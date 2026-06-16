@@ -10,8 +10,16 @@ export type StripeItemView = {
   removed: boolean;
 };
 
+/** A manual entitlement override, reduced to what the pure derivation needs.
+ *  Callers pass only ACTIVE, collapsed overrides (see src/lib/ops/entitlements.ts). */
+export type EntitlementOverride = { entitlement: string; mode: "grant" | "revoke" };
+
 export type EntitlementsInput = {
   items: StripeItemView[];
+  /** Active manual overrides, applied as a FINAL step after seat/addon
+   *  derivation, in array order (later entries win). A `grant` adds the key, a
+   *  `revoke` removes it — so a revoke can strip a seat-included key. */
+  overrides?: EntitlementOverride[];
 };
 
 /**
@@ -30,6 +38,8 @@ export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import"] as const;
  *    SEAT_INCLUDED_ENTITLEMENTS — holding a plan includes `ai_import`.
  *  - Any active `addon` item with an `addonKey` grants that key. This generic
  *    add-on support is retained for future add-ons; none ship today.
+ *  - Any active manual override is applied last — `grant` adds the key,
+ *    `revoke` removes it.
  *
  * Excludes removed items and addon items missing an addonKey (itself a CHECK
  * violation, but we defend rather than throw so a corrupt payload can't break
@@ -46,6 +56,13 @@ export function deriveEntitlements(input: EntitlementsInput): string[] {
   }
   for (const i of input.items) {
     if (i.kind === "addon" && !i.removed && i.addonKey) set.add(i.addonKey);
+  }
+  // Final step: union in manual overrides (grant adds, revoke removes). Applied
+  // last so a revoke can strip a seat-included key and a grant can add one the
+  // subscription does not imply. Order matters — later entries win.
+  for (const o of input.overrides ?? []) {
+    if (o.mode === "grant") set.add(o.entitlement);
+    else set.delete(o.entitlement);
   }
   return Array.from(set).sort();
 }
