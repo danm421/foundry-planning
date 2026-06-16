@@ -7,6 +7,7 @@ import { buildWhatIfTools } from "./whatif";
 import { buildScenarioWriteTools } from "./scenario-writes";
 import { buildDetailWriteTools } from "./detail-writes";
 import { buildCrmTools } from "./crm";
+import { buildReportTools } from "./report";
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
@@ -22,6 +23,9 @@ import { buildCrmTools } from "./crm";
  * (add_income, update_income, remove_income), the liability sub-phase
  * (add_liability, update_liability, remove_liability), and the account sub-phase
  * (add_account, update_account, remove_account), also HITL-gated.
+ * Phase 4: adds the report tool (generate_report) — a NON-destructive enqueue
+ * that queues a presentation deck and renders it in the background, so it is NOT
+ * in WRITE_TOOL_NAMES and does not route through the approval gate.
  */
 export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
   return [
@@ -31,6 +35,7 @@ export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface
     ...buildScenarioWriteTools(toolCtx),
     ...buildDetailWriteTools(toolCtx),
     ...buildCrmTools(toolCtx),
+    ...buildReportTools(toolCtx),
   ];
 }
 

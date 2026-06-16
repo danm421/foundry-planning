@@ -56,6 +56,19 @@ vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("../guards", () => ({ clientToHousehold: vi.fn(), assertHouseholdReadable: vi.fn() }));
 vi.mock("../account-mask", () => ({ maskSsnLast4: vi.fn() }));
+// Phase 4: stub the report tool's IO + heavy registry deps so this stays pure.
+vi.mock("@/components/presentations/registry", () => ({ PRESENTATION_PAGES: {} }));
+vi.mock("@/components/presentations/render-presentation-pdf", () => ({
+  BodySchema: { safeParse: vi.fn() },
+  renderPresentationPdf: vi.fn(),
+}));
+vi.mock("@/lib/crm/generation-runs", () => ({
+  createQueuedRun: vi.fn(),
+  markRunning: vi.fn(),
+  markDone: vi.fn(),
+  markFailed: vi.fn(),
+}));
+vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -138,19 +151,20 @@ const EXPECTED_CRM_ALL_19 = [
   "suggest_tasks",
 ];
 
-describe("buildTools (Phase 1 + Phase 2 + Phase 3 assembly)", () => {
-  it("returns exactly the 50 named tools (15 Phase-1 + 4 scenario writes + 12 detail writes + 19 CRM)", () => {
+describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
+  it("returns exactly the 51 named tools (15 Phase-1 + 4 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
-    // Phase-1, scenario-write, and detail-write tools all present
+    // Phase-1, scenario-write, detail-write, and report tools all present
     for (const n of [
       ...EXPECTED_PHASE1,
       ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
       ...EXPECTED_DETAIL_WRITE_TOOL_NAMES,
+      "generate_report",
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(50);
+    expect(tools).toHaveLength(51);
   });
 
   it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
@@ -219,6 +233,21 @@ describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
 it("Tier-B CRM writes are in WRITE_TOOL_NAMES; Tier-A writes are NOT", () => {
   for (const n of ["crm_delete_note", "crm_delete_task", "crm_create_tasks"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(true);
   for (const n of ["crm_add_note","crm_log_activity","crm_create_task","crm_update_task","crm_complete_task","crm_post_task_comment"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(false);
+});
+
+describe("buildTools (Phase 4 report tool)", () => {
+  it("buildTools includes generate_report", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    expect(names.has("generate_report")).toBe(true);
+  });
+
+  it("generate_report is NOT a write tool (non-destructive enqueue, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("generate_report")).toBe(false);
+  });
+
+  it("routes generate_report to tools (auto-apply, no approval gate)", () => {
+    expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
 });
 
 describe("routeAfterAgent with WRITE_TOOL_NAMES", () => {
