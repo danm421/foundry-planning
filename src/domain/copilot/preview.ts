@@ -23,6 +23,8 @@ import {
 } from "@/lib/scenario/scenario-change-describe";
 import { computeRowDiff } from "@/lib/scenario/diff-row";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
+import { scenarioChangesToBaseWrites } from "@/lib/scenario/scenario-changes-to-base-writes";
 import { applyScenarioChanges } from "@/engine/scenario/applyChanges";
 import { runProjection } from "@/engine";
 import {
@@ -877,6 +879,30 @@ export async function describeProposedWrite(
     }
     if (call.name === "update_account") {
       return await enrichUpdateAccount(base, call.args, ctx);
+    }
+    if (call.name === "promote_to_base") {
+      const scenarioId = str(call.args.scenarioId);
+      if (!scenarioId) return base;
+      const { effectiveTree: baseTree } = await loadEffectiveTree(ctx.clientId, ctx.firmId, "base", {});
+      const [changes, groups] = await Promise.all([
+        loadScenarioChanges(scenarioId),
+        loadScenarioToggleGroups(scenarioId),
+      ]);
+      const plan = scenarioChangesToBaseWrites(baseTree, changes, groups, {});
+      const lines: string[] = [
+        ...plan.inserts.map((w) => `ADD ${w.kind}`),
+        ...plan.updates.map((w) => `EDIT ${w.kind} ${w.id}`),
+        ...plan.singletonUpdates.map((w) => `EDIT ${w.kind} (singleton)`),
+        ...plan.removes.map((w) => `REMOVE ${w.kind} ${w.id}`),
+      ];
+      return {
+        ...base,
+        details: [
+          ...(lines.length ? lines : ["(no field-level changes — base already matches this scenario)"]),
+          "The current base is auto-snapshotted before applying (rollback point).",
+          "WARNING: ALL other scenarios for this client are permanently deleted on approval.",
+        ],
+      };
     }
     if (call.name !== "propose_changes") return base;
 
