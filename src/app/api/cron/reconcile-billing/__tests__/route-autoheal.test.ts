@@ -53,6 +53,13 @@ vi.mock("@/lib/billing/webhook-error-check", () => ({
   checkRecentWebhookErrors: vi.fn().mockResolvedValue(0),
 }));
 
+// Override-aware write paths now consult manual entitlement overrides. These are
+// the non-override flow tests, so stub the lookup to "no active overrides" —
+// preserving the original assertions (entitlements derived from sub items alone).
+vi.mock("@/lib/ops/entitlements", () => ({
+  getActiveEntitlementOverrides: () => Promise.resolve([]),
+}));
+
 import { GET } from "../route";
 
 beforeEach(() => {

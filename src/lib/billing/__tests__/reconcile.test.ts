@@ -111,3 +111,43 @@ describe("diffReconciliation", () => {
     ]);
   });
 });
+
+describe("diffReconciliation — entitlement overrides (no-clobber)", () => {
+  it("includes an active grant in derived → no entitlements drift when Clerk already has it", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import"] },
+      overrides: [{ entitlement: "ai_copilot", mode: "grant" }],
+    };
+    expect(diffReconciliation(input).find((d) => d.field === "entitlements")).toBeUndefined();
+  });
+
+  it("a grant appears in the entitlements drift stripeValue → auto-heal ADDS it (never strips)", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_import"] }, // Clerk missing the grant
+      overrides: [{ entitlement: "ai_copilot", mode: "grant" }],
+    };
+    const ent = diffReconciliation(input).find((d) => d.field === "entitlements");
+    expect(ent?.stripeValue).toEqual(["ai_copilot", "ai_import"]); // heal writes THIS → grant survives
+  });
+
+  it("a revoke removes a seat-included key from derived", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      clerk: { subscriptionStatus: "active", entitlements: [] },
+      overrides: [{ entitlement: "ai_import", mode: "revoke" }],
+    };
+    expect(diffReconciliation(input).find((d) => d.field === "entitlements")).toBeUndefined();
+  });
+
+  it("WITHOUT the override store, a manual Clerk key is flagged as drift (the clobber this prevents)", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import"] },
+      // no overrides
+    };
+    const ent = diffReconciliation(input).find((d) => d.field === "entitlements");
+    expect(ent?.stripeValue).toEqual(["ai_import"]); // heal would STRIP ai_copilot — the bug the store fixes
+  });
+});

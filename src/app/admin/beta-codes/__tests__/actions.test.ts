@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockAuth = vi.fn();
-const mockRequireBetaOperator = vi.fn();
+const mockRequireOpsAdmin = vi.fn();
 const mockMintCodes = vi.fn();
 const mockRevokeCode = vi.fn();
 const mockRecordAudit = vi.fn();
 const mockRevalidatePath = vi.fn();
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
-vi.mock("@/lib/authz", () => ({ requireBetaOperator: () => mockRequireBetaOperator() }));
+vi.mock("@/lib/ops/ops-auth", () => ({ requireOpsAdmin: () => mockRequireOpsAdmin() }));
 vi.mock("@/lib/billing/beta-codes", () => ({
   mintCodes: (...a: unknown[]) => mockMintCodes(...a),
   revokeCode: (...a: unknown[]) => mockRevokeCode(...a),
@@ -21,7 +21,7 @@ import { mintCodesAction, revokeCodeAction } from "../actions";
 beforeEach(() => {
   vi.clearAllMocks();
   mockAuth.mockResolvedValue({ userId: "user_op", orgId: "org_op" });
-  mockRequireBetaOperator.mockResolvedValue(undefined);
+  mockRequireOpsAdmin.mockResolvedValue({ clerkUserId: "user_op", email: "op@foundry", role: "superadmin" });
   mockMintCodes.mockResolvedValue(["FNDR-AAAA-BBBB"]);
   mockRevokeCode.mockResolvedValue({ id: "code_1" });
 });
@@ -47,7 +47,7 @@ describe("mintCodesAction", () => {
   });
 
   it("returns forbidden when the gate throws", async () => {
-    mockRequireBetaOperator.mockRejectedValue(new Error("nope"));
+    mockRequireOpsAdmin.mockRejectedValue(new Error("nope"));
     const res = await mintCodesAction({ count: 1, label: null, expiresAt: null, entitlements: ["ai_import"] });
     expect(res.ok).toBe(false);
     expect(mockMintCodes).not.toHaveBeenCalled();

@@ -3696,6 +3696,49 @@ export const betaCodes = pgTable("beta_codes", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Foundry staff who can operate across all orgs (ops console). Keyed to the
+// Clerk *user*, deliberately OUTSIDE Clerk org roles — so it neither needs nor
+// consumes the B2B custom-roles add-on, and never collides with the per-org
+// advisor `org:admin` role. Generalizes the retired BETA_OPERATOR allowlist.
+export const opsAdmins = pgTable(
+  "ops_admins",
+  {
+    clerkUserId: text("clerk_user_id").primaryKey(),
+    email: text("email").notNull(),
+    role: text("role").notNull(), // 'support' | 'ops' | 'superadmin'
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [check("ops_admins_role_check", sql`${t.role} IN ('support','ops','superadmin')`)],
+);
+
+// Per-org entitlement overrides set by Foundry ops staff. Append-style and
+// attributable: each manual grant/revoke is its OWN row (reason + set_by +
+// optional expiry), never a mutate-in-place. This table is the durable source
+// of truth for manual entitlement changes; Clerk publicMetadata.entitlements is
+// a derived cache rebuilt from subscription items UNIONed with active overrides
+// (see deriveEntitlements + src/lib/ops/entitlements.ts). Survives the
+// reconcile-billing cron, which now reads overrides before healing Clerk.
+export const opsEntitlementOverrides = pgTable(
+  "ops_entitlement_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    entitlement: text("entitlement").notNull(),
+    mode: text("mode").notNull(), // 'grant' | 'revoke'
+    reason: text("reason").notNull(),
+    setBy: text("set_by").notNull(), // ops clerk_user_id
+    expiresAt: timestamp("expires_at", { withTimezone: true }), // nullable; comps auto-expire
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("ops_entitlement_overrides_firm_idx").on(t.firmId, t.entitlement),
+    check("ops_entitlement_overrides_mode_check", sql`${t.mode} IN ('grant','revoke')`),
+  ],
+);
+
 // Stripe subscription items — one per seat line + one per add-on.
 // `kind` distinguishes seats (quantity tracks org membership) from
 // add-ons (quantity is always 1, presence = entitlement).

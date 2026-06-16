@@ -56,6 +56,13 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: (a: unknown) => mockRecordAudit(a),
 }));
 
+// Override-aware write paths now consult manual entitlement overrides. These are
+// the non-override flow tests, so stub the lookup to "no active overrides" —
+// preserving the original assertions (entitlements derived from sub items alone).
+vi.mock("@/lib/ops/entitlements", () => ({
+  getActiveEntitlementOverrides: () => Promise.resolve([]),
+}));
+
 import { handleSubscriptionUpsert } from "../customer-subscription-upserted";
 
 beforeEach(() => {

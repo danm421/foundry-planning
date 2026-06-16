@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { requireBetaOperator } from "@/lib/authz";
+import { requireOpsAdmin } from "@/lib/ops/ops-auth";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   try {
-    await requireBetaOperator();
+    await requireOpsAdmin();
   } catch {
     notFound(); // don't reveal the route to non-operators
   }

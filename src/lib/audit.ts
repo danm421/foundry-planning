@@ -218,6 +218,13 @@ export type AuditAction =
   | "billing.reconcile_healed"
   | "billing.access_denied"
   | "billing.dispute_closed"
+  // Ops console (cross-org staff actions; actorId = ops user, firmId = target)
+  | "ops.entitlement.granted"
+  | "ops.entitlement.revoked"
+  | "ops.billing.portal_opened"
+  | "ops.billing.trial_extended"
+  | "ops.impersonation.started"
+  | "ops.impersonation.ended"
   // Org membership lifecycle (mirrors Clerk events)
   | "member.invited"
   | "member.removed"
@@ -303,7 +310,23 @@ type Args = {
 
 export async function recordAudit(args: Args): Promise<void> {
   try {
-    const actorId = args.actorId ?? (await auth()).userId ?? "system";
+    let actorId = args.actorId;
+    let metadata: Record<string, unknown> | null = args.metadata ?? null;
+    // Resolve the actor only when no explicit override was passed — keeps the
+    // webhook path from ever calling auth(). During impersonation the session
+    // belongs to the advisor (userId) but was minted by an ops operator
+    // (actor.sub); attribute the action to the operator and stamp the
+    // impersonated advisor in metadata. No schema change — rides in jsonb.
+    if (!actorId) {
+      const { userId, actor } = await auth();
+      const opsActor = typeof actor?.sub === "string" ? actor.sub : null;
+      if (opsActor) {
+        actorId = opsActor;
+        metadata = { ...(metadata ?? {}), actingAsAdvisor: userId ?? null };
+      } else {
+        actorId = userId ?? "system";
+      }
+    }
     await db.insert(auditLog).values({
       firmId: args.firmId,
       actorId,
@@ -311,7 +334,7 @@ export async function recordAudit(args: Args): Promise<void> {
       resourceType: args.resourceType,
       resourceId: args.resourceId,
       clientId: args.clientId ?? null,
-      metadata: args.metadata ?? null,
+      metadata,
     });
   } catch (err) {
     const msg =

@@ -9,6 +9,8 @@ import {
   tosAcceptances,
 } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
+import { deriveEntitlements } from "@/lib/billing/entitlements";
+import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
 import { recordAudit } from "@/lib/audit";
 
@@ -169,13 +171,18 @@ export async function handleCheckoutSessionCompleted(
     .onConflictDoNothing()
     .returning({ id: tosAcceptances.id });
 
-  // 7. Set Clerk metadata.
+  // 7. Set Clerk metadata. At checkout the line items aren't materialized in
+  // this handler, so we derive from an empty item set — any pre-existing grant
+  // override surfaces immediately; the subsequent customer.subscription.created
+  // webhook recomputes entitlements with the real items + overrides.
+  const overrides = await getActiveEntitlementOverrides(firmId);
+  const entitlements = deriveEntitlements({ items: [], overrides });
   await cc.organizations.updateOrganizationMetadata(firmId, {
     publicMetadata: {
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
       subscription_status: sub.status,
-      entitlements: [],
+      entitlements,
       trial_ends_at: sub.trial_end
         ? new Date(sub.trial_end * 1000).toISOString()
         : null,

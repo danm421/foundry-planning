@@ -1,4 +1,4 @@
-import { deriveEntitlements } from "./entitlements";
+import { deriveEntitlements, type EntitlementOverride } from "./entitlements";
 
 export type ReconcileItem = {
   kind: "seat" | "addon";
@@ -12,6 +12,9 @@ export type ReconcileInput = {
   stripe: { status: string; items: ReconcileItem[] };
   db: { status: string; items: ReconcileItem[] };
   clerk: { subscriptionStatus: string; entitlements: string[] };
+  /** Active manual overrides for this firm; unioned into the derived
+   *  entitlements so a grant survives reconciliation (and a revoke is honored). */
+  overrides?: EntitlementOverride[];
 };
 
 export type DriftEntry = {
@@ -32,9 +35,12 @@ export type DriftEntry = {
  * implemented here — the cron only detects, ops resolves manually per
  * runbook.
  *
- * Entitlements are derived from the Stripe line items alone (an active seat
- * implies the bundled `ai_import`). Drift checks compare that derivation
- * against the Clerk hot-path snapshot.
+ * Entitlements are derived from the Stripe line items (an active seat implies
+ * the bundled `ai_import`), then any active manual `overrides` are unioned in
+ * as a final step — a grant adds a key the subscription doesn't imply, a revoke
+ * strips one (even the seat-included `ai_import`). Drift checks compare that
+ * derivation against the Clerk hot-path snapshot, so a manual grant is not
+ * flagged as drift and clobbered on heal.
  */
 export function diffReconciliation(input: ReconcileInput): DriftEntry[] {
   const drift: DriftEntry[] = [];
@@ -69,7 +75,7 @@ export function diffReconciliation(input: ReconcileInput): DriftEntry[] {
     });
   }
 
-  const derived = deriveEntitlements({ items: stripe.items });
+  const derived = deriveEntitlements({ items: stripe.items, overrides: input.overrides ?? [] });
   const clerkSorted = [...clerk.entitlements].sort();
   if (JSON.stringify(derived) !== JSON.stringify(clerkSorted)) {
     drift.push({
