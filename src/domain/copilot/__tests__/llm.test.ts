@@ -1,5 +1,5 @@
 // src/domain/copilot/__tests__/llm.test.ts
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { chatModel, instanceNameFromEndpoint } from "../llm";
 
 describe("instanceNameFromEndpoint", () => {
@@ -56,5 +56,20 @@ describe("chatModel", () => {
     vi.stubEnv("AZURE_ANALYSIS_MODEL", "");
     vi.stubEnv("AZURE_MODEL", "");
     expect(() => chatModel("full")).toThrow("ai_not_configured");
+  });
+});
+
+describe("embeddings()", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("delegates to callAIEmbedding", async () => {
+    const callAIEmbedding = vi.fn().mockResolvedValue(Array(1536).fill(0.1));
+    vi.doMock("@/lib/extraction/azure-client", () => ({ callAIEmbedding }));
+    const { embeddings } = await import("../llm");
+    const vec = await embeddings("retirement");
+    expect(vec).toHaveLength(1536);
+    expect(callAIEmbedding).toHaveBeenCalledWith("retirement");
   });
 });

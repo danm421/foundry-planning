@@ -1,5 +1,6 @@
 // src/domain/copilot/llm.ts
 import { AzureChatOpenAI } from "@langchain/openai";
+import { callAIEmbedding } from "@/lib/extraction/azure-client";
 
 /**
  * Azure config the copilot chat model needs. Foundry's env differs from
@@ -85,4 +86,13 @@ export function chatModel(model: "full" | "mini" = "full"): AzureChatOpenAI {
     azureOpenAIApiVersion: apiVersion,
     streaming: true,
   });
+}
+
+/**
+ * Embed copilot text (KB ingest + query-time retrieval). A thin re-export so
+ * the copilot domain owns its embedding entry point; the Azure specifics live
+ * in azure-client.ts. 1536-dim, fail-closed contract is enforced there.
+ */
+export async function embeddings(text: string): Promise<number[]> {
+  return callAIEmbedding(text);
 }
