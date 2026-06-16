@@ -8,6 +8,7 @@ vi.mock("@/lib/scenario/changes-writer", () => ({
   applyEntityAdd: vi.fn(), applyEntityEdit: vi.fn(), applyEntityRemove: vi.fn(), revertChange: vi.fn(),
 }));
 vi.mock("@/lib/scenario/snapshot", () => ({ createSnapshot: vi.fn() }));
+vi.mock("@/lib/scenario/promote-to-base", () => ({ promoteScenarioToBase: vi.fn() }));
 vi.mock("@/lib/scenario/load-projection-for-ref", () => ({ loadProjectionForRef: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/db", () => ({
@@ -20,6 +21,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { createScenarioWithClone } from "@/lib/scenario/create-with-clone";
 import { applyEntityAdd, applyEntityEdit, applyEntityRemove, revertChange } from "@/lib/scenario/changes-writer";
 import { createSnapshot } from "@/lib/scenario/snapshot";
+import { promoteScenarioToBase } from "@/lib/scenario/promote-to-base";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/db";
@@ -240,5 +242,69 @@ describe("compare_and_snapshot", () => {
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "copilot.write_approved", metadata: expect.objectContaining({ tool: "compare_and_snapshot" }) }),
     );
+  });
+});
+
+describe("promote_to_base", () => {
+  // Default: the client-pin lookup returns a NON-base scenario owned by this client.
+  function pinReturns(rows: unknown[]) {
+    vi.mocked(db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn(() => ({ where: vi.fn(() => Promise.resolve(rows)) })),
+    } as never);
+  }
+  beforeEach(() => {
+    pinReturns([{ id: "scenario_1", name: "Roth ladder", isBaseCase: false }]);
+    vi.mocked(promoteScenarioToBase).mockResolvedValue({
+      snapshotId: "snap-old-base", deletedScenarioCount: 2, counts: {}, notes: { kept: 0, dropped: 0 },
+    });
+  });
+
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("promote_to_base").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("REFUSES when the target is already the base case (and does NOT call promoteScenarioToBase)", async () => {
+    pinReturns([{ id: "scenario_1", name: "Base", isBaseCase: true }]);
+    const result = await getTool("promote_to_base").invoke({ scenarioId: "scenario_1" });
+    expect(String(result)).toMatch(/already the base|refus/i);
+    expect(promoteScenarioToBase).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+
+  it("promotes a non-base scenario and audits exactly one write_approved with the real resourceId", async () => {
+    const result = await getTool("promote_to_base").invoke({ scenarioId: "scenario_1" });
+    expect(promoteScenarioToBase).toHaveBeenCalledTimes(1);
+    expect(promoteScenarioToBase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        scenarioId: "scenario_1",
+        scenarioName: "Roth ladder",
+        toggleState: {},
+        userId: "user_1",
+        dateLabel: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
+    const approvedCalls = vi
+      .mocked(recordAudit)
+      .mock.calls.filter(([a]) => a.action === "copilot.write_approved");
+    expect(approvedCalls).toHaveLength(1);
+    expect(approvedCalls[0][0]).toMatchObject({
+      action: "copilot.write_approved",
+      resourceType: "scenario",
+      resourceId: "scenario_1",
+      clientId: "client_1",
+      firmId: "org_session",
+    });
+    expect(String(result)).toContain("snap-old-base");
+  });
+
+  it("rejects when verifyClientAccess fails (no promote, no audit)", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    const result = await getTool("promote_to_base").invoke({ scenarioId: "scenario_1" });
+    expect(String(result)).toMatch(/not found|access denied/i);
+    expect(promoteScenarioToBase).not.toHaveBeenCalled();
   });
 });

@@ -33,6 +33,7 @@ import {
   revertChange,
 } from "@/lib/scenario/changes-writer";
 import { createSnapshot } from "@/lib/scenario/snapshot";
+import { promoteScenarioToBase } from "@/lib/scenario/promote-to-base";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import type { ScenarioRef } from "@/lib/scenario/loader";
 import type { EstateCompareRef } from "@/lib/scenario/scenario-from-search-params";
@@ -374,5 +375,68 @@ export function buildScenarioWriteTools({
     },
   );
 
-  return [createScenario, proposeChanges, revertChangeTool, compareAndSnapshot];
+  const promoteToBase = tool(
+    async ({ scenarioId }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
+
+        // Re-verify the scenario belongs to THIS client and capture isBaseCase.
+        const [row] = await db
+          .select({ id: scenarios.id, name: scenarios.name, isBaseCase: scenarios.isBaseCase })
+          .from(scenarios)
+          .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, ctx.clientId)));
+        if (!row) return `Scenario ${scenarioId} not found for this client.`;
+        // REFUSE on base — promoting the base to itself still deletes siblings.
+        if (row.isBaseCase) {
+          return "That is already the base case — promoting it would delete every other scenario for no change. Refusing.";
+        }
+
+        const dateLabel = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const result = await promoteScenarioToBase({
+          clientId: ctx.clientId,
+          firmId,
+          scenarioId,
+          scenarioName: row.name,
+          toggleState: {},
+          userId: ctx.userId,
+          dateLabel,
+        });
+
+        // write_approved fires HERE (the tool), on real persisted success, with the
+        // real resourceId — the inherited single-most-important rule.
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "scenario",
+          resourceId: scenarioId,
+          clientId: ctx.clientId,
+          firmId,
+          metadata: {
+            tool: "promote_to_base",
+            snapshotId: result.snapshotId,
+            deletedScenarioCount: result.deletedScenarioCount,
+            dateLabel,
+          },
+        });
+
+        return `Promoted "${row.name}" to base. Snapshotted the old base (id ${result.snapshotId}) and deleted ${result.deletedScenarioCount} other scenario(s).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "promote_to_base",
+      description:
+        "Make a what-if scenario the new base case. DESTRUCTIVE: overwrites the base plan with this scenario's " +
+        "changes, auto-snapshots the current base first, and DELETES all other scenarios. Refuses if the target " +
+        "is already the base. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        scenarioId: z.string().describe("the scenario uuid to promote to base"),
+      }),
+    },
+  );
+
+  return [createScenario, proposeChanges, revertChangeTool, compareAndSnapshot, promoteToBase];
 }
