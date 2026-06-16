@@ -102,3 +102,23 @@ export async function callAIExtraction(
 ): Promise<string> {
   return (await callAIExtractionWithMeta(systemPrompt, userPrompt, model)).content;
 }
+
+/**
+ * Embed a single string via the Azure OpenAI embeddings deployment. No SDK
+ * change — the cached AzureOpenAI client already exposes `.embeddings.create`.
+ * Fails CLOSED when the embeddings deployment env is unset (mirrors the
+ * extraction env discipline) and asserts the 1536-dim contract the pgvector
+ * column requires, so a wrong deployment surfaces at the call site, not as a
+ * DB error.
+ */
+export async function callAIEmbedding(input: string): Promise<number[]> {
+  const model = process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT;
+  if (!model) throw new Error("ai_embedding_not_configured");
+  const client = getClient();
+  const response = await client.embeddings.create({ model, input });
+  const vec = response.data[0]?.embedding;
+  if (!vec || vec.length !== 1536) {
+    throw new Error("embedding_dim_mismatch");
+  }
+  return vec;
+}

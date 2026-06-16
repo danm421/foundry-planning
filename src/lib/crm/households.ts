@@ -250,18 +250,22 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
 
   // Audit + activity are side records written with the global `db` after the
   // transaction commits (recordAudit/recordActivity don't accept a tx handle).
+  const { userId: actorId } = await auth();
   await recordAudit({
     action: "crm.household.create",
     resourceType: "crm_household",
     resourceId: household.id,
     firmId,
   });
-  await recordActivity({
-    householdId: household.id,
-    kind: "note",
-    title: "Household created",
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: household.id,
+      kind: "note",
+      title: "Household created",
+      occurredAt: new Date(),
+    },
+    { actorUserId: actorId ?? "" },
+  );
   for (const contact of contacts) {
     await recordAudit({
       action: "crm.contact.create",
@@ -269,13 +273,16 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
       resourceId: contact.id,
       firmId,
     });
-    await recordActivity({
-      householdId: household.id,
-      kind: "contact_change",
-      title: `Added ${contact.role}: ${contact.firstName} ${contact.lastName}`,
-      metadata: { contactId: contact.id, role: contact.role },
-      occurredAt: new Date(),
-    });
+    await recordActivity(
+      {
+        householdId: household.id,
+        kind: "contact_change",
+        title: `Added ${contact.role}: ${contact.firstName} ${contact.lastName}`,
+        metadata: { contactId: contact.id, role: contact.role },
+        occurredAt: new Date(),
+      },
+      { actorUserId: actorId ?? "" },
+    );
   }
 
   return household;
@@ -305,13 +312,17 @@ export async function updateCrmHousehold(
   });
 
   if (patch.status && patch.status !== existing.status) {
-    await recordActivity({
-      householdId: id,
-      kind: "status_change",
-      title: `Status: ${existing.status} → ${patch.status}`,
-      metadata: { from: existing.status, to: patch.status },
-      occurredAt: new Date(),
-    });
+    const { userId } = await auth();
+    await recordActivity(
+      {
+        householdId: id,
+        kind: "status_change",
+        title: `Status: ${existing.status} → ${patch.status}`,
+        metadata: { from: existing.status, to: patch.status },
+        occurredAt: new Date(),
+      },
+      { actorUserId: userId ?? "" },
+    );
   }
   return updated;
 }
@@ -344,18 +355,22 @@ export async function softDeleteCrmHousehold(id: string, deletedBy: string) {
     .where(eq(crmHouseholds.id, id))
     .returning();
 
+  const { userId } = await auth();
   await recordAudit({
     action: "crm.household.soft_delete",
     resourceType: "crm_household",
     resourceId: id,
     firmId,
   });
-  await recordActivity({
-    householdId: id,
-    kind: "status_change",
-    title: "Household moved to Trash",
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: id,
+      kind: "status_change",
+      title: "Household moved to Trash",
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return updated;
 }
 
@@ -374,18 +389,22 @@ export async function restoreCrmHousehold(id: string) {
     .where(eq(crmHouseholds.id, id))
     .returning();
 
+  const { userId } = await auth();
   await recordAudit({
     action: "crm.household.restore",
     resourceType: "crm_household",
     resourceId: id,
     firmId,
   });
-  await recordActivity({
-    householdId: id,
-    kind: "status_change",
-    title: "Household restored from Trash",
-    occurredAt: new Date(),
-  });
+  await recordActivity(
+    {
+      householdId: id,
+      kind: "status_change",
+      title: "Household restored from Trash",
+      occurredAt: new Date(),
+    },
+    { actorUserId: userId ?? "" },
+  );
   return updated;
 }
 

@@ -1,7 +1,6 @@
 import { db } from "@/db";
 import { crmActivity, crmHouseholds } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { auth } from "@clerk/nextjs/server";
 
 type RecordActivityInput = {
   householdId: string;
@@ -20,18 +19,20 @@ type RecordActivityInput = {
  * userId; activity is a human-readable timeline of household events
  * surfaced in the CRM UI.
  */
-export async function recordActivity(input: RecordActivityInput) {
+export async function recordActivity(
+  input: RecordActivityInput,
+  opts: { actorUserId: string },
+) {
   const household = await db.query.crmHouseholds.findFirst({
     where: eq(crmHouseholds.id, input.householdId),
     columns: { firmId: true },
   });
   if (!household) throw new Error(`Cannot record activity: household ${input.householdId} not found`);
 
-  const { userId } = await auth();
   await db.insert(crmActivity).values({
     householdId: input.householdId,
     firmId: household.firmId,
-    actorUserId: userId,
+    actorUserId: opts.actorUserId,
     kind: input.kind,
     title: input.title,
     body: input.body,

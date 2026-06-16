@@ -135,8 +135,9 @@ describe("handleSubscriptionUpsert", () => {
     );
   });
 
-  it("grants the seat-bundled ai_import entitlement and mirrors add-on taxonomy to the DB", async () => {
-    // Any active seat grants ai_import (bundled into the plan). A generic
+  it("grants the seat-bundled entitlements and mirrors add-on taxonomy to the DB", async () => {
+    // Any active seat grants the plan-bundled entitlements (ai_copilot +
+    // ai_import). A generic
     // add-on line still maps to the DB mirror via price.metadata so reconcile
     // can read it. kind/addon_key live on price.metadata; the item metadata is
     // intentionally empty.
@@ -192,7 +193,7 @@ describe("handleSubscriptionUpsert", () => {
       "org_ai",
       expect.objectContaining({
         publicMetadata: expect.objectContaining({
-          entitlements: ["ai_import", "white_label"],
+          entitlements: ["ai_copilot", "ai_import", "white_label"],
         }),
       }),
     );

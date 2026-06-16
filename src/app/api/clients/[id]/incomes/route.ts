@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarios, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
-import {
-  assertAccountsInClient,
-  assertBusinessAccountsInClient,
-  assertEntitiesInClient,
-} from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { requireOrgId, requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { createIncomeForClient } from "@/lib/clients/incomes-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -59,104 +54,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
-    if (!scenarioId) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const {
-      type,
-      name,
-      annualAmount,
-      startYear,
-      endYear,
-      growthRate,
-      growthSource,
-      owner,
-      claimingAge,
-      ownerEntityId,
-      ownerAccountId,
-      cashAccountId,
-      inflationStartYear,
-    } = body;
-    const startYearRef = body.startYearRef ?? null;
-    const endYearRef = body.endYearRef ?? null;
-    const taxType = body.taxType ?? null;
-    const ssBenefitMode = body.ssBenefitMode ?? null;
-    const piaMonthly = body.piaMonthly != null ? String(body.piaMonthly) : null;
-    const claimingAgeMonths = body.claimingAgeMonths != null ? Number(body.claimingAgeMonths) : 0;
-    const claimingAgeMode = body.claimingAgeMode ?? null;
-
-    if (!type || !name || !startYear || !endYear) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    // Schema enforces this with a CHECK, but report a clean 400 instead of a
-    // raw DB error so the dialog can surface it.
-    if (ownerEntityId != null && ownerAccountId != null) {
-      return NextResponse.json(
-        { error: "Cannot set both ownerEntityId and ownerAccountId" },
-        { status: 400 },
-      );
-    }
-
-    const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
-    if (!entCheck.ok) {
-      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
-    }
-    const acctCheck = await assertAccountsInClient(id, [cashAccountId, ownerAccountId]);
-    if (!acctCheck.ok) {
-      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-    }
-    if (ownerAccountId != null) {
-      const bizCheck = await assertBusinessAccountsInClient(id, [ownerAccountId]);
-      if (!bizCheck.ok) {
-        return NextResponse.json({ error: bizCheck.reason }, { status: 400 });
-      }
-    }
-
-    const [income] = await db
-      .insert(incomes)
-      .values({
-        clientId: id,
-        scenarioId,
-        type,
-        name,
-        annualAmount: annualAmount ?? "0",
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate ?? "0.03",
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        owner: owner ?? "client",
-        claimingAge: claimingAge ? Number(claimingAge) : null,
-        ownerEntityId: ownerEntityId ?? null,
-        ownerAccountId: ownerAccountId ?? null,
-        cashAccountId: cashAccountId ?? null,
-        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
-        startYearRef,
-        endYearRef,
-        taxType,
-        ssBenefitMode,
-        piaMonthly,
-        claimingAgeMonths,
-        claimingAgeMode,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "income.create",
-      resourceType: "income",
-      resourceId: income.id,
+    const result = await createIncomeForClient({
       clientId: id,
       firmId,
-      metadata: { type: income.type, name: income.name },
+      actorId: userId,
+      input: await request.json(),
     });
-
-    return NextResponse.json(income, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

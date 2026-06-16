@@ -33,6 +33,18 @@ const inet = customType<{ data: string; driverData: string }>({
   },
 });
 
+// pgvector column. drizzle-kit can't fully express vector(N) or the HNSW
+// index — the migration's CREATE EXTENSION + index step is hand-edited
+// (see migration <NNNN>). Mirrors the `inet` customType precedent above.
+const vector1536 = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "vector(1536)";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+});
+
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 export const filingStatusEnum = pgEnum("filing_status", [
@@ -4063,3 +4075,60 @@ export const solverMcCache = pgTable(
 
 export type SolverMcCacheRow = InferSelectModel<typeof solverMcCache>;
 export type NewSolverMcCacheRow = InferInsertModel<typeof solverMcCache>;
+
+// --- Planning Copilot ---
+// One row per chat thread. id doubles as the LangGraph checkpointer thread_id.
+// userId/firmId are Clerk ids (text), matching clients.firmId (text). clientId
+// is the client-scoped thread target (null = firm-level thread, Phase 2+).
+export const copilotConversations = pgTable(
+  "copilot_conversations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    firmId: text("firm_id").notNull(),
+    clientId: uuid("client_id").references(() => clients.id, {
+      onDelete: "cascade",
+    }),
+    title: text("title").notNull().default("New conversation"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("copilot_conversations_user_updated_idx").on(t.userId, t.updatedAt),
+  ],
+);
+
+// ── Planning KB ───────────────────────────────────────────────────────────────
+
+export const kbSourceEnum = pgEnum("kb_source", [
+  "planning_playbook",
+  "tax_reference",
+  "client_document",
+  "firm_note",
+  "other",
+]);
+
+export const planningKbChunks = pgTable(
+  "planning_kb_chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    source: kbSourceEnum("source").notNull(),
+    sourceRef: text("source_ref").notNull(),
+    firmId: text("firm_id"),                       // null = global/curated seed
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    chunkText: text("chunk_text").notNull(),
+    contentHash: text("content_hash").notNull(),
+    embedding: vector1536("embedding").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("planning_kb_chunks_content_hash_uq").on(t.contentHash),
+    index("planning_kb_chunks_firm_id_idx").on(t.firmId),
+    index("planning_kb_chunks_client_id_idx").on(t.clientId),
+  ],
+);

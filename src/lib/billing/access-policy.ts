@@ -25,7 +25,17 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * widening the method check.
  */
 const READ_POST_PREFIXES = ["/api/clients/", "/api/cma/"] as const;
-const READ_POST_SUFFIXES = ["/reports/data", "/projection", "/preview"] as const;
+const READ_POST_SUFFIXES = [
+  "/reports/data",
+  "/projection",
+  "/preview",
+  // Copilot read turns: stream produces a streamed answer, resume continues
+  // after an approval decision. Both READ/compute — Phase 2 writes go through
+  // the approval/HITL path with normal mutation gating, so a read-only
+  // (grace / late-past_due) firm may still converse with the copilot.
+  "/copilot/stream",
+  "/copilot/resume",
+] as const;
 
 function isReadPost(pathname: string): boolean {
   if (!READ_POST_PREFIXES.some((p) => pathname.startsWith(p))) return false;

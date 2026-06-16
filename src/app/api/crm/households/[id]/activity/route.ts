@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listActivity, recordActivity } from "@/lib/crm/activity";
 import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
 import { createCrmActivitySchema } from "@/lib/crm/schemas";
+import { auth } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
 
@@ -45,14 +46,18 @@ export async function POST(
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
-    await recordActivity({
-      householdId: id,
-      kind: parsed.data.kind,
-      title: parsed.data.title,
-      body: parsed.data.body,
-      metadata: parsed.data.metadata,
-      occurredAt: parsed.data.occurredAt ? new Date(parsed.data.occurredAt) : new Date(),
-    });
+    const { userId } = await auth();
+    await recordActivity(
+      {
+        householdId: id,
+        kind: parsed.data.kind,
+        title: parsed.data.title,
+        body: parsed.data.body,
+        metadata: parsed.data.metadata,
+        occurredAt: parsed.data.occurredAt ? new Date(parsed.data.occurredAt) : new Date(),
+      },
+      { actorUserId: userId ?? "" },
+    );
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

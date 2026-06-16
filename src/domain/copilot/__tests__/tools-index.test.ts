@@ -1,0 +1,287 @@
+// src/domain/copilot/__tests__/tools-index.test.ts
+import { describe, it, expect, vi } from "vitest";
+import { buildToolContext } from "../context";
+import type { CopilotAuthContext } from "../state";
+
+// Stub the IO/engine deps the read+compute+whatif tools import at module load
+// so this assembly test stays a pure unit (no DB, no Azure, no engine run).
+vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
+vi.mock("@/lib/projection/load-monte-carlo-data", () => ({ loadMonteCarloData: vi.fn() }));
+vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
+vi.mock("@/engine", () => ({ runProjection: vi.fn(), runProjectionWithEvents: vi.fn() }));
+vi.mock("@/lib/solver/solve-target", () => ({ solveTarget: vi.fn() }));
+vi.mock("@/lib/solver/solve-max-spending", () => ({ solveMaxSpending: vi.fn() }));
+vi.mock("@/lib/solver/solve-ss-portfolio", () => ({ solveSsClaimAgeByPortfolio: vi.fn() }));
+vi.mock("@/engine/scenario/applyChanges", () => ({ applyScenarioChanges: vi.fn() }));
+vi.mock("@/engine/what-if/life-insurance-need", () => ({
+  runLifeInsuranceWhatIf: vi.fn(),
+  survivorEndingPortfolio: vi.fn(),
+}));
+vi.mock("@/lib/solver/apply-mutations", () => ({ applyMutations: vi.fn() }));
+// Phase 2: stub scenario-writes IO deps
+vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
+vi.mock("@/db", () => ({ db: {} }));
+// Phase 3: stub detail-writes (expense + income) cores
+vi.mock("@/lib/clients/expenses-writes", () => ({
+  createExpenseForClient: vi.fn(),
+  updateExpenseForClient: vi.fn(),
+  deleteExpenseForClient: vi.fn(),
+}));
+vi.mock("@/lib/clients/incomes-writes", () => ({
+  createIncomeForClient: vi.fn(),
+  updateIncomeForClient: vi.fn(),
+  deleteIncomeForClient: vi.fn(),
+}));
+vi.mock("@/lib/clients/liabilities-writes", () => ({
+  createLiabilityForClient: vi.fn(),
+  updateLiabilityForClient: vi.fn(),
+  deleteLiabilityForClient: vi.fn(),
+}));
+vi.mock("@/lib/clients/accounts-writes", () => ({
+  createAccountForClient: vi.fn(),
+  updateAccountForClient: vi.fn(),
+  deleteAccountForClient: vi.fn(),
+}));
+// CRM tool deps (assembly test stays pure — no DB, no CRM IO)
+vi.mock("@/lib/crm/notes", () => ({ createNote: vi.fn(), listHouseholdNotes: vi.fn(), deleteNote: vi.fn() }));
+vi.mock("@/lib/crm/schemas", () => ({ createCrmNoteSchema: { parse: vi.fn() } }));
+vi.mock("@/lib/crm/activity", () => ({ recordActivity: vi.fn(), listActivity: vi.fn() }));
+vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.fn() }));
+vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
+vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
+vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn() }));
+vi.mock("@/lib/overview/get-overview-data", () => ({ getOverviewData: vi.fn() }));
+vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("../guards", () => ({ clientToHousehold: vi.fn(), assertHouseholdReadable: vi.fn() }));
+vi.mock("../account-mask", () => ({ maskSsnLast4: vi.fn() }));
+// Phase 4: stub the report tool's IO + heavy registry deps so this stays pure.
+vi.mock("@/components/presentations/registry", () => ({ PRESENTATION_PAGES: {} }));
+vi.mock("@/components/presentations/render-presentation-pdf", () => ({
+  BodySchema: { safeParse: vi.fn() },
+  renderPresentationPdf: vi.fn(),
+}));
+vi.mock("@/lib/crm/generation-runs", () => ({
+  createQueuedRun: vi.fn(),
+  markRunning: vi.fn(),
+  markDone: vi.fn(),
+  markFailed: vi.fn(),
+}));
+vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
+// Phase 4: stub the knowledge tool's embedding dep so this stays pure.
+vi.mock("../llm", () => ({ embeddings: vi.fn() }));
+
+import { buildTools, WRITE_TOOL_NAMES } from "../tools";
+import { routeAfterAgent } from "../routing";
+
+const ctx: CopilotAuthContext = { userId: "u1", firmId: "org_A", clientId: "c1", scenarioId: "base" };
+const TOOL_CTX = buildToolContext(ctx, "conv-1");
+
+const EXPECTED_PHASE1 = [
+  // read
+  "find_client",
+  "client_briefing",
+  "list_scenarios",
+  "read_detail",
+  "search_planning_kb",
+  // compute
+  "run_projection",
+  "run_monte_carlo",
+  "compare_scenarios",
+  "explain_report",
+  // whatif + solvers
+  "whatif_roth",
+  "whatif_social_security",
+  "whatif_withdrawal",
+  "whatif_estate_tax",
+  "whatif_life_insurance_need",
+  "solve_goal",
+  "solve_max_spending",
+];
+
+const EXPECTED_SCENARIO_WRITE_TOOL_NAMES = [
+  "compare_and_snapshot",
+  "create_scenario",
+  "propose_changes",
+  "revert_change",
+  "promote_to_base",
+];
+
+const EXPECTED_DETAIL_WRITE_TOOL_NAMES = [
+  "add_expense",
+  "update_expense",
+  "remove_expense",
+  "add_income",
+  "update_income",
+  "remove_income",
+  "add_liability",
+  "update_liability",
+  "remove_liability",
+  "add_account",
+  "update_account",
+  "remove_account",
+];
+
+const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
+  "crm_create_tasks",
+  "crm_delete_note",
+  "crm_delete_task",
+];
+
+const EXPECTED_CRM_ALL_19 = [
+  // read (4)
+  "crm_client_card",
+  "crm_recent_notes",
+  "crm_list_tasks",
+  "crm_activity_feed",
+  // Tier-A writes (6)
+  "crm_add_note",
+  "crm_log_activity",
+  "crm_create_task",
+  "crm_update_task",
+  "crm_complete_task",
+  "crm_post_task_comment",
+  // Tier-B writes (3)
+  "crm_delete_note",
+  "crm_delete_task",
+  "crm_create_tasks",
+  // composite skills (6)
+  "meeting_prep",
+  "generate_agenda",
+  "draft_follow_up",
+  "summarize_notes",
+  "whats_changed_since",
+  "suggest_tasks",
+];
+
+describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
+  it("returns exactly the 53 named tools (16 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
+    const tools = buildTools(TOOL_CTX);
+    const names = new Set(tools.map((t) => t.name));
+    // Phase-1, scenario-write, detail-write, and report tools all present
+    for (const n of [
+      ...EXPECTED_PHASE1,
+      ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
+      ...EXPECTED_DETAIL_WRITE_TOOL_NAMES,
+      "generate_report",
+    ]) {
+      expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
+    }
+    expect(tools).toHaveLength(53);
+  });
+
+  it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
+      expect(names.has(n), `expected detail-write tool ${n} in buildTools output`).toBe(true);
+    }
+  });
+
+  it("buildTools includes all 19 CRM tools by name", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const n of EXPECTED_CRM_ALL_19) {
+      expect(names.has(n), `expected CRM tool ${n} in buildTools output`).toBe(true);
+    }
+  });
+
+  it("has no duplicate tool names", () => {
+    const names = buildTools(TOOL_CTX).map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("WRITE_TOOL_NAMES is a non-empty Set (20 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes)", () => {
+    expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
+    expect(WRITE_TOOL_NAMES.size).toBe(20);
+  });
+
+  it("WRITE_TOOL_NAMES contains the 12 detail-write (expense + income + liability + account) tool names", () => {
+    for (const n of EXPECTED_DETAIL_WRITE_TOOL_NAMES) {
+      expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
+    }
+  });
+});
+
+describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
+  it("WRITE_TOOL_NAMES contains exactly the 5 scenario-write tool names", () => {
+    for (const n of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
+      expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
+    }
+  });
+
+  it("promote_to_base is a write tool that routes through the HITL approval gate", () => {
+    expect(WRITE_TOOL_NAMES.has("promote_to_base")).toBe(true);
+    expect(routeAfterAgent([{ name: "promote_to_base" }], WRITE_TOOL_NAMES)).toBe("approval");
+  });
+
+  it("WRITE_TOOL_NAMES contains exactly the 3 Tier-B CRM tool names", () => {
+    for (const n of EXPECTED_CRM_TIER_B_TOOL_NAMES) {
+      expect(WRITE_TOOL_NAMES.has(n), `expected ${n} in WRITE_TOOL_NAMES`).toBe(true);
+    }
+  });
+
+  it("buildTools includes all 5 scenario write tool names", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const w of EXPECTED_SCENARIO_WRITE_TOOL_NAMES) {
+      expect(names.has(w), `expected ${w} in buildTools output`).toBe(true);
+    }
+  });
+
+  it("buildTools still includes Phase-1 read+compute tool names", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    expect(names.has("find_client")).toBe(true);
+    expect(names.has("run_projection")).toBe(true);
+  });
+
+  it("has no duplicate tool names after adding write tools", () => {
+    const names = buildTools(TOOL_CTX).map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+it("Tier-B CRM writes are in WRITE_TOOL_NAMES; Tier-A writes are NOT", () => {
+  for (const n of ["crm_delete_note", "crm_delete_task", "crm_create_tasks"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(true);
+  for (const n of ["crm_add_note","crm_log_activity","crm_create_task","crm_update_task","crm_complete_task","crm_post_task_comment"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(false);
+});
+
+describe("buildTools (Phase 4 report tool)", () => {
+  it("buildTools includes generate_report", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    expect(names.has("generate_report")).toBe(true);
+  });
+
+  it("generate_report is NOT a write tool (non-destructive enqueue, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("generate_report")).toBe(false);
+  });
+
+  it("search_planning_kb is NOT a write tool (read-only KB retrieval, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("search_planning_kb")).toBe(false);
+  });
+
+  it("routes generate_report to tools (auto-apply, no approval gate)", () => {
+    expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+});
+
+describe("routeAfterAgent with WRITE_TOOL_NAMES", () => {
+  it("routes a write tool call to approval", () => {
+    expect(routeAfterAgent([{ name: "propose_changes" }], WRITE_TOOL_NAMES)).toBe("approval");
+  });
+
+  it("routes a read tool call to tools", () => {
+    expect(routeAfterAgent([{ name: "find_client" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+
+  it("routes empty tool calls to __end__", () => {
+    expect(routeAfterAgent([], WRITE_TOOL_NAMES)).toBe("__end__");
+  });
+
+  // CRM routing
+  it("routes crm_add_note (Tier-A) to tools (auto-apply, no HITL)", () => {
+    expect(routeAfterAgent([{ name: "crm_add_note" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+
+  it("routes crm_delete_task (Tier-B) to approval (HITL required)", () => {
+    expect(routeAfterAgent([{ name: "crm_delete_task" }], WRITE_TOOL_NAMES)).toBe("approval");
+  });
+});

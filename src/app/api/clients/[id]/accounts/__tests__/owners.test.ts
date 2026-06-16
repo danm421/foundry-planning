@@ -36,6 +36,7 @@ const d = HAS_DB ? describe : describe.skip;
 vi.mock("@/lib/db-helpers", () => ({
   getOrgId: vi.fn(),
   requireOrgId: vi.fn(),
+  requireOrgAndUser: vi.fn(),
 }));
 
 // Suppress audit noise in tests
@@ -54,6 +55,8 @@ vi.mock("@/lib/audit/snapshots/account", () => ({
 vi.mock("@/lib/db-scoping", () => ({
   assertEntitiesInClient: vi.fn().mockResolvedValue({ ok: true }),
   assertModelPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
+  assertTickerPortfoliosInFirm: vi.fn().mockResolvedValue({ ok: true }),
+  assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
@@ -258,6 +261,7 @@ d("Account owners[] API — POST and PUT", () => {
   beforeEach(async () => {
     await cleanup();
     vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgAndUser).mockResolvedValue({ orgId: TEST_FIRM, userId: "user_test" });
   });
 
   // ── tests ─────────────────────────────────────────────────────────────────

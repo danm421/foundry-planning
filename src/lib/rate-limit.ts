@@ -132,6 +132,29 @@ export async function checkProjectionRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Copilot turns. Each turn can fan out to slow tools (Monte Carlo, solvers,
+// multi-scenario compares), so this is tighter than the projection bucket but
+// still generous for an advisor mid-conversation. 20/min/firm. Fail-closed
+// like every other limiter — a transient Upstash outage 503s the turn (an
+// acceptable retry), never silently un-limits it.
+const getCopilotLimiter = buildLimiter(20, "1 m", "rl:copilot");
+
+/**
+ * Check whether `key` (firm id) may invoke the copilot stream/resume routes.
+ * Budget: 20 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant. On not-allowed the
+ * route returns 503 (or 429 for `exceeded`) via `rateLimitErrorResponse`.
+ */
+export async function checkCopilotRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getCopilotLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // PDF export (presentation decks + comparison / balance-sheet / liquidity
 // reports). A full @react-pdf render of a multi-page document is heavier and
 // rarer than an interactive projection, so it gets its own budget — a burst of

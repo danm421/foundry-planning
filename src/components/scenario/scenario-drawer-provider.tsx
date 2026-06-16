@@ -30,6 +30,16 @@ export function useScenarioDrawer(): ScenarioDrawerUI {
 }
 
 /**
+ * Like `useScenarioDrawer` but returns `null` outside the provider instead of
+ * throwing. Used by the copilot provider to coordinate mutual exclusion with
+ * the drawer (close the drawer when the copilot opens) without hard-coupling
+ * the copilot's mount to the drawer being present.
+ */
+export function useScenarioDrawerOptional(): ScenarioDrawerUI | null {
+  return useContext(ScenarioDrawerCtx);
+}
+
+/**
  * Holds the right-edge changes drawer's open/closed flag. Mounted in
  * ClientLayout so the state survives client-side navigation between sibling
  * pages (the layout doesn't unmount). Defaults closed; a full reload resets it.

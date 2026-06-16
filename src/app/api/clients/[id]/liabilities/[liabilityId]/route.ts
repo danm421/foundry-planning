@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { liabilities, liabilityOwners } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
-import { recordUpdate, recordDelete } from "@/lib/audit";
-import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import {
-  type ValidatedOwner,
-  validateOwnersShape,
-  validateOwnersTenant,
-} from "@/lib/ownership";
+  updateLiabilityForClient,
+  deleteLiabilityForClient,
+} from "@/lib/clients/liabilities-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -21,103 +13,18 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; liabilityId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, liabilityId } = await params;
-
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-
-    // Prevent mass-assignment: strip identity / tenancy fields.
-    const {
-      id: _stripId,
-      clientId: _stripClientId,
-      createdAt: _stripCreatedAt,
-      updatedAt: _stripUpdatedAt,
-      ...safeUpdate
-    } = body;
-    void _stripId; void _stripClientId;
-    void _stripCreatedAt; void _stripUpdatedAt;
-
-    const [before] = await db
-      .select()
-      .from(liabilities)
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
-
-    if (!before) {
-      return NextResponse.json({ error: "Liability not found" }, { status: 404 });
-    }
-
-    // ── owners[] validation (PUT) ──────────────────────────────────────────
-    // When parentAccountId is being set non-null, the liability becomes a child
-    // of a business account. Children have no per-row owners — skip validation
-    // entirely; the transaction will wipe liabilityOwners atomically.
-    const isReparentingToParent = body.parentAccountId != null;
-    let validatedOwners: ValidatedOwner[] | undefined;
-
-    if (!isReparentingToParent && Array.isArray(body.owners)) {
-      const shapeResult = validateOwnersShape(body.owners);
-      if ("error" in shapeResult) {
-        return NextResponse.json({ error: shapeResult.error }, { status: 400 });
-      }
-      const tenantError = await validateOwnersTenant(shapeResult.owners, id);
-      if (tenantError) {
-        return NextResponse.json({ error: tenantError.error }, { status: 400 });
-      }
-      validatedOwners = shapeResult.owners;
-    }
-    // ── end owners[] validation ────────────────────────────────────────────
-
-    // Strip owners from the update payload — owners live in liability_owners, not liabilities
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { owners: _stripOwners, ...liabilityUpdate } = safeUpdate as Record<string, unknown>;
-
-    let updated: typeof liabilities.$inferSelect;
-    await db.transaction(async (tx) => {
-      const [result] = await tx
-        .update(liabilities)
-        .set({
-          ...liabilityUpdate,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
-        .returning();
-      updated = result;
-
-      if (isReparentingToParent) {
-        // Child-of-business liabilities carry no per-row owners — clear atomically.
-        await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
-      } else if (validatedOwners) {
-        await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
-        for (const o of validatedOwners) {
-          await tx.insert(liabilityOwners).values({
-            liabilityId,
-            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
-            entityId: o.kind === "entity" ? o.entityId : null,
-            percent: o.percent.toString(),
-          });
-        }
-      }
-    });
-
-    if (!updated!) {
-      return NextResponse.json({ error: "Liability not found" }, { status: 404 });
-    }
-
-    await recordUpdate({
-      action: "liability.update",
-      resourceType: "liability",
-      resourceId: liabilityId,
+    const result = await updateLiabilityForClient({
       clientId: id,
       firmId,
-      before: await toLiabilitySnapshot(before),
-      after: await toLiabilitySnapshot(updated!),
-      fieldLabels: LIABILITY_FIELD_LABELS,
+      actorId: userId,
+      liabilityId,
+      input: await request.json(),
     });
-
-    return NextResponse.json(updated!);
+    return result.ok
+      ? NextResponse.json(result.data)
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -133,41 +40,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; liabilityId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, liabilityId } = await params;
-
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const [existing] = await db
-      .select()
-      .from(liabilities)
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
-
-    if (!existing) {
-      return NextResponse.json({ error: "Liability not found" }, { status: 404 });
-    }
-
-    const snapshot = await toLiabilitySnapshot(existing);
-
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(liabilities)
-        .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
-      await pruneOrphanScenarioChanges(tx, liabilityId);
-    });
-
-    await recordDelete({
-      action: "liability.delete",
-      resourceType: "liability",
-      resourceId: liabilityId,
+    const result = await deleteLiabilityForClient({
       clientId: id,
       firmId,
-      snapshot,
+      actorId: userId,
+      liabilityId,
     });
-
-    return NextResponse.json({ success: true });
+    return result.ok
+      ? NextResponse.json({ success: true })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -291,6 +291,12 @@ export type AuditAction =
   | "vault.document.version_added"
   // Support & feedback
   | "support.message_sent"
+  // Planning Copilot (LLM agent)
+  | "copilot.query" // a user turn was submitted to the copilot
+  | "copilot.tool_call" // the agent invoked a read/compute/write tool
+  | "copilot.write_proposed" // a write tool produced a preview, awaiting approval
+  | "copilot.write_approved" // the advisor confirmed a proposed write (executed)
+  | "copilot.write_rejected" // the advisor rejected a proposed write
   | "feedback.submitted";
 
 type Args = {

@@ -12,6 +12,7 @@ import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
+import { CopilotMount } from "@/components/copilot/copilot-mount";
 
 interface Props {
   children: React.ReactNode;
@@ -97,6 +98,11 @@ export default async function ClientLayout({ children, params }: Props): Promise
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
       <ScenarioDrawerProvider>
         <section className="px-[var(--pad-card)] pb-6">{children}</section>
+        <CopilotMount
+          clientId={id}
+          enabled={process.env.COPILOT_ENABLED === "true"}
+          scenarioNames={Object.fromEntries(scenarioRows.map((s) => [s.id, s.name]))}
+        />
       </ScenarioDrawerProvider>
     </ScenarioModeWrapper>
   );

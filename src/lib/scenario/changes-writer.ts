@@ -22,6 +22,15 @@ import { ForbiddenError } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "./loader";
 
+/**
+ * A Drizzle transaction handle (the value passed to a `db.transaction` callback).
+ * Callers that already hold an open transaction can pass it as `args.tx` so the
+ * writer's statements enroll in THAT transaction instead of opening their own —
+ * letting a multi-change batch commit or roll back as one unit. Omitting it
+ * preserves the original behavior (each writer manages its own transaction).
+ */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 interface BaseEntity {
   id: string;
   [k: string]: unknown;
@@ -151,6 +160,8 @@ export interface ApplyEntityEditArgs {
   targetId: string;
   desiredFields: Record<string, unknown>;
   toggleGroupId?: string | null;
+  /** Run on this open transaction instead of opening a new one (batch atomicity). */
+  tx?: Tx;
 }
 
 /**
@@ -189,8 +200,9 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
   // The load + delete/upsert sequence below reads the base tree and then
   // either deletes a stale edit row (if desired matches base) or upserts a
   // new diff. Wrapping in a transaction keeps the read-modify-write atomic
-  // against concurrent writers on the same target.
-  await db.transaction(async (tx) => {
+  // against concurrent writers on the same target. When the caller passes an
+  // open transaction, enroll in it instead of opening a nested one.
+  const runEdit = async (tx: Tx) => {
     const [existingAdd] = await tx
       .select()
       .from(scenarioChanges)
@@ -275,7 +287,10 @@ export async function applyEntityEdit(args: ApplyEntityEditArgs): Promise<void> 
           updatedAt: new Date(),
         },
       });
-  });
+  };
+
+  if (args.tx) await runEdit(args.tx);
+  else await db.transaction(runEdit);
 }
 
 export interface ApplyEntityAddArgs {
@@ -284,6 +299,8 @@ export interface ApplyEntityAddArgs {
   targetKind: TargetKind;
   entity: BaseEntity;
   toggleGroupId?: string | null;
+  /** Run on this open transaction instead of opening a new one (batch atomicity). */
+  tx?: Tx;
 }
 
 /**
@@ -308,7 +325,7 @@ export async function applyEntityAdd(
     );
   }
 
-  await db
+  await (args.tx ?? db)
     .insert(scenarioChanges)
     .values({
       scenarioId,
@@ -341,6 +358,8 @@ export interface ApplyEntityRemoveArgs {
   targetKind: TargetKind;
   targetId: string;
   toggleGroupId?: string | null;
+  /** Run on this open transaction instead of opening a new one (batch atomicity). */
+  tx?: Tx;
 }
 
 /**
@@ -365,8 +384,9 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
   // delete edit + upsert remove). Wrapping in a transaction prevents a
   // concurrent writer from inserting an `add` row between our select and
   // our remove-upsert (which would leave both rows present and confuse
-  // applyChanges).
-  await db.transaction(async (tx) => {
+  // applyChanges). When the caller passes an open transaction, enroll in it
+  // instead of opening a nested one.
+  const runRemove = async (tx: Tx) => {
     // Check for an existing `add` row — if present, the entity is
     // scenario-only; deleting the add row (plus any piled-on edit) restores
     // the base view without leaving a remove marker.
@@ -431,7 +451,10 @@ export async function applyEntityRemove(args: ApplyEntityRemoveArgs): Promise<vo
           updatedAt: new Date(),
         },
       });
-  });
+  };
+
+  if (args.tx) await runRemove(args.tx);
+  else await db.transaction(runRemove);
 }
 
 export interface RevertChangeArgs {

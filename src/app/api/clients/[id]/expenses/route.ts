@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarios, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
-import {
-  assertAccountsInClient,
-  assertBusinessAccountsInClient,
-  assertEntitiesInClient,
-} from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { requireOrgId, requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { createExpenseForClient } from "@/lib/clients/expenses-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -59,105 +54,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
-    if (!scenarioId) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const {
-      type,
-      name,
-      annualAmount,
-      startYear,
-      endYear,
-      growthRate,
-      growthSource,
-      ownerEntityId,
-      ownerAccountId,
-      cashAccountId,
-      inflationStartYear,
-      deductionType,
-      endsAtMedicareEligibilityOwner,
-    } = body;
-    const startYearRef = body.startYearRef ?? null;
-    const endYearRef = body.endYearRef ?? null;
-
-    if (!type || !name || !startYear || !endYear) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    if (
-      endsAtMedicareEligibilityOwner != null &&
-      endsAtMedicareEligibilityOwner !== "client" &&
-      endsAtMedicareEligibilityOwner !== "spouse"
-    ) {
-      return NextResponse.json(
-        { error: "endsAtMedicareEligibilityOwner must be 'client', 'spouse', or null" },
-        { status: 400 },
-      );
-    }
-
-    // Schema enforces this with a CHECK, but report a clean 400 instead of a
-    // raw DB error so the dialog can surface it.
-    if (ownerEntityId != null && ownerAccountId != null) {
-      return NextResponse.json(
-        { error: "Cannot set both ownerEntityId and ownerAccountId" },
-        { status: 400 },
-      );
-    }
-
-    const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
-    if (!entCheck.ok) {
-      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
-    }
-    const acctCheck = await assertAccountsInClient(id, [cashAccountId, ownerAccountId]);
-    if (!acctCheck.ok) {
-      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-    }
-    if (ownerAccountId != null) {
-      const bizCheck = await assertBusinessAccountsInClient(id, [ownerAccountId]);
-      if (!bizCheck.ok) {
-        return NextResponse.json({ error: bizCheck.reason }, { status: 400 });
-      }
-    }
-
-    const [expense] = await db
-      .insert(expenses)
-      .values({
-        clientId: id,
-        scenarioId,
-        type,
-        name,
-        annualAmount: annualAmount ?? "0",
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate ?? "0.03",
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        ownerEntityId: ownerEntityId ?? null,
-        ownerAccountId: ownerAccountId ?? null,
-        cashAccountId: cashAccountId ?? null,
-        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
-        startYearRef,
-        endYearRef,
-        deductionType: deductionType ?? null,
-        endsAtMedicareEligibilityOwner: endsAtMedicareEligibilityOwner ?? null,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "expense.create",
-      resourceType: "expense",
-      resourceId: expense.id,
+    const result = await createExpenseForClient({
       clientId: id,
       firmId,
-      metadata: { type: expense.type, name: expense.name },
+      actorId: userId,
+      input: await request.json(),
     });
-
-    return NextResponse.json(expense, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -93,9 +93,13 @@ describe("reconcile-billing auto-heal", () => {
       status: "active",
       items: { data: [{ id: "si_seat", quantity: 1, metadata: { kind: "seat" } }] },
     });
-    // Clerk says "trialing" but Stripe says "active" → status drift, heal to active.
+    // Clerk says "trialing" but Stripe says "active" → status drift only (the
+    // seat-bundled ai_copilot + ai_import already match), heal status to active.
     mockGetOrg.mockResolvedValue({
-      publicMetadata: { subscription_status: "trialing", entitlements: ["ai_import"] },
+      publicMetadata: {
+        subscription_status: "trialing",
+        entitlements: ["ai_copilot", "ai_import"],
+      },
     });
 
     const res = await GET(authed());
@@ -126,8 +130,11 @@ describe("reconcile-billing auto-heal", () => {
       items: { data: [{ id: "si_seat", quantity: 1, metadata: { kind: "seat" } }] },
     });
     mockGetOrg.mockResolvedValue({
-      // seat item → derived entitlements = ["ai_import"] (bundled into the plan)
-      publicMetadata: { subscription_status: "active", entitlements: ["ai_import"] },
+      // seat item → derived entitlements = ["ai_copilot", "ai_import"] (bundled into the plan)
+      publicMetadata: {
+        subscription_status: "active",
+        entitlements: ["ai_copilot", "ai_import"],
+      },
     });
 
     const res = await GET(authed());
