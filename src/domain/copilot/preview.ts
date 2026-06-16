@@ -745,6 +745,8 @@ async function enrichAddAccount(
   const fkError = await assertAccountFks(clientId, firmId, parsed.data);
   if (fkError) return { ...base, summary: fkError };
 
+  // owners is stripped from the diff lines (an array renders as "[object Object]");
+  // accountCascadeLines re-reads it off the full parsed.data spread below.
   const { owners, ...rowForLines } = parsed.data;
   void owners;
   const details = createDiffLines(rowForLines);
