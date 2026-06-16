@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   values: vi.fn().mockResolvedValue(undefined),
   authUserId: vi.fn(),
+  actor: null as { sub: string } | null,
 }));
 
 vi.mock("@/db", () => ({
@@ -18,7 +19,7 @@ vi.mock("@/db", () => ({
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: h.authUserId() }),
+  auth: async () => ({ userId: h.authUserId(), actor: h.actor }),
 }));
 
 import { recordAudit } from "@/lib/audit";
@@ -34,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.values.mockResolvedValue(undefined);
   h.authUserId.mockReturnValue("user-1");
+  h.actor = null;
 });
 
 describe("recordAudit", () => {
@@ -74,6 +76,27 @@ describe("recordAudit", () => {
     expect(h.values).toHaveBeenCalledWith(
       expect.objectContaining({ actorId: "system" }),
     );
+  });
+
+  it("during impersonation, attributes to the ops actor and stamps the advisor", async () => {
+    h.authUserId.mockReturnValue("user_advisor"); // session belongs to the advisor
+    h.actor = { sub: "user_ops" }; // minted by the ops operator
+    await recordAudit({ ...base, metadata: { k: 1 } });
+    expect(h.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "user_ops",
+        metadata: { k: 1, actingAsAdvisor: "user_advisor" },
+      }),
+    );
+  });
+
+  it("an explicit actorId still wins over the actor claim (and never calls auth())", async () => {
+    h.actor = { sub: "user_ops" };
+    await recordAudit({ ...base, actorId: "clerk:webhook" });
+    expect(h.values).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "clerk:webhook" }),
+    );
+    expect(h.authUserId).not.toHaveBeenCalled();
   });
 
   it("swallows a DB error: resolves without throwing and logs", async () => {
