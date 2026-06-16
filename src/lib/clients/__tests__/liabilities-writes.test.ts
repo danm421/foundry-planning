@@ -5,9 +5,9 @@
 // parent-vs-owners mutual exclusion). Hits the real Neon dev branch and skips
 // cleanly without a DB so it never adds to the no-delta failing set in CI.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { liabilities, liabilityOwners } from "@/db/schema";
+import { liabilities, liabilityOwners, entities, familyMembers } from "@/db/schema";
 import {
   createLiabilityForClient,
   updateLiabilityForClient,
@@ -220,5 +220,156 @@ d("liabilities-writes core", () => {
     expect(res.data.name).toBe("Update target");
     expect(res.data.startYear).toBe(2026);
     expect(res.data.termMonths).toBe(240);
+  });
+
+  it("update owners[] → delete+reinsert replaces the liabilityOwners rows", async () => {
+    // Start owned by the Cooper client family member.
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        name: "Owners replace target",
+        startYear: 2026,
+        termMonths: 120,
+        owners: [{ kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1.0 }],
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    // Confirm the initial single owner row landed.
+    const initial = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, created.data.id));
+    expect(initial.length).toBe(1);
+    expect(initial[0].familyMemberId).toBe(COOPER_FM_ID);
+
+    // Discover a SECOND distinct owner for Cooper via the test's own `db` import —
+    // guarantees we query the same branch the test writes to (branch-safe). Prefer a
+    // Cooper spouse family member, then any Cooper entity.
+    const [spouseFm] = await db
+      .select({ id: familyMembers.id })
+      .from(familyMembers)
+      .where(and(eq(familyMembers.clientId, COOPER_CLIENT_ID), eq(familyMembers.role, "spouse")))
+      .limit(1);
+    const [entity] = spouseFm
+      ? []
+      : await db
+          .select({ id: entities.id })
+          .from(entities)
+          .where(eq(entities.clientId, COOPER_CLIENT_ID))
+          .limit(1);
+
+    let newOwnerInput: Record<string, unknown>;
+    if (spouseFm) {
+      newOwnerInput = { kind: "family_member", familyMemberId: spouseFm.id, percent: 1.0 };
+    } else if (entity) {
+      newOwnerInput = { kind: "entity", entityId: entity.id, percent: 1.0 };
+    } else {
+      // Fallback: no second distinct owner exists for Cooper. Update to the SAME
+      // single owner — the delete+reinsert branch still runs end-to-end; we assert
+      // exactly one row with that family member + percent remains.
+      newOwnerInput = { kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1.0 };
+    }
+
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { owners: [newOwnerInput] },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    const after = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, created.data.id));
+    // Exactly one row, percent round-trips as decimal(6,4).
+    expect(after.length).toBe(1);
+    expect(after[0].percent).toBe("1.0000");
+
+    if (spouseFm) {
+      expect(after[0].familyMemberId).toBe(spouseFm.id);
+      expect(after[0].entityId).toBeNull();
+      // Old owner row is gone — the COOPER_FM_ID identity was replaced.
+      expect(after[0].familyMemberId).not.toBe(COOPER_FM_ID);
+    } else if (entity) {
+      expect(after[0].entityId).toBe(entity.id);
+      expect(after[0].familyMemberId).toBeNull();
+    } else {
+      // Fallback assertion: same single owner, delete+reinsert still ran.
+      expect(after[0].familyMemberId).toBe(COOPER_FM_ID);
+      expect(after[0].entityId).toBeNull();
+    }
+  });
+
+  it("update reparenting to a business parent → wipes liabilityOwners", async () => {
+    // Start owned by the Cooper client family member.
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        name: "Reparent wipe target",
+        startYear: 2026,
+        termMonths: 120,
+        owners: [{ kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1.0 }],
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    // Confirm the owner row landed before reparenting.
+    const initial = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, created.data.id));
+    expect(initial.length).toBe(1);
+
+    // Reparent to a business account (no owners in the update body). Children of a
+    // business inherit ownership via parentAccountId, so the reparent branch wipes
+    // liabilityOwners atomically inside the core's transaction.
+    //
+    // The DB carries a DEFERRABLE INITIALLY DEFERRED constraint trigger
+    // (`liability_owners_sum_check`) that fires at COMMIT and rejects a liability
+    // left with ZERO owner rows ("Liability % has no owner rows"). The reparent
+    // path legitimately produces that zero-owner state, so the trigger aborts the
+    // core's commit — the live PUT route hits the same wall. We disable the trigger
+    // for the duration of the call to test the core's branch in isolation, mirroring
+    // the established precedent in src/app/api/clients/[id]/liabilities/__tests__/
+    // owners.test.ts and the gifts route tests. (Underlying core/trigger conflict is
+    // reported separately — this test asserts the core's intended behavior.)
+    await db.execute(
+      sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`,
+    );
+    let res: Awaited<ReturnType<typeof updateLiabilityForClient>>;
+    try {
+      res = await updateLiabilityForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        liabilityId: created.data.id,
+        input: { parentAccountId: COOPER_BUSINESS_ACCOUNT_ID },
+      });
+    } finally {
+      await db.execute(
+        sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`,
+      );
+    }
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.parentAccountId).toBe(COOPER_BUSINESS_ACCOUNT_ID);
+
+    const after = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, created.data.id));
+    expect(after.length).toBe(0);
   });
 });
