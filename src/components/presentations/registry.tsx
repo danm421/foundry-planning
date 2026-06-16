@@ -885,7 +885,7 @@ export const medicareSummaryPage: PresentationPage<MedicareSummaryPageData, Medi
   id: "medicareSummary",
   title: "Medicare & IRMAA Summary",
   description: "One-page Medicare overview: lifetime premiums, the IRMAA income surcharge, tier exposure over time, and survivor/RMD risks.",
-  category: "Income Tax",
+  category: "Retirement",
   defaultOptions: MEDICARE_SUMMARY_OPTIONS_DEFAULT,
   optionsSchema: medicareSummaryOptionsSchema,
   summarizeOptions: summarizeMedicareSummaryOptions,

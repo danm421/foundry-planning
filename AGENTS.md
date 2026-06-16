@@ -169,7 +169,7 @@ eMoney reference material lives at `~/Documents/brain/40-resources/eMoney-docs/`
 | plan | `title`, `date`, `status`, `type: plan`, `spec: "[[<spec>]]"`, `tags: [plan, <topic>]` |
 | future-work | `title`, `status: tracker`, `type: future-work`, `tags: [future-work, <topic>]` |
 
-**Status values:** `proposed` · `in-progress` · `spec-complete` · `shipped` · `shipped-phase-1` · `paused` · `deferred` · `abandoned`
+**Status values:** `proposed` · `in-progress` · `spec-complete` · `shipped` · `shipped-phase-1` · `superseded` · `paused` · `deferred` · `abandoned`
 
 **Topic tags:** `tax`, `social-security`, `cma-investments`, `monte-carlo`, `engine`, `reports`, `ui`, `admin`, `estate`, `extraction`, `fixes`, `client-data`, `integrations`, `security`, `tooling`, `analytics`, `schema`.
 
