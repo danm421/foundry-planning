@@ -238,7 +238,9 @@ export function buildComputeTools(
           availablePages: ids.map((id) => ({
             id,
             title: PRESENTATION_PAGES[id].title,
+            description: PRESENTATION_PAGES[id].description,
             category: PRESENTATION_PAGES[id].category,
+            supportsScenarioOverride: PRESENTATION_PAGES[id].supportsScenarioOverride,
           })),
         });
       }
@@ -314,7 +316,9 @@ export function buildComputeTools(
       return JSON.stringify({
         pageId,
         title: page.title,
+        description: page.description,
         category: page.category,
+        supportsScenarioOverride: page.supportsScenarioOverride,
         data,
         narrative,
       });

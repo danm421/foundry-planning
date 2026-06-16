@@ -27,14 +27,18 @@ vi.mock("@/components/presentations/registry", () => {
   const cashFlowPage = {
     id: "cashFlow",
     title: "Cash Flow",
+    description: "Annual income, expenses, withdrawals, and portfolio totals.",
     category: "Cash Flow",
+    supportsScenarioOverride: true,
     defaultOptions: { drill: false },
     buildData: vi.fn(() => ({ rows: [{ year: 2025, total: 100_000 }], narrative: ["Cash flow is positive."] })),
   };
   const monteCarloPage = {
     id: "monteCarlo",
     title: "Monte Carlo",
+    description: "Probability of success, portfolio fan, ending distribution, and longevity.",
     category: "Monte Carlo",
+    supportsScenarioOverride: true,
     defaultOptions: {},
     buildData: vi.fn(() => ({ successRate: 0.9 })),
   };
@@ -347,5 +351,62 @@ describe("compute.ts — explain_report", () => {
     expect(PRESENTATION_PAGES.monteCarlo.buildData).not.toHaveBeenCalled();
     // No projection load happens for an unavailable page.
     expect(loadEffectiveTree).not.toHaveBeenCalled();
+  });
+
+  it("includes description and supportsScenarioOverride in availablePages listing", async () => {
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1" })) as string,
+    );
+    const cashFlowEntry = out.availablePages.find((p: { id: string }) => p.id === "cashFlow");
+    expect(cashFlowEntry).toBeDefined();
+    expect(cashFlowEntry.description).toBe("Annual income, expenses, withdrawals, and portfolio totals.");
+    expect(cashFlowEntry.supportsScenarioOverride).toBe(true);
+  });
+
+  it("includes description and supportsScenarioOverride in single-page return", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: { firstName: "Jane", lastName: "Doe", spouseName: null },
+        planSettings: {},
+      },
+      warnings: [],
+      resolutionContext: {},
+    } as unknown as Awaited<ReturnType<typeof loadEffectiveTree>>);
+    vi.mocked(runProjectionWithEvents).mockReturnValue({
+      years: [{ year: 2025 } as never],
+    } as unknown as ReturnType<typeof runProjectionWithEvents>);
+
+    const out = JSON.parse(
+      (await tool("explain_report").invoke({ clientId: "client-1", pageId: "cashFlow" })) as string,
+    );
+    expect(out.description).toBe("Annual income, expenses, withdrawals, and portfolio totals.");
+    expect(out.supportsScenarioOverride).toBe(true);
+  });
+
+  it("runtime-dynamic: a fake page id injected into the registry appears in availablePages (never hardcoded)", async () => {
+    // Temporarily inject a fake page into the mocked PRESENTATION_PAGES.
+    const fakeRegistry = PRESENTATION_PAGES as Record<string, unknown>;
+    fakeRegistry["syntheticTestPage"] = {
+      id: "syntheticTestPage",
+      title: "Synthetic Test Page",
+      description: "A fake page used only in this test.",
+      category: "Cash Flow",
+      supportsScenarioOverride: false,
+      defaultOptions: {},
+      buildData: vi.fn(),
+    };
+
+    try {
+      const out = JSON.parse(
+        (await tool("explain_report").invoke({ clientId: "client-1" })) as string,
+      );
+      const found = out.availablePages.find((p: { id: string }) => p.id === "syntheticTestPage");
+      expect(found).toBeDefined();
+      expect(found.description).toBe("A fake page used only in this test.");
+      expect(found.supportsScenarioOverride).toBe(false);
+    } finally {
+      // Clean up so other tests aren't affected.
+      delete fakeRegistry["syntheticTestPage"];
+    }
   });
 });
