@@ -29,6 +29,8 @@ import {
   assertEntitiesInClient,
   assertAccountsInClient,
   assertBusinessAccountsInClient,
+  assertModelPortfoliosInFirm,
+  assertTickerPortfoliosInFirm,
 } from "@/lib/db-scoping";
 import { z } from "zod";
 import { formatZodIssues } from "@/lib/schemas/common";
@@ -44,6 +46,10 @@ import {
   liabilityCreateSchema,
   liabilityUpdateSchema,
 } from "@/lib/schemas/liabilities";
+import {
+  accountCreateSchema,
+  accountUpdateSchema,
+} from "@/lib/schemas/accounts";
 import { createDiffLines } from "@/lib/clients/create-diff-adapter";
 import type {
   OpType,
@@ -221,6 +227,23 @@ function previewRemoveLiability(a: Record<string, unknown>): WritePreview {
   return { name: "remove_liability", summary: `Remove liability (id ${id}).` };
 }
 
+function previewAddAccount(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  return { name: "add_account", summary: `Add account “${name}”.` };
+}
+
+function previewUpdateAccount(a: Record<string, unknown>): WritePreview {
+  const id = str(a.accountId) ?? "";
+  const name = str(a.name);
+  const label = name ? `“${name}” ` : "";
+  return { name: "update_account", summary: `Update account ${label}(id ${id}).`.trim() };
+}
+
+function previewRemoveAccount(a: Record<string, unknown>): WritePreview {
+  const id = str(a.accountId) ?? "";
+  return { name: "remove_account", summary: `Remove account (id ${id}).` };
+}
+
 function previewCompareAndSnapshot(args: Record<string, unknown>): WritePreview {
   const name = str(args.name) ?? "(unnamed)";
   const left = refLabel(str(args.leftRef));
@@ -264,6 +287,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewUpdateLiability(call.args);
     case "remove_liability":
       return previewRemoveLiability(call.args);
+    case "add_account":
+      return previewAddAccount(call.args);
+    case "update_account":
+      return previewUpdateAccount(call.args);
+    case "remove_account":
+      return previewRemoveAccount(call.args);
     case "crm_delete_note":
       return previewCrmDeleteNote(call.args);
     case "crm_delete_task":
@@ -429,6 +458,76 @@ function liabilityOwnershipLines(
     );
   }
   return [];
+}
+
+/**
+ * Run the SAME FK asserts the account create core runs (entities for
+ * ownerEntityId, FIRM-scoped model + ticker portfolios, and — when
+ * parentAccountId is set — the parent-business check). Unlike assertLiabilityFks
+ * this takes `firmId` because the portfolio asserts are firm-scoped. The
+ * assertBusinessAccountsInClient call covers BOTH the cross-tenant AND the
+ * not-business rejects the core enforces. Returns the first failed assert's
+ * message, or null when every FK is in-client/in-firm. NO insert — dry run only.
+ */
+async function assertAccountFks(
+  clientId: string,
+  firmId: string,
+  fields: {
+    ownerEntityId?: string | null;
+    modelPortfolioId?: string | null;
+    tickerPortfolioId?: string | null;
+    parentAccountId?: string | null;
+  },
+): Promise<string | null> {
+  const ent = await assertEntitiesInClient(clientId, [fields.ownerEntityId]);
+  if (!ent.ok) return ent.reason;
+  const mp = await assertModelPortfoliosInFirm(firmId, [fields.modelPortfolioId]);
+  if (!mp.ok) return mp.reason;
+  const tp = await assertTickerPortfoliosInFirm(firmId, [fields.tickerPortfolioId]);
+  if (!tp.ok) return tp.reason;
+  if (fields.parentAccountId != null) {
+    const biz = await assertBusinessAccountsInClient(clientId, [fields.parentAccountId]);
+    if (!biz.ok) return biz.reason;
+  }
+  return null;
+}
+
+/**
+ * Cascade lines describing the account-specific consequences (spec §5):
+ *   • a new top-level business (category === "business", no parentAccountId) also
+ *     provisions a system-managed cash sub-account — a guaranteed-but-unvalued
+ *     consequence (we do NOT fabricate the child id, per spec §11);
+ *   • deriveFromHoldings === true recomputes value + asset mix post-write;
+ *   • a per-row ownership split (owners[], no parentAccountId) renders one line
+ *     per owner (the liability ownership-lines style).
+ * Returns [] when none apply, so the caller appends nothing.
+ */
+function accountCascadeLines(parsed: {
+  category?: string;
+  parentAccountId?: string | null;
+  deriveFromHoldings?: boolean;
+  owners?: unknown;
+}): string[] {
+  const lines: string[] = [];
+  const isChild = parsed.parentAccountId != null;
+  if (parsed.category === "business" && !isChild) {
+    lines.push("Will also create a business-cash sub-account.");
+  }
+  if (parsed.deriveFromHoldings === true) {
+    lines.push("Value and allocation will be recomputed from holdings after save (post-write).");
+  }
+  const owners = parsed.owners as ProposedOwner[] | undefined;
+  if (!isChild && owners && owners.length > 0) {
+    lines.push(
+      ...owners.map(
+        (o) =>
+          `Owner: ${o.kind} ${o.familyMemberId ?? o.entityId ?? ""} (${Math.round(
+            (o.percent ?? 0) * 100,
+          )}%)`,
+      ),
+    );
+  }
+  return lines;
 }
 
 /**
@@ -623,13 +722,115 @@ async function enrichUpdateLiability(
 }
 
 /**
+ * Dry-run enrichment for add_account: zod-parse via accountCreateSchema, run the
+ * same FK asserts the core runs (entities + firm-scoped portfolios + parent
+ * business; NO insert), then render the would-be new row as `field: value` lines
+ * via createDiffLines, PLUS the account cascade line(s) (the Phase-3 headline,
+ * spec §5): a business row provisions a cash sub-account; deriveFromHoldings
+ * recomputes value/allocation post-write; per-row owners render one line each.
+ * The owners array is stripped before createDiffLines (an array renders as
+ * "[object Object]"). On a zod or FK failure, surface the validation error as the
+ * summary with no diff. Mirrors enrichAddLiability.
+ */
+async function enrichAddAccount(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  clientId: string,
+  firmId: string,
+): Promise<WritePreview> {
+  const parsed = accountCreateSchema.safeParse(args);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertAccountFks(clientId, firmId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  const { owners, ...rowForLines } = parsed.data;
+  void owners;
+  const details = createDiffLines(rowForLines);
+  // deriveFromHoldings is NOT a column on accountCreateSchema (the core mass-
+  // assigns it on update / it drives the post-write sync), so the schema strips
+  // it — read the flag off the RAW args for the cascade line.
+  details.push(...accountCascadeLines({ ...parsed.data, deriveFromHoldings: args.deriveFromHoldings === true }));
+  return { ...base, details };
+}
+
+/**
+ * Dry-run enrichment for update_account: zod-parse the (non-id) args via
+ * accountUpdateSchema (best-effort — the core mass-assigns rather than parsing,
+ * but the schema gives a clean diff), run the same FK asserts (NO update), load
+ * the live row, and surface the isDefaultChecking SYSTEM-MANAGED guard: when the
+ * current row is default-checking AND the update would change a guarded field
+ * (category / subType / parentAccountId, or owners present), set `summary` to the
+ * matching core/route message and return (no diff). Otherwise diff
+ * `currentRow → {...currentRow, ...parsed-minus-owners}` to render `field: from →
+ * to` lines PLUS the account cascade line(s). On a zod or FK failure, surface the
+ * validation error as the summary. Mirrors enrichUpdateLiability.
+ */
+async function enrichUpdateAccount(
+  base: WritePreview,
+  args: Record<string, unknown>,
+  ctx: CopilotAuthContext,
+): Promise<WritePreview> {
+  const { accountId, ...rest } = args;
+  const id = typeof accountId === "string" ? accountId : undefined;
+  const parsed = accountUpdateSchema.safeParse(rest);
+  if (!parsed.success) {
+    return { ...base, summary: zodErrorMessage(parsed.error) };
+  }
+  const fkError = await assertAccountFks(ctx.clientId, ctx.firmId, parsed.data);
+  if (fkError) return { ...base, summary: fkError };
+
+  if (!id) return base;
+  const { effectiveTree } = await loadEffectiveTree(
+    ctx.clientId,
+    ctx.firmId,
+    ctx.scenarioId,
+    {},
+  );
+  const current = findRowById(effectiveTree, id);
+  if (!current) return base;
+
+  const { owners, ...rowFields } = parsed.data;
+
+  // isDefaultChecking system-managed guards (mirror the core/route messages):
+  // surface the guard message and return before the diff.
+  if (current.isDefaultChecking) {
+    if ("category" in rowFields && rowFields.category !== current.category) {
+      return { ...base, summary: "This is a system-managed cash account — its category can't be changed." };
+    }
+    if ("subType" in rowFields && rowFields.subType !== current.subType) {
+      return { ...base, summary: "This is a system-managed cash account — its account type can't be changed." };
+    }
+    if ("parentAccountId" in rowFields && rowFields.parentAccountId !== current.parentAccountId) {
+      return { ...base, summary: "A system-managed cash account's parent can't be changed." };
+    }
+    if (owners !== undefined) {
+      return { ...base, summary: "This is a system-managed cash account — its ownership can't be changed." };
+    }
+  }
+
+  const diff = computeRowDiff(current, { ...current, ...rowFields });
+  const details = diff.kind === "edit"
+    ? diff.fields.map((f) => `${f.field}: ${fmt(f.from)} → ${fmt(f.to)}`)
+    : [];
+  // deriveFromHoldings is stripped by accountUpdateSchema (the core mass-assigns
+  // it) — read the flag off the RAW args for the cascade line.
+  details.push(...accountCascadeLines({ ...parsed.data, deriveFromHoldings: rest.deriveFromHoldings === true }));
+  if (details.length === 0) return base;
+  return { ...base, details };
+}
+
+/**
  * Async preview. Without an auth context (or for any tool without enrichment) it
  * returns the pure formatter result unchanged. With a context it ALSO enriches:
  *   • propose_changes — live field-level from→to diff per edit + portfolio impact;
  *   • add_expense / update_expense / add_income / update_income /
- *     add_liability / update_liability — a dry-run row diff (zod + FK asserts, NO
- *     write) plus, for liabilities, the ownership cascade line(s); or the
- *     plain-language validation error when the payload is invalid.
+ *     add_liability / update_liability / add_account / update_account — a dry-run
+ *     row diff (zod + FK asserts, NO write) plus, for liabilities, the ownership
+ *     cascade line(s) and, for accounts, the business / holdings / ownership
+ *     cascade line(s); or the plain-language validation error when the payload is
+ *     invalid.
  * All enrichment is best-effort — wrapped in try/catch so any load/parse/assert
  * failure degrades to the pure preview rather than blocking approval.
  */
@@ -658,6 +859,12 @@ export async function describeProposedWrite(
     }
     if (call.name === "update_liability") {
       return await enrichUpdateLiability(base, call.args, ctx);
+    }
+    if (call.name === "add_account") {
+      return await enrichAddAccount(base, call.args, ctx.clientId, ctx.firmId);
+    }
+    if (call.name === "update_account") {
+      return await enrichUpdateAccount(base, call.args, ctx);
     }
     if (call.name !== "propose_changes") return base;
 

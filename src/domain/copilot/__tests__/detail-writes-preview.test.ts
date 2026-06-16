@@ -16,8 +16,11 @@ import type { ProposedWrite } from "../preview";
 import { expenseCreateSchema } from "@/lib/schemas/expenses";
 import { incomeCreateSchema } from "@/lib/schemas/incomes";
 import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
+import { accountCreateSchema } from "@/lib/schemas/accounts";
 import type { CopilotAuthContext } from "@/domain/copilot/state";
 import { db } from "@/db";
+import { accounts } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";
 const COOPER_FIRM_ID = "org_3CitTEIe8PJa1BVYw7LnEjkiP9r";
@@ -303,6 +306,144 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_liability dry run)", () => 
     // Pure formatter result: named summary, NO enriched details.
     expect(preview.name).toBe("add_liability");
     expect(preview.summary).toMatch(/Add liability/i);
+    expect(preview.details).toBeUndefined();
+  });
+});
+
+describe.skipIf(!HAS_DB)("detail-writes preview (account dry run + cascade)", () => {
+  // A random uuid that is NOT a model portfolio in this firm — proves the
+  // firm-scoped modelPortfolio FK assert surfaces as the summary.
+  const FOREIGN_MODEL_PORTFOLIO_ID = "9c9c9c9c-9c9c-9c9c-9c9c-9c9c9c9c9c9c";
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders the would-be-new-row field lines for add_account and does NOT insert", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_account",
+      args: { name: "Brokerage", category: "taxable", value: 50000 },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // The dry run never writes.
+    expect(insertSpy).not.toHaveBeenCalled();
+
+    expect(preview.name).toBe("add_account");
+    expect(preview.summary).toMatch(/Add account/i);
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    // createDiffLines renders the parsed, defaulted row as `field: value` lines.
+    expect(text).toMatch(/name: Brokerage/);
+    expect(text).toMatch(/category: taxable/);
+    expect(text).toMatch(/value: 50000/);
+  });
+
+  it("renders the business-cash cascade line for a business add_account", async () => {
+    const call: ProposedWrite = {
+      name: "add_account",
+      args: {
+        name: "New Consulting LLC",
+        category: "business",
+        businessType: "llc",
+        value: 100000,
+        basis: 50000,
+        owners: [{ kind: "family_member", familyMemberId: COOPER_FM_ID, percent: 1.0 }],
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(preview.name).toBe("add_account");
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    expect(text).toMatch(/Will also create a business-cash sub-account\./);
+    // An owners[] cascade line is also rendered.
+    expect(text).toMatch(/Owner: family_member .* \(100%\)/);
+  });
+
+  it("renders the holdings-recompute cascade line when deriveFromHoldings is set", async () => {
+    const call: ProposedWrite = {
+      name: "add_account",
+      args: {
+        name: "Holdings-driven brokerage",
+        category: "taxable",
+        value: 75000,
+        deriveFromHoldings: true,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(preview.name).toBe("add_account");
+    expect(preview.details).toBeDefined();
+    const text = preview.details!.join(" ");
+    expect(text).toMatch(
+      /Value and allocation will be recomputed from holdings after save \(post-write\)\./,
+    );
+  });
+
+  it("surfaces the cross-tenant modelPortfolioId FK error as the summary (no insert)", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    const call: ProposedWrite = {
+      name: "add_account",
+      args: {
+        name: "Bad account",
+        category: "taxable",
+        modelPortfolioId: FOREIGN_MODEL_PORTFOLIO_ID,
+      },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(preview.name).toBe("add_account");
+    expect(preview.summary).toMatch(/not available to this firm/i);
+    // An FK failure renders no field diff.
+    expect(preview.details).toBeUndefined();
+  });
+
+  it("surfaces the system-managed guard message on an isDefaultChecking update (no insert)", async () => {
+    const insertSpy = vi.spyOn(db, "insert");
+    // Discover a real isDefaultChecking account for this client at runtime
+    // (branch-safe — ids differ per Neon branch).
+    const [guarded] = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.clientId, COOPER_CLIENT_ID),
+          eq(accounts.isDefaultChecking, true),
+        ),
+      )
+      .limit(1);
+    expect(guarded, "expected an isDefaultChecking account fixture").toBeDefined();
+
+    const call: ProposedWrite = {
+      name: "update_account",
+      // Changing the category of a system-managed cash account is guarded.
+      args: { accountId: guarded.id, category: "taxable" },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(preview.name).toBe("update_account");
+    expect(preview.summary).toMatch(/system-managed cash account/i);
+    // The guard short-circuits before the diff.
+    expect(preview.details).toBeUndefined();
+  });
+
+  it("degrades to the pure formatter when enrichment throws", async () => {
+    vi.spyOn(accountCreateSchema, "safeParse").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const call: ProposedWrite = {
+      name: "add_account",
+      args: { name: "Brokerage", category: "taxable" },
+    };
+    const preview = await describeProposedWrite(call, ctx);
+
+    // Pure formatter result: named summary, NO enriched details.
+    expect(preview.name).toBe("add_account");
+    expect(preview.summary).toMatch(/Add account/i);
     expect(preview.details).toBeUndefined();
   });
 });

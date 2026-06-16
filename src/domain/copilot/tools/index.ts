@@ -19,8 +19,9 @@ import { buildCrmTools } from "./crm";
  * gate when called.
  * Phase 3: adds the detail (plan-data) write tools — the expense sub-phase
  * (add_expense, update_expense, remove_expense), the income sub-phase
- * (add_income, update_income, remove_income), and the liability sub-phase
- * (add_liability, update_liability, remove_liability), also HITL-gated.
+ * (add_income, update_income, remove_income), the liability sub-phase
+ * (add_liability, update_liability, remove_liability), and the account sub-phase
+ * (add_account, update_account, remove_account), also HITL-gated.
  */
 export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
   return [
@@ -55,6 +56,10 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "add_liability",
   "update_liability",
   "remove_liability",
+  // Phase-3 detail (plan-data) writes — account sub-phase, HITL-gated
+  "add_account",
+  "update_account",
+  "remove_account",
   // Tier-B CRM destructive / bulk writes — route through HITL approval node
   "crm_delete_note",
   "crm_delete_task",

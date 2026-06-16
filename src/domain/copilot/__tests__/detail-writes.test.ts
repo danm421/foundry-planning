@@ -29,6 +29,11 @@ vi.mock("@/lib/clients/liabilities-writes", () => ({
   updateLiabilityForClient: vi.fn(),
   deleteLiabilityForClient: vi.fn(),
 }));
+vi.mock("@/lib/clients/accounts-writes", () => ({
+  createAccountForClient: vi.fn(),
+  updateAccountForClient: vi.fn(),
+  deleteAccountForClient: vi.fn(),
+}));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { buildDetailWriteTools } from "../tools/detail-writes";
@@ -49,6 +54,11 @@ import {
   updateLiabilityForClient,
   deleteLiabilityForClient,
 } from "@/lib/clients/liabilities-writes";
+import {
+  createAccountForClient,
+  updateAccountForClient,
+  deleteAccountForClient,
+} from "@/lib/clients/accounts-writes";
 import { recordAudit } from "@/lib/audit";
 import type { CopilotAuthContext } from "@/domain/copilot/context";
 
@@ -581,6 +591,173 @@ describe("remove_liability", () => {
     });
     const result = await getTool("remove_liability").invoke({ liabilityId: "missing" });
     expect(String(result)).toBe("Liability not found");
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+});
+
+describe("add_account", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("add_account").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("gates access BEFORE the core and passes actorId: ctx.userId (NOT firmId)", async () => {
+    vi.mocked(createAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1", name: "Brokerage" } as never,
+      resourceId: "acct-1",
+    });
+    await getTool("add_account").invoke({ name: "Brokerage", category: "taxable" });
+
+    expect(requireOrgId).toHaveBeenCalled();
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(createAccountForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+      }),
+    );
+
+    const accessOrder = vi.mocked(verifyClientAccess).mock.invocationCallOrder[0];
+    const writeOrder = vi.mocked(createAccountForClient).mock.invocationCallOrder[0];
+    expect(accessOrder).toBeLessThan(writeOrder);
+  });
+
+  it("audits copilot.write_approved and returns the new id on success", async () => {
+    vi.mocked(createAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1", name: "Brokerage" } as never,
+      resourceId: "acct-1",
+    });
+    const result = await getTool("add_account").invoke({
+      name: "Brokerage",
+      category: "taxable",
+    });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "account",
+        resourceId: "acct-1",
+        metadata: expect.objectContaining({ tool: "add_account" }),
+      }),
+    );
+    expect(String(result)).toContain("acct-1");
+  });
+
+  it("returns the core error verbatim and does NOT audit write_approved on {ok:false}", async () => {
+    vi.mocked(createAccountForClient).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "parentAccountId must reference a business account",
+    });
+    const result = await getTool("add_account").invoke({
+      name: "x",
+      category: "taxable",
+      parentAccountId: "a1",
+    });
+    expect(String(result)).toBe("parentAccountId must reference a business account");
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+
+  it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    const result = await getTool("add_account").invoke({ name: "x", category: "taxable" });
+    expect(String(result)).toMatch(/not found|access denied/i);
+    expect(createAccountForClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("update_account", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("update_account").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("passes accountId + actorId: ctx.userId to the core and audits on success", async () => {
+    vi.mocked(updateAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1", name: "Brokerage" } as never,
+      resourceId: "acct-1",
+    });
+    const result = await getTool("update_account").invoke({
+      accountId: "acct-1",
+      value: 250000,
+    });
+    expect(updateAccountForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+        accountId: "acct-1",
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "account",
+        resourceId: "acct-1",
+        metadata: expect.objectContaining({ tool: "update_account" }),
+      }),
+    );
+    expect(String(result)).toContain("acct-1");
+  });
+
+  it("returns the core error verbatim on {ok:false}", async () => {
+    vi.mocked(updateAccountForClient).mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: "Account not found",
+    });
+    const result = await getTool("update_account").invoke({ accountId: "missing" });
+    expect(String(result)).toBe("Account not found");
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "copilot.write_approved" }),
+    );
+  });
+});
+
+describe("remove_account", () => {
+  it('description ends with "Requires human approval."', () => {
+    expect(getTool("remove_account").description).toMatch(/Requires human approval\.$/);
+  });
+
+  it("passes accountId + actorId: ctx.userId to the core and audits on success", async () => {
+    vi.mocked(deleteAccountForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "acct-1" },
+      resourceId: "acct-1",
+    });
+    const result = await getTool("remove_account").invoke({ accountId: "acct-1" });
+    expect(deleteAccountForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "client_1",
+        firmId: "org_session",
+        actorId: "u1",
+        accountId: "acct-1",
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "copilot.write_approved",
+        resourceType: "account",
+        resourceId: "acct-1",
+        metadata: expect.objectContaining({ tool: "remove_account" }),
+      }),
+    );
+    expect(String(result)).toContain("acct-1");
+  });
+
+  it("returns the core error verbatim (e.g. system-managed guard) on {ok:false}", async () => {
+    vi.mocked(deleteAccountForClient).mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "This is a system-managed cash account and can't be deleted.",
+    });
+    const result = await getTool("remove_account").invoke({ accountId: "default-1" });
+    expect(String(result)).toBe("This is a system-managed cash account and can't be deleted.");
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "copilot.write_approved" }),
     );

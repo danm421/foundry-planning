@@ -2,8 +2,9 @@
 //
 // Phase 3 DETAIL (plan-data) WRITE TOOLS — the expense sub-phase
 // (add_/update_/remove_expense), the income sub-phase
-// (add_/update_/remove_income), and the liability sub-phase
-// (add_/update_/remove_liability). These mutate base-case plan data, so they
+// (add_/update_/remove_income), the liability sub-phase
+// (add_/update_/remove_liability), and the account sub-phase
+// (add_/update_/remove_account). These mutate base-case plan data, so they
 // route through the human-approval gate (WRITE_TOOL_NAMES) exactly like the
 // Phase-2 scenario writes, and they share that surface's security posture:
 //
@@ -45,6 +46,11 @@ import {
   updateLiabilityForClient,
   deleteLiabilityForClient,
 } from "@/lib/clients/liabilities-writes";
+import {
+  createAccountForClient,
+  updateAccountForClient,
+  deleteAccountForClient,
+} from "@/lib/clients/accounts-writes";
 import type { CopilotToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
@@ -169,6 +175,77 @@ const liabilityFields = {
     .optional()
     .describe("business-account id; makes this a child-of-business liability (ownership inherited, no separate owners)"),
   ownerEntityId: z.string().optional().describe("owning entity id (legacy owner synthesis)"),
+  owners: z
+    .array(
+      z.object({
+        kind: z.enum(["family_member", "entity"]),
+        familyMemberId: z.string().optional(),
+        entityId: z.string().optional(),
+        percent: z.number(),
+      }),
+    )
+    .optional()
+    .describe(
+      "ownership split; percents are fractions summing to 1.0; mutually exclusive with parentAccountId",
+    ),
+};
+
+// The model-supplied public account fields (clientId/scenarioId/firmId come from
+// ctx). Mirrors the loose, coercion-tolerant input the API route accepts; the core
+// zod-parses it via accountCreateSchema/accountUpdateSchema and applies the FK
+// asserts + business pre-branch + defaults. `category` is kept .optional() here
+// (matching liabilityFields.startYear) — the add tool re-requires it; the core's
+// accountCreateSchema enforces required-ness once for all callers. (Internal-only
+// tokens are NOT exposed — expenseFields/incomeFields/liabilityFields omit theirs too.)
+const accountFields = {
+  category: z
+    .string()
+    .optional()
+    .describe("account category, e.g. 'taxable', 'retirement', 'cash', 'business'"),
+  subType: z.string().optional().describe("account sub-type, e.g. 'checking' or 'roth_ira'"),
+  value: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("current market value (defaults to 0)"),
+  basis: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("cost basis (defaults to 0)"),
+  rothValue: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Roth portion of the value, if applicable (defaults to 0)"),
+  growthRate: z
+    .union([z.number(), z.string()])
+    .nullable()
+    .optional()
+    .describe("annual growth rate, e.g. 0.05; null inherits the category default"),
+  growthSource: z.string().optional().describe("'default' to inherit, else 'custom' uses growthRate"),
+  rmdEnabled: z.boolean().optional().describe("whether required minimum distributions apply"),
+  titlingType: z.string().optional().describe("legal titling, e.g. 'jtwros' or 'individual'"),
+  modelPortfolioId: z.string().optional().describe("firm model-portfolio id driving the asset mix"),
+  tickerPortfolioId: z.string().optional().describe("firm fund (ticker) portfolio id driving the asset mix"),
+  ownerEntityId: z.string().optional().describe("owning entity id (legacy owner synthesis)"),
+  parentAccountId: z
+    .string()
+    .optional()
+    .describe("business-account id; makes this a child-of-business account (ownership inherited)"),
+  custodian: z.string().optional().describe("custodian name, e.g. 'Schwab'"),
+  accountNumberLast4: z.string().optional().describe("last 4 digits of the account number"),
+  deriveFromHoldings: z
+    .boolean()
+    .optional()
+    .describe("when true, value + asset mix are recomputed from the account's holdings after save"),
+  businessType: z
+    .enum(["sole_prop", "partnership", "s_corp", "c_corp", "llc", "other"])
+    .optional()
+    .describe("business entity type (required when category is 'business')"),
+  distributionPolicyPercent: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("fraction of business earnings distributed each year"),
+  flowMode: z.string().optional().describe("business cash-flow mode, e.g. 'annual'"),
+  businessTaxTreatment: z.string().optional().describe("business tax treatment, e.g. 'qbi'"),
   owners: z
     .array(
       z.object({
@@ -570,6 +647,143 @@ export function buildDetailWriteTools({
     },
   );
 
+  const addAccount = tool(
+    async (input) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await createAccountForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          input,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "account",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "add_account", name: r.data.name },
+        });
+
+        return `Added account "${r.data.name}" (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "add_account",
+      description:
+        "Add a new account to the current client's base-case plan. The model supplies the " +
+        "account fields (name + category required); clientId is server-derived. Creating a " +
+        "business account also provisions a system-managed cash sub-account. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        ...accountFields,
+        name: z.string().min(1).describe("display name for the account"),
+        category: z
+          .string()
+          .min(1)
+          .describe("account category, e.g. 'taxable', 'retirement', 'cash', 'business'"),
+      }),
+    },
+  );
+
+  const updateAccount = tool(
+    async ({ accountId, ...input }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await updateAccountForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          accountId,
+          input,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "account",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "update_account", name: r.data.name },
+        });
+
+        return `Updated account "${r.data.name}" (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "update_account",
+      description:
+        "Update fields on an existing account in the current client's base-case plan. Pass the " +
+        "accountId plus only the fields to change. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        ...accountFields,
+        accountId: z.string().describe("id of the account to update"),
+        name: z.string().min(1).optional().describe("display name for the account"),
+        category: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("account category, e.g. 'taxable', 'retirement', 'cash', 'business'"),
+      }),
+    },
+  );
+
+  const removeAccount = tool(
+    async ({ accountId }) => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+
+        const r = await deleteAccountForClient({
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          accountId,
+        });
+        if (!r.ok) return r.error;
+
+        await recordAudit({
+          action: "copilot.write_approved",
+          resourceType: "account",
+          resourceId: r.resourceId,
+          clientId: ctx.clientId,
+          firmId: gate.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "remove_account" },
+        });
+
+        return `Removed account (id ${r.resourceId}).`;
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "remove_account",
+      description:
+        "Remove an account from the current client's base-case plan by id. Default / " +
+        "system-managed cash accounts cannot be removed. " +
+        APPROVAL_SUFFIX,
+      schema: z.object({
+        accountId: z.string().describe("id of the account to remove"),
+      }),
+    },
+  );
+
   return [
     addExpense,
     updateExpense,
@@ -580,5 +794,8 @@ export function buildDetailWriteTools({
     addLiability,
     updateLiability,
     removeLiability,
+    addAccount,
+    updateAccount,
+    removeAccount,
   ];
 }
