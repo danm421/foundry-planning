@@ -6,9 +6,9 @@ import { useSelectedLayoutSegment } from "next/navigation";
 const TABS: Array<{ segment: string | null; label: string; href: string }> = [
   { segment: null, label: "Overview", href: "" },
   { segment: "entitlements", label: "Entitlements", href: "/entitlements" },
+  { segment: "billing", label: "Billing", href: "/billing" },
+  { segment: "impersonate", label: "Impersonate", href: "/impersonate" },
 ];
-
-const SOON = ["Billing", "Impersonate"]; // built in later plans
 
 export default function OrgTabs({ firmId }: { firmId: string }) {
   const active = useSelectedLayoutSegment();
@@ -31,15 +31,6 @@ export default function OrgTabs({ firmId }: { firmId: string }) {
           </Link>
         );
       })}
-      {SOON.map((label) => (
-        <span
-          key={label}
-          title="Coming soon"
-          className="-mb-px cursor-default border-b-2 border-transparent px-3 py-2 text-neutral-600"
-        >
-          {label}
-        </span>
-      ))}
     </nav>
   );
 }
