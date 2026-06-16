@@ -69,6 +69,8 @@ vi.mock("@/lib/crm/generation-runs", () => ({
   markFailed: vi.fn(),
 }));
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
+// Phase 4: stub the knowledge tool's embedding dep so this stays pure.
+vi.mock("../llm", () => ({ embeddings: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -82,6 +84,7 @@ const EXPECTED_PHASE1 = [
   "client_briefing",
   "list_scenarios",
   "read_detail",
+  "search_planning_kb",
   // compute
   "run_projection",
   "run_monte_carlo",
@@ -153,7 +156,7 @@ const EXPECTED_CRM_ALL_19 = [
 ];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
-  it("returns exactly the 52 named tools (15 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
+  it("returns exactly the 53 named tools (16 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, and report tools all present
@@ -165,7 +168,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(52);
+    expect(tools).toHaveLength(53);
   });
 
   it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
@@ -249,6 +252,10 @@ describe("buildTools (Phase 4 report tool)", () => {
 
   it("generate_report is NOT a write tool (non-destructive enqueue, no HITL)", () => {
     expect(WRITE_TOOL_NAMES.has("generate_report")).toBe(false);
+  });
+
+  it("search_planning_kb is NOT a write tool (read-only KB retrieval, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("search_planning_kb")).toBe(false);
   });
 
   it("routes generate_report to tools (auto-apply, no approval gate)", () => {

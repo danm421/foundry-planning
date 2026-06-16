@@ -8,6 +8,7 @@ import { buildScenarioWriteTools } from "./scenario-writes";
 import { buildDetailWriteTools } from "./detail-writes";
 import { buildCrmTools } from "./crm";
 import { buildReportTools } from "./report";
+import { buildKnowledgeTools } from "./knowledge";
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
@@ -36,6 +37,7 @@ export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface
     ...buildDetailWriteTools(toolCtx),
     ...buildCrmTools(toolCtx),
     ...buildReportTools(toolCtx),
+    ...buildKnowledgeTools(toolCtx),
   ];
 }
 

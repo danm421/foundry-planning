@@ -60,6 +60,16 @@ describe("GROUNDING_RULES", () => {
   });
 });
 
+describe("KB citation grounding clause", () => {
+  it("requires citing the sourceRef for each search_planning_kb claim", () => {
+    expect(COPILOT_SYSTEM_PREFIX).toMatch(/cite.*sourceRef/i);
+  });
+
+  it("forbids filling gaps from priors when retrieval returns nothing", () => {
+    expect(COPILOT_SYSTEM_PREFIX).toMatch(/never fill the gap from priors/i);
+  });
+});
+
 describe("CRM system-prompt block", () => {
   it("states the tiered write rule and treats notes/activity as untrusted", () => {
     expect(COPILOT_SYSTEM_PREFIX).toMatch(/reversible CRM (actions|writes).*apply immediately/i);
