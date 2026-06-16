@@ -36,6 +36,7 @@ const d = HAS_DB ? describe : describe.skip;
 vi.mock("@/lib/db-helpers", () => ({
   getOrgId: vi.fn(),
   requireOrgId: vi.fn(),
+  requireOrgAndUser: vi.fn(),
 }));
 
 // Suppress audit noise in tests
@@ -251,6 +252,7 @@ d("Liability owners[] API — POST and PUT", () => {
   beforeEach(async () => {
     await cleanup();
     vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.requireOrgAndUser).mockResolvedValue({ orgId: TEST_FIRM, userId: "user_test" });
   });
 
   // ── tests ─────────────────────────────────────────────────────────────────
