@@ -1,8 +1,8 @@
 // Income write-core. The single validation + write path shared by the API
 // routes (src/app/api/clients/[id]/incomes/**) and the Copilot write tools, so
-// route and agent can never drift. Cloned from expenses-writes.ts — same
-// baseCaseScenarioId helper, same FK-assert sequence, same orphan-prune, same
-// metadata-only audit; income-specific deltas noted inline.
+// route and agent can never drift. Cloned from expenses-writes.ts — the shared
+// baseCaseScenarioId helper (./base-case), same FK-assert sequence, same
+// orphan-prune, same metadata-only audit; income-specific deltas noted inline.
 //
 // Lifted verbatim from the route bodies: base-case scenario lookup, zod parse,
 // the same three FK asserts (entities / accounts / business accounts), the single
@@ -21,7 +21,7 @@
 //     ssBenefitMode, piaMonthly) are included in both create and update where
 //     the route includes them.
 import { db } from "@/db";
-import { scenarios, incomes } from "@/db/schema";
+import { incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
@@ -33,26 +33,10 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { incomeCreateSchema, incomeUpdateSchema } from "@/lib/schemas/incomes";
+import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type IncomeRow = typeof incomes.$inferSelect;
-
-/**
- * Resolve the base-case scenario id for a client after verifying firm + staff
- * access. Mirrors the route's private `getBaseCaseScenarioId` (POST route) —
- * returns null when the client is inaccessible OR has no base case, which the
- * cores map to a 404 "Client not found" exactly like the route.
- */
-async function baseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
-}
 
 export async function createIncomeForClient(args: {
   clientId: string;

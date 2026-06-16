@@ -5,7 +5,7 @@
 // parent-vs-owners mutual exclusion). Hits the real Neon dev branch and skips
 // cleanly without a DB so it never adds to the no-delta failing set in CI.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { liabilities, liabilityOwners, entities, familyMembers } from "@/db/schema";
 import {
@@ -308,7 +308,7 @@ d("liabilities-writes core", () => {
     }
   });
 
-  it("update reparenting to a business parent → wipes liabilityOwners", async () => {
+  it("update reparenting to a business parent → wipes liabilityOwners (real trigger enabled)", async () => {
     // Start owned by the Cooper client family member.
     const created = await createLiabilityForClient({
       clientId: COOPER_CLIENT_ID,
@@ -334,34 +334,23 @@ d("liabilities-writes core", () => {
 
     // Reparent to a business account (no owners in the update body). Children of a
     // business inherit ownership via parentAccountId, so the reparent branch wipes
-    // liabilityOwners atomically inside the core's transaction.
+    // liabilityOwners atomically inside the core's transaction — leaving zero owner
+    // rows.
     //
     // The DB carries a DEFERRABLE INITIALLY DEFERRED constraint trigger
-    // (`liability_owners_sum_check`) that fires at COMMIT and rejects a liability
-    // left with ZERO owner rows ("Liability % has no owner rows"). The reparent
-    // path legitimately produces that zero-owner state, so the trigger aborts the
-    // core's commit — the live PUT route hits the same wall. We disable the trigger
-    // for the duration of the call to test the core's branch in isolation, mirroring
-    // the established precedent in src/app/api/clients/[id]/liabilities/__tests__/
-    // owners.test.ts and the gifts route tests. (Underlying core/trigger conflict is
-    // reported separately — this test asserts the core's intended behavior.)
-    await db.execute(
-      sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`,
-    );
-    let res: Awaited<ReturnType<typeof updateLiabilityForClient>>;
-    try {
-      res = await updateLiabilityForClient({
-        clientId: COOPER_CLIENT_ID,
-        firmId: COOPER_FIRM_ID,
-        actorId: ACTOR_ID,
-        liabilityId: created.data.id,
-        input: { parentAccountId: COOPER_BUSINESS_ACCOUNT_ID },
-      });
-    } finally {
-      await db.execute(
-        sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`,
-      );
-    }
+    // (`liability_owners_sum_check`) that fires at COMMIT. Migration 0167 makes
+    // check_liability_owners_sum SKIP the sum check when the liability's
+    // parent_account_id is non-null (a child of a business legitimately has zero
+    // owner rows), so this commit succeeds with the REAL trigger ENABLED. This test
+    // therefore proves the live PUT route / Copilot tool reparent works end-to-end —
+    // before 0167 it required disabling the trigger, which proved nothing about prod.
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { parentAccountId: COOPER_BUSINESS_ACCOUNT_ID },
+    });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.parentAccountId).toBe(COOPER_BUSINESS_ACCOUNT_ID);
@@ -371,5 +360,93 @@ d("liabilities-writes core", () => {
       .from(liabilityOwners)
       .where(eq(liabilityOwners.liabilityId, created.data.id));
     expect(after.length).toBe(0);
+  });
+
+  // ── FK tenancy asserts on UPDATE (2026-06-16 hardening) ─────────────────────
+  // The update path now runs the same conditional FK asserts as the CREATE core.
+  // These lock the cross-client gap the original 1:1 port carried over from the
+  // live PUT route (which ran no update-time asserts).
+
+  it("update with cross-client linkedPropertyId → {ok:false, status:400} + not linked", async () => {
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "FK update target (linkedProperty)", startYear: 2026, termMonths: 120 },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { linkedPropertyId: FOREIGN_ACCOUNT_ID },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+
+    // The cross-client account must NOT have been linked.
+    const [row] = await db
+      .select({ linkedPropertyId: liabilities.linkedPropertyId })
+      .from(liabilities)
+      .where(eq(liabilities.id, created.data.id));
+    expect(row.linkedPropertyId).toBeNull();
+  });
+
+  it("update with cross-client parentAccountId → {ok:false, status:400} + not reparented", async () => {
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "FK update target (parent)", startYear: 2026, termMonths: 120 },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { parentAccountId: FOREIGN_ACCOUNT_ID },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+
+    const [row] = await db
+      .select({ parentAccountId: liabilities.parentAccountId })
+      .from(liabilities)
+      .where(eq(liabilities.id, created.data.id));
+    expect(row.parentAccountId).toBeNull();
+  });
+
+  it("update with a non-business parentAccountId → {ok:false, status:400} matching /business/i", async () => {
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "FK update target (non-business parent)", startYear: 2026, termMonths: 120 },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { parentAccountId: COOPER_NONBUSINESS_ACCOUNT_ID },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toMatch(/business/i);
   });
 });

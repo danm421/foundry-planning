@@ -1,8 +1,8 @@
 // Account write-core. The single validation + write path shared by the API
 // routes (src/app/api/clients/[id]/accounts/**) and the Copilot write tools, so
-// route and agent can never drift. Cloned from liabilities-writes.ts — same
-// baseCaseScenarioId helper, same writeError / {ok:true,...} shape, same
-// snapshot-based audit and tx-wrapped owners satellite.
+// route and agent can never drift. Cloned from liabilities-writes.ts — the shared
+// baseCaseScenarioId helper (./base-case), same writeError / {ok:true,...} shape,
+// same snapshot-based audit and tx-wrapped owners satellite.
 //
 // Lifted verbatim from the route bodies: base-case scenario lookup, the business
 // pre-branch normalization, the entity / model-portfolio / ticker-portfolio /
@@ -50,7 +50,7 @@
 //   • actorId forwarding: recordCreate/recordUpdate/recordDelete receive actorId
 //     explicitly (they accept `actorId?`) — matches the three shipped cores.
 import { db } from "@/db";
-import { scenarios, accounts, accountOwners } from "@/db/schema";
+import { accounts, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
@@ -73,6 +73,7 @@ import {
 import { accountCreateSchema } from "@/lib/schemas/accounts";
 import { AddBusinessInputSchema } from "@/lib/schemas/accounts-business";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
+import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type AccountRow = typeof accounts.$inferSelect;
@@ -98,23 +99,6 @@ function mapBusinessTypeToSubType(
     default:
       return "other";
   }
-}
-
-/**
- * Resolve the base-case scenario id for a client after verifying firm + staff
- * access. Mirrors the route's private `getBaseCaseScenarioId` (POST route) —
- * returns null when the client is inaccessible OR has no base case, which the
- * core maps to a 404 "Client not found" exactly like the route.
- */
-async function baseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
 }
 
 export async function createAccountForClient(args: {

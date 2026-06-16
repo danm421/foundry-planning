@@ -1,7 +1,8 @@
 // Expense write-core. The single validation + write path shared by the API
 // routes (src/app/api/clients/[id]/expenses/**) and the Copilot write tools, so
 // route and agent can never drift. This is the TEMPLATE the income / liability /
-// account cores copy — keep the shape uniform.
+// account cores copy — keep the shape uniform. The base-case scenario lookup is
+// the one piece factored out of all four into the shared ./base-case helper.
 //
 // Lifted verbatim from the route bodies: base-case scenario lookup, zod parse,
 // the same three FK asserts (entities / accounts / business accounts), the single
@@ -11,7 +12,7 @@
 // requireOrgId()/auth()), and NextResponse.json(...) becomes writeError(...) /
 // {ok:true,...}.
 import { db } from "@/db";
-import { scenarios, expenses } from "@/db/schema";
+import { expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
@@ -23,6 +24,7 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
+import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type ExpenseRow = typeof expenses.$inferSelect;
@@ -30,23 +32,6 @@ type ExpenseRow = typeof expenses.$inferSelect;
 // passed the raw body value), but the column is the expenseTypeEnum. Cast at the
 // boundary so a bad value still fails at the DB exactly as it did via the route.
 type ExpenseType = ExpenseRow["type"];
-
-/**
- * Resolve the base-case scenario id for a client after verifying firm + staff
- * access. Mirrors the route's private `getBaseCaseScenarioId` (POST route) —
- * returns null when the client is inaccessible OR has no base case, which the
- * cores map to a 404 "Client not found" exactly like the route.
- */
-async function baseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
-}
 
 export async function createExpenseForClient(args: {
   clientId: string;

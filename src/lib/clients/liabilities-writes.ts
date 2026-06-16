@@ -29,15 +29,18 @@
 //     business and explicit owners[].
 //   • No isDefault guard on delete (liabilities have no default rows), but delete
 //     DOES load + 404 the row first (unlike the income core's no-op delete).
-//   • IMPORTANT DIVERGENCE (route-equivalent on purpose): the live PUT route runs
-//     NO FK tenancy asserts on update (no assertEntitiesInClient /
-//     assertAccountsInClient), so this core omits them too to stay byte-for-byte
-//     equivalent. This is a latent gap — a PUT/tool could set
-//     linkedPropertyId/parentAccountId cross-tenant within the same firm. Tracked
-//     in future-work/security-hardening.md; do NOT "fix" it here or Task 11's
-//     route-equivalence assertions break.
+//   • FK tenancy asserts on UPDATE (hardening, 2026-06-16): the update path
+//     runs the same conditional FK asserts the CREATE core has — ownerEntityId
+//     (assertEntitiesInClient), linkedPropertyId (assertAccountsInClient), and a
+//     reparent parentAccountId (in-client + category === "business"). This
+//     CLOSES a latent gap the original 1:1 port carried over from the live PUT
+//     route, which ran no update-time asserts and so let a PUT/Copilot tool set
+//     linkedPropertyId/parentAccountId to a cross-client account in the same firm
+//     (gateAccess only scopes to firm-owned clients, not the FK target's client).
+//     The PUT route delegates to this core, so the route inherits the asserts and
+//     route-equivalence is preserved by construction (route == core).
 import { db } from "@/db";
-import { scenarios, liabilities, liabilityOwners, accounts } from "@/db/schema";
+import { liabilities, liabilityOwners, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
@@ -52,26 +55,10 @@ import {
   synthesizeLegacyLiabilityOwners,
 } from "@/lib/ownership";
 import { liabilityCreateSchema, liabilityUpdateSchema } from "@/lib/schemas/liabilities";
+import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type LiabilityRow = typeof liabilities.$inferSelect;
-
-/**
- * Resolve the base-case scenario id for a client after verifying firm + staff
- * access. Mirrors the route's private `getBaseCaseScenarioId` (POST route) —
- * returns null when the client is inaccessible OR has no base case, which the
- * cores map to a 404 "Client not found" exactly like the route.
- */
-async function baseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
-}
 
 export async function createLiabilityForClient(args: {
   clientId: string;
@@ -218,12 +205,39 @@ export async function updateLiabilityForClient(args: {
 
   if (!before) return writeError(404, "Liability not found");
 
+  // ── Cross-tenant FK asserts on the present keys ────────────────────────────
+  // Validate any FK present in the update against this client — mirrors the CREATE
+  // core and the income/expense update cores. Closes the cross-client gap noted in
+  // the file header (gateAccess scopes only to firm-owned clients, not to the FK
+  // target's client). The assert* helpers skip null/undefined ids, so an omitted or
+  // explicitly-cleared field is a no-op.
+  if (p.ownerEntityId !== undefined) {
+    const c = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
+    if (!c.ok) return writeError(400, c.reason);
+  }
+  if (p.linkedPropertyId !== undefined) {
+    const c = await assertAccountsInClient(clientId, [p.linkedPropertyId]);
+    if (!c.ok) return writeError(400, c.reason);
+  }
+  // A non-null parentAccountId must scope to this client AND point at a business
+  // account — identical to the CREATE core's parent-business check.
+  if (p.parentAccountId != null) {
+    const parentCheck = await assertAccountsInClient(clientId, [p.parentAccountId]);
+    if (!parentCheck.ok) return writeError(400, parentCheck.reason);
+    const [parentRow] = await db
+      .select({ category: accounts.category })
+      .from(accounts)
+      .where(eq(accounts.id, p.parentAccountId));
+    if (!parentRow || parentRow.category !== "business") {
+      return writeError(400, "parentAccountId must reference a business account");
+    }
+  }
+  // ── end FK asserts ──────────────────────────────────────────────────────────
+
   // ── owners[] validation (PUT) ──────────────────────────────────────────────
   // When parentAccountId is being set non-null the liability becomes a child of a
   // business account — children have no per-row owners, so skip validation and let
   // the transaction wipe liabilityOwners atomically.
-  // NOTE: the live PUT route runs NO FK tenancy asserts here (see file header) —
-  // this core omits them too to stay route-equivalent.
   const isReparentingToParent = p.parentAccountId != null;
   let validatedOwners: ValidatedOwner[] | undefined;
 
