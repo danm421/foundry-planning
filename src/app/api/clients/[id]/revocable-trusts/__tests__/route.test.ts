@@ -12,7 +12,11 @@ import {
 import { eq, and } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_test_rt", orgId: "firm_test_rt" })),
+  auth: vi.fn(async () => ({
+    userId: "user_test_rt",
+    orgId: "firm_test_rt",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  })),
 }));
 
 const FIRM_A = "firm_test_rt";
@@ -223,12 +227,12 @@ describe("POST /api/clients/[id]/revocable-trusts", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 404 for a client from another firm", async () => {
+  it("returns 403 for a client from another firm", async () => {
     const res = await POST(
       makeReq("POST", { name: "Cross-Firm Trust" }),
       { params: Promise.resolve({ id: otherClientId }) }
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -314,12 +318,12 @@ describe("PATCH /api/clients/[id]/revocable-trusts/[trustId]", () => {
     expect(acct2Row.revocableTrustId).toBeNull();
   });
 
-  it("returns 404 when trustId does not belong to client", async () => {
+  it("returns 403 when trustId does not belong to client", async () => {
     const res = await PATCH(
       makeReq("PATCH", { name: "Hack", accountIds: [] }),
       { params: Promise.resolve({ id: otherClientId, trustId }) }
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("returns 400 for invalid body", async () => {
@@ -364,18 +368,18 @@ describe("DELETE /api/clients/[id]/revocable-trusts/[trustId]", () => {
     expect(acct1Row.revocableTrustId).toBeNull();
   });
 
-  it("returns 404 when trust does not belong to this client/firm", async () => {
+  it("returns 403 when trust does not belong to this client/firm", async () => {
     // Create a trust under FIRM_A client
     const [trust] = await db
       .insert(revocableTrusts)
       .values({ clientId, name: "Trust for Cross-Firm Test" })
       .returning();
 
-    // Try to delete it as FIRM_B client
+    // Try to delete it as FIRM_B client (requireClientEditAccess throws ForbiddenError → 403)
     const res = await DELETE(makeReq("DELETE"), {
       params: Promise.resolve({ id: otherClientId, trustId: trust.id }),
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
 
     // Cleanup
     await db.delete(revocableTrusts).where(eq(revocableTrusts.id, trust.id));

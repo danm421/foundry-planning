@@ -11,7 +11,9 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { grantUpdateSchema } from "@/lib/schemas/stock-options";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -86,9 +88,11 @@ export async function PUT(
 ) {
   try {
     const { id, accountId, grantId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const guard = await resolveGrantOrError(id, accountId, grantId);
     if (!guard.ok) return guard.response;
-    const { firmId } = guard;
 
     const body = await request.json();
     const parsed = grantUpdateSchema.safeParse(body);
@@ -184,7 +188,7 @@ export async function PUT(
       resourceId: grantId,
       clientId: id,
       firmId,
-      metadata: { accountId, grantType: input.grantType },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId, grantType: input.grantType }),
     });
 
     return NextResponse.json({
@@ -193,9 +197,8 @@ export async function PUT(
       plannedEvents: result.plannedEvents,
     });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "PUT /api/clients/[id]/stock-option-accounts/[accountId]/grants/[grantId] error:",
       err,
@@ -214,9 +217,12 @@ export async function DELETE(
 ) {
   try {
     const { id, accountId, grantId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const guard = await resolveGrantOrError(id, accountId, grantId);
     if (!guard.ok) return guard.response;
-    const { firmId, grant } = guard;
+    const { grant } = guard;
 
     await db
       .delete(stockOptionGrants)
@@ -228,14 +234,13 @@ export async function DELETE(
       resourceId: grantId,
       clientId: id,
       firmId,
-      metadata: { accountId, grantType: grant.grantType },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId, grantType: grant.grantType }),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "DELETE /api/clients/[id]/stock-option-accounts/[accountId]/grants/[grantId] error:",
       err,

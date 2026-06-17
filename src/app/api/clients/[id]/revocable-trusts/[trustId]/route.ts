@@ -6,13 +6,11 @@ import { eq, and, inArray, notInArray } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string) {
-  return verifyClientAccess(clientId);
-}
 
 /** Verify the trust row belongs to clientId (and thus firmId by FK chain).
  *  Returns the trust row or null. */
@@ -31,16 +29,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; trustId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, trustId } = await params;
-
-    const access = await verifyClient(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const trust = await verifyTrust(trustId, id);
     if (!trust) {
@@ -126,11 +118,13 @@ export async function PATCH(
       resourceId: trustId,
       clientId: id,
       firmId,
-      metadata: { name, accountIds: finalAccountIds },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name, accountIds: finalAccountIds }),
     });
 
     return NextResponse.json({ ...updated, accountIds: finalAccountIds });
   } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -144,16 +138,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; trustId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, trustId } = await params;
-
-    const access = await verifyClient(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const trust = await verifyTrust(trustId, id);
     if (!trust) {
@@ -172,11 +160,13 @@ export async function DELETE(
       resourceId: trustId,
       clientId: id,
       firmId,
-      metadata: { name: trust.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: trust.name }),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

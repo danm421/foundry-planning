@@ -8,7 +8,7 @@ import {
   notesReceivable,
 } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import {
@@ -19,12 +19,10 @@ import {
   noteReceivableUpdateSchema,
   type NoteReceivableOwnerInput,
 } from "@/lib/schemas/note-receivable";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function assertClientInFirm(clientId: string) {
-  return verifyClientAccess(clientId);
-}
 
 async function validateOwnersBelongToClient(
   clientId: string,
@@ -77,16 +75,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, noteId } = await params;
-
-    const access = await assertClientInFirm(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const [before] = await db
       .select()
@@ -189,13 +181,13 @@ export async function PATCH(
       before: await toNoteReceivableSnapshot(before),
       after: await toNoteReceivableSnapshot(after!),
       fieldLabels: NOTE_RECEIVABLE_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(after!);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "PATCH /api/clients/[id]/notes-receivable/[noteId] error:",
       err,
@@ -213,16 +205,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, noteId } = await params;
-
-    const access = await assertClientInFirm(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const [existing] = await db
       .select()
@@ -249,13 +235,13 @@ export async function DELETE(
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "DELETE /api/clients/[id]/notes-receivable/[noteId] error:",
       err,

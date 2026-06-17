@@ -3,9 +3,11 @@ import { db } from "@/db";
 import { withdrawalStrategies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +17,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; strategyId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, strategyId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const { accountId, priorityOrder, startYear, endYear } = body;
@@ -53,14 +49,13 @@ export async function PUT(
       resourceId: strategyId,
       clientId: id,
       firmId,
-      metadata: { accountId: updated.accountId, priorityOrder: updated.priorityOrder },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId: updated.accountId, priorityOrder: updated.priorityOrder }),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/withdrawal-strategy/[strategyId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -72,16 +67,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; strategyId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, strategyId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     await db.transaction(async (tx) => {
       await tx
@@ -96,13 +85,13 @@ export async function DELETE(
       resourceId: strategyId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/withdrawal-strategy/[strategyId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

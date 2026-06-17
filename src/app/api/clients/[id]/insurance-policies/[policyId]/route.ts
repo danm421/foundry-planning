@@ -16,7 +16,9 @@ import {
   ownerRefToAccountOwnerRows,
   type OwnerRef,
 } from "@/lib/insurance-policies/owner-ref";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -47,17 +49,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; policyId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, policyId } = await params;
-
-    // Verify client belongs to this firm (+ staff scope) or is shared in.
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Tenant-isolation: confirm the target account exists, belongs to this
     // client, and is a life-insurance account. Without this, an attacker
@@ -248,14 +243,13 @@ export async function PATCH(
       resourceId: policyId,
       clientId: id,
       firmId,
-      metadata: { name: target.name, fieldsChanged: Object.keys(input) },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: target.name, fieldsChanged: Object.keys(input) }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "PATCH /api/clients/[id]/insurance-policies/[policyId] error:",
       err,
@@ -273,17 +267,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; policyId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, policyId } = await params;
-
-    // Verify client belongs to this firm (+ staff scope) or is shared in.
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Tenant-isolation: same guard as PATCH.
     const [target] = await db
@@ -310,14 +297,13 @@ export async function DELETE(
       resourceId: policyId,
       clientId: id,
       firmId,
-      metadata: { name: target.name ?? null },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: target.name ?? null }),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "DELETE /api/clients/[id]/insurance-policies/[policyId] error:",
       err,

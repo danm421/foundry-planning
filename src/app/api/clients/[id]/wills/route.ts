@@ -16,7 +16,9 @@ import {
   verifyCrossRefs,
   computeSoftWarnings,
 } from "./_helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -128,15 +130,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
     const parsed = willCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -225,7 +222,7 @@ export async function POST(
       resourceId: willId,
       clientId: id,
       firmId,
-      metadata: { grantor: data.grantor, bequestCount: data.bequests.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { grantor: data.grantor, bequestCount: data.bequests.length }),
     });
 
     return NextResponse.json(
@@ -233,9 +230,8 @@ export async function POST(
       { status: 201 },
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     // Unique-index violation: map 23505 on will_bequests_liability_idx → 400
     if (
       typeof err === "object" &&
