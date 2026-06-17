@@ -155,6 +155,47 @@ describe("ForgePanel", () => {
     expect(card).toHaveTextContent("stmt.pdf");
   });
 
+  // Regression (no-card-on-attach): in a real browser `e.target.files` is a
+  // *live* FileList, and the onChange handler resets `e.target.value = ""` (so
+  // the same file can be re-picked) — which empties that live FileList *in
+  // place*. The card-building `Array.from(list)` must therefore snapshot the
+  // files *synchronously* in onPickFiles; if it's left deferred inside the
+  // setState updater, React runs it after value="" and reads an empty list, so
+  // nothing is attached and no card appears.
+  //
+  // This only manifests when React's eager-state bailout is skipped (StrictMode
+  // + concurrent root in dev, or any pending update). The other attach tests
+  // pass because jsdom takes the eager path with no pending work — masking it.
+  // We reproduce the browser path by (1) emulating a live FileList that empties
+  // on value="", and (2) typing first so a pending update forces the updater to
+  // run deferred.
+  it("keeps the attachment when the live FileList is cleared before the deferred state update", async () => {
+    mountPanel();
+    const input = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    const file = new File(["x"], "stmt.pdf");
+    // Array-like FileList stand-in, emptied in place — as the browser empties a
+    // real live FileList when the input's value is reset.
+    const liveFiles: { length: number; [i: number]: File } = { 0: file, length: 1 };
+    Object.defineProperty(input, "files", { configurable: true, get: () => liveFiles });
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      get: () => "",
+      set: () => {
+        delete liveFiles[0];
+        liveFiles.length = 0;
+      },
+    });
+    await act(async () => {
+      // A pending update in the same flush disables React's eager-state bailout,
+      // forcing the setAttached updater to run deferred (the real-browser path).
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "look at this" },
+      });
+      fireEvent.change(input);
+    });
+    expect(screen.getByTestId("forge-attachment")).toHaveTextContent("stmt.pdf");
+  });
+
   it("updates the scenario chip when the URL scenario changes (drift)", () => {
     const { rerender } = mountPanel();
     expect(screen.getByTestId("chip-scenario").textContent).toContain("Roth scenario");

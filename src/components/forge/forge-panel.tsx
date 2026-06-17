@@ -182,7 +182,14 @@ export function ForgePanel({
 
   function onPickFiles(list: FileList | null) {
     if (!list) return;
-    setAttached((prev) => [...prev, ...Array.from(list)]);
+    // Snapshot the files synchronously. `e.target.files` is a *live* FileList,
+    // and the input's onChange resets `value = ""` (to allow re-picking the same
+    // file) right after this call — which empties that FileList in place. React
+    // may run the setAttached updater deferred (StrictMode/concurrent), so a
+    // `...Array.from(list)` inside the updater would read the now-empty list and
+    // drop the attachment. Capturing here, before value="", keeps it stable.
+    const files = Array.from(list);
+    setAttached((prev) => [...prev, ...files]);
   }
 
   const lastMsg = messages[messages.length - 1];
