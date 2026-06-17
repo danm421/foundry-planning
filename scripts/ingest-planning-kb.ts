@@ -35,8 +35,8 @@ try {
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { ingestDocument } from "@/domain/copilot/ingest";
-import type { KbSource } from "@/domain/copilot/tools/knowledge";
+import { ingestDocument } from "@/domain/forge/ingest";
+import type { KbSource } from "@/domain/forge/tools/knowledge";
 
 const SEED_PATH = resolve(process.cwd(), "data/planning-kb/seed.md");
 const VALID_SOURCES: ReadonlySet<string> = new Set([

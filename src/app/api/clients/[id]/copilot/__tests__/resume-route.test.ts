@@ -36,12 +36,12 @@ vi.mock("@/lib/rate-limit", async () => {
 
 const touchConversation = vi.fn(async () => {});
 const userOwnsConversation = vi.fn(async () => true);
-vi.mock("@/domain/copilot/conversations", () => ({
+vi.mock("@/domain/forge/conversations", () => ({
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
   userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
 }));
 
-vi.mock("@/domain/copilot/load-prompt-context", () => ({
+vi.mock("@/domain/forge/load-prompt-context", () => ({
   loadPromptContext: vi.fn(async () => ({
     firmName: "Northstar",
     client: { householdTitle: "Reyes Household" },
@@ -66,7 +66,7 @@ const getTuple = vi.fn(async () => ({
     },
   },
 }));
-vi.mock("@/domain/copilot/checkpointer", () => ({
+vi.mock("@/domain/forge/checkpointer", () => ({
   getCheckpointer: () => ({ getTuple: (...a: unknown[]) => getTuple(...(a as [])) }),
 }));
 
@@ -102,7 +102,7 @@ const buildGraph = vi.fn((...args: unknown[]) => {
   buildGraphCalls.push(args);
   return fakeGraph;
 });
-vi.mock("@/domain/copilot/graph", () => ({ buildGraph: (...a: unknown[]) => buildGraph(...a) }));
+vi.mock("@/domain/forge/graph", () => ({ buildGraph: (...a: unknown[]) => buildGraph(...a) }));
 
 import { POST } from "../resume/route";
 

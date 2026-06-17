@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider } from "../copilot-provider";
-import { CopilotLauncher } from "../copilot-launcher";
+import { CopilotProvider } from "../forge-provider";
+import { CopilotLauncher } from "../forge-launcher";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("CopilotLauncher", () => {
-  it("renders an AI launcher wired to aria-controls=copilot-panel and toggles open", () => {
+  it("renders an AI launcher wired to aria-controls=forge-panel and toggles open", () => {
     render(
       <ScenarioDrawerProvider>
         <CopilotProvider clientId="c1">
@@ -22,7 +22,7 @@ describe("CopilotLauncher", () => {
     );
 
     const btn = screen.getByRole("button", { name: /open forge/i });
-    expect(btn).toHaveAttribute("aria-controls", "copilot-panel");
+    expect(btn).toHaveAttribute("aria-controls", "forge-panel");
     expect(btn).toHaveAttribute("aria-expanded", "false");
 
     act(() => btn.click());

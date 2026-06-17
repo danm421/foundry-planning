@@ -1,16 +1,16 @@
-// src/components/copilot/copilot-panel.tsx
+// src/components/copilot/forge-panel.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { sectionKeyForPath } from "@/lib/back-nav";
-import { useCopilot } from "./copilot-provider";
+import { useCopilot } from "./forge-provider";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
-import { useCopilotStream, type PendingApproval } from "./use-copilot-stream";
+import { useCopilotStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
-import { useCopilotImport, type CopilotImportResult } from "./use-copilot-import";
+import { useCopilotImport, type CopilotImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
@@ -192,7 +192,7 @@ export function CopilotPanel({
 
   return (
     <div
-      id="copilot-panel"
+      id="forge-panel"
       role="complementary"
       aria-label="Forge"
       // z-30: the same right-panel layer as ScenarioDrawer — above page

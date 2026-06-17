@@ -7,11 +7,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CopilotPanel } from "../copilot-panel";
-import type { UseCopilotStreamResult, PendingApproval } from "../use-copilot-stream";
+import { CopilotPanel } from "../forge-panel";
+import type { UseCopilotStreamResult, PendingApproval } from "../use-forge-stream";
 
 // ---------------------------------------------------------------------------
-// Mock next/navigation (needed by copilot-provider + panel internals)
+// Mock next/navigation (needed by forge-provider + panel internals)
 // ---------------------------------------------------------------------------
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -30,14 +30,14 @@ vi.mock("../actions", () => ({
 // ---------------------------------------------------------------------------
 // Mock copilot provider — useCopilot() returns controlled state
 // ---------------------------------------------------------------------------
-vi.mock("../copilot-provider", () => ({
+vi.mock("../forge-provider", () => ({
   useCopilot: () => ({
     scenarioId: "base",
     pathname: "/clients/c1/overview",
     isOpen: true,
     close: vi.fn(),
   }),
-  // CopilotProvider used in copilot-panel.test.tsx but not needed here
+  // CopilotProvider used in forge-panel.test.tsx but not needed here
   CopilotProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -54,8 +54,8 @@ vi.mock("@/components/scenario/scenario-drawer-provider", () => ({
 // ---------------------------------------------------------------------------
 let mockStreamState: UseCopilotStreamResult;
 
-vi.mock("../use-copilot-stream", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("../use-copilot-stream")>();
+vi.mock("../use-forge-stream", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../use-forge-stream")>();
   return {
     ...orig, // keep parseCopilotSse etc.
     useCopilotStream: () => mockStreamState,

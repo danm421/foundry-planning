@@ -24,13 +24,13 @@ vi.mock("@/lib/rate-limit", async () => {
 const createConversation = vi.fn(async () => "conv-new");
 const touchConversation = vi.fn(async () => {});
 const userOwnsConversation = vi.fn(async () => true);
-vi.mock("@/domain/copilot/conversations", () => ({
+vi.mock("@/domain/forge/conversations", () => ({
   createConversation: (...a: unknown[]) => createConversation(...(a as [])),
   touchConversation: (...a: unknown[]) => touchConversation(...(a as [])),
   userOwnsConversation: (...a: unknown[]) => userOwnsConversation(...(a as [])),
 }));
 
-vi.mock("@/domain/copilot/load-prompt-context", () => ({
+vi.mock("@/domain/forge/load-prompt-context", () => ({
   loadPromptContext: vi.fn(async () => ({
     firmName: "Northstar",
     client: { householdTitle: "Reyes Household" },
@@ -41,7 +41,7 @@ vi.mock("@/domain/copilot/load-prompt-context", () => ({
 const recordAudit = vi.fn(async () => {});
 vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => recordAudit(...(a as [])) }));
 
-vi.mock("@/domain/copilot/checkpointer", () => ({ getCheckpointer: () => ({}) }));
+vi.mock("@/domain/forge/checkpointer", () => ({ getCheckpointer: () => ({}) }));
 
 // A tool-using v2 sequence: a token, then a tool start/end pair, then a token.
 const toolStreamEvents = async function* () {
@@ -65,7 +65,7 @@ const fakeGraph: {
   streamEvents: toolStreamEvents,
   getState: vi.fn(async () => ({ tasks: [] })),
 };
-vi.mock("@/domain/copilot/graph", () => ({ buildGraph: () => fakeGraph }));
+vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => fakeGraph }));
 
 import { POST } from "../stream/route";
 

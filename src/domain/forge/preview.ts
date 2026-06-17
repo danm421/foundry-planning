@@ -15,8 +15,8 @@
 // enrichment is BEST-EFFORT — it must never throw or block approval, so all of
 // its IO is wrapped in try/catch and the pure result is the fallback.
 
-import type { WritePreview } from "@/domain/copilot/types";
-import type { CopilotAuthContext } from "@/domain/copilot/state";
+import type { WritePreview } from "@/domain/forge/types";
+import type { CopilotAuthContext } from "@/domain/forge/state";
 import {
   describeChangeUnit,
   type ChangeUnit,

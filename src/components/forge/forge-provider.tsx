@@ -1,4 +1,4 @@
-// src/components/copilot/copilot-provider.tsx
+// src/components/copilot/forge-provider.tsx
 "use client";
 
 import {

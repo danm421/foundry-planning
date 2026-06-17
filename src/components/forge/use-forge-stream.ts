@@ -1,4 +1,4 @@
-// src/components/copilot/use-copilot-stream.ts
+// src/components/copilot/use-forge-stream.ts
 //
 // Client-side SSE consumer for the Copilot stream/resume routes. Adapts the
 // boundary-correct chunk parser from use-solver-solve.ts: the copilot route

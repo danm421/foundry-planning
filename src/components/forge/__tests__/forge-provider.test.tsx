@@ -5,7 +5,7 @@ import {
   ScenarioDrawerProvider,
   useScenarioDrawer,
 } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider, useCopilot } from "../copilot-provider";
+import { CopilotProvider, useCopilot } from "../forge-provider";
 
 // next/navigation: the provider re-reads useScenarioState (URL is source of
 // truth). A stable mock keeps the chip/scope deterministic in the test.

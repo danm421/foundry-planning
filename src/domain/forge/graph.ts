@@ -10,7 +10,7 @@ import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
 import { routeAfterAgent } from "./routing";
 import { selectHistoryWindow } from "./history-window";
-import { describeProposedWrite } from "@/domain/copilot/preview";
+import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
 
 /**

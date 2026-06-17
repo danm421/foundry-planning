@@ -4,8 +4,8 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   ScenarioDrawerProvider,
 } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider } from "../copilot-provider";
-import { CopilotPanel } from "../copilot-panel";
+import { CopilotProvider } from "../forge-provider";
+import { CopilotPanel } from "../forge-panel";
 
 /** Minimal streaming Response so the real useCopilotStream.send() resolves. */
 function makeStreamingResponse(): Response {
@@ -35,7 +35,7 @@ vi.mock("../actions", () => ({
   resolveBaseScenarioId: vi.fn(async () => "base"),
 }));
 
-vi.mock("../use-copilot-import", () => ({
+vi.mock("../use-forge-import", () => ({
   useCopilotImport: () => ({
     status: "idle",
     errorMessage: null,

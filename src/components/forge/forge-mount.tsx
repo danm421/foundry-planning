@@ -1,9 +1,9 @@
-// src/components/copilot/copilot-mount.tsx
+// src/components/copilot/forge-mount.tsx
 "use client";
 
-import { CopilotProvider } from "./copilot-provider";
-import { CopilotPanel } from "./copilot-panel";
-import { CopilotLauncher } from "./copilot-launcher";
+import { CopilotProvider } from "./forge-provider";
+import { CopilotPanel } from "./forge-panel";
+import { CopilotLauncher } from "./forge-launcher";
 
 /**
  * Client mount for the Copilot. Rendered by ClientLayout inside

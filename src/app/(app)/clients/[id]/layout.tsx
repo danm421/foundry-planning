@@ -12,7 +12,7 @@ import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotMount } from "@/components/copilot/copilot-mount";
+import { CopilotMount } from "@/components/forge/forge-mount";
 
 interface Props {
   children: React.ReactNode;

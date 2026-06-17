@@ -4,7 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 
 vi.mock("../actions", () => ({ resolveBaseScenarioId: vi.fn() }));
 import { resolveBaseScenarioId } from "../actions";
-import { useCopilotImport } from "../use-copilot-import";
+import { useCopilotImport } from "../use-forge-import";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {

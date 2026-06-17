@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { parseCopilotSse, useCopilotStream, type CopilotSseEvent } from "../use-copilot-stream";
+import { parseCopilotSse, useCopilotStream, type CopilotSseEvent } from "../use-forge-stream";
 
 /** Feed a sequence of raw chunks through the stateful boundary parser. */
 function drain(chunks: string[]): CopilotSseEvent[] {

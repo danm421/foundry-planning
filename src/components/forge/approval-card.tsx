@@ -9,10 +9,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-// Re-export the canonical types defined in use-copilot-stream so the panel
+// Re-export the canonical types defined in use-forge-stream so the panel
 // and hook share the same shape without a duplicate declaration.
-export type { WritePreview, ApprovalCall } from "./use-copilot-stream";
-import type { WritePreview, ApprovalCall } from "./use-copilot-stream";
+export type { WritePreview, ApprovalCall } from "./use-forge-stream";
+import type { WritePreview, ApprovalCall } from "./use-forge-stream";
 
 type Verdict = "confirm" | "reject";
 

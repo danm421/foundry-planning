@@ -27,7 +27,7 @@ import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { describeProposedWrite } from "../preview";
 import type { ProposedWrite } from "../preview";
-import type { CopilotAuthContext } from "@/domain/copilot/state";
+import type { CopilotAuthContext } from "@/domain/forge/state";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
 import { computeRowDiff } from "@/lib/scenario/diff-row";
 import * as loaderModule from "@/lib/scenario/loader";

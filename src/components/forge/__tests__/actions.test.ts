@@ -3,16 +3,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
-vi.mock("@/domain/copilot/conversations", () => ({
+vi.mock("@/domain/forge/conversations", () => ({
   listMyConversations: vi.fn(),
   userOwnsConversation: vi.fn(),
 }));
-vi.mock("@/domain/copilot/checkpointer", () => ({ getCheckpointer: vi.fn() }));
-vi.mock("@/domain/copilot/transcript", () => ({ toUiMessages: vi.fn(() => []) }));
+vi.mock("@/domain/forge/checkpointer", () => ({ getCheckpointer: vi.fn() }));
+vi.mock("@/domain/forge/transcript", () => ({ toUiMessages: vi.fn(() => []) }));
 
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
-import * as convos from "@/domain/copilot/conversations";
+import * as convos from "@/domain/forge/conversations";
 import { listMyConversations, loadConversationMessages } from "../actions";
 
 beforeEach(() => {

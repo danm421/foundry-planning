@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotMount } from "../copilot-mount";
+import { CopilotMount } from "../forge-mount";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),

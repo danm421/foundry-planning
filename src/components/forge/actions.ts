@@ -7,10 +7,10 @@ import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import {
   listMyConversations as listConversationsForUser,
   userOwnsConversation,
-} from "@/domain/copilot/conversations";
-import { getCheckpointer } from "@/domain/copilot/checkpointer";
-import { toUiMessages } from "@/domain/copilot/transcript";
-import type { WritePreview } from "@/domain/copilot/types";
+} from "@/domain/forge/conversations";
+import { getCheckpointer } from "@/domain/forge/checkpointer";
+import { toUiMessages } from "@/domain/forge/transcript";
+import type { WritePreview } from "@/domain/forge/types";
 
 /** Thread list for the signed-in advisor (panel calls this with no args). */
 export async function listMyConversations() {

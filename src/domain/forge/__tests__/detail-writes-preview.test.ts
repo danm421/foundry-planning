@@ -17,7 +17,7 @@ import { expenseCreateSchema } from "@/lib/schemas/expenses";
 import { incomeCreateSchema } from "@/lib/schemas/incomes";
 import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
-import type { CopilotAuthContext } from "@/domain/copilot/state";
+import type { CopilotAuthContext } from "@/domain/forge/state";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
