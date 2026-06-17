@@ -1,11 +1,21 @@
 // src/lib/extraction/__tests__/vision-ocr.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { renderPageAsImage, getDocumentProxy } = vi.hoisted(() => ({
-  renderPageAsImage: vi.fn(),
-  getDocumentProxy: vi.fn(),
+const { renderPageAsImage, getDocumentProxy, createIsomorphicCanvasFactory } =
+  vi.hoisted(() => ({
+    renderPageAsImage: vi.fn(),
+    getDocumentProxy: vi.fn(),
+    createIsomorphicCanvasFactory: vi.fn(),
+  }));
+vi.mock("unpdf", () => ({
+  getDocumentProxy,
+  renderPageAsImage,
+  createIsomorphicCanvasFactory,
 }));
-vi.mock("unpdf", () => ({ getDocumentProxy, renderPageAsImage }));
+
+// Sentinel returned by the mocked factory resolver so we can assert the exact
+// CanvasFactory instance is threaded into getDocumentProxy.
+const FAKE_CANVAS_FACTORY = { __fakeCanvasFactory: true };
 
 // sharp(buffer).resize(...).jpeg(...).toBuffer() chain → returns a tiny buffer.
 vi.mock("sharp", () => {
@@ -28,6 +38,7 @@ beforeEach(() => {
   vi.stubEnv("AZURE_API_KEY", "test-key");
   renderPageAsImage.mockReset().mockResolvedValue(new ArrayBuffer(4));
   getDocumentProxy.mockReset();
+  createIsomorphicCanvasFactory.mockReset().mockResolvedValue(FAKE_CANVAS_FACTORY);
   callAIVisionTranscription.mockReset();
 });
 
@@ -64,6 +75,23 @@ describe("visionOcrPdf", () => {
     await expect(
       visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" }),
     ).rejects.toThrow(/AZURE_API_KEY/);
+  });
+
+  it("opens the document with a real canvas factory so scanned (image) pages can paint", async () => {
+    // Regression: opening the document without a CanvasFactory leaves pdf.js
+    // with a stub factory that throws "@napi-rs/canvas is not available" the
+    // moment it paints an image XObject — i.e. every scanned page. The factory
+    // must be resolved from our canvasImport and threaded into getDocumentProxy.
+    getDocumentProxy.mockResolvedValue({ numPages: 1 });
+    callAIVisionTranscription.mockResolvedValue("T");
+
+    await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" });
+
+    expect(createIsomorphicCanvasFactory).toHaveBeenCalledTimes(1);
+    expect(createIsomorphicCanvasFactory.mock.calls[0][0]).toBeTypeOf("function");
+    expect(getDocumentProxy.mock.calls[0][1]).toMatchObject({
+      CanvasFactory: FAKE_CANVAS_FACTORY,
+    });
   });
 
   it("interleaves rendering with transcription instead of rendering all pages up front", async () => {

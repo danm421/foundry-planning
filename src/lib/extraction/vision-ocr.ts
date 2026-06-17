@@ -42,22 +42,28 @@ export async function visionOcrPdf(
   const batchSize = opts.batchSize ?? DEFAULT_BATCH;
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
 
-  const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
+  const { getDocumentProxy, renderPageAsImage, createIsomorphicCanvasFactory } =
+    await import("unpdf");
   const sharp = (await import("sharp")).default;
 
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  // @napi-rs/canvas ships a prebuilt native binary that runs on Vercel Fluid
+  // Compute. The factory must be threaded into getDocumentProxy below — without
+  // it, pdf.js falls back to a stub canvas factory that throws the moment it
+  // paints an image XObject, i.e. on every scanned page (the OCR use case).
+  const canvasImport = () =>
+    import("@napi-rs/canvas") as unknown as Promise<
+      typeof import("@napi-rs/canvas")
+    >;
+  const CanvasFactory = await createIsomorphicCanvasFactory(canvasImport);
+
+  const pdf = await getDocumentProxy(new Uint8Array(buffer), { CanvasFactory });
   const pageCount = pdf.numPages;
   const pagesToRender = Math.min(pageCount, opts.maxPages);
 
   async function renderPage(p: number): Promise<VisionImage> {
     const raw = await renderPageAsImage(pdf, p, {
       scale: RENDER_SCALE,
-      // unpdf accepts a canvas factory import; @napi-rs/canvas ships a
-      // prebuilt native binary that runs on Vercel Fluid Compute.
-      canvasImport: () =>
-        import("@napi-rs/canvas") as unknown as Promise<
-          typeof import("@napi-rs/canvas")
-        >,
+      canvasImport,
     });
     const jpeg = await sharp(Buffer.from(raw as ArrayBuffer))
       .resize({
