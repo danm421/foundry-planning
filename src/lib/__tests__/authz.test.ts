@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockAuth = vi.fn();
+const mockGetOrganization = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
+  clerkClient: () => Promise.resolve({ organizations: { getOrganization: (...a: unknown[]) => mockGetOrganization(...a) } }),
 }));
 
 const mockIsBillingContact = vi.fn();
@@ -14,6 +16,7 @@ import {
   requireBillingContact,
   requireOrgAdminOrOwner,
   requireActiveSubscription,
+  requireActiveSubscriptionForFirm,
   ForbiddenError,
 } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
@@ -21,6 +24,7 @@ import { UnauthorizedError } from "@/lib/db-helpers";
 beforeEach(() => {
   mockAuth.mockReset();
   mockIsBillingContact.mockReset();
+  mockGetOrganization.mockReset();
 });
 
 describe("requireBillingContact", () => {
@@ -135,5 +139,63 @@ describe("requireActiveSubscription", () => {
       sessionClaims: {},
     });
     await expect(requireActiveSubscription()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("requireActiveSubscriptionForFirm", () => {
+  it("own org active via session claims passes without calling getOrganization", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_a",
+      sessionClaims: { org_public_metadata: { subscription_status: "active" } },
+    });
+    await expect(requireActiveSubscriptionForFirm("org_a")).resolves.toBeUndefined();
+    expect(mockGetOrganization).not.toHaveBeenCalled();
+  });
+
+  it("different (owning) firm active via Clerk passes and calls getOrganization", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_b",
+      sessionClaims: { org_public_metadata: { subscription_status: "canceled" } },
+    });
+    mockGetOrganization.mockResolvedValue({ publicMetadata: { subscription_status: "active" } });
+    await expect(requireActiveSubscriptionForFirm("org_a")).resolves.toBeUndefined();
+    expect(mockGetOrganization).toHaveBeenCalledWith({ organizationId: "org_a" });
+  });
+
+  it("lapsed owning firm throws ForbiddenError", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_b",
+      sessionClaims: {},
+    });
+    mockGetOrganization.mockResolvedValue({ publicMetadata: { subscription_status: "canceled" } });
+    await expect(requireActiveSubscriptionForFirm("org_a")).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("founder bypass — own path (is_founder=true in session claims)", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_a",
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    });
+    await expect(requireActiveSubscriptionForFirm("org_a")).resolves.toBeUndefined();
+    expect(mockGetOrganization).not.toHaveBeenCalled();
+  });
+
+  it("founder bypass — cross-firm path (is_founder=true in Clerk org metadata)", async () => {
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      orgId: "org_b",
+      sessionClaims: {},
+    });
+    mockGetOrganization.mockResolvedValue({ publicMetadata: { is_founder: true } });
+    await expect(requireActiveSubscriptionForFirm("org_a")).resolves.toBeUndefined();
+  });
+
+  it("no userId throws UnauthorizedError", async () => {
+    mockAuth.mockResolvedValue({ userId: null });
+    await expect(requireActiveSubscriptionForFirm("org_a")).rejects.toBeInstanceOf(UnauthorizedError);
   });
 });
