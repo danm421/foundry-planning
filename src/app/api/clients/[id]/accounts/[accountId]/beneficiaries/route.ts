@@ -11,7 +11,8 @@ import {
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -63,15 +64,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    await requireOrgId();
     const { id, accountId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    await requireOrgId();
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyClientAndAccount(id, accountId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -173,9 +169,8 @@ export async function PUT(
 
     return NextResponse.json(inserted);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT account beneficiaries error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

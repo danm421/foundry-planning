@@ -57,8 +57,14 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@clerk/nextjs/server", () => ({
   // orgId = TEST_FIRM (inlined — vi.mock is hoisted) so the real verifyClientAccess
   // own-firm path matches for TEST_FIRM clients; OTHER_FIRM clients fall through to
-  // the (empty) share resolver and are denied, preserving the cross-firm 404 test.
-  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_account_flow_overrides_route_test" }),
+  // the (empty) share resolver and are denied, preserving the cross-firm 403 test.
+  // Task 17f1: sessionClaims.org_public_metadata.is_founder bypasses the subscription
+  // gate so requireActiveSubscriptionForFirm passes without a live Clerk API call.
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "firm_account_flow_overrides_route_test",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
 const TEST_FIRM = "firm_account_flow_overrides_route_test";
@@ -380,16 +386,18 @@ d("/api/clients/[id]/accounts/[accountId]/flow-overrides", () => {
     expect(res.status).toBe(400);
   });
 
-  it("cross-firm access returns 404 (client not found)", async () => {
-    // Seed under OTHER_FIRM, then call with TEST_FIRM auth — client lookup
-    // misses, so the route returns 404 without leaking that the row exists.
+  it("cross-firm access (PUT) returns 403 after edit-gap closure", async () => {
+    // Seed under OTHER_FIRM, then call PUT with TEST_FIRM auth — requireClientEditAccess
+    // throws ForbiddenError (not-found collapses to 403 per PLAN-LITERAL decision).
     const { clientId, businessAccountId } = await setup({ firmId: OTHER_FIRM });
-    const res = await GET(
-      makeReq(clientId, businessAccountId) as never,
+    const res = await PUT(
+      makeReq(clientId, businessAccountId, {
+        method: "PUT",
+        body: { overrides: [] },
+      }) as never,
       { params: Promise.resolve({ id: clientId, accountId: businessAccountId }) },
     );
-    expect(res.status).toBe(404);
-    expect((await res.json()).error).toMatch(/Client not found/);
+    expect(res.status).toBe(403);
   });
 
   it("PUT with malformed body returns 400", async () => {

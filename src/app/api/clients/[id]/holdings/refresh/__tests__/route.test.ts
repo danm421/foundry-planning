@@ -40,7 +40,13 @@ vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockRecordAudi
 vi.mock("@clerk/nextjs/server", () => ({
   // orgId = "firm_1" so the real verifyClientAccess own-firm path
   // (`client.firmId === orgId`) matches the mocked client row's firmId below.
-  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_1" }),
+  // Task 17f1: sessionClaims.org_public_metadata.is_founder bypasses the subscription
+  // gate so requireActiveSubscriptionForFirm passes without a live Clerk API call.
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "firm_1",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
 import { POST } from "../route";
@@ -65,10 +71,10 @@ describe("POST /api/clients/[id]/holdings/refresh", () => {
     expect(res.status).toBe(401);
   });
 
-  it("404 when the client is not in the caller's firm", async () => {
-    selectQueue.push([]); // client check → no row
+  it("403 when the client is not in the caller's firm (edit-gap closure)", async () => {
+    selectQueue.push([]); // client check → no row → requireClientEditAccess throws ForbiddenError
     const res = await POST(req(), ctx("c1"));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("refreshes the client's holdings, returns a summary, records audit", async () => {

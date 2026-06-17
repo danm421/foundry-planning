@@ -8,13 +8,20 @@ const mockInsert = vi.hoisted(() => vi.fn());
 const mockDelete = vi.hoisted(() => vi.fn());
 const mockTransaction = vi.hoisted(() => vi.fn());
 
+// Task 17f1: include sessionClaims.org_public_metadata.is_founder so
+// requireActiveSubscriptionForFirm passes without a live Clerk API call.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_a" }),
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "firm_a",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: vi.fn().mockResolvedValue("firm_a"),
-}));
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn().mockResolvedValue("firm_a") };
+});
 
 vi.mock("@/lib/audit", () => ({
   recordCreate: vi.fn().mockResolvedValue(undefined),
@@ -251,8 +258,8 @@ describe("POST /api/clients/[id]/accounts/[accountId]/split", () => {
     expect(body.error).toBe("The default household cash account cannot be split");
   });
 
-  it("returns 404 for accounts in another firm", async () => {
-    // requireOrgId returns firm_a but client lookup returns empty
+  it("returns 403 for accounts in another firm (edit-gap closure)", async () => {
+    // requireClientEditAccess throws ForbiddenError when client not found/not accessible
     dbState.client = null;
     dbState.account = null;
     dbState.insertedCount = 0;
@@ -262,9 +269,7 @@ describe("POST /api/clients/[id]/accounts/[accountId]/split", () => {
       params: Promise.resolve({ id: "cli_b", accountId: "acc_joint" }),
     });
 
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error).toBe("Client not found");
+    expect(res.status).toBe(403);
   });
 
   it("rejects life-insurance joint accounts with 400", async () => {

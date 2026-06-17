@@ -6,7 +6,9 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { allocationPutSchema } from "@/lib/schemas/allocations";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -59,16 +61,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const acct = await assertAccountInFirm(id, accountId);
     if (!acct) {
@@ -130,14 +126,13 @@ export async function PUT(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { count: nonZero.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { count: nonZero.length }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/accounts/[accountId]/allocations error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

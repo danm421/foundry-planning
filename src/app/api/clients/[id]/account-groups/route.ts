@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse } from "@/lib/authz";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { recordAudit } from "@/lib/audit";
 import { listAccountGroups } from "@/lib/account-groups/queries";
 import {
@@ -39,16 +40,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 // POST /api/clients/[id]/account-groups — create a custom account group
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
-
-    const access = await verifyClientAccess(clientId);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await req.json();
     const parsed = createAccountGroupSchema.safeParse(body);
@@ -67,10 +62,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: groupId,
       clientId,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         name: parsed.data.name,
         memberCount: parsed.data.memberAccountIds.length,
-      },
+      }),
     });
 
     return NextResponse.json({ id: groupId }, { status: 201 });

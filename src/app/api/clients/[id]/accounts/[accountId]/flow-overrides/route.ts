@@ -10,7 +10,9 @@ import { and, eq, isNull, type SQL } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { flowOverrideBulkSchema } from "@/lib/schemas/flow-overrides";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -107,13 +109,9 @@ export async function PUT(
   try {
     const { id, accountId } = await params;
     const scenarioId = new URL(req.url).searchParams.get("scenarioId");
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const auth = await authorize(id, accountId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -167,15 +165,14 @@ export async function PUT(
       resourceType: "account_flow_overrides",
       resourceId: accountId,
       clientId: id,
-      firmId: auth.firmId,
-      metadata: { scenarioId: scenarioId ?? null, count: parsed.data.overrides.length },
+      firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId: scenarioId ?? null, count: parsed.data.overrides.length }),
     });
 
     return NextResponse.json({ ok: true, count: parsed.data.overrides.length });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/accounts/[accountId]/flow-overrides error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accounts, accountOwners, crmHouseholdContacts, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgId } from "@/lib/db-helpers";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { recordCreate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot } from "@/lib/audit/snapshots/account";
 import { parseBody } from "@/lib/schemas/common";
@@ -16,12 +19,9 @@ export async function POST(
 ) {
   try {
     const { id, accountId } = await params;
-
-    const access = await requireClientAccess(id).catch(() => null);
-    if (!access) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    const { client, firmId } = access;
+    const callerOrg = await requireOrgId();
+    const { client, firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // CRM contact — source for the split account label.
     const [primaryContact] = client.crmHouseholdId
@@ -183,6 +183,7 @@ export async function POST(
         rothValue: spouseRothValueRounded.toFixed(2),
       }),
     ]);
+    const crossFirmMeta = crossFirmAuditMeta({ access }, callerOrg);
     await Promise.all([
       recordDelete({
         action: "account.delete",
@@ -191,6 +192,7 @@ export async function POST(
         clientId: id,
         firmId,
         snapshot,
+        extraMetadata: crossFirmMeta,
       }),
       recordCreate({
         action: "account.create",
@@ -199,6 +201,7 @@ export async function POST(
         clientId: id,
         firmId,
         snapshot: clientSnapshot,
+        extraMetadata: crossFirmMeta,
       }),
       recordCreate({
         action: "account.create",
@@ -207,14 +210,14 @@ export async function POST(
         clientId: id,
         firmId,
         snapshot: spouseSnapshot,
+        extraMetadata: crossFirmMeta,
       }),
     ]);
 
     return NextResponse.json(result);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/accounts/[accountId]/split error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
