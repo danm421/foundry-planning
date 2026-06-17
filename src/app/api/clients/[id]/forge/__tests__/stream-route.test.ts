@@ -83,7 +83,7 @@ async function drain(res: Response): Promise<string> {
 beforeEach(() => {
   vi.clearAllMocks();
   fakeGraph.streamEvents = defaultStreamEvents;
-  process.env.COPILOT_ENABLED = "true";
+  process.env.FORGE_ENABLED = "true";
   // §B: subscription_status:"active" must live INSIDE org_public_metadata so the
   // REAL requireActiveSubscription passes and the happy path reaches the stream.
   auth.mockResolvedValue({
@@ -99,7 +99,7 @@ beforeEach(() => {
 
 describe("POST /api/clients/[id]/forge/stream — gate chain", () => {
   it("returns 404 when the feature flag is off", async () => {
-    process.env.COPILOT_ENABLED = "false";
+    process.env.FORGE_ENABLED = "false";
     const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
     expect(res.status).toBe(404);
   });

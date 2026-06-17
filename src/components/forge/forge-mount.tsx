@@ -9,7 +9,7 @@ import { ForgeLauncher } from "./forge-launcher";
  * Client mount for the Forge. Rendered by ClientLayout inside
  * ScenarioModeWrapper as a sibling of ScenarioDrawerProvider so it shares the
  * layout's lifetime and reaches clientId + live scenarioId. Renders nothing
- * when the COPILOT_ENABLED flag (resolved server-side in the layout) is off.
+ * when the FORGE_ENABLED flag (resolved server-side in the layout) is off.
  */
 export function ForgeMount({
   clientId,

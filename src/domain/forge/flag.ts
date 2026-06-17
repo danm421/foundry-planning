@@ -6,7 +6,11 @@
  * BILLING_ENFORCEMENT_MODE in src/proxy.ts). The forge stream/resume
  * routes 404 when this returns false. Strict equality on "true" — no truthy
  * coercion — so a stray "1"/"yes"/"" never silently enables it.
+ *
+ * Dual-read transition: prefers FORGE_ENABLED, falls back to the legacy
+ * COPILOT_ENABLED so the flag never goes dark during the rename. The
+ * COPILOT_ENABLED fallback is dropped once FORGE_ENABLED is live in Vercel.
  */
 export function isForgeEnabled(): boolean {
-  return process.env.COPILOT_ENABLED === "true";
+  return (process.env.FORGE_ENABLED ?? process.env.COPILOT_ENABLED) === "true";
 }

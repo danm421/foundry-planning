@@ -13,6 +13,7 @@ import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
 import { ForgeMount } from "@/components/forge/forge-mount";
+import { isForgeEnabled } from "@/domain/forge/flag";
 
 interface Props {
   children: React.ReactNode;
@@ -101,7 +102,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
         <ForgeMount
           clientId={id}
           clientName={householdTitle}
-          enabled={process.env.COPILOT_ENABLED === "true"}
+          enabled={isForgeEnabled()}
           scenarioNames={Object.fromEntries(scenarioRows.map((s) => [s.id, s.name]))}
         />
       </ScenarioDrawerProvider>

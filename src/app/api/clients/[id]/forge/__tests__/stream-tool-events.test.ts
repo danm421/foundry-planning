@@ -100,7 +100,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakeGraph.streamEvents = toolStreamEvents;
   fakeGraph.getState = vi.fn(async () => ({ tasks: [] }));
-  process.env.COPILOT_ENABLED = "true";
+  process.env.FORGE_ENABLED = "true";
   auth.mockResolvedValue({
     userId: "u1",
     sessionClaims: {
@@ -139,8 +139,8 @@ describe("POST /api/clients/[id]/forge/stream — tool events", () => {
     expect(toolEnd).toMatchObject({ name: "run_monte_carlo" });
   });
 
-  it("returns 404 when COPILOT_ENABLED is off", async () => {
-    process.env.COPILOT_ENABLED = "false";
+  it("returns 404 when FORGE_ENABLED is off", async () => {
+    process.env.FORGE_ENABLED = "false";
     const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
     expect(res.status).toBe(404);
   });

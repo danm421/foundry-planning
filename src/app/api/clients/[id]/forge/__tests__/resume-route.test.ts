@@ -151,7 +151,7 @@ beforeEach(() => {
       },
     },
   });
-  process.env.COPILOT_ENABLED = "true";
+  process.env.FORGE_ENABLED = "true";
   auth.mockResolvedValue({
     userId: "user_1",
     sessionClaims: {
@@ -171,8 +171,8 @@ const goodBody = {
 };
 
 describe("POST /api/clients/[id]/forge/resume — gates + IDOR", () => {
-  it("returns 404 when COPILOT_ENABLED is off", async () => {
-    process.env.COPILOT_ENABLED = "false";
+  it("returns 404 when FORGE_ENABLED is off", async () => {
+    process.env.FORGE_ENABLED = "false";
     const res = await POST(makeReq(goodBody), ctx);
     expect(res.status).toBe(404);
     expect(buildGraph).not.toHaveBeenCalled();
