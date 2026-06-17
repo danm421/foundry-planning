@@ -1,0 +1,68 @@
+// src/lib/extraction/__tests__/vision-ocr.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { renderPageAsImage, getDocumentProxy } = vi.hoisted(() => ({
+  renderPageAsImage: vi.fn(),
+  getDocumentProxy: vi.fn(),
+}));
+vi.mock("unpdf", () => ({ getDocumentProxy, renderPageAsImage }));
+
+// sharp(buffer).resize(...).jpeg(...).toBuffer() chain → returns a tiny buffer.
+vi.mock("sharp", () => {
+  const chain = {
+    resize: vi.fn().mockReturnThis(),
+    jpeg: vi.fn().mockReturnThis(),
+    toBuffer: vi.fn().mockResolvedValue(Buffer.from("img")),
+  };
+  return { default: vi.fn(() => chain) };
+});
+
+const { callAIVisionTranscription } = vi.hoisted(() => ({
+  callAIVisionTranscription: vi.fn(),
+}));
+vi.mock("../azure-client", () => ({ callAIVisionTranscription }));
+
+import { visionOcrPdf } from "../vision-ocr";
+
+beforeEach(() => {
+  vi.stubEnv("AZURE_API_KEY", "test-key");
+  renderPageAsImage.mockReset().mockResolvedValue(new ArrayBuffer(4));
+  getDocumentProxy.mockReset();
+  callAIVisionTranscription.mockReset();
+});
+
+describe("visionOcrPdf", () => {
+  it("transcribes pages in batches and concatenates in order", async () => {
+    getDocumentProxy.mockResolvedValue({ numPages: 5 });
+    callAIVisionTranscription
+      .mockResolvedValueOnce("BATCH-A")   // pages 1-4
+      .mockResolvedValueOnce("BATCH-B");  // page 5
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini", batchSize: 4 });
+
+    expect(res.pageCount).toBe(5);
+    expect(res.pagesProcessed).toBe(5);
+    expect(res.truncated).toBe(false);
+    expect(res.text).toBe("BATCH-A\n\nBATCH-B");
+    expect(renderPageAsImage).toHaveBeenCalledTimes(5);
+  });
+
+  it("caps at maxPages and reports truncated", async () => {
+    getDocumentProxy.mockResolvedValue({ numPages: 10 });
+    callAIVisionTranscription.mockResolvedValue("X");
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 3, model: "mini", batchSize: 4 });
+
+    expect(res.pageCount).toBe(10);
+    expect(res.pagesProcessed).toBe(3);
+    expect(res.truncated).toBe(true);
+    expect(renderPageAsImage).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails closed when AZURE_API_KEY is unset", async () => {
+    vi.stubEnv("AZURE_API_KEY", "");
+    await expect(
+      visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" }),
+    ).rejects.toThrow(/AZURE_API_KEY/);
+  });
+});
