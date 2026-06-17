@@ -14,7 +14,7 @@ import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
 
 /**
- * Compile the copilot graph for one conversation.
+ * Compile the forge graph for one conversation.
  *
  * @param authContext server-derived firm/client/scenario scope (also seeded into state).
  * @param checkpointer PostgresSaver (prod) / MemorySaver (tests), keyed by thread_id.

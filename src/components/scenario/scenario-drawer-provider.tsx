@@ -31,9 +31,9 @@ export function useScenarioDrawer(): ScenarioDrawerUI {
 
 /**
  * Like `useScenarioDrawer` but returns `null` outside the provider instead of
- * throwing. Used by the copilot provider to coordinate mutual exclusion with
- * the drawer (close the drawer when the copilot opens) without hard-coupling
- * the copilot's mount to the drawer being present.
+ * throwing. Used by the forge provider to coordinate mutual exclusion with
+ * the drawer (close the drawer when the forge opens) without hard-coupling
+ * the forge's mount to the drawer being present.
  */
 export function useScenarioDrawerOptional(): ScenarioDrawerUI | null {
   return useContext(ScenarioDrawerCtx);

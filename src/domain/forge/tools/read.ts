@@ -1,6 +1,6 @@
 // src/domain/copilot/tools/read.ts
 //
-// Phase 1 read tools for the copilot. Every client-scoped tool re-derives the
+// Phase 1 read tools for the forge. Every client-scoped tool re-derives the
 // firmId server-side via `requireOrgId()` (the model never supplies scope) and
 // awaits `assertClientReadable` before touching any client data, so a
 // model-echoed clientId can never widen scope. `find_client` is the lone
@@ -84,7 +84,7 @@ function matchKind(m?: MatchAnnotation): MatchAnnotation["kind"] {
   return m?.kind ?? "new";
 }
 
-/** Compact, sanitized summary of a pending import for the copilot. Exported for unit testing. */
+/** Compact, sanitized summary of a pending import for the forge. Exported for unit testing. */
 export function summarizeImport(
   importId: string,
   status: string,

@@ -24,7 +24,7 @@ export type EntitlementsInput = {
 
 /**
  * Entitlements bundled into the base plan — granted to any firm holding an
- * active seat. AI document import (`ai_import`) and the planning copilot
+ * active seat. AI document import (`ai_import`) and the planning forge
  * (`ai_copilot`) both ship with every plan; neither is a separate add-on or
  * has a usage quota.
  */

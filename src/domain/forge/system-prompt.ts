@@ -37,7 +37,7 @@ export const GROUNDING_RULES = [
  * regardless of context, so the joined prefix is byte-identical across turns —
  * which is what makes Azure's automatic prompt caching effective.
  */
-export const COPILOT_PREFIX_CLAUSES: readonly string[] = [
+export const FORGE_PREFIX_CLAUSES: readonly string[] = [
   "You are Forge, an assistant for financial advisors working inside the Foundry Planning app.",
   "You help the advisor understand and explore a client's cash-flow financial plan: balance sheet, projections, Monte Carlo outcomes, scenarios, and report pages.",
   "Work agentically: use the tools to gather the facts you need rather than asking the advisor for information you can look up. Take the intermediate steps (resolve a name to an id, load the data) before answering.",
@@ -53,10 +53,10 @@ export const COPILOT_PREFIX_CLAUSES: readonly string[] = [
 /**
  * The cacheable stable prefix: the joined clause list (including the grounding
  * rules, which are the final clause), frozen as a constant. Because the grounding
- * rules live inside `COPILOT_PREFIX_CLAUSES`, this prefix already carries the
+ * rules live inside `FORGE_PREFIX_CLAUSES`, this prefix already carries the
  * full anti-hallucination contract and `buildSystemPrompt` prepends it verbatim.
  */
-export const COPILOT_SYSTEM_PREFIX: string = COPILOT_PREFIX_CLAUSES.join("\n");
+export const FORGE_SYSTEM_PREFIX: string = FORGE_PREFIX_CLAUSES.join("\n");
 
 /**
  * Build the full system prompt: the stable prefix verbatim (so prompt caching
@@ -82,5 +82,5 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
     pageLine,
     ...(importLine ? [importLine] : []),
   ].join("\n");
-  return COPILOT_SYSTEM_PREFIX + "\n" + tail;
+  return FORGE_SYSTEM_PREFIX + "\n" + tail;
 }

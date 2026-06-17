@@ -5,7 +5,7 @@ import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import type { ForgePromptContext } from "./system-prompt";
 
 /**
- * Assemble the variable system-prompt tail context for one copilot turn:
+ * Assemble the variable system-prompt tail context for one forge turn:
  * firm name, client household title, and the active scenario's name/base flag.
  *
  * Lives outside the route (which mocks it in tests) and outside graph.ts (which

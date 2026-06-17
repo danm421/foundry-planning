@@ -18,20 +18,20 @@ vi.mock("next/navigation", () => ({
 
 function Probe() {
   const drawer = useScenarioDrawer();
-  const copilot = useForge();
+  const forge = useForge();
   return (
     <div>
       <span data-testid="drawer-open">{String(drawer.open)}</span>
-      <span data-testid="copilot-open">{String(copilot.isOpen)}</span>
-      <span data-testid="scenario">{String(copilot.scenarioId)}</span>
+      <span data-testid="forge-open">{String(forge.isOpen)}</span>
+      <span data-testid="scenario">{String(forge.scenarioId)}</span>
       <button onClick={() => drawer.setOpen(true)}>open-drawer</button>
-      <button onClick={() => copilot.open()}>open-copilot</button>
+      <button onClick={() => forge.open()}>open-forge</button>
     </div>
   );
 }
 
 describe("ForgeProvider mutual exclusion", () => {
-  it("closes the scenario drawer when the copilot opens; exposes live scenarioId", () => {
+  it("closes the scenario drawer when the forge opens; exposes live scenarioId", () => {
     render(
       <ScenarioDrawerProvider>
         <ForgeProvider clientId="c1">
@@ -49,11 +49,11 @@ describe("ForgeProvider mutual exclusion", () => {
     });
     expect(screen.getByTestId("drawer-open").textContent).toBe("true");
 
-    // open the copilot → drawer must close (one right panel at a time)
+    // open the forge → drawer must close (one right panel at a time)
     act(() => {
-      screen.getByText("open-copilot").click();
+      screen.getByText("open-forge").click();
     });
-    expect(screen.getByTestId("copilot-open").textContent).toBe("true");
+    expect(screen.getByTestId("forge-open").textContent).toBe("true");
     expect(screen.getByTestId("drawer-open").textContent).toBe("false");
   });
 });

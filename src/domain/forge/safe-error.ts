@@ -3,7 +3,7 @@ import { ProjectionInputError } from "@/lib/projection/load-client-data";
 /**
  * Map a thrown error to a SAFE, user-facing message for the SSE `error` event.
  *
- * The copilot stream catch must NEVER emit raw `err.message`: tool/projection
+ * The forge stream catch must NEVER emit raw `err.message`: tool/projection
  * errors routinely embed client UUIDs, internal ids, and other machinery that
  * the advisor must not see leaked through the chat surface. This collapses every
  * error to a small set of vetted strings, defaulting to a generic fallback.

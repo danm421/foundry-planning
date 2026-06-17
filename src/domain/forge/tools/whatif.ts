@@ -241,8 +241,8 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
       // withdrawal_strategy is a singleton TargetKind: an edit change whose
       // payload is the {field:{from,to}} map the engine's applyEdit consumes.
       const change: ScenarioChange = {
-        id: "copilot-whatif-withdrawal",
-        scenarioId: "copilot-whatif",
+        id: "forge-whatif-withdrawal",
+        scenarioId: "forge-whatif",
         opType: "edit",
         targetKind: "withdrawal_strategy",
         targetId: "withdrawal_strategy",

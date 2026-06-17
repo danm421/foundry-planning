@@ -77,7 +77,7 @@ function makeStreamingResponse(): Response {
 }
 
 const validArgs = {
-  message: "Hello copilot",
+  message: "Hello forge",
   scenarioId: "scen_1",
 };
 

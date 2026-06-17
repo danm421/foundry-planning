@@ -2,7 +2,7 @@
 import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
 
 /**
- * Everything the copilot graph + tools need to scope every read/write, derived
+ * Everything the forge graph + tools need to scope every read/write, derived
  * SERVER-SIDE from the request (Clerk org/user + the URL's client/scenario).
  * The model NEVER supplies any of these — it cannot widen its own scope.
  */

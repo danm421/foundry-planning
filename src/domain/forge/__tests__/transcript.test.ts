@@ -6,7 +6,7 @@ import { toUiMessages } from "../transcript";
 describe("toUiMessages", () => {
   it("keeps user and assistant prose, drops tool and system messages (round-trip of a full turn)", () => {
     const out = toUiMessages([
-      new SystemMessage("you are foundry copilot"),
+      new SystemMessage("you are foundry forge"),
       new HumanMessage("how is the retirement plan tracking?"),
       new AIMessage({ content: "", tool_calls: [{ id: "c1", name: "run_projection", args: {} }] }),
       new ToolMessage({ tool_call_id: "c1", content: "{...}" }),

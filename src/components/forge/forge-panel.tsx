@@ -78,7 +78,7 @@ export function ForgePanel({
   const locked = busy || pendingApproval != null || importing;
 
   // Mutual exclusion belt-and-braces: if the scenario drawer opens while the
-  // copilot is open, close the copilot (the provider handles the inverse).
+  // forge is open, close the forge (the provider handles the inverse).
   useEffect(() => {
     if (open && drawer?.open) close();
   }, [open, drawer?.open, close]);
@@ -415,7 +415,7 @@ export function ForgePanel({
           )}
           <input
             ref={fileInputRef}
-            data-testid="copilot-file-input"
+            data-testid="forge-file-input"
             type="file"
             multiple
             accept=".pdf,.xlsx,.xls,.csv"

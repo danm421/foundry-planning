@@ -68,7 +68,7 @@ const MD_COMPONENTS: Components = {
 };
 
 /**
- * Renders assistant markdown (bullets, code, tables, links) for streamed copilot
+ * Renders assistant markdown (bullets, code, tables, links) for streamed forge
  * bubbles, styled with Foundry CSS-var tokens (no hardcoded hex). The indigo
  * `--color-secondary` token marks AI accents (links + list markers). All long
  * tokens wrap so nothing overflows its bubble. Memoized because streaming

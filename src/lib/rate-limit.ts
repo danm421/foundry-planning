@@ -137,10 +137,10 @@ export async function checkProjectionRateLimit(
 // still generous for an advisor mid-conversation. 20/min/firm. Fail-closed
 // like every other limiter — a transient Upstash outage 503s the turn (an
 // acceptable retry), never silently un-limits it.
-const getForgeLimiter = buildLimiter(20, "1 m", "rl:copilot");
+const getForgeLimiter = buildLimiter(20, "1 m", "rl:forge");
 
 /**
- * Check whether `key` (firm id) may invoke the copilot stream/resume routes.
+ * Check whether `key` (firm id) may invoke the forge stream/resume routes.
  * Budget: 20 req/min/firm.
  *
  * Returns `{ allowed: false, reason: ... }` for any failure mode —

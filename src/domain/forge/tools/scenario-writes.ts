@@ -1,6 +1,6 @@
 // src/domain/copilot/tools/scenario-writes.ts
 //
-// Phase 2 SCENARIO WRITE TOOLS — the highest-risk copilot surface. Every tool
+// Phase 2 SCENARIO WRITE TOOLS — the highest-risk forge surface. Every tool
 // here executes POST-APPROVAL, on a /resume request that may originate in a
 // different session than the one that proposed the write. So NONE of them trust
 // `ctx.firmId`: each re-derives the firmId fresh via `requireOrgId()` and
@@ -70,7 +70,7 @@ export function buildScenarioWriteTools({
 
         // Resolve the source. `copyFrom` is model-supplied — when it's a uuid we
         // re-verify it points at a scenario owned by THIS client before cloning,
-        // so a copilot can't seed a new scenario from another client's data.
+        // so a forge can't seed a new scenario from another client's data.
         let source: CreateWithCloneSource;
         if (copyFrom == null || copyFrom === "empty") {
           source = { kind: "empty" };
@@ -312,7 +312,7 @@ export function buildScenarioWriteTools({
 
   // Resolve a model-supplied ref string ("base" | scenario uuid) into a
   // ScenarioRef. We do NOT accept snapshot/do-nothing refs from the model here
-  // — the copilot snapshots live scenarios only.
+  // — the forge snapshots live scenarios only.
   const toRef = (raw: string): ScenarioRef => ({
     kind: "scenario",
     id: raw === "base" ? "base" : raw,

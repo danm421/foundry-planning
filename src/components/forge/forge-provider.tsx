@@ -34,9 +34,9 @@ export function useForge(): ForgeContextValue {
 }
 
 /**
- * Holds copilot open/close state and current scope (clientId, live scenarioId,
+ * Holds forge open/close state and current scope (clientId, live scenarioId,
  * pathname). Coordinates mutual exclusion with the scenario drawer: opening the
- * copilot closes the drawer so only one right-edge panel (shared z-30 layer) is
+ * forge closes the drawer so only one right-edge panel (shared z-30 layer) is
  * open at a time. Mounted in ClientLayout as a sibling of ScenarioDrawerProvider.
  */
 export function ForgeProvider({

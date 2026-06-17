@@ -32,7 +32,7 @@ const READ_POST_SUFFIXES = [
   // Forge read turns: stream produces a streamed answer, resume continues
   // after an approval decision. Both READ/compute — Phase 2 writes go through
   // the approval/HITL path with normal mutation gating, so a read-only
-  // (grace / late-past_due) firm may still converse with the copilot.
+  // (grace / late-past_due) firm may still converse with the forge.
   "/copilot/stream",
   "/copilot/resume",
 ] as const;

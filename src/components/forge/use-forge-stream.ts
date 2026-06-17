@@ -1,7 +1,7 @@
 // src/components/copilot/use-forge-stream.ts
 //
 // Client-side SSE consumer for the Forge stream/resume routes. Adapts the
-// boundary-correct chunk parser from use-solver-solve.ts: the copilot route
+// boundary-correct chunk parser from use-solver-solve.ts: the forge route
 // emits `data:`-only frames (no `event:` line), each a JSON object tagged by
 // `type`. The hook accumulates streamed tokens into the trailing assistant
 // bubble, tracks tool-run status for "Running Monte Carlo…" affordances, and
@@ -49,7 +49,7 @@ export type ForgeStatus = "idle" | "streaming" | "done" | "error" | "cancelled";
  * union. Stateless generator over a buffer: yields each complete frame and
  * RETURNS the trailing partial frame so the caller can carry it into the next
  * chunk. Adapted from `parseSseStream` in use-solver-solve.ts (which keyed on
- * an `event:` line — the copilot protocol has none, so we key on the JSON
+ * an `event:` line — the forge protocol has none, so we key on the JSON
  * `type`).
  */
 export function* parseForgeSse(buffer: string): Generator<ForgeSseEvent, string> {
@@ -80,7 +80,7 @@ export interface SendArgs {
   scenarioId: string;
   conversationId?: string;
   currentPage?: string;
-  /** When set, tells the copilot a freshly-uploaded import is awaiting review. */
+  /** When set, tells the forge a freshly-uploaded import is awaiting review. */
   pendingImportId?: string;
   /** Display-only filenames to show on the user bubble; never sent to the server. */
   attachments?: string[];

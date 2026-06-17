@@ -28,7 +28,7 @@ vi.mock("../actions", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock copilot provider — useForge() returns controlled state
+// Mock forge provider — useForge() returns controlled state
 // ---------------------------------------------------------------------------
 vi.mock("../forge-provider", () => ({
   useForge: () => ({

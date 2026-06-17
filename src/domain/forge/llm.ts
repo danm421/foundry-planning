@@ -3,7 +3,7 @@ import { AzureChatOpenAI } from "@langchain/openai";
 import { callAIEmbedding } from "@/lib/extraction/azure-client";
 
 /**
- * Azure config the copilot chat model needs. Foundry's env differs from
+ * Azure config the forge chat model needs. Foundry's env differs from
  * ethos: AZURE_ENDPOINT is a FULL URL (https://<instance>.openai.azure.com),
  * not a bare resource name — see src/lib/extraction/azure-client.ts. We derive
  * the bare <instance> for AzureChatOpenAI's azureOpenAIApiInstanceName.
@@ -61,7 +61,7 @@ export function assertForgeAzureConfig(model: "full" | "mini"): ForgeAzureConfig
 }
 
 /**
- * Tool-calling chat model for the copilot. Both deployments (gpt-5.4 /
+ * Tool-calling chat model for the forge. Both deployments (gpt-5.4 /
  * gpt-5.4-mini) are GPT-5-series *reasoning* models, which reject any
  * `temperature` other than the default — passing `temperature: 0` makes Azure
  * 400 (`unsupported_value`) on the very first turn, so the stream route would
@@ -89,8 +89,8 @@ export function chatModel(model: "full" | "mini" = "full"): AzureChatOpenAI {
 }
 
 /**
- * Embed copilot text (KB ingest + query-time retrieval). A thin re-export so
- * the copilot domain owns its embedding entry point; the Azure specifics live
+ * Embed forge text (KB ingest + query-time retrieval). A thin re-export so
+ * the forge domain owns its embedding entry point; the Azure specifics live
  * in azure-client.ts. 1536-dim, fail-closed contract is enforced there.
  */
 export async function embeddings(text: string): Promise<number[]> {

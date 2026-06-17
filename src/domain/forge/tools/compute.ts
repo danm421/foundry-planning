@@ -145,7 +145,7 @@ export function buildComputeTools(
           scenarioId: ctx.scenarioId,
         });
       } catch (err) {
-        console.error("[copilot] monte-carlo compute failed", err);
+        console.error("[forge] monte-carlo compute failed", err);
       }
       // The compute cache returns `row.payload as T` with no shape validation, so
       // a stale/partial cached result could be missing `raw` entirely. Degrade
@@ -282,7 +282,7 @@ export function buildComputeTools(
       const c = effectiveTree.client;
       const clientName = `${c.firstName} ${c.lastName}`.trim();
 
-      // Assemble the same context shape the export route builds. The copilot
+      // Assemble the same context shape the export route builds. The forge
       // needs only the page DATA, not PDF branding, so cover/branding fields
       // get safe placeholders (non-framing pages ignore them).
       const reportCtx: BuildDataContext = {

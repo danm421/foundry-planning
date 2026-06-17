@@ -1,6 +1,6 @@
 // src/domain/copilot/tools/report.ts
 //
-// Phase 4 — the `generate_report` copilot tool. The model names registry pages
+// Phase 4 — the `generate_report` forge tool. The model names registry pages
 // (+ optional scenarios / Monte Carlo / title); we validate those against the
 // live presentation registry, enforce the same fan-out caps the export route
 // uses, and enqueue a `generation_runs` row. The actual render runs in the
@@ -146,7 +146,7 @@ export async function generateReport(
         resourceId: ctx.clientId,
         clientId: ctx.clientId,
         firmId,
-        metadata: { pages: body.pages.map((p) => p.pageId), via: "copilot" },
+        metadata: { pages: body.pages.map((p) => p.pageId), via: "forge" },
       });
       await markDone(runId, doc?.id ?? null);
     } catch (err) {

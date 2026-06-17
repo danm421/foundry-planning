@@ -16,15 +16,15 @@ import {
   userOwnsConversation,
 } from "../conversations";
 
-const FIRM = "org_copilot_conv_test";
-const USER_A = "user_copilot_a";
-const USER_B = "user_copilot_b";
+const FIRM = "org_forge_conv_test";
+const USER_A = "user_forge_a";
+const USER_B = "user_forge_b";
 
 afterAll(async () => {
   await db.delete(copilotConversations).where(eq(copilotConversations.firmId, FIRM));
 });
 
-describe("copilot conversations CRUD", () => {
+describe("forge conversations CRUD", () => {
   it("creates then lists a conversation for its owner", async () => {
     const id = await createConversation({ userId: USER_A, firmId: FIRM, title: "First" });
     const rows = await listMyConversations(USER_A, FIRM);

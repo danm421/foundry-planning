@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
 });
 
-describe("copilot actions", () => {
+describe("forge actions", () => {
   it("listMyConversations passes the derived user+firm to the DB helper", async () => {
     vi.mocked(convos.listMyConversations).mockResolvedValue([{ id: "c1" }] as never);
     const rows = await listMyConversations();

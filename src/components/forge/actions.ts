@@ -47,7 +47,7 @@ export async function loadConversationMessages(conversationId: string): Promise<
 }
 
 /**
- * Resolve the client's base-case scenario id for the copilot document import.
+ * Resolve the client's base-case scenario id for the forge document import.
  * The chat always imports against the base case (factual data), regardless of
  * which scenario the panel is viewing. Returns null when the client is
  * inaccessible or has no base case — the caller surfaces that as an error.
