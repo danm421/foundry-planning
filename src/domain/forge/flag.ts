@@ -14,3 +14,13 @@
 export function isForgeEnabled(): boolean {
   return (process.env.FORGE_ENABLED ?? process.env.COPILOT_ENABLED) === "true";
 }
+
+/**
+ * Whether an org's entitlements grant Forge access. Dual-read transition: accepts
+ * the new `ai_forge` key and the legacy `ai_copilot` (both seat-included today).
+ * Drop the `ai_copilot` clause once every org's Clerk metadata carries `ai_forge`
+ * (backfill + reconcile cron) — single edit point for both route gates.
+ */
+export function hasForgeEntitlement(entitlements: string[] | null | undefined): boolean {
+  return !!entitlements && (entitlements.includes("ai_forge") || entitlements.includes("ai_copilot"));
+}

@@ -15,7 +15,7 @@ import {
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
-import { isForgeEnabled } from "@/domain/forge/flag";
+import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +69,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     if (mapped) return json(mapped.status, mapped.body);
     throw err;
   }
-  if (!entitlements?.includes("ai_forge") && !entitlements?.includes("ai_copilot")) {
+  if (!hasForgeEntitlement(entitlements)) {
     return json(403, { error: "Forge is not enabled for your plan." });
   }
 
