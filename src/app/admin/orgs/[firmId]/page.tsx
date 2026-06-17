@@ -12,9 +12,9 @@ function fmt(d: Date | null | undefined) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-neutral-800 py-2">
-      <dt className="text-neutral-400">{label}</dt>
-      <dd className="text-right">{children}</dd>
+    <div className="flex justify-between gap-4 border-b border-hair py-2">
+      <dt className="text-ink-2">{label}</dt>
+      <dd className="text-right text-ink">{children}</dd>
     </div>
   );
 }
@@ -38,8 +38,8 @@ export default async function OrgOverviewPage({
 
   return (
     <div className="space-y-6">
-      <section className="rounded border border-neutral-800 p-4">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">Organization</h2>
+      <section className="rounded border border-hair p-4">
+        <h2 className="mb-2 text-sm font-medium text-ink-2">Organization</h2>
         <dl className="text-sm">
           <Field label="Founder">{firm.isFounder ? "Yes" : "No"}</Field>
           <Field label="Archived">{firm.archivedAt ? fmt(firm.archivedAt) : "No"}</Field>
@@ -47,8 +47,8 @@ export default async function OrgOverviewPage({
         </dl>
       </section>
 
-      <section className="rounded border border-neutral-800 p-4">
-        <h2 className="mb-2 text-sm font-medium text-neutral-300">Subscription</h2>
+      <section className="rounded border border-hair p-4">
+        <h2 className="mb-2 text-sm font-medium text-ink-2">Subscription</h2>
         {sub ? (
           <dl className="text-sm">
             <Field label="Status">{sub.status}</Field>
@@ -56,11 +56,11 @@ export default async function OrgOverviewPage({
             <Field label="Current period end">{fmt(sub.currentPeriodEnd)}</Field>
             <Field label="Cancels at period end">{sub.cancelAtPeriodEnd ? "Yes" : "No"}</Field>
             <Field label="Stripe customer">
-              <span className="font-mono text-xs">{sub.stripeCustomerId}</span>
+              <span className="tabular text-xs">{sub.stripeCustomerId}</span>
             </Field>
           </dl>
         ) : (
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-ink-3">
             {firm.isFounder ? "Founder org — no Stripe subscription." : "No subscription on record."}
           </p>
         )}

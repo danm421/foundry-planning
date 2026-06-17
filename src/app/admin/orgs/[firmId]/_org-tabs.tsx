@@ -14,17 +14,17 @@ export default function OrgTabs({ firmId }: { firmId: string }) {
   const active = useSelectedLayoutSegment();
   const base = `/admin/orgs/${firmId}`;
   return (
-    <nav className="flex gap-1 border-b border-neutral-800 text-sm">
+    <nav className="flex gap-1 border-b border-hair text-sm">
       {TABS.map((t) => {
         const isActive = active === t.segment;
         return (
           <Link
             key={t.label}
             href={`${base}${t.href}`}
-            className={`-mb-px border-b-2 px-3 py-2 ${
+            className={`-mb-px border-b-2 px-3 py-2 transition ${
               isActive
-                ? "border-sky-400 text-sky-300"
-                : "border-transparent text-neutral-400 hover:text-neutral-200"
+                ? "border-accent text-accent"
+                : "border-transparent text-ink-3 hover:text-ink"
             }`}
           >
             {t.label}

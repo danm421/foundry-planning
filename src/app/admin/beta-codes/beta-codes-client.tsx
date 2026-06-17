@@ -81,19 +81,19 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
           c.getValue() ? (
             c.getValue()
           ) : (
-            <span className="text-neutral-500">—</span>
+            <span className="text-ink-3">—</span>
           ),
       }),
       col.accessor("createdAt", {
         header: "Created",
         cell: (c) => (
-          <span className="tabular-nums font-mono text-xs">{fmt(c.getValue())}</span>
+          <span className="tabular text-xs">{fmt(c.getValue())}</span>
         ),
       }),
       col.accessor("expiresAt", {
         header: "Expires",
         cell: (c) => (
-          <span className="tabular-nums font-mono text-xs">{fmt(c.getValue())}</span>
+          <span className="tabular text-xs">{fmt(c.getValue())}</span>
         ),
       }),
       col.accessor("status", {
@@ -112,12 +112,12 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
         cell: (c) => {
           const r = c.row.original;
           return r.redeemedByUserId ? (
-            <span className="font-mono text-xs text-neutral-400">
+            <span className="tabular text-xs text-ink-2">
               {r.redeemedByUserId}
               {r.redeemedOrgId ? ` · ${r.redeemedOrgId}` : ""}
             </span>
           ) : (
-            <span className="text-neutral-600">—</span>
+            <span className="text-ink-3">—</span>
           );
         },
       }),
@@ -131,7 +131,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
             <button
               onClick={() => onRevoke(r.id)}
               disabled={pending}
-              className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+              className="text-xs text-crit hover:opacity-80 disabled:opacity-50"
             >
               Revoke
             </button>
@@ -150,53 +150,53 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
   return (
     <div className="flex flex-col gap-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Beta Founder Codes</h1>
-        <p className="mt-1 text-sm text-neutral-400">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Beta Founder Codes</h1>
+        <p className="mt-1 text-sm text-ink-2">
           Mint single-use codes and manage existing ones.
         </p>
       </header>
 
       {/* Mint form */}
-      <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
-        <h2 className="mb-4 text-sm font-medium text-neutral-300">Mint new codes</h2>
+      <section className="rounded-lg border border-hair bg-card p-5">
+        <h2 className="mb-4 text-sm font-medium text-ink-2">Mint new codes</h2>
         <form onSubmit={onMint}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-neutral-400">Count</span>
+              <span className="text-ink-2">Count</span>
               <input
                 type="number"
                 min={1}
                 max={100}
                 value={count}
                 onChange={(e) => setCount(Number(e.target.value))}
-                className="rounded border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-emerald-600 focus:outline-none"
+                className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-neutral-400">Label</span>
+              <span className="text-ink-2">Label</span>
               <input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 placeholder="Jane @ Acme"
-                className="rounded border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-emerald-600 focus:outline-none"
+                className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-neutral-400">Expires</span>
+              <span className="text-ink-2">Expires</span>
               <input
                 type="date"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="rounded border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-neutral-100 focus:border-emerald-600 focus:outline-none"
+                className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-neutral-400">Entitlements</span>
+              <span className="text-ink-2">Entitlements</span>
               <input
                 value={entitlements}
                 onChange={(e) => setEntitlements(e.target.value)}
                 placeholder="ai_import"
-                className="rounded border border-neutral-700 bg-neutral-800 px-2.5 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-emerald-600 focus:outline-none"
+                className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
               />
             </label>
           </div>
@@ -204,11 +204,11 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
             <button
               type="submit"
               disabled={pending}
-              className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >
               {pending ? "Minting…" : "Mint codes"}
             </button>
-            {error && <span className="text-sm text-red-400">{error}</span>}
+            {error && <span className="text-sm text-crit">{error}</span>}
           </div>
         </form>
       </section>
@@ -227,19 +227,19 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
               Copy all
             </button>
           </div>
-          <p className="mb-3 text-xs text-amber-300">
+          <p className="mb-3 text-xs text-warn">
             Shown once — copy these now. They cannot be retrieved later.
           </p>
           <ul className="flex flex-col gap-1.5">
             {minted.map((c) => (
               <li
                 key={c}
-                className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-900 px-3 py-2"
+                className="flex items-center justify-between rounded border border-hair bg-card px-3 py-2"
               >
-                <span className="font-mono text-sm tabular-nums">{c}</span>
+                <span className="tabular text-sm">{c}</span>
                 <button
                   onClick={() => navigator.clipboard.writeText(c)}
-                  className="text-xs text-neutral-400 hover:text-neutral-200"
+                  className="text-xs text-ink-2 hover:text-ink"
                 >
                   Copy
                 </button>
@@ -251,15 +251,15 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
 
       {/* Codes table */}
       <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-300">
+        <h2 className="mb-3 text-sm font-medium text-ink-2">
           All codes
-          <span className="ml-2 tabular-nums font-mono text-neutral-500">
+          <span className="ml-2 tabular text-ink-3">
             ({initialCodes.length})
           </span>
         </h2>
-        <div className="overflow-hidden rounded-lg border border-neutral-800">
+        <div className="overflow-hidden rounded-lg border border-hair">
           <table className="w-full text-left text-sm">
-            <thead className="bg-neutral-900 text-neutral-400">
+            <thead className="bg-card text-ink-3">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((h) => (
@@ -272,7 +272,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-neutral-800 hover:bg-neutral-900/50">
+                <tr key={row.id} className="border-t border-hair hover:bg-card/50">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -283,7 +283,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
               {rows.length === 0 && (
                 <tr>
                   <td
-                    className="px-4 py-10 text-center text-sm text-neutral-500"
+                    className="px-4 py-10 text-center text-sm text-ink-3"
                     colSpan={6}
                   >
                     No codes yet.
