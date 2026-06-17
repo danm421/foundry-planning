@@ -84,6 +84,7 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
   const [shares, setShares] = useState<ClientShareRow[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   // --- Privacy toggle state ---
   const [isPrivate, setIsPrivate] = useState(initialIsPrivate);
@@ -91,10 +92,11 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
-  // Sync isPrivate when prop changes (e.g. parent re-renders after revoke/share)
+  // Sync isPrivate when prop changes (e.g. parent re-renders after revoke/share).
+  // Skip while a save is in flight to avoid clobbering the optimistic toggle.
   useEffect(() => {
-    setIsPrivate(initialIsPrivate);
-  }, [initialIsPrivate]);
+    if (!privacySaving) setIsPrivate(initialIsPrivate);
+  }, [initialIsPrivate, privacySaving]);
 
   // Fetch this client's existing shares from the outgoing list.
   const fetchShares = useCallback(() => {
@@ -171,11 +173,18 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
 
   async function handleRevoke(shareId: string) {
     setRevoking(shareId);
+    setRevokeError(null);
     try {
-      await fetch(`/api/shares/${shareId}`, { method: "DELETE" });
-      fetchShares();
+      const res = await fetch(`/api/shares/${shareId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setRevokeError((data as { error?: string }).error ?? "Failed to revoke access.");
+      }
+    } catch {
+      setRevokeError("Failed to revoke access.");
     } finally {
       setRevoking(null);
+      fetchShares();
     }
   }
 
@@ -355,6 +364,12 @@ export default function ShareDialog({ open, onOpenChange, clientId, initialIsPri
           </form>
 
           {/* ── Existing shares ── */}
+          {revokeError && (
+            <p role="alert" className="text-[12px] text-crit">
+              {revokeError}
+            </p>
+          )}
+
           {sharesLoading && (
             <p className="text-[12px] text-ink-4">Loading shared access…</p>
           )}

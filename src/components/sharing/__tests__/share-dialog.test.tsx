@@ -58,6 +58,36 @@ function makeFetchMock(sharesPayload: object = { shares: [] }) {
   });
 }
 
+/** Returns a fetch mock where the POST to /shares returns the given HTTP status. */
+function makeFetchMockWithSharesPostStatus(status: number) {
+  return vi.fn((url: string, opts?: RequestInit) => {
+    // GET /api/shares?direction=outgoing → always succeed
+    if (typeof url === "string" && url.includes("/api/shares") && (!opts || opts.method === "GET" || !opts.method)) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ shares: [] }),
+      } as Response);
+    }
+    // POST /api/clients/[id]/shares → return requested error status
+    if (
+      typeof url === "string" &&
+      url.includes(`/api/clients/${CLIENT_ID}/shares`) &&
+      opts?.method === "POST"
+    ) {
+      return Promise.resolve({
+        ok: false,
+        status,
+        json: () => Promise.resolve({ error: "error" }),
+      } as Response);
+    }
+    return Promise.resolve({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: "unexpected" }),
+    } as Response);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -148,6 +178,70 @@ describe("ShareDialog", () => {
       expect(putCall).toBeDefined();
       const body = JSON.parse(putCall![1]!.body as string);
       expect(body).toEqual({ isPrivate: true });
+    });
+  });
+
+  it("shows 'user not found' inline error when shares POST returns 404", async () => {
+    const fetchMock = makeFetchMockWithSharesPostStatus(404);
+    global.fetch = fetchMock as typeof fetch;
+
+    render(
+      <ShareDialog
+        open
+        onOpenChange={() => {}}
+        clientId={CLIENT_ID}
+        initialIsPrivate={false}
+      />,
+    );
+
+    // Wait for initial shares fetch to settle
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/shares"),
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    // Fill in the email and submit
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "nobody@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "No Foundry user found with that email address.",
+      );
+    });
+  });
+
+  it("shows 'already has access' inline error when shares POST returns 409", async () => {
+    const fetchMock = makeFetchMockWithSharesPostStatus(409);
+    global.fetch = fetchMock as typeof fetch;
+
+    render(
+      <ShareDialog
+        open
+        onOpenChange={() => {}}
+        clientId={CLIENT_ID}
+        initialIsPrivate={false}
+      />,
+    );
+
+    // Wait for initial shares fetch to settle
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/shares"),
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    // Fill in the email and submit
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "existing@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /share/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "This person already has access to this client.",
+      );
     });
   });
 });
