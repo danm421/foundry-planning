@@ -12,9 +12,11 @@ import {
   crmHouseholds,
   crmHouseholdContacts,
 } from "@/db/schema";
-import { eq, and, asc, isNull } from "drizzle-orm";
+import { eq, and, asc, isNull, or, inArray, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
+import { resolveSharedClientAccess, resolveSharesForRecipient } from "@/lib/clients/shared-access";
+import { resolveActors } from "@/lib/activity/resolve-actors";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
@@ -44,6 +46,10 @@ export async function GET() {
     const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
     const scope = advisorScopeCondition(clients.advisorId, visible);
 
+    // Fetch the set of client ids shared to this user from other firms.
+    const { sharedClientIds } = await resolveSharedClientAccess(userId ?? "");
+    const sharedIds = [...sharedClientIds];
+
     // Tight projection: the list UI only needs identity + the fields
     // shown in the table. Identity (firstName/lastName/spouse names) now lives
     // on CRM contacts joined via crm_household_id. Sort order keys off the
@@ -52,6 +58,7 @@ export async function GET() {
     const rows = await db
       .select({
         id: clients.id,
+        firmId: clients.firmId,
         firstName: primaryContact.firstName,
         lastName: primaryContact.lastName,
         retirementAge: clients.retirementAge,
@@ -70,14 +77,30 @@ export async function GET() {
       )
       .where(
         and(
-          eq(clients.firmId, firmId),
           isNull(crmHouseholds.deletedAt),
-          ...(scope ? [scope] : []),
+          or(
+            and(eq(clients.firmId, firmId), ...(scope ? [scope] : [])),
+            sharedIds.length ? inArray(clients.id, sharedIds) : sql`false`,
+          ),
         ),
       )
       .orderBy(asc(primaryContact.lastName), asc(primaryContact.firstName));
 
-    return NextResponse.json(rows);
+    // Tag each row with access:"own"|"shared" and sharedBy (display name of
+    // the sharing advisor) for shared rows. Own-firm rows always get sharedBy:null.
+    const details = await resolveSharesForRecipient(userId ?? "");
+    const ownerByClient = new Map(details.map((d) => [d.clientId, d.ownerUserId]));
+    const names = await resolveActors([...new Set(details.map((d) => d.ownerUserId))]);
+    const tagged = rows.map((r) => {
+      const owner = ownerByClient.get(r.id);
+      return {
+        ...r,
+        access: r.firmId === firmId ? "own" : "shared",
+        sharedBy: owner ? (names.get(owner)?.name ?? null) : null,
+      };
+    });
+
+    return NextResponse.json(tagged);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
