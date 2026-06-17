@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { clients, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
+import { clients, clientShares, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -26,6 +26,7 @@ function setAuth(userId: string, orgRole?: string) {
 }
 
 beforeEach(async () => {
+  await db.delete(clientShares).where(eq(clientShares.firmId, ORG));
   await db.delete(clients).where(eq(clients.firmId, ORG));
   await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, ORG));
   await db
@@ -77,5 +78,28 @@ describe("client access authz", () => {
   it("returns false for a client in another firm", async () => {
     setAuth("user_member", "org:member");
     expect(await verifyClientAccess(clientId, "org_other")).toBe(false);
+  });
+
+  it("a cross-firm recipient with a per-client share gets shared view access", async () => {
+    await db.insert(clientShares).values({
+      firmId: ORG, ownerUserId: ADV_A, recipientUserId: "user_rcpt",
+      recipientEmail: "r@x.com", scope: "client", clientId,
+      permission: "view", createdBy: ADV_A,
+    });
+    // recipient is active in a DIFFERENT org
+    vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
+    const acc = await requireClientAccess(clientId);
+    expect(acc).toMatchObject({ firmId: ORG, permission: "view", access: "shared" });
+  });
+
+  it("a cross-firm user with no share is denied (no existence leak)", async () => {
+    vi.mocked(auth).mockResolvedValue({ userId: "user_stranger", orgId: "org_other", orgRole: "org:admin" } as never);
+    await expect(requireClientAccess(clientId)).rejects.toThrow("Client not found or access denied");
+  });
+
+  it("own-firm member gets edit permission + access=own", async () => {
+    setAuth("user_member", "org:member");
+    const acc = await requireClientAccess(clientId);
+    expect(acc).toMatchObject({ firmId: ORG, permission: "edit", access: "own" });
   });
 });

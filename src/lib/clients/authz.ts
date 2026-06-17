@@ -2,10 +2,11 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { UnauthorizedError } from "@/lib/db-helpers";
 import { ForbiddenError } from "@/lib/authz";
 import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
 import { STAFF_ROLES } from "@/lib/capabilities";
+import { resolveSharedClientAccess, type SharePermission } from "./shared-access";
 
 // Shared staff-scope check: firm-wide roles always pass; staff roles pass only
 // when the advisor is in their mapped set. The single home for "can this caller
@@ -37,22 +38,47 @@ export async function verifyClientAccess(
   return staffMaySeeAdvisor(client.advisorId, firmId);
 }
 
+export type ClientAccess = {
+  client: typeof clients.$inferSelect;
+  firmId: string;
+  permission: SharePermission;
+  access: "own" | "shared";
+};
+
 /**
- * Throw-based gate that also returns the row + firmId, for callers (e.g.
- * `ClientLayout`, the `[id]` detail route) that need the client object. Throws
- * a single ForbiddenError for both not-found and access-denied so existence
- * never leaks across firms / advisor books.
+ * Throw-based gate that also returns the row + firmId + permission + access,
+ * for callers (e.g. `ClientLayout`, the `[id]` detail route) that need the
+ * client object. Throws a single ForbiddenError for both not-found and
+ * access-denied so existence never leaks across firms / advisor books.
+ *
+ * Cross-org callers get access via `clientShares`; own-firm callers go through
+ * the existing staff-scope rules and always receive `permission: "edit"`.
  */
-export async function requireClientAccess(
-  clientId: string,
-): Promise<{ client: typeof clients.$inferSelect; firmId: string }> {
-  const firmId = await requireOrgId();
-  const [client] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client || !(await staffMaySeeAdvisor(client.advisorId, firmId))) {
-    throw new ForbiddenError("Client not found or access denied");
+export async function requireClientAccess(clientId: string): Promise<ClientAccess> {
+  const { userId, orgId } = await auth();
+  if (!userId) throw new UnauthorizedError();
+
+  // Load by id ONLY — cross-tenant grants mean we cannot pre-filter by firm.
+  const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
+  if (!client) throw new ForbiddenError("Client not found or access denied");
+
+  // Own-firm path: existing staff-scope rules, full edit.
+  if (orgId && client.firmId === orgId) {
+    if (!(await staffMaySeeAdvisor(client.advisorId, client.firmId))) {
+      throw new ForbiddenError("Client not found or access denied");
+    }
+    return { client, firmId: client.firmId, permission: "edit", access: "own" };
   }
-  return { client, firmId };
+
+  // Cross-firm path: consult the share resolver.
+  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(userId);
+  if (sharedClientIds.has(clientId)) {
+    return {
+      client,
+      firmId: client.firmId,
+      permission: permissionByClientId.get(clientId) ?? "view",
+      access: "shared",
+    };
+  }
+  throw new ForbiddenError("Client not found or access denied");
 }
