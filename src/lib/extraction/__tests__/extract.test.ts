@@ -23,12 +23,18 @@ vi.mock("../excel-parser", () => ({
     extractExcelText: vi.fn().mockResolvedValue("Account\tValue\nIRA\t200000"),
 }));
 
+vi.mock("../vision-ocr", () => ({
+    visionOcrPdf: vi.fn(),
+}));
+
 import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
 import { extractPdfText } from "../pdf-parser";
+import { visionOcrPdf } from "../vision-ocr";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
+const mockedVision = vi.mocked(visionOcrPdf);
 
 beforeEach(() => {
     mockedPdf.mockResolvedValue(
@@ -187,5 +193,65 @@ describe("extractDocument", () => {
         expect(h[1].ticker).toBeUndefined();
         expect(h[1].name).toContain("912828ZZ9");
         expect(h[2].name).toBe("Cash");
+    });
+});
+
+describe("scanned-PDF vision OCR fallback", () => {
+    it("recovers text via OCR when the PDF has no text layer, then extracts", async () => {
+        mockedPdf.mockResolvedValueOnce(""); // no text layer
+        mockedVision.mockResolvedValueOnce({
+            text: "Account Statement\nSchwab Brokerage\nMarket Value: $150,000",
+            pageCount: 3,
+            pagesProcessed: 3,
+            truncated: false,
+        });
+
+        const result = await extractDocument(
+            Buffer.from("scanned pdf"),
+            "scan.pdf",
+            "auto",
+            "mini",
+            "pdf",
+        );
+
+        expect(mockedVision).toHaveBeenCalledTimes(1);
+        expect(result.extracted.accounts).toHaveLength(1);
+        expect(result.warnings.some((w) => /recovered via image OCR/i.test(w))).toBe(true);
+    });
+
+    it("adds a truncation warning when OCR was capped", async () => {
+        mockedPdf.mockResolvedValueOnce("");
+        mockedVision.mockResolvedValueOnce({
+            text: "Account Statement\nSchwab Brokerage\nMarket Value: $150,000",
+            pageCount: 58,
+            pagesProcessed: 30,
+            truncated: true,
+        });
+
+        const result = await extractDocument(
+            Buffer.from("scanned pdf"),
+            "scan.pdf",
+            "account_statement",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.warnings.some((w) => /first 30 of 58 pages/i.test(w))).toBe(true);
+    });
+
+    it("returns an empty scanned-unreadable result when OCR fails", async () => {
+        mockedPdf.mockResolvedValueOnce("");
+        mockedVision.mockRejectedValueOnce(new Error("AZURE_API_KEY is not configured"));
+
+        const result = await extractDocument(
+            Buffer.from("scanned pdf"),
+            "scan.pdf",
+            "account_statement",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.extracted.accounts).toEqual([]);
+        expect(result.warnings.some((w) => /scanned image/i.test(w))).toBe(true);
     });
 });

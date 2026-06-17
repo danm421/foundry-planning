@@ -30,6 +30,7 @@ import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier
 import { redactSsns } from "./redact-ssn";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
+import { visionOcrPdf } from "./vision-ocr";
 
 const PROMPTS: Record<DocumentType, string> = {
     account_statement: ACCOUNT_STATEMENT_PROMPT,
@@ -65,6 +66,22 @@ function emptyExtracted(): ExtractionResult["extracted"] {
         entities: [],
         lifePolicies: [],
         wills: [],
+    };
+}
+
+function scannedUnreadableResult(
+    fileName: string,
+    documentType: DocumentType | "auto",
+    warnings: string[],
+): ExtractionResult {
+    const fallbackType: DocumentType =
+        documentType === "auto" ? "account_statement" : documentType;
+    return {
+        documentType: fallbackType,
+        fileName,
+        extracted: emptyExtracted(),
+        warnings,
+        promptVersion: promptVersionFor(fallbackType),
     };
 }
 
@@ -165,19 +182,51 @@ export async function extractDocument(
     console.log(`[extract] ${logName}: got ${text.length} chars of text from ${kind}`);
 
     if (!text || text.trim().length < 30) {
-        console.log(`[extract] ${logName}: too little text, skipping AI call`);
-        warnings.push(
-            "Very little text could be extracted from this document. It may be a scanned image — try uploading a text-based PDF."
-        );
-        const fallbackType: DocumentType =
-            documentType === "auto" ? "account_statement" : documentType;
-        return {
-            documentType: fallbackType,
-            fileName,
-            extracted: emptyExtracted(),
-            warnings,
-            promptVersion: promptVersionFor(fallbackType),
-        };
+        // No usable text layer. For PDFs, try recovering text via vision OCR
+        // (scanned/image-only statements). Non-PDFs (csv/xlsx) have no OCR path.
+        if (kind === "pdf") {
+            console.log(`[extract] ${logName}: no text layer; attempting vision OCR fallback`);
+            try {
+                const maxPages =
+                    Number(process.env.EXTRACTION_OCR_MAX_PAGES ?? "30") || 30;
+                const ocr = await visionOcrPdf(fileBuffer, { maxPages, model });
+                if (ocr.text.trim().length >= 30) {
+                    text = ocr.text;
+                    warnings.push(
+                        "This document had no text layer (scanned/image PDF); its text was recovered via image OCR — please verify the extracted figures."
+                    );
+                    if (ocr.truncated) {
+                        warnings.push(
+                            `Only the first ${ocr.pagesProcessed} of ${ocr.pageCount} pages were read; data on later pages was skipped.`
+                        );
+                    }
+                    console.log(
+                        `[extract] ${logName}: vision OCR recovered ${text.length} chars`
+                    );
+                    // fall through to classify / redact / extract below
+                } else {
+                    warnings.push(
+                        "We couldn't read any text from this PDF — it appears to be a scanned image we couldn't process. Try uploading a text-based PDF."
+                    );
+                    return scannedUnreadableResult(fileName, documentType, warnings);
+                }
+            } catch (err) {
+                console.error(
+                    `[extract] ${logName}: vision OCR failed:`,
+                    err instanceof Error ? err.message.slice(0, 200) : "unknown"
+                );
+                warnings.push(
+                    "We couldn't read any text from this PDF — it appears to be a scanned image we couldn't process. Try uploading a text-based PDF."
+                );
+                return scannedUnreadableResult(fileName, documentType, warnings);
+            }
+        } else {
+            console.log(`[extract] ${logName}: too little text, skipping AI call`);
+            warnings.push(
+                "Very little text could be extracted from this document."
+            );
+            return scannedUnreadableResult(fileName, documentType, warnings);
+        }
     }
 
     // 2. Classify if auto
