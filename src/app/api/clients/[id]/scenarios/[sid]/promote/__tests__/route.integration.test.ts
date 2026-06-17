@@ -66,8 +66,12 @@ vi.mock("@/lib/audit", async () => {
 });
 
 // Clerk auth mock — promote route calls auth() for userId.
+// verifyClientAccess (called via assertScenarioRouteScope) also reads orgId from
+// auth(); it must equal the disposable FIRM_ID so the own-firm early-return path
+// is taken and the cross-org share resolver is never reached.
+// FIRM_ID is module-scoped (defined below), so we use a getter closure here.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_promotetest" })),
+  auth: vi.fn(async () => ({ userId: "user_promotetest", orgId: FIRM_ID })),
 }));
 
 // ── Disposable fixture ids — all randomised so tests never touch real data ───

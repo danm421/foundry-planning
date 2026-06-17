@@ -20,6 +20,10 @@ vi.mock("@/lib/audit", async () => {
   return { ...actual, recordCreate: vi.fn().mockResolvedValue(undefined) };
 });
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
+}));
+
 vi.mock("@/lib/audit/snapshots/account", () => ({
   toAccountSnapshot: vi.fn().mockResolvedValue({
     name: "Joint Brokerage",

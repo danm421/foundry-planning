@@ -91,14 +91,14 @@ beforeEach(() => {
 });
 
 describe("GET /api/clients/[id]/snapshots", () => {
-  it("returns 401 when there is no Clerk org context", async () => {
-    const { UnauthorizedError } = await import("@/lib/db-helpers");
-    vi.mocked(requireOrgId).mockRejectedValueOnce(new UnauthorizedError());
-
+  it("returns 404 when there is no Clerk org context (no-org denied uniformly)", async () => {
+    // GET no longer calls requireOrgId — it goes straight to verifyClientAccess.
+    // verifyClientAccess returns {ok:false} when findClientInFirm is unset,
+    // so an unauthenticated request is denied with 404 (uniform denial behavior).
     const res = await GET(makeReq("http://test.local"), {
       params: Promise.resolve({ id: CLIENT_ID }),
     });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
   });
 
   it("returns 404 when the client is not in the caller's firm", async () => {

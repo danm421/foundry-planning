@@ -15,6 +15,10 @@ vi.mock("@/lib/db-scoping", () => ({
   assertBusinessAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
+}));
+
 vi.mock("@/lib/audit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audit")>("@/lib/audit");
   return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
