@@ -57,6 +57,17 @@ describe("summarizeImport", () => {
     expect(out.accounts[2].name).not.toContain("123-45-6789");
   });
 
+  it("redacts SSNs embedded in warnings entries", () => {
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      warnings: ["Primary client SSN 123-45-6789 could not be matched"],
+    };
+    const out = summarizeImport("imp_1", "review", payload) as {
+      warnings: string[];
+    };
+    expect(out.warnings[0]).not.toContain("123-45-6789");
+  });
+
   it("reports not-yet-extracted when payload is null", () => {
     const out = summarizeImport("imp_1", "draft", null) as { found: boolean; note: string };
     expect(out.found).toBe(true);

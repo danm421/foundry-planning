@@ -131,7 +131,7 @@ export function summarizeImport(
       liabilities: tally(payload.liabilities),
     },
     accounts,
-    warnings: payload.warnings,
+    warnings: payload.warnings.map((w) => clean(w) ?? w),
   };
 }
 
@@ -289,6 +289,7 @@ export function buildReadTools(
 
   const readImport = tool(
     async ({ importId }: { importId: string }) => {
+      await assertClientReadable(ctx, ctx.clientId);
       const firmId = await requireOrgId();
       // Scoped lookup: id + conversation-bound client + firm. A cross-firm or
       // cross-client id simply returns no row — existence never leaks.
