@@ -291,6 +291,9 @@ export type AuditAction =
   | "vault.document.version_added"
   // Support & feedback
   | "support.message_sent"
+  // Cross-org sharing (share grants and revocations)
+  | "client_share.create"
+  | "client_share.revoke"
   // Planning Copilot (LLM agent)
   | "copilot.query" // a user turn was submitted to the copilot
   | "copilot.tool_call" // the agent invoked a read/compute/write tool
