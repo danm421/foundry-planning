@@ -39,6 +39,16 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: vi.fn(),
 }));
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn(),
+  requireClientEditAccess: vi.fn(),
+}));
+
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined), authErrorResponse: vi.fn().mockReturnValue(null) };
+});
+
 // Suppress audit noise in tests
 vi.mock("@/lib/audit", () => ({
   recordCreate: vi.fn().mockResolvedValue(undefined),
@@ -255,6 +265,9 @@ d("Liability owners[] API — POST and PUT", () => {
     await cleanup();
     vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
     vi.mocked(helpers.requireOrgAndUser).mockResolvedValue({ orgId: TEST_FIRM, userId: "user_test" });
+    const authz = await import("@/lib/clients/authz");
+    vi.mocked(authz.requireClientEditAccess).mockResolvedValue({ firmId: TEST_FIRM, access: "own" } as never);
+    vi.mocked(authz.verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: TEST_FIRM, access: "own" } as never);
   });
 
   // ── tests ─────────────────────────────────────────────────────────────────

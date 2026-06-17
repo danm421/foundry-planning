@@ -9,6 +9,16 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: vi.fn().mockResolvedValue({ orgId: "firm_test", userId: "user_test" }),
 }));
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
+  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "firm_test", access: "own" }),
+}));
+
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined), authErrorResponse: vi.fn().mockReturnValue(null) };
+});
+
 vi.mock("@/lib/audit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audit")>("@/lib/audit");
   return { ...actual, recordUpdate: vi.fn().mockResolvedValue(undefined) };
@@ -25,11 +35,11 @@ vi.mock("@/lib/audit/snapshots/liability", () => ({
   },
 }));
 
-// db.select() is called twice: once for client check, once for the before-liability fetch.
+// db.select() is called once for the before-liability fetch.
+// (Client access check now goes through requireClientEditAccess which is mocked directly.)
 // db.update().set().where().returning() returns the updated row.
 // db.transaction() is called for the update + optional owners[] write.
 vi.mock("@/db", () => {
-  let selectCallCount = 0;
   const beforeRow = { id: "lia_test", balance: "300000", name: "Mortgage", clientId: "cli_test" };
   const afterRow = { id: "lia_test", balance: "290000", name: "Mortgage", clientId: "cli_test" };
 
@@ -44,12 +54,7 @@ vi.mock("@/db", () => {
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
       where: vi.fn(() => {
-        selectCallCount++;
-        if (selectCallCount === 1) {
-          // Client existence check
-          return [{ id: "cli_test", firmId: "firm_test" }];
-        }
-        // Liability before-fetch
+        // Only the before-liability fetch remains.
         return [beforeRow];
       }),
     })),

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordCreate } from "@/lib/audit";
 import { toExtraPaymentSnapshot } from "@/lib/audit/snapshots/extra-payment";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +26,6 @@ async function verifyOwnership(clientId: string, liabilityId: string) {
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    await requireOrgId();
     const { id, liabilityId } = await params;
 
     if (!(await verifyOwnership(id, liabilityId))) {
@@ -48,12 +49,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, liabilityId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (access.permission !== "edit") return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     if (!(await verifyOwnership(id, liabilityId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -83,13 +82,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       clientId: id,
       firmId,
       snapshot: await toExtraPaymentSnapshot(row),
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST extra-payments error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
