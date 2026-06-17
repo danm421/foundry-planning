@@ -50,8 +50,14 @@ export async function visionOcrPdf(
   // Compute. The factory must be threaded into getDocumentProxy below — without
   // it, pdf.js falls back to a stub canvas factory that throws the moment it
   // paints an image XObject, i.e. on every scanned page (the OCR use case).
+  // turbopackIgnore: even with serverExternalPackages, Turbopack traces this
+  // dynamic import and tries to place @napi-rs/canvas's prebuilt native .node
+  // binary in an ESM chunk. The darwin binary happens to place (local build
+  // passes), but the linux binary fails the production build ("asset is not
+  // placeable in ESM chunks"). Ignoring the import keeps it a runtime require;
+  // serverExternalPackages still ships the package in the function's node_modules.
   const canvasImport = () =>
-    import("@napi-rs/canvas") as unknown as Promise<
+    import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "@napi-rs/canvas") as unknown as Promise<
       typeof import("@napi-rs/canvas")
     >;
   const CanvasFactory = await createIsomorphicCanvasFactory(canvasImport);
