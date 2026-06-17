@@ -84,6 +84,7 @@ const EXPECTED_PHASE1 = [
   "client_briefing",
   "list_scenarios",
   "read_detail",
+  "read_import",
   "search_planning_kb",
   // compute
   "run_projection",
@@ -156,7 +157,7 @@ const EXPECTED_CRM_ALL_19 = [
 ];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
-  it("returns exactly the 53 named tools (16 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
+  it("returns exactly the 54 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, and report tools all present
@@ -168,7 +169,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(53);
+    expect(tools).toHaveLength(54);
   });
 
   it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {
