@@ -19,7 +19,7 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
     description: "Extract client data from uploaded documents via AI.",
   },
   {
-    key: "ai_copilot",
+    key: "ai_forge",
     label: "Forge (AI planning assistant)",
     description: "Conversational planning assistant powered by AI agents.",
   },

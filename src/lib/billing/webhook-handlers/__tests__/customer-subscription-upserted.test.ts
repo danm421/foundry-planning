@@ -193,7 +193,7 @@ describe("handleSubscriptionUpsert", () => {
       "org_ai",
       expect.objectContaining({
         publicMetadata: expect.objectContaining({
-          entitlements: ["ai_copilot", "ai_import", "white_label"],
+          entitlements: ["ai_copilot", "ai_forge", "ai_import", "white_label"],
         }),
       }),
     );

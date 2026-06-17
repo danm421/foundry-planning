@@ -13,7 +13,7 @@ const ok: ReconcileInput = {
   },
   clerk: {
     subscriptionStatus: "active",
-    entitlements: ["ai_copilot", "ai_import"],
+    entitlements: ["ai_copilot", "ai_forge", "ai_import"],
   },
 };
 
@@ -51,7 +51,7 @@ describe("diffReconciliation", () => {
       {
         firmId: "org_1",
         field: "entitlements",
-        stripeValue: ["ai_copilot", "ai_import"],
+        stripeValue: ["ai_copilot", "ai_forge", "ai_import"],
         clerkValue: [],
       },
     ]);
@@ -81,7 +81,7 @@ describe("diffReconciliation", () => {
       ...ok,
       stripe: { ...ok.stripe, items: [seat, removedAddon] },
       db: { ...ok.db, items: [seat, removedAddon] },
-      clerk: { ...ok.clerk, entitlements: ["ai_copilot", "ai_import"] },
+      clerk: { ...ok.clerk, entitlements: ["ai_copilot", "ai_forge", "ai_import"] },
     };
     expect(diffReconciliation(input)).toEqual([]);
   });
@@ -99,14 +99,14 @@ describe("diffReconciliation", () => {
         firmId: "org_1",
         stripe: { status: "active", items: [seat, addon] },
         db: { status: "active", items: [seat, addon] },
-        clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import"] },
+        clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_forge", "ai_import"] },
       }),
     ).toEqual([
       {
         firmId: "org_1",
         field: "entitlements",
-        stripeValue: ["ai_copilot", "ai_import", "white_label"],
-        clerkValue: ["ai_copilot", "ai_import"],
+        stripeValue: ["ai_copilot", "ai_forge", "ai_import", "white_label"],
+        clerkValue: ["ai_copilot", "ai_forge", "ai_import"],
       },
     ]);
   });
@@ -116,7 +116,7 @@ describe("diffReconciliation — entitlement overrides (no-clobber)", () => {
   it("includes an active grant in derived → no entitlements drift when Clerk already has it", () => {
     const input: ReconcileInput = {
       ...ok,
-      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import"] },
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_forge", "ai_import"] },
       overrides: [{ entitlement: "ai_copilot", mode: "grant" }],
     };
     expect(diffReconciliation(input).find((d) => d.field === "entitlements")).toBeUndefined();
@@ -129,27 +129,27 @@ describe("diffReconciliation — entitlement overrides (no-clobber)", () => {
       overrides: [{ entitlement: "ai_copilot", mode: "grant" }],
     };
     const ent = diffReconciliation(input).find((d) => d.field === "entitlements");
-    expect(ent?.stripeValue).toEqual(["ai_copilot", "ai_import"]); // heal writes THIS → grant survives
+    expect(ent?.stripeValue).toEqual(["ai_copilot", "ai_forge", "ai_import"]); // heal writes THIS → grant survives
   });
 
   it("a revoke removes a seat-included key from derived", () => {
     const input: ReconcileInput = {
       ...ok,
-      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot"] },
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_forge"] },
       overrides: [{ entitlement: "ai_import", mode: "revoke" }],
     };
-    // Seat derives [ai_copilot, ai_import]; the revoke strips ai_import, so derived
-    // collapses to [ai_copilot] — matching Clerk, hence no entitlements drift.
+    // Seat derives [ai_copilot, ai_forge, ai_import]; the revoke strips ai_import,
+    // so derived collapses to [ai_copilot, ai_forge] — matching Clerk, no drift.
     expect(diffReconciliation(input).find((d) => d.field === "entitlements")).toBeUndefined();
   });
 
   it("WITHOUT the override store, a manual Clerk key is flagged as drift (the clobber this prevents)", () => {
     const input: ReconcileInput = {
       ...ok,
-      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_import", "white_label"] },
+      clerk: { subscriptionStatus: "active", entitlements: ["ai_copilot", "ai_forge", "ai_import", "white_label"] },
       // no overrides
     };
     const ent = diffReconciliation(input).find((d) => d.field === "entitlements");
-    expect(ent?.stripeValue).toEqual(["ai_copilot", "ai_import"]); // heal would STRIP white_label — the bug the store fixes
+    expect(ent?.stripeValue).toEqual(["ai_copilot", "ai_forge", "ai_import"]); // heal would STRIP white_label — the bug the store fixes
   });
 });

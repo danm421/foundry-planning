@@ -233,7 +233,7 @@ describe("GET /api/cron/reconcile-billing", () => {
     mockGetOrg.mockResolvedValue({
       publicMetadata: {
         subscription_status: "active",
-        entitlements: ["ai_copilot", "ai_import", "white_label"],
+        entitlements: ["ai_copilot", "ai_forge", "ai_import", "white_label"],
       },
     });
 

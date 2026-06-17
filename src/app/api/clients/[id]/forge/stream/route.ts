@@ -69,7 +69,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     if (mapped) return json(mapped.status, mapped.body);
     throw err;
   }
-  if (!entitlements?.includes("ai_copilot")) {
+  if (!entitlements?.includes("ai_forge") && !entitlements?.includes("ai_copilot")) {
     return json(403, { error: "Forge is not enabled for your plan." });
   }
 

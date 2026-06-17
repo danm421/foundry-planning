@@ -24,11 +24,16 @@ export type EntitlementsInput = {
 
 /**
  * Entitlements bundled into the base plan — granted to any firm holding an
- * active seat. AI document import (`ai_import`) and the planning forge
- * (`ai_copilot`) both ship with every plan; neither is a separate add-on or
- * has a usage quota.
+ * active seat. AI document import (`ai_import`) and Forge, the AI planning
+ * assistant (`ai_forge`), both ship with every plan; neither is a separate
+ * add-on or has a usage quota.
+ *
+ * Dual-read transition (copilot → Forge rename): the legacy `ai_copilot` key is
+ * still derived alongside `ai_forge` so reads that check either key keep passing
+ * and no org loses access. `ai_copilot` is dropped from this list once every
+ * org's Clerk metadata carries `ai_forge` (backfill + reconcile cron).
  */
-export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import", "ai_copilot"] as const;
+export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"] as const;
 
 /**
  * Derive the Clerk-public-metadata `entitlements` array from a subscription's
