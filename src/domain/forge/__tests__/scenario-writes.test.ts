@@ -59,11 +59,11 @@ describe("create_scenario", () => {
     expect(String(result)).toMatch(/not found|access denied|cannot/i);
     expect(createScenarioWithClone).not.toHaveBeenCalled();
   });
-  it("goes through createScenarioWithClone (not raw db) and emits copilot.write_approved", async () => {
+  it("goes through createScenarioWithClone (not raw db) and emits forge.write_approved", async () => {
     vi.mocked(createScenarioWithClone).mockResolvedValue({ scenario: { id: "s-new", name: "Roth ladder" } as never });
     const result = await getTool("create_scenario").invoke({ name: "Roth ladder", copyFrom: "base" });
     expect(createScenarioWithClone).toHaveBeenCalledWith(expect.objectContaining({ clientId: "client_1", name: "Roth ladder", source: { kind: "base" } }));
-    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved", clientId: "client_1", firmId: "org_session" }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved", clientId: "client_1", firmId: "org_session" }));
     expect(String(result)).toContain("s-new");
   });
 });
@@ -137,11 +137,11 @@ describe("propose_changes", () => {
     });
     expect(String(result)).toMatch(/sorry/i);
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
-  it("emits copilot.write_approved after the batch", async () => {
+  it("emits forge.write_approved after the batch", async () => {
     vi.mocked(applyEntityEdit).mockResolvedValue(undefined);
     await getTool("propose_changes").invoke({
       scenarioId: "scenario_1",
@@ -149,7 +149,7 @@ describe("propose_changes", () => {
       changes: [{ opType: "edit", targetKind: "income", targetId: "inc1", desiredFields: { annualAmount: 1 } }],
     });
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved", metadata: expect.objectContaining({ tool: "propose_changes" }) }),
+      expect.objectContaining({ action: "forge.write_approved", metadata: expect.objectContaining({ tool: "propose_changes" }) }),
     );
   });
 });
@@ -198,7 +198,7 @@ describe("revert_change", () => {
       scenarioId: "scenario_1", firmId: "org_session", targetKind: "income", targetId: "inc1", opType: "edit",
     });
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved", metadata: expect.objectContaining({ tool: "revert_change" }) }),
+      expect.objectContaining({ action: "forge.write_approved", metadata: expect.objectContaining({ tool: "revert_change" }) }),
     );
   });
 });
@@ -240,7 +240,7 @@ describe("compare_and_snapshot", () => {
   it("audits write_approved", async () => {
     await getTool("compare_and_snapshot").invoke({ name: "n", leftRef: "base", rightRef: "s2" });
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved", metadata: expect.objectContaining({ tool: "compare_and_snapshot" }) }),
+      expect.objectContaining({ action: "forge.write_approved", metadata: expect.objectContaining({ tool: "compare_and_snapshot" }) }),
     );
   });
 });
@@ -269,7 +269,7 @@ describe("promote_to_base", () => {
     expect(String(result)).toMatch(/already the base|refus/i);
     expect(promoteScenarioToBase).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -289,10 +289,10 @@ describe("promote_to_base", () => {
     );
     const approvedCalls = vi
       .mocked(recordAudit)
-      .mock.calls.filter(([a]) => a.action === "copilot.write_approved");
+      .mock.calls.filter(([a]) => a.action === "forge.write_approved");
     expect(approvedCalls).toHaveLength(1);
     expect(approvedCalls[0][0]).toMatchObject({
-      action: "copilot.write_approved",
+      action: "forge.write_approved",
       resourceType: "scenario",
       resourceId: "scenario_1",
       clientId: "client_1",

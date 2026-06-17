@@ -139,8 +139,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     };
 
     await recordAudit({
-      action: "copilot.query",
-      resourceType: "copilot_conversation",
+      action: "forge.query",
+      resourceType: "forge_conversation",
       resourceId: cid,
       clientId,
       firmId,

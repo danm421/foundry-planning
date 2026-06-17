@@ -171,8 +171,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   const rejected = verdicts.filter((v) => v === "reject").length;
   if (confirmed > 0) {
     await recordAudit({
-      action: "copilot.write_approved",
-      resourceType: "copilot_conversation",
+      action: "forge.write_approved",
+      resourceType: "forge_conversation",
       resourceId: conversationId,
       clientId,
       firmId,

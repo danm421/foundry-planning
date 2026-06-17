@@ -171,10 +171,10 @@ describe("approval node — promote_to_base (destructive scenario write)", () =>
     // no-resume) pass it has NOT fired yet — interrupt() threw before reaching the
     // audit loop. It records once on the resume pass (Tests 2 & 3).
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_proposed" }),
+      expect.objectContaining({ action: "forge.write_proposed" }),
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -193,12 +193,12 @@ describe("approval node — promote_to_base (destructive scenario write)", () =>
     // write_proposed fires EXACTLY ONCE across the propose + resume passes — the
     // audit loop is after interrupt(), so the pre-resume pass never records it.
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     // write_approved is emitted by the TOOL on success, never by the node.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         metadata: expect.objectContaining({ tool: "promote_to_base", snapshotId: "snap1" }),
       }),
     );
@@ -222,12 +222,12 @@ describe("approval node — promote_to_base (destructive scenario write)", () =>
     // write_proposed fires EXACTLY ONCE (on the resume pass), independent of the
     // reject verdict — the node audits every proposed write, confirm or decline.
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     // The node audited the rejection.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_rejected",
+        action: "forge.write_rejected",
         clientId: "client_1",
         firmId: "org_session",
         metadata: expect.objectContaining({ tool: "promote_to_base", toolCallId: "call_promote_1" }),
@@ -235,7 +235,7 @@ describe("approval node — promote_to_base (destructive scenario write)", () =>
     );
     // The tool never claimed approval.
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
     // The decline message is in the thread.
     const declined = out.messages.find(

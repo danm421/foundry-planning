@@ -3,7 +3,7 @@
 // Tier-B CRM destructive / bulk write tools: crm_delete_note, crm_delete_task,
 // crm_create_tasks. These route through HITL approval (WRITE_TOOL_NAMES). The
 // tool body runs only AFTER interrupt() on resume. The tool fires
-// copilot.write_approved (never copilot.tool_call) on real persisted success.
+// forge.write_approved (never forge.tool_call) on real persisted success.
 // The node owns write_proposed / write_rejected.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -87,7 +87,7 @@ describe("crm_create_tasks (Tier B, bulk)", () => {
     expect(createTask).toHaveBeenCalledWith("org_A", "advisor-9", expect.objectContaining({ householdId: "hh-1", title: "Task C" }));
     // One write_approved audit, count=3
     const auditCalls = recordAudit.mock.calls.filter(
-      (c) => (c[0] as { action: string }).action === "copilot.write_approved",
+      (c) => (c[0] as { action: string }).action === "forge.write_approved",
     );
     expect(auditCalls).toHaveLength(1);
     expect(auditCalls[0][0]).toMatchObject({ metadata: { count: 3 } });
@@ -100,17 +100,17 @@ describe("crm_create_tasks (Tier B, bulk)", () => {
     const out = await byName("crm_create_tasks").invoke({ tasks });
     expect(out).toMatch(/exceed/i);
     expect(createTask).not.toHaveBeenCalled();
-    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved" }));
+    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved" }));
   });
 });
 
 describe("crm_delete_task (Tier B)", () => {
-  it("deletes the task (household-checked) and fires copilot.write_approved on success", async () => {
+  it("deletes the task (household-checked) and fires forge.write_approved on success", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
     deleteTask.mockResolvedValue(undefined);
     const out = JSON.parse(await byName("crm_delete_task").invoke({ taskId: "t1" }));
     expect(deleteTask).toHaveBeenCalledWith("t1", "org_A");
-    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved", resourceType: "crm_task", resourceId: "t1" }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved", resourceType: "crm_task", resourceId: "t1" }));
     expect(out.ok).toBe(true);
   });
 
@@ -119,17 +119,17 @@ describe("crm_delete_task (Tier B)", () => {
     const out = await byName("crm_delete_task").invoke({ taskId: "t1" });
     expect(out).toMatch(/does not belong to this client/i);
     expect(deleteTask).not.toHaveBeenCalled();
-    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved" }));
+    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved" }));
   });
 });
 
 describe("crm_delete_note (Tier B)", () => {
-  it("deletes the note and fires copilot.write_approved on real success", async () => {
+  it("deletes the note and fires forge.write_approved on real success", async () => {
     listHouseholdNotes.mockResolvedValue([{ id: "n1" }]);
     deleteNote.mockResolvedValue(undefined);
     const out = JSON.parse(await byName("crm_delete_note").invoke({ noteId: "n1" }));
     expect(deleteNote).toHaveBeenCalledWith("n1", "hh-1", "org_A", "advisor-9");
-    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved", resourceType: "crm_note", resourceId: "n1" }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved", resourceType: "crm_note", resourceId: "n1" }));
     expect(out.ok).toBe(true);
   });
 
@@ -138,6 +138,6 @@ describe("crm_delete_note (Tier B)", () => {
     const out = await byName("crm_delete_note").invoke({ noteId: "n1" });
     expect(out).toMatch(/not found for this client/i);
     expect(deleteNote).not.toHaveBeenCalled();
-    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "copilot.write_approved" }));
+    expect(recordAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "forge.write_approved" }));
   });
 });

@@ -62,7 +62,7 @@ beforeEach(() => {
 });
 
 describe("crm_create_task (Tier A)", () => {
-  it("creates task with householdId forced from gate (never from model) and fires copilot.tool_call", async () => {
+  it("creates task with householdId forced from gate (never from model) and fires forge.tool_call", async () => {
     createTask.mockResolvedValue({ id: "t1", title: "Send IPS", householdId: "hh-1", priority: "med", status: "open" });
     const out = JSON.parse(
       await byName("crm_create_task").invoke({
@@ -81,7 +81,7 @@ describe("crm_create_task (Tier A)", () => {
     const callArg = createTask.mock.calls[0][2];
     expect(callArg.householdId).toBe("hh-1");
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+      expect.objectContaining({ action: "forge.tool_call", resourceType: "crm_task", resourceId: "t1" }),
     );
     expect(out.task.id).toBe("t1");
   });
@@ -95,7 +95,7 @@ describe("crm_create_task (Tier A)", () => {
 });
 
 describe("crm_log_activity (Tier A)", () => {
-  it("records activity with actorUserId=ctx.userId and fires copilot.tool_call", async () => {
+  it("records activity with actorUserId=ctx.userId and fires forge.tool_call", async () => {
     recordActivity.mockResolvedValue(undefined);
     const out = JSON.parse(
       await byName("crm_log_activity").invoke({
@@ -111,7 +111,7 @@ describe("crm_log_activity (Tier A)", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.tool_call",
+        action: "forge.tool_call",
         resourceType: "crm_activity",
         resourceId: "hh-1",
       }),
@@ -129,7 +129,7 @@ describe("crm_log_activity (Tier A)", () => {
 });
 
 describe("crm_add_note (Tier A)", () => {
-  it("creates a note with actorUserId=ctx.userId and fires copilot.tool_call", async () => {
+  it("creates a note with actorUserId=ctx.userId and fires forge.tool_call", async () => {
     createNote.mockResolvedValue({ id: "n1", subject: "Met with Sam", noteKind: "meeting" });
     const out = JSON.parse(
       await byName("crm_add_note").invoke({
@@ -147,7 +147,7 @@ describe("crm_add_note (Tier A)", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.tool_call",
+        action: "forge.tool_call",
         resourceType: "crm_note",
         resourceId: "n1",
       }),
@@ -168,7 +168,7 @@ describe("crm_add_note (Tier A)", () => {
 });
 
 describe("crm_update_task (Tier A, ownership-gated)", () => {
-  it("updates a task field when ownership passes and fires copilot.tool_call", async () => {
+  it("updates a task field when ownership passes and fires forge.tool_call", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
     updateTaskField.mockResolvedValue({ id: "t1", title: "Updated title" });
     const out = JSON.parse(
@@ -179,7 +179,7 @@ describe("crm_update_task (Tier A, ownership-gated)", () => {
       expect.objectContaining({ field: "title", value: "Updated title" }),
     );
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+      expect.objectContaining({ action: "forge.tool_call", resourceType: "crm_task", resourceId: "t1" }),
     );
     expect(out.task.id).toBe("t1");
   });
@@ -202,7 +202,7 @@ describe("crm_complete_task (Tier A, ownership-gated)", () => {
     );
     expect(setTaskStatus).toHaveBeenCalledWith("t1", "org_A", "advisor-9", "done");
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+      expect.objectContaining({ action: "forge.tool_call", resourceType: "crm_task", resourceId: "t1" }),
     );
     expect(out.task.status).toBe("done");
     expect(out.followOnId).toBe("t2");
@@ -218,7 +218,7 @@ describe("crm_complete_task (Tier A, ownership-gated)", () => {
 });
 
 describe("crm_post_task_comment (Tier A, ownership-gated)", () => {
-  it("posts a comment with authorUserId=ctx.userId and fires copilot.tool_call", async () => {
+  it("posts a comment with authorUserId=ctx.userId and fires forge.tool_call", async () => {
     getTaskById.mockResolvedValue({ task: { id: "t1", householdId: "hh-1" }, tags: [] });
     postComment.mockResolvedValue({ id: "c1", bodyMarkdown: "Great progress!" });
     const out = JSON.parse(
@@ -226,7 +226,7 @@ describe("crm_post_task_comment (Tier A, ownership-gated)", () => {
     );
     expect(postComment).toHaveBeenCalledWith("t1", "org_A", "advisor-9", "Great progress!");
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.tool_call", resourceType: "crm_task", resourceId: "t1" }),
+      expect.objectContaining({ action: "forge.tool_call", resourceType: "crm_task", resourceId: "t1" }),
     );
     expect(out.ok).toBe(true);
   });

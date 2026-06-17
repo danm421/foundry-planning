@@ -8,7 +8,7 @@
 //   • gateAccess (requireOrgId + verifyClientAccess) runs BEFORE the core.
 //   • actorId passed to the core is ctx.userId (the Clerk user), NOT firmId —
 //     this LOCKS the SOC2 actor deviation from the plan sketch.
-//   • copilot.write_approved fires only on a real {ok:true} from the core.
+//   • forge.write_approved fires only on a real {ok:true} from the core.
 //   • {ok:false} surfaces the core's error verbatim and skips write_approved.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -112,7 +112,7 @@ describe("add_expense", () => {
     expect(accessOrder).toBeLessThan(writeOrder);
   });
 
-  it("audits copilot.write_approved and returns the new id on success", async () => {
+  it("audits forge.write_approved and returns the new id on success", async () => {
     vi.mocked(createExpenseForClient).mockResolvedValue({
       ok: true,
       data: { id: "exp-1", name: "Vacation" } as never,
@@ -124,7 +124,7 @@ describe("add_expense", () => {
     });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceId: "exp-1",
         metadata: expect.objectContaining({ tool: "add_expense" }),
       }),
@@ -146,7 +146,7 @@ describe("add_expense", () => {
     });
     expect(String(result)).toBe("Cannot set both ownerEntityId and ownerAccountId");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -186,7 +186,7 @@ describe("update_expense", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceId: "exp-1",
         metadata: expect.objectContaining({ tool: "update_expense" }),
       }),
@@ -203,7 +203,7 @@ describe("update_expense", () => {
     const result = await getTool("update_expense").invoke({ expenseId: "missing" });
     expect(String(result)).toBe("Expense not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -230,7 +230,7 @@ describe("remove_expense", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceId: "exp-1",
         metadata: expect.objectContaining({ tool: "remove_expense" }),
       }),
@@ -247,7 +247,7 @@ describe("remove_expense", () => {
     const result = await getTool("remove_expense").invoke({ expenseId: "default-1" });
     expect(String(result)).toBe("Default living-expense rows cannot be deleted.");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -280,7 +280,7 @@ describe("add_income", () => {
     expect(accessOrder).toBeLessThan(writeOrder);
   });
 
-  it("audits copilot.write_approved and returns the new id on success", async () => {
+  it("audits forge.write_approved and returns the new id on success", async () => {
     vi.mocked(createIncomeForClient).mockResolvedValue({
       ok: true,
       data: { id: "inc-1", name: "Salary" } as never,
@@ -289,7 +289,7 @@ describe("add_income", () => {
     const result = await getTool("add_income").invoke({ type: "salary", name: "Salary" });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "income",
         resourceId: "inc-1",
         metadata: expect.objectContaining({ tool: "add_income" }),
@@ -312,7 +312,7 @@ describe("add_income", () => {
     });
     expect(String(result)).toBe("Cannot set both ownerEntityId and ownerAccountId");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -349,7 +349,7 @@ describe("update_income", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "income",
         resourceId: "inc-1",
         metadata: expect.objectContaining({ tool: "update_income" }),
@@ -367,7 +367,7 @@ describe("update_income", () => {
     const result = await getTool("update_income").invoke({ incomeId: "missing" });
     expect(String(result)).toBe("Income not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -394,7 +394,7 @@ describe("remove_income", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "income",
         resourceId: "inc-1",
         metadata: expect.objectContaining({ tool: "remove_income" }),
@@ -412,7 +412,7 @@ describe("remove_income", () => {
     const result = await getTool("remove_income").invoke({ incomeId: "missing" });
     expect(String(result)).toBe("Client not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -449,7 +449,7 @@ describe("add_liability", () => {
     expect(accessOrder).toBeLessThan(writeOrder);
   });
 
-  it("audits copilot.write_approved and returns the new id on success", async () => {
+  it("audits forge.write_approved and returns the new id on success", async () => {
     vi.mocked(createLiabilityForClient).mockResolvedValue({
       ok: true,
       data: { id: "liab-1", name: "Mortgage" } as never,
@@ -462,7 +462,7 @@ describe("add_liability", () => {
     });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "liability",
         resourceId: "liab-1",
         metadata: expect.objectContaining({ tool: "add_liability" }),
@@ -488,7 +488,7 @@ describe("add_liability", () => {
       "A liability cannot have both a parent business and explicit owners",
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -529,7 +529,7 @@ describe("update_liability", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "liability",
         resourceId: "liab-1",
         metadata: expect.objectContaining({ tool: "update_liability" }),
@@ -547,7 +547,7 @@ describe("update_liability", () => {
     const result = await getTool("update_liability").invoke({ liabilityId: "missing" });
     expect(String(result)).toBe("Liability not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -574,7 +574,7 @@ describe("remove_liability", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "liability",
         resourceId: "liab-1",
         metadata: expect.objectContaining({ tool: "remove_liability" }),
@@ -592,7 +592,7 @@ describe("remove_liability", () => {
     const result = await getTool("remove_liability").invoke({ liabilityId: "missing" });
     expect(String(result)).toBe("Liability not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -625,7 +625,7 @@ describe("add_account", () => {
     expect(accessOrder).toBeLessThan(writeOrder);
   });
 
-  it("audits copilot.write_approved and returns the new id on success", async () => {
+  it("audits forge.write_approved and returns the new id on success", async () => {
     vi.mocked(createAccountForClient).mockResolvedValue({
       ok: true,
       data: { id: "acct-1", name: "Brokerage" } as never,
@@ -637,7 +637,7 @@ describe("add_account", () => {
     });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "account",
         resourceId: "acct-1",
         metadata: expect.objectContaining({ tool: "add_account" }),
@@ -659,7 +659,7 @@ describe("add_account", () => {
     });
     expect(String(result)).toBe("parentAccountId must reference a business account");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -696,7 +696,7 @@ describe("update_account", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "account",
         resourceId: "acct-1",
         metadata: expect.objectContaining({ tool: "update_account" }),
@@ -714,7 +714,7 @@ describe("update_account", () => {
     const result = await getTool("update_account").invoke({ accountId: "missing" });
     expect(String(result)).toBe("Account not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });
@@ -741,7 +741,7 @@ describe("remove_account", () => {
     );
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         resourceType: "account",
         resourceId: "acct-1",
         metadata: expect.objectContaining({ tool: "remove_account" }),
@@ -759,7 +759,7 @@ describe("remove_account", () => {
     const result = await getTool("remove_account").invoke({ accountId: "default-1" });
     expect(String(result)).toBe("This is a system-managed cash account and can't be deleted.");
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 });

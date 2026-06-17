@@ -100,7 +100,7 @@ export function buildScenarioWriteTools({
           metadata: { tool: "create_scenario", name, copyFrom: copyFrom ?? "empty" },
         });
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "scenario",
           resourceId: scenario.id,
           clientId: ctx.clientId,
@@ -220,7 +220,7 @@ export function buildScenarioWriteTools({
         });
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "scenario",
           resourceId: scenarioId,
           clientId: ctx.clientId,
@@ -279,7 +279,7 @@ export function buildScenarioWriteTools({
         });
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "scenario",
           resourceId: scenarioId,
           clientId: ctx.clientId,
@@ -347,7 +347,7 @@ export function buildScenarioWriteTools({
         });
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "scenario_snapshot",
           resourceId: snapshot.id,
           clientId: ctx.clientId,
@@ -407,7 +407,7 @@ export function buildScenarioWriteTools({
         // write_approved fires HERE (the tool), on real persisted success, with the
         // real resourceId — the inherited single-most-important rule.
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "scenario",
           resourceId: scenarioId,
           clientId: ctx.clientId,

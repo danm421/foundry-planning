@@ -84,8 +84,8 @@ export function buildGraph(
     // the proposal pass and the resume pass, double-recording write_proposed.
     for (const c of writeCalls) {
       await recordAudit({
-        action: "copilot.write_proposed",
-        resourceType: "copilot_conversation",
+        action: "forge.write_proposed",
+        resourceType: "forge_conversation",
         resourceId: conversationId,
         clientId: ctx.clientId,
         firmId: ctx.firmId,
@@ -102,14 +102,14 @@ export function buildGraph(
       if (WRITE_TOOL_NAMES.has(c.name)) {
         const verdict = decision.decisions[id] ?? "reject";
         if (verdict === "confirm") {
-          // The tool emits copilot.write_approved itself, only on real success.
+          // The tool emits forge.write_approved itself, only on real success.
           const t = toolsByName.get(c.name)!;
           const result = await t.invoke(c.args);
           messages.push(new ToolMessage({ tool_call_id: id, content: String(result) }));
         } else {
           await recordAudit({
-            action: "copilot.write_rejected",
-            resourceType: "copilot_conversation",
+            action: "forge.write_rejected",
+            resourceType: "forge_conversation",
             resourceId: conversationId,
             clientId: ctx.clientId,
             firmId: ctx.firmId,

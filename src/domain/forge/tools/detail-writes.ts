@@ -279,7 +279,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "expense",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -323,7 +323,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "expense",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -367,7 +367,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "expense",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -408,7 +408,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "income",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -452,7 +452,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "income",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -496,7 +496,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "income",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -536,7 +536,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "liability",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -579,7 +579,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "liability",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -622,7 +622,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "liability",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -662,7 +662,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "account",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -710,7 +710,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "account",
           resourceId: r.resourceId,
           clientId: ctx.clientId,
@@ -758,7 +758,7 @@ export function buildDetailWriteTools({
         if (!r.ok) return r.error;
 
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "account",
           resourceId: r.resourceId,
           clientId: ctx.clientId,

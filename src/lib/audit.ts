@@ -291,12 +291,20 @@ export type AuditAction =
   | "vault.document.version_added"
   // Support & feedback
   | "support.message_sent"
-  // Planning Forge (LLM agent)
-  | "copilot.query" // a user turn was submitted to the copilot
-  | "copilot.tool_call" // the agent invoked a read/compute/write tool
-  | "copilot.write_proposed" // a write tool produced a preview, awaiting approval
-  | "copilot.write_approved" // the advisor confirmed a proposed write (executed)
-  | "copilot.write_rejected" // the advisor rejected a proposed write
+  // Planning Forge (LLM agent). New writes emit forge.*; the copilot.* variants
+  // are LEGACY — rows written before the 2026-06-17 copilot→Forge rename cutover.
+  // They remain in the union so historical audit rows still type-check/decode;
+  // they are NOT backfilled (the audit log is append-only/immutable).
+  | "forge.query" // a user turn was submitted to Forge
+  | "forge.tool_call" // the agent invoked a read/compute/write tool
+  | "forge.write_proposed" // a write tool produced a preview, awaiting approval
+  | "forge.write_approved" // the advisor confirmed a proposed write (executed)
+  | "forge.write_rejected" // the advisor rejected a proposed write
+  | "copilot.query" // legacy (pre-2026-06-17 cutover)
+  | "copilot.tool_call" // legacy
+  | "copilot.write_proposed" // legacy
+  | "copilot.write_approved" // legacy
+  | "copilot.write_rejected" // legacy
   | "feedback.submitted";
 
 type Args = {

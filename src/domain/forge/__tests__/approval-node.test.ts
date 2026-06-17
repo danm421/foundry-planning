@@ -9,9 +9,9 @@
 // tool reaches success on confirm.
 //
 // Audit ownership split under test:
-//   • the NODE emits copilot.write_proposed (post-interrupt, so it fires once per
-//     proposal — only on the resume pass) and, on a decline, copilot.write_rejected;
-//   • the write TOOL emits copilot.write_approved — only on a real success.
+//   • the NODE emits forge.write_proposed (post-interrupt, so it fires once per
+//     proposal — only on the resume pass) and, on a decline, forge.write_rejected;
+//   • the write TOOL emits forge.write_approved — only on a real success.
 // So a confirm run shows write_approved coming from the tool (not the node), and a
 // paused run (no resume) shows NO write_proposed yet.
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -163,10 +163,10 @@ describe("approval node", () => {
     // (paused, no-resume) pass it has NOT fired yet — interrupt() threw before
     // reaching the audit loop. It records once on the resume pass (Tests 2 & 3).
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_proposed" }),
+      expect.objectContaining({ action: "forge.write_proposed" }),
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -185,12 +185,12 @@ describe("approval node", () => {
     // write_proposed fires EXACTLY ONCE across the propose + resume passes — the
     // audit loop is now after interrupt(), so the pre-resume pass never records it.
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     // write_approved is emitted by the TOOL on success, never by the node.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         metadata: expect.objectContaining({ tool: "propose_changes" }),
       }),
     );
@@ -214,12 +214,12 @@ describe("approval node", () => {
     // write_proposed fires EXACTLY ONCE (on the resume pass), independent of the
     // reject verdict — the node audits every proposed write, confirm or decline.
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     // The node audited the rejection.
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_rejected",
+        action: "forge.write_rejected",
         clientId: "client_1",
         firmId: "org_session",
         metadata: expect.objectContaining({ tool: "propose_changes", toolCallId: "call_1" }),
@@ -227,7 +227,7 @@ describe("approval node", () => {
     );
     // The tool never claimed approval.
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
     // The decline message is in the thread.
     const declined = out.messages.find(
@@ -294,10 +294,10 @@ describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
 
     // write_proposed not yet fired (fires after interrupt() on the resume pass).
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_proposed" }),
+      expect.objectContaining({ action: "forge.write_proposed" }),
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 
@@ -312,11 +312,11 @@ describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
 
     expect(deleteTask).toHaveBeenCalledTimes(1);
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         metadata: expect.objectContaining({ tool: "crm_delete_task" }),
       }),
     );
@@ -336,16 +336,16 @@ describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
 
     expect(deleteTask).not.toHaveBeenCalled();
     expect(
-      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "copilot.write_proposed"),
+      vi.mocked(recordAudit).mock.calls.filter(([a]) => a.action === "forge.write_proposed"),
     ).toHaveLength(1);
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_rejected",
+        action: "forge.write_rejected",
         metadata: expect.objectContaining({ tool: "crm_delete_task", toolCallId: "call_crm_1" }),
       }),
     );
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
     const declined = out.messages.find(
       (m): m is ToolMessage =>

@@ -273,7 +273,7 @@ describe("POST /api/clients/[id]/forge/resume — happy path", () => {
     // confirm, so the route-level audit fires with the confirmed/rejected count).
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
-        action: "copilot.write_approved",
+        action: "forge.write_approved",
         actorId: "user_1",
         clientId: "c1",
         firmId: "firm_1",
@@ -291,11 +291,11 @@ describe("POST /api/clients/[id]/forge/resume — happy path", () => {
     // Drain so the stream lifecycle (touch/getState) completes.
     await drainSse(res);
 
-    // No route-level copilot.write_approved row for a resume that confirmed
+    // No route-level forge.write_approved row for a resume that confirmed
     // nothing. (The graph is mocked, so the per-write tool audit / write_rejected
     // node never fire here — this isolates the route-level audit.)
     expect(recordAudit).not.toHaveBeenCalledWith(
-      expect.objectContaining({ action: "copilot.write_approved" }),
+      expect.objectContaining({ action: "forge.write_approved" }),
     );
   });
 

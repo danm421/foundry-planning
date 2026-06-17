@@ -3,7 +3,7 @@
 // CRM + practice-management tools. Every tool re-derives firmId via requireOrgId()
 // and resolves+verifies the household on EVERY call (a /resume may arrive from
 // another session — never trust ctx.firmId). Tier-A writes auto-apply and fire
-// copilot.tool_call + the core's crm.* audit; Tier-B writes route to HITL via
+// forge.tool_call + the core's crm.* audit; Tier-B writes route to HITL via
 // WRITE_TOOL_NAMES. Errors are RETURNED as strings, never thrown. actorUserId is
 // always ctx.userId — the model can never widen the actor.
 import { tool } from "@langchain/core/tools";
@@ -67,7 +67,7 @@ async function assertNoteInHousehold(
   return notes.some((n) => n.id === noteId) ? true : `Note ${noteId} not found for this client.`;
 }
 
-/** Fire the copilot.tool_call audit for a Tier-A auto-applied write (in addition
+/** Fire the forge.tool_call audit for a Tier-A auto-applied write (in addition
  *  to the core's own crm.* row). Only mutating Tier-A tools call this.
  *  firmId must be the verified gate.firmId, not ctx.firmId. */
 async function auditToolCall(
@@ -79,7 +79,7 @@ async function auditToolCall(
   tool: string,
 ) {
   await recordAudit({
-    action: "copilot.tool_call",
+    action: "forge.tool_call",
     resourceType,
     resourceId,
     firmId,
@@ -373,7 +373,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
   // ── Tier-B: HITL destructive / bulk writes ────────────────────────────────
   // These are in WRITE_TOOL_NAMES → routed through the approval node.
   // The tool body runs ONLY AFTER interrupt() on resume. The tool fires
-  // copilot.write_approved (never copilot.tool_call) on real persisted success.
+  // forge.write_approved (never forge.tool_call) on real persisted success.
   // The node owns write_proposed / write_rejected.
 
   const deleteNoteTool = tool(
@@ -385,7 +385,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       try {
         await deleteNote(noteId, gate.householdId, gate.firmId, ctx.userId);
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "crm_note",
           resourceId: noteId,
           firmId: gate.firmId,
@@ -414,7 +414,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
       try {
         await deleteTask(taskId, gate.firmId);
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "crm_task",
           resourceId: taskId,
           firmId: gate.firmId,
@@ -450,7 +450,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
           ids.push(task.id);
         }
         await recordAudit({
-          action: "copilot.write_approved",
+          action: "forge.write_approved",
           resourceType: "crm_task",
           resourceId: gate.householdId,
           firmId: gate.firmId,
@@ -480,7 +480,7 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
   );
 
   // ── Sub-phase 6: Composite advisor skills (read-only orchestration) ───────
-  // None of these tools mutate. None fire copilot.tool_call or write_approved.
+  // None of these tools mutate. None fire forge.tool_call or write_approved.
   // Grounding contract: payloads contain ONLY figures present in tool inputs.
 
   /** Shared gather implementation for meeting_prep and generate_agenda (DRY). */

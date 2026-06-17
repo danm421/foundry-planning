@@ -4,7 +4,7 @@
 //   meeting_prep, summarize_notes, whats_changed_since,
 //   suggest_tasks, generate_agenda, draft_follow_up
 //
-// None of these tools mutate. None fire copilot.tool_call or write_approved.
+// None of these tools mutate. None fire forge.tool_call or write_approved.
 // All return error strings on failure, never throw.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -134,7 +134,7 @@ describe("meeting_prep", () => {
     expect(Array.isArray(out.observations)).toBe(true);
   });
 
-  it("is READ-ONLY: does not fire copilot.tool_call or write_approved", async () => {
+  it("is READ-ONLY: does not fire forge.tool_call or write_approved", async () => {
     await byName("meeting_prep").invoke({});
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -327,7 +327,7 @@ describe("draft_follow_up", () => {
     expect(out).not.toContain("scaffold");
   });
 
-  it("is READ-ONLY: does not fire copilot.tool_call or write_approved", async () => {
+  it("is READ-ONLY: does not fire forge.tool_call or write_approved", async () => {
     await byName("draft_follow_up").invoke({ noteId: "n1" });
     expect(recordAudit).not.toHaveBeenCalled();
   });
