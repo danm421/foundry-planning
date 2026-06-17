@@ -3,8 +3,13 @@
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 import { useSidebar } from "./sidebar-provider";
+import { ShieldIcon } from "./icons";
 
-export default function UserMenu(): ReactElement {
+export default function UserMenu({
+  isOpsAdmin = false,
+}: {
+  isOpsAdmin?: boolean;
+}): ReactElement {
   const { collapsed } = useSidebar();
   return (
     <div
@@ -23,7 +28,17 @@ export default function UserMenu(): ReactElement {
           },
         }}
         showName={!collapsed}
-      />
+      >
+        {isOpsAdmin && (
+          <UserButton.MenuItems>
+            <UserButton.Link
+              label="Foundry Ops"
+              labelIcon={<ShieldIcon width={16} height={16} />}
+              href="/admin"
+            />
+          </UserButton.MenuItems>
+        )}
+      </UserButton>
     </div>
   );
 }

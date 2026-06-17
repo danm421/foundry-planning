@@ -12,17 +12,20 @@ import { SubscriptionGuard } from "@/components/subscription-guard";
 import Topbar from "@/components/topbar";
 import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
+import { getOpsAdmin } from "@/lib/ops/ops-auth";
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const [{ orgId, sessionClaims, actor }, jar, state] = await Promise.all([
+  const [{ orgId, sessionClaims, actor }, jar, state, opsAdmin] = await Promise.all([
     auth(),
     cookies(),
     getSubscriptionState(),
+    getOpsAdmin(),
   ]);
+  const isOpsAdmin = opsAdmin !== null;
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
   const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
   const meta =
@@ -43,7 +46,7 @@ export default async function AppLayout({
     <SidebarProvider initialCollapsed={collapsed}>
       <AppShell>
         <SidebarFrame>
-          <Sidebar clientsCount={clientsCount} />
+          <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
         </SidebarFrame>
         <BackNavProvider>
           <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
