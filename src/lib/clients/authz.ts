@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { ForbiddenError } from "@/lib/authz";
 import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
@@ -22,20 +22,35 @@ async function staffMaySeeAdvisor(
   return visible !== VISIBLE_ALL && visible.has(advisorId);
 }
 
+export type ClientAccessCheck =
+  | { ok: false }
+  | { ok: true; permission: SharePermission; firmId: string; access: "own" | "shared" };
+
 /**
- * Boolean gate, signature-compatible with the inline `verifyClientAccess`
- * helpers it replaces across the `[id]` API routes. firm scope + staff scope.
+ * Non-throwing client access check. Own-firm (staff-scoped) -> edit; otherwise
+ * consult the cross-org share resolver. Read handlers gate on `ok`; mutation
+ * handlers additionally require `permission === "edit"`.
  */
-export async function verifyClientAccess(
-  clientId: string,
-  firmId: string,
-): Promise<boolean> {
+export async function verifyClientAccess(clientId: string): Promise<ClientAccessCheck> {
+  const { userId, orgId } = await auth();
+  if (!userId) return { ok: false };
+
   const [client] = await db
-    .select({ advisorId: clients.advisorId })
+    .select({ advisorId: clients.advisorId, firmId: clients.firmId })
     .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) return false;
-  return staffMaySeeAdvisor(client.advisorId, firmId);
+    .where(eq(clients.id, clientId));
+  if (!client) return { ok: false };
+
+  if (orgId && client.firmId === orgId) {
+    if (!(await staffMaySeeAdvisor(client.advisorId, client.firmId))) return { ok: false };
+    return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
+  }
+
+  const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(userId);
+  if (sharedClientIds.has(clientId)) {
+    return { ok: true, permission: permissionByClientId.get(clientId) ?? "view", firmId: client.firmId, access: "shared" };
+  }
+  return { ok: false };
 }
 
 export type ClientAccess = {

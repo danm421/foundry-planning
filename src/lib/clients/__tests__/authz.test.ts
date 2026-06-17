@@ -3,10 +3,6 @@ import { db } from "@/db";
 import { clients, clientShares, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-vi.mock("@/lib/db-helpers", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
-  return { ...actual, requireOrgId: vi.fn().mockResolvedValue("org_clauthz") };
-});
 vi.mock("@clerk/nextjs/server", async () => {
   const actual = await vi.importActual<typeof import("@clerk/nextjs/server")>(
     "@clerk/nextjs/server",
@@ -49,10 +45,45 @@ beforeEach(async () => {
   clientId = c.id;
 });
 
-describe("client access authz", () => {
+describe("verifyClientAccess", () => {
+  it("a member (firm-wide) gets ok+edit", async () => {
+    setAuth("user_member", "org:member");
+    expect(await verifyClientAccess(clientId)).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  it("a planner mapped to the client's advisor gets ok+edit", async () => {
+    await db.insert(staffAdvisorVisibility).values({
+      firmId: ORG,
+      staffUserId: "user_planner",
+      advisorUserId: ADV_A,
+    });
+    setAuth("user_planner", "org:planner");
+    expect(await verifyClientAccess(clientId)).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  it("a planner NOT mapped is denied", async () => {
+    setAuth("user_planner_unmapped", "org:planner");
+    expect(await verifyClientAccess(clientId)).toEqual({ ok: false });
+  });
+
+  it("a cross-firm user with no share is denied", async () => {
+    vi.mocked(auth).mockResolvedValue({ userId: "user_stranger", orgId: "org_other", orgRole: "org:admin" } as never);
+    expect(await verifyClientAccess(clientId)).toEqual({ ok: false });
+  });
+
+  it("cross-firm shared recipient gets ok+view", async () => {
+    await db.insert(clientShares).values({
+      firmId: ORG, ownerUserId: ADV_A, recipientUserId: "user_rcpt",
+      recipientEmail: "r@x.com", scope: "client", clientId, permission: "view", createdBy: ADV_A,
+    });
+    vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
+    expect(await verifyClientAccess(clientId)).toMatchObject({ ok: true, permission: "view", firmId: ORG, access: "shared" });
+  });
+});
+
+describe("requireClientAccess", () => {
   it("a member (firm-wide) gets access", async () => {
     setAuth("user_member", "org:member");
-    expect(await verifyClientAccess(clientId, ORG)).toBe(true);
     await expect(requireClientAccess(clientId)).resolves.toMatchObject({
       firmId: ORG,
     });
@@ -65,19 +96,12 @@ describe("client access authz", () => {
       advisorUserId: ADV_A,
     });
     setAuth("user_planner", "org:planner");
-    expect(await verifyClientAccess(clientId, ORG)).toBe(true);
     await expect(requireClientAccess(clientId)).resolves.toBeTruthy();
   });
 
   it("a planner NOT mapped to the client's advisor is denied", async () => {
     setAuth("user_planner_unmapped", "org:planner");
-    expect(await verifyClientAccess(clientId, ORG)).toBe(false);
     await expect(requireClientAccess(clientId)).rejects.toThrow();
-  });
-
-  it("returns false for a client in another firm", async () => {
-    setAuth("user_member", "org:member");
-    expect(await verifyClientAccess(clientId, "org_other")).toBe(false);
   });
 
   it("a cross-firm recipient with a per-client share gets shared view access", async () => {
