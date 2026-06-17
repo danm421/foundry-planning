@@ -11,7 +11,7 @@ import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
 import { useCopilotImport, type CopilotImportResult } from "./use-copilot-import";
-import { ImportSummaryCard } from "./import-summary-card";
+import { ImportReviewLink } from "./import-review-link";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -139,23 +139,35 @@ export function CopilotPanel({
 
   async function onSend() {
     if (locked) return;
-    // Send-with-files: run the import pipeline instead of a chat turn.
+    // Send-with-files: run the import pipeline, then immediately engage the agent.
     if (attached.length > 0) {
       const files = attached;
+      const prompt = input.trim(); // may be empty — the attachment is the turn
       setAttached([]);
       setInput("");
       setImportResult(null); // clear any prior summary before a new run
       const result = await runImport(clientId, files);
-      if (result) {
-        setPendingImportId(result.importId);
-        setImportResult(result);
-      }
+      if (!result) return; // importError bubble already shown by the hook
+      setPendingImportId(result.importId);
+      setImportResult(result);
+      // Fire one chat turn so Forge reads the import and responds right away.
+      // send() pushes the user bubble itself — do not push one here.
+      await send({
+        message: prompt,
+        scenarioId: scenarioId ?? "base",
+        conversationId,
+        currentPage: sectionKeyForPath(pathname),
+        pendingImportId: result.importId,
+        attachments: files.map((f) => f.name),
+      });
+      listMyConversations()
+        .then((t) => setThreads(t as Thread[]))
+        .catch(() => {});
       return;
     }
     const msg = input.trim();
     if (!msg) return;
     setInput("");
-    // scenarioId + pathname are re-read every render → current scope per turn.
     await send({
       message: msg,
       scenarioId: scenarioId ?? "base",
@@ -280,7 +292,27 @@ export function CopilotPanel({
                       : "min-w-0 max-w-[90%] rounded-[var(--radius)] rounded-bl-sm border border-hair bg-card-2 px-3 py-2"
                   }
                 >
-                  {isUser ? m.text : isStreamingThis ? <TypingDots /> : <MarkdownMessage text={m.text} />}
+                  {isUser ? (
+                    <>
+                      {m.attachments && m.attachments.length > 0 && (
+                        <div className="mb-1 flex flex-wrap gap-1">
+                          {m.attachments.map((name, k) => (
+                            <span
+                              key={k}
+                              className="inline-flex items-center gap-1 rounded-full bg-secondary-ink/30 px-2 py-0.5 text-[11px]"
+                            >
+                              📎 {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {m.text && <span>{m.text}</span>}
+                    </>
+                  ) : isStreamingThis ? (
+                    <TypingDots />
+                  ) : (
+                    <MarkdownMessage text={m.text} />
+                  )}
                 </div>
               </div>
             );
@@ -305,10 +337,9 @@ export function CopilotPanel({
           )}
 
           {importResult && (
-            <ImportSummaryCard
+            <ImportReviewLink
               clientId={clientId}
               importId={importResult.importId}
-              summary={importResult.summary}
               warnings={importResult.warnings}
             />
           )}
