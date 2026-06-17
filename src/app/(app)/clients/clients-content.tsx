@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   listCrmHouseholds,
   listRecentlyOpenedHouseholds,
@@ -37,7 +37,7 @@ export function buildSharedRows(
 ): SharedRow[] {
   return shares.map((s) => {
     const meta = clientMeta.get(s.clientId);
-    const displayName = meta?.primaryName ?? meta?.householdName ?? s.clientId;
+    const displayName = meta?.primaryName ?? meta?.householdName ?? "Unknown client";
     return {
       clientId: s.clientId,
       displayName,
@@ -193,12 +193,14 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
 
   const sharedClientIds = shares.map((s) => s.clientId);
 
+  // Hoist a single Clerk client instance shared by both lookup blocks below.
+  const cc = await clerkClient();
+
   // 2. Resolve owner display names via resolveActors pattern (Clerk user list).
   const ownerUserIds = [...new Set(shares.map((s) => s.ownerUserId))];
   const ownerNames = new Map<string, string>();
   if (ownerUserIds.length > 0) {
     try {
-      const cc = await clerkClient();
       const list = await cc.users.getUserList({ userId: ownerUserIds });
       for (const u of list.data) {
         const name =
@@ -217,7 +219,6 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
   const firmNames = new Map<string, string>();
   if (firmIds.length > 0) {
     try {
-      const cc = await clerkClient();
       await Promise.all(
         firmIds.map(async (id) => {
           try {
@@ -249,7 +250,10 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
       .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
       .leftJoin(
         crmHouseholdContacts,
-        eq(crmHouseholdContacts.householdId, crmHouseholds.id),
+        and(
+          eq(crmHouseholdContacts.householdId, crmHouseholds.id),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
       )
       .where(inArray(clients.id, sharedClientIds));
 

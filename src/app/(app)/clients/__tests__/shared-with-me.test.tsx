@@ -114,6 +114,7 @@ describe("SharedWithMeTable", () => {
     expect(text).toContain("Shared by");
     expect(text).toContain("Alice Owner");
     expect(text).toContain("Acme Wealth");
+    expect(text).toContain("Shared by Alice Owner · Acme Wealth");
   });
 
   it("renders a 'View' permission chip for view permission", () => {
