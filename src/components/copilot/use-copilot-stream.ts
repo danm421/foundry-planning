@@ -78,6 +78,8 @@ export interface SendArgs {
   scenarioId: string;
   conversationId?: string;
   currentPage?: string;
+  /** When set, tells the copilot a freshly-uploaded import is awaiting review. */
+  pendingImportId?: string;
 }
 
 export interface UseCopilotStreamResult {
@@ -207,6 +209,7 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
             scenarioId: args.scenarioId,
             conversationId: args.conversationId ?? conversationId,
             currentPage: args.currentPage,
+            pendingImportId: args.pendingImportId,
           }),
           signal: ac.signal,
         });

@@ -1,6 +1,7 @@
-// @vitest-environment node
-import { describe, it, expect } from "vitest";
-import { parseCopilotSse, type CopilotSseEvent } from "../use-copilot-stream";
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { parseCopilotSse, useCopilotStream, type CopilotSseEvent } from "../use-copilot-stream";
 
 /** Feed a sequence of raw chunks through the stateful boundary parser. */
 function drain(chunks: string[]): CopilotSseEvent[] {
@@ -53,5 +54,48 @@ describe("parseCopilotSse", () => {
         calls: [{ id: "t1", name: "propose_changes", args: {} }],
       },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useCopilotStream.send — fetch body wiring
+// ---------------------------------------------------------------------------
+
+/** Build a minimal streaming Response whose body emits a single SSE done frame. */
+function makeStreamingResponse(): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+const validArgs = {
+  message: "Hello copilot",
+  scenarioId: "scen_1",
+};
+
+describe("useCopilotStream.send", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
+  });
+
+  it("includes pendingImportId in the fetch body when provided", async () => {
+    const { result } = renderHook(() => useCopilotStream("client_42"));
+
+    await act(async () => {
+      await result.current.send({ ...validArgs, pendingImportId: "imp_7" });
+    });
+
+    const body = JSON.parse(
+      (globalThis.fetch as Mock).mock.calls[0][1].body as string,
+    );
+    expect(body.pendingImportId).toBe("imp_7");
   });
 });

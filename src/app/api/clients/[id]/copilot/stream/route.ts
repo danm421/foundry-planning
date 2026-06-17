@@ -27,6 +27,7 @@ type StreamBody = {
   conversationId?: string;
   scenarioId: string;
   currentPage?: string;
+  pendingImportId?: string;
 };
 
 function json(status: number, body: unknown): Response {
@@ -148,7 +149,14 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       firmName,
     });
     systemPrompt = () =>
-      buildSystemPrompt({ ...promptCtx, currentPage: body.currentPage });
+      buildSystemPrompt({
+        ...promptCtx,
+        currentPage: body.currentPage,
+        pendingImport:
+          typeof body.pendingImportId === "string" && body.pendingImportId.length > 0
+            ? { importId: body.pendingImportId }
+            : undefined,
+      });
   } catch {
     return json(500, { error: "Internal server error." });
   }
