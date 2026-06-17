@@ -21,6 +21,7 @@ import { extractDocument } from "@/lib/extraction/extract";
 import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import { downloadImportFile } from "@/lib/imports/blob";
+import { summarizeExtraction } from "@/lib/imports/extract-summary";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -261,14 +262,15 @@ export async function POST(request: NextRequest, { params }: Params) {
             }
         }
 
-        // No "failed" import status — when every file fails, drop back to
-        // draft so the advisor can edit/replace files and try again.
-        const finalStatus: "review" | "draft" =
-            succeeded > 0 ? "review" : "draft";
+        // Status is driven by whether any usable rows came out — a file that
+        // "succeeds" but yields nothing (e.g. an un-OCR-able scan) drops the
+        // import to draft so the UI surfaces the warning instead of an empty
+        // Review screen.
+        const summary = summarizeExtraction(fileResults);
         await db
             .update(clientImports)
             .set({
-                status: finalStatus,
+                status: summary.status,
                 payloadJson: { fileResults },
                 updatedAt: new Date(),
             })
@@ -278,7 +280,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             ok: true,
             succeeded,
             failed,
-            status: finalStatus,
+            status: summary.status,
+            warnings: summary.warnings,
         });
     } catch (err) {
         if (err instanceof UnauthorizedError) {

@@ -122,3 +122,54 @@ export async function callAIEmbedding(input: string): Promise<number[]> {
   }
   return vec;
 }
+
+export interface VisionImage {
+  b64: string;
+  mime: string;
+}
+
+/**
+ * Transcribe scanned/image PDF pages to text via the Azure OpenAI vision
+ * deployment. Used only as a fallback when a PDF has no embedded text layer.
+ * Note: page images are sent un-redacted (pixels cannot be SSN-redacted);
+ * Azure resource-level ZDR means in-transit only, and redaction still runs on
+ * the returned text before the downstream extraction call.
+ */
+export async function callAIVisionTranscription(
+  images: VisionImage[],
+  model: "mini" | "full" | (string & {}) = "mini",
+): Promise<string> {
+  const client = getClient();
+  const modelName =
+    model === "full"
+      ? (process.env.AZURE_ANALYSIS_MODEL ?? "gpt-5.4")
+      : model === "mini"
+        ? (process.env.AZURE_MODEL ?? "gpt-5.4-mini")
+        : model;
+
+  const instruction =
+    "Transcribe every page of this financial statement image verbatim. " +
+    "Preserve all numbers exactly as shown. Render tabular data (holdings, " +
+    "transactions) as GitHub-flavored markdown tables. Do not summarize, " +
+    "interpret, or omit any rows. Output only the transcribed text.";
+
+  const content = [
+    { type: "text", text: instruction },
+    ...images.map((img) => ({
+      type: "image_url",
+      image_url: { url: `data:${img.mime};base64,${img.b64}` },
+    })),
+  ];
+
+  const response = await client.chat.completions.create({
+    model: modelName,
+    messages: [{ role: "user", content }] as unknown as Parameters<typeof client.chat.completions.create>[0]["messages"],
+    max_completion_tokens: 16000,
+  });
+
+  const out = response.choices[0]?.message?.content;
+  if (!out) {
+    throw new Error("Azure OpenAI returned empty transcription");
+  }
+  return out;
+}
