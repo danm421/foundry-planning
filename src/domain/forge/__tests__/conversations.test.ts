@@ -8,7 +8,7 @@ vi.hoisted(() => {
 });
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { copilotConversations } from "@/db/schema";
+import { forgeConversations } from "@/db/schema";
 import {
   createConversation,
   listMyConversations,
@@ -21,7 +21,7 @@ const USER_A = "user_forge_a";
 const USER_B = "user_forge_b";
 
 afterAll(async () => {
-  await db.delete(copilotConversations).where(eq(copilotConversations.firmId, FIRM));
+  await db.delete(forgeConversations).where(eq(forgeConversations.firmId, FIRM));
 });
 
 describe("forge conversations CRUD", () => {
@@ -42,16 +42,16 @@ describe("forge conversations CRUD", () => {
     const id = await createConversation({ userId: USER_A, firmId: FIRM, title: "Original" });
     await touchConversation(id, USER_B, "hacked");
     const [afterB] = await db
-      .select({ title: copilotConversations.title })
-      .from(copilotConversations)
-      .where(eq(copilotConversations.id, id));
+      .select({ title: forgeConversations.title })
+      .from(forgeConversations)
+      .where(eq(forgeConversations.id, id));
     expect(afterB.title).toBe("Original");
 
     await touchConversation(id, USER_A, "renamed");
     const [afterA] = await db
-      .select({ title: copilotConversations.title })
-      .from(copilotConversations)
-      .where(eq(copilotConversations.id, id));
+      .select({ title: forgeConversations.title })
+      .from(forgeConversations)
+      .where(eq(forgeConversations.id, id));
     expect(afterA.title).toBe("renamed");
   });
 

@@ -1,7 +1,7 @@
 // src/domain/forge/conversations.ts
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { copilotConversations } from "@/db/schema";
+import { forgeConversations } from "@/db/schema";
 
 /**
  * Create a chat thread. Returns the new conversation id (= checkpointer
@@ -15,14 +15,14 @@ export async function createConversation(input: {
   title?: string;
 }): Promise<string> {
   const [row] = await db
-    .insert(copilotConversations)
+    .insert(forgeConversations)
     .values({
       userId: input.userId,
       firmId: input.firmId,
       clientId: input.clientId ?? null,
       title: input.title ?? "New conversation",
     })
-    .returning({ id: copilotConversations.id });
+    .returning({ id: forgeConversations.id });
   return row.id;
 }
 
@@ -30,14 +30,14 @@ export async function createConversation(input: {
 export async function listMyConversations(userId: string, firmId: string) {
   return db
     .select({
-      id: copilotConversations.id,
-      title: copilotConversations.title,
-      clientId: copilotConversations.clientId,
-      updatedAt: copilotConversations.updatedAt,
+      id: forgeConversations.id,
+      title: forgeConversations.title,
+      clientId: forgeConversations.clientId,
+      updatedAt: forgeConversations.updatedAt,
     })
-    .from(copilotConversations)
-    .where(and(eq(copilotConversations.userId, userId), eq(copilotConversations.firmId, firmId)))
-    .orderBy(desc(copilotConversations.updatedAt))
+    .from(forgeConversations)
+    .where(and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId)))
+    .orderBy(desc(forgeConversations.updatedAt))
     .limit(50);
 }
 
@@ -47,9 +47,9 @@ export async function listMyConversations(userId: string, firmId: string) {
  */
 export async function touchConversation(id: string, userId: string, title?: string): Promise<void> {
   await db
-    .update(copilotConversations)
+    .update(forgeConversations)
     .set({ updatedAt: new Date(), ...(title ? { title } : {}) })
-    .where(and(eq(copilotConversations.id, id), eq(copilotConversations.userId, userId)));
+    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)));
 }
 
 /**
@@ -58,9 +58,9 @@ export async function touchConversation(id: string, userId: string, title?: stri
  */
 export async function userOwnsConversation(id: string, userId: string): Promise<boolean> {
   const rows = await db
-    .select({ id: copilotConversations.id })
-    .from(copilotConversations)
-    .where(and(eq(copilotConversations.id, id), eq(copilotConversations.userId, userId)))
+    .select({ id: forgeConversations.id })
+    .from(forgeConversations)
+    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)))
     .limit(1);
   return rows.length > 0;
 }
