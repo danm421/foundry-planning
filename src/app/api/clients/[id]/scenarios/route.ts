@@ -4,13 +4,12 @@
 // POST → create a new scenario, optionally cloning toggle groups + changes
 //        from the client's base case or another scenario in the same client.
 //
-// Auth model:
-// - `requireOrgId` returns the caller's firm id (401 if no Clerk org).
-// - `findClientInFirm` is the org-scope gate — 404 if the client doesn't
-//   belong to the caller's firm. Same pattern as Task 3's changes route so
-//   leaked client ids can't be probed across firms.
-// - On POST with `copyFrom` = explicit scenario uuid, we re-verify the source
-//   scenario lives under the same client before passing to the clone helper.
+// Auth model (Task 17d — POST):
+// - `requireOrgAndUser` for callerOrg + `requireClientEditAccess` for owning
+//   firmId and edit-permission gate. Replaces old verifyClientAccess+edit check.
+//   Client-not-found now collapses to 403 (uniform denial).
+// - `requireActiveSubscriptionForFirm(firmId)` gates on the OWNING firm's sub.
+// GET retains `verifyClientAccess` (read-only; no permission escalation).
 //
 // Note: the `scenarios` row has no firm_id column; org scoping flows through
 // `clients.firm_id`. The plan's example incorrectly inserted a `firmId` on
@@ -22,9 +21,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   createScenarioWithClone,
   type CreateWithCloneSource,
@@ -77,22 +77,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
-
-    const access = await verifyClientAccess(clientId);
-    if (!access.ok) {
-      return NextResponse.json(
-        { error: "Client not found" },
-        { status: 404 },
-      );
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json(
-        { error: "View-only access" },
-        { status: 403 },
-      );
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const parsed = CREATE.safeParse(await req.json());
     if (!parsed.success) {
@@ -138,7 +126,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: scenario.id,
       clientId,
       firmId,
-      metadata: { name, copyFrom },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name, copyFrom }),
     });
 
     return NextResponse.json({ scenario }, { status: 201 });

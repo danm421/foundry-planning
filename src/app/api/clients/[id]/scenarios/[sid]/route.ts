@@ -10,10 +10,12 @@
 //          to delete the base case to avoid orphaning the client's projection
 //          state.
 //
-// Auth model mirrors Task 3 (changes route): `requireOrgId` then the shared
-// `assertScenarioRouteScope` helper that 404s on (a) client outside firm or
-// (b) scenario not under client. Returning 404 (not 403) for cross-firm probes
-// prevents existence-leaks of foreign scenario ids.
+// Auth model (Task 17d): `requireOrgAndUser` for callerOrg (audit actor) +
+// `requireClientEditAccess` for firmId (OWNING) and edit-permission gate.
+// This closes the pre-existing edit gap where `assertScenarioRouteScope`
+// had no permission check of its own. VIEW recipients now get 403.
+// `assertScenarioRouteScope` receives the OWNING firmId so cross-org
+// shared-edit recipients pass the `a.firmId === firmId` check inside it.
 
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -21,8 +23,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { createScenarioWithClone } from "@/lib/scenario/create-with-clone";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 
@@ -36,8 +40,10 @@ type RouteCtx = { params: Promise<{ id: string; sid: string }> };
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -61,7 +67,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       resourceId: scenarioId,
       clientId,
       firmId,
-      metadata: { name: parsed.data.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: parsed.data.name }),
     });
 
     return NextResponse.json({ ok: true });
@@ -80,8 +86,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 
 export async function POST(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -100,7 +108,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
       resourceId: created.id,
       clientId,
       firmId,
-      metadata: { sourceScenarioId: scenarioId, name: created.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        sourceScenarioId: scenarioId,
+        name: created.name,
+      }),
     });
 
     return NextResponse.json({ scenario: created }, { status: 201 });
@@ -119,8 +130,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -143,7 +156,9 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
       resourceId: scenarioId,
       clientId,
       firmId,
-      metadata: { name: scope.scenario.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        name: scope.scenario.name,
+      }),
     });
 
     return NextResponse.json({ ok: true });

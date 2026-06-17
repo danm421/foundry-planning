@@ -2,13 +2,16 @@
 //
 // POST /api/clients/[id]/scenarios/[sid]/promote
 // Promotes scenario [sid] into the client's base case (see promoteScenarioToBase).
-// Auth + scoping via assertScenarioRouteScope; the base case cannot be promoted
-// into itself (400); a client with no base case yields 409.
+// Auth (Task 17d): `requireOrgAndUser` for userId; `requireClientEditAccess`
+// for owning firmId and edit-permission gate. Closes the prior edit gap where
+// assertScenarioRouteScope had no permission check. VIEW recipients now get 403.
+// assertScenarioRouteScope receives the OWNING firmId so cross-org shared-edit
+// recipients pass. A non-base-case check + a 409 on missing base case remain.
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@clerk/nextjs/server";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { promoteScenarioToBase, PromoteError } from "@/lib/scenario/promote-to-base";
 
@@ -22,8 +25,10 @@ type RouteCtx = { params: Promise<{ id: string; sid: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { userId } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -42,7 +47,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       );
     }
 
-    const userId = (await auth()).userId ?? "system";
     // The route may compute dates (engine/helper code must not).
     const dateLabel = new Date().toISOString().slice(0, 10);
 

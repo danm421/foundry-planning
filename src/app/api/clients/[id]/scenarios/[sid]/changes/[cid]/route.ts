@@ -19,12 +19,12 @@
 //   { label: "Max out 401(k)" }        // rename this change
 //   { label: null }                    // reset to computed smart label
 //
-// Auth model: same as the sibling /changes route — `requireOrgId` then
-// `assertScenarioRouteScope` (client-in-firm AND scenario-in-client). The
-// change-id is then verified to belong to this scenario (404 on miss). When the
-// target group is non-null, it's verified to belong to the same scenario (400
-// on miss) so a leaked group id from a foreign scenario can't smuggle changes
-// across.
+// Auth model (Task 17d): `requireOrgAndUser` + `requireClientEditAccess` for
+// owning firmId and edit-permission gate. `assertScenarioRouteScope` receives
+// the OWNING firmId so cross-org shared-edit recipients pass. The change-id is
+// then verified to belong to this scenario (404 on miss). When the target group
+// is non-null, it's verified to belong to the same scenario (400 on miss) so a
+// leaked group id from a foreign scenario can't smuggle changes across.
 //
 // We don't need to re-check single-level-dependency here — the change is just
 // being moved into an existing group, and the group's own dependency was
@@ -36,8 +36,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 
 export const dynamic = "force-dynamic";
@@ -63,8 +65,10 @@ type RouteCtx = {
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId, cid: changeId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -143,7 +147,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
         resourceId: changeId,
         clientId,
         firmId,
-        metadata: { scenarioId, toggleGroupId: body.toggleGroupId },
+        metadata: crossFirmAuditMeta({ access }, callerOrg, {
+          scenarioId,
+          toggleGroupId: body.toggleGroupId,
+        }),
       });
     }
     if (body.enabled !== undefined) {
@@ -153,7 +160,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
         resourceId: changeId,
         clientId,
         firmId,
-        metadata: { scenarioId, enabled: body.enabled },
+        metadata: crossFirmAuditMeta({ access }, callerOrg, {
+          scenarioId,
+          enabled: body.enabled,
+        }),
       });
     }
     if (body.label !== undefined) {
@@ -163,7 +173,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
         resourceId: changeId,
         clientId,
         firmId,
-        metadata: { scenarioId, label: body.label },
+        metadata: crossFirmAuditMeta({ access }, callerOrg, {
+          scenarioId,
+          label: body.label,
+        }),
       });
     }
 

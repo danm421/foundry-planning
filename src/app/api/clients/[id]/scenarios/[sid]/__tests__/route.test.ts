@@ -42,13 +42,17 @@ const d = HAS_DB ? describe : describe.skip;
 // @clerk/nextjs/server. Mock it so the staff-scope check is a no-op (undefined
 // orgRole ⇒ non-staff ⇒ access turns purely on the firm-scoped clients query,
 // driven by the requireOrgId mock + the seeded rows).
+// Task 17d: include sessionClaims.org_public_metadata.is_founder so
+// requireActiveSubscriptionForFirm passes without a live Clerk API call.
 vi.mock("@clerk/nextjs/server", () => ({
-  // verifyClientAccess now reads `orgId` from auth() — derive it from the per-test
-  // requireOrgId mock so the own-firm match and the cross-firm 404 stay in sync.
   auth: vi.fn(async () => {
     const { requireOrgId } = await import("@/lib/db-helpers");
     const orgId = await requireOrgId().catch(() => undefined);
-    return { userId: "user_test", orgId };
+    return {
+      userId: "user_test",
+      orgId,
+      sessionClaims: { org_public_metadata: { is_founder: true } },
+    };
   }),
 }));
 
@@ -304,10 +308,11 @@ d("scenario [sid] route (PATCH / POST duplicate / DELETE)", () => {
     expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when caller's firm doesn't own the client (cross-firm probe)", async () => {
+  it("returns 403 when caller's firm doesn't own the client (uniform denial)", async () => {
+    // Task 17d: requireClientEditAccess throws ForbiddenError for no-access callers → 403.
     vi.mocked(helpers.requireOrgId).mockResolvedValue("org_not_cooper");
 
-    // PATCH should 404 before mutating.
+    // PATCH should 403 before mutating.
     const newName = `should-not-stick-${randomUUID().slice(0, 8)}`;
     const req = makeReq("http://test.local/scenarios/sid", {
       method: "PATCH",
@@ -318,7 +323,7 @@ d("scenario [sid] route (PATCH / POST duplicate / DELETE)", () => {
       params: Promise.resolve({ id: COOPER_CLIENT_ID, sid: scenarioId }),
     });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
 
     // Confirm name didn't change.
     const { db } = dbMod;

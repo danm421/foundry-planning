@@ -14,10 +14,11 @@
 //          The reassign-or-delete + group-delete pair runs in a transaction
 //          so a UI tab-close mid-flight can't leave half-detached changes.
 //
-// Auth model: `requireOrgId` then `assertScenarioRouteScope` (client-in-firm
-// AND scenario-in-client), then an inline check that `gid` belongs to `sid`.
-// Keeping the gid check inline (not in the shared helper) keeps the helper's
-// API surface narrow — only handlers that operate on a specific group need it.
+// Auth model (Task 17d): `requireOrgAndUser` + `requireClientEditAccess` for
+// owning firmId and edit-permission gate. Closes the prior edit gap where
+// assertScenarioRouteScope had no permission check. VIEW recipients now get 403.
+// assertScenarioRouteScope receives the OWNING firmId so cross-org recipients pass.
+// gid-in-sid check remains inline (kept narrow helper surface).
 
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
@@ -25,8 +26,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import { recordAudit, type AuditAction } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +52,10 @@ type RouteCtx = {
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId, gid: groupId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -159,7 +164,11 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       resourceId: groupId,
       clientId,
       firmId,
-      metadata: { scenarioId, groupId, ...body },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        scenarioId,
+        groupId,
+        ...body,
+      }),
     });
 
     return NextResponse.json({ ok: true });
@@ -181,8 +190,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 
 export async function DELETE(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId, gid: groupId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -254,7 +265,11 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
       resourceId: groupId,
       clientId,
       firmId,
-      metadata: { scenarioId, groupId, moveChangesTo },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        scenarioId,
+        groupId,
+        moveChangesTo,
+      }),
     });
 
     return NextResponse.json({ ok: true });

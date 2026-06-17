@@ -10,25 +10,24 @@
 //        by the snapshot picker dropdown and Task 37 admin views; not strictly
 //        required by Task 36's spec but cheap to ship alongside.
 //
-// Auth model mirrors `scenarios/route.ts`: `requireOrgId` for the firm id +
-// `findClientInFirm` for the org-scope gate (404 on cross-firm probe). The
-// snapshot table has no firmId column — scoping inherits via the parent client.
+// Auth model (Task 17d — POST): `requireOrgAndUser` + `requireClientEditAccess`
+// for owning firmId + edit-permission gate. Replaces old verifyClientAccess.
+// `requireActiveSubscriptionForFirm(firmId)` gates on the OWNING firm's sub.
+// GET retains `verifyClientAccess` (read-only).
 //
-// Userid wiring: `requireOrgId` only returns the firm id, but the snapshot row
-// records `frozenByUserId` for SOC-2 attribution. Pull the userId from
-// `auth()` directly. `recordAudit` does the same internally for `actorId`.
+// Userid wiring: `requireOrgAndUser` returns both orgId and userId.
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { scenarioSnapshots } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { refFromString } from "@/lib/scenario/scenario-from-search-params";
 
@@ -91,28 +90,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
-    const { userId } = await auth();
-    // `requireOrgId` already guarantees a userId in its own auth() call, but
-    // we re-check defensively — the typed `auth()` return is `userId | null`.
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const { id: clientId } = await ctx.params;
-
-    const access = await verifyClientAccess(clientId);
-    if (!access.ok) {
-      return NextResponse.json(
-        { error: "Client not found" },
-        { status: 404 },
-      );
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json(
-        { error: "View-only access" },
-        { status: 403 },
-      );
-    }
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const parsed = POST_BODY.safeParse(await req.json());
     if (!parsed.success) {
@@ -154,7 +135,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: snapshot.id,
       clientId,
       firmId,
-      metadata: { name, sourceKind, left, right },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        name,
+        sourceKind,
+        left,
+        right,
+      }),
     });
 
     return NextResponse.json({ snapshot }, { status: 201 });

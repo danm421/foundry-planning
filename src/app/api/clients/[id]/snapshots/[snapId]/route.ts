@@ -7,6 +7,12 @@
 //          designed to outlive the source scenario, but user-initiated
 //          deletes are still allowed (this is the only sanctioned path).
 //
+// Auth model (Task 17d — DELETE): `requireOrgAndUser` + `requireClientEditAccess`
+// for owning firmId and edit-permission gate. Replaces old verifyClientAccess.
+// `requireActiveSubscriptionForFirm(firmId)` gates on the OWNING firm's sub.
+// Client-not-found now collapses to 403 (uniform denial).
+// GET retains `verifyClientAccess` (read-only).
+//
 // Security: every miss — bad client id, cross-firm probe, or snapshot under
 // a different client — returns 404 to avoid leaking the existence of foreign
 // snapshot ids. Same shape as `scenarios/[sid]/route.ts`.
@@ -17,9 +23,10 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioSnapshots } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -71,22 +78,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId, snapId } = await ctx.params;
-
-    const access = await verifyClientAccess(clientId);
-    if (!access.ok) {
-      return NextResponse.json(
-        { error: "Snapshot not found" },
-        { status: 404 },
-      );
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json(
-        { error: "View-only access" },
-        { status: 403 },
-      );
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Same id+clientId pair on the lookup so the existence check enforces the
     // same scoping rule the GET does.
@@ -119,7 +114,9 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
       resourceId: snapId,
       clientId,
       firmId,
-      metadata: { name: target.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        name: target.name,
+      }),
     });
 
     return NextResponse.json({ ok: true });

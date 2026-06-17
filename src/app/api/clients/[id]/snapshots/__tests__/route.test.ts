@@ -1,9 +1,13 @@
 // src/app/api/clients/[id]/snapshots/__tests__/route.test.ts
 //
 // Unit tests for the snapshots collection route. Mocks at the lib boundary
-// (`requireOrgId`, `findClientInFirm`, `createSnapshot`, `recordAudit`, and
-// the drizzle `db` chain) so the suite runs without a live database — the
-// real DB round-trip lives in `src/lib/scenario/__tests__/snapshot.test.ts`.
+// (`requireOrgAndUser`, `requireClientEditAccess`, `requireActiveSubscriptionForFirm`,
+// `findClientInFirm`, `createSnapshot`, `recordAudit`, and the drizzle `db` chain)
+// so the suite runs without a live database — the real DB round-trip lives in
+// `src/lib/scenario/__tests__/snapshot.test.ts`.
+//
+// Task 17d: POST now uses requireOrgAndUser + requireClientEditAccess + requireActiveSubscriptionForFirm.
+// Client-not-found collapses to 403 (uniform denial from ForbiddenError). GET is unchanged.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -13,6 +17,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 
 vi.mock("@/lib/db-helpers", () => ({
   requireOrgId: vi.fn(),
+  requireOrgAndUser: vi.fn(),
   UnauthorizedError: class UnauthorizedError extends Error {
     constructor(message = "Unauthorized") {
       super(message);
@@ -27,20 +32,25 @@ vi.mock("@/lib/db-scoping", () => ({
   >(),
 }));
 
-// Phase-1b: the route swapped findClientInFirm -> verifyClientAccess. Delegate
-// the boolean gate to the still-mocked findClientInFirm so the null-driven 404
-// tests and the happy path keep working without a real DB.
+// GET uses verifyClientAccess; POST uses requireClientEditAccess.
 vi.mock("@/lib/clients/authz", () => ({
-  // verifyClientAccess is now 1-arg and returns the access object. Source the
-  // firm from the test's FIRM_ID ("firm_test", inlined — vi.mock is hoisted) and
-  // delegate to findClientInFirm so the null-driven 404 tests keep working.
-  verifyClientAccess: vi.fn(async (clientId: string) => {
+  verifyClientAccess: vi.fn(async (_clientId: string) => {
     const { findClientInFirm } = await import("@/lib/db-scoping");
-    return (await findClientInFirm(clientId, "firm_test")) != null
+    return (await findClientInFirm(_clientId, "firm_test")) != null
       ? { ok: true, permission: "edit", firmId: "firm_test", access: "own" }
       : { ok: false };
   }),
+  requireClientEditAccess: vi.fn(),
 }));
+
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return {
+    ...actual,
+    requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
+    authErrorResponse: actual.authErrorResponse,
+  };
+});
 
 vi.mock("@/lib/audit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audit")>(
@@ -70,8 +80,10 @@ vi.mock("@/db", () => {
   return { db: { select } };
 });
 
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { GET, POST } from "../route";
@@ -84,17 +96,18 @@ function makeReq(url: string, init?: RequestInit) {
 }
 
 beforeEach(() => {
-  vi.mocked(requireOrgId).mockReset();
+  vi.mocked(requireOrgAndUser).mockReset();
   vi.mocked(findClientInFirm).mockReset();
+  vi.mocked(requireClientEditAccess).mockReset();
+  vi.mocked(requireActiveSubscriptionForFirm).mockResolvedValue(undefined);
   vi.mocked(recordAudit).mockClear();
   vi.mocked(createSnapshot).mockReset();
 });
 
 describe("GET /api/clients/[id]/snapshots", () => {
   it("returns 404 when there is no Clerk org context (no-org denied uniformly)", async () => {
-    // GET no longer calls requireOrgId — it goes straight to verifyClientAccess.
-    // verifyClientAccess returns {ok:false} when findClientInFirm is unset,
-    // so an unauthenticated request is denied with 404 (uniform denial behavior).
+    // GET uses verifyClientAccess which returns {ok:false} when findClientInFirm
+    // is unset (auth returns no orgId so the client lookup misses).
     const res = await GET(makeReq("http://test.local"), {
       params: Promise.resolve({ id: CLIENT_ID }),
     });
@@ -102,7 +115,6 @@ describe("GET /api/clients/[id]/snapshots", () => {
   });
 
   it("returns 404 when the client is not in the caller's firm", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
     vi.mocked(findClientInFirm).mockResolvedValueOnce(
       null as unknown as { id: string },
     );
@@ -114,7 +126,6 @@ describe("GET /api/clients/[id]/snapshots", () => {
   });
 
   it("returns the snapshots list on the happy path", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
     vi.mocked(findClientInFirm).mockResolvedValueOnce({ id: CLIENT_ID });
 
     const res = await GET(makeReq("http://test.local"), {
@@ -144,7 +155,7 @@ describe("POST /api/clients/[id]/snapshots", () => {
 
   it("returns 401 when there is no Clerk org context", async () => {
     const { UnauthorizedError } = await import("@/lib/db-helpers");
-    vi.mocked(requireOrgId).mockRejectedValueOnce(new UnauthorizedError());
+    vi.mocked(requireOrgAndUser).mockRejectedValueOnce(new UnauthorizedError());
 
     const res = await POST(
       postReq({ left: "base", right: "s1", name: "x" }),
@@ -155,24 +166,26 @@ describe("POST /api/clients/[id]/snapshots", () => {
     expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when the client is not in the caller's firm", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
-    vi.mocked(findClientInFirm).mockResolvedValueOnce(
-      null as unknown as { id: string },
+  it("returns 403 when the client is not in the caller's firm (uniform denial)", async () => {
+    // Task 17d: client-not-found collapses to 403 via ForbiddenError from requireClientEditAccess.
+    const { ForbiddenError } = await import("@/lib/authz");
+    vi.mocked(requireOrgAndUser).mockResolvedValueOnce({ orgId: FIRM_ID, userId: "user_test" });
+    vi.mocked(requireClientEditAccess).mockRejectedValueOnce(
+      new ForbiddenError("Client not found or access denied"),
     );
 
     const res = await POST(
       postReq({ left: "base", right: "s1", name: "x" }),
       { params: Promise.resolve({ id: CLIENT_ID }) },
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     expect(vi.mocked(createSnapshot)).not.toHaveBeenCalled();
     expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
   });
 
   it("returns 400 on a malformed body (missing name)", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
-    vi.mocked(findClientInFirm).mockResolvedValueOnce({ id: CLIENT_ID });
+    vi.mocked(requireOrgAndUser).mockResolvedValueOnce({ orgId: FIRM_ID, userId: "user_test" });
+    vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: FIRM_ID, access: "own" as const } as never);
 
     const res = await POST(postReq({ left: "base", right: "s1" }), {
       params: Promise.resolve({ id: CLIENT_ID }),
@@ -182,8 +195,8 @@ describe("POST /api/clients/[id]/snapshots", () => {
   });
 
   it("returns 400 when left === right (no diff to freeze)", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
-    vi.mocked(findClientInFirm).mockResolvedValueOnce({ id: CLIENT_ID });
+    vi.mocked(requireOrgAndUser).mockResolvedValueOnce({ orgId: FIRM_ID, userId: "user_test" });
+    vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: FIRM_ID, access: "own" as const } as never);
 
     const res = await POST(
       postReq({ left: "base", right: "base", name: "noop" }),
@@ -194,8 +207,8 @@ describe("POST /api/clients/[id]/snapshots", () => {
   });
 
   it("creates the snapshot, audits, and returns the row on success", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
-    vi.mocked(findClientInFirm).mockResolvedValueOnce({ id: CLIENT_ID });
+    vi.mocked(requireOrgAndUser).mockResolvedValueOnce({ orgId: FIRM_ID, userId: "user_test" });
+    vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: FIRM_ID, access: "own" as const } as never);
     vi.mocked(createSnapshot).mockResolvedValueOnce({
       id: "snap-new",
       clientId: CLIENT_ID,
@@ -252,8 +265,8 @@ describe("POST /api/clients/[id]/snapshots", () => {
   });
 
   it("resolves a snap:<id> left side into a snapshot ref", async () => {
-    vi.mocked(requireOrgId).mockResolvedValueOnce(FIRM_ID);
-    vi.mocked(findClientInFirm).mockResolvedValueOnce({ id: CLIENT_ID });
+    vi.mocked(requireOrgAndUser).mockResolvedValueOnce({ orgId: FIRM_ID, userId: "user_test" });
+    vi.mocked(requireClientEditAccess).mockResolvedValueOnce({ firmId: FIRM_ID, access: "own" as const } as never);
     vi.mocked(createSnapshot).mockResolvedValueOnce({
       id: "snap-2",
     } as never);
