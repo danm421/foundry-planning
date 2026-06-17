@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   FORGE_SYSTEM_PREFIX,
   GROUNDING_RULES,
+  RESPONSE_STYLE,
   buildSystemPrompt,
   type ForgePromptContext,
 } from "../system-prompt";
@@ -57,6 +58,34 @@ describe("GROUNDING_RULES", () => {
 
   it("does NOT leak internal tool names", () => {
     expect(GROUNDING_RULES).not.toMatch(/run_projection|find_client/);
+  });
+});
+
+describe("RESPONSE_STYLE clause", () => {
+  it("lives inside the cacheable stable prefix", () => {
+    expect(FORGE_SYSTEM_PREFIX).toContain(RESPONSE_STYLE);
+  });
+
+  it("directs Forge to lead with the answer and match length to the question", () => {
+    expect(RESPONSE_STYLE).toMatch(/lead with the direct answer/i);
+    expect(RESPONSE_STYLE).toMatch(/match length to the question/i);
+  });
+
+  it("requires truthful reporting of failures and empty results", () => {
+    expect(RESPONSE_STYLE).toMatch(/be truthful about what happened/i);
+  });
+
+  it("forbids the reflexive next-step menu", () => {
+    expect(RESPONSE_STYLE).toMatch(/menu of next steps|as a ritual/i);
+  });
+
+  it("tells Forge to investigate bug claims and give its own verdict", () => {
+    expect(RESPONSE_STYLE).toMatch(/investigate with your tools/i);
+    expect(RESPONSE_STYLE).toMatch(/even when that contradicts the advisor/i);
+  });
+
+  it("does NOT leak internal tool names", () => {
+    expect(RESPONSE_STYLE).not.toMatch(/run_projection|find_client|read_import/);
   });
 });
 
