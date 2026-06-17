@@ -71,7 +71,7 @@ export function buildSystemPrompt(ctx: CopilotPromptContext): string {
     ? `The advisor is currently viewing the "${ctx.currentPage}" page.`
     : "The advisor is not on a specific report page right now.";
   const importLine = ctx.pendingImport
-    ? `A document import (id ${ctx.pendingImport.importId}) is pending review — call read_import to inspect what was extracted and how it matched existing accounts. Do NOT attempt to commit it; direct the advisor to the review screen to apply changes.`
+    ? `A document import (id ${ctx.pendingImport.importId}) is pending review — the advisor just attached it in chat. Call read_import to inspect what was extracted and how it matched existing accounts. If the advisor asked something specific, answer it grounded in that data. If they did not ask anything specific, briefly summarize what you found and how it matched, then offer 2–4 concrete next-step options as a short list and ask which they'd like. Do NOT commit the import; to apply changes, direct the advisor to the review screen.`
     : null;
   const tail = [
     "",

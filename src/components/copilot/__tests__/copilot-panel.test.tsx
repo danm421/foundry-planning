@@ -7,6 +7,18 @@ import {
 import { CopilotProvider } from "../copilot-provider";
 import { CopilotPanel } from "../copilot-panel";
 
+/** Minimal streaming Response so the real useCopilotStream.send() resolves. */
+function makeStreamingResponse(): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+      c.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
 // Drive the URL scope. `current` is reassigned per render to simulate drift.
 let currentSearch = "scenario=s1";
 const currentPath = "/clients/c1/overview";
@@ -38,6 +50,7 @@ vi.mock("../use-copilot-import", () => ({
 
 beforeEach(() => {
   currentSearch = "scenario=s1";
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
 });
 
 function mountPanel() {
@@ -79,19 +92,7 @@ describe("CopilotPanel", () => {
     expect(screen.getByText("stmt.pdf")).toBeInTheDocument();
   });
 
-  it("renders the import summary after sending with a file", async () => {
-    mountPanel();
-    const input = screen.getByTestId("copilot-file-input") as HTMLInputElement;
-    await act(async () => {
-      fireEvent.change(input, { target: { files: [new File(["x"], "stmt.pdf")] } });
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByLabelText("Send message"));
-    });
-    expect(await screen.findByTestId("copilot-import-summary")).toBeInTheDocument();
-  });
-
-  it("clears the import summary when starting a new chat", async () => {
+  it("on send-with-file: shows the attachment in the thread, fires a chat turn with the import, and a review link", async () => {
     mountPanel();
     const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
     await act(async () => {
@@ -100,11 +101,58 @@ describe("CopilotPanel", () => {
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Send message"));
     });
-    expect(await screen.findByTestId("copilot-import-summary")).toBeInTheDocument();
+
+    // Review link (commit hand-off) appears.
+    expect(await screen.findByTestId("copilot-import-review")).toBeInTheDocument();
+
+    // The chat turn fired with the import id and an empty (attachment-only) message.
+    const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const streamCall = calls.find((c) => String(c[0]).includes("/copilot/stream"));
+    expect(streamCall).toBeTruthy();
+    const body = JSON.parse((streamCall![1] as { body: string }).body);
+    expect(body.pendingImportId).toBe("imp_1");
+    expect(body.message).toBe("");
+
+    // The attachment shows in the conversation (user bubble chip).
+    expect(screen.getAllByText(/stmt\.pdf/).length).toBeGreaterThan(0);
+  });
+
+  it("clears the review link when starting a new chat", async () => {
+    mountPanel();
+    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+    expect(await screen.findByTestId("copilot-import-review")).toBeInTheDocument();
+
     await act(async () => {
       fireEvent.click(screen.getByText("+ New chat"));
     });
-    expect(screen.queryByTestId("copilot-import-summary")).toBeNull();
+    expect(screen.queryByTestId("copilot-import-review")).toBeNull();
+  });
+
+  it("attaches via the paperclip button → input path and shows a clear card", async () => {
+    mountPanel();
+    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const clickSpy = vi.spyOn(fileInput, "click");
+
+    // The paperclip button must actually trigger the hidden input.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Attach a document"));
+    });
+    expect(clickSpy).toHaveBeenCalled();
+
+    // Simulate the OS file selection.
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+
+    const card = screen.getByTestId("copilot-attachment");
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveTextContent("stmt.pdf");
   });
 
   it("updates the scenario chip when the URL scenario changes (drift)", () => {

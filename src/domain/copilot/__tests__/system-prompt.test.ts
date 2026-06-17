@@ -136,3 +136,9 @@ it("omits the pending-import line when none is pending", () => {
   const prompt = buildSystemPrompt(baseCtx);
   expect(prompt).not.toMatch(/read_import/);
 });
+
+it("guides the model to answer a specific ask or, with none, summarize and offer options", () => {
+  const prompt = buildSystemPrompt({ ...baseCtx, pendingImport: { importId: "imp_77" } });
+  expect(prompt).toMatch(/if the advisor asked something specific/i);
+  expect(prompt).toMatch(/offer .* options/i);
+});

@@ -11,7 +11,7 @@ import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
 import { useCopilotImport, type CopilotImportResult } from "./use-copilot-import";
-import { ImportSummaryCard } from "./import-summary-card";
+import { ImportReviewLink } from "./import-review-link";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -139,23 +139,35 @@ export function CopilotPanel({
 
   async function onSend() {
     if (locked) return;
-    // Send-with-files: run the import pipeline instead of a chat turn.
+    // Send-with-files: run the import pipeline, then immediately engage the agent.
     if (attached.length > 0) {
       const files = attached;
+      const prompt = input.trim(); // may be empty — the attachment is the turn
       setAttached([]);
       setInput("");
       setImportResult(null); // clear any prior summary before a new run
       const result = await runImport(clientId, files);
-      if (result) {
-        setPendingImportId(result.importId);
-        setImportResult(result);
-      }
+      if (!result) return; // importError bubble already shown by the hook
+      setPendingImportId(result.importId);
+      setImportResult(result);
+      // Fire one chat turn so Forge reads the import and responds right away.
+      // send() pushes the user bubble itself — do not push one here.
+      await send({
+        message: prompt,
+        scenarioId: scenarioId ?? "base",
+        conversationId,
+        currentPage: sectionKeyForPath(pathname),
+        pendingImportId: result.importId,
+        attachments: files.map((f) => f.name),
+      });
+      listMyConversations()
+        .then((t) => setThreads(t as Thread[]))
+        .catch(() => {});
       return;
     }
     const msg = input.trim();
     if (!msg) return;
     setInput("");
-    // scenarioId + pathname are re-read every render → current scope per turn.
     await send({
       message: msg,
       scenarioId: scenarioId ?? "base",
@@ -280,7 +292,27 @@ export function CopilotPanel({
                       : "min-w-0 max-w-[90%] rounded-[var(--radius)] rounded-bl-sm border border-hair bg-card-2 px-3 py-2"
                   }
                 >
-                  {isUser ? m.text : isStreamingThis ? <TypingDots /> : <MarkdownMessage text={m.text} />}
+                  {isUser ? (
+                    <>
+                      {m.attachments && m.attachments.length > 0 && (
+                        <div className="mb-1 flex flex-wrap gap-1">
+                          {m.attachments.map((name, k) => (
+                            <span
+                              key={k}
+                              className="inline-flex items-center gap-1 rounded-full bg-secondary-ink/30 px-2 py-0.5 text-[11px]"
+                            >
+                              📎 {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {m.text && <span>{m.text}</span>}
+                    </>
+                  ) : isStreamingThis ? (
+                    <TypingDots />
+                  ) : (
+                    <MarkdownMessage text={m.text} />
+                  )}
                 </div>
               </div>
             );
@@ -305,10 +337,9 @@ export function CopilotPanel({
           )}
 
           {importResult && (
-            <ImportSummaryCard
+            <ImportReviewLink
               clientId={clientId}
               importId={importResult.importId}
-              summary={importResult.summary}
               warnings={importResult.warnings}
             />
           )}
@@ -346,22 +377,39 @@ export function CopilotPanel({
         {/* Composer */}
         <div className="border-t border-hair px-4 py-3">
           {attached.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className="mb-2 space-y-1.5">
               {attached.map((f, i) => (
-                <span
+                <div
                   key={i}
-                  className="inline-flex items-center gap-1 rounded-full border border-hair bg-card-2 px-2 py-0.5 text-[11px] text-ink-2"
+                  data-testid="copilot-attachment"
+                  className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1.5"
                 >
-                  {f.name}
+                  <svg
+                    aria-hidden
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="shrink-0 text-ink-3"
+                  >
+                    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                    <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{f.name}</span>
+                  <span className="shrink-0 text-[11px] text-ink-4">{formatBytes(f.size)}</span>
                   <button
                     type="button"
                     aria-label={`Remove ${f.name}`}
                     onClick={() => setAttached((prev) => prev.filter((_, j) => j !== i))}
-                    className="text-ink-4 hover:text-ink"
+                    className="shrink-0 text-ink-4 hover:text-ink"
                   >
                     ×
                   </button>
-                </span>
+                </div>
               ))}
             </div>
           )}
@@ -470,6 +518,14 @@ function pageLabelForPath(pathname: string): string {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ")
   );
+}
+
+/** Compact human-readable file size for attachment cards (e.g. "12 KB", "3.4 MB"). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function TypingDots() {
