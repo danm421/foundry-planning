@@ -197,6 +197,10 @@ describe("extractDocument", () => {
 });
 
 describe("scanned-PDF vision OCR fallback", () => {
+    beforeEach(() => {
+        mockedVision.mockReset();
+    });
+
     it("recovers text via OCR when the PDF has no text layer, then extracts", async () => {
         mockedPdf.mockResolvedValueOnce(""); // no text layer
         mockedVision.mockResolvedValueOnce({
@@ -237,6 +241,7 @@ describe("scanned-PDF vision OCR fallback", () => {
         );
 
         expect(result.warnings.some((w) => /first 30 of 58 pages/i.test(w))).toBe(true);
+        expect(result.extracted.accounts).toHaveLength(1);
     });
 
     it("returns an empty scanned-unreadable result when OCR fails", async () => {
