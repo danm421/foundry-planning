@@ -8,9 +8,11 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { giftUpdateSchema } from "@/lib/schemas/gifts";
 
@@ -21,15 +23,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; giftId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
     const parsed = giftUpdateSchema.safeParse(body);
     if (!parsed.success) {
@@ -173,12 +170,12 @@ export async function PATCH(
       resourceId: giftId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
     return NextResponse.json(row);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PATCH /api/clients/[id]/gifts/[giftId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -189,15 +186,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; giftId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     let row: typeof gifts.$inferSelect | undefined;
     await db.transaction(async (tx) => {
       const [deleted] = await tx
@@ -218,13 +210,12 @@ export async function DELETE(
       resourceId: giftId,
       clientId: id,
       firmId,
-      metadata: { year: row.year, grantor: row.grantor },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { year: row.year, grantor: row.grantor }),
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/gifts/[giftId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

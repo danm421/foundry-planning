@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -38,15 +40,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const {
@@ -77,14 +74,13 @@ export async function POST(
       resourceId: member.id,
       clientId: id,
       firmId,
-      metadata: { firstName: member.firstName, relationship: member.relationship },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { firstName: member.firstName, relationship: member.relationship }),
     });
 
     return NextResponse.json(member, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/family-members error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

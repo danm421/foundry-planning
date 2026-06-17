@@ -3,9 +3,10 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { externalBeneficiaryCreateSchema } from "@/lib/schemas/beneficiaries";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -39,15 +40,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireOrgId();
+    await requireOrgAndUser();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
     const parsed = externalBeneficiaryCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -68,9 +64,8 @@ export async function POST(
       .returning();
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/external-beneficiaries error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

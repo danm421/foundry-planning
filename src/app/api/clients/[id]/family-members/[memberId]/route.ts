@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +17,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; memberId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, memberId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const {
@@ -56,14 +53,13 @@ export async function PUT(
       resourceId: memberId,
       clientId: id,
       firmId,
-      metadata: { firstName: updated.firstName, relationship: updated.relationship },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { firstName: updated.firstName, relationship: updated.relationship }),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/family-members/[memberId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -74,15 +70,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; memberId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, memberId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Remove any will-recipient rows that point at this family member before
     // deleting it — recipient_id is a polymorphic FK-less column, so a plain
@@ -102,13 +93,13 @@ export async function DELETE(
       resourceId: memberId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/family-members/[memberId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -3,11 +3,12 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -16,15 +17,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    await requireOrgId();
+    await requireOrgAndUser();
     const { id, beneficiaryId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
     const parsed = externalBeneficiaryUpdateSchema.safeParse(body);
     if (!parsed.success) {
@@ -48,9 +44,8 @@ export async function PATCH(
     }
     return NextResponse.json(row);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PATCH external-beneficiaries/[beneficiaryId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -61,15 +56,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    await requireOrgId();
+    await requireOrgAndUser();
     const { id, beneficiaryId } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     // Delete the beneficiary and, atomically, any will-recipient rows that point
     // at it — recipient_id is a polymorphic FK-less column, so a plain delete
     // would leave a dangling id and silently wrong estate projections (audit F13).
@@ -93,9 +83,8 @@ export async function DELETE(
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE external-beneficiaries/[beneficiaryId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

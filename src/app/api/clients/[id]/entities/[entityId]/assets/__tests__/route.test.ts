@@ -73,7 +73,12 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@clerk/nextjs/server", () => ({
   // orgId = TEST_FIRM (inlined — vi.mock is hoisted) so the real verifyClientAccess
   // own-firm path matches and the firm-scoped gate resolves to edit access.
-  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_entity_assets_route_test" }),
+  // sessionClaims include is_founder so requireActiveSubscriptionForFirm passes.
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "firm_entity_assets_route_test",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
 const TEST_FIRM = "firm_entity_assets_route_test";

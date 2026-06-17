@@ -13,7 +13,11 @@ import {
 import { eq, and, sql } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_test_entities", orgId: "firm_test_entities" })),
+  auth: vi.fn(async () => ({
+    userId: "user_test_entities",
+    orgId: "firm_test_entities",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  })),
 }));
 
 const FIRM_A = "firm_test_entities";

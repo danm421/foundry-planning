@@ -7,8 +7,9 @@ import {
   accountOwners,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -33,16 +34,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    await requireOrgId();
+    await requireOrgAndUser();
     const { id, entityId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Entity must belong to client.
     const [ent] = await db
@@ -107,9 +102,8 @@ export async function POST(
 
     return NextResponse.json({ created });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "POST /api/clients/[id]/entities/[entityId]/ensure-cash error:",
       err,

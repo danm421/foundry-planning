@@ -12,9 +12,11 @@ import {
   familyMembers,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
 import { computeCltInceptionInterests } from "@/lib/entities/compute-clt-inception";
@@ -110,15 +112,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const parsed = entityCreateSchema.safeParse(body);
@@ -442,7 +439,7 @@ export async function POST(
         resourceId: entity.id,
         clientId: id,
         firmId,
-        metadata: trustSplitAudit,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, trustSplitAudit as Record<string, unknown>),
       });
     }
 
@@ -452,7 +449,7 @@ export async function POST(
       resourceId: entity.id,
       clientId: id,
       firmId,
-      metadata: { name: entity.name, entityType: entity.entityType },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: entity.name, entityType: entity.entityType }),
     });
 
     const responseOwners = isBusinessType && data.owners
@@ -464,9 +461,8 @@ export async function POST(
       : [];
     return NextResponse.json({ ...entity, owners: responseOwners }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     if (err instanceof BadRequestError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
