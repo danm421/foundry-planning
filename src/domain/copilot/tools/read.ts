@@ -9,9 +9,14 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios } from "@/db/schema";
+import { scenarios, clientImports } from "@/db/schema";
+import type {
+  ImportPayload,
+  ImportPayloadJson,
+  MatchAnnotation,
+} from "@/lib/imports/types";
 import { requireOrgId } from "@/lib/db-helpers";
 import { searchClients } from "@/lib/client-search";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
@@ -73,6 +78,61 @@ function joinName(
 ): string | null {
   const joined = [first, last].filter((p) => p && p.trim()).join(" ").trim();
   return joined.length > 0 ? joined : null;
+}
+
+function matchKind(m?: MatchAnnotation): MatchAnnotation["kind"] {
+  return m?.kind ?? "new";
+}
+
+/** Compact, sanitized summary of a pending import for the copilot. Exported for unit testing. */
+export function summarizeImport(
+  importId: string,
+  status: string,
+  payload: ImportPayload | null,
+) {
+  if (!payload) {
+    return { found: true, importId, status, note: "extraction not complete yet", counts: {} };
+  }
+  const tally = (rows: { match?: MatchAnnotation }[]) => {
+    const t = { exact: 0, fuzzy: 0, new: 0 };
+    for (const r of rows) t[matchKind(r.match)]++;
+    return t;
+  };
+  const clean = (s: string | null | undefined) =>
+    s == null ? null : redactSsns(String(s)).text;
+
+  const accounts = payload.accounts.map((a) => ({
+    name: clean(a.name),
+    custodian: clean(a.custodian),
+    accountNumberLast4: a.accountNumberLast4 ?? null,
+    value: a.value ?? null,
+    match: matchKind(a.match),
+    matchedExistingId: a.match?.kind === "exact" ? a.match.existingId : undefined,
+    fuzzyCandidates: a.match?.kind === "fuzzy" ? a.match.candidates : undefined,
+  }));
+
+  return {
+    found: true,
+    importId,
+    status,
+    counts: {
+      accounts: payload.accounts.length,
+      incomes: payload.incomes.length,
+      expenses: payload.expenses.length,
+      liabilities: payload.liabilities.length,
+      lifePolicies: payload.lifePolicies.length,
+      wills: payload.wills.length,
+      entities: payload.entities.length,
+    },
+    matchTotals: {
+      accounts: tally(payload.accounts),
+      incomes: tally(payload.incomes),
+      expenses: tally(payload.expenses),
+      liabilities: tally(payload.liabilities),
+    },
+    accounts,
+    warnings: payload.warnings,
+  };
 }
 
 export function buildReadTools(
@@ -227,5 +287,45 @@ export function buildReadTools(
     },
   );
 
-  return [findClient, clientBriefing, listScenarios, readDetail];
+  const readImport = tool(
+    async ({ importId }: { importId: string }) => {
+      const firmId = await requireOrgId();
+      // Scoped lookup: id + conversation-bound client + firm. A cross-firm or
+      // cross-client id simply returns no row — existence never leaks.
+      const [row] = await db
+        .select({
+          id: clientImports.id,
+          status: clientImports.status,
+          payloadJson: clientImports.payloadJson,
+        })
+        .from(clientImports)
+        .where(
+          and(
+            eq(clientImports.id, importId),
+            eq(clientImports.clientId, ctx.clientId),
+            eq(clientImports.orgId, firmId),
+          ),
+        )
+        .limit(1);
+
+      if (!row) {
+        return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
+      }
+
+      const payload = (row.payloadJson as ImportPayloadJson | null)?.payload ?? null;
+      return JSON.stringify(summarizeImport(row.id, row.status, payload));
+    },
+    {
+      name: "read_import",
+      description:
+        "Inspect a pending document import the advisor just uploaded in chat: per-entity counts and, for each row, how it matched the client's existing base-case data (exact / fuzzy / new). Account numbers are masked and SSNs redacted. Read-only — never commits; direct the advisor to the review screen to apply changes.",
+      schema: z.object({
+        importId: z
+          .string()
+          .describe("The import id surfaced by the chat after a document upload."),
+      }),
+    },
+  );
+
+  return [findClient, clientBriefing, listScenarios, readDetail, readImport];
 }
