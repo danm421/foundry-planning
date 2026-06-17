@@ -4,10 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { requireActiveSubscription } from "@/lib/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 const patchSchema = z
   .object({
@@ -24,17 +25,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
-    await requireActiveSubscription();
     const { id } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);
@@ -78,18 +72,17 @@ export async function PATCH(
       resourceType: "client",
       resourceId: id,
       clientId: id,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         skippedSteps: next.skippedSteps ?? [],
         lastStepVisited: next.lastStepVisited ?? null,
         activeImportId: next.activeImportId ?? null,
-      },
+      }),
     });
 
     return NextResponse.json({ ok: true, state: next });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PATCH /api/clients/[id]/onboarding error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

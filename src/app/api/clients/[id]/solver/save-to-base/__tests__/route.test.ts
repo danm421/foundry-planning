@@ -1,32 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn() };
+});
 vi.mock("@/lib/db-scoping", () => ({
   findClientInFirm: vi.fn(),
   assertAccountsInClient: vi.fn(),
 }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
+});
 
-// Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
-// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
-// access turns purely on the firm-scoped clients query the test already drives).
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
 }));
-// Phase 1b: verifyClientAccess now owns the client-in-firm gate (replaces
-// findClientInFirm). Delegate to the already-mocked findClientInFirm so tests
-// that set findClientInFirm → null still exercise the 404 path.
+// requireClientEditAccess is now the gate. Delegate to the already-mocked
+// findClientInFirm so tests that set findClientInFirm → null exercise the 403 path.
 vi.mock("@/lib/clients/authz", () => ({
-  // verifyClientAccess is now 1-arg. Source the firm from the test's FIRM_ID
-  // (inlined — vi.mock is hoisted above the const) and return the object shape;
-  // tests that set findClientInFirm → null still drive the 404 path.
-  verifyClientAccess: vi.fn().mockImplementation(async (clientId: string) => {
+  requireClientEditAccess: vi.fn().mockImplementation(async (clientId: string) => {
     const { findClientInFirm } = await import("@/lib/db-scoping");
+    const { ForbiddenError } = await import("@/lib/authz");
     const client = await findClientInFirm(clientId, "00000000-0000-4000-8000-000000000099");
-    return client != null
-      ? { ok: true, permission: "edit", firmId: "00000000-0000-4000-8000-000000000099", access: "own" }
-      : { ok: false };
+    if (!client) throw new ForbiddenError("Client not found or no access");
+    return { firmId: "00000000-0000-4000-8000-000000000099", access: "own" as const };
   }),
 }));
 
@@ -116,13 +116,13 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 404 when the client is not in the caller's firm", async () => {
+  it("returns 403 when the client is not in the caller's firm", async () => {
     vi.mocked(findClientInFirm).mockResolvedValue(null as never);
     const res = await POST(
       makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "x", value: ACCT }] }),
       ctx as never,
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("inserts a brand-new account plus its owner row, scoped to the base scenario", async () => {

@@ -13,7 +13,9 @@ import {
   toRothConversionSnapshot,
   ROTH_CONVERSION_FIELD_LABELS,
 } from "@/lib/audit/snapshots/roth-conversion";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +75,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
@@ -158,6 +157,7 @@ export async function POST(
       clientId: id,
       firmId,
       snapshot: await toRothConversionSnapshot(created),
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(
@@ -165,9 +165,8 @@ export async function POST(
       { status: 201 },
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/roth-conversions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -179,13 +178,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
@@ -286,13 +282,13 @@ export async function PUT(
       before: await toRothConversionSnapshot(before),
       after: await toRothConversionSnapshot(updated),
       fieldLabels: ROTH_CONVERSION_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ...updated, sources: updatedSources });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/roth-conversions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -304,13 +300,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
@@ -342,13 +335,13 @@ export async function DELETE(
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/roth-conversions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
