@@ -15,6 +15,7 @@ import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
 import { CopilotMount } from "@/components/copilot/copilot-mount";
 import ShareClientButton from "@/components/sharing/share-client-button";
+import { ClientAccessProvider } from "@/components/client-access-provider";
 
 interface Props {
   children: React.ReactNode;
@@ -98,32 +99,34 @@ export default async function ClientLayout({ children, params }: Props): Promise
     : `${primary.firstName} ${primary.lastName}`.trim();
 
   return (
-    <ScenarioModeWrapper clientId={id} scenarios={scenarioRows}>
-      <ReportSectionLabel label={householdTitle} />
-      <ClientHeader
-        clientId={id}
-        people={people}
-        centerSlot={<HeaderSubtabs clientId={id} />}
-        rightSlot={
-          <>
-            <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
-            <ShareClientButton
-              clientId={id}
-              isPrivate={clientRow.isPrivate}
-              canManage={canManageShares}
-            />
-          </>
-        }
-      />
-      <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
-      <ScenarioDrawerProvider>
-        <section className="px-[var(--pad-card)] pb-6">{children}</section>
-        <CopilotMount
+    <ClientAccessProvider value={{ permission: access.permission, access: access.access }}>
+      <ScenarioModeWrapper clientId={id} scenarios={scenarioRows}>
+        <ReportSectionLabel label={householdTitle} />
+        <ClientHeader
           clientId={id}
-          enabled={process.env.COPILOT_ENABLED === "true"}
-          scenarioNames={Object.fromEntries(scenarioRows.map((s) => [s.id, s.name]))}
+          people={people}
+          centerSlot={<HeaderSubtabs clientId={id} />}
+          rightSlot={
+            <>
+              <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
+              <ShareClientButton
+                clientId={id}
+                isPrivate={clientRow.isPrivate}
+                canManage={canManageShares}
+              />
+            </>
+          }
         />
-      </ScenarioDrawerProvider>
-    </ScenarioModeWrapper>
+        <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
+        <ScenarioDrawerProvider>
+          <section className="px-[var(--pad-card)] pb-6">{children}</section>
+          <CopilotMount
+            clientId={id}
+            enabled={process.env.COPILOT_ENABLED === "true"}
+            scenarioNames={Object.fromEntries(scenarioRows.map((s) => [s.id, s.name]))}
+          />
+        </ScenarioDrawerProvider>
+      </ScenarioModeWrapper>
+    </ClientAccessProvider>
   );
 }
