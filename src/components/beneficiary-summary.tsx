@@ -15,8 +15,8 @@ interface BeneficiarySummaryProps {
   designations: Designation[];
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
-  onEditAccount: (accountId: string) => void;
-  onEditEntity: (entityId: string) => void;
+  onEditAccount?: (accountId: string) => void;
+  onEditEntity?: (entityId: string) => void;
 }
 
 function beneficiaryName(
@@ -142,13 +142,15 @@ export default function BeneficiarySummary({
                         )}
                       </dl>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onEditAccount(account.id)}
-                      className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
-                    >
-                      Edit <span aria-hidden="true">→</span>
-                    </button>
+                    {onEditAccount && (
+                      <button
+                        type="button"
+                        onClick={() => onEditAccount(account.id)}
+                        className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
+                      >
+                        Edit <span aria-hidden="true">→</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -189,13 +191,15 @@ export default function BeneficiarySummary({
                         )}
                       </dl>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onEditEntity(entity.id)}
-                      className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
-                    >
-                      Edit <span aria-hidden="true">→</span>
-                    </button>
+                    {onEditEntity && (
+                      <button
+                        type="button"
+                        onClick={() => onEditEntity(entity.id)}
+                        className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
+                      >
+                        Edit <span aria-hidden="true">→</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
