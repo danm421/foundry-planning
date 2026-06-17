@@ -84,7 +84,7 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
     ? `The advisor is currently viewing the "${ctx.currentPage}" page.`
     : "The advisor is not on a specific report page right now.";
   const importLine = ctx.pendingImport
-    ? `A document import (id ${ctx.pendingImport.importId}) is pending review — the advisor just attached it in chat. Call read_import to inspect what was extracted and how it matched existing accounts. If the advisor asked something specific, answer it grounded in that data. If they did not ask anything specific, briefly summarize what you found and how it matched, then offer 2–4 concrete next-step options as a short list and ask which they'd like. Do NOT commit the import; to apply changes, direct the advisor to the review screen.`
+    ? `A document import (id ${ctx.pendingImport.importId}) is pending review — the advisor just attached it in chat. Call read_import to inspect what was extracted and how it matched existing accounts. Answer the advisor's question grounded in that data; if the extraction came back empty or failed, say so in one line with the real reason (e.g. a scanned image with no readable text). If they didn't ask anything specific, give a one- or two-line summary of what was extracted and how it matched. Do NOT commit the import; applying changes happens on the review screen.`
     : null;
   const tail = [
     "",

@@ -181,8 +181,14 @@ it("omits the pending-import line when none is pending", () => {
   expect(prompt).not.toMatch(/read_import/);
 });
 
-it("guides the model to answer a specific ask or, with none, summarize and offer options", () => {
+it("tells Forge to report a failed or empty extraction truthfully in one line", () => {
   const prompt = buildSystemPrompt({ ...baseCtx, pendingImport: { importId: "imp_77" } });
-  expect(prompt).toMatch(/if the advisor asked something specific/i);
-  expect(prompt).toMatch(/offer .* options/i);
+  expect(prompt).toMatch(/empty or failed/i);
+  expect(prompt).toMatch(/scanned image/i);
+});
+
+it("no longer forces a 2–4 option menu or a 'which they'd like' ritual", () => {
+  const prompt = buildSystemPrompt({ ...baseCtx, pendingImport: { importId: "imp_77" } });
+  expect(prompt).not.toMatch(/offer .* options/i);
+  expect(prompt).not.toMatch(/which they'd like/i);
 });
