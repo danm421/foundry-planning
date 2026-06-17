@@ -99,11 +99,17 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     return json(400, { error: "message and scenarioId are required." });
   }
   // Trim once and validate the trimmed value: a whitespace-only message must not
-  // create a blank-titled conversation or burn a model turn on empty input.
+  // create a blank-titled conversation or burn a model turn on empty input —
+  // UNLESS a freshly-uploaded import is attached, in which case the document IS
+  // the turn and the model message is synthesized below.
   const message = body.message.trim();
-  if (message.length === 0) {
+  const hasPendingImport =
+    typeof body.pendingImportId === "string" && body.pendingImportId.length > 0;
+  if (message.length === 0 && !hasPendingImport) {
     return json(400, { error: "message must not be empty." });
   }
+  const modelMessage =
+    message.length > 0 ? message : "I've attached a document for you to review.";
 
   let cid: string;
   let authContext: CopilotAuthContext;
@@ -120,7 +126,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         userId,
         firmId,
         clientId,
-        title: message.slice(0, 60),
+        title: message.length > 0 ? message.slice(0, 60) : "Document import",
       });
     }
     cid = conversationId;
@@ -171,7 +177,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       send({ type: "conversation", conversationId: cid });
       try {
         const events = graph.streamEvents(
-          { messages: [new HumanMessage(message)], authContext },
+          { messages: [new HumanMessage(modelMessage)], authContext },
           { version: "v2", configurable: { thread_id: cid }, recursionLimit: 25 },
         );
         for await (const ev of events) {

@@ -199,4 +199,22 @@ describe("POST /api/clients/[id]/copilot/stream — hello stream", () => {
     expect(createConversation).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  it("accepts an attachment-only turn (empty message + pendingImportId) and titles it", async () => {
+    const res = await POST(
+      makeReq({ message: "", scenarioId: "base", pendingImportId: "imp_9" }),
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    await drain(res);
+    expect(createConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Document import" }),
+    );
+  });
+
+  it("still rejects an empty message when no import is pending", async () => {
+    const res = await POST(makeReq({ message: "", scenarioId: "base" }), ctx);
+    expect(res.status).toBe(400);
+    expect(createConversation).not.toHaveBeenCalled();
+  });
 });
