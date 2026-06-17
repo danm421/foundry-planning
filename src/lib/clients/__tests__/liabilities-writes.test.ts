@@ -20,7 +20,14 @@ import {
 // the DB firm-membership check. recordCreate/Update/Delete get actorId explicitly
 // from the core, so they never read auth() here.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: "user_test_liability_core", orgRole: "org:admin" }),
+  // orgId must equal COOPER_FIRM_ID so the real verifyClientAccess own-firm path
+  // (`client.firmId === orgId`) matches and the write-core gate `a.firmId !== firmId`
+  // passes. vi.mock is hoisted above the COOPER_FIRM_ID const, so inline the literal.
+  auth: async () => ({
+    userId: "user_test_liability_core",
+    orgRole: "org:admin",
+    orgId: "org_3CitTEIe8PJa1BVYw7LnEjkiP9r",
+  }),
 }));
 
 const HAS_DB = !!process.env.DATABASE_URL;

@@ -36,7 +36,7 @@ function getTool(name: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_session");
-  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
   vi.mocked(recordAudit).mockResolvedValue(undefined);
 });
 
@@ -48,13 +48,13 @@ describe("create_scenario", () => {
     vi.mocked(createScenarioWithClone).mockResolvedValue({ scenario: { id: "s-new", name: "Roth ladder" } as never });
     await getTool("create_scenario").invoke({ name: "Roth ladder", copyFrom: "base" });
     expect(requireOrgId).toHaveBeenCalled();
-    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
     const accessOrder = vi.mocked(verifyClientAccess).mock.invocationCallOrder[0];
     const writeOrder = vi.mocked(createScenarioWithClone).mock.invocationCallOrder[0];
     expect(accessOrder).toBeLessThan(writeOrder);
   });
   it("rejects when verifyClientAccess fails (cross-firm clientId)", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("create_scenario").invoke({ name: "X", copyFrom: "base" });
     expect(String(result)).toMatch(/not found|access denied|cannot/i);
     expect(createScenarioWithClone).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe("propose_changes", () => {
   });
 
   it("rejects when verifyClientAccess fails", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("propose_changes").invoke({
       scenarioId: "scenario_1",
       groupName: "g",
@@ -168,7 +168,7 @@ describe("revert_change", () => {
   });
 
   it("rejects when verifyClientAccess fails", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("revert_change").invoke({
       scenarioId: "scenario_1", targetKind: "income", targetId: "inc1", opType: "edit",
     });
@@ -216,7 +216,7 @@ describe("compare_and_snapshot", () => {
   });
 
   it("rejects when verifyClientAccess fails", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("compare_and_snapshot").invoke({ name: "n", leftRef: "base", rightRef: "s2" });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createSnapshot).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe("promote_to_base", () => {
   });
 
   it("rejects when verifyClientAccess fails (no promote, no audit)", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("promote_to_base").invoke({ scenarioId: "scenario_1" });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(promoteScenarioToBase).not.toHaveBeenCalled();

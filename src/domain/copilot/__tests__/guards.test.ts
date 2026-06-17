@@ -1,8 +1,10 @@
 // src/domain/copilot/__tests__/guards.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const verifyClientAccess = vi.fn<(clientId: string, firmId: string) => Promise<boolean>>();
-vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string, f: string) => verifyClientAccess(c, f) }));
+const verifyClientAccess = vi.fn<(clientId: string) => Promise<
+  { ok: false } | { ok: true; permission: "view" | "edit"; firmId: string; access: "own" | "shared" }
+>>();
+vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string) => verifyClientAccess(c) }));
 
 // --- add at top, beside the existing verifyClientAccess mock ---
 const findFirst = vi.fn();
@@ -22,18 +24,18 @@ beforeEach(() => verifyClientAccess.mockReset());
 
 describe("assertClientReadable", () => {
   it("resolves when clientId matches the conversation scope and the firm grants access", async () => {
-    verifyClientAccess.mockResolvedValue(true);
+    verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
     await assertClientReadable(ctx, "client-in-firm"); // ctx.clientId === "client-in-firm"
-    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm", "org_A");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm");
   });
   it("throws ForbiddenScopeError for a clientId outside the conversation scope, before any DB call", async () => {
     await expect(assertClientReadable(ctx, "another-client")).rejects.toBeInstanceOf(ForbiddenScopeError);
     expect(verifyClientAccess).not.toHaveBeenCalled();
   });
   it("throws ForbiddenScopeError when the bound client fails the firm access check (cross-firm IDOR)", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     await expect(assertClientReadable(ctx, "client-in-firm")).rejects.toBeInstanceOf(ForbiddenScopeError);
-    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm", "org_A");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm");
   });
 });
 
@@ -55,13 +57,13 @@ describe("clientToHousehold", () => {
 describe("assertHouseholdReadable", () => {
   beforeEach(() => { verifyClientAccess.mockReset(); findFirst.mockReset(); });
   it("resolves to the household after the client read-check passes", async () => {
-    verifyClientAccess.mockResolvedValue(true);
+    verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
     findFirst.mockResolvedValue({ crmHouseholdId: "hh-1" });
     await expect(assertHouseholdReadable(ctx)).resolves.toBe("hh-1");
-    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm", "org_A");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client-in-firm");
   });
   it("rejects (before any household read) when the client fails the firm read-check", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     await expect(assertHouseholdReadable(ctx)).rejects.toBeInstanceOf(ForbiddenScopeError);
     expect(findFirst).not.toHaveBeenCalled();
   });

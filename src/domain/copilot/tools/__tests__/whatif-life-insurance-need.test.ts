@@ -33,7 +33,7 @@ function toolByName(name: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" });
   loadEffectiveTree.mockResolvedValue({
     effectiveTree: { id: "tree" } as unknown as ClientData,
     warnings: [],
@@ -79,7 +79,7 @@ describe("whatif_life_insurance_need", () => {
     const args = { clientId: "client-1", scenarioId: "base", deceased: "spouse" as const, deathYear: 2032 };
     const a = JSON.parse(String(await tool.invoke(args)));
     vi.clearAllMocks();
-    verifyClientAccess.mockResolvedValue(true);
+    verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" });
     loadEffectiveTree.mockResolvedValue({ effectiveTree: { id: "tree" } as unknown as ClientData, warnings: [], resolutionContext: undefined });
     runLifeInsuranceWhatIf.mockReturnValue([]);
     survivorEndingPortfolio.mockImplementation(() => {

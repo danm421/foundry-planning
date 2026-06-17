@@ -54,7 +54,8 @@ export async function generateReport(
 ): Promise<GenerateReportResult> {
   // Re-derive the firm and re-verify access — never trust ctx.firmId at run time.
   const firmId = await requireOrgId();
-  if (!(await verifyClientAccess(ctx.clientId, firmId))) {
+  const acc = await verifyClientAccess(ctx.clientId);
+  if (!acc.ok || acc.firmId !== firmId) {
     return { error: "Client not found or access denied." };
   }
 

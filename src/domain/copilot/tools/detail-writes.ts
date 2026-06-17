@@ -66,7 +66,8 @@ async function gateAccess(
   clientId: string,
 ): Promise<{ firmId: string } | { error: string }> {
   const firmId = await requireOrgId();
-  const ok = await verifyClientAccess(clientId, firmId);
+  const acc = await verifyClientAccess(clientId);
+  const ok = acc.ok && acc.firmId === firmId;
   if (!ok) return { error: "Client not found or access denied." };
   return { firmId };
 }

@@ -19,7 +19,7 @@ const recordAudit = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: (c: string, f: string) => verifyClientAccess(c, f),
+  verifyClientAccess: (c: string) => verifyClientAccess(c),
 }));
 vi.mock("../guards", async (o) => ({
   ...(await o()),
@@ -56,7 +56,7 @@ const byName = (n: string) =>
 
 beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   clientToHousehold.mockResolvedValue("hh-1");
   listHouseholdNotes.mockReset();
   deleteNote.mockReset();

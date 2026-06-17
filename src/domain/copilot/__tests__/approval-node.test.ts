@@ -128,7 +128,7 @@ beforeEach(() => {
     .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [WRITE_CALL] }))
     .mockResolvedValue(new AIMessage("Done — applied the change."));
   vi.mocked(requireOrgId).mockResolvedValue("org_session");
-  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
   vi.mocked(recordAudit).mockResolvedValue(undefined);
   vi.mocked(applyEntityEdit).mockResolvedValue(undefined);
 });
@@ -263,7 +263,7 @@ describe("approval node — crm_delete_task (Tier-B CRM write)", () => {
       .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [CRM_DELETE_CALL] }))
       .mockResolvedValue(new AIMessage("Done — task deleted."));
     vi.mocked(requireOrgId).mockResolvedValue("org_session");
-    vi.mocked(verifyClientAccess).mockResolvedValue(true);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
     vi.mocked(clientToHousehold).mockResolvedValue("hh_1");
     vi.mocked(recordAudit).mockResolvedValue(undefined);
     // assertTaskInHousehold checks getTaskById then compares householdId

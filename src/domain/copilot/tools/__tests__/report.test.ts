@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   afterPromise = Promise.resolve();
   requireOrgId.mockResolvedValue("firm-1");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" });
   whereMock.mockResolvedValue([{ crmHouseholdId: "hh1" }]);
   createQueuedRun.mockResolvedValue("run-1");
   renderPresentationPdf.mockResolvedValue({ buffer: Buffer.from("pdf"), filename: "deck.pdf" });
@@ -133,7 +133,7 @@ describe("generateReport", () => {
   });
 
   it("refuses when client access is denied", async () => {
-    verifyClientAccess.mockResolvedValueOnce(false);
+    verifyClientAccess.mockResolvedValueOnce({ ok: false });
     const r = await generateReport({ pageIds: ["cover"] }, CTX, "conv-1");
     expect("error" in r).toBe(true);
     expect(createQueuedRun).not.toHaveBeenCalled();
