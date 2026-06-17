@@ -3,6 +3,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
+import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import {
   listMyConversations as listConversationsForUser,
   userOwnsConversation,
@@ -43,4 +44,15 @@ export async function loadConversationMessages(conversationId: string): Promise<
   const pending = tuple?.pendingWrites?.find(([, channel]) => channel === "__interrupt__");
   const approval = pending ? (pending[2] as LoadedConversation["approval"]) : null;
   return { messages, approval };
+}
+
+/**
+ * Resolve the client's base-case scenario id for the copilot document import.
+ * The chat always imports against the base case (factual data), regardless of
+ * which scenario the panel is viewing. Returns null when the client is
+ * inaccessible or has no base case — the caller surfaces that as an error.
+ */
+export async function resolveBaseScenarioId(clientId: string): Promise<string | null> {
+  const firmId = await requireOrgId();
+  return baseCaseScenarioId(clientId, firmId);
 }
