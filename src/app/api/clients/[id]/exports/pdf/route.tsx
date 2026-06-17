@@ -4,8 +4,8 @@ import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { db } from "@/db";
 import { firms } from "@/db/schema";
-import { UnauthorizedError } from "@/lib/db-helpers";
-import { requireClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import {
   checkExportPdfRateLimit,
   rateLimitErrorResponse,
@@ -46,14 +46,8 @@ export async function POST(
 ) {
   try {
     const { id: clientId } = await params;
-    const access = await requireClientAccess(clientId).catch((e) => {
-      if (e instanceof UnauthorizedError) throw e;
-      return null;
-    });
-    if (!access) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    const { client: _clientRow, firmId } = access;
+    const { client: _clientRow, firmId } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
     const crmHouseholdId = _clientRow.crmHouseholdId;
 
     const rl = await checkExportPdfRateLimit(firmId);
@@ -193,9 +187,8 @@ export async function POST(
       },
     });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /clients/[id]/exports/pdf failed", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

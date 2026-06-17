@@ -23,6 +23,19 @@ vi.mock("@/lib/db-helpers", async () => {
   };
 });
 
+vi.mock("@/lib/authz", () => ({
+  requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
+  authErrorResponse: vi.fn().mockImplementation((err: unknown) => {
+    if (err instanceof Error && (err.name === "UnauthorizedError" || err.message === "Unauthorized")) {
+      return { status: 401, body: { error: "Unauthorized" } };
+    }
+    if (err instanceof Error && err.name === "ForbiddenError") {
+      return { status: 403, body: { error: err.message } };
+    }
+    return null;
+  }),
+}));
+
 // The route gained a PDF-export rate-limit guard (audit F11); let it pass so
 // tests don't hit the real shared Upstash budget (nondeterministic once spent).
 vi.mock("@/lib/rate-limit", () => ({
@@ -43,15 +56,12 @@ vi.mock("@/db", () => ({
   },
 }));
 
-// Phase-1b advisor gate. Delegate to the mocked requireOrgId so the "401 when
-// requireOrgId throws" case still surfaces, and return a client carrying
-// crmHouseholdId so the run-log capture branch runs (the route reads it off the
-// gated row now, not via a second @/db query).
+// Phase-1b advisor gate. Returns a client carrying crmHouseholdId so the
+// run-log capture branch runs (the route reads it off the gated row now,
+// not via a second @/db query).
 vi.mock("@/lib/clients/authz", () => ({
-  requireClientAccess: vi.fn().mockImplementation(async (clientId: string) => {
-    const { requireOrgId } = await import("@/lib/db-helpers");
-    const firmId = await requireOrgId();
-    return { client: { id: clientId, crmHouseholdId: "hh-test" }, firmId };
+  requireClientEditAccess: vi.fn().mockImplementation(async (clientId: string) => {
+    return { client: { id: clientId, crmHouseholdId: "hh-test" }, firmId: "firm_test", access: "own" };
   }),
 }));
 
@@ -247,9 +257,10 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(callArgs.charts).toEqual([chart]);
   });
 
-  it("returns 401 when requireOrgId throws UnauthorizedError", async () => {
-    const { requireOrgId, UnauthorizedError } = await import("@/lib/db-helpers");
-    (requireOrgId as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new UnauthorizedError());
+  it("returns 401 when requireClientEditAccess throws UnauthorizedError", async () => {
+    const { requireClientEditAccess } = await import("@/lib/clients/authz");
+    const { UnauthorizedError } = await import("@/lib/db-helpers");
+    (requireClientEditAccess as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new UnauthorizedError());
     const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });
     expect(res.status).toBe(401);
   });
