@@ -97,7 +97,12 @@ const SAMPLE_APPROVAL: PendingApproval = {
 
 function mountPanel() {
   return render(
-    <CopilotPanel clientId="c1" scenarioNames={{ base: "Base case" }} forceOpenForTest />,
+    <CopilotPanel
+      clientId="c1"
+      clientName="Jane & John Smith"
+      scenarioNames={{ base: "Base case" }}
+      forceOpenForTest
+    />,
   );
 }
 
@@ -112,7 +117,7 @@ describe("CopilotPanel approval slot — Phase 2", () => {
   it("(1) does NOT render ApprovalCard text when pendingApproval is null", () => {
     mockStreamState = makeStreamState({ pendingApproval: null });
     mountPanel();
-    expect(screen.queryByText(/copilot wants to make/i)).toBeNull();
+    expect(screen.queryByText(/forge wants to make/i)).toBeNull();
     // Also confirm the old placeholder is gone
     expect(document.querySelector("[data-testid='approval-slot']")).toBeNull();
   });
@@ -120,7 +125,7 @@ describe("CopilotPanel approval slot — Phase 2", () => {
   it("(2) renders ApprovalCard summary and details when pendingApproval is set", () => {
     mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL });
     mountPanel();
-    expect(screen.getByText("Copilot wants to make 1 change")).toBeInTheDocument();
+    expect(screen.getByText("Forge wants to make 1 change")).toBeInTheDocument();
     expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
     expect(screen.getByText("+$214k")).toBeInTheDocument();
   });
@@ -152,7 +157,7 @@ describe("CopilotPanel approval slot — Phase 2", () => {
     // though status is "idle"/"done" (not "streaming") while the card is up.
     mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL, status: "done" });
     mountPanel();
-    expect(screen.getByRole("textbox", { name: /ask the copilot/i })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /ask forge/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 });

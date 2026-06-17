@@ -20,7 +20,7 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
   },
   {
     key: "ai_copilot",
-    label: "AI planning copilot",
+    label: "Forge (AI planning assistant)",
     description: "Conversational planning assistant powered by AI agents.",
   },
 ];

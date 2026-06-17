@@ -21,13 +21,13 @@ describe("CopilotLauncher", () => {
       </ScenarioDrawerProvider>,
     );
 
-    const btn = screen.getByRole("button", { name: /open copilot/i });
+    const btn = screen.getByRole("button", { name: /open forge/i });
     expect(btn).toHaveAttribute("aria-controls", "copilot-panel");
     expect(btn).toHaveAttribute("aria-expanded", "false");
 
     act(() => btn.click());
     // Once open, the launcher hides itself (the panel owns close); querying by
     // its open-label returns nothing.
-    expect(screen.queryByRole("button", { name: /open copilot/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /open forge/i })).toBeNull();
   });
 });

@@ -17,7 +17,7 @@ vi.mock("../actions", () => ({
 function tree(enabled: boolean) {
   return (
     <ScenarioDrawerProvider>
-      <CopilotMount clientId="c1" enabled={enabled} scenarioNames={{}} />
+      <CopilotMount clientId="c1" clientName="Jane & John Smith" enabled={enabled} scenarioNames={{}} />
     </ScenarioDrawerProvider>
   );
 }
@@ -25,12 +25,12 @@ function tree(enabled: boolean) {
 describe("CopilotMount", () => {
   it("renders the launcher when enabled", () => {
     render(tree(true));
-    expect(screen.getByRole("button", { name: /open copilot/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open forge/i })).toBeInTheDocument();
   });
 
   it("renders nothing when the flag is off", () => {
     render(tree(false));
-    expect(screen.queryByRole("button", { name: /open copilot/i })).toBeNull();
-    expect(screen.queryByLabelText(/foundry copilot/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /open forge/i })).toBeNull();
+    expect(screen.queryByLabelText(/forge/i)).toBeNull();
   });
 });

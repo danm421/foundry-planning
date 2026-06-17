@@ -65,7 +65,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     throw err;
   }
   if (!entitlements?.includes("ai_copilot")) {
-    return json(403, { error: "AI Copilot is not enabled for your plan." });
+    return json(403, { error: "Forge is not enabled for your plan." });
   }
 
   // 5. Client scope (firm + staff). False → 404 (existence must not leak).
@@ -78,7 +78,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
-      "Too many copilot requests. Please wait a moment and try again.",
+      "Too many Forge requests. Please wait a moment and try again.",
     );
   }
 

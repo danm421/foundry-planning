@@ -21,13 +21,20 @@ type Thread = { id: string; title: string; updatedAt?: Date | string };
 
 interface CopilotPanelProps {
   clientId: string;
-  /** Scenario id → display name, for the scenario context chip. */
+  /** Household display name (e.g. "Jane & John Smith") for the context line. */
+  clientName: string;
+  /** Scenario id → display name, for the scenario context line. */
   scenarioNames: Record<string, string>;
   /** Test-only: render the panel open without the provider toggle. */
   forceOpenForTest?: boolean;
 }
 
-export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: CopilotPanelProps) {
+export function CopilotPanel({
+  clientId,
+  clientName,
+  scenarioNames,
+  forceOpenForTest,
+}: CopilotPanelProps) {
   const { scenarioId, pathname, isOpen, close } = useCopilot();
   const drawer = useScenarioDrawerOptional();
   const open = forceOpenForTest || isOpen;
@@ -169,13 +176,13 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   const lastMsg = messages[messages.length - 1];
   const streamingEmpty = busy && lastMsg?.role === "assistant" && lastMsg.text === "";
   const scenarioLabel = scenarioId ? scenarioNames[scenarioId] ?? "Scenario" : "Base case";
-  const pageLabel = sectionKeyForPath(pathname);
+  const pageLabel = pageLabelForPath(pathname);
 
   return (
     <div
       id="copilot-panel"
       role="complementary"
-      aria-label="Foundry Copilot"
+      aria-label="Forge"
       // z-30: the same right-panel layer as ScenarioDrawer — above page
       // content, below the topbar (z-40) and client header (z-[35]).
       className="fixed right-0 top-[100px] z-30 h-[calc(100vh-100px)] border-l border-hair bg-card shadow-[-4px_0_16px_rgba(0,0,0,0.18)]"
@@ -188,28 +195,32 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
       inert={open ? undefined : true}
     >
       <div className="flex h-full flex-col">
-        {/* Header + context chips */}
+        {/* Header + context line */}
         <div className="flex items-center justify-between gap-2 border-b border-hair px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary-wash text-secondary-ink">
               <SparkIcon />
             </span>
-            <span className="text-[13px] font-semibold text-ink">Copilot</span>
+            <span className="text-[13px] font-semibold text-ink">Forge</span>
           </div>
           <button
             type="button"
             onClick={close}
-            aria-label="Close copilot"
+            aria-label="Close Forge"
             className="flex h-7 w-7 items-center justify-center rounded text-ink-3 hover:bg-card-hover hover:text-ink"
           >
             <span aria-hidden className="text-base leading-none">×</span>
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 border-b border-hair px-4 py-2">
-          <Chip testid="chip-client" label="Client" value={clientId.slice(0, 8)} />
-          <Chip testid="chip-scenario" label="Scenario" value={scenarioLabel} />
-          <Chip testid="chip-page" label="Page" value={pageLabel} />
+        {/* Context line — who/what/where Forge is scoped to. Humanized: client
+            name, scenario, and a friendly page label (no raw IDs or route keys). */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 border-b border-hair px-4 py-2 text-[11px] text-ink-3">
+          <span data-testid="chip-client" className="text-ink-2">{clientName}</span>
+          <span aria-hidden className="text-ink-4">·</span>
+          <span data-testid="chip-scenario" className="text-ink-2">{scenarioLabel}</span>
+          <span aria-hidden className="text-ink-4">·</span>
+          <span data-testid="chip-page" className="text-ink-2">{pageLabel}</span>
         </div>
 
         {/* Thread row */}
@@ -391,7 +402,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
               </svg>
             </button>
             <textarea
-              aria-label="Ask the copilot"
+              aria-label="Ask Forge"
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -432,21 +443,38 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   );
 }
 
-function Chip({ testid, label, value }: { testid: string; label: string; value: string }) {
+/** Client sub-page segments that don't title-case cleanly from their slug. */
+const CLIENT_PAGE_LABELS: Record<string, string> = {
+  cashflow: "Cash Flow",
+  "income-expenses": "Income & Expenses",
+};
+
+/**
+ * Human-readable label for the current page, for the context line. Turns a
+ * route into something an advisor would recognize ("Balance Sheet"), never a
+ * raw key like `client:UUID`. The panel only ever mounts under `/clients/[id]`,
+ * so the client-sub-page branch is the live path; the rest degrades gracefully.
+ */
+function pageLabelForPath(pathname: string): string {
+  const parts = pathname.split("/").filter(Boolean); // ["clients", id, section?, …]
+  if (parts[0] !== "clients" || !parts[1]) {
+    const seg = parts[0];
+    return seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : "Overview";
+  }
+  const section = parts[2];
+  if (!section) return "Overview"; // /clients/[id] root
   return (
-    <span
-      data-testid={testid}
-      className="inline-flex items-center gap-1 rounded-full border border-hair bg-card-2 px-2 py-0.5 text-[11px] text-ink-3"
-    >
-      <span className="text-ink-4">{label}:</span>
-      <span className="text-ink-2">{value}</span>
-    </span>
+    CLIENT_PAGE_LABELS[section] ??
+    section
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ")
   );
 }
 
 function TypingDots() {
   return (
-    <div className="flex items-center gap-1 py-1" aria-label="Copilot is typing">
+    <div className="flex items-center gap-1 py-1" aria-label="Forge is typing">
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-4 [animation-delay:-0.3s]" />
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-4 [animation-delay:-0.15s]" />
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-4" />

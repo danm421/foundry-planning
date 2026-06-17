@@ -19,7 +19,7 @@ export function CopilotLauncher() {
     <button
       type="button"
       onClick={open}
-      aria-label="Open copilot"
+      aria-label="Open Forge"
       aria-expanded={isOpen}
       aria-controls="copilot-panel"
       className="fixed bottom-6 right-6 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-secondary/40 bg-secondary text-secondary-on shadow-lg transition-colors hover:bg-secondary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/60"

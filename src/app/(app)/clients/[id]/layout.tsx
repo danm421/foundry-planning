@@ -100,6 +100,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
         <section className="px-[var(--pad-card)] pb-6">{children}</section>
         <CopilotMount
           clientId={id}
+          clientName={householdTitle}
           enabled={process.env.COPILOT_ENABLED === "true"}
           scenarioNames={Object.fromEntries(scenarioRows.map((s) => [s.id, s.name]))}
         />

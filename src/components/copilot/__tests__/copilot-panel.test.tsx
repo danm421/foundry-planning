@@ -46,6 +46,7 @@ function mountPanel() {
       <CopilotProvider clientId="c1">
         <CopilotPanel
           clientId="c1"
+          clientName="Jane & John Smith"
           scenarioNames={{ s1: "Roth scenario", s2: "Delay SS to 70" }}
           forceOpenForTest
         />
@@ -57,8 +58,16 @@ function mountPanel() {
 describe("CopilotPanel", () => {
   it("renders the empty state and input (smoke)", async () => {
     mountPanel();
-    expect(await screen.findByRole("textbox", { name: /ask the copilot/i })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: /ask forge/i })).toBeInTheDocument();
     expect(screen.getByText(/how can i help/i)).toBeInTheDocument();
+  });
+
+  it("shows a humanized context line (client name, scenario, page — no raw IDs)", () => {
+    mountPanel();
+    expect(screen.getByTestId("chip-client").textContent).toBe("Jane & John Smith");
+    expect(screen.getByTestId("chip-scenario").textContent).toContain("Roth scenario");
+    // pathname mock is /clients/c1/overview → friendly page label
+    expect(screen.getByTestId("chip-page").textContent).toBe("Overview");
   });
 
   it("shows an attached-file chip after choosing a file", async () => {
@@ -109,6 +118,7 @@ describe("CopilotPanel", () => {
         <CopilotProvider clientId="c1">
           <CopilotPanel
             clientId="c1"
+            clientName="Jane & John Smith"
             scenarioNames={{ s1: "Roth scenario", s2: "Delay SS to 70" }}
             forceOpenForTest
           />

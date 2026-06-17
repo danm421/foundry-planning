@@ -58,7 +58,7 @@ export function ApprovalCard({ previews, calls, busy, onSubmit, onCancel }: Appr
       <div className="flex items-center gap-2 border-b border-warn/30 px-4 py-3">
         <span aria-hidden className="text-warn">⚠</span>
         <span className="text-[13px] font-semibold text-warn">
-          Copilot wants to make {previews.length} change{previews.length === 1 ? "" : "s"}
+          Forge wants to make {previews.length} change{previews.length === 1 ? "" : "s"}
         </span>
       </div>
 

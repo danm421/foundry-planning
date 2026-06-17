@@ -227,7 +227,7 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
         const text = await res.text().catch(() => "");
         const msg =
           res.status === 503
-            ? text || "Copilot is temporarily unavailable (rate limited). Try again shortly."
+            ? text || "Forge is temporarily unavailable (rate limited). Try again shortly."
             : text || `Request failed (HTTP ${res.status}).`;
         setStatus("error");
         setErrorMessage(msg);

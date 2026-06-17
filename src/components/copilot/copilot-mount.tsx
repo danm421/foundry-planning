@@ -13,17 +13,19 @@ import { CopilotLauncher } from "./copilot-launcher";
  */
 export function CopilotMount({
   clientId,
+  clientName,
   enabled,
   scenarioNames,
 }: {
   clientId: string;
+  clientName: string;
   enabled: boolean;
   scenarioNames: Record<string, string>;
 }) {
   if (!enabled) return null;
   return (
     <CopilotProvider clientId={clientId}>
-      <CopilotPanel clientId={clientId} scenarioNames={scenarioNames} />
+      <CopilotPanel clientId={clientId} clientName={clientName} scenarioNames={scenarioNames} />
       <CopilotLauncher />
     </CopilotProvider>
   );
