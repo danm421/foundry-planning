@@ -17,7 +17,15 @@ describe("summarizeExtraction", () => {
     });
     expect(s.status).toBe("review");
     expect(s.totalRows).toBe(1);
-    expect(s.warnings).toContain("w1");
+    expect(s.warnings).toEqual(["w1"]);
+  });
+
+  it("counts a present family as one row", () => {
+    const s = summarizeExtraction({
+      a: result({ extracted: { ...emptyExtracted(), family: {} as never } }),
+    });
+    expect(s.totalRows).toBe(1);
+    expect(s.status).toBe("review");
   });
 
   it("returns draft and dedupes warnings when no rows were produced", () => {
