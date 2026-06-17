@@ -107,6 +107,27 @@ describe("CopilotPanel", () => {
     expect(screen.queryByTestId("copilot-import-summary")).toBeNull();
   });
 
+  it("attaches via the paperclip button → input path and shows a clear card", async () => {
+    mountPanel();
+    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const clickSpy = vi.spyOn(fileInput, "click");
+
+    // The paperclip button must actually trigger the hidden input.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Attach a document"));
+    });
+    expect(clickSpy).toHaveBeenCalled();
+
+    // Simulate the OS file selection.
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+
+    const card = screen.getByTestId("copilot-attachment");
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveTextContent("stmt.pdf");
+  });
+
   it("updates the scenario chip when the URL scenario changes (drift)", () => {
     const { rerender } = mountPanel();
     expect(screen.getByTestId("chip-scenario").textContent).toContain("Roth scenario");

@@ -346,22 +346,39 @@ export function CopilotPanel({
         {/* Composer */}
         <div className="border-t border-hair px-4 py-3">
           {attached.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className="mb-2 space-y-1.5">
               {attached.map((f, i) => (
-                <span
+                <div
                   key={i}
-                  className="inline-flex items-center gap-1 rounded-full border border-hair bg-card-2 px-2 py-0.5 text-[11px] text-ink-2"
+                  data-testid="copilot-attachment"
+                  className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1.5"
                 >
-                  {f.name}
+                  <svg
+                    aria-hidden
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="shrink-0 text-ink-3"
+                  >
+                    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                    <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{f.name}</span>
+                  <span className="shrink-0 text-[11px] text-ink-4">{formatBytes(f.size)}</span>
                   <button
                     type="button"
                     aria-label={`Remove ${f.name}`}
                     onClick={() => setAttached((prev) => prev.filter((_, j) => j !== i))}
-                    className="text-ink-4 hover:text-ink"
+                    className="shrink-0 text-ink-4 hover:text-ink"
                   >
                     ×
                   </button>
-                </span>
+                </div>
               ))}
             </div>
           )}
@@ -470,6 +487,14 @@ function pageLabelForPath(pathname: string): string {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ")
   );
+}
+
+/** Compact human-readable file size for attachment cards (e.g. "12 KB", "3.4 MB"). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function TypingDots() {
