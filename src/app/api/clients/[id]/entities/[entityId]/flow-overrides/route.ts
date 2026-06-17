@@ -100,10 +100,11 @@ export async function PUT(
     const { orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const auth = await authorize(id, entityId);
-    if ("error" in auth) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const [ent] = await db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
+    if (!ent) return NextResponse.json({ error: "Entity not found" }, { status: 404 });
     if (scenarioId) {
       const [scenario] = await db
         .select()

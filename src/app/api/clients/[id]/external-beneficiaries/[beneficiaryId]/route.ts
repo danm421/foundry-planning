@@ -3,7 +3,6 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgAndUser } from "@/lib/db-helpers";
 import { externalBeneficiaryUpdateSchema } from "@/lib/schemas/beneficiaries";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
@@ -17,7 +16,6 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    await requireOrgAndUser();
     const { id, beneficiaryId } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
@@ -56,7 +54,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    await requireOrgAndUser();
     const { id, beneficiaryId } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);

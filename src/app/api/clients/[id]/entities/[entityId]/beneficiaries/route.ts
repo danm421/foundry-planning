@@ -8,7 +8,6 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { requireOrgAndUser } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -70,7 +69,6 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    await requireOrgAndUser();
     const { id, entityId } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);

@@ -3,7 +3,6 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { externalBeneficiaries } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { requireOrgAndUser } from "@/lib/db-helpers";
 import { externalBeneficiaryCreateSchema } from "@/lib/schemas/beneficiaries";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -40,7 +39,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireOrgAndUser();
     const { id } = await params;
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
