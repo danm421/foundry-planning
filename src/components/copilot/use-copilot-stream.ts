@@ -39,6 +39,8 @@ export type CopilotChatRole = "user" | "assistant";
 export interface CopilotMessage {
   role: CopilotChatRole;
   text: string;
+  /** Display-only filenames shown as chips on a user bubble (chat attachments). */
+  attachments?: string[];
 }
 export type CopilotStatus = "idle" | "streaming" | "done" | "error" | "cancelled";
 
@@ -80,6 +82,8 @@ export interface SendArgs {
   currentPage?: string;
   /** When set, tells the copilot a freshly-uploaded import is awaiting review. */
   pendingImportId?: string;
+  /** Display-only filenames to show on the user bubble; never sent to the server. */
+  attachments?: string[];
 }
 
 export interface UseCopilotStreamResult {
@@ -195,7 +199,7 @@ export function useCopilotStream(clientId: string): UseCopilotStreamResult {
       // Push the user turn + an empty assistant bubble to stream into.
       setMessages((m) => [
         ...m,
-        { role: "user", text: args.message },
+        { role: "user", text: args.message, attachments: args.attachments },
         { role: "assistant", text: "" },
       ]);
 

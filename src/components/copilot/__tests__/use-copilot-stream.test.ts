@@ -98,4 +98,19 @@ describe("useCopilotStream.send", () => {
     );
     expect(body.pendingImportId).toBe("imp_7");
   });
+
+  it("attaches `attachments` to the pushed user message (display only)", async () => {
+    const { result } = renderHook(() => useCopilotStream("client_42"));
+
+    await act(async () => {
+      await result.current.send({ ...validArgs, attachments: ["stmt.pdf"] });
+    });
+
+    const userMsg = result.current.messages.find((m) => m.role === "user");
+    expect(userMsg?.attachments).toEqual(["stmt.pdf"]);
+
+    // attachments are display-only — they must NOT go in the fetch body.
+    const body = JSON.parse((globalThis.fetch as Mock).mock.calls[0][1].body as string);
+    expect(body.attachments).toBeUndefined();
+  });
 });
