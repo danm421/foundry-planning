@@ -13,6 +13,8 @@ export type CopilotPromptContext = {
   scenario: { name: string; isBaseCase: boolean };
   /** The report/page the advisor is currently viewing, if any. */
   currentPage?: string;
+  /** A document import the advisor just uploaded in chat, awaiting review. */
+  pendingImport?: { importId: string };
 };
 
 /** No-hallucinated-numbers grounding rules. Lives IN the stable prefix so Azure
@@ -68,6 +70,9 @@ export function buildSystemPrompt(ctx: CopilotPromptContext): string {
   const pageLine = ctx.currentPage
     ? `The advisor is currently viewing the "${ctx.currentPage}" page.`
     : "The advisor is not on a specific report page right now.";
+  const importLine = ctx.pendingImport
+    ? `A document import (id ${ctx.pendingImport.importId}) is pending review — call read_import to inspect what was extracted and how it matched existing accounts. Do NOT attempt to commit it; direct the advisor to the review screen to apply changes.`
+    : null;
   const tail = [
     "",
     "--- Current context (server-provided; authoritative) ---",
@@ -75,6 +80,7 @@ export function buildSystemPrompt(ctx: CopilotPromptContext): string {
     `Active client: ${ctx.client.householdTitle}.`,
     `Active scenario: ${scenarioLabel}.`,
     pageLine,
+    ...(importLine ? [importLine] : []),
   ].join("\n");
   return COPILOT_SYSTEM_PREFIX + "\n" + tail;
 }

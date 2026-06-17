@@ -118,3 +118,21 @@ describe("buildSystemPrompt", () => {
     expect(p).toContain("Northstar Advisors");
   });
 });
+
+const baseCtx = {
+  firmName: "Acme Advisors",
+  client: { householdTitle: "The Smiths" },
+  scenario: { name: "Base Case", isBaseCase: true },
+};
+
+it("appends a pending-import line and points at read_import + the review screen", () => {
+  const prompt = buildSystemPrompt({ ...baseCtx, pendingImport: { importId: "imp_42" } });
+  expect(prompt).toContain("imp_42");
+  expect(prompt).toMatch(/read_import/);
+  expect(prompt).toMatch(/review/i);
+});
+
+it("omits the pending-import line when none is pending", () => {
+  const prompt = buildSystemPrompt(baseCtx);
+  expect(prompt).not.toMatch(/read_import/);
+});
