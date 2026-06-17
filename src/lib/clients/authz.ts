@@ -97,3 +97,17 @@ export async function requireClientAccess(clientId: string): Promise<ClientAcces
   }
   throw new ForbiddenError("Client not found or access denied");
 }
+
+/**
+ * Throw-based write gate: wraps `requireClientAccess` and additionally
+ * rejects callers that only hold a view-level share. Returns the client
+ * row, the owning firmId, and the access type ("own" | "shared").
+ * The single home for the cross-org WRITE rule.
+ */
+export async function requireClientEditAccess(clientId: string) {
+  const acc = await requireClientAccess(clientId);
+  if (acc.permission !== "edit") {
+    throw new ForbiddenError("Edit access required");
+  }
+  return { client: acc.client, firmId: acc.firmId, access: acc.access };
+}

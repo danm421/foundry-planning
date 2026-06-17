@@ -11,7 +11,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { verifyClientAccess, requireClientAccess } from "../authz";
+import { verifyClientAccess, requireClientAccess, requireClientEditAccess } from "../authz";
 
 const ORG = "org_clauthz";
 const ADV_A = "adv_a";
@@ -125,5 +125,34 @@ describe("requireClientAccess", () => {
     setAuth("user_member", "org:member");
     const acc = await requireClientAccess(clientId);
     expect(acc).toMatchObject({ firmId: ORG, permission: "edit", access: "own" });
+  });
+});
+
+describe("requireClientEditAccess", () => {
+  it("own-firm member resolves with access=own", async () => {
+    setAuth("user_member", "org:member");
+    const acc = await requireClientEditAccess(clientId);
+    expect(acc).toMatchObject({ firmId: ORG, access: "own" });
+  });
+
+  it("shared-VIEW recipient throws 'Edit access required'", async () => {
+    await db.insert(clientShares).values({
+      firmId: ORG, ownerUserId: ADV_A, recipientUserId: "user_rcpt",
+      recipientEmail: "r@x.com", scope: "client", clientId,
+      permission: "view", createdBy: ADV_A,
+    });
+    vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
+    await expect(requireClientEditAccess(clientId)).rejects.toThrow("Edit access required");
+  });
+
+  it("shared-EDIT recipient resolves with owning firmId and access=shared", async () => {
+    await db.insert(clientShares).values({
+      firmId: ORG, ownerUserId: ADV_A, recipientUserId: "user_rcpt",
+      recipientEmail: "r@x.com", scope: "client", clientId,
+      permission: "edit", createdBy: ADV_A,
+    });
+    vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
+    const acc = await requireClientEditAccess(clientId);
+    expect(acc).toMatchObject({ firmId: ORG, access: "shared" });
   });
 });
