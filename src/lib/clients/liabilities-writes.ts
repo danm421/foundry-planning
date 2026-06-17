@@ -65,8 +65,9 @@ export async function createLiabilityForClient(args: {
   firmId: string;
   actorId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<LiabilityRow>> {
-  const { clientId, firmId, actorId, input } = args;
+  const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (!scenarioId) return writeError(404, "Client not found");
@@ -174,6 +175,7 @@ export async function createLiabilityForClient(args: {
     firmId,
     actorId,
     snapshot: await toLiabilitySnapshot(liability!),
+    extraMetadata: crossFirmMeta,
   });
 
   return { ok: true, data: liability!, resourceId: liability!.id };
@@ -185,8 +187,9 @@ export async function updateLiabilityForClient(args: {
   actorId: string;
   liabilityId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<LiabilityRow>> {
-  const { clientId, firmId, actorId, liabilityId, input } = args;
+  const { clientId, firmId, actorId, liabilityId, input, crossFirmMeta } = args;
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -310,6 +313,7 @@ export async function updateLiabilityForClient(args: {
     before: await toLiabilitySnapshot(before),
     after: await toLiabilitySnapshot(updated!),
     fieldLabels: LIABILITY_FIELD_LABELS,
+    extraMetadata: crossFirmMeta,
   });
 
   return { ok: true, data: updated!, resourceId: liabilityId };
@@ -320,8 +324,9 @@ export async function deleteLiabilityForClient(args: {
   firmId: string;
   actorId: string;
   liabilityId: string;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<{ id: string }>> {
-  const { clientId, firmId, actorId, liabilityId } = args;
+  const { clientId, firmId, actorId, liabilityId, crossFirmMeta } = args;
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -354,6 +359,7 @@ export async function deleteLiabilityForClient(args: {
     firmId,
     actorId,
     snapshot,
+    extraMetadata: crossFirmMeta,
   });
 
   return { ok: true, data: { id: liabilityId }, resourceId: liabilityId };

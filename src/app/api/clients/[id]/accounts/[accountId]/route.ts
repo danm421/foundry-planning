@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accounts, familyMembers, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId, requireOrgAndUser } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   updateAccountForClient,
   deleteAccountForClient,
@@ -17,16 +19,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, accountId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const result = await updateAccountForClient({
       clientId: id,
@@ -34,14 +30,14 @@ export async function PUT(
       actorId: userId,
       accountId,
       input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
     return result.ok
       ? NextResponse.json(result.data)
       : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/accounts/[accountId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -53,16 +49,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    await requireOrgId();
     const { id, accountId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    await requireOrgAndUser();
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const { ownerFamilyMemberId } = body;
@@ -137,9 +127,8 @@ export async function PATCH(
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PATCH /api/clients/[id]/accounts/[accountId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -151,30 +140,24 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, accountId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const result = await deleteAccountForClient({
       clientId: id,
       firmId,
       actorId: userId,
       accountId,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
     return result.ok
       ? NextResponse.json({ success: true })
       : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/accounts/[accountId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

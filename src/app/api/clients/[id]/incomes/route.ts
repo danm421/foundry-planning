@@ -3,7 +3,9 @@ import { db } from "@/db";
 import { scenarios, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { createIncomeForClient } from "@/lib/clients/incomes-writes";
 
 export const dynamic = "force-dynamic";
@@ -54,28 +56,23 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id } = await params;
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const result = await createIncomeForClient({
       clientId: id,
       firmId,
       actorId: userId,
       input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
     return result.ok
       ? NextResponse.json(result.data, { status: 201 })
       : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/incomes error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

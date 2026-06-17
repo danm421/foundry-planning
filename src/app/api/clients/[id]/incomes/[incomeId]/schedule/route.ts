@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { incomes, incomeScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -48,16 +50,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, incomeId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyOwnership(id, incomeId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -85,14 +81,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       resourceId: incomeId,
       clientId: id,
       firmId,
-      metadata: { count: overrides.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { count: overrides.length }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT income schedule error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -100,16 +95,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    await requireOrgId();
     const { id, incomeId } = await params;
-
-    const access = await verifyClientAccess(id);
-    if (!access.ok) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
+    await requireOrgAndUser();
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyOwnership(id, incomeId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -120,9 +109,8 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE income schedule error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

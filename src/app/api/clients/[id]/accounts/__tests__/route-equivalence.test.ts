@@ -23,12 +23,14 @@ import { accounts, accountOwners, auditLog } from "@/db/schema";
 import { createAccountForClient } from "@/lib/clients/accounts-writes";
 import { POST } from "../route";
 
-// Mock Clerk auth to return org:admin inside COOPER_FIRM_ID.
+// Mock Clerk auth to return org:admin inside COOPER_FIRM_ID with founder bypass so
+// requireActiveSubscriptionForFirm passes without a live Clerk API call.
 vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({
     userId: "user_route_equiv_test",
     orgId: "org_3CitTEIe8PJa1BVYw7LnEjkiP9r",
     orgRole: "org:admin",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
   }),
 }));
 
