@@ -8,7 +8,7 @@
 //
 // Pattern: auth mocked, real DB, clientShares rows inserted per-test.
 // Follows src/lib/clients/__tests__/authz.test.ts (DB-backed mock pattern).
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
