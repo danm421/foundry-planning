@@ -38,7 +38,8 @@ export async function assertScenarioRouteScope(
   // Replaces the firm-only `findClientInFirm` so a planner can't reach a
   // scenario under a client outside their mapped advisors. Covers every
   // `scenarios/[sid]/*` route that routes through this shared helper.
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return {
       kind: "miss",
       response: NextResponse.json(

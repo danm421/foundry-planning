@@ -104,7 +104,8 @@ export async function updateExpenseForClient(args: {
 }): Promise<EntityWriteResult<ExpenseRow>> {
   const { clientId, firmId, actorId, expenseId, input } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -186,7 +187,8 @@ export async function deleteExpenseForClient(args: {
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, expenseId } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 

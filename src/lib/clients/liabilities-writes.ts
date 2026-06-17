@@ -188,7 +188,8 @@ export async function updateLiabilityForClient(args: {
 }): Promise<EntityWriteResult<LiabilityRow>> {
   const { clientId, firmId, actorId, liabilityId, input } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -322,7 +323,8 @@ export async function deleteLiabilityForClient(args: {
 }): Promise<EntityWriteResult<{ id: string }>> {
   const { clientId, firmId, actorId, liabilityId } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
