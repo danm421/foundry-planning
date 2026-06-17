@@ -33,8 +33,8 @@ const READ_POST_SUFFIXES = [
   // after an approval decision. Both READ/compute — Phase 2 writes go through
   // the approval/HITL path with normal mutation gating, so a read-only
   // (grace / late-past_due) firm may still converse with the forge.
-  "/copilot/stream",
-  "/copilot/resume",
+  "/forge/stream",
+  "/forge/resume",
 ] as const;
 
 function isReadPost(pathname: string): boolean {

@@ -205,7 +205,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
 
       let res: Response;
       try {
-        res = await fetch(`/api/clients/${clientId}/copilot/stream`, {
+        res = await fetch(`/api/clients/${clientId}/forge/stream`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -262,7 +262,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const res = await fetch(`/api/clients/${clientId}/copilot/resume`, {
+        const res = await fetch(`/api/clients/${clientId}/forge/resume`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ conversationId, decisions }),

@@ -59,7 +59,7 @@ vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => fakeGraph }));
 import { POST } from "../stream/route";
 
 function makeReq(body: unknown): Request {
-  return new Request("http://localhost/api/clients/c1/copilot/stream", {
+  return new Request("http://localhost/api/clients/c1/forge/stream", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -97,7 +97,7 @@ beforeEach(() => {
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });
 
-describe("POST /api/clients/[id]/copilot/stream — gate chain", () => {
+describe("POST /api/clients/[id]/forge/stream — gate chain", () => {
   it("returns 404 when the feature flag is off", async () => {
     process.env.COPILOT_ENABLED = "false";
     const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
@@ -143,7 +143,7 @@ describe("POST /api/clients/[id]/copilot/stream — gate chain", () => {
   });
 });
 
-describe("POST /api/clients/[id]/copilot/stream — hello stream", () => {
+describe("POST /api/clients/[id]/forge/stream — hello stream", () => {
   it("streams conversation + tokens + done, and records the audit", async () => {
     const res = await POST(makeReq({ message: "Tell me about the plan", scenarioId: "base" }), ctx);
     expect(res.status).toBe(200);

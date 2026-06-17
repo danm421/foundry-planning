@@ -107,7 +107,7 @@ vi.mock("@/domain/forge/graph", () => ({ buildGraph: (...a: unknown[]) => buildG
 import { POST } from "../resume/route";
 
 function makeReq(body: unknown): Request {
-  return new Request("http://localhost/api/clients/c1/copilot/resume", {
+  return new Request("http://localhost/api/clients/c1/forge/resume", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -170,7 +170,7 @@ const goodBody = {
   decisions: { t1: "confirm" as const },
 };
 
-describe("POST /api/clients/[id]/copilot/resume — gates + IDOR", () => {
+describe("POST /api/clients/[id]/forge/resume — gates + IDOR", () => {
   it("returns 404 when COPILOT_ENABLED is off", async () => {
     process.env.COPILOT_ENABLED = "false";
     const res = await POST(makeReq(goodBody), ctx);
@@ -250,7 +250,7 @@ describe("POST /api/clients/[id]/copilot/resume — gates + IDOR", () => {
   });
 });
 
-describe("POST /api/clients/[id]/copilot/resume — happy path", () => {
+describe("POST /api/clients/[id]/forge/resume — happy path", () => {
   it("resumes with Command({resume:{decisions}}), streams token + done, touches, audits", async () => {
     const res = await POST(makeReq(goodBody), ctx);
     expect(res.status).toBe(200);

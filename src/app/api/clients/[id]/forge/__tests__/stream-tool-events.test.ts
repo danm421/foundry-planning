@@ -70,7 +70,7 @@ vi.mock("@/domain/forge/graph", () => ({ buildGraph: () => fakeGraph }));
 import { POST } from "../stream/route";
 
 function makeReq(body: unknown): Request {
-  return new Request("http://localhost/api/clients/c1/copilot/stream", {
+  return new Request("http://localhost/api/clients/c1/forge/stream", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -112,7 +112,7 @@ beforeEach(() => {
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });
 
-describe("POST /api/clients/[id]/copilot/stream — tool events", () => {
+describe("POST /api/clients/[id]/forge/stream — tool events", () => {
   it("emits conversation, token, tool_start, tool_end, token, done in order", async () => {
     const res = await POST(
       makeReq({ message: "Run a Monte Carlo", scenarioId: "base" }),
