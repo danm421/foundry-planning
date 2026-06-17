@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
+import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
 import { eq, desc, asc } from "drizzle-orm";
@@ -13,6 +14,7 @@ import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
 import { CopilotMount } from "@/components/copilot/copilot-mount";
+import ShareClientButton from "@/components/sharing/share-client-button";
 
 interface Props {
   children: React.ReactNode;
@@ -21,9 +23,18 @@ interface Props {
 
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
   const { id } = await params;
-  const access = await requireClientAccess(id).catch(() => null);
+  const [access, { userId, orgRole }] = await Promise.all([
+    requireClientAccess(id).catch(() => null),
+    auth(),
+  ]);
   if (!access) notFound();
   const { client: clientRow } = access;
+
+  // Only the owning advisor or an org admin of the owning firm may manage shares.
+  // Recipients who received a shared client (access === "shared") cannot share further.
+  const canManageShares =
+    access.access === "own" &&
+    (userId === clientRow.advisorId || orgRole === "org:admin");
 
   const [household] = await db
     .select({ deletedAt: crmHouseholds.deletedAt })
@@ -93,7 +104,16 @@ export default async function ClientLayout({ children, params }: Props): Promise
         clientId={id}
         people={people}
         centerSlot={<HeaderSubtabs clientId={id} />}
-        rightSlot={<ScenarioChipRow clientId={id} scenarios={scenarioRows} />}
+        rightSlot={
+          <>
+            <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
+            <ShareClientButton
+              clientId={id}
+              isPrivate={clientRow.isPrivate}
+              canManage={canManageShares}
+            />
+          </>
+        }
       />
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
       <ScenarioDrawerProvider>
