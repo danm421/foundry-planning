@@ -39,9 +39,9 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const callerOrg = await requireOrgId();
 
-    const rl = await checkProjectionRateLimit(firmId);
+    const rl = await checkProjectionRateLimit(callerOrg);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
         rl,
@@ -54,9 +54,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const access = await verifyClientAccess(clientId);
     if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const raw = await req.json();
@@ -71,7 +68,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const result = await getOrComputeSolverMc({
       clientId,
-      firmId,
+      firmId: access.firmId,
       source,
       mutations: mutations as SolverMutation[],
       ...(extraAccountMixes ? { extraAccountMixes } : {}),

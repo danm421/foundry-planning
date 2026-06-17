@@ -41,10 +41,10 @@ function sseChunk(event: SseEventName, payload: unknown): string {
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
-  let firmId: string;
+  let callerOrg: string;
   let clientId: string;
   try {
-    firmId = await requireOrgId();
+    callerOrg = await requireOrgId();
     ({ id: clientId } = await ctx.params);
   } catch (err) {
     const authResp = authErrorResponse(err);
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   // mid-stream error event. This route runs one deterministic projection per
   // plan year (40–60 engine runs), so it shares the projection budget like the
   // sibling solve / solve-mc routes (F6).
-  const rl = await checkProjectionRateLimit(firmId);
+  const rl = await checkProjectionRateLimit(callerOrg);
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
@@ -73,12 +73,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   if (!access.ok) {
     return new Response(JSON.stringify({ error: "Client not found" }), {
       status: 404,
-      headers: { "content-type": "application/json" },
-    });
-  }
-  if (access.permission !== "edit") {
-    return new Response(JSON.stringify({ error: "View-only access" }), {
-      status: 403,
       headers: { "content-type": "application/json" },
     });
   }
@@ -101,9 +95,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const [{ effectiveTree }, proceeds] = await Promise.all([
-          loadEffectiveTree(clientId, firmId, assumptions.scenarioRef, {}),
+          loadEffectiveTree(clientId, access.firmId, assumptions.scenarioRef, {}),
           loadLiProceedsGrowth(
-            firmId,
+            access.firmId,
             assumptions.modelPortfolioId,
             DEFAULT_LI_GROWTH,
           ),

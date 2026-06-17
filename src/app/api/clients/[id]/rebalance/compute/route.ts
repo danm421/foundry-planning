@@ -31,15 +31,12 @@ const bodySchema = z
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id } = await params;
 
     const access = await verifyClientAccess(id);
     if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const parsed = bodySchema.safeParse(await request.json());
@@ -47,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
     }
 
-    const inputs = await loadRebalanceInputs(id, firmId, parsed.data);
+    const inputs = await loadRebalanceInputs(id, access.firmId, parsed.data);
     return NextResponse.json(assembleRebalanceResult(inputs));
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

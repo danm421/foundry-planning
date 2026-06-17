@@ -41,9 +41,6 @@ export async function POST(
     if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    if (access.permission !== "edit") {
-      return NextResponse.json({ error: "View-only access" }, { status: 403 });
-    }
 
     // Tenant-isolation: confirm the target account exists, belongs to
     // this client, and is a life-insurance account. Even though this
