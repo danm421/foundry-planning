@@ -89,6 +89,21 @@ describe("RESPONSE_STYLE clause", () => {
   });
 });
 
+describe("citation grounding rule (no source-tag noise)", () => {
+  it("still grounds every figure in a tool result", () => {
+    expect(GROUNDING_RULES).toMatch(/ground every figure in a tool result/i);
+  });
+
+  it("forbids visible [Source: …] tags and exposing internal ids/uuids", () => {
+    expect(GROUNDING_RULES).toMatch(/do NOT stamp visible/i);
+    expect(GROUNDING_RULES).toMatch(/ids\/uuids/i);
+  });
+
+  it("drops the old 'cite the source of every factual claim' instruction", () => {
+    expect(GROUNDING_RULES).not.toMatch(/cite the source of every factual claim/i);
+  });
+});
+
 describe("KB citation grounding clause", () => {
   it("requires citing the sourceRef for each search_planning_kb claim", () => {
     expect(FORGE_SYSTEM_PREFIX).toMatch(/cite.*sourceRef/i);

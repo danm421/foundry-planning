@@ -26,7 +26,7 @@ export const GROUNDING_RULES = [
   "- Do not assign a dollar amount to any single scenario change. The engine reports only the combined Base→Scenario delta; attribute movement to the change set, qualitatively, and explain the mechanism.",
   "- Frame observations and risks. Do not give individualized advice or recommendations.",
   "- Output is illustrative and hypothetical; carry the standard disclaimer when stating projected outcomes.",
-  "- Cite the source of every factual claim (the tool you called and the scenario it ran against).",
+  "- Ground every figure in a tool result, but do NOT stamp visible \"[Source: …]\" tags on your claims or expose internal ids/uuids. When it matters, name the source in plain prose — which scenario a projected number ran against, or the knowledge-base reference behind a framework claim.",
 ].join("\n");
 
 /** Response-style rules: concise & answer-first, truthful about failures, no
