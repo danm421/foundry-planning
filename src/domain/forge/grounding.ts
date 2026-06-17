@@ -1,4 +1,4 @@
-// src/domain/copilot/grounding.ts
+// src/domain/forge/grounding.ts
 
 // Matches $2.5M, $100,000, 92%, 2026, 0.92, etc. (M/K suffix case-insensitive)
 const NUMBER_TOKEN_RE = /\$?\d[\d,]*(?:\.\d+)?\s?(?:[MKmk])?%?/g;

@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/detail-writes.ts
+// src/domain/forge/tools/detail-writes.ts
 //
 // Phase 3 DETAIL (plan-data) WRITE TOOLS — the expense sub-phase
 // (add_/update_/remove_expense), the income sub-phase

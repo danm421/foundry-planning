@@ -1,4 +1,4 @@
-// src/domain/copilot/conversations.ts
+// src/domain/forge/conversations.ts
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { copilotConversations } from "@/db/schema";

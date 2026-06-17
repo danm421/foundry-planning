@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/llm.test.ts
+// src/domain/forge/__tests__/llm.test.ts
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { chatModel, instanceNameFromEndpoint } from "../llm";
 

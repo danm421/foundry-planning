@@ -1,4 +1,4 @@
-// src/components/copilot/markdown-message.tsx
+// src/components/forge/markdown-message.tsx
 "use client";
 
 import { memo } from "react";

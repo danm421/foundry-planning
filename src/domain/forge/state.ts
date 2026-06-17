@@ -1,4 +1,4 @@
-// src/domain/copilot/state.ts
+// src/domain/forge/state.ts
 import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
 
 /**

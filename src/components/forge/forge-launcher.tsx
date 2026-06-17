@@ -1,4 +1,4 @@
-// src/components/copilot/forge-launcher.tsx
+// src/components/forge/forge-launcher.tsx
 "use client";
 
 import { useForge } from "./forge-provider";

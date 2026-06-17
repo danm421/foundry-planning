@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/knowledge.ts
+// src/domain/forge/tools/knowledge.ts
 //
 // Phase 4 read tool: `search_planning_kb` — tenant-scoped semantic search over
 // the `planning_kb_chunks` pgvector table. Tenant isolation is the security

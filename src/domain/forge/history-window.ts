@@ -1,4 +1,4 @@
-// src/domain/copilot/history-window.ts
+// src/domain/forge/history-window.ts
 import { type BaseMessage, HumanMessage } from "@langchain/core/messages";
 
 /**

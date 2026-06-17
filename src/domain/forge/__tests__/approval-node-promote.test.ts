@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/approval-node-promote.test.ts
+// src/domain/forge/__tests__/approval-node-promote.test.ts
 //
 // Phase-4 Task 14 — the promote_to_base HITL flow, exercised end-to-end through
 // the REAL graph (real agent/approval nodes, real promote_to_base tool). A

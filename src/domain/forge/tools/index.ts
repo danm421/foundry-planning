@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/index.ts
+// src/domain/forge/tools/index.ts
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { ForgeToolContext } from "../context";
 import { buildReadTools } from "./read";

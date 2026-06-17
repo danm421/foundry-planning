@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/grounding.test.ts
+// src/domain/forge/__tests__/grounding.test.ts
 import { describe, it, expect } from "vitest";
 import { findUngroundedNumbers } from "../grounding";
 

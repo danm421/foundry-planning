@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/report.ts
+// src/domain/forge/tools/report.ts
 //
 // Phase 4 — the `generate_report` forge tool. The model names registry pages
 // (+ optional scenarios / Monte Carlo / title); we validate those against the

@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/__tests__/report.test.ts
+// src/domain/forge/tools/__tests__/report.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock every IO boundary so the tool stays a pure unit. ────────────────────

@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/approval-node.test.ts
+// src/domain/forge/__tests__/approval-node.test.ts
 //
 // Phase-2 Task 61 — the approval node's audit + preview behaviour, exercised
 // end-to-end through the REAL graph (real agent/approval nodes, real tools).

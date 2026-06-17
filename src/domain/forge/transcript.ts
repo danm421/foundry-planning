@@ -1,4 +1,4 @@
-// src/domain/copilot/transcript.ts
+// src/domain/forge/transcript.ts
 import { type BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 
 export type UiMessage = { role: "user" | "assistant"; text: string };

@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/detail-writes.test.ts
+// src/domain/forge/__tests__/detail-writes.test.ts
 //
 // Phase-3 expense WRITE tools (add_/update_/remove_expense). Mirrors the
 // scenario-writes test structure: the cores are mocked, so this stays a pure

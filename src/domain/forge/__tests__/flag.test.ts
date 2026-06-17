@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/flag.test.ts
+// src/domain/forge/__tests__/flag.test.ts
 import { afterEach, describe, expect, it } from "vitest";
 import { isForgeEnabled } from "../flag";
 

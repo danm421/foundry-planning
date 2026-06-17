@@ -1,4 +1,4 @@
-// src/components/copilot/actions.ts
+// src/components/forge/actions.ts
 "use server";
 
 import { auth } from "@clerk/nextjs/server";

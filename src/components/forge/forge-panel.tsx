@@ -1,4 +1,4 @@
-// src/components/copilot/forge-panel.tsx
+// src/components/forge/forge-panel.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";

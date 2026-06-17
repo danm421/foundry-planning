@@ -1,4 +1,4 @@
-// src/domain/copilot/preview.ts
+// src/domain/forge/preview.ts
 //
 // Turns a proposed scenario-write (the model's raw tool args, captured at the
 // approval interrupt in graph.ts) into a `WritePreview` for the approval card.

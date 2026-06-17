@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/crm-tier-b.test.ts
+// src/domain/forge/__tests__/crm-tier-b.test.ts
 //
 // Tier-B CRM destructive / bulk write tools: crm_delete_note, crm_delete_task,
 // crm_create_tasks. These route through HITL approval (WRITE_TOOL_NAMES). The

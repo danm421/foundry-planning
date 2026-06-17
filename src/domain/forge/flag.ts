@@ -1,4 +1,4 @@
-// src/domain/copilot/flag.ts
+// src/domain/forge/flag.ts
 
 /**
  * Single source of truth for the forge feature flag. Mirrors the inline

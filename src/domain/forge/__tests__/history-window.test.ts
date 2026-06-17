@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/history-window.test.ts
+// src/domain/forge/__tests__/history-window.test.ts
 import { describe, it, expect } from "vitest";
 import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { selectHistoryWindow } from "../history-window";

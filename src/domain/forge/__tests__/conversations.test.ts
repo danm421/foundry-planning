@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/conversations.test.ts
+// src/domain/forge/__tests__/conversations.test.ts
 import { describe, it, expect, afterAll, vi } from "vitest";
 vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

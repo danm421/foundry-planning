@@ -1,4 +1,4 @@
-// src/domain/copilot/system-prompt.ts
+// src/domain/forge/system-prompt.ts
 
 /**
  * Variable, per-turn context for the system prompt tail. Assembled by the route

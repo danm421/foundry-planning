@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/whatif.ts
+// src/domain/forge/tools/whatif.ts
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";

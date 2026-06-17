@@ -1,4 +1,4 @@
-// src/domain/copilot/llm.ts
+// src/domain/forge/llm.ts
 import { AzureChatOpenAI } from "@langchain/openai";
 import { callAIEmbedding } from "@/lib/extraction/azure-client";
 

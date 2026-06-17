@@ -1,4 +1,4 @@
-// src/components/copilot/use-forge-import.ts
+// src/components/forge/use-forge-import.ts
 //
 // Client-side orchestrator for the in-chat document import. Drives the existing
 // import endpoints in order — create (updating, base case) → upload → extract

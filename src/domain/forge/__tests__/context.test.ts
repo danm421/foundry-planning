@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/context.test.ts
+// src/domain/forge/__tests__/context.test.ts
 import { describe, it, expect } from "vitest";
 import { buildToolContext } from "../context";
 import type { ForgeAuthContext } from "../state";

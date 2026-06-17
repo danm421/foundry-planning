@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/scenario-writes.test.ts
+// src/domain/forge/__tests__/scenario-writes.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));

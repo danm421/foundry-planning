@@ -1,4 +1,4 @@
-// src/components/copilot/approval-card.tsx
+// src/components/forge/approval-card.tsx
 //
 // Presentational component that renders an `approval_required` payload:
 // a list of WritePreview rows (one per write tool call) with per-row

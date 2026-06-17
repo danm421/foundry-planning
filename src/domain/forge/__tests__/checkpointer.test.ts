@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/checkpointer.test.ts
+// src/domain/forge/__tests__/checkpointer.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the heavy pg-backed module so the test never touches a real DB.

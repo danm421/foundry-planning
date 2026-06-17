@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/scenario-writes.ts
+// src/domain/forge/tools/scenario-writes.ts
 //
 // Phase 2 SCENARIO WRITE TOOLS — the highest-risk forge surface. Every tool
 // here executes POST-APPROVAL, on a /resume request that may originate in a

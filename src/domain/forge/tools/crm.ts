@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/crm.ts
+// src/domain/forge/tools/crm.ts
 //
 // CRM + practice-management tools. Every tool re-derives firmId via requireOrgId()
 // and resolves+verifies the household on EVERY call (a /resume may arrive from

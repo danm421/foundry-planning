@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/crm-composite.test.ts
+// src/domain/forge/__tests__/crm-composite.test.ts
 //
 // Tests for the six read-only composite advisor skills:
 //   meeting_prep, summarize_notes, whats_changed_since,

@@ -1,4 +1,4 @@
-// src/domain/copilot/context.ts
+// src/domain/forge/context.ts
 import type { ForgeAuthContext } from "./state";
 
 export type { ForgeAuthContext } from "./state";

@@ -1,4 +1,4 @@
-// src/components/copilot/__tests__/actions.test.ts
+// src/components/forge/__tests__/actions.test.ts
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));

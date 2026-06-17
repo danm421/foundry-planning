@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/state.test.ts
+// src/domain/forge/__tests__/state.test.ts
 import { describe, it, expect } from "vitest";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { ForgeState, type ForgeAuthContext } from "../state";

@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/transcript.test.ts
+// src/domain/forge/__tests__/transcript.test.ts
 import { describe, it, expect } from "vitest";
 import { HumanMessage, AIMessage, ToolMessage, SystemMessage } from "@langchain/core/messages";
 import { toUiMessages } from "../transcript";

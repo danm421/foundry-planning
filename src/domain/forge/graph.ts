@@ -1,4 +1,4 @@
-// src/domain/copilot/graph.ts
+// src/domain/forge/graph.ts
 import { StateGraph, START, END, interrupt } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";

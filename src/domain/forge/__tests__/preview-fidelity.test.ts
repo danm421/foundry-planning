@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/preview-fidelity.test.ts
+// src/domain/forge/__tests__/preview-fidelity.test.ts
 //
 // Preview fidelity: the field-level diff line `describeProposedWrite` shows for a
 // propose_changes EDIT must agree with the ACTUAL write's row diff. We compute

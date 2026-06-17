@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/detail-writes-preview.test.ts
+// src/domain/forge/__tests__/detail-writes-preview.test.ts
 //
 // Dry-run preview for the expense write tools. `describeProposedWrite` with an
 // auth context must:

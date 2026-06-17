@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/__tests__/whatif-social-security.test.ts
+// src/domain/forge/tools/__tests__/whatif-social-security.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClientData } from "@/engine/types";
 import type { EndingPortfolioSolveResult } from "@/lib/solver/solve-types";

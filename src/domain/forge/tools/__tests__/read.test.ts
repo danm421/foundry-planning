@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/__tests__/read.test.ts
+// src/domain/forge/tools/__tests__/read.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- mocks -----------------------------------------------------------------

@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/read.ts
+// src/domain/forge/tools/read.ts
 //
 // Phase 1 read tools for the forge. Every client-scoped tool re-derives the
 // firmId server-side via `requireOrgId()` (the model never supplies scope) and

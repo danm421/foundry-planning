@@ -1,4 +1,4 @@
-// src/components/copilot/forge-mount.tsx
+// src/components/forge/forge-mount.tsx
 "use client";
 
 import { ForgeProvider } from "./forge-provider";

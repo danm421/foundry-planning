@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/system-prompt.test.ts
+// src/domain/forge/__tests__/system-prompt.test.ts
 import { describe, it, expect } from "vitest";
 import {
   FORGE_SYSTEM_PREFIX,

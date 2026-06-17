@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/routing.test.ts
+// src/domain/forge/__tests__/routing.test.ts
 import { describe, it, expect } from "vitest";
 import { routeAfterAgent } from "../routing";
 

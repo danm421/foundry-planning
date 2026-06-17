@@ -1,4 +1,4 @@
-// src/components/copilot/spark-icon.tsx
+// src/components/forge/spark-icon.tsx
 
 /**
  * The Forge "AI sparkle" glyph. Shared by the panel (header + empty state)

@@ -1,4 +1,4 @@
-// src/domain/copilot/tools/__tests__/whatif-withdrawal.test.ts
+// src/domain/forge/tools/__tests__/whatif-withdrawal.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ScenarioChange } from "@/engine/scenario/types";

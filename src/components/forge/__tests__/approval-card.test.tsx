@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// src/components/copilot/__tests__/approval-card.test.tsx
+// src/components/forge/__tests__/approval-card.test.tsx
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ApprovalCard } from "../approval-card";

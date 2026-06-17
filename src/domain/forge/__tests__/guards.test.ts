@@ -1,4 +1,4 @@
-// src/domain/copilot/__tests__/guards.test.ts
+// src/domain/forge/__tests__/guards.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const verifyClientAccess = vi.fn<(clientId: string, firmId: string) => Promise<boolean>>();

@@ -1,4 +1,4 @@
-// src/domain/copilot/guards.ts
+// src/domain/forge/guards.ts
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";

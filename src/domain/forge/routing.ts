@@ -1,4 +1,4 @@
-// src/domain/copilot/routing.ts
+// src/domain/forge/routing.ts
 
 /** The shape of a tool call we route on — only the name matters. */
 export type ToolCallLike = { name: string };
