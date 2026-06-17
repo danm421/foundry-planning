@@ -27,7 +27,7 @@ import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { describeProposedWrite } from "../preview";
 import type { ProposedWrite } from "../preview";
-import type { CopilotAuthContext } from "@/domain/forge/state";
+import type { ForgeAuthContext } from "@/domain/forge/state";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
 import { computeRowDiff } from "@/lib/scenario/diff-row";
 import * as loaderModule from "@/lib/scenario/loader";
@@ -117,7 +117,7 @@ describe.skipIf(!HAS_DB)("preview fidelity", () => {
     expect(beforeRow!.annualAmount).not.toBe(NEW_AMOUNT);
 
     // (2) Build the preview for a propose_changes edit of annualAmount.
-    const ctx: CopilotAuthContext = {
+    const ctx: ForgeAuthContext = {
       userId: "user_test",
       firmId: COOPER_FIRM_ID,
       clientId: COOPER_CLIENT_ID,
@@ -200,7 +200,7 @@ describe("CRM Tier-B previews", () => {
 // because the DB fidelity test never calls it).
 
 describe("promote_to_base card enrichment", () => {
-  const ctx: CopilotAuthContext = {
+  const ctx: ForgeAuthContext = {
     userId: "user_test",
     firmId: "firm_1",
     clientId: "client_1",

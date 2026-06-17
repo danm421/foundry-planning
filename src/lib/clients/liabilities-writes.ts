@@ -1,5 +1,5 @@
 // Liability write-core. The single validation + write path shared by the API
-// routes (src/app/api/clients/[id]/liabilities/**) and the Copilot write tools,
+// routes (src/app/api/clients/[id]/liabilities/**) and the Forge write tools,
 // so route and agent can never drift. Cloned from incomes-writes.ts — same
 // baseCaseScenarioId helper, same writeError / {ok:true,...} shape.
 //
@@ -34,7 +34,7 @@
 //     (assertEntitiesInClient), linkedPropertyId (assertAccountsInClient), and a
 //     reparent parentAccountId (in-client + category === "business"). This
 //     CLOSES a latent gap the original 1:1 port carried over from the live PUT
-//     route, which ran no update-time asserts and so let a PUT/Copilot tool set
+//     route, which ran no update-time asserts and so let a PUT/Forge tool set
 //     linkedPropertyId/parentAccountId to a cross-client account in the same firm
 //     (gateAccess only scopes to firm-owned clients, not the FK target's client).
 //     The PUT route delegates to this core, so the route inherits the asserts and

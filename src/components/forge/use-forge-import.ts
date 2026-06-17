@@ -9,7 +9,7 @@
 import { useCallback, useState } from "react";
 import { resolveBaseScenarioId } from "./actions";
 
-export type CopilotImportStatus =
+export type ForgeImportStatus =
   | "idle"
   | "creating"
   | "uploading"
@@ -23,16 +23,16 @@ export interface ImportSummary {
   match: { exact: number; fuzzy: number; new: number };
 }
 
-export interface CopilotImportResult {
+export interface ForgeImportResult {
   importId: string;
   summary: ImportSummary;
   warnings: string[];
 }
 
-export interface UseCopilotImportResult {
-  status: CopilotImportStatus;
+export interface UseForgeImportResult {
+  status: ForgeImportStatus;
   errorMessage: string | null;
-  runImport: (clientId: string, files: File[]) => Promise<CopilotImportResult | null>;
+  runImport: (clientId: string, files: File[]) => Promise<ForgeImportResult | null>;
   reset: () => void;
 }
 
@@ -46,8 +46,8 @@ async function errText(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
-export function useCopilotImport(): UseCopilotImportResult {
-  const [status, setStatus] = useState<CopilotImportStatus>("idle");
+export function useForgeImport(): UseForgeImportResult {
+  const [status, setStatus] = useState<ForgeImportStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const reset = useCallback(() => {
@@ -56,7 +56,7 @@ export function useCopilotImport(): UseCopilotImportResult {
   }, []);
 
   const runImport = useCallback(
-    async (clientId: string, files: File[]): Promise<CopilotImportResult | null> => {
+    async (clientId: string, files: File[]): Promise<ForgeImportResult | null> => {
       setErrorMessage(null);
       try {
         // 1. Resolve the base-case scenario — the chat imports factual data into

@@ -13,10 +13,10 @@ vi.mock("@/lib/db-helpers", () => ({
 const verifyClientAccess = vi.fn<() => Promise<boolean>>();
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: () => verifyClientAccess() }));
 
-const checkCopilotRateLimit = vi.fn();
+const checkForgeRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit");
-  return { ...actual, checkCopilotRateLimit: () => checkCopilotRateLimit() };
+  return { ...actual, checkForgeRateLimit: () => checkForgeRateLimit() };
 });
 
 const createConversation = vi.fn(async () => "conv-new");
@@ -94,7 +94,7 @@ beforeEach(() => {
   });
   requireOrgId.mockResolvedValue("org_A");
   verifyClientAccess.mockResolvedValue(true);
-  checkCopilotRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
+  checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });
 
 describe("POST /api/clients/[id]/copilot/stream — gate chain", () => {
@@ -111,7 +111,7 @@ describe("POST /api/clients/[id]/copilot/stream — gate chain", () => {
   });
 
   it("returns 429/503 when rate-limited", async () => {
-    checkCopilotRateLimit.mockResolvedValue({ allowed: false, reason: "exceeded", reset: 0 });
+    checkForgeRateLimit.mockResolvedValue({ allowed: false, reason: "exceeded", reset: 0 });
     const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
     expect([429, 503]).toContain(res.status);
   });
@@ -173,7 +173,7 @@ describe("POST /api/clients/[id]/copilot/stream — hello stream", () => {
   it("emits a generic SSE error (never raw internals) when the stream throws", async () => {
     // The stream surfaces graph failures as a mid-stream SSE error event — HTTP
     // status stays 200. The raw message (UUID + 'internal detail') must NOT leak;
-    // only safeCopilotErrorMessage's generic fallback should reach the client.
+    // only safeForgeErrorMessage's generic fallback should reach the client.
     fakeGraph.streamEvents = async function* () {
       yield { event: "noop", data: {}, name: "model" };
       throw new Error("boom 1a2b3c4d-5e6f-7890-abcd-ef0123456789 internal detail");

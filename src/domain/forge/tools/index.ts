@@ -1,6 +1,6 @@
 // src/domain/copilot/tools/index.ts
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 import { buildReadTools } from "./read";
 import { buildComputeTools } from "./compute";
 import { buildWhatIfTools } from "./whatif";
@@ -28,7 +28,7 @@ import { buildKnowledgeTools } from "./knowledge";
  * that queues a presentation deck and renders it in the background, so it is NOT
  * in WRITE_TOOL_NAMES and does not route through the approval gate.
  */
-export function buildTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
+export function buildTools(toolCtx: ForgeToolContext): StructuredToolInterface[] {
   return [
     ...buildReadTools(toolCtx),
     ...buildComputeTools(toolCtx),

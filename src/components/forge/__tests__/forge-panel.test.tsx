@@ -4,8 +4,8 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   ScenarioDrawerProvider,
 } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider } from "../forge-provider";
-import { CopilotPanel } from "../forge-panel";
+import { ForgeProvider } from "../forge-provider";
+import { ForgePanel } from "../forge-panel";
 
 /** Minimal streaming Response so the real useCopilotStream.send() resolves. */
 function makeStreamingResponse(): Response {
@@ -36,7 +36,7 @@ vi.mock("../actions", () => ({
 }));
 
 vi.mock("../use-forge-import", () => ({
-  useCopilotImport: () => ({
+  useForgeImport: () => ({
     status: "idle",
     errorMessage: null,
     runImport: vi.fn(async () => ({
@@ -56,19 +56,19 @@ beforeEach(() => {
 function mountPanel() {
   return render(
     <ScenarioDrawerProvider>
-      <CopilotProvider clientId="c1">
-        <CopilotPanel
+      <ForgeProvider clientId="c1">
+        <ForgePanel
           clientId="c1"
           clientName="Jane & John Smith"
           scenarioNames={{ s1: "Roth scenario", s2: "Delay SS to 70" }}
           forceOpenForTest
         />
-      </CopilotProvider>
+      </ForgeProvider>
     </ScenarioDrawerProvider>,
   );
 }
 
-describe("CopilotPanel", () => {
+describe("ForgePanel", () => {
   it("renders the empty state and input (smoke)", async () => {
     mountPanel();
     expect(await screen.findByRole("textbox", { name: /ask forge/i })).toBeInTheDocument();
@@ -163,14 +163,14 @@ describe("CopilotPanel", () => {
     currentSearch = "scenario=s2";
     rerender(
       <ScenarioDrawerProvider>
-        <CopilotProvider clientId="c1">
-          <CopilotPanel
+        <ForgeProvider clientId="c1">
+          <ForgePanel
             clientId="c1"
             clientName="Jane & John Smith"
             scenarioNames={{ s1: "Roth scenario", s2: "Delay SS to 70" }}
             forceOpenForTest
           />
-        </CopilotProvider>
+        </ForgeProvider>
       </ScenarioDrawerProvider>,
     );
     expect(screen.getByTestId("chip-scenario").textContent).toContain("Delay SS to 70");

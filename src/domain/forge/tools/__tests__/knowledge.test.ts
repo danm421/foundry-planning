@@ -48,9 +48,9 @@ vi.mock("@/db", () => ({
 
 import { searchPlanningKb, buildKnowledgeTools } from "../knowledge";
 import { buildToolContext } from "../../context";
-import type { CopilotAuthContext } from "../../context";
+import type { ForgeAuthContext } from "../../context";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "u",
   firmId: "org_A",
   clientId: "c1",

@@ -1,9 +1,9 @@
 // src/domain/copilot/__tests__/context.test.ts
 import { describe, it, expect } from "vitest";
 import { buildToolContext } from "../context";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "u1",
   firmId: "org_A",
   clientId: "c1",

@@ -1,5 +1,5 @@
 // Expense write-core. The single validation + write path shared by the API
-// routes (src/app/api/clients/[id]/expenses/**) and the Copilot write tools, so
+// routes (src/app/api/clients/[id]/expenses/**) and the Forge write tools, so
 // route and agent can never drift. This is the TEMPLATE the income / liability /
 // account cores copy — keep the shape uniform. The base-case scenario lookup is
 // the one piece factored out of all four into the shared ./base-case helper.

@@ -28,10 +28,10 @@ vi.mock("@/lib/authz", async () => {
 const verifyClientAccess = vi.fn<() => Promise<boolean>>();
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: () => verifyClientAccess() }));
 
-const checkCopilotRateLimit = vi.fn();
+const checkForgeRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit");
-  return { ...actual, checkCopilotRateLimit: () => checkCopilotRateLimit() };
+  return { ...actual, checkForgeRateLimit: () => checkForgeRateLimit() };
 });
 
 const touchConversation = vi.fn(async () => {});
@@ -161,7 +161,7 @@ beforeEach(() => {
   requireOrgId.mockResolvedValue("firm_1");
   requireActiveSubscription.mockResolvedValue(undefined);
   verifyClientAccess.mockResolvedValue(true);
-  checkCopilotRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
+  checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
   userOwnsConversation.mockResolvedValue(true);
 });
 

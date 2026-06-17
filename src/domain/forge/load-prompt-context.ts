@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
-import type { CopilotPromptContext } from "./system-prompt";
+import type { ForgePromptContext } from "./system-prompt";
 
 /**
  * Assemble the variable system-prompt tail context for one copilot turn:
@@ -18,7 +18,7 @@ export async function loadPromptContext(args: {
   firmId: string;
   scenarioId: string;
   firmName: string;
-}): Promise<CopilotPromptContext> {
+}): Promise<ForgePromptContext> {
   const client = await getClientWithContacts(args.clientId, args.firmId);
 
   // ClientWithContacts has no householdTitle field — derive it from the primary

@@ -4,7 +4,7 @@ import { AddBusinessInputSchema } from "./accounts-business";
 
 // Single validation path for account create/update. Reproduces the inline
 // coercion the POST route (`/api/clients/[id]/accounts`) does today so the
-// write-core and Copilot tool can share one parse step.
+// write-core and Forge tool can share one parse step.
 //
 // Mirrors liabilities.ts: coercion building blocks GUARD undefined so an
 // omitted field in a partial update stays undefined instead of being

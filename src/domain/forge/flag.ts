@@ -7,6 +7,6 @@
  * routes 404 when this returns false. Strict equality on "true" — no truthy
  * coercion — so a stray "1"/"yes"/"" never silently enables it.
  */
-export function isCopilotEnabled(): boolean {
+export function isForgeEnabled(): boolean {
   return process.env.COPILOT_ENABLED === "true";
 }

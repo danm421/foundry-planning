@@ -17,7 +17,7 @@ import { expenseCreateSchema } from "@/lib/schemas/expenses";
 import { incomeCreateSchema } from "@/lib/schemas/incomes";
 import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
 import { accountCreateSchema } from "@/lib/schemas/accounts";
-import type { CopilotAuthContext } from "@/domain/forge/state";
+import type { ForgeAuthContext } from "@/domain/forge/state";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -33,7 +33,7 @@ const FOREIGN_ACCOUNT_ID = "3d552610-0eff-47b4-a7bf-fe3a3805d876";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "user_test",
   firmId: COOPER_FIRM_ID,
   clientId: COOPER_CLIENT_ID,

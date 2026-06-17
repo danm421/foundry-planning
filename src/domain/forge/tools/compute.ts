@@ -2,7 +2,7 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -73,7 +73,7 @@ function compactYear(y: ProjectionYear) {
 }
 
 export function buildComputeTools(
-  toolCtx: CopilotToolContext,
+  toolCtx: ForgeToolContext,
 ): StructuredToolInterface[] {
   const { ctx } = toolCtx;
 
@@ -296,7 +296,7 @@ export function buildComputeTools(
         firmTagline: null,
         reportDate: new Date().toISOString().slice(0, 10),
         firmLogoDataUrl: null,
-        // Copilot returns page DATA, not a styled PDF — use the default report
+        // Forge returns page DATA, not a styled PDF — use the default report
         // accent (firm override is irrelevant here; only framing pages read it).
         accentColor: resolveAccentColor(null),
       };

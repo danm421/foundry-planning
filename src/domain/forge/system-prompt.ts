@@ -4,7 +4,7 @@
  * Variable, per-turn context for the system prompt tail. Assembled by the route
  * server-side; this module is pure (no DB/Clerk imports).
  */
-export type CopilotPromptContext = {
+export type ForgePromptContext = {
   /** Firm display name (Clerk org name). */
   firmName: string;
   /** Active client identity — household title only (no PII beyond the name). */
@@ -63,7 +63,7 @@ export const COPILOT_SYSTEM_PREFIX: string = COPILOT_PREFIX_CLAUSES.join("\n");
  * hits) followed by a short variable tail naming the firm, client, scenario,
  * and page the advisor is currently looking at.
  */
-export function buildSystemPrompt(ctx: CopilotPromptContext): string {
+export function buildSystemPrompt(ctx: ForgePromptContext): string {
   const scenarioLabel = ctx.scenario.isBaseCase
     ? `the base case ("${ctx.scenario.name}")`
     : `the scenario "${ctx.scenario.name}"`;

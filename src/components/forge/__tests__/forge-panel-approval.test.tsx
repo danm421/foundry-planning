@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 //
-// Tests for Phase-2 ApprovalCard wiring in CopilotPanel.
-// Mocks useCopilotStream with the real return shape so we can drive
+// Tests for Phase-2 ApprovalCard wiring in ForgePanel.
+// Mocks useForgeStream with the real return shape so we can drive
 // pendingApproval from the outside without a live SSE connection.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CopilotPanel } from "../forge-panel";
-import type { UseCopilotStreamResult, PendingApproval } from "../use-forge-stream";
+import { ForgePanel } from "../forge-panel";
+import type { UseForgeStreamResult, PendingApproval } from "../use-forge-stream";
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation (needed by forge-provider + panel internals)
@@ -28,17 +28,17 @@ vi.mock("../actions", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock copilot provider — useCopilot() returns controlled state
+// Mock copilot provider — useForge() returns controlled state
 // ---------------------------------------------------------------------------
 vi.mock("../forge-provider", () => ({
-  useCopilot: () => ({
+  useForge: () => ({
     scenarioId: "base",
     pathname: "/clients/c1/overview",
     isOpen: true,
     close: vi.fn(),
   }),
-  // CopilotProvider used in forge-panel.test.tsx but not needed here
-  CopilotProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  // ForgeProvider used in forge-panel.test.tsx but not needed here
+  ForgeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -52,20 +52,20 @@ vi.mock("@/components/scenario/scenario-drawer-provider", () => ({
 // ---------------------------------------------------------------------------
 // Controlled stream state — reassigned per test
 // ---------------------------------------------------------------------------
-let mockStreamState: UseCopilotStreamResult;
+let mockStreamState: UseForgeStreamResult;
 
 vi.mock("../use-forge-stream", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../use-forge-stream")>();
   return {
-    ...orig, // keep parseCopilotSse etc.
-    useCopilotStream: () => mockStreamState,
+    ...orig, // keep parseForgeSse etc.
+    useForgeStream: () => mockStreamState,
   };
 });
 
 // ---------------------------------------------------------------------------
 // Helper: build a default stream result (idle, no messages, no approval)
 // ---------------------------------------------------------------------------
-function makeStreamState(overrides: Partial<UseCopilotStreamResult> = {}): UseCopilotStreamResult {
+function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForgeStreamResult {
   return {
     messages: [],
     setMessages: vi.fn(),
@@ -97,7 +97,7 @@ const SAMPLE_APPROVAL: PendingApproval = {
 
 function mountPanel() {
   return render(
-    <CopilotPanel
+    <ForgePanel
       clientId="c1"
       clientName="Jane & John Smith"
       scenarioNames={{ base: "Base case" }}
@@ -109,7 +109,7 @@ function mountPanel() {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-describe("CopilotPanel approval slot — Phase 2", () => {
+describe("ForgePanel approval slot — Phase 2", () => {
   beforeEach(() => {
     mockStreamState = makeStreamState();
   });

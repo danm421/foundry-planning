@@ -1,7 +1,7 @@
 // src/components/copilot/spark-icon.tsx
 
 /**
- * The Copilot "AI sparkle" glyph. Shared by the panel (header + empty state)
+ * The Forge "AI sparkle" glyph. Shared by the panel (header + empty state)
  * and the floating launcher so the AI mark stays identical everywhere; size is
  * controlled via className (defaults to the panel's inline size). Pure SVG — no
  * hooks, so it renders in either a server or client tree.

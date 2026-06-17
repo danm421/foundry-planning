@@ -4076,7 +4076,7 @@ export const solverMcCache = pgTable(
 export type SolverMcCacheRow = InferSelectModel<typeof solverMcCache>;
 export type NewSolverMcCacheRow = InferInsertModel<typeof solverMcCache>;
 
-// --- Planning Copilot ---
+// --- Planning Forge ---
 // One row per chat thread. id doubles as the LangGraph checkpointer thread_id.
 // userId/firmId are Clerk ids (text), matching clients.firmId (text). clientId
 // is the client-scoped thread target (null = firm-level thread, Phase 2+).

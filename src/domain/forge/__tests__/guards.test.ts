@@ -9,9 +9,9 @@ const findFirst = vi.fn();
 vi.mock("@/db", () => ({ db: { query: { clients: { findFirst: (...a: unknown[]) => findFirst(...a) } } } }));
 
 import { assertClientReadable, ForbiddenScopeError } from "../guards";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "u1",
   firmId: "org_A",
   clientId: "client-in-firm",

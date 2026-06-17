@@ -3,16 +3,16 @@ import { Command } from "@langchain/langgraph";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { checkCopilotRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { buildGraph } from "@/domain/forge/graph";
 import { getCheckpointer } from "@/domain/forge/checkpointer";
 import { touchConversation, userOwnsConversation } from "@/domain/forge/conversations";
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
-import { safeCopilotErrorMessage } from "@/domain/forge/safe-error";
-import { isCopilotEnabled } from "@/domain/forge/flag";
-import type { CopilotAuthContext } from "@/domain/forge/state";
+import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
+import { isForgeEnabled } from "@/domain/forge/flag";
+import type { ForgeAuthContext } from "@/domain/forge/state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -34,7 +34,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // --- Gate chain (mirrors the stream route, IN ORDER — ALL before the stream) ---
 
   // 1. Feature flag (canonical single source of truth — strict "true"). 404 when off.
-  if (!isCopilotEnabled()) {
+  if (!isForgeEnabled()) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -74,7 +74,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   // 6. Rate limit (fail-closed; exceeded→429 else→503).
-  const rl = await checkCopilotRateLimit(firmId);
+  const rl = await checkForgeRateLimit(firmId);
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
@@ -119,13 +119,13 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // conversation IDOR to the URL clientId" guard — a missing checkpoint (nothing
   // to resume) or a mismatch (pending write belongs to a different client/user)
   // both 404, never leaking.
-  let checkpointAuth: CopilotAuthContext;
+  let checkpointAuth: ForgeAuthContext;
   try {
     const tuple = await getCheckpointer().getTuple({
       configurable: { thread_id: conversationId },
     });
     const persisted = tuple?.checkpoint?.channel_values?.authContext as
-      | CopilotAuthContext
+      | ForgeAuthContext
       | undefined;
     if (!persisted || persisted.clientId !== clientId || persisted.userId !== userId) {
       return new Response("Not found", { status: 404 });
@@ -140,7 +140,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // recovered from the checkpoint so the resumed summary turn's prompt and any
   // ctx.scenarioId-dependent read/compute tool run against the ORIGINAL scenario,
   // never a default. (compute.ts reads ctx.scenarioId directly.)
-  const authContext: CopilotAuthContext = {
+  const authContext: ForgeAuthContext = {
     userId,
     firmId,
     clientId,
@@ -196,7 +196,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       // itself is cancelled, not just the SSE write side.
       // DIVERGENCE (intentional): this resume route handles req.signal
       // cancel-on-disconnect; the stream route does NOT yet (logged open item in
-      // security-hardening.md "## Open — Copilot Phase-0", "Abort the in-flight
+      // security-hardening.md "## Open — Forge Phase-0", "Abort the in-flight
       // Azure request on client disconnect"). A future PR should backport this here.
       const onAbort = () => {
         closed = true;
@@ -252,7 +252,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         }
       } catch (err) {
         // Never emit raw err.message — it may leak client ids / internals.
-        send({ type: "error", message: safeCopilotErrorMessage(err) });
+        send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {
         req.signal.removeEventListener("abort", onAbort);
         if (!closed) controller.close();

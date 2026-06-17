@@ -103,13 +103,13 @@ vi.mock("../guards", () => ({ clientToHousehold: vi.fn(), assertHouseholdReadabl
 vi.mock("../account-mask", () => ({ maskSsnLast4: vi.fn() }));
 
 import { buildGraph } from "../graph";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { promoteScenarioToBase } from "@/lib/scenario/promote-to-base";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "user_1",
   firmId: "org_session",
   clientId: "client_1",

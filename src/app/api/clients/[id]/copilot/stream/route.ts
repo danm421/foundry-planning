@@ -3,7 +3,7 @@ import { HumanMessage } from "@langchain/core/messages";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { checkCopilotRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
+import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { buildGraph } from "@/domain/forge/graph";
 import { getCheckpointer } from "@/domain/forge/checkpointer";
@@ -14,9 +14,9 @@ import {
 } from "@/domain/forge/conversations";
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
-import { safeCopilotErrorMessage } from "@/domain/forge/safe-error";
-import { isCopilotEnabled } from "@/domain/forge/flag";
-import type { CopilotAuthContext } from "@/domain/forge/state";
+import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
+import { isForgeEnabled } from "@/domain/forge/flag";
+import type { ForgeAuthContext } from "@/domain/forge/state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // --- Gate chain (canonical order — ALL before the ReadableStream opens) ---
 
   // 1. Feature flag (canonical single source of truth — strict "true").
-  if (!isCopilotEnabled()) {
+  if (!isForgeEnabled()) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -79,7 +79,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   // 6. Rate limit (fail-closed; exceeded→429 else→503).
-  const rl = await checkCopilotRateLimit(firmId);
+  const rl = await checkForgeRateLimit(firmId);
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
@@ -112,7 +112,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     message.length > 0 ? message : "I've attached a document for you to review.";
 
   let cid: string;
-  let authContext: CopilotAuthContext;
+  let authContext: ForgeAuthContext;
   let systemPrompt: () => string;
   try {
     let conversationId = body.conversationId;
@@ -212,7 +212,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         send({ type: "done" });
       } catch (err) {
         // §C: never emit raw err.message — it may leak client ids / internals.
-        send({ type: "error", message: safeCopilotErrorMessage(err) });
+        send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {
         controller.close();
       }

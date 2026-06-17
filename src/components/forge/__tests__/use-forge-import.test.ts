@@ -4,7 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 
 vi.mock("../actions", () => ({ resolveBaseScenarioId: vi.fn() }));
 import { resolveBaseScenarioId } from "../actions";
-import { useCopilotImport } from "../use-forge-import";
+import { useForgeImport } from "../use-forge-import";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -14,7 +14,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   } as unknown as Response;
 }
 
-describe("useCopilotImport", () => {
+describe("useForgeImport", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("runs create → upload → extract → match in order and returns a summary", async () => {
@@ -30,7 +30,7 @@ describe("useCopilotImport", () => {
       throw new Error(`unexpected ${u}`);
     }) as unknown as typeof fetch;
 
-    const { result } = renderHook(() => useCopilotImport());
+    const { result } = renderHook(() => useForgeImport());
     let res: Awaited<ReturnType<typeof result.current.runImport>>;
     await act(async () => {
       res = await result.current.runImport("client_1", [new File(["x"], "stmt.pdf")]);
@@ -51,7 +51,7 @@ describe("useCopilotImport", () => {
     vi.mocked(resolveBaseScenarioId).mockResolvedValue(null);
     globalThis.fetch = vi.fn() as unknown as typeof fetch;
 
-    const { result } = renderHook(() => useCopilotImport());
+    const { result } = renderHook(() => useForgeImport());
     let res: unknown;
     await act(async () => {
       res = await result.current.runImport("client_1", [new File(["x"], "stmt.pdf")]);
@@ -73,7 +73,7 @@ describe("useCopilotImport", () => {
       throw new Error(`unexpected ${u}`);
     }) as unknown as typeof fetch;
 
-    const { result } = renderHook(() => useCopilotImport());
+    const { result } = renderHook(() => useForgeImport());
     await act(async () => {
       await result.current.runImport("client_1", [new File(["x"], "stmt.pdf")]);
     });

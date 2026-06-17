@@ -16,9 +16,9 @@ vi.mock("../tools", () => ({
 }));
 
 import { buildGraph } from "../graph";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 
-const authContext: CopilotAuthContext = {
+const authContext: ForgeAuthContext = {
   userId: "u1",
   firmId: "org_A",
   clientId: "c1",

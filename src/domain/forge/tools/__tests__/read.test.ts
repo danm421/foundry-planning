@@ -76,9 +76,9 @@ vi.mock("../../guards", () => {
 
 import { buildReadTools } from "../read";
 import { buildToolContext } from "../../context";
-import type { CopilotAuthContext } from "../../context";
+import type { ForgeAuthContext } from "../../context";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "u1",
   firmId: "firmA",
   clientId: "client-1",

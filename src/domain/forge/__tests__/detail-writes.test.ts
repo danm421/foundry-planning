@@ -60,9 +60,9 @@ import {
   deleteAccountForClient,
 } from "@/lib/clients/accounts-writes";
 import { recordAudit } from "@/lib/audit";
-import type { CopilotAuthContext } from "@/domain/forge/context";
+import type { ForgeAuthContext } from "@/domain/forge/context";
 
-const CTX: CopilotAuthContext = {
+const CTX: ForgeAuthContext = {
   userId: "u1",
   firmId: "org_session",
   clientId: "client_1",

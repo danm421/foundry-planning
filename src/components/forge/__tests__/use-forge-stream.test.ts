@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { parseCopilotSse, useCopilotStream, type CopilotSseEvent } from "../use-forge-stream";
+import { parseForgeSse, useForgeStream, type ForgeSseEvent } from "../use-forge-stream";
 
 /** Feed a sequence of raw chunks through the stateful boundary parser. */
-function drain(chunks: string[]): CopilotSseEvent[] {
+function drain(chunks: string[]): ForgeSseEvent[] {
   let buffer = "";
-  const out: CopilotSseEvent[] = [];
+  const out: ForgeSseEvent[] = [];
   for (const chunk of chunks) {
     buffer += chunk;
-    const it = parseCopilotSse(buffer);
+    const it = parseForgeSse(buffer);
     let next = it.next();
     while (!next.done) {
       out.push(next.value);
@@ -20,7 +20,7 @@ function drain(chunks: string[]): CopilotSseEvent[] {
   return out;
 }
 
-describe("parseCopilotSse", () => {
+describe("parseForgeSse", () => {
   it("handles a frame split across two chunks without dropping or duplicating", () => {
     const events = drain([
       // chunk A: a complete conversation frame + the START of a token frame
@@ -58,7 +58,7 @@ describe("parseCopilotSse", () => {
 });
 
 // ---------------------------------------------------------------------------
-// useCopilotStream.send — fetch body wiring
+// useForgeStream.send — fetch body wiring
 // ---------------------------------------------------------------------------
 
 /** Build a minimal streaming Response whose body emits a single SSE done frame. */
@@ -81,13 +81,13 @@ const validArgs = {
   scenarioId: "scen_1",
 };
 
-describe("useCopilotStream.send", () => {
+describe("useForgeStream.send", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
   });
 
   it("includes pendingImportId in the fetch body when provided", async () => {
-    const { result } = renderHook(() => useCopilotStream("client_42"));
+    const { result } = renderHook(() => useForgeStream("client_42"));
 
     await act(async () => {
       await result.current.send({ ...validArgs, pendingImportId: "imp_7" });

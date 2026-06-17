@@ -2,7 +2,7 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 import { assertClientReadable, ForbiddenScopeError } from "../guards";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection, runProjectionWithEvents } from "@/engine";
@@ -33,7 +33,7 @@ import {
  * on success. The model can never widen scope.
  */
 async function guardClient(
-  ctx: CopilotToolContext["ctx"],
+  ctx: ForgeToolContext["ctx"],
   clientId: string,
 ): Promise<string | null> {
   try {
@@ -79,7 +79,7 @@ const SOLVE_LEVER_SCHEMA = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("roth-conversion-amount"), techniqueId: z.string() }),
 ]);
 
-export function buildWhatIfTools(toolCtx: CopilotToolContext): StructuredToolInterface[] {
+export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInterface[] {
   const { ctx } = toolCtx;
 
   const whatifRoth = tool(

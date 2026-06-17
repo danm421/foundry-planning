@@ -51,7 +51,7 @@ import {
   updateAccountForClient,
   deleteAccountForClient,
 } from "@/lib/clients/accounts-writes";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
 const APPROVAL_SUFFIX = "Requires human approval.";
@@ -263,7 +263,7 @@ const accountFields = {
 
 export function buildDetailWriteTools({
   ctx,
-}: CopilotToolContext): StructuredToolInterface[] {
+}: ForgeToolContext): StructuredToolInterface[] {
   const addExpense = tool(
     async (input) => {
       try {

@@ -1,7 +1,7 @@
 // src/domain/copilot/__tests__/tools-index.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { buildToolContext } from "../context";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 
 // Stub the IO/engine deps the read+compute+whatif tools import at module load
 // so this assembly test stays a pure unit (no DB, no Azure, no engine run).
@@ -75,7 +75,7 @@ vi.mock("../llm", () => ({ embeddings: vi.fn() }));
 import { buildTools, WRITE_TOOL_NAMES } from "../tools";
 import { routeAfterAgent } from "../routing";
 
-const ctx: CopilotAuthContext = { userId: "u1", firmId: "org_A", clientId: "c1", scenarioId: "base" };
+const ctx: ForgeAuthContext = { userId: "u1", firmId: "org_A", clientId: "c1", scenarioId: "base" };
 const TOOL_CTX = buildToolContext(ctx, "conv-1");
 
 const EXPECTED_PHASE1 = [

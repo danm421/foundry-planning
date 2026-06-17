@@ -5,7 +5,7 @@ import {
   ScenarioDrawerProvider,
   useScenarioDrawer,
 } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider, useCopilot } from "../forge-provider";
+import { ForgeProvider, useForge } from "../forge-provider";
 
 // next/navigation: the provider re-reads useScenarioState (URL is source of
 // truth). A stable mock keeps the chip/scope deterministic in the test.
@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 
 function Probe() {
   const drawer = useScenarioDrawer();
-  const copilot = useCopilot();
+  const copilot = useForge();
   return (
     <div>
       <span data-testid="drawer-open">{String(drawer.open)}</span>
@@ -30,13 +30,13 @@ function Probe() {
   );
 }
 
-describe("CopilotProvider mutual exclusion", () => {
+describe("ForgeProvider mutual exclusion", () => {
   it("closes the scenario drawer when the copilot opens; exposes live scenarioId", () => {
     render(
       <ScenarioDrawerProvider>
-        <CopilotProvider clientId="c1">
+        <ForgeProvider clientId="c1">
           <Probe />
-        </CopilotProvider>
+        </ForgeProvider>
       </ScenarioDrawerProvider>,
     );
 

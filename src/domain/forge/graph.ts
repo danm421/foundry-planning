@@ -4,7 +4,7 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
-import { CopilotState, type CopilotAuthContext } from "./state";
+import { ForgeState, type ForgeAuthContext } from "./state";
 import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI factory
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
@@ -23,7 +23,7 @@ import { recordAudit } from "@/lib/audit";
  *   Supplied by the route (which has DB/Clerk access) so graph.ts stays pure.
  */
 export function buildGraph(
-  authContext: CopilotAuthContext,
+  authContext: ForgeAuthContext,
   checkpointer: BaseCheckpointSaver,
   conversationId: string,
   systemPrompt: () => string,
@@ -36,7 +36,7 @@ export function buildGraph(
   // is safe to unify across the tool union.
   const toolsByName = new Map<string, StructuredToolInterface>(tools.map((t) => [t.name, t]));
 
-  async function agentNode(state: typeof CopilotState.State) {
+  async function agentNode(state: typeof ForgeState.State) {
     const system = new SystemMessage(systemPrompt());
     // The full thread is checkpointed; only send a bounded recent window so
     // token cost/latency don't grow. The system prompt is the stable prefix
@@ -46,7 +46,7 @@ export function buildGraph(
     return { messages: [response] };
   }
 
-  async function approvalNode(state: typeof CopilotState.State) {
+  async function approvalNode(state: typeof ForgeState.State) {
     // authContext is the server-derived scope (firm/client); it's the `ctx`
     // describeProposedWrite + the audit calls below need.
     const ctx = authContext;
@@ -129,7 +129,7 @@ export function buildGraph(
     return { messages };
   }
 
-  const graph = new StateGraph(CopilotState)
+  const graph = new StateGraph(ForgeState)
     .addNode("agent", agentNode)
     .addNode("tools", toolNode)
     .addNode("approval", approvalNode)

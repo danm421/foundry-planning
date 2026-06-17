@@ -24,13 +24,13 @@ import { computeAlerts } from "@/lib/alerts";
 import { recordAudit } from "@/lib/audit";
 import { clientToHousehold } from "../guards";
 import { maskSsnLast4 } from "../account-mask";
-import type { CopilotAuthContext } from "../state";
-import type { CopilotToolContext } from "../context";
+import type { ForgeAuthContext } from "../state";
+import type { ForgeToolContext } from "../context";
 
 /** Re-derive firmId + resolve the household on every call. Returns a string error
  *  on any failure so the tool can hand it to the model as a ToolMessage. */
 async function gateCrm(
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<{ firmId: string; householdId: string } | { error: string }> {
   try {
     const firmId = await requireOrgId();
@@ -71,7 +71,7 @@ async function assertNoteInHousehold(
  *  to the core's own crm.* row). Only mutating Tier-A tools call this.
  *  firmId must be the verified gate.firmId, not ctx.firmId. */
 async function auditToolCall(
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
   conversationId: string,
   firmId: string,
   resourceType: string,
@@ -93,7 +93,7 @@ async function auditToolCall(
 const BULK_TASK_HITL_THRESHOLD = 3;
 const BULK_TASK_HARD_CAP = 25;
 
-export function buildCrmTools({ ctx, conversationId }: CopilotToolContext): StructuredToolInterface[] {
+export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): StructuredToolInterface[] {
   const recentNotes = tool(
     async ({ limit }) => {
       const gate = await gateCrm(ctx);

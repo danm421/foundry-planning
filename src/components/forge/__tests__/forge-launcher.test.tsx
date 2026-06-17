@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotProvider } from "../forge-provider";
-import { CopilotLauncher } from "../forge-launcher";
+import { ForgeProvider } from "../forge-provider";
+import { ForgeLauncher } from "../forge-launcher";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -11,13 +11,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(""),
 }));
 
-describe("CopilotLauncher", () => {
+describe("ForgeLauncher", () => {
   it("renders an AI launcher wired to aria-controls=forge-panel and toggles open", () => {
     render(
       <ScenarioDrawerProvider>
-        <CopilotProvider clientId="c1">
-          <CopilotLauncher />
-        </CopilotProvider>
+        <ForgeProvider clientId="c1">
+          <ForgeLauncher />
+        </ForgeProvider>
       </ScenarioDrawerProvider>,
     );
 

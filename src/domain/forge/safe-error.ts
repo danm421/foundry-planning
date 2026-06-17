@@ -14,7 +14,7 @@ import { ProjectionInputError } from "@/lib/projection/load-client-data";
 const GENERIC_FALLBACK = "Something went wrong while processing your request.";
 const PROJECTION_MESSAGE = "There was a problem loading this client's plan data.";
 
-export function safeCopilotErrorMessage(err: unknown): string {
+export function safeForgeErrorMessage(err: unknown): string {
   // Known domain error from the projection loader → safe generic, never the raw
   // message (which embeds the client id / scenario id).
   if (err instanceof ProjectionInputError) {

@@ -8,7 +8,7 @@ import { callAIEmbedding } from "@/lib/extraction/azure-client";
  * not a bare resource name — see src/lib/extraction/azure-client.ts. We derive
  * the bare <instance> for AzureChatOpenAI's azureOpenAIApiInstanceName.
  */
-export type CopilotAzureConfig = {
+export type ForgeAzureConfig = {
   instanceName: string;
   apiKey: string;
   apiVersion: string;
@@ -43,7 +43,7 @@ export function instanceNameFromEndpoint(endpoint: string): string {
  * Throws `ai_not_configured` if any required env var is missing — same
  * sentinel string the extraction path uses, so callers can branch uniformly.
  */
-export function assertCopilotAzureConfig(model: "full" | "mini"): CopilotAzureConfig {
+export function assertForgeAzureConfig(model: "full" | "mini"): ForgeAzureConfig {
   const endpoint = process.env.AZURE_ENDPOINT;
   const apiKey = process.env.AZURE_API_KEY;
   const apiVersion = process.env.AZURE_API_VERSION;
@@ -78,7 +78,7 @@ export function assertCopilotAzureConfig(model: "full" | "mini"): CopilotAzureCo
  * ethos hit). Defaults to the full (gpt-5.4) deployment.
  */
 export function chatModel(model: "full" | "mini" = "full"): AzureChatOpenAI {
-  const { instanceName, apiKey, apiVersion, deployment } = assertCopilotAzureConfig(model);
+  const { instanceName, apiKey, apiVersion, deployment } = assertForgeAzureConfig(model);
   return new AzureChatOpenAI({
     azureOpenAIApiKey: apiKey,
     azureOpenAIApiInstanceName: instanceName,

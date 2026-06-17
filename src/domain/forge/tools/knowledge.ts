@@ -14,8 +14,8 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { embeddings } from "../llm";
 import { assertClientReadable } from "../guards";
-import type { CopilotAuthContext } from "../state";
-import type { CopilotToolContext } from "../context";
+import type { ForgeAuthContext } from "../state";
+import type { ForgeToolContext } from "../context";
 
 export type KbSource =
   | "planning_playbook"
@@ -36,7 +36,7 @@ const MAX_TOPK = 12;
 export async function searchPlanningKb(
   query: string,
   topK: number,
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<{ chunks: KbChunkResult[] }> {
   const k = Math.min(MAX_TOPK, Math.max(1, topK || 6));
   // Client-doc rows are pinned to ctx.clientId; reconfirm read access first so
@@ -68,7 +68,7 @@ export async function searchPlanningKb(
   return { chunks };
 }
 
-export function buildKnowledgeTools({ ctx }: CopilotToolContext): StructuredToolInterface[] {
+export function buildKnowledgeTools({ ctx }: ForgeToolContext): StructuredToolInterface[] {
   const searchTool = tool(
     async ({ query, topK }) => {
       try {

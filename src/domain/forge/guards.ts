@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import type { CopilotAuthContext } from "./state";
+import type { ForgeAuthContext } from "./state";
 
 export class ForbiddenScopeError extends Error {
   constructor(detail: string) {
@@ -19,7 +19,7 @@ export class ForbiddenScopeError extends Error {
  * Throws ForbiddenScopeError on a cross-firm or staff-out-of-book client.
  */
 export async function assertClientReadable(
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
   clientId: string,
 ): Promise<void> {
   // Pin to the conversation's bound client: a model-echoed id can never widen
@@ -55,7 +55,7 @@ export async function clientToHousehold(clientId: string, firmId: string): Promi
  * client, then resolve+return its householdId. Composes assertClientReadable so
  * the cross-firm + outside-conversation-scope checks run first.
  */
-export async function assertHouseholdReadable(ctx: CopilotAuthContext): Promise<string> {
+export async function assertHouseholdReadable(ctx: ForgeAuthContext): Promise<string> {
   await assertClientReadable(ctx, ctx.clientId);
   return clientToHousehold(ctx.clientId, ctx.firmId);
 }

@@ -16,7 +16,7 @@
 // its IO is wrapped in try/catch and the pure result is the fallback.
 
 import type { WritePreview } from "@/domain/forge/types";
-import type { CopilotAuthContext } from "@/domain/forge/state";
+import type { ForgeAuthContext } from "@/domain/forge/state";
 import {
   describeChangeUnit,
   type ChangeUnit,
@@ -572,7 +572,7 @@ async function enrichAddExpense(
 async function enrichUpdateExpense(
   base: WritePreview,
   args: Record<string, unknown>,
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const { expenseId, ...rest } = args;
   const id = typeof expenseId === "string" ? expenseId : undefined;
@@ -631,7 +631,7 @@ async function enrichAddIncome(
 async function enrichUpdateIncome(
   base: WritePreview,
   args: Record<string, unknown>,
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const { incomeId, ...rest } = args;
   const id = typeof incomeId === "string" ? incomeId : undefined;
@@ -700,7 +700,7 @@ async function enrichAddLiability(
 async function enrichUpdateLiability(
   base: WritePreview,
   args: Record<string, unknown>,
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const { liabilityId, ...rest } = args;
   const id = typeof liabilityId === "string" ? liabilityId : undefined;
@@ -784,7 +784,7 @@ async function enrichAddAccount(
 async function enrichUpdateAccount(
   base: WritePreview,
   args: Record<string, unknown>,
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
 ): Promise<WritePreview> {
   const { accountId, ...rest } = args;
   const id = typeof accountId === "string" ? accountId : undefined;
@@ -850,7 +850,7 @@ async function enrichUpdateAccount(
  */
 export async function describeProposedWrite(
   call: ProposedWrite,
-  ctx?: CopilotAuthContext,
+  ctx?: ForgeAuthContext,
 ): Promise<WritePreview> {
   const base = formatProposedWrite(call);
   if (!ctx) return base;

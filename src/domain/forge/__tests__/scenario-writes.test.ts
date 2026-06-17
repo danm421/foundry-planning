@@ -25,9 +25,9 @@ import { promoteScenarioToBase } from "@/lib/scenario/promote-to-base";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/db";
-import type { CopilotAuthContext } from "@/domain/forge/context";
+import type { ForgeAuthContext } from "@/domain/forge/context";
 
-const CTX: CopilotAuthContext = { userId: "user_1", firmId: "org_session", clientId: "client_1", scenarioId: "scenario_1" };
+const CTX: ForgeAuthContext = { userId: "user_1", firmId: "org_session", clientId: "client_1", scenarioId: "scenario_1" };
 function getTool(name: string) {
   const t = buildScenarioWriteTools({ ctx: CTX, conversationId: "conv_1" }).find((x) => x.name === name);
   if (!t) throw new Error(`tool ${name} not built`);

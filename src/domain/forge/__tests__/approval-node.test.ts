@@ -101,7 +101,7 @@ vi.mock("../guards", () => ({ clientToHousehold: vi.fn(), assertHouseholdReadabl
 vi.mock("../account-mask", () => ({ maskSsnLast4: vi.fn() }));
 
 import { buildGraph } from "../graph";
-import type { CopilotAuthContext } from "../state";
+import type { ForgeAuthContext } from "../state";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
@@ -110,7 +110,7 @@ import { deleteTask } from "@/lib/crm-tasks/mutations";
 import { getTaskById } from "@/lib/crm-tasks/queries";
 import { clientToHousehold } from "../guards";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "user_1",
   firmId: "org_session",
   clientId: "client_1",

@@ -1,5 +1,5 @@
 // Account write-core. The single validation + write path shared by the API
-// routes (src/app/api/clients/[id]/accounts/**) and the Copilot write tools, so
+// routes (src/app/api/clients/[id]/accounts/**) and the Forge write tools, so
 // route and agent can never drift. Cloned from liabilities-writes.ts — the shared
 // baseCaseScenarioId helper (./base-case), same writeError / {ok:true,...} shape,
 // same snapshot-based audit and tx-wrapped owners satellite.

@@ -6,7 +6,7 @@ import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
  * SERVER-SIDE from the request (Clerk org/user + the URL's client/scenario).
  * The model NEVER supplies any of these — it cannot widen its own scope.
  */
-export type CopilotAuthContext = {
+export type ForgeAuthContext = {
   /** Clerk userId of the advisor running the conversation. */
   userId: string;
   /** Clerk orgId — the tenant. Maps to `clients.firmId` / `firmId` args. */
@@ -22,7 +22,7 @@ export type CopilotAuthContext = {
  * message-log reducer (the FULL thread is checkpointed); `authContext` is a
  * single last-write-wins channel carried through every node.
  */
-export const CopilotState = Annotation.Root({
+export const ForgeState = Annotation.Root({
   ...MessagesAnnotation.spec,
-  authContext: Annotation<CopilotAuthContext>({ reducer: (_, b) => b }),
+  authContext: Annotation<ForgeAuthContext>({ reducer: (_, b) => b }),
 });

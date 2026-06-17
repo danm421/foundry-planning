@@ -38,7 +38,7 @@ import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import type { ScenarioRef } from "@/lib/scenario/loader";
 import type { EstateCompareRef } from "@/lib/scenario/scenario-from-search-params";
 import type { TargetKind, OpType } from "@/engine/scenario/types";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 
 /** Every write tool's description ends with this so the UI can flag approval. */
 const APPROVAL_SUFFIX = "Requires human approval.";
@@ -60,7 +60,7 @@ async function gateAccess(
 
 export function buildScenarioWriteTools({
   ctx,
-}: CopilotToolContext): StructuredToolInterface[] {
+}: ForgeToolContext): StructuredToolInterface[] {
   const createScenario = tool(
     async ({ name, copyFrom }) => {
       try {

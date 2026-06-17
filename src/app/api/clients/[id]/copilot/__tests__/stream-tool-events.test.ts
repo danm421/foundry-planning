@@ -15,10 +15,10 @@ vi.mock("@/lib/db-helpers", () => ({
 const verifyClientAccess = vi.fn<() => Promise<boolean>>();
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: () => verifyClientAccess() }));
 
-const checkCopilotRateLimit = vi.fn();
+const checkForgeRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit");
-  return { ...actual, checkCopilotRateLimit: () => checkCopilotRateLimit() };
+  return { ...actual, checkForgeRateLimit: () => checkForgeRateLimit() };
 });
 
 const createConversation = vi.fn(async () => "conv-new");
@@ -109,7 +109,7 @@ beforeEach(() => {
   });
   requireOrgId.mockResolvedValue("org_A");
   verifyClientAccess.mockResolvedValue(true);
-  checkCopilotRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
+  checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });
 
 describe("POST /api/clients/[id]/copilot/stream — tool events", () => {

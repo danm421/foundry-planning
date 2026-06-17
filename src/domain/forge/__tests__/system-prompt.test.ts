@@ -4,10 +4,10 @@ import {
   COPILOT_SYSTEM_PREFIX,
   GROUNDING_RULES,
   buildSystemPrompt,
-  type CopilotPromptContext,
+  type ForgePromptContext,
 } from "../system-prompt";
 
-const promptCtx: CopilotPromptContext = {
+const promptCtx: ForgePromptContext = {
   firmName: "Northstar Advisors",
   client: { householdTitle: "The Reyes Household" },
   scenario: { name: "Retire at 62", isBaseCase: false },

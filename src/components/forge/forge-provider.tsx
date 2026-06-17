@@ -12,7 +12,7 @@ import { usePathname } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
 
-interface CopilotContextValue {
+interface ForgeContextValue {
   clientId: string;
   /** Live scenario id from the URL (null = base case). Re-read every render so
    *  each turn captures the current scope (scenario-drift guard). */
@@ -25,11 +25,11 @@ interface CopilotContextValue {
   isOpen: boolean;
 }
 
-const CopilotCtx = createContext<CopilotContextValue | null>(null);
+const ForgeCtx = createContext<ForgeContextValue | null>(null);
 
-export function useCopilot(): CopilotContextValue {
-  const ctx = useContext(CopilotCtx);
-  if (!ctx) throw new Error("useCopilot must be used within CopilotProvider");
+export function useForge(): ForgeContextValue {
+  const ctx = useContext(ForgeCtx);
+  if (!ctx) throw new Error("useForge must be used within ForgeProvider");
   return ctx;
 }
 
@@ -39,7 +39,7 @@ export function useCopilot(): CopilotContextValue {
  * copilot closes the drawer so only one right-edge panel (shared z-30 layer) is
  * open at a time. Mounted in ClientLayout as a sibling of ScenarioDrawerProvider.
  */
-export function CopilotProvider({
+export function ForgeProvider({
   clientId,
   children,
 }: {
@@ -66,10 +66,10 @@ export function CopilotProvider({
   }, [drawer]);
 
   return (
-    <CopilotCtx.Provider
+    <ForgeCtx.Provider
       value={{ clientId, scenarioId, pathname, open, close, toggle, isOpen }}
     >
       {children}
-    </CopilotCtx.Provider>
+    </ForgeCtx.Provider>
   );
 }

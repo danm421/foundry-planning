@@ -1,6 +1,6 @@
 // src/domain/copilot/tools/__tests__/compute.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { CopilotAuthContext } from "../../context";
+import type { ForgeAuthContext } from "../../context";
 
 // firmId is re-derived server-side via requireOrgId, never trusted from the
 // model. Pin it to the ctx firmId so the loader-arg assertions are stable.
@@ -52,7 +52,7 @@ vi.mock("../../guards", () => {
   }
   return {
     ForbiddenScopeError,
-    assertClientReadable: vi.fn(async (ctx: CopilotAuthContext, clientId: string) => {
+    assertClientReadable: vi.fn(async (ctx: ForgeAuthContext, clientId: string) => {
       if (clientId !== ctx.clientId) throw new ForbiddenScopeError(`client ${clientId}`);
     }),
   };
@@ -66,7 +66,7 @@ import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { PRESENTATION_PAGES } from "@/components/presentations/registry";
 
-const ctx: CopilotAuthContext = {
+const ctx: ForgeAuthContext = {
   userId: "u1",
   firmId: "firmA",
   clientId: "client-1",

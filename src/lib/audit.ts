@@ -291,7 +291,7 @@ export type AuditAction =
   | "vault.document.version_added"
   // Support & feedback
   | "support.message_sent"
-  // Planning Copilot (LLM agent)
+  // Planning Forge (LLM agent)
   | "copilot.query" // a user turn was submitted to the copilot
   | "copilot.tool_call" // the agent invoked a read/compute/write tool
   | "copilot.write_proposed" // a write tool produced a preview, awaiting approval

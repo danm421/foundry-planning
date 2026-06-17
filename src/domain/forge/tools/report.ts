@@ -32,8 +32,8 @@ import {
 import { BodySchema, renderPresentationPdf } from "@/components/presentations/render-presentation-pdf";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { PRESENTATION_PAGES } from "@/components/presentations/registry";
-import type { CopilotAuthContext } from "../state";
-import type { CopilotToolContext } from "../context";
+import type { ForgeAuthContext } from "../state";
+import type { ForgeToolContext } from "../context";
 
 /** Same fan-out caps the export route enforces. */
 const MAX_DISTINCT_SCENARIOS = 6;
@@ -47,7 +47,7 @@ type GenerateReportResult =
 
 export async function generateReport(
   args: { pageIds: string[]; scenarioIds?: string[]; includeMonteCarlo?: boolean; title?: string },
-  ctx: CopilotAuthContext,
+  ctx: ForgeAuthContext,
   // Part of the mandated tool signature; audit/output ownership is keyed off ctx
   // today, so this is intentionally unused here.
   conversationId: string, // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -157,7 +157,7 @@ export async function generateReport(
   return { runId, status: "queued", pageCount: pageIds.length };
 }
 
-export function buildReportTools({ ctx, conversationId }: CopilotToolContext): StructuredToolInterface[] {
+export function buildReportTools({ ctx, conversationId }: ForgeToolContext): StructuredToolInterface[] {
   const generateReportTool = tool(
     async (args) => {
       const r = await generateReport(args, ctx, conversationId);

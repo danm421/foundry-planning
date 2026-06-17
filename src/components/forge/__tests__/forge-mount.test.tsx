@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
-import { CopilotMount } from "../forge-mount";
+import { ForgeMount } from "../forge-mount";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -17,12 +17,12 @@ vi.mock("../actions", () => ({
 function tree(enabled: boolean) {
   return (
     <ScenarioDrawerProvider>
-      <CopilotMount clientId="c1" clientName="Jane & John Smith" enabled={enabled} scenarioNames={{}} />
+      <ForgeMount clientId="c1" clientName="Jane & John Smith" enabled={enabled} scenarioNames={{}} />
     </ScenarioDrawerProvider>
   );
 }
 
-describe("CopilotMount", () => {
+describe("ForgeMount", () => {
   it("renders the launcher when enabled", () => {
     render(tree(true));
     expect(screen.getByRole("button", { name: /open forge/i })).toBeInTheDocument();

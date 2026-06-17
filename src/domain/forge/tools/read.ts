@@ -25,7 +25,7 @@ import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { redactSsns } from "@/lib/extraction/redact-ssn";
 import type { ClientData } from "@/engine/types";
-import type { CopilotToolContext } from "../context";
+import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
 import { maskAccountNumber } from "../account-mask";
 
@@ -136,7 +136,7 @@ export function summarizeImport(
 }
 
 export function buildReadTools(
-  toolCtx: CopilotToolContext,
+  toolCtx: ForgeToolContext,
 ): StructuredToolInterface[] {
   const { ctx } = toolCtx;
 

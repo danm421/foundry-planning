@@ -3,14 +3,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { sectionKeyForPath } from "@/lib/back-nav";
-import { useCopilot } from "./forge-provider";
+import { useForge } from "./forge-provider";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
-import { useCopilotStream, type PendingApproval } from "./use-forge-stream";
+import { useForgeStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
-import { useCopilotImport, type CopilotImportResult } from "./use-forge-import";
+import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
@@ -19,7 +19,7 @@ const PANEL_WIDTH = 420;
 
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
-interface CopilotPanelProps {
+interface ForgePanelProps {
   clientId: string;
   /** Household display name (e.g. "Jane & John Smith") for the context line. */
   clientName: string;
@@ -29,13 +29,13 @@ interface CopilotPanelProps {
   forceOpenForTest?: boolean;
 }
 
-export function CopilotPanel({
+export function ForgePanel({
   clientId,
   clientName,
   scenarioNames,
   forceOpenForTest,
-}: CopilotPanelProps) {
-  const { scenarioId, pathname, isOpen, close } = useCopilot();
+}: ForgePanelProps) {
+  const { scenarioId, pathname, isOpen, close } = useForge();
   const drawer = useScenarioDrawerOptional();
   const open = forceOpenForTest || isOpen;
 
@@ -52,7 +52,7 @@ export function CopilotPanel({
     send,
     cancel,
     resume,
-  } = useCopilotStream(clientId);
+  } = useForgeStream(clientId);
 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [input, setInput] = useState("");
@@ -60,8 +60,8 @@ export function CopilotPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
   const [pendingImportId, setPendingImportId] = useState<string | undefined>();
-  const [importResult, setImportResult] = useState<CopilotImportResult | null>(null);
-  const { status: importStatus, errorMessage: importError, runImport } = useCopilotImport();
+  const [importResult, setImportResult] = useState<ForgeImportResult | null>(null);
+  const { status: importStatus, errorMessage: importError, runImport } = useForgeImport();
   const importing =
     importStatus === "creating" ||
     importStatus === "uploading" ||
