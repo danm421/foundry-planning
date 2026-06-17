@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { UnauthorizedError } from "@/lib/db-helpers";
 import { quoteTickerSchema } from "@/lib/schemas/holdings";
 import { fetchEodClose } from "@/lib/investments/quote";
 import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function assertAccountInFirm(clientId: string, accountId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
@@ -23,9 +24,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
-    if (!(await assertAccountInFirm(id, accountId, firmId))) {
+    if (!(await assertAccountInFirm(id, accountId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     const parsed = quoteTickerSchema.safeParse({

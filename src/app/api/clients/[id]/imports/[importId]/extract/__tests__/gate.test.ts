@@ -15,7 +15,9 @@ vi.mock("@/lib/imports/authz", async () => {
   return { ...actual, requireImportAccess: vi.fn() };
 });
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockResolvedValue(true),
+  verifyClientAccess: vi
+    .fn()
+    .mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" }),
 }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));

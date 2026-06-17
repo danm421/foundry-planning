@@ -23,8 +23,12 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     const body = await request.json();
     const parsed = giftUpdateSchema.safeParse(body);
@@ -187,8 +191,12 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, giftId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     let row: typeof gifts.$inferSelect | undefined;
     await db.transaction(async (tx) => {

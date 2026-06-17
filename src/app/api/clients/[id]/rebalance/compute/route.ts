@@ -34,8 +34,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const parsed = bodySchema.safeParse(await request.json());

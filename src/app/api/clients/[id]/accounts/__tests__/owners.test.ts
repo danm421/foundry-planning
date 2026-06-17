@@ -63,7 +63,9 @@ vi.mock("@/lib/db-scoping", () => ({
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query the test already drives).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = TEST_FIRM (inlined — vi.mock is hoisted) so the real verifyClientAccess
+  // own-firm path matches and the firm-scoped gate resolves to edit access.
+  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_owners_test" }),
 }));
 
 const TEST_FIRM = "firm_owners_test";

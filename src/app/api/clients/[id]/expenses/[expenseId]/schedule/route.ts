@@ -10,8 +10,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string; expenseId: string }> };
 
-async function verifyOwnership(clientId: string, expenseId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return false;
+async function verifyOwnership(clientId: string, expenseId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return false;
 
   const [exp] = await db
     .select()
@@ -22,10 +23,9 @@ async function verifyOwnership(clientId: string, expenseId: string, firmId: stri
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, expenseId } = await params;
 
-    if (!(await verifyOwnership(id, expenseId, firmId))) {
+    if (!(await verifyOwnership(id, expenseId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -51,7 +51,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const firmId = await requireOrgId();
     const { id, expenseId } = await params;
 
-    if (!(await verifyOwnership(id, expenseId, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
+    if (!(await verifyOwnership(id, expenseId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -93,10 +101,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, expenseId } = await params;
 
-    if (!(await verifyOwnership(id, expenseId, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
+    if (!(await verifyOwnership(id, expenseId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

@@ -14,7 +14,8 @@ export async function GET(
   const { id } = await params;
   const firmId = await requireOrgId();
 
-  if (!(await verifyClientAccess(id, firmId))) {
+  const access = await verifyClientAccess(id);
+  if (!access.ok) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
@@ -33,7 +34,7 @@ export async function GET(
   try {
     const result = await getOrComputeMonteCarlo({
       clientId: id,
-      firmId,
+      firmId: access.firmId,
       scenarioId,
       forceRefresh,
     });

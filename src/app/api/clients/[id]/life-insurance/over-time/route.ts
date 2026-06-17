@@ -69,10 +69,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     );
   }
 
-  const inFirm = await verifyClientAccess(clientId, firmId);
-  if (!inFirm) {
+  const access = await verifyClientAccess(clientId);
+  if (!access.ok) {
     return new Response(JSON.stringify({ error: "Client not found" }), {
       status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (access.permission !== "edit") {
+    return new Response(JSON.stringify({ error: "View-only access" }), {
+      status: 403,
       headers: { "content-type": "application/json" },
     });
   }

@@ -29,10 +29,17 @@ async function resolveGrantOrError(
 > {
   const firmId = await requireOrgId();
 
-  if (!(await verifyClientAccess(id, firmId))) {
+  const access = await verifyClientAccess(id);
+  if (!access.ok) {
     return {
       ok: false,
       response: NextResponse.json({ error: "Client not found" }, { status: 404 }),
+    };
+  }
+  if (access.permission !== "edit") {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "View-only access" }, { status: 403 }),
     };
   }
 

@@ -17,9 +17,9 @@ export const dynamic = "force-dynamic";
 async function verifyClientAndTrust(
   clientId: string,
   entityId: string,
-  firmId: string,
 ) {
-  if (!(await verifyClientAccess(clientId, firmId)))
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok)
     return { ok: false as const, reason: "client" as const };
   const [entity] = await db
     .select({ id: entities.id, entityType: entities.entityType })
@@ -36,9 +36,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    const v = await verifyClientAndTrust(id, entityId, firmId);
+    const v = await verifyClientAndTrust(id, entityId);
     if (!v.ok)
       return NextResponse.json(
         { error: v.reason === "not_trust" ? "Entity is not a trust" : "Not found" },
@@ -70,9 +69,16 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, entityId } = await params;
-    const v = await verifyClientAndTrust(id, entityId, firmId);
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+    const v = await verifyClientAndTrust(id, entityId);
     if (!v.ok)
       return NextResponse.json(
         { error: v.reason === "not_trust" ? "Entity is not a trust" : "Not found" },

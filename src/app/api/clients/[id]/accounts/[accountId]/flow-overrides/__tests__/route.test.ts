@@ -55,7 +55,10 @@ vi.mock("@/lib/audit", () => ({
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query the test already drives).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = TEST_FIRM (inlined — vi.mock is hoisted) so the real verifyClientAccess
+  // own-firm path matches for TEST_FIRM clients; OTHER_FIRM clients fall through to
+  // the (empty) share resolver and are denied, preserving the cross-firm 404 test.
+  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_account_flow_overrides_route_test" }),
 }));
 
 const TEST_FIRM = "firm_account_flow_overrides_route_test";

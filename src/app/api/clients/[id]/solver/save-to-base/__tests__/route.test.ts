@@ -18,10 +18,15 @@ vi.mock("@clerk/nextjs/server", () => ({
 // findClientInFirm). Delegate to the already-mocked findClientInFirm so tests
 // that set findClientInFirm → null still exercise the 404 path.
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockImplementation(async (clientId: string, firmId: string) => {
+  // verifyClientAccess is now 1-arg. Source the firm from the test's FIRM_ID
+  // (inlined — vi.mock is hoisted above the const) and return the object shape;
+  // tests that set findClientInFirm → null still drive the 404 path.
+  verifyClientAccess: vi.fn().mockImplementation(async (clientId: string) => {
     const { findClientInFirm } = await import("@/lib/db-scoping");
-    const client = await findClientInFirm(clientId, firmId);
-    return client != null;
+    const client = await findClientInFirm(clientId, "00000000-0000-4000-8000-000000000099");
+    return client != null
+      ? { ok: true, permission: "edit", firmId: "00000000-0000-4000-8000-000000000099", access: "own" }
+      : { ok: false };
   }),
 }));
 

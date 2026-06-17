@@ -85,11 +85,13 @@ type RouteCtx = { params: Promise<{ id: string; sid: string }> };
 async function assertRouteScope(
   clientId: string,
   scenarioId: string,
-  firmId: string,
 ): Promise<NextResponse | null> {
-  const inFirm = await verifyClientAccess(clientId, firmId);
-  if (!inFirm) {
+  const access = await verifyClientAccess(clientId);
+  if (!access.ok) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
+  if (access.permission !== "edit") {
+    return NextResponse.json({ error: "View-only access" }, { status: 403 });
   }
   const [scenario] = await db
     .select({ id: scenarios.id })
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId, sid: scenarioId } = await ctx.params;
 
-    const scopeError = await assertRouteScope(clientId, scenarioId, firmId);
+    const scopeError = await assertRouteScope(clientId, scenarioId);
     if (scopeError) return scopeError;
 
     const parsed = POST_BODY.safeParse(await req.json());
@@ -212,7 +214,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId, sid: scenarioId } = await ctx.params;
 
-    const scopeError = await assertRouteScope(clientId, scenarioId, firmId);
+    const scopeError = await assertRouteScope(clientId, scenarioId);
     if (scopeError) return scopeError;
 
     const url = new URL(req.url);

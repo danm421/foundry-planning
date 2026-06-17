@@ -16,10 +16,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, beneficiaryId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     const body = await request.json();
     const parsed = externalBeneficiaryUpdateSchema.safeParse(body);
@@ -57,10 +61,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; beneficiaryId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, beneficiaryId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     // Delete the beneficiary and, atomically, any will-recipient rows that point
     // at it — recipient_id is a polymorphic FK-less column, so a plain delete

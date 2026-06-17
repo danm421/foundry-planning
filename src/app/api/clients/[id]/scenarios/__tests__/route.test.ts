@@ -59,10 +59,15 @@ vi.mock("@/lib/audit", async () => {
 });
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
-// Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
-// access turns purely on the firm-scoped clients query the test already drives).
+// verifyClientAccess now reads `orgId` from auth() (not requireOrgId), so the
+// auth mock derives orgId from the per-test requireOrgId mock to keep the
+// own-firm match and the wrong-firm 404 test in sync.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    const orgId = await requireOrgId().catch(() => undefined);
+    return { userId: "user_test", orgId };
+  }),
 }));
 
 const COOPER_CLIENT_ID = "877a9532-f8ea-49b0-9db7-aadd64fab82a";

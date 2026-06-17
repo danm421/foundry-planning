@@ -13,8 +13,9 @@ type Params = {
   params: Promise<{ id: string; liabilityId: string; extraPaymentId: string }>;
 };
 
-async function verifyOwnership(clientId: string, liabilityId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return false;
+async function verifyOwnership(clientId: string, liabilityId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return false;
 
   const [liab] = await db
     .select()
@@ -28,7 +29,14 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
 
-    if (!(await verifyOwnership(id, liabilityId, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+    if (!(await verifyOwnership(id, liabilityId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -102,7 +110,14 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
 
-    if (!(await verifyOwnership(id, liabilityId, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+    if (!(await verifyOwnership(id, liabilityId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

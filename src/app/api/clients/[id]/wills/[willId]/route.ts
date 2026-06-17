@@ -21,10 +21,6 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function verifyClient(clientId: string, firmId: string) {
-  return verifyClientAccess(clientId, firmId);
-}
-
 async function verifyWillBelongsToClient(willId: string, clientId: string) {
   const [row] = await db
     .select({ id: wills.id })
@@ -38,9 +34,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const [willRow] = await db
@@ -122,8 +118,12 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     if (!(await verifyWillBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
@@ -247,8 +247,12 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     if (!(await verifyWillBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });

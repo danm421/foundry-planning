@@ -68,9 +68,14 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     return json(403, { error: "AI Copilot is not enabled for your plan." });
   }
 
-  // 5. Client scope (firm + staff). False → 404 (existence must not leak).
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  // 5. Client scope (firm + staff). Not-ok → 404 (existence must not leak);
+  // view-only → 403 (copilot resume can write).
+  const access = await verifyClientAccess(clientId);
+  if (!access.ok) {
     return new Response("Not found", { status: 404 });
+  }
+  if (access.permission !== "edit") {
+    return json(403, { error: "View-only access" });
   }
 
   // 6. Rate limit (fail-closed; exceeded→429 else→503).

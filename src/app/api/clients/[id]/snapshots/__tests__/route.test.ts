@@ -31,9 +31,14 @@ vi.mock("@/lib/db-scoping", () => ({
 // the boolean gate to the still-mocked findClientInFirm so the null-driven 404
 // tests and the happy path keep working without a real DB.
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn(async (clientId: string, firmId: string) => {
+  // verifyClientAccess is now 1-arg and returns the access object. Source the
+  // firm from the test's FIRM_ID ("firm_test", inlined — vi.mock is hoisted) and
+  // delegate to findClientInFirm so the null-driven 404 tests keep working.
+  verifyClientAccess: vi.fn(async (clientId: string) => {
     const { findClientInFirm } = await import("@/lib/db-scoping");
-    return (await findClientInFirm(clientId, firmId)) != null;
+    return (await findClientInFirm(clientId, "firm_test")) != null
+      ? { ok: true, permission: "edit", firmId: "firm_test", access: "own" }
+      : { ok: false };
   }),
 }));
 

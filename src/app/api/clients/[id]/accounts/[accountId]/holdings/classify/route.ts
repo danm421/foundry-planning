@@ -11,8 +11,9 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function assertAccountInFirm(clientId: string, accountId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
@@ -25,9 +26,16 @@ export async function POST(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, accountId } = await params;
-    if (!(await assertAccountInFirm(id, accountId, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+    if (!(await assertAccountInFirm(id, accountId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     const parsed = await parseBody(classifyTickerSchema, req);

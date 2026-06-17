@@ -43,7 +43,13 @@ const d = HAS_DB ? describe : describe.skip;
 // orgRole ⇒ non-staff ⇒ access turns purely on the firm-scoped clients query,
 // driven by the requireOrgId mock + the seeded rows).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // verifyClientAccess now reads `orgId` from auth() — derive it from the per-test
+  // requireOrgId mock so the own-firm match and the cross-firm 404 stay in sync.
+  auth: vi.fn(async () => {
+    const { requireOrgId } = await import("@/lib/db-helpers");
+    const orgId = await requireOrgId().catch(() => undefined);
+    return { userId: "user_test", orgId };
+  }),
 }));
 
 vi.mock("@/lib/db-helpers", async () => {

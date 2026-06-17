@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 
 async function authorize(clientId: string, entityId: string) {
   const firmId = await requireOrgId();
-  if (!(await verifyClientAccess(clientId, firmId)))
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok)
     return { error: "Client not found", status: 404 as const };
   const [ent] = await db
     .select()
@@ -94,6 +95,13 @@ export async function PUT(
   try {
     const { id, entityId } = await params;
     const scenarioId = req.nextUrl.searchParams.get("scenarioId");
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
     const auth = await authorize(id, entityId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });

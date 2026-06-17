@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
 import { listAccountCascadeDependents } from "@/lib/accounts/cascade-dependents";
 import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function verifyClient(clientId: string, firmId: string) {
-  return verifyClientAccess(clientId, firmId);
+async function verifyClient(clientId: string) {
+  const a = await verifyClientAccess(clientId);
+  return a.ok;
 }
 
 // GET /api/clients/[id]/accounts/[accountId]/dependents — transfers + Roth
@@ -20,9 +20,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    if (!(await verifyClient(id))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const [account] = await db

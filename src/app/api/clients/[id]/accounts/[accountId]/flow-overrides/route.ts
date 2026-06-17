@@ -21,7 +21,8 @@ export const dynamic = "force-dynamic";
 // would silently ignore.
 async function authorize(clientId: string, accountId: string) {
   const firmId = await requireOrgId();
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) {
     return { error: "Client not found", status: 404 as const };
   }
   const [account] = await db
@@ -106,6 +107,13 @@ export async function PUT(
   try {
     const { id, accountId } = await params;
     const scenarioId = new URL(req.url).searchParams.get("scenarioId");
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
     const auth = await authorize(id, accountId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });

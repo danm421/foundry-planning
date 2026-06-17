@@ -20,18 +20,14 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function verifyClient(clientId: string, firmId: string) {
-  return verifyClientAccess(clientId, firmId);
-}
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const willRows = await db
@@ -134,8 +130,12 @@ export async function POST(
   try {
     const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
     const body = await request.json();
     const parsed = willCreateSchema.safeParse(body);

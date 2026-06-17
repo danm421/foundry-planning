@@ -18,8 +18,12 @@ export async function PATCH(
   try {
     const firmId = await requireOrgId();
     const { id, seriesId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const parsed = await parseBody(giftSeriesUpdateSchema, request);
@@ -117,8 +121,12 @@ export async function DELETE(
   try {
     const firmId = await requireOrgId();
     const { id, seriesId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const [deleted] = await db

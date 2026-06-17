@@ -23,12 +23,13 @@ async function resolveAccountOrError(
   id: string,
   accountId: string,
 ): Promise<
-  | { ok: true; firmId: string }
+  | { ok: true; firmId: string; permission: "view" | "edit" }
   | { ok: false; response: NextResponse }
 > {
   const firmId = await requireOrgId();
 
-  if (!(await verifyClientAccess(id, firmId))) {
+  const access = await verifyClientAccess(id);
+  if (!access.ok) {
     return {
       ok: false,
       response: NextResponse.json({ error: "Client not found" }, { status: 404 }),
@@ -52,7 +53,7 @@ async function resolveAccountOrError(
     };
   }
 
-  return { ok: true, firmId };
+  return { ok: true, firmId, permission: access.permission };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,9 @@ export async function POST(
     const { id, accountId } = await params;
     const guard = await resolveAccountOrError(id, accountId);
     if (!guard.ok) return guard.response;
+    if (guard.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
     const { firmId } = guard;
 
     const body = await request.json();

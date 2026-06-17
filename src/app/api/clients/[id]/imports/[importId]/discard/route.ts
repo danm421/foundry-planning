@@ -25,8 +25,12 @@ export async function POST(_request: NextRequest, { params }: Params) {
     }
     const { id: clientId, importId } = await params;
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     // requireImportAccess filters out already-discarded imports

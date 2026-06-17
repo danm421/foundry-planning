@@ -46,11 +46,10 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await verifyClientAccess(clientId, firmId);
-    if (!inFirm) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json(
         { error: "Client not found" },
         { status: 404 },
@@ -81,11 +80,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await verifyClientAccess(clientId, firmId);
-    if (!inFirm) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json(
         { error: "Client not found" },
         { status: 404 },
+      );
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json(
+        { error: "View-only access" },
+        { status: 403 },
       );
     }
 

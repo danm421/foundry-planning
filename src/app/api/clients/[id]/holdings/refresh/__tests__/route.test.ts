@@ -38,7 +38,9 @@ vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockRecordAudi
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query the test already drives).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = "firm_1" so the real verifyClientAccess own-firm path
+  // (`client.firmId === orgId`) matches the mocked client row's firmId below.
+  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_1" }),
 }));
 
 import { POST } from "../route";
@@ -70,7 +72,7 @@ describe("POST /api/clients/[id]/holdings/refresh", () => {
   });
 
   it("refreshes the client's holdings, returns a summary, records audit", async () => {
-    selectQueue.push([{ id: "c1" }]); // client-in-firm check
+    selectQueue.push([{ id: "c1", firmId: "firm_1" }]); // client-in-firm check (verifyClientAccess own-firm path)
     selectQueue.push([
       { id: "h1", accountId: "a1", displayTicker: "VTI", priceAsOf: "2026-05-28", deriveFromHoldings: true },
       { id: "h2", accountId: "a2", displayTicker: "FOOBAR", priceAsOf: null, deriveFromHoldings: true },

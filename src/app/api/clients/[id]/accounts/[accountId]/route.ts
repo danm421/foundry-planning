@@ -19,6 +19,15 @@ export async function PUT(
   try {
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, accountId } = await params;
+
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
     const result = await updateAccountForClient({
       clientId: id,
       firmId,
@@ -44,11 +53,15 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id, accountId } = await params;
 
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -140,6 +153,15 @@ export async function DELETE(
   try {
     const { orgId: firmId, userId } = await requireOrgAndUser();
     const { id, accountId } = await params;
+
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
     const result = await deleteAccountForClient({
       clientId: id,
       firmId,

@@ -118,8 +118,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     const raw = await req.json();

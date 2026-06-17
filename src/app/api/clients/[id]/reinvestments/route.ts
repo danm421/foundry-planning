@@ -15,8 +15,9 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
 
-async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
 
   const [scenario] = await db
     .select()
@@ -52,10 +53,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -110,7 +111,15 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -239,7 +248,15 @@ export async function PUT(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -436,7 +453,15 @@ export async function DELETE(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
+    }
+
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }

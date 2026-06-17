@@ -14,12 +14,17 @@ const req = (body: unknown) => new Request("http://t/compute", { method: "POST",
 
 beforeEach(() => {
   vi.mocked(requireOrgId).mockResolvedValue("firm-1");
-  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(verifyClientAccess).mockResolvedValue({
+    ok: true,
+    permission: "edit",
+    firmId: "firm-1",
+    access: "own",
+  });
 });
 
 describe("POST rebalance/compute", () => {
   it("404s when the client is not in the firm", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const res = await POST(req({ accountIds: ["a"], target: { portfolioId: "p" } }), ctx);
     expect(res.status).toBe(404);
   });
