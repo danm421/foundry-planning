@@ -9,6 +9,7 @@ import ExtractionProgress from "@/components/import/extraction-progress";
 import ReviewWizard from "@/components/import/review-wizard";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
+import { draftErrorMessage } from "@/lib/imports/draft-error-message";
 
 export interface ImportFlowFile {
   id: string;
@@ -115,11 +116,10 @@ function DraftStage(props: ImportFlowProps) {
         succeeded?: number;
         failed?: number;
         status?: string;
+        warnings?: string[];
       };
       if (body.status === "draft") {
-        setExtractError(
-          `All ${body.failed ?? props.files.length} file(s) failed to extract. Check the dev server log for details.`,
-        );
+        setExtractError(draftErrorMessage(body, props.files.length));
         setExtracting(false);
         return;
       }
