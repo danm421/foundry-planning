@@ -100,7 +100,7 @@ describe("useForgeStream.send", () => {
   });
 
   it("attaches `attachments` to the pushed user message (display only)", async () => {
-    const { result } = renderHook(() => useCopilotStream("client_42"));
+    const { result } = renderHook(() => useForgeStream("client_42"));
 
     await act(async () => {
       await result.current.send({ ...validArgs, attachments: ["stmt.pdf"] });

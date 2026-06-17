@@ -7,7 +7,7 @@ import {
 import { ForgeProvider } from "../forge-provider";
 import { ForgePanel } from "../forge-panel";
 
-/** Minimal streaming Response so the real useCopilotStream.send() resolves. */
+/** Minimal streaming Response so the real useForgeStream.send() resolves. */
 function makeStreamingResponse(): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -85,7 +85,7 @@ describe("ForgePanel", () => {
 
   it("shows an attached-file chip after choosing a file", async () => {
     mountPanel();
-    const input = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const input = screen.getByTestId("forge-file-input") as HTMLInputElement;
     await act(async () => {
       fireEvent.change(input, { target: { files: [new File(["x"], "stmt.pdf")] } });
     });
@@ -94,7 +94,7 @@ describe("ForgePanel", () => {
 
   it("on send-with-file: shows the attachment in the thread, fires a chat turn with the import, and a review link", async () => {
     mountPanel();
-    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
     await act(async () => {
       fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
     });
@@ -103,11 +103,11 @@ describe("ForgePanel", () => {
     });
 
     // Review link (commit hand-off) appears.
-    expect(await screen.findByTestId("copilot-import-review")).toBeInTheDocument();
+    expect(await screen.findByTestId("forge-import-review")).toBeInTheDocument();
 
     // The chat turn fired with the import id and an empty (attachment-only) message.
     const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    const streamCall = calls.find((c) => String(c[0]).includes("/copilot/stream"));
+    const streamCall = calls.find((c) => String(c[0]).includes("/forge/stream"));
     expect(streamCall).toBeTruthy();
     const body = JSON.parse((streamCall![1] as { body: string }).body);
     expect(body.pendingImportId).toBe("imp_1");
@@ -119,24 +119,24 @@ describe("ForgePanel", () => {
 
   it("clears the review link when starting a new chat", async () => {
     mountPanel();
-    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
     await act(async () => {
       fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
     });
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Send message"));
     });
-    expect(await screen.findByTestId("copilot-import-review")).toBeInTheDocument();
+    expect(await screen.findByTestId("forge-import-review")).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByText("+ New chat"));
     });
-    expect(screen.queryByTestId("copilot-import-review")).toBeNull();
+    expect(screen.queryByTestId("forge-import-review")).toBeNull();
   });
 
   it("attaches via the paperclip button → input path and shows a clear card", async () => {
     mountPanel();
-    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
     const clickSpy = vi.spyOn(fileInput, "click");
 
     // The paperclip button must actually trigger the hidden input.
@@ -150,7 +150,7 @@ describe("ForgePanel", () => {
       fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
     });
 
-    const card = screen.getByTestId("copilot-attachment");
+    const card = screen.getByTestId("forge-attachment");
     expect(card).toBeInTheDocument();
     expect(card).toHaveTextContent("stmt.pdf");
   });

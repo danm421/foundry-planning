@@ -381,7 +381,7 @@ export function ForgePanel({
               {attached.map((f, i) => (
                 <div
                   key={i}
-                  data-testid="copilot-attachment"
+                  data-testid="forge-attachment"
                   className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1.5"
                 >
                   <svg

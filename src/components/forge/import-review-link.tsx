@@ -1,4 +1,4 @@
-// src/components/copilot/import-review-link.tsx
+// src/components/forge/import-review-link.tsx
 "use client";
 
 interface ImportReviewLinkProps {
@@ -16,7 +16,7 @@ interface ImportReviewLinkProps {
 export function ImportReviewLink({ clientId, importId, warnings }: ImportReviewLinkProps) {
   const reviewHref = `/clients/${clientId}/details/import/${importId}`;
   return (
-    <div data-testid="copilot-import-review" className="space-y-1">
+    <div data-testid="forge-import-review" className="space-y-1">
       {warnings.length > 0 && (
         <ul className="list-disc pl-4 text-[11px] text-ink-3">
           {warnings.map((w, i) => (
