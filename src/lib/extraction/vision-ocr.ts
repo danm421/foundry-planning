@@ -21,19 +21,35 @@ export interface VisionOcrOptions {
   concurrency?: number;
 }
 
-async function renderPageImages(
+/**
+ * Fallback OCR for PDFs with no embedded text layer. Renders each page to a
+ * downscaled JPEG and transcribes it via the Azure OpenAI vision deployment.
+ *
+ * Rendering (CPU-bound) is pipelined against transcription (I/O-bound): each
+ * batch's transcription is launched without awaiting it, so the next batch
+ * renders while up to `concurrency` transcriptions are in flight. This bounds
+ * both wall-clock time and peak memory — we never hold more than the in-flight
+ * window of rendered JPEGs at once, rather than every page up front. Fails
+ * closed when Azure is unconfigured.
+ */
+export async function visionOcrPdf(
   buffer: Buffer,
-  maxPages: number,
-): Promise<{ images: VisionImage[]; pageCount: number; truncated: boolean }> {
+  opts: VisionOcrOptions,
+): Promise<VisionOcrResult> {
+  if (!process.env.AZURE_API_KEY) {
+    throw new Error("AZURE_API_KEY is not configured — vision OCR unavailable.");
+  }
+  const batchSize = opts.batchSize ?? DEFAULT_BATCH;
+  const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+
   const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
   const sharp = (await import("sharp")).default;
 
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const pageCount = pdf.numPages;
-  const pagesToRender = Math.min(pageCount, maxPages);
+  const pagesToRender = Math.min(pageCount, opts.maxPages);
 
-  const images: VisionImage[] = [];
-  for (let p = 1; p <= pagesToRender; p++) {
+  async function renderPage(p: number): Promise<VisionImage> {
     const raw = await renderPageAsImage(pdf, p, {
       scale: RENDER_SCALE,
       // unpdf accepts a canvas factory import; @napi-rs/canvas ships a
@@ -52,51 +68,40 @@ async function renderPageImages(
       })
       .jpeg({ quality: JPEG_QUALITY })
       .toBuffer();
-    images.push({ b64: jpeg.toString("base64"), mime: "image/jpeg" });
-  }
-  return { images, pageCount, truncated: pageCount > maxPages };
-}
-
-/**
- * Fallback OCR for PDFs with no embedded text layer. Renders each page to an
- * image, downscales it, and transcribes batches via the Azure OpenAI vision
- * deployment. Fails closed when Azure is unconfigured.
- */
-export async function visionOcrPdf(
-  buffer: Buffer,
-  opts: VisionOcrOptions,
-): Promise<VisionOcrResult> {
-  if (!process.env.AZURE_API_KEY) {
-    throw new Error("AZURE_API_KEY is not configured — vision OCR unavailable.");
-  }
-  const batchSize = opts.batchSize ?? DEFAULT_BATCH;
-  const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
-
-  const { images, pageCount, truncated } = await renderPageImages(
-    buffer,
-    opts.maxPages,
-  );
-
-  const batches: VisionImage[][] = [];
-  for (let i = 0; i < images.length; i += batchSize) {
-    batches.push(images.slice(i, i + batchSize));
+    return { b64: jpeg.toString("base64"), mime: "image/jpeg" };
   }
 
-  const transcripts: string[] = new Array(batches.length).fill("");
-  for (let i = 0; i < batches.length; i += concurrency) {
-    const slice = batches.slice(i, i + concurrency);
-    const out = await Promise.all(
-      slice.map((b) => callAIVisionTranscription(b, opts.model)),
-    );
-    out.forEach((t, j) => {
-      transcripts[i + j] = t;
+  const transcripts: string[] = [];
+  let batchIndex = 0;
+  // index → in-flight transcription; entries delete themselves on settle so we
+  // can await the oldest (Promise.race) whenever the window is full.
+  const inFlight = new Map<number, Promise<number>>();
+
+  for (let start = 1; start <= pagesToRender; start += batchSize) {
+    const end = Math.min(start + batchSize - 1, pagesToRender);
+    const batch: VisionImage[] = [];
+    for (let p = start; p <= end; p++) batch.push(await renderPage(p));
+
+    const index = batchIndex++;
+    const task = callAIVisionTranscription(batch, opts.model).then((text) => {
+      transcripts[index] = text;
+      return index;
     });
+    inFlight.set(
+      index,
+      task.then((settled) => {
+        inFlight.delete(settled);
+        return settled;
+      }),
+    );
+    if (inFlight.size >= concurrency) await Promise.race(inFlight.values());
   }
+  await Promise.all(inFlight.values());
 
   return {
     text: transcripts.join("\n\n"),
     pageCount,
-    pagesProcessed: images.length,
-    truncated,
+    pagesProcessed: pagesToRender,
+    truncated: pageCount > opts.maxPages,
   };
 }

@@ -65,4 +65,46 @@ describe("visionOcrPdf", () => {
       visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" }),
     ).rejects.toThrow(/AZURE_API_KEY/);
   });
+
+  it("interleaves rendering with transcription instead of rendering all pages up front", async () => {
+    getDocumentProxy.mockResolvedValue({ numPages: 6 });
+    // Record how many pages had been rendered at the moment each batch's
+    // transcription was kicked off. Eager rendering would render all 6 pages
+    // before the first transcription call (→ [6, 6, 6]); a pipeline renders
+    // only one batch ahead (→ [2, 4, 6]).
+    const rendersWhenTranscribed: number[] = [];
+    callAIVisionTranscription.mockImplementation(async () => {
+      rendersWhenTranscribed.push(renderPageAsImage.mock.calls.length);
+      return "T";
+    });
+
+    await visionOcrPdf(Buffer.from("pdf"), {
+      maxPages: 30,
+      model: "mini",
+      batchSize: 2,
+      concurrency: 2,
+    });
+
+    expect(rendersWhenTranscribed).toEqual([2, 4, 6]);
+  });
+
+  it("stops rendering ahead once `concurrency` transcriptions are outstanding", async () => {
+    getDocumentProxy.mockResolvedValue({ numPages: 8 });
+    // Transcriptions never settle, so the in-flight window stays full and the
+    // render loop must block rather than rasterize every remaining page.
+    callAIVisionTranscription.mockReturnValue(new Promise<string>(() => {}));
+
+    // Don't await — it would hang by design. Let the microtask queue drain.
+    void visionOcrPdf(Buffer.from("pdf"), {
+      maxPages: 30,
+      model: "mini",
+      batchSize: 2,
+      concurrency: 2,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Only the first concurrency*batchSize pages render; the rest wait behind
+    // the full window — bounding peak memory to the in-flight JPEGs.
+    expect(renderPageAsImage).toHaveBeenCalledTimes(4);
+  });
 });
