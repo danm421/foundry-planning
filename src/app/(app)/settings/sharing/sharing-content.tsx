@@ -1,11 +1,12 @@
 import "server-only";
 import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
-import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientShares, clients, crmHouseholds } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
+import { resolveActors } from "@/lib/activity/resolve-actors";
+import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
 import { SharingPanels } from "./sharing-panels";
 
 export type OutgoingShare = {
@@ -61,7 +62,7 @@ export async function SharingContent(): Promise<ReactElement> {
       .select({ id: clients.id, name: crmHouseholds.name })
       .from(clients)
       .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
-      .where(eq(clients.firmId, orgId));
+      .where(and(eq(clients.firmId, orgId), inArray(clients.id, clientIds)));
     for (const r of rows) clientNameMap.set(r.id, r.name);
   }
 
@@ -103,45 +104,16 @@ export async function SharingContent(): Promise<ReactElement> {
 
   const entries = Array.from(aggMap.values());
 
-  // Resolve owner display names via Clerk (reuses the existing resolveActors pattern).
+  // Resolve owner display names and firm names concurrently.
   const ownerIds = [...new Set(entries.map((e) => e.ownerUserId))];
-  const ownerNames = new Map<string, string>();
-  if (ownerIds.length > 0) {
-    try {
-      const cc = await clerkClient();
-      const list = await cc.users.getUserList({ userId: ownerIds });
-      for (const u of list.data) {
-        const name =
-          [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
-          u.emailAddresses?.[0]?.emailAddress ||
-          "Unknown user";
-        ownerNames.set(u.id, name);
-      }
-    } catch (err) {
-      console.error("[sharing] clerk owner lookup failed:", err);
-    }
-  }
-
-  // Resolve firm names via Clerk organizations.
   const firmIds = [...new Set(entries.map((e) => e.firmId))];
-  const firmNames = new Map<string, string>();
-  if (firmIds.length > 0) {
-    try {
-      const cc = await clerkClient();
-      await Promise.all(
-        firmIds.map(async (id) => {
-          try {
-            const org = await cc.organizations.getOrganization({ organizationId: id });
-            firmNames.set(id, org.name);
-          } catch {
-            // Org not found or no longer accessible — silently skip.
-          }
-        }),
-      );
-    } catch (err) {
-      console.error("[sharing] clerk org lookup failed:", err);
-    }
-  }
+  const [actorMap, firmNames] = await Promise.all([
+    resolveActors(ownerIds),
+    resolveFirmNames(firmIds),
+  ]);
+  const ownerNames = new Map(
+    [...actorMap.entries()].map(([id, a]) => [id, a.name]),
+  );
 
   const incoming: IncomingShare[] = entries.map((e) => ({
     ownerUserId: e.ownerUserId,

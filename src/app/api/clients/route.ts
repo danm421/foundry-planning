@@ -15,7 +15,7 @@ import {
 import { eq, and, asc, isNull, or, inArray, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
-import { resolveSharedClientAccess, resolveSharesForRecipient } from "@/lib/clients/shared-access";
+import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
@@ -46,9 +46,9 @@ export async function GET() {
     const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
     const scope = advisorScopeCondition(clients.advisorId, visible);
 
-    // Fetch the set of client ids shared to this user from other firms.
-    const { sharedClientIds } = await resolveSharedClientAccess(userId ?? "");
-    const sharedIds = [...sharedClientIds];
+    // Single share-map expansion — used for both the inArray filter and tagging.
+    const details = await resolveSharesForRecipient(userId ?? "");
+    const sharedIds = [...new Set(details.map((d) => d.clientId))];
 
     // Tight projection: the list UI only needs identity + the fields
     // shown in the table. Identity (firstName/lastName/spouse names) now lives
@@ -88,7 +88,6 @@ export async function GET() {
 
     // Tag each row with access:"own"|"shared" and sharedBy (display name of
     // the sharing advisor) for shared rows. Own-firm rows always get sharedBy:null.
-    const details = await resolveSharesForRecipient(userId ?? "");
     const ownerByClient = new Map(details.map((d) => [d.clientId, d.ownerUserId]));
     const names = await resolveActors([...new Set(details.map((d) => d.ownerUserId))]);
     const tagged = rows.map((r) => {

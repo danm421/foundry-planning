@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -12,6 +11,8 @@ import { CrmHouseholdSearch } from "@/components/crm-household-search";
 import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
 import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
+import { resolveActors } from "@/lib/activity/resolve-actors";
+import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
 
 // ---------------------------------------------------------------------------
 // Shared-row type — exported so the table component and tests can reference it.
@@ -193,46 +194,16 @@ async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
 
   const sharedClientIds = shares.map((s) => s.clientId);
 
-  // Hoist a single Clerk client instance shared by both lookup blocks below.
-  const cc = await clerkClient();
-
-  // 2. Resolve owner display names via resolveActors pattern (Clerk user list).
+  // 2+3. Resolve owner display names and firm names concurrently.
   const ownerUserIds = [...new Set(shares.map((s) => s.ownerUserId))];
-  const ownerNames = new Map<string, string>();
-  if (ownerUserIds.length > 0) {
-    try {
-      const list = await cc.users.getUserList({ userId: ownerUserIds });
-      for (const u of list.data) {
-        const name =
-          [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
-          u.emailAddresses?.[0]?.emailAddress ||
-          "Unknown user";
-        ownerNames.set(u.id, name);
-      }
-    } catch (err) {
-      console.error("[shared-view] clerk user lookup failed:", err);
-    }
-  }
-
-  // 3. Resolve firm names via Clerk organizations (mirrors sharing-content.tsx).
   const firmIds = [...new Set(shares.map((s) => s.firmId))];
-  const firmNames = new Map<string, string>();
-  if (firmIds.length > 0) {
-    try {
-      await Promise.all(
-        firmIds.map(async (id) => {
-          try {
-            const org = await cc.organizations.getOrganization({ organizationId: id });
-            firmNames.set(id, org.name);
-          } catch {
-            // Org not found or no longer accessible — silently skip.
-          }
-        }),
-      );
-    } catch (err) {
-      console.error("[shared-view] clerk org lookup failed:", err);
-    }
-  }
+  const [actorMap, firmNames] = await Promise.all([
+    resolveActors(ownerUserIds),
+    resolveFirmNames(firmIds),
+  ]);
+  const ownerNames = new Map(
+    [...actorMap.entries()].map(([id, a]) => [id, a.name]),
+  );
 
   // 4. Resolve client display names.
   //    Join clients → crmHouseholds → left join crmHouseholdContacts (primary only).
