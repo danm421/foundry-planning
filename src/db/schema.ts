@@ -674,6 +674,9 @@ export const clients = pgTable("clients", {
   spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
+  // Excludes this client from the owner's share-all grants. Default false
+  // (sweepable). An explicit per-client share is honored even when private.
+  isPrivate: boolean("is_private").notNull().default(false),
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   quickStartState: jsonb("quick_start_state").notNull().default({}),
@@ -4132,3 +4135,44 @@ export const planningKbChunks = pgTable(
     index("planning_kb_chunks_client_id_idx").on(t.clientId),
   ],
 );
+
+// --- Cross-Org Client Sharing ---
+// One row per cross-org sharing grant. firmId/ownerUserId are the OWNING firm
+// + advisor (the client's). recipientUserId is the resolved Clerk user the
+// access is granted to. Revoke = set revokedAt (history preserved). Visibility
+// enums use text({enum}) like presentation_templates.visibility — no pgEnum DDL.
+export const clientShares = pgTable(
+  "client_shares",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    recipientUserId: text("recipient_user_id").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    scope: text("scope", { enum: ["all", "client"] }).notNull(),
+    clientId: uuid("client_id").references(() => clients.id, {
+      onDelete: "cascade",
+    }),
+    permission: text("permission", { enum: ["view", "edit"] }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdBy: text("created_by").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("client_shares_recipient_idx").on(t.recipientUserId, t.revokedAt),
+    index("client_shares_owner_idx").on(t.firmId, t.ownerUserId),
+    // One active share-all per (owner, recipient).
+    uniqueIndex("client_shares_active_all_idx")
+      .on(t.ownerUserId, t.recipientUserId)
+      .where(sql`${t.scope} = 'all' AND ${t.revokedAt} IS NULL`),
+    // One active per-client share per (client, recipient).
+    uniqueIndex("client_shares_active_client_idx")
+      .on(t.clientId, t.recipientUserId)
+      .where(sql`${t.scope} = 'client' AND ${t.revokedAt} IS NULL`),
+  ],
+);
+
+export type ClientShareRow = InferSelectModel<typeof clientShares>;
+export type NewClientShareRow = InferInsertModel<typeof clientShares>;
