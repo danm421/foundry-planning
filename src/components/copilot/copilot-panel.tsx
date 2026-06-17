@@ -374,7 +374,21 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
               aria-label="Attach a document"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
             >
-              <span aria-hidden className="text-sm">＋</span>
+              {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
+                  (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
+              <svg
+                aria-hidden
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
             </button>
             <textarea
               aria-label="Ask the copilot"

@@ -30,7 +30,7 @@ export function ImportSummaryCard({
       </p>
       <p className="mt-0.5 text-[12px] text-ink-2">
         {match.exact} matched existing · {match.new} new
-        {match.fuzzy > 0 ? ` · ${match.fuzzy} need review` : ""}
+        {match.fuzzy > 0 ? ` · ${match.fuzzy} to review` : ""}
       </p>
       {warnings.length > 0 && (
         <ul className="mt-1 list-disc pl-4 text-[11px] text-ink-3">
