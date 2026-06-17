@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   ScenarioDrawerProvider,
 } from "@/components/scenario/scenario-drawer-provider";
@@ -20,6 +20,20 @@ vi.mock("next/navigation", () => ({
 vi.mock("../actions", () => ({
   listMyConversations: vi.fn(async () => []),
   loadConversationMessages: vi.fn(async () => ({ messages: [], approval: null })),
+  resolveBaseScenarioId: vi.fn(async () => "base"),
+}));
+
+vi.mock("../use-copilot-import", () => ({
+  useCopilotImport: () => ({
+    status: "idle",
+    errorMessage: null,
+    runImport: vi.fn(async () => ({
+      importId: "imp_1",
+      summary: { extract: { succeeded: 1, failed: 0 }, match: { exact: 1, fuzzy: 0, new: 0 } },
+      warnings: [],
+    })),
+    reset: vi.fn(),
+  }),
 }));
 
 beforeEach(() => {
@@ -45,6 +59,43 @@ describe("CopilotPanel", () => {
     mountPanel();
     expect(await screen.findByRole("textbox", { name: /ask the copilot/i })).toBeInTheDocument();
     expect(screen.getByText(/how can i help/i)).toBeInTheDocument();
+  });
+
+  it("shows an attached-file chip after choosing a file", async () => {
+    mountPanel();
+    const input = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    expect(screen.getByText("stmt.pdf")).toBeInTheDocument();
+  });
+
+  it("renders the import summary after sending with a file", async () => {
+    mountPanel();
+    const input = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+    expect(await screen.findByTestId("copilot-import-summary")).toBeInTheDocument();
+  });
+
+  it("clears the import summary when starting a new chat", async () => {
+    mountPanel();
+    const fileInput = screen.getByTestId("copilot-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+    expect(await screen.findByTestId("copilot-import-summary")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByText("+ New chat"));
+    });
+    expect(screen.queryByTestId("copilot-import-summary")).toBeNull();
   });
 
   it("updates the scenario chip when the URL scenario changes (drift)", () => {

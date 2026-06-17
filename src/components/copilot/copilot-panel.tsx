@@ -10,6 +10,8 @@ import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import { listMyConversations, loadConversationMessages } from "./actions";
+import { useCopilotImport, type CopilotImportResult } from "./use-copilot-import";
+import { ImportSummaryCard } from "./import-summary-card";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -48,6 +50,16 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   const [threads, setThreads] = useState<Thread[]>([]);
   const [input, setInput] = useState("");
   const [loadingThread, setLoadingThread] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attached, setAttached] = useState<File[]>([]);
+  const [pendingImportId, setPendingImportId] = useState<string | undefined>();
+  const [importResult, setImportResult] = useState<CopilotImportResult | null>(null);
+  const { status: importStatus, errorMessage: importError, runImport } = useCopilotImport();
+  const importing =
+    importStatus === "creating" ||
+    importStatus === "uploading" ||
+    importStatus === "extracting" ||
+    importStatus === "matching";
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
   // While an approval is pending the graph is checkpointed mid-interrupt; the
@@ -56,7 +68,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   // corrupt the pending proposal, so lock the composer until it resolves.
   // (busy alone isn't enough: the stream emits `approval_required` then `done`,
   // so status is "done" — not "streaming" — while the card is up.)
-  const locked = busy || pendingApproval != null;
+  const locked = busy || pendingApproval != null || importing;
 
   // Mutual exclusion belt-and-braces: if the scenario drawer opens while the
   // copilot is open, close the copilot (the provider handles the inverse).
@@ -97,6 +109,8 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
     setConversationId(undefined);
     setMessages([]);
     setPendingApproval(null);
+    setPendingImportId(undefined);
+    setImportResult(null);
     setInput("");
   }
 
@@ -104,6 +118,8 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
     if (busy || loadingThread || id === conversationId) return;
     setLoadingThread(true);
     setPendingApproval(null);
+    setPendingImportId(undefined);
+    setImportResult(null);
     try {
       const { messages: loaded, approval } = await loadConversationMessages(id);
       setConversationId(id);
@@ -115,8 +131,22 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
   }
 
   async function onSend() {
+    if (locked) return;
+    // Send-with-files: run the import pipeline instead of a chat turn.
+    if (attached.length > 0) {
+      const files = attached;
+      setAttached([]);
+      setInput("");
+      setImportResult(null); // clear any prior summary before a new run
+      const result = await runImport(clientId, files);
+      if (result) {
+        setPendingImportId(result.importId);
+        setImportResult(result);
+      }
+      return;
+    }
     const msg = input.trim();
-    if (!msg || locked) return;
+    if (!msg) return;
     setInput("");
     // scenarioId + pathname are re-read every render → current scope per turn.
     await send({
@@ -124,10 +154,16 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
       scenarioId: scenarioId ?? "base",
       conversationId,
       currentPage: sectionKeyForPath(pathname),
+      pendingImportId,
     });
     listMyConversations()
       .then((t) => setThreads(t as Thread[]))
       .catch(() => {});
+  }
+
+  function onPickFiles(list: FileList | null) {
+    if (!list) return;
+    setAttached((prev) => [...prev, ...Array.from(list)]);
   }
 
   const lastMsg = messages[messages.length - 1];
@@ -247,6 +283,31 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
             </div>
           )}
 
+          {importing && (
+            <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+              {importStatus === "creating" && "Starting import…"}
+              {importStatus === "uploading" && "Uploading document…"}
+              {importStatus === "extracting" && "Extracting data…"}
+              {importStatus === "matching" && "Matching against existing accounts…"}
+            </div>
+          )}
+
+          {importResult && (
+            <ImportSummaryCard
+              clientId={clientId}
+              importId={importResult.importId}
+              summary={importResult.summary}
+              warnings={importResult.warnings}
+            />
+          )}
+
+          {importError && (
+            <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
+              {importError}
+            </div>
+          )}
+
           {/* Phase-2: render the real ApprovalCard when approval is pending.
               key= per approval round so verdict state resets on each new payload. */}
           {pendingApproval && (
@@ -273,7 +334,48 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
 
         {/* Composer */}
         <div className="border-t border-hair px-4 py-3">
+          {attached.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {attached.map((f, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 rounded-full border border-hair bg-card-2 px-2 py-0.5 text-[11px] text-ink-2"
+                >
+                  {f.name}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => setAttached((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-ink-4 hover:text-ink"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            data-testid="copilot-file-input"
+            type="file"
+            multiple
+            accept=".pdf,.xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              onPickFiles(e.target.files);
+              e.target.value = ""; // allow re-selecting the same file
+            }}
+          />
           <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={locked}
+              aria-label="Attach a document"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
+            >
+              <span aria-hidden className="text-sm">＋</span>
+            </button>
             <textarea
               aria-label="Ask the copilot"
               rows={1}
@@ -302,7 +404,7 @@ export function CopilotPanel({ clientId, scenarioNames, forceOpenForTest }: Copi
               <button
                 type="button"
                 onClick={() => void onSend()}
-                disabled={!input.trim() || locked}
+                disabled={(!input.trim() && attached.length === 0) || locked}
                 aria-label="Send message"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-secondary text-secondary-on hover:bg-secondary-ink disabled:opacity-40"
               >
