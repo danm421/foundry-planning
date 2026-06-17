@@ -1752,6 +1752,7 @@ export default function IncomeExpensesView({
                 planSettings={ssPlanSettings}
                 incomes={incomeList as unknown as EngineIncome[]}
                 onSaved={refreshIncomes}
+                canEdit={canEdit}
               />
             </div>
           )}
