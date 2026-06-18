@@ -1,0 +1,249 @@
+import { db } from "@/db";
+import {
+  clients,
+  crmHouseholds,
+  accounts,
+  entities,
+  entityOwners,
+  crmActivity,
+  crmTasks,
+  clientOpenItems,
+  clientImports,
+} from "@/db/schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+
+// Single source of truth for the sort vocabulary — the Forge tool's Zod enum
+// (book.ts) derives from this, so a new signal is added in exactly one place.
+export const SIGNAL_KEYS = [
+  "netWorth",
+  "liquid",
+  "cashBalance",
+  "lastContactDays",
+  "openTasks",
+  "openItems",
+] as const;
+export type SignalKey = (typeof SIGNAL_KEYS)[number];
+
+export interface ScanBookFilters {
+  lastContactDaysOver?: number;
+  lastContactDaysUnder?: number;
+  cashAtLeast?: number;
+  liquidAtLeast?: number;
+  netWorthUnder?: number;
+  hasPendingImport?: boolean;
+  hasOpenItems?: boolean;
+  minOpenTasks?: number;
+}
+
+export interface ScanBookOptions {
+  sortBy?: SignalKey;
+  direction?: "asc" | "desc";
+  filters?: ScanBookFilters;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ClientSignalRow {
+  clientId: string;
+  name: string;
+  netWorth: number;
+  liquid: number;
+  cashBalance: number;
+  lastContactDays: number | null;
+  openTasks: number;
+  openItems: number;
+  pendingImport: boolean;
+}
+
+export interface ScanBookResult {
+  rows: ClientSignalRow[];
+  totalCount: number;
+  truncated: boolean;
+}
+
+// Mirror of get-overview-data.ts so book-scan net worth == client_briefing.
+const LIQUID_CATEGORY_EXCLUDE = new Set(["real_estate", "business", "life_insurance"]);
+const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+
+export const DEFAULT_LIMIT = 25;
+export const MAX_LIMIT = 200;
+
+export async function scanBook(
+  ctx: { firmId: string; advisorId: string },
+  opts: ScanBookOptions,
+): Promise<ScanBookResult> {
+  // 1. Base: the caller's own, non-deleted clients.
+  const baseRows = await db
+    .select({ clientId: clients.id, householdId: clients.crmHouseholdId, name: crmHouseholds.name })
+    .from(clients)
+    .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
+    .where(
+      and(
+        eq(clients.firmId, ctx.firmId),
+        eq(clients.advisorId, ctx.advisorId),
+        isNull(crmHouseholds.deletedAt),
+      ),
+    );
+
+  const clientIds = baseRows.map((r) => r.clientId);
+  const householdIds = baseRows.map((r) => r.householdId);
+  if (clientIds.length === 0) {
+    return { rows: [], totalCount: 0, truncated: false };
+  }
+
+  // All per-signal queries key only off the already-scoped clientIds/householdIds,
+  // so they're independent — fan them out in one round-trip. (entity OWNERS depends
+  // on the entities result, so it stays sequential below.)
+  const [accountRows, entityRows, activityRows, taskRows, openItemRows, pendingImportRows] =
+    await Promise.all([
+      // accounts → netWorth(partial)/liquid/cash
+      db
+        .select({ clientId: accounts.clientId, category: accounts.category, value: accounts.value })
+        .from(accounts)
+        .where(inArray(accounts.clientId, clientIds)),
+      // business entities → family-share contribution to netWorth
+      db
+        .select({ id: entities.id, clientId: entities.clientId, entityType: entities.entityType, value: entities.value })
+        .from(entities)
+        .where(inArray(entities.clientId, clientIds)),
+      // lastContact: MAX(occurred_at) per household — as epoch seconds to avoid JS
+      // parsing ambiguity with timezone-unqualified timestamp strings.
+      db
+        .select({
+          householdId: crmActivity.householdId,
+          lastEpochSec: sql<number>`extract(epoch from max(${crmActivity.occurredAt}))`,
+        })
+        .from(crmActivity)
+        .where(inArray(crmActivity.householdId, householdIds))
+        .groupBy(crmActivity.householdId),
+      // open CRM tasks per household
+      db
+        .select({ householdId: crmTasks.householdId, n: sql<number>`count(*)::int` })
+        .from(crmTasks)
+        .where(
+          and(
+            inArray(crmTasks.householdId, householdIds),
+            inArray(crmTasks.status, ["open", "in_progress", "blocked"]),
+          ),
+        )
+        .groupBy(crmTasks.householdId),
+      // open planning items per client (completed_at IS NULL)
+      db
+        .select({ clientId: clientOpenItems.clientId, n: sql<number>`count(*)::int` })
+        .from(clientOpenItems)
+        .where(and(inArray(clientOpenItems.clientId, clientIds), isNull(clientOpenItems.completedAt)))
+        .groupBy(clientOpenItems.clientId),
+      // pending imports per client
+      db
+        .selectDistinct({ clientId: clientImports.clientId })
+        .from(clientImports)
+        .where(
+          and(
+            inArray(clientImports.clientId, clientIds),
+            inArray(clientImports.status, ["draft", "extracting", "review"]),
+          ),
+        ),
+    ]);
+
+  // Accounts → netWorth(partial)/liquid/cash, grouped in JS.
+  const portfolio = new Map<string, { net: number; liquid: number; cash: number }>();
+  for (const a of accountRows) {
+    const v = Number(a.value ?? 0);
+    const p = portfolio.get(a.clientId) ?? { net: 0, liquid: 0, cash: 0 };
+    p.net += v;
+    if (!LIQUID_CATEGORY_EXCLUDE.has(String(a.category))) p.liquid += v;
+    if (a.category === "cash") p.cash += v;
+    portfolio.set(a.clientId, p);
+  }
+
+  // Business-entity family share → add to netWorth (mirrors get-overview-data.ts).
+  const businessEntities = entityRows.filter(
+    (e) => e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType) && Number(e.value ?? 0) > 0,
+  );
+  const businessEntityIds = businessEntities.map((e) => e.id);
+  const ownerRows = businessEntityIds.length
+    ? await db
+        .select({ entityId: entityOwners.entityId, percent: entityOwners.percent })
+        .from(entityOwners)
+        .where(inArray(entityOwners.entityId, businessEntityIds))
+    : [];
+
+  // An entity with no owner rows is fully family-owned (share 1); otherwise its
+  // family share is the clamped sum of owner percents.
+  const ownerSumByEntity = new Map<string, number>();
+  for (const o of ownerRows) {
+    ownerSumByEntity.set(o.entityId, (ownerSumByEntity.get(o.entityId) ?? 0) + parseFloat(o.percent));
+  }
+  const businessShareByClient = new Map<string, number>();
+  for (const e of businessEntities) {
+    const v = Number(e.value ?? 0);
+    const ownerSum = ownerSumByEntity.get(e.id);
+    const familyShare = ownerSum != null ? Math.max(0, Math.min(1, ownerSum)) : 1;
+    businessShareByClient.set(e.clientId, (businessShareByClient.get(e.clientId) ?? 0) + v * familyShare);
+  }
+
+  const lastContactByHousehold = new Map<string, number>();
+  for (const r of activityRows) if (r.lastEpochSec != null) lastContactByHousehold.set(r.householdId, r.lastEpochSec);
+
+  const openTasksByHousehold = new Map<string, number>();
+  for (const r of taskRows) if (r.householdId != null) openTasksByHousehold.set(r.householdId, r.n);
+
+  const openItemsByClient = new Map<string, number>();
+  for (const r of openItemRows) openItemsByClient.set(r.clientId, r.n);
+
+  const pendingImportClients = new Set(pendingImportRows.map((r) => r.clientId));
+
+  const nowSec = Date.now() / 1000;
+  const daysSince = (epochSec: number | undefined): number | null =>
+    epochSec == null ? null : Math.floor((nowSec - epochSec) / 86400);
+
+  // 4. Assemble rows.
+  const rows: ClientSignalRow[] = baseRows.map((b) => {
+    const p = portfolio.get(b.clientId) ?? { net: 0, liquid: 0, cash: 0 };
+    return {
+      clientId: b.clientId,
+      name: b.name,
+      netWorth: p.net + (businessShareByClient.get(b.clientId) ?? 0),
+      liquid: p.liquid,
+      cashBalance: p.cash,
+      lastContactDays: daysSince(lastContactByHousehold.get(b.householdId)),
+      openTasks: openTasksByHousehold.get(b.householdId) ?? 0,
+      openItems: openItemsByClient.get(b.clientId) ?? 0,
+      pendingImport: pendingImportClients.has(b.clientId),
+    };
+  });
+
+  // Filters (all AND-ed).
+  const f = opts.filters ?? {};
+  const filtered = rows.filter((r) => {
+    if (f.cashAtLeast != null && r.cashBalance < f.cashAtLeast) return false;
+    if (f.liquidAtLeast != null && r.liquid < f.liquidAtLeast) return false;
+    if (f.netWorthUnder != null && r.netWorth >= f.netWorthUnder) return false;
+    if (f.hasPendingImport != null && r.pendingImport !== f.hasPendingImport) return false;
+    if (f.hasOpenItems != null && r.openItems > 0 !== f.hasOpenItems) return false;
+    if (f.minOpenTasks != null && r.openTasks < f.minOpenTasks) return false;
+    // never-contacted (null) is the MOST stale: kept by lastContactDaysOver,
+    // excluded by lastContactDaysUnder. Map null → Infinity for both.
+    if (f.lastContactDaysOver != null && (r.lastContactDays ?? Infinity) <= f.lastContactDaysOver) return false;
+    if (f.lastContactDaysUnder != null && (r.lastContactDays ?? Infinity) >= f.lastContactDaysUnder) return false;
+    return true;
+  });
+
+  // Sort — nulls always last regardless of direction.
+  const sortBy = opts.sortBy ?? "lastContactDays";
+  const dir = opts.direction ?? "desc";
+  filtered.sort((a, b) => {
+    const av = a[sortBy];
+    const bv = b[sortBy];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return dir === "asc" ? av - bv : bv - av;
+  });
+
+  const totalCount = filtered.length;
+  const limit = Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const offset = opts.offset ?? 0;
+  const page = filtered.slice(offset, offset + limit);
+  return { rows: page, totalCount, truncated: offset + page.length < totalCount };
+}

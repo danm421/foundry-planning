@@ -38,3 +38,11 @@ tests:
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Which of my clients haven't I contacted in the last 90 days?"
+      expectTool: "scan_book"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
