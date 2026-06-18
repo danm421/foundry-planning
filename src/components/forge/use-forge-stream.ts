@@ -85,6 +85,12 @@ export interface SendArgs {
   pendingImportId?: string;
   /** Display-only filenames to show on the user bubble; never sent to the server. */
   attachments?: string[];
+  /**
+   * Skip pushing the user bubble — the caller already showed it (e.g. the
+   * attachment path renders the turn before the import runs so it appears
+   * immediately). When true, `send` only pushes the empty assistant bubble.
+   */
+  skipUserBubble?: boolean;
 }
 
 export interface UseForgeStreamResult {
@@ -205,12 +211,16 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       setStreamingText("");
       setToolStatus(null);
       setIsVerifying(false);
-      // Push the user turn + an empty assistant bubble to stream into.
-      setMessages((m) => [
-        ...m,
-        { role: "user", text: args.message, attachments: args.attachments },
-        { role: "assistant", text: "" },
-      ]);
+      // Push the user turn (unless the caller already showed it) + an empty
+      // assistant bubble to stream into.
+      setMessages((m) => {
+        const next = [...m];
+        if (!args.skipUserBubble) {
+          next.push({ role: "user", text: args.message, attachments: args.attachments });
+        }
+        next.push({ role: "assistant", text: "" });
+        return next;
+      });
 
       let res: Response;
       try {

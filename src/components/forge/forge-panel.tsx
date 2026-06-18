@@ -147,19 +147,26 @@ export function ForgePanel({
       setAttached([]);
       setInput("");
       setImportResult(null); // clear any prior summary before a new run
+      // Show the user's turn (with attachment chips) right away — the import
+      // analysis below can take seconds, and we don't want the message to
+      // vanish from the composer until it's done. send() is told to skip the
+      // user bubble so it isn't duplicated.
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: prompt, attachments: files.map((f) => f.name) },
+      ]);
       const result = await runImport(clientId, files);
       if (!result) return; // importError bubble already shown by the hook
       setPendingImportId(result.importId);
       setImportResult(result);
       // Fire one chat turn so Forge reads the import and responds right away.
-      // send() pushes the user bubble itself — do not push one here.
       await send({
         message: prompt,
         scenarioId: scenarioId ?? "base",
         conversationId,
         currentPage: sectionKeyForPath(pathname),
         pendingImportId: result.importId,
-        attachments: files.map((f) => f.name),
+        skipUserBubble: true,
       });
       listMyConversations()
         .then((t) => setThreads(t as Thread[]))
