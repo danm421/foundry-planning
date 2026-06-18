@@ -13,6 +13,7 @@ import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { HoldingClassContribution } from "@/lib/investments/holdings-rollup";
+import type { AccountHoldingsGroup } from "@/lib/investments/holdings-inventory";
 import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette";
 import { ExportButton } from "@/components/exports/export-button";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
@@ -41,6 +42,7 @@ interface Props {
   holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>>;
   accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
   fundPortfolios: { id: string; name: string }[];
+  holdingsGroups: AccountHoldingsGroup[];
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";

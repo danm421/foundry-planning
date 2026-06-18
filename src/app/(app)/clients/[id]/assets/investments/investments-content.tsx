@@ -29,6 +29,7 @@ import {
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
+import { buildHoldingsInventory } from "@/lib/investments/holdings-inventory";
 import { breakdownHoldingsByClass, holdingMarketValue, type HoldingClassContribution } from "@/lib/investments/holdings-rollup";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
 import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
@@ -176,17 +177,18 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       weight: parseFloat(r.weight),
     });
 
-  // Holdings-driven accounts (growth_source === "asset_mix" with real holdings) can
-  // be expanded in the class drill to show the underlying positions. Build a
-  // per-account, per-class breakdown using the same blend logic as the rollup.
-  const assetMixAccountIds = acctRows
-    .filter((a) => toGrowthSource(a.growthSource) === "asset_mix")
-    .map((a) => a.id);
-  const enrichedByAccount = await loadEnrichedHoldings(assetMixAccountIds);
+  // Load enriched holdings for ALL accounts once. The Holdings tab shows every
+  // account that has holdings; the allocation drill + rebalance still scope to
+  // asset_mix accounts via assetMixAccountIdSet below (behavior-preserving —
+  // only asset_mix accounts carry holdings rows in practice).
+  const enrichedByAccount = await loadEnrichedHoldings(acctRows.map((a) => a.id));
+  const assetMixAccountIdSet = new Set(
+    acctRows.filter((a) => toGrowthSource(a.growthSource) === "asset_mix").map((a) => a.id),
+  );
 
   // accounts that actually hold individual securities, with a market-value total
   const accountsWithHoldings = acctRows
-    .filter((a) => enrichedByAccount.has(a.id))
+    .filter((a) => assetMixAccountIdSet.has(a.id) && enrichedByAccount.has(a.id))
     .map((a) => {
       const rows = enrichedByAccount.get(a.id)!;
       const value = rows.reduce(
@@ -211,6 +213,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
 
   const holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>> = {};
   for (const [accountId, enriched] of enrichedByAccount) {
+    if (!assetMixAccountIdSet.has(accountId)) continue;
     const positions = enriched.map((e) => ({
       id: e.id,
       ticker: e.displayTicker ?? "",
@@ -325,6 +328,11 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     ctx: statsCtx,
   });
 
+  const holdingsGroups = buildHoldingsInventory(
+    enrichedByAccount,
+    new Map(acctRows.map((a) => [a.id, { name: a.name, category: a.category }])),
+  );
+
   return (
     <InvestmentsClient
       clientId={clientId}
@@ -345,6 +353,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       holdingsByAccountClass={holdingsByAccountClass}
       accountsWithHoldings={accountsWithHoldings}
       fundPortfolios={fundPortfolios}
+      holdingsGroups={holdingsGroups}
     />
   );
 }
