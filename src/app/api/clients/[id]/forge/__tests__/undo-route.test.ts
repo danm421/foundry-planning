@@ -20,7 +20,7 @@ vi.mock("@/lib/authz", async () => {
   return { ...actual, requireActiveSubscription: () => requireActiveSubscription() };
 });
 
-const verifyClientAccess = vi.fn<() => Promise<boolean>>();
+const verifyClientAccess = vi.fn<() => Promise<{ ok: boolean; permission?: string; firmId?: string; access?: string }>>();
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: () => verifyClientAccess() }));
 
 const checkForgeRateLimit = vi.fn();
@@ -87,7 +87,7 @@ beforeEach(() => {
   });
   requireOrgId.mockResolvedValue("firm_1");
   requireActiveSubscription.mockResolvedValue(undefined);
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_1", access: "own" });
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
   userOwnsConversation.mockResolvedValue(true);
 });
