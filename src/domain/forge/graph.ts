@@ -1,7 +1,7 @@
 // src/domain/forge/graph.ts
 import { StateGraph, START, END, interrupt } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseCheckpointSaver, LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ForgeState, type ForgeAuthContext } from "./state";
@@ -12,6 +12,7 @@ import { getStore } from "./store";
 import { parseResumeDecisions } from "./interrupts";
 import { routeAfterAgent } from "./routing";
 import { compactHistory } from "./history-window";
+import { classifyIntent } from "./dispatcher";
 import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
 
@@ -71,7 +72,8 @@ export function buildGraph(
   conversationId: string,
   systemPrompt: () => string,
 ) {
-  const tools = buildTools(buildToolContext(authContext, conversationId));
+  const toolCtx = buildToolContext(authContext, conversationId);
+  const tools = buildTools(toolCtx);
   const model = chatModel().bindTools(tools);
   const toolNode = new ToolNode(tools);
   // Map for the approval node to invoke a confirmed write tool by name. The args
@@ -86,7 +88,19 @@ export function buildGraph(
     // when older turns are trimmed. The system prompt is the stable prefix (good
     // for Azure's automatic prompt caching).
     const window = compactHistory(state.messages);
-    const response = await model.invoke([system, ...window]);
+    // Flag-gated multi-model tiering: a cheap mini-model classifies which tool
+    // bundles the turn needs, so the full model is bound only to those. Default
+    // OFF (validate via the eval harness before enabling); classifyIntent has a
+    // full-tool fallback so a misclassification never hides every tool.
+    let turnModel = model;
+    if (process.env.FORGE_TIERING_ENABLED === "true") {
+      const lastHuman = [...state.messages].reverse().find((m) => m instanceof HumanMessage);
+      const text =
+        lastHuman && typeof lastHuman.content === "string" ? lastHuman.content : "";
+      const bundles = await classifyIntent(text);
+      turnModel = chatModel().bindTools(buildTools(toolCtx, bundles));
+    }
+    const response = await turnModel.invoke([system, ...window]);
     return { messages: [response] };
   }
 

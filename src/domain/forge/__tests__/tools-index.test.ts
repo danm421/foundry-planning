@@ -72,7 +72,7 @@ vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
 // Phase 4: stub the knowledge tool's embedding dep so this stays pure.
 vi.mock("../llm", () => ({ embeddings: vi.fn() }));
 
-import { buildTools, WRITE_TOOL_NAMES } from "../tools";
+import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
 
 const ctx: ForgeAuthContext = { userId: "u1", firmId: "org_A", clientId: "c1", scenarioId: "base" };
@@ -272,6 +272,23 @@ describe("buildTools (Phase 4 report tool)", () => {
 
   it("routes generate_report to tools (auto-apply, no approval gate)", () => {
     expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+});
+
+describe("buildTools bundles", () => {
+  it("buildTools() with no bundle arg returns the full set (unchanged count 56)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(56);
+  });
+
+  it("buildTools(ctx, ['read']) returns only the read bundle", () => {
+    const names = buildTools(TOOL_CTX, ["read"]).map((t) => t.name);
+    const readNames = new Set(TOOL_BUNDLES.read(TOOL_CTX).map((t) => t.name));
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.every((n) => readNames.has(n))).toBe(true);
+  });
+
+  it("narrowing to a subset is strictly smaller than the full set", () => {
+    expect(buildTools(TOOL_CTX, ["read", "memory"]).length).toBeLessThan(buildTools(TOOL_CTX).length);
   });
 });
 

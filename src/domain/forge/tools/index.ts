@@ -10,6 +10,28 @@ import { buildCrmTools } from "./crm";
 import { buildReportTools } from "./report";
 import { buildKnowledgeTools } from "./knowledge";
 import { buildMemoryTools } from "./memory";
+import { ALL_BUNDLES, type BundleName } from "../dispatcher";
+
+/**
+ * Tool bundles keyed by the names the dispatcher classifies into. buildTools
+ * flattens the selected bundles; the default (ALL_BUNDLES) reproduces the prior
+ * flat array exactly (same order, same count) so nothing changes unless a caller
+ * narrows the set (the FORGE_TIERING_ENABLED path).
+ */
+export const TOOL_BUNDLES: Record<
+  BundleName,
+  (toolCtx: ForgeToolContext) => StructuredToolInterface[]
+> = {
+  read: buildReadTools,
+  compute: buildComputeTools,
+  whatif: buildWhatIfTools,
+  "scenario-write": buildScenarioWriteTools,
+  "detail-write": buildDetailWriteTools,
+  crm: buildCrmTools,
+  report: buildReportTools,
+  knowledge: buildKnowledgeTools,
+  memory: buildMemoryTools,
+};
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
@@ -32,18 +54,11 @@ import { buildMemoryTools } from "./memory";
  * stores non-destructive advisor/client preferences, so it is NOT in
  * WRITE_TOOL_NAMES and does not route through the approval gate.
  */
-export function buildTools(toolCtx: ForgeToolContext): StructuredToolInterface[] {
-  return [
-    ...buildReadTools(toolCtx),
-    ...buildComputeTools(toolCtx),
-    ...buildWhatIfTools(toolCtx),
-    ...buildScenarioWriteTools(toolCtx),
-    ...buildDetailWriteTools(toolCtx),
-    ...buildCrmTools(toolCtx),
-    ...buildReportTools(toolCtx),
-    ...buildKnowledgeTools(toolCtx),
-    ...buildMemoryTools(toolCtx),
-  ];
+export function buildTools(
+  toolCtx: ForgeToolContext,
+  bundles: readonly BundleName[] = ALL_BUNDLES,
+): StructuredToolInterface[] {
+  return bundles.flatMap((b) => TOOL_BUNDLES[b](toolCtx));
 }
 
 /**
