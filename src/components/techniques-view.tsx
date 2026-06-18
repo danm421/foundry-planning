@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
 import AddAssetTransactionForm, { type BusinessSaleOption } from "./forms/add-asset-transaction-form";
@@ -275,35 +276,40 @@ function RowActions({
   onDelete,
 }: {
   itemName: string;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
+  if (!onEdit && !onDelete) return null;
   return (
     <div className="flex shrink-0 items-center justify-end gap-1">
-      <button
-        type="button"
-        title="Edit"
-        aria-label={`Edit ${itemName}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit();
-        }}
-        className="rounded border border-hair px-2 py-0.5 text-xs text-ink-2 hover:bg-card-2"
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        title="Delete"
-        aria-label={`Delete ${itemName}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
-      >
-        <TrashIcon />
-      </button>
+      {onEdit && (
+        <button
+          type="button"
+          title="Edit"
+          aria-label={`Edit ${itemName}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className="rounded border border-hair px-2 py-0.5 text-xs text-ink-2 hover:bg-card-2"
+        >
+          Edit
+        </button>
+      )}
+      {onDelete && (
+        <button
+          type="button"
+          title="Delete"
+          aria-label={`Delete ${itemName}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
+        >
+          <TrashIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -320,7 +326,7 @@ function SectionShell({
   help: string;
   count: number;
   addLabel: string;
-  onAdd: () => void;
+  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -333,12 +339,14 @@ function SectionShell({
             {count} {count === 1 ? "item" : "items"}
           </span>
         </div>
-        <button
-          onClick={onAdd}
-          className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
-        >
-          {addLabel}
-        </button>
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
+          >
+            {addLabel}
+          </button>
+        )}
       </header>
       <div className="overflow-hidden rounded-lg border border-hair bg-card/60">{children}</div>
     </section>
@@ -387,8 +395,8 @@ function RothConversionsTable({
 }: {
   rows: RothConversionRow[];
   accounts: AccountOption[];
-  onEdit: (c: RothConversionRow) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (c: RothConversionRow) => void;
+  onDelete?: (id: string) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyRow message="No Roth conversions yet." />;
@@ -437,7 +445,7 @@ function RothConversionsTable({
               </div>
               <span className="truncate text-xs tabular-nums text-ink-3">{yearRange}</span>
               <span className="truncate text-xs text-ink-3">{rothDetail(c)}</span>
-              <RowActions itemName={c.name} onEdit={() => onEdit(c)} onDelete={() => onDelete(c.id)} />
+              <RowActions itemName={c.name} onEdit={onEdit ? () => onEdit(c) : undefined} onDelete={onDelete ? () => onDelete(c.id) : undefined} />
             </li>
           );
         })}
@@ -459,8 +467,8 @@ function TransfersTable({
 }: {
   rows: TransferRow[];
   accounts: AccountOption[];
-  onEdit: (t: TransferRow) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (t: TransferRow) => void;
+  onDelete?: (id: string) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyRow message="No transfers yet." />;
@@ -508,7 +516,7 @@ function TransfersTable({
                 {formatCurrency(t.amount)}
               </span>
               <span className="truncate text-xs tabular-nums text-ink-3">{yearRange}</span>
-              <RowActions itemName={t.name} onEdit={() => onEdit(t)} onDelete={() => onDelete(t.id)} />
+              <RowActions itemName={t.name} onEdit={onEdit ? () => onEdit(t) : undefined} onDelete={onDelete ? () => onDelete(t.id) : undefined} />
             </li>
           );
         })}
@@ -528,8 +536,8 @@ function ReinvestmentsTable({
   onDelete,
 }: {
   rows: ReinvestmentRow[];
-  onEdit: (r: ReinvestmentRow) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (r: ReinvestmentRow) => void;
+  onDelete?: (id: string) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyRow message="No reinvestments yet." />;
@@ -569,7 +577,7 @@ function ReinvestmentsTable({
               <span className="truncate text-xs tabular-nums text-ink-3">
                 {formatYear(r.year, r.yearRef)}
               </span>
-              <RowActions itemName={r.name} onEdit={() => onEdit(r)} onDelete={() => onDelete(r.id)} />
+              <RowActions itemName={r.name} onEdit={onEdit ? () => onEdit(r) : undefined} onDelete={onDelete ? () => onDelete(r.id) : undefined} />
             </li>
           );
         })}
@@ -792,8 +800,8 @@ function AssetTransactionsTable({
   pastBuys: PastBuy[];
   projectedSaleValueFor: (accountId: string, year: number) => number | null;
   projectedMortgagePayoffFor: (liabilityId: string, year: number) => number | null;
-  onEdit: (t: AssetTransactionRow) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (t: AssetTransactionRow) => void;
+  onDelete?: (id: string) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyRow message="No asset transactions yet." />;
@@ -882,7 +890,7 @@ function AssetTransactionsTable({
               >
                 {headline?.value ?? "—"}
               </span>
-              <RowActions itemName={tx.name} onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
+              <RowActions itemName={tx.name} onEdit={onEdit ? () => onEdit(tx) : undefined} onDelete={onDelete ? () => onDelete(tx.id) : undefined} />
             </li>
           );
         })}
@@ -910,6 +918,8 @@ export default function TechniquesView({
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const { scenarioId } = useScenarioState(clientId);
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
 
   const [showAddTransfer, setShowAddTransfer] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
@@ -980,6 +990,7 @@ export default function TechniquesView({
   );
 
   async function handleDeleteTransfer(transferId: string) {
+    if (!canEdit) return;
     await writer.submit(
       { op: "remove", targetKind: "transfer", targetId: transferId },
       {
@@ -991,6 +1002,7 @@ export default function TechniquesView({
   }
 
   async function handleDeleteReinvestment(reinvestmentId: string) {
+    if (!canEdit) return;
     await writer.submit(
       { op: "remove", targetKind: "reinvestment", targetId: reinvestmentId },
       {
@@ -1002,6 +1014,7 @@ export default function TechniquesView({
   }
 
   async function handleDeleteTransaction(transactionId: string) {
+    if (!canEdit) return;
     await writer.submit(
       { op: "remove", targetKind: "asset_transaction", targetId: transactionId },
       {
@@ -1013,6 +1026,7 @@ export default function TechniquesView({
   }
 
   async function handleDeleteRothConversion(rothConversionId: string) {
+    if (!canEdit) return;
     await writer.submit(
       { op: "remove", targetKind: "roth_conversion", targetId: rothConversionId },
       {
@@ -1030,13 +1044,13 @@ export default function TechniquesView({
         help="Move dollars from tax-deferred accounts (Traditional IRA, 401(k)) into a Roth IRA, paying ordinary income tax now in exchange for tax-free growth and withdrawals."
         count={rothConversions.length}
         addLabel="+ Add Roth Conversion"
-        onAdd={() => setShowAddRothConversion(true)}
+        onAdd={canEdit ? () => setShowAddRothConversion(true) : undefined}
       >
         <RothConversionsTable
           rows={rothConversions}
           accounts={accounts}
-          onEdit={(c) => setEditingRothConversion(c)}
-          onDelete={(id) => handleDeleteRothConversion(id)}
+          onEdit={canEdit ? (c) => setEditingRothConversion(c) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteRothConversion(id) : undefined}
         />
       </SectionShell>
 
@@ -1045,13 +1059,13 @@ export default function TechniquesView({
         help="Move money between accounts on a one-time, recurring, or scheduled basis. Classification (Roth conversion, rollover, distribution, liquidation) is inferred from the source and target account types."
         count={transfers.length}
         addLabel="+ Add Transfer"
-        onAdd={() => setShowAddTransfer(true)}
+        onAdd={canEdit ? () => setShowAddTransfer(true) : undefined}
       >
         <TransfersTable
           rows={transfers}
           accounts={accounts}
-          onEdit={(t) => setEditingTransfer(t)}
-          onDelete={(id) => handleDeleteTransfer(id)}
+          onEdit={canEdit ? (t) => setEditingTransfer(t) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteTransfer(id) : undefined}
         />
       </SectionShell>
 
@@ -1060,12 +1074,12 @@ export default function TechniquesView({
         help="Re-allocate an account at a chosen year — switch to a model portfolio or a custom growth rate. Optionally realize embedded gains as taxes in the switch year."
         count={reinvestments.length}
         addLabel="+ Add Reinvestment"
-        onAdd={() => setShowAddReinvestment(true)}
+        onAdd={canEdit ? () => setShowAddReinvestment(true) : undefined}
       >
         <ReinvestmentsTable
           rows={reinvestments}
-          onEdit={(r) => setEditingReinvestment(r)}
-          onDelete={(id) => handleDeleteReinvestment(id)}
+          onEdit={canEdit ? (r) => setEditingReinvestment(r) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteReinvestment(id) : undefined}
         />
       </SectionShell>
 
@@ -1074,7 +1088,7 @@ export default function TechniquesView({
         help="Buy or sell a specific asset (real estate, business interest, vehicle). Sells use the projected end-of-year value unless overridden; Sell+Buy lets you roll proceeds into a replacement purchase."
         count={assetTransactions.length}
         addLabel="+ Add Transaction"
-        onAdd={() => setShowAddTransaction(true)}
+        onAdd={canEdit ? () => setShowAddTransaction(true) : undefined}
       >
         <AssetTransactionsTable
           rows={assetTransactions}
@@ -1084,12 +1098,12 @@ export default function TechniquesView({
           pastBuys={pastBuys}
           projectedSaleValueFor={projectedSaleValueFor}
           projectedMortgagePayoffFor={projectedMortgagePayoffFor}
-          onEdit={(t) => setEditingTransaction(t)}
-          onDelete={(id) => handleDeleteTransaction(id)}
+          onEdit={canEdit ? (t) => setEditingTransaction(t) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteTransaction(id) : undefined}
         />
       </SectionShell>
 
-      {(showAddTransfer || editingTransfer) && (
+      {canEdit && (showAddTransfer || editingTransfer) && (
         <AddTransferForm
           clientId={clientId}
           accounts={accounts}
@@ -1102,7 +1116,7 @@ export default function TechniquesView({
         />
       )}
 
-      {(showAddReinvestment || editingReinvestment) && (
+      {canEdit && (showAddReinvestment || editingReinvestment) && (
         <AddReinvestmentForm
           clientId={clientId}
           accounts={accounts}
@@ -1116,7 +1130,7 @@ export default function TechniquesView({
         />
       )}
 
-      {(showAddRothConversion || editingRothConversion) && (
+      {canEdit && (showAddRothConversion || editingRothConversion) && (
         <AddRothConversionForm
           clientId={clientId}
           accounts={accounts}
@@ -1129,7 +1143,7 @@ export default function TechniquesView({
         />
       )}
 
-      {(showAddTransaction || editingTransaction) && (
+      {canEdit && (showAddTransaction || editingTransaction) && (
         <AddAssetTransactionForm
           clientId={clientId}
           accounts={accounts}
