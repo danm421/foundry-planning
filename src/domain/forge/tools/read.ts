@@ -366,8 +366,9 @@ export function buildReadTools(
         .from(clientImports)
         .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
         .limit(1);
-      const payload = (final?.payloadJson as ImportPayloadJson | null)?.payload ?? null;
-      return JSON.stringify(summarizeImport(final!.id, final!.status, payload));
+      if (!final) return JSON.stringify({ found: false, importId, note: "import disappeared after extraction" });
+      const payload = (final.payloadJson as ImportPayloadJson | null)?.payload ?? null;
+      return JSON.stringify(summarizeImport(final.id, final.status, payload));
     },
     {
       name: "extract_import",

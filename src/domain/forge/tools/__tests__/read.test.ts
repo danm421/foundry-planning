@@ -326,7 +326,10 @@ describe("summarizeImport — dependents count", () => {
     };
     const out = summarizeImport("imp1", "review", payload as never);
     expect(out.counts.dependents).toBe(2);
-    expect(out.matchTotals).toHaveProperty("dependents");
+    expect(out.matchTotals).toBeDefined();
+    const depTotals = (out.matchTotals as { dependents?: unknown }).dependents;
+    expect(depTotals).toBeDefined();
+    expect(depTotals).toEqual(expect.objectContaining({ exact: expect.any(Number), fuzzy: expect.any(Number), new: expect.any(Number) }));
   });
 });
 
