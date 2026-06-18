@@ -54,13 +54,6 @@ export function buildWhereHeld(
   categoryMembers: Record<string, string[]>,
   customGroupMembers: Record<string, string[]>,
 ): WhereHeldRollup {
-  const classValueOf = (acctId: string): number => {
-    const a = accountsById[acctId];
-    if (!a) return 0;
-    const w = a.weights.find((x) => x.assetClassId === assetClassId)?.weight ?? 0;
-    return a.value * w;
-  };
-
   const accounts: WhereHeldAccount[] = Object.entries(accountsById)
     .map(([accountId, a]) => {
       const classWeight = a.weights.find((x) => x.assetClassId === assetClassId)?.weight ?? 0;
@@ -75,6 +68,11 @@ export function buildWhereHeld(
     })
     .filter((a) => a.classValue > 0)
     .sort((a, b) => b.classValue - a.classValue);
+
+  // Reuse the per-account class dollars already computed above for the rollups
+  // (accounts is filtered to classValue > 0, so any id absent here contributes 0).
+  const classValueByAccountId = new Map(accounts.map((a) => [a.accountId, a.classValue]));
+  const classValueOf = (id: string): number => classValueByAccountId.get(id) ?? 0;
 
   const byCategory = Object.entries(categoryMembers)
     .map(([category, ids]) => ({ category, classValue: ids.reduce((s, id) => s + classValueOf(id), 0) }))

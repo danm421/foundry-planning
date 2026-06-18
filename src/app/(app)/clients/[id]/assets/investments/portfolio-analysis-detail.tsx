@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
 import { PortfolioAnalysisScatter } from "./portfolio-analysis-scatter";
 import { buildColorMap, labelForType } from "./portfolio-analysis-series";
+import { exactCurrency } from "@/lib/presentations/format";
 import type { AnalysisRow, EntityType } from "@/lib/investments/portfolio-analysis";
 import type { BreakdownEntry, WhereHeldRollup } from "@/lib/investments/analysis-detail";
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
-const money = (v: number) =>
-  v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 export interface DetailMemberAccount { id: string; name: string; value: number; topClass: string | null; }
 
@@ -30,7 +28,7 @@ export default function PortfolioAnalysisDetail({
   tax: { ordinaryIncome: number; ltCapitalGains: number; qualifiedDividends: number; taxExempt: number } | null;
   backHref: string;
 }) {
-  const colorMap = useMemo(() => buildColorMap(scatterRows), [scatterRows]);
+  const colorMap = buildColorMap(scatterRows);
   const stat = (label: string, value: string) => (
     <div className="rounded border border-hair px-3 py-2">
       <div className="text-xs text-ink-4">{label}</div>
@@ -50,7 +48,7 @@ export default function PortfolioAnalysisDetail({
           <h2 className="text-xl font-bold text-ink">{row.name}</h2>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {stat("Value", row.value === null ? "—" : money(row.value))}
+          {stat("Value", row.value === null ? "—" : exactCurrency(row.value))}
           {stat("Return", pct(row.stats.geometricReturn))}
           {stat("Mean", pct(row.stats.arithmeticMean))}
           {stat("Std Dev", pct(row.stats.stdDev))}
@@ -84,7 +82,7 @@ export default function PortfolioAnalysisDetail({
                 <tr key={b.assetClassId} className="border-b border-hair">
                   <td className="py-2">{b.name}</td>
                   <td className="py-2 text-right">{pct(b.weight)}</td>
-                  <td className="py-2 text-right">{b.value === null ? "—" : money(b.value)}</td>
+                  <td className="py-2 text-right">{b.value === null ? "—" : exactCurrency(b.value)}</td>
                   <td className="py-2 text-right">{pct(b.stats.geometricReturn)}</td>
                   <td className="py-2 text-right">{pct(b.stats.arithmeticMean)}</td>
                   <td className="py-2 text-right">{pct(b.stats.stdDev)}</td>
@@ -111,7 +109,7 @@ export default function PortfolioAnalysisDetail({
               {members.map((m) => (
                 <tr key={m.id} className="border-b border-hair">
                   <td className="py-2">{m.name}</td>
-                  <td className="py-2 text-right">{money(m.value)}</td>
+                  <td className="py-2 text-right">{exactCurrency(m.value)}</td>
                   <td className="py-2">{m.topClass ?? "—"}</td>
                 </tr>
               ))}
@@ -150,7 +148,7 @@ export default function PortfolioAnalysisDetail({
                 {whereHeld.accounts.map((a) => (
                   <tr key={a.accountId} className="border-b border-hair">
                     <td className="py-2">{a.name}</td>
-                    <td className="py-2 text-right">{money(a.classValue)}</td>
+                    <td className="py-2 text-right">{exactCurrency(a.classValue)}</td>
                     <td className="py-2 text-right">{pct(a.classWeight)}</td>
                   </tr>
                 ))}

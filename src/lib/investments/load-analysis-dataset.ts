@@ -43,7 +43,10 @@ export async function loadAnalysisDataset(
     .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id)));
   if (!settings) return null;
 
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, groupRows] =
+  // Correlations are fetched unfiltered alongside the rest; buildStatsContext/
+  // buildCorrelationMatrix drops any pair whose id isn't in this firm's class
+  // list (same drop-on-build firm scoping investments-content uses).
+  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, groupRows, correlationRows] =
     await Promise.all([
       db
         .select()
@@ -56,18 +59,14 @@ export async function loadAnalysisDataset(
       db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
       db.select().from(modelPortfolioAllocations),
       db.select().from(accountGroups).where(eq(accountGroups.clientId, clientId)),
+      db
+        .select({
+          assetClassIdA: assetClassCorrelations.assetClassIdA,
+          assetClassIdB: assetClassCorrelations.assetClassIdB,
+          correlation: assetClassCorrelations.correlation,
+        })
+        .from(assetClassCorrelations),
     ]);
-
-  // Correlations fetched unfiltered; buildStatsContext/buildCorrelationMatrix
-  // drops any pair whose id isn't in this firm's class list (same drop-on-build
-  // firm scoping investments-content uses).
-  const correlationRows = await db
-    .select({
-      assetClassIdA: assetClassCorrelations.assetClassIdA,
-      assetClassIdB: assetClassCorrelations.assetClassIdB,
-      correlation: assetClassCorrelations.correlation,
-    })
-    .from(assetClassCorrelations);
 
   const accountIds = new Set(acctRows.map((a) => a.id));
   const accountMixByAccountId: Record<string, AssetClassWeight[]> = {};
@@ -97,7 +96,7 @@ export async function loadAnalysisDataset(
       weight: parseFloat(r.weight),
     });
 
-  const memberIdsByGroup = new Map<string, string[]>();
+  const memberIdsByGroup: Record<string, string[]> = {};
   if (groupRows.length > 0) {
     const groupIds = groupRows.map((g) => g.id);
     const memberRows = await db
@@ -108,10 +107,7 @@ export async function loadAnalysisDataset(
       .from(accountGroupMembers)
       .where(inArray(accountGroupMembers.accountGroupId, groupIds));
     for (const row of memberRows) {
-      (
-        memberIdsByGroup.get(row.accountGroupId) ??
-        memberIdsByGroup.set(row.accountGroupId, []).get(row.accountGroupId)!
-      ).push(row.accountId);
+      (memberIdsByGroup[row.accountGroupId] ??= []).push(row.accountId);
     }
   }
 
@@ -176,7 +172,7 @@ export async function loadAnalysisDataset(
       id: g.id,
       name: g.name,
       color: g.color,
-      accountIds: memberIdsByGroup.get(g.id) ?? [],
+      accountIds: memberIdsByGroup[g.id] ?? [],
     })),
   });
 }

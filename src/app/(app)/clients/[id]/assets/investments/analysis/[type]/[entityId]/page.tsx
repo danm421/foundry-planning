@@ -6,7 +6,6 @@ import { getOrgId } from "@/lib/db-helpers";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 import { loadAnalysisDataset } from "@/lib/investments/load-analysis-dataset";
 import { buildBreakdown, buildWhereHeld } from "@/lib/investments/analysis-detail";
-import { categoryLabel } from "@/lib/investments/portfolio-analysis";
 import PortfolioAnalysisDetail, { type DetailMemberAccount } from "../../../portfolio-analysis-detail";
 
 interface PageProps {
@@ -70,14 +69,10 @@ export default async function PortfolioAnalysisDetailPage({ params, searchParams
   if (scenario) qs.set("scenario", scenario);
   const backHref = `/clients/${clientId}/assets/investments?${qs.toString()}`;
 
-  // Relabel category rows with the human label (buildAnalysisRows already does
-  // this, but keep it resilient if a raw slug slips through).
-  const displayRow = row.type === "category" ? { ...row, name: categoryLabel(row.id) } : row;
-
   return (
     <ScenarioDrawerShell clientId={clientId} scenarioId={scenario}>
       <PortfolioAnalysisDetail
-        row={displayRow}
+        row={row}
         breakdown={breakdown}
         members={members}
         whereHeld={whereHeld}
