@@ -150,6 +150,7 @@ export async function extractDocument(
     model: "mini" | "full",
     uploadKind?: UploadKind,
     extractHoldings = false,
+    comprehensive = false,
 ): Promise<ExtractionResult> {
     const ext = getFileExtension(fileName);
     const warnings: string[] = [];
@@ -171,7 +172,7 @@ export async function extractDocument(
     } else if (kind === "xlsx") {
         text = await extractExcelText(fileBuffer);
         if (documentType === "auto") documentType = "excel_import";
-    } else if (documentType === "fact_finder") {
+    } else if (documentType === "fact_finder" || (comprehensive && kind === "pdf")) {
         pdfPages = await extractPdfPages(fileBuffer);
         text = pdfPages.join("\n");
     } else {
@@ -246,25 +247,25 @@ export async function extractDocument(
     }
     text = redacted.text;
 
-    // 4. Multi-pass route for fact-finder documents.
-    if (documentType === "fact_finder" && pdfPages && pdfPages.length > 0) {
+    // 4. Multi-pass route for fact-finder documents (and any PDF when comprehensive=true).
+    if ((documentType === "fact_finder" || comprehensive) && pdfPages && pdfPages.length > 0) {
         const redactedPages = pdfPages.map((p) => redactSsns(p).text);
         const anchors =
             redactedPages.slice(0, 3).join("\n") +
             "\n...\n" +
             redactedPages.slice(-1).join("\n");
-        const outline = ""; // pdf-parser doesn't yet surface the outline; ok for now
         const multi = await extractWithMultiPass({
             pages: redactedPages,
-            outline,
+            outline: "",
             anchors,
             model,
+            withHoldings: extractHoldings,
         });
         if (multi) {
             const extracted = flattenMultiPass(multi);
             warnings.push(...multi.warnings);
             return {
-                documentType,
+                documentType: documentType === "auto" ? "fact_finder" : documentType,
                 fileName,
                 extracted,
                 warnings,
@@ -272,7 +273,7 @@ export async function extractDocument(
             };
         }
         warnings.push(
-            "Could not classify the fact-finder document — falling back to single-pass extraction."
+            "Could not classify the document — falling back to single-pass extraction."
         );
         // fall through to single-pass below
     }

@@ -17,6 +17,12 @@ vi.mock("../azure-client", () => ({
 
 vi.mock("../pdf-parser", () => ({
     extractPdfText: vi.fn(),
+    extractPdfPages: vi.fn(async () => [
+        "page 1 content with enough text to pass the minimum length check",
+        "page 2 content with enough text to pass the minimum length check",
+        "page 3 content with enough text to pass the minimum length check",
+        "page 4 income and social security data for John SS 38400 per year",
+    ]),
 }));
 
 vi.mock("../excel-parser", () => ({
@@ -31,6 +37,8 @@ import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
 import { extractPdfText } from "../pdf-parser";
 import { visionOcrPdf } from "../vision-ocr";
+import { FACT_FINDER_CLASSIFIER_PROMPT } from "../prompts/fact-finder-classifier";
+import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
@@ -163,6 +171,24 @@ describe("extractDocument", () => {
             expect.any(String),
             "mini",
         );
+    });
+
+    it("comprehensive mode runs multi-pass for a non-fact_finder PDF", async () => {
+        // classifier → incomes on page 4; income-summary → one SS row.
+        // Use mockImplementationOnce variants so the default mock is restored
+        // for subsequent tests (mockImplementation would otherwise leak).
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>  // income-summary
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "report.pdf", "auto", "mini", "pdf", false, /* comprehensive */ true,
+        );
+
+        expect(result.extracted.incomes).toHaveLength(1);
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
     });
 
     it("extracts stocks, a bond, and cash into nested holdings", async () => {
