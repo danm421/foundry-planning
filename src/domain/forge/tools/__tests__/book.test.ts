@@ -6,7 +6,12 @@ vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") })
 const { scanBookMock } = vi.hoisted(() => ({
   scanBookMock: vi.fn(async () => ({ rows: [], totalCount: 0, truncated: false })),
 }));
-vi.mock("@/lib/book-scan/scan", () => ({ scanBook: scanBookMock }));
+// Partial mock: stub scanBook (no DB), keep the real SIGNAL_KEYS / limit
+// constants that book.ts reads when building the tool schema.
+vi.mock("@/lib/book-scan/scan", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/book-scan/scan")>()),
+  scanBook: scanBookMock,
+}));
 
 const ctx: ForgeAuthContext = { userId: "u_advisor", firmId: "org_A", clientId: "c1", scenarioId: "base" };
 const TOOL_CTX = buildToolContext(ctx, "conv-1");

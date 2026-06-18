@@ -12,13 +12,17 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
-export type SignalKey =
-  | "netWorth"
-  | "liquid"
-  | "cashBalance"
-  | "lastContactDays"
-  | "openTasks"
-  | "openItems";
+// Single source of truth for the sort vocabulary — the Forge tool's Zod enum
+// (book.ts) derives from this, so a new signal is added in exactly one place.
+export const SIGNAL_KEYS = [
+  "netWorth",
+  "liquid",
+  "cashBalance",
+  "lastContactDays",
+  "openTasks",
+  "openItems",
+] as const;
+export type SignalKey = (typeof SIGNAL_KEYS)[number];
 
 export interface ScanBookFilters {
   lastContactDaysOver?: number;
@@ -61,8 +65,8 @@ export interface ScanBookResult {
 const LIQUID_CATEGORY_EXCLUDE = new Set(["real_estate", "business", "life_insurance"]);
 const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
 
-const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 200;
+export const DEFAULT_LIMIT = 25;
+export const MAX_LIMIT = 200;
 
 export async function scanBook(
   ctx: { firmId: string; advisorId: string },
@@ -82,16 +86,66 @@ export async function scanBook(
     );
 
   const clientIds = baseRows.map((r) => r.clientId);
+  const householdIds = baseRows.map((r) => r.householdId);
   if (clientIds.length === 0) {
     return { rows: [], totalCount: 0, truncated: false };
   }
 
-  // 2. Accounts → netWorth(partial)/liquid/cash, grouped in JS.
-  const accountRows = await db
-    .select({ clientId: accounts.clientId, category: accounts.category, value: accounts.value })
-    .from(accounts)
-    .where(inArray(accounts.clientId, clientIds));
+  // All per-signal queries key only off the already-scoped clientIds/householdIds,
+  // so they're independent — fan them out in one round-trip. (entity OWNERS depends
+  // on the entities result, so it stays sequential below.)
+  const [accountRows, entityRows, activityRows, taskRows, openItemRows, pendingImportRows] =
+    await Promise.all([
+      // accounts → netWorth(partial)/liquid/cash
+      db
+        .select({ clientId: accounts.clientId, category: accounts.category, value: accounts.value })
+        .from(accounts)
+        .where(inArray(accounts.clientId, clientIds)),
+      // business entities → family-share contribution to netWorth
+      db
+        .select({ id: entities.id, clientId: entities.clientId, entityType: entities.entityType, value: entities.value })
+        .from(entities)
+        .where(inArray(entities.clientId, clientIds)),
+      // lastContact: MAX(occurred_at) per household — as epoch seconds to avoid JS
+      // parsing ambiguity with timezone-unqualified timestamp strings.
+      db
+        .select({
+          householdId: crmActivity.householdId,
+          lastEpochSec: sql<number>`extract(epoch from max(${crmActivity.occurredAt}))`,
+        })
+        .from(crmActivity)
+        .where(inArray(crmActivity.householdId, householdIds))
+        .groupBy(crmActivity.householdId),
+      // open CRM tasks per household
+      db
+        .select({ householdId: crmTasks.householdId, n: sql<number>`count(*)::int` })
+        .from(crmTasks)
+        .where(
+          and(
+            inArray(crmTasks.householdId, householdIds),
+            inArray(crmTasks.status, ["open", "in_progress", "blocked"]),
+          ),
+        )
+        .groupBy(crmTasks.householdId),
+      // open planning items per client (completed_at IS NULL)
+      db
+        .select({ clientId: clientOpenItems.clientId, n: sql<number>`count(*)::int` })
+        .from(clientOpenItems)
+        .where(and(inArray(clientOpenItems.clientId, clientIds), isNull(clientOpenItems.completedAt)))
+        .groupBy(clientOpenItems.clientId),
+      // pending imports per client
+      db
+        .selectDistinct({ clientId: clientImports.clientId })
+        .from(clientImports)
+        .where(
+          and(
+            inArray(clientImports.clientId, clientIds),
+            inArray(clientImports.status, ["draft", "extracting", "review"]),
+          ),
+        ),
+    ]);
 
+  // Accounts → netWorth(partial)/liquid/cash, grouped in JS.
   const portfolio = new Map<string, { net: number; liquid: number; cash: number }>();
   for (const a of accountRows) {
     const v = Number(a.value ?? 0);
@@ -102,12 +156,7 @@ export async function scanBook(
     portfolio.set(a.clientId, p);
   }
 
-  // 3. Business-entity family share → add to netWorth (mirrors get-overview-data.ts).
-  const entityRows = await db
-    .select({ id: entities.id, clientId: entities.clientId, entityType: entities.entityType, value: entities.value })
-    .from(entities)
-    .where(inArray(entities.clientId, clientIds));
-
+  // Business-entity family share → add to netWorth (mirrors get-overview-data.ts).
   const businessEntities = entityRows.filter(
     (e) => e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType) && Number(e.value ?? 0) > 0,
   );
@@ -119,69 +168,29 @@ export async function scanBook(
         .where(inArray(entityOwners.entityId, businessEntityIds))
     : [];
 
+  // An entity with no owner rows is fully family-owned (share 1); otherwise its
+  // family share is the clamped sum of owner percents.
   const ownerSumByEntity = new Map<string, number>();
-  const entitiesWithOwners = new Set<string>();
   for (const o of ownerRows) {
-    entitiesWithOwners.add(o.entityId);
     ownerSumByEntity.set(o.entityId, (ownerSumByEntity.get(o.entityId) ?? 0) + parseFloat(o.percent));
   }
   const businessShareByClient = new Map<string, number>();
   for (const e of businessEntities) {
     const v = Number(e.value ?? 0);
-    const familyShare = entitiesWithOwners.has(e.id)
-      ? Math.max(0, Math.min(1, ownerSumByEntity.get(e.id) ?? 0))
-      : 1;
+    const ownerSum = ownerSumByEntity.get(e.id);
+    const familyShare = ownerSum != null ? Math.max(0, Math.min(1, ownerSum)) : 1;
     businessShareByClient.set(e.clientId, (businessShareByClient.get(e.clientId) ?? 0) + v * familyShare);
   }
 
-  const householdIds = baseRows.map((r) => r.householdId);
-
-  // lastContact: MAX(occurred_at) per household — returned as epoch seconds to
-  // avoid JS parsing ambiguity with timezone-unqualified timestamp strings.
-  const activityRows = await db
-    .select({
-      householdId: crmActivity.householdId,
-      lastEpochSec: sql<number>`extract(epoch from max(${crmActivity.occurredAt}))`,
-    })
-    .from(crmActivity)
-    .where(inArray(crmActivity.householdId, householdIds))
-    .groupBy(crmActivity.householdId);
   const lastContactByHousehold = new Map<string, number>();
   for (const r of activityRows) if (r.lastEpochSec != null) lastContactByHousehold.set(r.householdId, r.lastEpochSec);
 
-  // open CRM tasks per household.
-  const taskRows = await db
-    .select({ householdId: crmTasks.householdId, n: sql<number>`count(*)::int` })
-    .from(crmTasks)
-    .where(
-      and(
-        inArray(crmTasks.householdId, householdIds),
-        inArray(crmTasks.status, ["open", "in_progress", "blocked"]),
-      ),
-    )
-    .groupBy(crmTasks.householdId);
   const openTasksByHousehold = new Map<string, number>();
   for (const r of taskRows) if (r.householdId != null) openTasksByHousehold.set(r.householdId, r.n);
 
-  // open planning items per client (completed_at IS NULL).
-  const openItemRows = await db
-    .select({ clientId: clientOpenItems.clientId, n: sql<number>`count(*)::int` })
-    .from(clientOpenItems)
-    .where(and(inArray(clientOpenItems.clientId, clientIds), isNull(clientOpenItems.completedAt)))
-    .groupBy(clientOpenItems.clientId);
   const openItemsByClient = new Map<string, number>();
   for (const r of openItemRows) openItemsByClient.set(r.clientId, r.n);
 
-  // pending imports per client.
-  const pendingImportRows = await db
-    .selectDistinct({ clientId: clientImports.clientId })
-    .from(clientImports)
-    .where(
-      and(
-        inArray(clientImports.clientId, clientIds),
-        inArray(clientImports.status, ["draft", "extracting", "review"]),
-      ),
-    );
   const pendingImportClients = new Set(pendingImportRows.map((r) => r.clientId));
 
   const nowSec = Date.now() / 1000;

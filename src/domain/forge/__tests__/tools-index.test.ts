@@ -71,8 +71,15 @@ vi.mock("@/lib/crm/generation-runs", () => ({
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
 // Phase 4: stub the knowledge tool's embedding dep so this stays pure.
 vi.mock("../llm", () => ({ embeddings: vi.fn() }));
-// Book bundle: stub the book-scan lib so this stays pure (no DB).
-vi.mock("@/lib/book-scan/scan", () => ({ scanBook: vi.fn() }));
+// Book bundle: stub the book-scan lib so this stays pure (no DB). book.ts reads
+// SIGNAL_KEYS/limit constants at tool-build time, so the stub must provide them
+// (values mirror src/lib/book-scan/scan.ts).
+vi.mock("@/lib/book-scan/scan", () => ({
+  scanBook: vi.fn(),
+  SIGNAL_KEYS: ["netWorth", "liquid", "cashBalance", "lastContactDays", "openTasks", "openItems"],
+  DEFAULT_LIMIT: 25,
+  MAX_LIMIT: 200,
+}));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";

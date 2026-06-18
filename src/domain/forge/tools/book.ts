@@ -6,7 +6,7 @@ import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
-import { scanBook } from "@/lib/book-scan/scan";
+import { scanBook, SIGNAL_KEYS, DEFAULT_LIMIT, MAX_LIMIT } from "@/lib/book-scan/scan";
 import type { ForgeToolContext } from "../context";
 
 const filtersSchema = z
@@ -26,13 +26,7 @@ export function buildBookTools(toolCtx: ForgeToolContext): StructuredToolInterfa
   const { ctx } = toolCtx;
 
   const scanBookTool = tool(
-    async (opts: {
-      sortBy?: "netWorth" | "liquid" | "cashBalance" | "lastContactDays" | "openTasks" | "openItems";
-      direction?: "asc" | "desc";
-      filters?: z.infer<typeof filtersSchema>;
-      limit?: number;
-      offset?: number;
-    }) => {
+    async (opts) => {
       const firmId = await requireOrgId();
       const result = await scanBook({ firmId, advisorId: ctx.userId }, opts);
       return JSON.stringify(result);
@@ -42,13 +36,16 @@ export function buildBookTools(toolCtx: ForgeToolContext): StructuredToolInterfa
       description:
         "Scan across the advisor's own clients for relationship and portfolio signals — who hasn't been contacted recently, who holds the most idle cash, who has open items or a pending document import. Returns a ranked, capped list of clients with their figures plus a total count. Use it for 'my clients' / 'which clients…' questions.",
       schema: z.object({
-        sortBy: z
-          .enum(["netWorth", "liquid", "cashBalance", "lastContactDays", "openTasks", "openItems"])
-          .optional()
-          .describe("Signal to rank by. Default lastContactDays."),
+        sortBy: z.enum(SIGNAL_KEYS).optional().describe("Signal to rank by. Default lastContactDays."),
         direction: z.enum(["asc", "desc"]).optional().describe("Sort direction. Default desc."),
         filters: filtersSchema.describe("Optional filters, all AND-ed."),
-        limit: z.number().int().min(1).max(200).optional().describe("Max rows (default 25, hard cap 200)."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_LIMIT)
+          .optional()
+          .describe(`Max rows (default ${DEFAULT_LIMIT}, hard cap ${MAX_LIMIT}).`),
         offset: z.number().int().min(0).optional().describe("Pagination offset."),
       }),
     },
