@@ -4,7 +4,7 @@ import Link from "next/link";
 import { PortfolioAnalysisScatter } from "./portfolio-analysis-scatter";
 import { buildColorMap, labelForType } from "./portfolio-analysis-series";
 import { exactCurrency } from "@/lib/presentations/format";
-import type { AnalysisRow, EntityType } from "@/lib/investments/portfolio-analysis";
+import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
 import type { BreakdownEntry, WhereHeldRollup } from "@/lib/investments/analysis-detail";
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
@@ -160,5 +160,3 @@ export default function PortfolioAnalysisDetail({
     </div>
   );
 }
-
-export type { EntityType };
