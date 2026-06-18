@@ -94,6 +94,7 @@ const EXPECTED_PHASE1 = [
   "list_scenarios",
   "read_detail",
   "read_import",
+  "extract_import",
   "search_planning_kb",
   // compute
   "run_projection",
@@ -170,7 +171,7 @@ const EXPECTED_MEMORY_TOOL_NAMES = ["read_memory", "write_memory"];
 const EXPECTED_BOOK = ["scan_book"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book)", () => {
-  it("returns exactly the 57 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book)", () => {
+  it("returns exactly the 58 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, and memory tools all present
@@ -183,7 +184,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(57);
+    expect(tools).toHaveLength(58);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -281,6 +282,10 @@ describe("buildTools (Phase 4 report tool)", () => {
     expect(WRITE_TOOL_NAMES.has("search_planning_kb")).toBe(false);
   });
 
+  it("extract_import is NOT a write tool (re-stages pending import only, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("extract_import")).toBe(false);
+  });
+
   it("routes generate_report to tools (auto-apply, no approval gate)", () => {
     expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
   });
@@ -298,8 +303,8 @@ describe("buildTools (book bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 57)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(57);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 58)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(58);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
