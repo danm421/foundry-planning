@@ -3150,6 +3150,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          // primaryAge/spouseAge: senior deductions lower incomeTaxBase, which
+          // sizes the conversion. retirementBreakdown is omitted — it feeds only
+          // state exclusions (not this probe's federal incomeTaxBase) and is
+          // declared after this closure's first call site (TDZ).
+          primaryAge: ages.client,
+          spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
         });
         return trial.taxResult.flow.incomeTaxBase;
@@ -3309,6 +3315,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
       interestIncomeForTax,
       deductionBreakdownIn: deductionBreakdownResult ?? null,
+      // NB: retirementBreakdown/primaryAge/spouseAge must stay in sync with the
+      // YearTaxInput rebuilds in the supplemental-withdrawal loop below
+      // (seededTaxInput, supplementalTaxInput) — the rebuilt input becomes the
+      // stored taxResult, so omitting them silently drops the senior deductions.
       retirementBreakdown,
       primaryAge: ages.client,
       spouseAge: ages.spouse,
@@ -4240,6 +4250,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          retirementBreakdown,
+          primaryAge: ages.client,
+          spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
         };
         taxOutForIter = computeTaxForYear(seededTaxInput);
@@ -4381,6 +4394,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          retirementBreakdown,
+          primaryAge: ages.client,
+          spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
         };
         taxOutForIter = computeTaxForYear(supplementalTaxInput);
