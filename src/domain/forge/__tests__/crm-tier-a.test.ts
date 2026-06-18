@@ -14,7 +14,7 @@ const recordAudit = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: (c: string, f: string) => verifyClientAccess(c, f),
+  verifyClientAccess: (c: string) => verifyClientAccess(c),
 }));
 vi.mock("../guards", async (o) => ({
   ...(await o()),
@@ -49,7 +49,7 @@ const byName = (n: string) =>
 
 beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   clientToHousehold.mockResolvedValue("hh-1");
   createNote.mockReset();
   recordActivity.mockReset();
@@ -87,7 +87,7 @@ describe("crm_create_task (Tier A)", () => {
   });
 
   it("returns an error string when access is denied", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("crm_create_task").invoke({ title: "x" });
     expect(out).toMatch(/access denied/i);
     expect(createTask).not.toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe("crm_log_activity (Tier A)", () => {
   });
 
   it("returns an error string when access is denied", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("crm_log_activity").invoke({ kind: "call", title: "test" });
     expect(out).toMatch(/access denied/i);
     expect(recordActivity).not.toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe("crm_add_note (Tier A)", () => {
   });
 
   it("returns an error string and does NOT write when access is denied", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("crm_add_note").invoke({
       subject: "x",
       noteDate: "2026-06-15",

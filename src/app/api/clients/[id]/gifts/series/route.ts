@@ -2,19 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarios, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesSchema } from "@/lib/schemas/gift-series";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(
   clientId: string,
-  firmId: string,
 ): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
 
   // LIMIT 2 to surface the "multiple base scenarios" data-integrity bug loudly
   // rather than silently picking an arbitrary one.
@@ -42,13 +44,13 @@ async function getBaseCaseScenarioId(
 // touching another firm's data.
 async function resolveScenarioId(
   clientId: string,
-  firmId: string,
   requested: string | null,
 ): Promise<string | null | undefined> {
   if (requested == null || requested === "base") {
-    return getBaseCaseScenarioId(clientId, firmId);
+    return getBaseCaseScenarioId(clientId);
   }
-  if (!(await verifyClientAccess(clientId, firmId))) return undefined;
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return undefined;
   const [scenario] = await db
     .select({ id: scenarios.id })
     .from(scenarios)
@@ -67,13 +69,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
 
     // List the active scenario's series when one is selected (?scenario=<sid>),
     // else the base case — must match the partition POST just wrote to.
     const requestedScenario = new URL(request.url).searchParams.get("scenario");
-    const scenarioId = await resolveScenarioId(id, firmId, requestedScenario);
+    const scenarioId = await resolveScenarioId(id, requestedScenario);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -99,19 +100,21 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // gift_series is scenario-scoped: write into the active scenario when one is
     // selected (?scenario=<sid>), not always base — otherwise the loader (which
     // filters by scenario_id) never surfaces the row under that scenario and it
     // silently pollutes base. baseId doubles as the firm-scoped client gate.
-    const baseId = await getBaseCaseScenarioId(id, firmId);
+    const baseId = await getBaseCaseScenarioId(id);
     if (!baseId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const requestedScenario = new URL(request.url).searchParams.get("scenario");
-    const scenarioId = await resolveScenarioId(id, firmId, requestedScenario);
+    const scenarioId = await resolveScenarioId(id, requestedScenario);
     if (!scenarioId) {
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
@@ -165,20 +168,19 @@ export async function POST(
       resourceId: row.id,
       clientId: id,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         grantor: row.grantor,
         startYear: row.startYear,
         endYear: row.endYear,
-      },
+      }),
     });
 
     // Return the full inserted row (not just { id }) so the GiftDialog's
     // optimistic list update has grantor/years/amountMode/etc. without a refetch.
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/gifts/series error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

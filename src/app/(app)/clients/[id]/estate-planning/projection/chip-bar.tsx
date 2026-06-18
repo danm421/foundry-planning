@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PlanSettings } from "@/engine/types";
+import { useClientAccess } from "@/components/client-access-provider";
 import { ChipEditor, type ChipFormat } from "./chip-editor";
 
 interface Props {
@@ -21,6 +22,8 @@ const CHIPS: Array<{
 ];
 
 export function ChipBar({ clientId, planSettings, onOpenAssumptions }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [editing, setEditing] = useState<string | null>(null);
   const router = useRouter();
 
@@ -55,6 +58,22 @@ export function ChipBar({ clientId, planSettings, onOpenAssumptions }: Props) {
         {CHIPS.map((c) => {
           const raw = planSettings[c.key];
           const numeric = raw == null ? 0 : Number(raw);
+          // Under view-only, render the chip as a static, non-interactive label
+          // that still shows the assumption value (no onClick → no inline
+          // ChipEditor → no PUT /plan-settings).
+          if (!canEdit) {
+            return (
+              <span
+                key={c.key}
+                className="rounded border border-hair bg-card-2 px-2 py-1 text-[12px] text-ink"
+              >
+                {c.label}:{" "}
+                <span className="tabular-nums text-ink">
+                  {formatChip(numeric, c.format)}
+                </span>
+              </span>
+            );
+          }
           return (
             <div key={c.key} className="relative">
               <button
@@ -81,13 +100,15 @@ export function ChipBar({ clientId, planSettings, onOpenAssumptions }: Props) {
             </div>
           );
         })}
-        <button
-          type="button"
-          onClick={onOpenAssumptions}
-          className="text-[12px] text-ink-3 underline hover:text-ink"
-        >
-          Edit assumptions
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onOpenAssumptions}
+            className="text-[12px] text-ink-3 underline hover:text-ink"
+          >
+            Edit assumptions
+          </button>
+        )}
       </div>
     </div>
   );

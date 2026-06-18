@@ -4,9 +4,10 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_test" }),
 }));
 
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: vi.fn().mockResolvedValue("firm_test"),
-}));
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return { ...actual, requireOrgId: vi.fn().mockResolvedValue("firm_test") };
+});
 
 vi.mock("@/lib/db-scoping", () => ({
   assertAccountsInClient: vi.fn().mockResolvedValue({ ok: true }),
@@ -16,6 +17,16 @@ vi.mock("@/lib/audit", async () => {
   const actual = await vi.importActual<typeof import("@/lib/audit")>("@/lib/audit");
   return { ...actual, recordDelete: vi.fn().mockResolvedValue(undefined) };
 });
+
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
+});
+
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
+  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "firm_test", access: "own" }),
+}));
 
 vi.mock("@/lib/audit/snapshots/transfer", () => ({
   toTransferSnapshot: vi.fn().mockResolvedValue({

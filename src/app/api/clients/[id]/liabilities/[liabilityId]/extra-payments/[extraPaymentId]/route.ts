@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toExtraPaymentSnapshot, EXTRA_PAYMENT_FIELD_LABELS } from "@/lib/audit/snapshots/extra-payment";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +15,9 @@ type Params = {
   params: Promise<{ id: string; liabilityId: string; extraPaymentId: string }>;
 };
 
-async function verifyOwnership(clientId: string, liabilityId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return false;
+async function verifyOwnership(clientId: string, liabilityId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return false;
 
   const [liab] = await db
     .select()
@@ -25,10 +28,11 @@ async function verifyOwnership(clientId: string, liabilityId: string, firmId: st
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
-
-    if (!(await verifyOwnership(id, liabilityId, firmId))) {
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    if (!(await verifyOwnership(id, liabilityId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -85,13 +89,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       before: await toExtraPaymentSnapshot(before),
       after: await toExtraPaymentSnapshot(updated),
       fieldLabels: EXTRA_PAYMENT_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT extra-payment error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -99,10 +103,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
-
-    if (!(await verifyOwnership(id, liabilityId, firmId))) {
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    if (!(await verifyOwnership(id, liabilityId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -138,13 +143,13 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE extra-payment error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

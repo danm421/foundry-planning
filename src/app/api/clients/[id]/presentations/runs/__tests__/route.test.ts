@@ -20,6 +20,25 @@ vi.mock("@clerk/nextjs/server", async () => {
     currentUser: vi.fn().mockResolvedValue({ emailAddresses: [{ emailAddress: "advisor@firm.com" }] }),
   };
 });
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return {
+    ...actual,
+    requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
+    authErrorResponse: vi.fn().mockImplementation((err: unknown) => {
+      if (err instanceof actual.ForbiddenError) {
+        return { status: 403, body: { error: err.message } };
+      }
+      if (err instanceof Error && (err.name === "UnauthorizedError" || err.message === "Unauthorized")) {
+        return { status: 401, body: { error: "Unauthorized" } };
+      }
+      return null;
+    }),
+  };
+});
+vi.mock("@/lib/clients/cross-firm-audit", () => ({
+  crossFirmAuditMeta: vi.fn().mockImplementation((_a: unknown, _b: unknown, base?: unknown) => base ?? {}),
+}));
 vi.mock("next/server", async () => {
   const actual = await vi.importActual<typeof import("next/server")>("next/server");
   return {
@@ -103,10 +122,10 @@ describe("POST presentations/runs", () => {
     expect(row.resultDocumentId).toBe(documentId);
   });
 
-  it("404s for a client outside the firm", async () => {
+  it("403s for a client outside the firm", async () => {
     const res = await POST(req(validBody), {
       params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });

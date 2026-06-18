@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactElement } from "react";
+import { useClientAccess } from "@/components/client-access-provider";
 import { SparkleIcon } from "@/components/icons";
 import { qsStepLabel } from "@/lib/quick-start/state";
 import type { QsStepSlug } from "@/lib/quick-start/steps";
@@ -13,6 +14,8 @@ interface Props {
 }
 
 export default function ResumeQuickStartBanner({ clientId, step }: Props): ReactElement | null {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -46,14 +49,16 @@ export default function ResumeQuickStartBanner({ clientId, step }: Props): React
           Pick up where you left off — {qsStepLabel(step)}.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={dismiss}
-        disabled={busy}
-        className="text-[12px] font-medium text-ink-3 hover:text-ink disabled:opacity-50"
-      >
-        Dismiss
-      </button>
+      {canEdit && (
+        <button
+          type="button"
+          onClick={dismiss}
+          disabled={busy}
+          className="text-[12px] font-medium text-ink-3 hover:text-ink disabled:opacity-50"
+        >
+          Dismiss
+        </button>
+      )}
       <Link
         href={`/clients/${clientId}/quick-start?step=${step}`}
         className="rounded-sm bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on hover:bg-accent-ink"

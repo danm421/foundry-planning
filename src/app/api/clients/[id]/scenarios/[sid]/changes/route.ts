@@ -9,16 +9,23 @@
 // We additionally check `clientId` matches the scenario at the route layer so
 // a request like `/api/clients/<other-firm-client>/scenarios/<my-scenario>/...`
 // returns a clear 404 instead of a misleading 403 from the writer.
+//
+// Auth model (Task 17d): `requireOrgAndUser` + `requireClientEditAccess` for
+// the owning firmId and edit-permission gate. `assertScenarioRouteScope`
+// receives the OWNING firmId so cross-org shared-edit recipients pass. This
+// replaces the prior local assertRouteScope that had its own permission check
+// but used the caller's firmId (breaking cross-org).
 
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { scenarioToggleGroups, scenarios } from "@/db/schema";
+import { scenarioToggleGroups } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { verifyClientAccess } from "@/lib/clients/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   TARGET_KIND_TO_FIELD,
   SINGLETON_KIND_TO_FIELD,
@@ -29,6 +36,7 @@ import {
   applyEntityRemove,
   revertChange,
 } from "@/lib/scenario/changes-writer";
+import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import type { OpType, TargetKind } from "@/engine/scenario/types";
 
 // All writable TargetKind values, derived from the runtime lookup maps so the
@@ -73,41 +81,15 @@ const OP_TYPES = ["add", "edit", "remove"] as const;
 
 type RouteCtx = { params: Promise<{ id: string; sid: string }> };
 
-/**
- * Asserts the scenario belongs to the client AND the client belongs to the
- * firm. Returns null on success, or a NextResponse to short-circuit on miss
- * (404). The writer's `assertScenarioInFirm` would 403 on cross-firm access,
- * but we want a 404 here so a leaked scenario id can't be probed.
- *
- * Two queries (client→firm, scenario→client). The cost is acceptable for v1
- * (single-digit ms on Neon). Could be collapsed into a single join later.
- */
-async function assertRouteScope(
-  clientId: string,
-  scenarioId: string,
-  firmId: string,
-): Promise<NextResponse | null> {
-  const inFirm = await verifyClientAccess(clientId, firmId);
-  if (!inFirm) {
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
-  }
-  const [scenario] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, clientId)));
-  if (!scenario) {
-    return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
-  }
-  return null;
-}
-
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    const scopeError = await assertRouteScope(clientId, scenarioId, firmId);
-    if (scopeError) return scopeError;
+    const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
+    if (scope.kind === "miss") return scope.response;
 
     const parsed = POST_BODY.safeParse(await req.json());
     if (!parsed.success) {
@@ -156,7 +138,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           resourceId: scenarioId,
           clientId,
           firmId,
-          metadata: { op: "edit", targetKind: body.targetKind, targetId: body.targetId },
+          metadata: crossFirmAuditMeta({ access }, callerOrg, {
+            op: "edit",
+            targetKind: body.targetKind,
+            targetId: body.targetId,
+          }),
         });
         return NextResponse.json({ ok: true });
       }
@@ -176,7 +162,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           resourceId: scenarioId,
           clientId,
           firmId,
-          metadata: { op: "add", targetKind: body.targetKind, targetId },
+          metadata: crossFirmAuditMeta({ access }, callerOrg, {
+            op: "add",
+            targetKind: body.targetKind,
+            targetId,
+          }),
         });
         return NextResponse.json({ ok: true, targetId });
       }
@@ -194,7 +184,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           resourceId: scenarioId,
           clientId,
           firmId,
-          metadata: { op: "remove", targetKind: body.targetKind, targetId: body.targetId },
+          metadata: crossFirmAuditMeta({ access }, callerOrg, {
+            op: "remove",
+            targetKind: body.targetKind,
+            targetId: body.targetId,
+          }),
         });
         return NextResponse.json({ ok: true });
       }
@@ -209,11 +203,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
 export async function DELETE(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    const scopeError = await assertRouteScope(clientId, scenarioId, firmId);
-    if (scopeError) return scopeError;
+    const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
+    if (scope.kind === "miss") return scope.response;
 
     const url = new URL(req.url);
     const targetKind = url.searchParams.get("kind");
@@ -253,7 +249,11 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx) {
       resourceId: scenarioId,
       clientId,
       firmId,
-      metadata: { op: opType, targetKind, targetId },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
+        op: opType,
+        targetKind,
+        targetId,
+      }),
     });
 
     return NextResponse.json({ ok: true });

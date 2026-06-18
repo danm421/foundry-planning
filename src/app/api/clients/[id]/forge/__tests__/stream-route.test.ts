@@ -10,7 +10,7 @@ vi.mock("@/lib/db-helpers", () => ({
   UnauthorizedError: class extends Error {},
 }));
 
-const verifyClientAccess = vi.fn<() => Promise<boolean>>();
+const verifyClientAccess = vi.fn<() => Promise<{ ok: boolean; permission?: string; firmId?: string; access?: string }>>();
 vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: () => verifyClientAccess() }));
 
 const checkForgeRateLimit = vi.fn();
@@ -93,7 +93,7 @@ beforeEach(() => {
     },
   });
   requireOrgId.mockResolvedValue("org_A");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   checkForgeRateLimit.mockResolvedValue({ allowed: true, remaining: 9, reset: 0 });
 });
 
@@ -105,7 +105,7 @@ describe("POST /api/clients/[id]/forge/stream — gate chain", () => {
   });
 
   it("returns 404 when the client belongs to another firm (cross-firm)", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const res = await POST(makeReq({ message: "hi", scenarioId: "base" }), ctx);
     expect(res.status).toBe(404);
   });

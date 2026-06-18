@@ -16,6 +16,7 @@ import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useClientAccess } from "./client-access-provider";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1376,6 +1377,8 @@ export default function IncomeExpensesView({
   embed = "page",
 }: IncomeExpensesViewProps) {
   const isWizard = embed === "wizard";
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const writer = useScenarioWriter(clientId);
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1548,15 +1551,17 @@ export default function IncomeExpensesView({
             title="Income"
             subtitle={fmt(householdIncome) + " household · " + nonSsIncomeList.length + " entries"}
             actions={
-              <>
-                {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
-                <button
-                  onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
-                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
-                >
-                  + Add
-                </button>
-              </>
+              canEdit ? (
+                <>
+                  {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
+                  <button
+                    onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
+                    className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
+                  >
+                    + Add
+                  </button>
+                </>
+              ) : undefined
             }
           />
 
@@ -1580,7 +1585,7 @@ export default function IncomeExpensesView({
                     key={group.label}
                     label={group.label}
                     total={fmt(subtotal)}
-                    onAdd={() => setIncomeDialog({ open: true, defaultType: group.types[0] })}
+                    onAdd={canEdit ? () => setIncomeDialog({ open: true, defaultType: group.types[0] }) : undefined}
                   >
                     {items.map((income) => {
                       const entityName = income.ownerEntityId
@@ -1592,9 +1597,9 @@ export default function IncomeExpensesView({
                       return (
                         <Row
                           key={income.id}
-                          onClick={() => !incomeEdit && setIncomeDialog({ open: true, editing: income })}
-                          editMode={incomeEdit}
-                          onDelete={() => setDeletingIncome(income)}
+                          onClick={canEdit ? () => !incomeEdit && setIncomeDialog({ open: true, editing: income }) : undefined}
+                          editMode={canEdit && incomeEdit}
+                          onDelete={canEdit ? () => setDeletingIncome(income) : undefined}
                           label={income.name}
                           meta={[
                             entityName ??
@@ -1747,6 +1752,7 @@ export default function IncomeExpensesView({
                 planSettings={ssPlanSettings}
                 incomes={incomeList as unknown as EngineIncome[]}
                 onSaved={refreshIncomes}
+                canEdit={canEdit}
               />
             </div>
           )}
@@ -1758,15 +1764,17 @@ export default function IncomeExpensesView({
             title="Expenses"
             subtitle={fmt(householdExpense) + " household · " + expenseList.length + " entries"}
             actions={
-              <>
-                {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
-                <button
-                  onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
-                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
-                >
-                  + Add
-                </button>
-              </>
+              canEdit ? (
+                <>
+                  {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
+                  <button
+                    onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
+                    className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
+                  >
+                    + Add
+                  </button>
+                </>
+              ) : undefined
             }
           />
 
@@ -1792,7 +1800,7 @@ export default function IncomeExpensesView({
                   key={group.label}
                   label={group.label}
                   total={fmt(subtotal)}
-                  onAdd={() => setExpenseDialog({ open: true, defaultType: group.types[0] })}
+                  onAdd={canEdit ? () => setExpenseDialog({ open: true, defaultType: group.types[0] }) : undefined}
                 >
                   {items.map((expense) => {
                     const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
@@ -1803,15 +1811,17 @@ export default function IncomeExpensesView({
                       <Row
                         key={expense.id}
                         onClick={
-                          isLiving
+                          !canEdit
+                            ? undefined
+                            : isLiving
                             ? undefined
                             : () => !expenseEdit && setExpenseDialog({ open: true, editing: expense })
                         }
-                        onEdit={isLiving ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
+                        onEdit={canEdit && isLiving ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
                         amount={isLiving ? Number(expense.annualAmount) : undefined}
-                        onSaveAmount={isLiving ? (next) => saveExpenseAmount(expense, next) : undefined}
-                        editMode={expenseEdit}
-                        onDelete={expense.isDefault ? undefined : () => setDeletingExpense(expense)}
+                        onSaveAmount={canEdit && isLiving ? (next) => saveExpenseAmount(expense, next) : undefined}
+                        editMode={canEdit && expenseEdit}
+                        onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
                         label={expense.name}
                         meta={[entityName ?? businessName ?? null]}
                         starts={yearsDescriptor(expense.startYear, expense.endYear, planStart, planEnd)}
@@ -1838,9 +1848,9 @@ export default function IncomeExpensesView({
             rules={savingsRuleList}
             accountsById={accountMap}
             showAccountColumn
-            onEdit={(rule) => setSavingsDialog({ open: true, editing: rule })}
-            onDelete={(rule) => setDeletingSavings(rule)}
-            onAdd={() => setSavingsDialog({ open: true })}
+            onEdit={canEdit ? (rule) => setSavingsDialog({ open: true, editing: rule }) : undefined}
+            onDelete={canEdit ? (rule) => setDeletingSavings(rule) : undefined}
+            onAdd={canEdit ? () => setSavingsDialog({ open: true }) : undefined}
             emptyMessage={accounts.length === 0 ? "Add accounts first, then set up contribution rules." : "No savings rules yet."}
           />
         </div>

@@ -127,7 +127,7 @@ beforeEach(() => {
     .mockResolvedValueOnce(new AIMessage({ content: "", tool_calls: [PROMOTE_CALL] }))
     .mockResolvedValue(new AIMessage("Done — promoted to base."));
   vi.mocked(requireOrgId).mockResolvedValue("org_session");
-  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
   vi.mocked(recordAudit).mockResolvedValue(undefined);
   vi.mocked(promoteScenarioToBase).mockResolvedValue({
     snapshotId: "snap1",

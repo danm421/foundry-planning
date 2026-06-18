@@ -15,7 +15,8 @@ import { verifyClientAccess } from "@/lib/clients/authz";
  * on the single null sentinel to reproduce the route's behavior.
  */
 export async function baseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) return null;
 
   const [scenario] = await db
     .select()

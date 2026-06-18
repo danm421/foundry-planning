@@ -17,13 +17,11 @@ import {
   verifyCrossRefs,
   computeSoftWarnings,
 } from "../_helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string) {
-  return verifyClientAccess(clientId, firmId);
-}
 
 async function verifyWillBelongsToClient(willId: string, clientId: string) {
   const [row] = await db
@@ -38,9 +36,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const [willRow] = await db
@@ -120,11 +118,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyWillBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
@@ -209,7 +206,7 @@ export async function PATCH(
       resourceId: willId,
       clientId: id,
       firmId,
-      metadata: { bequestCount: bequests.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { bequestCount: bequests.length }),
     });
 
     return NextResponse.json({
@@ -217,9 +214,8 @@ export async function PATCH(
       warnings: computeSoftWarnings(bequests),
     });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     // Unique-index violation: map 23505 on will_bequests_liability_idx → 400
     if (
       typeof err === "object" &&
@@ -245,11 +241,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, willId } = await params;
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyWillBelongsToClient(willId, id))) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
@@ -263,12 +258,12 @@ export async function DELETE(
       resourceId: willId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/wills/[willId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -34,7 +34,8 @@ async function gateCrm(
 ): Promise<{ firmId: string; householdId: string } | { error: string }> {
   try {
     const firmId = await requireOrgId();
-    const ok = await verifyClientAccess(ctx.clientId, firmId);
+    const acc = await verifyClientAccess(ctx.clientId);
+    const ok = acc.ok && acc.firmId === firmId;
     if (!ok) return { error: "Client not found or access denied." };
     const householdId = await clientToHousehold(ctx.clientId, firmId);
     return { firmId, householdId };

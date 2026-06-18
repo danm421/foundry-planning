@@ -4,9 +4,10 @@
 // POST → create a new toggle group at the end of the scenario's group list
 //        (next orderIndex = max(existing) + 1).
 //
-// Auth model: `requireOrgId` then the shared `assertScenarioRouteScope` helper
-// guards both client-in-firm AND scenario-in-client. 404 (not 403) on miss to
-// avoid existence-leaks of foreign scenario / group ids.
+// Auth model (Task 17d — POST only): `requireOrgAndUser` + `requireClientEditAccess`
+// for owning firmId and edit-permission gate. Closes the prior edit gap where
+// assertScenarioRouteScope had no permission check. VIEW recipients now get 403.
+// GET retains `requireOrgId` + `assertScenarioRouteScope` (read-only).
 
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -14,8 +15,10 @@ import { z } from "zod";
 import { db } from "@/db";
 import { scenarioToggleGroups } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgId, requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 
 export const dynamic = "force-dynamic";
@@ -60,8 +63,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -103,12 +108,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: created.id,
       clientId,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         scenarioId,
         groupId: created.id,
         name,
         defaultOn,
-      },
+      }),
     });
 
     return NextResponse.json({ group: created }, { status: 201 });

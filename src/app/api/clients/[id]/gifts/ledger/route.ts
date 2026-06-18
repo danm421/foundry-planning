@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
@@ -10,17 +9,17 @@ import { computeExemptionSummary } from "@/lib/gifts/compute-exemption-summary";
 export const dynamic = "force-dynamic";
 
 // GET /api/clients/[id]/gifts/ledger — gift-tax exemption summary for the
-// trust dialog's ExemptionPanel. Org-scoped via `requireOrgId` +
-// `loadEffectiveTree` (which routes through `loadClientDataWithContext` and
-// throws `ClientNotFoundError` when the client doesn't belong to the firm).
+// trust dialog's ExemptionPanel. Access-scoped via `verifyClientAccess` +
+// `loadEffectiveTree` (loaded against the OWNING firm so cross-org shares
+// resolve; the loader throws `ClientNotFoundError` on a firm mismatch).
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const firmId = await requireOrgId();
 
-  if (!(await verifyClientAccess(id, firmId))) {
+  const access = await verifyClientAccess(id);
+  if (!access.ok) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
@@ -33,7 +32,7 @@ export async function GET(
     // projection, so we run it below.
     const { effectiveTree: data } = await loadEffectiveTree(
       id,
-      firmId,
+      access.firmId,
       scenarioParam ?? "base",
       {},
     );

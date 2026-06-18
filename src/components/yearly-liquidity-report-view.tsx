@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useClientAccess } from "@/components/client-access-provider";
 import type { Chart as ChartJSType } from "chart.js";
 import {
   runProjectionWithEvents,
@@ -26,6 +27,8 @@ export default function YearlyLiquidityReportView({
   ownerNames,
   ownerDobs,
 }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
   const [clientData, setClientData] = useState<ClientData | null>(null);
@@ -137,14 +140,16 @@ export default function YearlyLiquidityReportView({
         >
           {showPortfolio ? "Hide portfolio assets" : "Show portfolio assets"}
         </button>
-        <button
-          type="button"
-          onClick={exportPdf}
-          disabled={exporting}
-          className="rounded border border-indigo-700 bg-indigo-900/30 px-3 py-1 text-sm text-indigo-200 hover:bg-indigo-900/50 disabled:opacity-50"
-        >
-          {exporting ? "Exporting…" : "Export PDF"}
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={exportPdf}
+            disabled={exporting}
+            className="rounded border border-indigo-700 bg-indigo-900/30 px-3 py-1 text-sm text-indigo-200 hover:bg-indigo-900/50 disabled:opacity-50"
+          >
+            {exporting ? "Exporting…" : "Export PDF"}
+          </button>
+        )}
       </div>
 
       <YearlyLiquidityChart

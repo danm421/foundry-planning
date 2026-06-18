@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { requireClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   BodySchema,
   renderPresentationPdf,
@@ -27,14 +29,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const access = await requireClientAccess(id).catch((e) => {
-      if (e instanceof UnauthorizedError) throw e;
-      return null;
-    });
-    if (!access) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    const { client, firmId } = access;
+    const callerOrg = await requireOrgId();
+    const { client, firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const householdId = client.crmHouseholdId;
     if (!householdId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -101,7 +98,7 @@ export async function POST(
           resourceId: id,
           clientId: id,
           firmId,
-          metadata: { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" },
+          metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" }),
         });
         await markDone(runId, doc?.id ?? null);
       } catch (err) {
@@ -113,9 +110,8 @@ export async function POST(
 
     return NextResponse.json({ runId }, { status: 202 });
   } catch (err) {
-    if (err instanceof UnauthorizedError || (err instanceof Error && err.name === "UnauthorizedError")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /clients/[id]/presentations/runs failed", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

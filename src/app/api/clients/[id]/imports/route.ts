@@ -112,8 +112,15 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     // Verify the client belongs to this firm (and is accessible to the caller)
     // before any insert.
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (access.access !== "own") {
+      return NextResponse.json({ error: "Cross-organization imports are not supported." }, { status: 403 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     // Scenarios inherit client→firm scoping; the client check above
@@ -212,7 +219,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: message }, { status, headers });
     }
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -239,7 +247,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const result = await listClientImports({
       clientId,
-      firmId,
+      firmId: access.firmId,
       statusFilter,
       includeDiscarded: explicitDiscardedRequested,
     });

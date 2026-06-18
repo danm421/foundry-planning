@@ -28,8 +28,8 @@ export async function assertClientReadable(
   if (clientId !== ctx.clientId) {
     throw new ForbiddenScopeError(`client ${clientId} (outside conversation scope)`);
   }
-  const ok = await verifyClientAccess(clientId, ctx.firmId);
-  if (!ok) throw new ForbiddenScopeError(`client ${clientId}`);
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== ctx.firmId) throw new ForbiddenScopeError(`client ${clientId}`);
 }
 
 /**

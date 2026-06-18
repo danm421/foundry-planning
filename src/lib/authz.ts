@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { UnauthorizedError } from "./db-helpers";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
@@ -62,6 +62,12 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
   "past_due",
 ]);
 
+function metaIsActive(meta: Record<string, unknown>): boolean {
+  if (meta.is_founder === true) return true;
+  const status = typeof meta.subscription_status === "string" ? meta.subscription_status : null;
+  return !!status && ACTIVE_SUBSCRIPTION_STATUSES.has(status);
+}
+
 /**
  * Reads is_founder + subscription_status from Clerk org public metadata
  * (via sessionClaims.org_public_metadata — no extra Clerk API call).
@@ -80,15 +86,29 @@ export async function requireActiveSubscription(): Promise<void> {
   const meta =
     (sessionClaims as { org_public_metadata?: Record<string, unknown> })
       ?.org_public_metadata ?? {};
-  if (meta.is_founder === true) return;
-  const status = typeof meta.subscription_status === "string"
-    ? meta.subscription_status
-    : null;
-  if (!status || !ACTIVE_SUBSCRIPTION_STATUSES.has(status)) {
-    throw new ForbiddenError("Active subscription required");
-  }
+  if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
 }
 
+/**
+ * Subscription gate keyed to a specific (possibly cross-firm) owning firm.
+ * Own org: read sessionClaims.org_public_metadata (fast path, no Clerk call).
+ * Other firm: fetch that org's publicMetadata via Clerk and apply the same rule.
+ */
+export async function requireActiveSubscriptionForFirm(firmId: string): Promise<void> {
+  const { userId, orgId, sessionClaims } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  let meta: Record<string, unknown>;
+  if (orgId && firmId === orgId) {
+    meta =
+      (sessionClaims as { org_public_metadata?: Record<string, unknown> })
+        ?.org_public_metadata ?? {};
+  } else {
+    const cc = await clerkClient();
+    const org = await cc.organizations.getOrganization({ organizationId: firmId });
+    meta = (org.publicMetadata as Record<string, unknown>) ?? {};
+  }
+  if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
+}
 
 /**
  * Turn an auth-related thrown error into an HTTP response tuple that

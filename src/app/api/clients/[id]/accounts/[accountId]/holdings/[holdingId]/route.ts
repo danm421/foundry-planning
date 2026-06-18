@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accountHoldings, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { holdingUpdateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +17,9 @@ async function assertHoldingInFirm(
   clientId: string,
   accountId: string,
   holdingId: string,
-  firmId: string,
 ) {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
   const [row] = await db
     .select({ id: accountHoldings.id })
     .from(accountHoldings)
@@ -37,10 +39,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string; holdingId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId, holdingId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    if (!(await assertHoldingInFirm(id, accountId, holdingId, firmId))) {
+    if (!(await assertHoldingInFirm(id, accountId, holdingId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -72,16 +76,15 @@ export async function PUT(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { holdingId },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { holdingId }),
     });
 
     await syncAccountFromHoldings(accountId);
 
     return NextResponse.json(row);
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT holding error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -92,10 +95,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; accountId: string; holdingId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId, holdingId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    if (!(await assertHoldingInFirm(id, accountId, holdingId, firmId))) {
+    if (!(await assertHoldingInFirm(id, accountId, holdingId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -107,16 +112,15 @@ export async function DELETE(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { holdingId },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { holdingId }),
     });
 
     await syncAccountFromHoldings(accountId);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE holding error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

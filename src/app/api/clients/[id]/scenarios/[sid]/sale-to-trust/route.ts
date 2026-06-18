@@ -16,8 +16,10 @@
 // failure between the two calls — the toggle group remains harmless if
 // orphaned (no changes attached).
 //
-// Auth model: requireOrgId + assertScenarioRouteScope, matching toggle-
-// groups and changes routes.
+// Auth model (Task 17d): `requireOrgAndUser` + `requireClientEditAccess` for
+// owning firmId and edit-permission gate. Closes the prior edit gap where
+// assertScenarioRouteScope had no permission check. VIEW recipients now get 403.
+// assertScenarioRouteScope receives the OWNING firmId so cross-org recipients pass.
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -33,8 +35,10 @@ import {
   noteReceivableOwners,
 } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { authErrorResponse } from "@/lib/authz";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { applyEntityEdit } from "@/lib/scenario/changes-writer";
 import type { AccountOwner } from "@/engine/ownership";
@@ -68,8 +72,10 @@ type RouteCtx = { params: Promise<{ id: string; sid: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const { orgId: callerOrg } = await requireOrgAndUser();
     const { id: clientId, sid: scenarioId } = await ctx.params;
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const scope = await assertScenarioRouteScope(clientId, scenarioId, firmId);
     if (scope.kind === "miss") return scope.response;
@@ -228,7 +234,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: scenarioId,
       clientId,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         kind: "sale_to_trust",
         scenarioId,
         toggleGroupId: toggleGroup.id,
@@ -239,7 +245,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         noteTermMonths: body.noteTermMonths,
         noteStartYear: body.noteStartYear,
         notePaymentType: body.notePaymentType,
-      },
+      }),
     });
 
     return NextResponse.json(

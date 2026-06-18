@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useClientAccess } from "@/components/client-access-provider";
 import { STEPS } from "@/lib/onboarding/steps";
 import type { StepIconKey } from "@/lib/onboarding/steps";
 import type { StepStatus } from "@/lib/onboarding/types";
@@ -46,6 +47,8 @@ const STEP_ICONS: Record<StepIconKey, IconComponent> = {
 };
 
 export default function ReviewStep({ clientId, statuses, alreadyFinished }: ReviewStepProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,20 +155,22 @@ export default function ReviewStep({ clientId, statuses, alreadyFinished }: Revi
         <Link href={`/clients/${clientId}`} className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
           Save &amp; exit
         </Link>
-        <button
-          type="button"
-          onClick={onFinish}
-          disabled={submitting || blockers.length > 0}
-          title={
-            blockers.length > 0
-              ? `Resolve ${blockers.length} remaining step${blockers.length === 1 ? "" : "s"} first`
-              : undefined
-          }
-          className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-5 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
-        >
-          {submitting ? "Finishing…" : alreadyFinished ? "Re-finish onboarding" : "Finish onboarding"}
-          <ArrowRightIcon width={14} height={14} aria-hidden="true" />
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onFinish}
+            disabled={submitting || blockers.length > 0}
+            title={
+              blockers.length > 0
+                ? `Resolve ${blockers.length} remaining step${blockers.length === 1 ? "" : "s"} first`
+                : undefined
+            }
+            className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-5 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
+          >
+            {submitting ? "Finishing…" : alreadyFinished ? "Re-finish onboarding" : "Finish onboarding"}
+            <ArrowRightIcon width={14} height={14} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </div>
   );

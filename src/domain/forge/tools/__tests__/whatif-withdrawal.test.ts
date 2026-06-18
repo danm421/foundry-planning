@@ -41,7 +41,7 @@ function projYear(over: Partial<ProjectionYear>): ProjectionYear {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" });
   loadEffectiveTree.mockResolvedValue({
     effectiveTree: { withdrawalStrategy: ["taxable", "tax_deferred", "tax_free"] } as unknown as ClientData,
     warnings: [],

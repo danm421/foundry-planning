@@ -8,18 +8,18 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
 import { beneficiarySetSchema } from "@/lib/schemas/beneficiaries";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
 async function verifyClientAndTrust(
   clientId: string,
   entityId: string,
-  firmId: string,
 ) {
-  if (!(await verifyClientAccess(clientId, firmId)))
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok)
     return { ok: false as const, reason: "client" as const };
   const [entity] = await db
     .select({ id: entities.id, entityType: entities.entityType })
@@ -36,9 +36,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    const v = await verifyClientAndTrust(id, entityId, firmId);
+    const v = await verifyClientAndTrust(id, entityId);
     if (!v.ok)
       return NextResponse.json(
         { error: v.reason === "not_trust" ? "Entity is not a trust" : "Not found" },
@@ -70,9 +69,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    const v = await verifyClientAndTrust(id, entityId, firmId);
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    const v = await verifyClientAndTrust(id, entityId);
     if (!v.ok)
       return NextResponse.json(
         { error: v.reason === "not_trust" ? "Entity is not a trust" : "Not found" },
@@ -153,9 +153,8 @@ export async function PUT(
 
     return NextResponse.json(inserted);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT trust beneficiaries error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

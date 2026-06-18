@@ -5,7 +5,9 @@ import { eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { rowToMedicareCoverage, medicareCoverageToInsert } from "@/lib/medicare/dbMapper";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +16,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const rows = await db
@@ -38,11 +41,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     if (body?.owner !== "client" && body?.owner !== "spouse") {
@@ -72,14 +74,13 @@ export async function PUT(
       resourceId: `${id}:${body.owner}`,
       clientId: id,
       firmId,
-      metadata: { owner: body.owner },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { owner: body.owner }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/medicare-coverage error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   checkPreviewPdfRateLimit,
   rateLimitErrorResponse,
@@ -23,11 +24,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    const callerOrg = await requireOrgId();
 
     const { id } = await params;
 
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -52,7 +54,7 @@ export async function POST(
       );
     }
 
-    const rl = await checkPreviewPdfRateLimit(firmId);
+    const rl = await checkPreviewPdfRateLimit(callerOrg);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
         rl,
@@ -61,20 +63,20 @@ export async function POST(
     }
 
     const { buffer, filename, distinctScenarioCount } =
-      await renderPresentationPdf(id, firmId, parsed.data);
+      await renderPresentationPdf(id, access.firmId, parsed.data);
 
     await recordAudit({
       action: "presentations.preview_pdf",
       resourceType: "client",
       resourceId: id,
       clientId: id,
-      firmId,
-      metadata: {
+      firmId: access.firmId,
+      metadata: crossFirmAuditMeta({ access: access.access }, callerOrg, {
         pages: parsed.data.pages.map((p) => p.pageId),
         scenarioId: parsed.data.scenarioId,
         hasOverrides: parsed.data.pages.some((p) => p.scenarioOverride !== undefined),
         distinctScenarioCount,
-      },
+      }),
     });
 
     const safeFilename = filename.replace(/["\\\r\n;]/g, "");

@@ -111,7 +111,9 @@ vi.mock("@clerk/nextjs/server", () => ({
 // Phase 1b: verifyClientAccess now owns the client-in-firm gate. This test
 // exercises the route logic beyond the access check, so gate is always open.
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockResolvedValue(true),
+  verifyClientAccess: vi
+    .fn()
+    .mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" }),
 }));
 
 function makeReq(body: unknown): Request {

@@ -2,16 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { incomes, incomeScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string; incomeId: string }> };
 
-async function verifyOwnership(clientId: string, incomeId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return false;
+async function verifyOwnership(clientId: string, incomeId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return false;
 
   const [inc] = await db
     .select()
@@ -22,10 +25,9 @@ async function verifyOwnership(clientId: string, incomeId: string, firmId: strin
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, incomeId } = await params;
 
-    if (!(await verifyOwnership(id, incomeId, firmId))) {
+    if (!(await verifyOwnership(id, incomeId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -48,10 +50,11 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, incomeId } = await params;
-
-    if (!(await verifyOwnership(id, incomeId, firmId))) {
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    if (!(await verifyOwnership(id, incomeId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -78,14 +81,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       resourceId: incomeId,
       clientId: id,
       firmId,
-      metadata: { count: overrides.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { count: overrides.length }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT income schedule error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -93,10 +95,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await requireOrgId();
     const { id, incomeId } = await params;
-
-    if (!(await verifyOwnership(id, incomeId, firmId))) {
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    if (!(await verifyOwnership(id, incomeId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -106,9 +108,8 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE income schedule error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

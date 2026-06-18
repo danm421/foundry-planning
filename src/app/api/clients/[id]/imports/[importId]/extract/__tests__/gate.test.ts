@@ -15,7 +15,9 @@ vi.mock("@/lib/imports/authz", async () => {
   return { ...actual, requireImportAccess: vi.fn() };
 });
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn().mockResolvedValue(true),
+  verifyClientAccess: vi
+    .fn()
+    .mockResolvedValue({ ok: true, permission: "edit", firmId: "org_1", access: "own" }),
 }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -82,6 +84,25 @@ describe("extract route entitlement guard", () => {
     // No files → 400 after the gate, proving we passed it without extracting.
     const res = await POST(makeReq(), params);
     expect(res.status).toBe(400);
+    expect(extractDocument).not.toHaveBeenCalled();
+  });
+
+  it("403s for a shared (cross-org) recipient with access='shared'", async () => {
+    const { verifyClientAccess } = await import("@/lib/clients/authz");
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce({
+      ok: true,
+      permission: "edit",
+      firmId: "org_owner",
+      access: "shared",
+    } as never);
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_1",
+      sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
+    } as never);
+
+    const res = await POST(makeReq(), params);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Cross-organization imports are not supported." });
     expect(extractDocument).not.toHaveBeenCalled();
   });
 });

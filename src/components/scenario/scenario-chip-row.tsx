@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioModeUI } from "./scenario-mode-wrapper";
 import { PromoteScenarioDialog } from "./promote-scenario-dialog";
+import { useClientAccess } from "@/components/client-access-provider";
 
 export interface ScenarioChip {
   id: string;
@@ -41,6 +42,8 @@ export function ScenarioChipRow({
   clientId: string;
   scenarios: ScenarioChip[];
 }) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const { scenarioId: active, setScenario } = useScenarioState(clientId);
   const { openCreate } = useScenarioModeUI();
   const router = useRouter();
@@ -182,7 +185,7 @@ export function ScenarioChipRow({
                   <span aria-hidden="true">{isActive ? "● " : "○ "}</span>
                   {s.name}
                 </button>
-                {!s.isBaseCase && (
+                {canEdit && !s.isBaseCase && (
                   <>
                     {s.id === effectiveActive && (
                       <button
@@ -218,18 +221,22 @@ export function ScenarioChipRow({
               </div>
             );
           })}
-          <div className="my-1 border-t border-hair" />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              openCreate();
-            }}
-            className="w-full px-3 h-8 rounded-full text-[13px] text-left border border-dashed border-hair text-ink-4 hover:border-accent hover:text-ink-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            + New scenario
-          </button>
+          {canEdit && (
+            <>
+              <div className="my-1 border-t border-hair" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  openCreate();
+                }}
+                className="w-full px-3 h-8 rounded-full text-[13px] text-left border border-dashed border-hair text-ink-4 hover:border-accent hover:text-ink-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                + New scenario
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

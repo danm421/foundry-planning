@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import type { ImportListRow } from "@/lib/imports/list";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface DraftsListProps {
   clientId: string;
@@ -45,16 +46,20 @@ export default function DraftsList({
   inProgress,
   completed,
 }: DraftsListProps) {
+  const { access } = useClientAccess();
+  const isOwn = access === "own";
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-semibold text-ink">Imports</h1>
-        <Link
-          href={`/clients/${clientId}/details/import/new`}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent/90"
-        >
-          New import
-        </Link>
+        {isOwn && (
+          <Link
+            href={`/clients/${clientId}/details/import/new`}
+            className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent/90"
+          >
+            New import
+          </Link>
+        )}
       </div>
 
       <Section
@@ -122,6 +127,7 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { access } = useClientAccess();
   const detailHref = `/clients/${clientId}/details/import/${row.id}`;
 
   const handleDiscard = async () => {
@@ -170,7 +176,7 @@ function DraftRow({ row, clientId, kind }: DraftRowProps) {
           {relativeTime(row.updatedAt)}
         </span>
       </Link>
-      {kind === "in-progress" ? (
+      {kind === "in-progress" && access === "own" ? (
         <button
           type="button"
           onClick={handleDiscard}

@@ -7,6 +7,7 @@ import { HelpTip } from "@/components/help-tip";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useClientAccess } from "@/components/client-access-provider";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -340,6 +341,8 @@ export default function WithdrawalStrategySection({
   clientFirstName,
   spouseFirstName,
 }: WithdrawalStrategySectionProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const writer = useScenarioWriter(clientId);
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
   const [dialog, setDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>({
@@ -379,13 +382,15 @@ export default function WithdrawalStrategySection({
           </h3>
           <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth (illiquid accounts are skipped)." />
         </div>
-        <button
-          onClick={() => setDialog({ open: true })}
-          disabled={accounts.length === 0}
-          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-40"
-        >
-          + Add
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => setDialog({ open: true })}
+            disabled={accounts.length === 0}
+            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink disabled:opacity-40"
+          >
+            + Add
+          </button>
+        )}
       </header>
 
       <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/40">
@@ -416,26 +421,28 @@ export default function WithdrawalStrategySection({
                   <span className="truncate text-xs tabular-nums text-gray-400">
                     {yearsDescriptor(ws.startYear, ws.endYear)}
                   </span>
-                  <div className="flex shrink-0 items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      title="Edit"
-                      aria-label={`Edit ${accountMap[ws.accountId]?.name ?? "entry"}`}
-                      onClick={() => setDialog({ open: true, editing: ws })}
-                      className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      title="Delete"
-                      aria-label={`Delete ${accountMap[ws.accountId]?.name ?? "entry"}`}
-                      onClick={() => setDeleting(ws)}
-                      className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
-                    >
-                      <TrashIcon />
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex shrink-0 items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        title="Edit"
+                        aria-label={`Edit ${accountMap[ws.accountId]?.name ?? "entry"}`}
+                        onClick={() => setDialog({ open: true, editing: ws })}
+                        className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete"
+                        aria-label={`Delete ${accountMap[ws.accountId]?.name ?? "entry"}`}
+                        onClick={() => setDeleting(ws)}
+                        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ol>
@@ -443,7 +450,7 @@ export default function WithdrawalStrategySection({
         )}
       </div>
 
-      {dialog.open && (
+      {canEdit && dialog.open && (
         <WithdrawalDialog
           key={dialog.editing?.id ?? "new"}
           clientId={clientId}
@@ -465,25 +472,27 @@ export default function WithdrawalStrategySection({
         />
       )}
 
-      <ConfirmDeleteDialog
-        open={!!deleting}
-        title="Delete Withdrawal Entry"
-        message={
-          deleting
-            ? `Remove "${accountMap[deleting.accountId]?.name ?? "account"}" from the withdrawal order?`
-            : ""
-        }
-        onCancel={() => setDeleting(null)}
-        onConfirm={async () => {
-          if (!deleting) return;
-          const ok = await performDelete(deleting.id);
-          if (ok) {
-            setList((prev) => prev.filter((w) => w.id !== deleting.id));
-            setDialog({ open: false });
-            setDeleting(null);
+      {canEdit && (
+        <ConfirmDeleteDialog
+          open={!!deleting}
+          title="Delete Withdrawal Entry"
+          message={
+            deleting
+              ? `Remove "${accountMap[deleting.accountId]?.name ?? "account"}" from the withdrawal order?`
+              : ""
           }
-        }}
-      />
+          onCancel={() => setDeleting(null)}
+          onConfirm={async () => {
+            if (!deleting) return;
+            const ok = await performDelete(deleting.id);
+            if (ok) {
+              setList((prev) => prev.filter((w) => w.id !== deleting.id));
+              setDialog({ open: false });
+              setDeleting(null);
+            }
+          }}
+        />
+      )}
     </section>
   );
 }

@@ -35,9 +35,11 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import type { EntityOwner } from "@/engine/ownership";
 import { applyEntityOwnersOp, EPSILON } from "@/lib/entity-owners-ops";
 
@@ -79,12 +81,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string; entityId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId, entityId: trustId } = await params;
-
-    if (!(await verifyClientAccess(clientId, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json().catch(() => null);
     const parsed = assetOpSchema.safeParse(body);
@@ -273,7 +273,7 @@ export async function POST(
       resourceId: businessId,
       clientId,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         op:
           op.op === "add"
             ? "assign-business-to-trust"
@@ -284,7 +284,7 @@ export async function POST(
         appliedDebit: result.appliedDebit,
         isIrrevocable: trust.isIrrevocable ?? false,
         familyLossCount: result.familyLosses.length,
-      },
+      }),
     });
 
     // Read the new owner state to return.
@@ -306,9 +306,8 @@ export async function POST(
       })),
     });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "POST /api/clients/[id]/entities/[entityId]/assets error:",
       err,

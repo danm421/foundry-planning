@@ -10,14 +10,16 @@ import {
   externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import {
   assertAccountsInClient,
   assertLiabilitiesInClient,
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { giftCreateSchema } from "@/lib/schemas/gifts";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   applyOwnershipTransfer,
   getProjectionStartYearForScenario,
@@ -31,9 +33,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
     const rows = await db
@@ -56,11 +58,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
     const parsed = giftCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -298,18 +299,17 @@ export async function POST(
       resourceId: row.id,
       clientId: id,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         year: row.year,
         grantor: row.grantor,
         accountId: row.accountId,
         liabilityId: row.liabilityId,
-      },
+      }),
     });
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     if (err instanceof OwnershipTransferError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }

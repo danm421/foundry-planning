@@ -7,7 +7,9 @@ import { parseBody } from "@/lib/schemas/common";
 import { holdingCreateSchema } from "@/lib/schemas/holdings";
 import { recordAudit } from "@/lib/audit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   enrichHoldingRows,
   loadEnrichedHoldings,
@@ -21,8 +23,9 @@ export { enrichHoldingRows };
 
 export const dynamic = "force-dynamic";
 
-async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function assertAccountInFirm(clientId: string, accountId: string) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
   const [acct] = await db
     .select({ id: accounts.id })
     .from(accounts)
@@ -36,10 +39,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
-    const acct = await assertAccountInFirm(id, accountId, firmId);
+    const acct = await assertAccountInFirm(id, accountId);
     if (!acct) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -61,10 +63,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    const acct = await assertAccountInFirm(id, accountId, firmId);
+    const acct = await assertAccountInFirm(id, accountId);
     if (!acct) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -96,16 +100,15 @@ export async function POST(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { holdingId: row.id, ticker: b.displayTicker ?? null },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { holdingId: row.id, ticker: b.displayTicker ?? null }),
     });
 
     await syncAccountFromHoldings(accountId);
 
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/accounts/[accountId]/holdings error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

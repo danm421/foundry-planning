@@ -5,12 +5,15 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
-async function ownsDeduction(clientId: string, deductionId: string, firmId: string): Promise<boolean> {
-  if (!(await verifyClientAccess(clientId, firmId))) return false;
+async function ownsDeduction(clientId: string, deductionId: string): Promise<boolean> {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return false;
 
   const [row] = await db
     .select()
@@ -25,10 +28,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; deductionId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, deductionId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    if (!(await ownsDeduction(id, deductionId, firmId))) {
+    if (!(await ownsDeduction(id, deductionId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -68,14 +73,13 @@ export async function PUT(
       resourceId: deductionId,
       clientId: id,
       firmId,
-      metadata: { type: updated.type, name: updated.name ?? null },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { type: updated.type, name: updated.name ?? null }),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/deductions/[deductionId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -87,10 +91,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; deductionId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, deductionId } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    if (!(await ownsDeduction(id, deductionId, firmId))) {
+    if (!(await ownsDeduction(id, deductionId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -107,13 +113,13 @@ export async function DELETE(
       resourceId: deductionId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/deductions/[deductionId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

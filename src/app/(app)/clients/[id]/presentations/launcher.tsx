@@ -37,6 +37,7 @@ import {
 } from "@/components/presentations/launcher/use-launcher-state";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { RecentRunsPanel } from "@/components/presentations/recent-runs-panel";
+import { useClientAccess } from "@/components/client-access-provider";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 
@@ -108,6 +109,8 @@ function makeInitialState(): LauncherState {
 }
 
 export function PresentationsLauncher(props: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [state, dispatch] = useLauncherState(makeInitialState());
 
   const [templates, setTemplates] = useState(props.initialTemplates);
@@ -447,14 +450,16 @@ export function PresentationsLauncher(props: Props) {
           >
             Preview full
           </button>
-          <button
-            type="button"
-            disabled={generateDisabled || preparing}
-            onClick={handleGenerate}
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {preparing ? "Preparing…" : generating ? "Generating…" : "Generate PDF"}
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              disabled={generateDisabled || preparing}
+              onClick={handleGenerate}
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {preparing ? "Preparing…" : generating ? "Generating…" : "Generate PDF"}
+            </button>
+          )}
         </div>
       </div>
 

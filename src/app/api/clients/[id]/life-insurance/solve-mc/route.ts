@@ -43,10 +43,10 @@ function sseChunk(event: SseEventName, payload: unknown): string {
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
-  let firmId: string;
+  let callerOrg: string;
   let clientId: string;
   try {
-    firmId = await requireOrgId();
+    callerOrg = await requireOrgId();
     ({ id: clientId } = await ctx.params);
   } catch (err) {
     const authResp = authErrorResponse(err);
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
   // Rate-limit before opening the stream so a denial is a normal 429/503,
   // not a mid-stream error event. Shares the projection budget (engine run).
-  const rl = await checkProjectionRateLimit(firmId);
+  const rl = await checkProjectionRateLimit(callerOrg);
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
@@ -69,8 +69,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     );
   }
 
-  const inFirm = await verifyClientAccess(clientId, firmId);
-  if (!inFirm) {
+  const access = await verifyClientAccess(clientId);
+  if (!access.ok) {
     return new Response(JSON.stringify({ error: "Client not found" }), {
       status: 404,
       headers: { "content-type": "application/json" },
@@ -97,9 +97,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       };
       try {
         const [{ effectiveTree }, proceeds] = await Promise.all([
-          loadEffectiveTree(clientId, firmId, assumptions.scenarioRef, {}),
+          loadEffectiveTree(clientId, access.firmId, assumptions.scenarioRef, {}),
           loadLiProceedsGrowth(
-            firmId,
+            access.firmId,
             assumptions.modelPortfolioId,
             DEFAULT_LI_GROWTH,
           ),
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // scenarioId is the 3rd positional arg; it defaults to "base" (the
         // solver tab) but the presentations pre-solve passes a live scenario id
         // for scenario-override decks. The synthetic mixes stay in the 4th slot.
-        const mcPayload = await loadMonteCarloData(clientId, firmId, assumptions.scenarioRef, [
+        const mcPayload = await loadMonteCarloData(clientId, access.firmId, assumptions.scenarioRef, [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);
         // `coverEstateTaxes` is handled at the route level — the addend is computed

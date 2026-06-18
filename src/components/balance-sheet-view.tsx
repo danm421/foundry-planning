@@ -25,6 +25,7 @@ import {
 } from "@/engine/notes-receivable";
 import { useToast } from "@/components/toast";
 import { refreshClientHoldingPrices } from "@/lib/investments/holdings-client";
+import { useClientAccess } from "./client-access-provider";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
 
@@ -427,6 +428,8 @@ export default function BalanceSheetView({
   const isWizard = embed === "wizard";
   const showAssetsCol = !isWizard || section === "accounts";
   const showLiabilitiesCol = !isWizard || section === "liabilities";
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const { showToast } = useToast();
   const [refreshingPrices, setRefreshingPrices] = useState(false);
@@ -785,10 +788,10 @@ export default function BalanceSheetView({
           totalLabel={`Total ${fmt(totalInEstate)}`}
           actions={
             <div className="flex items-center gap-2">
-              {(nonNoteAccounts.length > 0 || noteRows.length > 0) && (
+              {canEdit && (nonNoteAccounts.length > 0 || noteRows.length > 0) && (
                 <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />
               )}
-              {nonNoteAccounts.length > 0 && (
+              {canEdit && nonNoteAccounts.length > 0 && (
                 <button
                   type="button"
                   onClick={handleRefreshPrices}
@@ -798,7 +801,7 @@ export default function BalanceSheetView({
                   {refreshingPrices ? "Refreshing…" : "Refresh prices"}
                 </button>
               )}
-              <AddAssetMenu onPick={(cat) => cat === "business" ? openAddBusiness() : setAddCategory(cat)} />
+              {canEdit && <AddAssetMenu onPick={(cat) => cat === "business" ? openAddBusiness() : setAddCategory(cat)} />}
             </div>
           }
         >
@@ -851,12 +854,12 @@ export default function BalanceSheetView({
                           setIncomesPopoverFor((cur) => (cur === a.id ? null : a.id))
                         }
                         consolidatedValue={consolidatedBusinessValue(a)}
-                        onClickRow={() => !assetsEdit && openEditBusiness(a)}
-                        onDeleteRow={() => setDeletingAccount(a)}
-                        onClickChild={(child) => handleAccountClick(child)}
-                        onDeleteChild={(child) => setDeletingAccount(child)}
-                        onClickChildLiability={(l) => !liabilitiesEdit && setEditingLiability(l)}
-                        editMode={assetsEdit}
+                        onClickRow={canEdit ? () => !assetsEdit && openEditBusiness(a) : undefined}
+                        onDeleteRow={canEdit ? () => setDeletingAccount(a) : undefined}
+                        onClickChild={canEdit ? (child) => handleAccountClick(child) : undefined}
+                        onDeleteChild={canEdit ? (child) => setDeletingAccount(child) : undefined}
+                        onClickChildLiability={canEdit ? (l) => !liabilitiesEdit && setEditingLiability(l) : undefined}
+                        editMode={canEdit && assetsEdit}
                         ownerDisplay={ownerDisplay}
                         growthDisplay={growthDisplay}
                         currentYearBalance={currentYearBalance}
@@ -864,9 +867,9 @@ export default function BalanceSheetView({
                     ) : (
                       <Row
                         key={a.id}
-                        onClick={() => handleAccountClick(a)}
-                        editMode={assetsEdit}
-                        onDelete={() => setDeletingAccount(a)}
+                        onClick={canEdit ? () => handleAccountClick(a) : undefined}
+                        editMode={canEdit && assetsEdit}
+                        onDelete={canEdit ? () => setDeletingAccount(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
                         subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
@@ -877,9 +880,9 @@ export default function BalanceSheetView({
                   {noteCatRows.map(({ note, value }) => (
                     <Row
                       key={note.id}
-                      onClick={() => handleNoteClick(note)}
-                      editMode={assetsEdit}
-                      onDelete={() => setDeletingNote(note)}
+                      onClick={canEdit ? () => handleNoteClick(note) : undefined}
+                      editMode={canEdit && assetsEdit}
+                      onDelete={canEdit ? () => setDeletingNote(note) : undefined}
                       label={note.name}
                       labelBadge={
                         note.linkedTrustEntityId ? (
@@ -922,18 +925,20 @@ export default function BalanceSheetView({
           totalClassName="text-red-400"
           actions={
             <div className="flex items-center gap-2">
-              {liabilities.length > 0 && (
+              {canEdit && liabilities.length > 0 && (
                 <EditToggle on={liabilitiesEdit} onToggle={() => setLiabilitiesEdit((v) => !v)} />
               )}
-              <AddLiabilityDialog
-                clientId={clientId}
-                realEstateAccounts={realEstateAccounts}
-                entities={entities}
-                businesses={businessOptions}
-                familyMembers={familyMembers}
-                clientFirstName={ownerNames.clientName.split(" ")[0]}
-                spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
-              />
+              {canEdit && (
+                <AddLiabilityDialog
+                  clientId={clientId}
+                  realEstateAccounts={realEstateAccounts}
+                  entities={entities}
+                  businesses={businessOptions}
+                  familyMembers={familyMembers}
+                  clientFirstName={ownerNames.clientName.split(" ")[0]}
+                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+                />
+              )}
             </div>
           }
         >
@@ -945,9 +950,9 @@ export default function BalanceSheetView({
                 {topLevelLiabilities.map((l) => (
                   <Row
                     key={l.id}
-                    onClick={() => !liabilitiesEdit && setEditingLiability(l)}
-                    editMode={liabilitiesEdit}
-                    onDelete={() => setDeletingLiability(l)}
+                    onClick={canEdit ? () => !liabilitiesEdit && setEditingLiability(l) : undefined}
+                    editMode={canEdit && liabilitiesEdit}
+                    onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
                     label={l.name}
                     subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
                     value={`(${fmt(currentYearBalance(l))})`}
@@ -1002,8 +1007,8 @@ export default function BalanceSheetView({
                       {rows.map((a) => (
                         <div
                           key={a.id}
-                          onClick={() => handleAccountClick(a)}
-                          className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                          onClick={canEdit ? () => handleAccountClick(a) : undefined}
+                          className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
                         >
                           <div>
                             <div className="text-sm font-medium text-gray-100">{a.name}</div>
@@ -1370,9 +1375,9 @@ function Row({
   value,
   valueClassName,
 }: {
-  onClick: () => void;
+  onClick?: () => void;
   editMode: boolean;
-  onDelete: () => void;
+  onDelete?: () => void;
   deletable?: boolean;
   label: string;
   labelBadge?: ReactNode;
@@ -1383,7 +1388,7 @@ function Row({
   return (
     <div
       onClick={onClick}
-      className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+      className={`flex items-center justify-between px-4 py-2 ${onClick ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-gray-100">
@@ -1394,7 +1399,7 @@ function Row({
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
-        {editMode && deletable && (
+        {editMode && deletable && onDelete && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -1425,11 +1430,11 @@ interface BusinessRowGroupProps {
   incomesPopoverOpen: boolean;
   onToggleIncomesPopover: () => void;
   consolidatedValue: number;
-  onClickRow: () => void;
-  onDeleteRow: () => void;
-  onClickChild: (child: AccountRow) => void;
-  onDeleteChild: (child: AccountRow) => void;
-  onClickChildLiability: (l: LiabilityRow) => void;
+  onClickRow?: () => void;
+  onDeleteRow?: () => void;
+  onClickChild?: (child: AccountRow) => void;
+  onDeleteChild?: (child: AccountRow) => void;
+  onClickChildLiability?: (l: LiabilityRow) => void;
   editMode: boolean;
   ownerDisplay: (a: AccountRow) => string;
   growthDisplay: (a: AccountRow) => string;
@@ -1475,7 +1480,7 @@ function BusinessRowGroup({
         </button>
         <div
           onClick={onClickRow}
-          className="flex flex-1 cursor-pointer items-center justify-between"
+          className={`flex flex-1 items-center justify-between ${onClickRow ? "cursor-pointer" : ""}`}
         >
           <div className="min-w-0">
             <div className="truncate text-sm font-medium text-gray-100">{biz.name}</div>
@@ -1491,7 +1496,7 @@ function BusinessRowGroup({
                 maximumFractionDigits: 0,
               }).format(consolidatedValue)}
             </span>
-            {editMode && (
+            {editMode && onDeleteRow && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1517,8 +1522,8 @@ function BusinessRowGroup({
                 {children_.map((c) => (
                   <div
                     key={c.id}
-                    onClick={() => onClickChild(c)}
-                    className="flex cursor-pointer items-center justify-between px-3 py-1.5 hover:bg-gray-800/60"
+                    onClick={onClickChild ? () => onClickChild(c) : undefined}
+                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChild ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
                   >
                     <div className="min-w-0">
                       <div className="truncate text-[13px] text-gray-100">{c.name}</div>
@@ -1532,7 +1537,7 @@ function BusinessRowGroup({
                           maximumFractionDigits: 0,
                         }).format(Number(c.value))}
                       </span>
-                      {editMode && (
+                      {editMode && onDeleteChild && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1559,8 +1564,8 @@ function BusinessRowGroup({
                 {childLiabilities.map((l) => (
                   <div
                     key={l.id}
-                    onClick={() => onClickChildLiability(l)}
-                    className="flex cursor-pointer items-center justify-between px-3 py-1.5 hover:bg-gray-800/60"
+                    onClick={onClickChildLiability ? () => onClickChildLiability(l) : undefined}
+                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChildLiability ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
                   >
                     <div className="min-w-0">
                       <div className="truncate text-[13px] text-gray-100">{l.name}</div>

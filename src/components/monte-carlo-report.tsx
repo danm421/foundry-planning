@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useThemeName } from "@/lib/chart-colors";
+import { useClientAccess } from "@/components/client-access-provider";
 import { colors, colorsLight } from "@/brand";
 import MonteCarloSkeleton from "@/app/(app)/clients/[id]/cashflow/monte-carlo/loading-skeleton";
 import { ReportHeader } from "./monte-carlo/report-header";
@@ -30,6 +31,8 @@ interface Props {
 
 
 export default function MonteCarloReport({ clientId }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const searchParams = useSearchParams();
   const theme = useThemeName();
   const brandColors = theme === "light" ? colorsLight : colors;
@@ -219,7 +222,7 @@ export default function MonteCarloReport({ clientId }: Props) {
             <div className="rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
           )}
 
-          {summary ? (
+          {summary && canEdit ? (
             <div className="flex justify-center pt-2">
               <button
                 onClick={handleRestart}

@@ -4,12 +4,15 @@ import { scenarios, withdrawalStrategies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
-async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
 
   const [scenario] = await db
     .select()
@@ -25,10 +28,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -54,10 +56,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -91,14 +94,13 @@ export async function POST(
       resourceId: strategy.id,
       clientId: id,
       firmId,
-      metadata: { accountId: strategy.accountId, priorityOrder: strategy.priorityOrder },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId: strategy.accountId, priorityOrder: strategy.priorityOrder }),
     });
 
     return NextResponse.json(strategy, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/withdrawal-strategy error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

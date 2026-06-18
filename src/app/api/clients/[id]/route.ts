@@ -17,7 +17,10 @@ import { computePlanEndAge } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
-import { requireClientAccess } from "@/lib/clients/authz";
+import { requireClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireOrgId } from "@/lib/db-helpers";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -54,11 +57,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const access = await requireClientAccess(id).catch(() => null);
-    if (!access) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    const { client: existing, firmId } = access;
+    const callerOrg = await requireOrgId();
+    const { client: existing, firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
     const body = await request.json();
 
     // Load the CRM contacts so we know the current identity state for
@@ -210,13 +211,13 @@ export async function PUT(
       before: toClientSnapshot(existing),
       after: toClientSnapshot(updated),
       fieldLabels: CLIENT_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -265,11 +266,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const access = await requireClientAccess(id).catch(() => null);
-    if (!access) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    const { client: existing, firmId } = access;
+    const callerOrg = await requireOrgId();
+    const { client: existing, firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const snapshot = toClientSnapshot(existing);
 
@@ -284,13 +283,13 @@ export async function DELETE(
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

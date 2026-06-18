@@ -1205,6 +1205,13 @@
       "when": 1781722564355,
       "tag": "0171_rename_copilot_conversations_to_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1781797790650,
+      "tag": "0172_hesitant_firebrand",
+      "breakpoints": true
     }
   ]
 }

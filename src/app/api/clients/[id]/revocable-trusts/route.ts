@@ -6,22 +6,20 @@ import { eq, and, inArray, asc } from "drizzle-orm";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string): Promise<boolean> {
-  return verifyClientAccess(clientId, firmId);
-}
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -73,11 +71,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const parsed = revocableTrustUpsertSchema.safeParse(body);
@@ -113,14 +110,13 @@ export async function POST(
       resourceId: trust.id,
       clientId: id,
       firmId,
-      metadata: { name: trust.name, accountIds },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: trust.name, accountIds }),
     });
 
     return NextResponse.json({ ...trust, accountIds }, { status: 201 });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/revocable-trusts error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { authErrorResponse } from "@/lib/authz";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
@@ -142,10 +143,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    const callerOrg = await requireOrgId();
     const { id } = await params;
 
-    if (!(await verifyClientAccess(id, firmId))) {
+    const access = await verifyClientAccess(id);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -158,12 +160,12 @@ export async function POST(
     }
     const body = parsed.data;
 
-    const rl = await checkExtractRateLimit(firmId);
+    const rl = await checkExtractRateLimit(callerOrg);
     if (!rl.allowed) return rateLimitErrorResponse(rl, "AI analysis rate limit exceeded");
 
     const [base, scn] = await Promise.all([
-      projectAndMc(id, firmId, "base"),
-      projectAndMc(id, firmId, body.scenarioId),
+      projectAndMc(id, access.firmId, "base"),
+      projectAndMc(id, access.firmId, body.scenarioId),
     ]);
 
     const client = scn.effectiveTree.client;
@@ -184,8 +186,8 @@ export async function POST(
       loadScenarioChanges(body.scenarioId),
       loadScenarioToggleGroups(body.scenarioId),
       resolveScenarioLabel(id, body.scenarioId),
-      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: "base", targetPoS: body.targetConfidence }).catch(() => null),
-      getOrComputeMaxSpending({ clientId: id, firmId, scenarioId: body.scenarioId, targetPoS: body.targetConfidence }).catch(() => null),
+      getOrComputeMaxSpending({ clientId: id, firmId: access.firmId, scenarioId: "base", targetPoS: body.targetConfidence }).catch(() => null),
+      getOrComputeMaxSpending({ clientId: id, firmId: access.firmId, scenarioId: body.scenarioId, targetPoS: body.targetConfidence }).catch(() => null),
     ]);
     const targetNames = buildTargetNames(scn.effectiveTree, id);
     const changeLines = changeLinesFor(changes, toggleGroups, targetNames);
@@ -242,14 +244,14 @@ export async function POST(
       resourceType: "client",
       resourceId: id,
       clientId: id,
-      firmId,
-      metadata: {
+      firmId: access.firmId,
+      metadata: crossFirmAuditMeta({ access: access.access }, callerOrg, {
         surface: "presentations.retirement_comparison",
         scenarioId: body.scenarioId,
         tone: body.tone,
         length: body.length,
         force: body.force,
-      },
+      }),
     });
 
     return NextResponse.json({ markdown, generatedAt, cached: false, hash });

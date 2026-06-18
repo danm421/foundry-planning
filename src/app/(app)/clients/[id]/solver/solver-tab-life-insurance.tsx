@@ -17,6 +17,7 @@ import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiNeedRange } from "./li-need-range";
+import { useClientAccess } from "@/components/client-access-provider";
 
 /** One decedent's solved need + the survivor's projection. */
 export interface LiSolveCase {
@@ -70,6 +71,9 @@ export function SolverTabLifeInsurance({
   estateAdminExpenses,
   modelPortfolios,
 }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
+
   const [solveResult, setSolveResult] = useState<LiSolveResult | null>(null);
   const [isSolving, setIsSolving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,11 +88,14 @@ export function SolverTabLifeInsurance({
       setIsSolving(true);
       const body = JSON.stringify(a);
       try {
-        // Persist (fire-and-forget; surface failures but don't block the solve).
-        const savePromise = fetch(
-          `/api/clients/${clientId}/life-insurance/settings`,
-          { method: "PUT", headers: { "content-type": "application/json" }, body },
-        );
+        // Persist only when the user has edit permission (fire-and-forget;
+        // surface failures but don't block the solve).
+        const savePromise = canEdit
+          ? fetch(
+              `/api/clients/${clientId}/life-insurance/settings`,
+              { method: "PUT", headers: { "content-type": "application/json" }, body },
+            )
+          : null;
 
         const res = await fetch(
           `/api/clients/${clientId}/life-insurance/solve`,
@@ -102,9 +109,11 @@ export function SolverTabLifeInsurance({
         setSolveResult(data);
         setErrorMessage(null);
 
-        const saveRes = await savePromise;
-        if (seq === solveSeqRef.current && !saveRes.ok) {
-          setErrorMessage(`Could not save assumptions (HTTP ${saveRes.status})`);
+        if (savePromise) {
+          const saveRes = await savePromise;
+          if (seq === solveSeqRef.current && !saveRes.ok) {
+            setErrorMessage(`Could not save assumptions (HTTP ${saveRes.status})`);
+          }
         }
       } catch (err) {
         if (seq !== solveSeqRef.current) return;
@@ -113,7 +122,7 @@ export function SolverTabLifeInsurance({
         if (seq === solveSeqRef.current) setIsSolving(false);
       }
     },
-    [clientId],
+    [clientId, canEdit],
   );
 
   // Initial solve on mount — show results immediately on first open.

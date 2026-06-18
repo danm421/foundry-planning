@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
@@ -79,6 +80,8 @@ export function LiveSolverWorkspace({
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
 
   const ownerOptions = useMemo(() => {
     const fms = baseClientData.familyMembers ?? [];
@@ -452,6 +455,7 @@ export function LiveSolverWorkspace({
   const [saveToBaseError, setSaveToBaseError] = useState<string | null>(null);
 
   async function handleSaveToBase() {
+    if (!canEdit) return;
     if (
       !confirm(
         "Save these changes to base facts? This will update the client's real data and cannot be undone.",
@@ -488,6 +492,7 @@ export function LiveSolverWorkspace({
   }
 
   async function handleSaveSubmit(args: { name: string }) {
+    if (!canEdit) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -1096,6 +1101,7 @@ export function LiveSolverWorkspace({
         canSaveToBase={mutations.some(isBaseSavableMutation)}
         solveActive={activeSolve !== null}
         savingToBase={savingToBase}
+        canEdit={canEdit}
         onReset={handleReset}
         onSave={() => setSaveOpen(true)}
         onSaveToBase={handleSaveToBase}

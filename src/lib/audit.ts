@@ -291,6 +291,9 @@ export type AuditAction =
   | "vault.document.version_added"
   // Support & feedback
   | "support.message_sent"
+  // Cross-org sharing (share grants and revocations)
+  | "client_share.create"
+  | "client_share.revoke"
   // Planning Forge (LLM agent). New writes emit forge.*; the copilot.* variants
   // are LEGACY — rows written before the 2026-06-17 copilot→Forge rename cutover.
   // They remain in the union so historical audit rows still type-check/decode;

@@ -9,7 +9,7 @@ const listTasks = vi.fn();
 const listOpenItemsForClient = vi.fn();
 const getHouseholdCard = vi.fn();
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
-vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string, f: string) => verifyClientAccess(c, f) }));
+vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string) => verifyClientAccess(c) }));
 vi.mock("../guards", async (orig) => ({ ...(await orig()), clientToHousehold: (c: string, f: string) => clientToHousehold(c, f) }));
 vi.mock("@/lib/crm/notes", () => ({ listHouseholdNotes: (h: string, f: string) => listHouseholdNotes(h, f) }));
 vi.mock("@/lib/crm/activity", () => ({ listActivity: (h: string, o: unknown) => listActivity(h, o) }));
@@ -26,7 +26,7 @@ const byName = (n: string) => buildCrmTools(tctx).find((t) => t.name === n)!;
 
 beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   clientToHousehold.mockResolvedValue("hh-1");
   listHouseholdNotes.mockReset();
   listActivity.mockReset();
@@ -43,7 +43,7 @@ describe("crm_recent_notes", () => {
     expect(out.notes[0].id).toBe("n1");
   });
   it("returns an error STRING (never throws) when access is denied", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("crm_recent_notes").invoke({ limit: 5 });
     expect(out).toMatch(/not found or access denied/i);
     expect(listHouseholdNotes).not.toHaveBeenCalled();

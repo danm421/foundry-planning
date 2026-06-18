@@ -10,7 +10,11 @@ import {
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_test_itemId", orgId: "firm_test_itemId" })),
+  auth: vi.fn(async () => ({
+    userId: "user_test_itemId",
+    orgId: "firm_test_itemId",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  })),
 }));
 
 const FIRM = "firm_test_itemId";
@@ -97,11 +101,11 @@ describe("PATCH /[itemId]", () => {
     expect(body.completedAt).toBeNull();
   });
 
-  it("404s across firms", async () => {
+  it("403s across firms", async () => {
     const res = await PATCH(req({ title: "hacked" }), {
       params: Promise.resolve({ id: clientOtherId, itemId }),
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });
 

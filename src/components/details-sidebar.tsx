@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { qsStepLabel } from "@/lib/quick-start/state";
 import type { QsStepSlug } from "@/lib/quick-start/steps";
+import { useClientAccess } from "./client-access-provider";
 
 interface DetailsSidebarProps {
   clientId: string;
@@ -193,6 +194,7 @@ function GuidedWalkthroughMenu({
 export default function DetailsSidebar({ clientId, quickStartResumeStep = null }: DetailsSidebarProps) {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
+  const { access } = useClientAccess();
 
   function renderLink(tab: SidebarTab) {
     const href = `/clients/${clientId}/details/${tab.href}`;
@@ -216,7 +218,9 @@ export default function DetailsSidebar({ clientId, quickStartResumeStep = null }
   return (
     <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
-      <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
+      {access === "own" && (
+        <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
+      )}
       <GuidedWalkthroughMenu
         clientId={clientId}
         resumeStep={quickStartResumeStep}

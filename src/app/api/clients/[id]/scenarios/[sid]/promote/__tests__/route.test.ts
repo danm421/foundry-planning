@@ -1,9 +1,24 @@
+// src/app/api/clients/[id]/scenarios/[sid]/promote/__tests__/route.test.ts
+//
+// Unit tests for the promote route. Task 17d: uses requireOrgAndUser +
+// requireClientEditAccess + requireActiveSubscriptionForFirm instead of
+// requireOrgId + assertScenarioRouteScope-only. Mocks at the lib boundary.
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
 
-vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn() }));
-vi.mock("@/lib/authz", () => ({ authErrorResponse: vi.fn(() => null) }));
-vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(async () => ({ userId: "user_123" })) }));
+vi.mock("@/lib/db-helpers", () => ({
+  requireOrgId: vi.fn(),
+  requireOrgAndUser: vi.fn(),
+}));
+vi.mock("@/lib/authz", () => ({
+  authErrorResponse: vi.fn(() => null),
+  requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(async () => ({ userId: "user_123", orgId: "firm_test" })) }));
+vi.mock("@/lib/clients/authz", () => ({
+  requireClientEditAccess: vi.fn(),
+}));
 vi.mock("@/lib/scenario/route-scope", () => ({ assertScenarioRouteScope: vi.fn() }));
 vi.mock("@/lib/scenario/promote-to-base", () => ({
   promoteScenarioToBase: vi.fn(),
@@ -19,7 +34,9 @@ vi.mock("@/lib/scenario/promote-to-base", () => ({
 }));
 
 import { POST } from "../route";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 import { promoteScenarioToBase, PromoteError } from "@/lib/scenario/promote-to-base";
 
@@ -43,7 +60,9 @@ const okScope = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
+  vi.mocked(requireOrgAndUser).mockResolvedValue({ orgId: "caller_org", userId: "user_123" });
+  vi.mocked(requireClientEditAccess).mockResolvedValue({ firmId: FIRM_ID, access: "own" as const } as never);
+  vi.mocked(requireActiveSubscriptionForFirm).mockResolvedValue(undefined);
 });
 
 describe("POST promote route", () => {
@@ -56,7 +75,7 @@ describe("POST promote route", () => {
     expect(promoteScenarioToBase).not.toHaveBeenCalled();
   });
 
-  it("returns the scope miss response (404) when client/scenario not in firm", async () => {
+  it("returns the scope miss response (404) when scenario not found in client", async () => {
     vi.mocked(assertScenarioRouteScope).mockResolvedValue({
       kind: "miss",
       response: NextResponse.json({ error: "not found" }, { status: 404 }),
@@ -81,6 +100,7 @@ describe("POST promote route", () => {
     expect(promoteScenarioToBase).toHaveBeenCalledTimes(1);
     expect(vi.mocked(promoteScenarioToBase).mock.calls[0][0]).toMatchObject({
       clientId: CLIENT_ID,
+      firmId: FIRM_ID,
       scenarioId: SCENARIO_ID,
       scenarioName: "Aggressive",
       toggleState: { g1: true },

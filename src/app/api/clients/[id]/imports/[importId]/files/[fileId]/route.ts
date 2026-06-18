@@ -35,7 +35,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
     }
     const { id: clientId, importId, fileId } = await params;
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -159,8 +160,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
     const { id: clientId, importId, fileId } = await params;
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.access !== "own") {
+      return NextResponse.json({ error: "Cross-organization imports are not supported." }, { status: 403 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     await requireImportAccess({ importId, clientId, firmId, userId });
@@ -234,8 +242,15 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     }
     const { id: clientId, importId, fileId } = await params;
 
-    if (!(await verifyClientAccess(clientId, firmId))) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (access.access !== "own") {
+      return NextResponse.json({ error: "Cross-organization imports are not supported." }, { status: 403 });
+    }
+    if (access.permission !== "edit") {
+      return NextResponse.json({ error: "View-only access" }, { status: 403 });
     }
 
     await requireImportAccess({ importId, clientId, firmId, userId });

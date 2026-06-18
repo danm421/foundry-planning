@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { requireClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
 import { auth, currentUser } from "@clerk/nextjs/server";
@@ -27,9 +28,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const access = await requireClientAccess(id).catch(() => null);
-    if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const { client, firmId } = access;
+    const { client, firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {
@@ -155,9 +155,8 @@ export async function POST(
       },
     });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST liquidity export-pdf error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

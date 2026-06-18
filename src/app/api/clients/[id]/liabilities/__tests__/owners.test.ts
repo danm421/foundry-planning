@@ -39,6 +39,16 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: vi.fn(),
 }));
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn(),
+  requireClientEditAccess: vi.fn(),
+}));
+
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined), authErrorResponse: vi.fn().mockReturnValue(null) };
+});
+
 // Suppress audit noise in tests
 vi.mock("@/lib/audit", () => ({
   recordCreate: vi.fn().mockResolvedValue(undefined),
@@ -61,7 +71,9 @@ vi.mock("@/lib/db-scoping", () => ({
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query the test already drives).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = TEST_FIRM (inlined — vi.mock is hoisted) so the real verifyClientAccess
+  // own-firm path matches and the firm-scoped gate resolves to edit access.
+  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_liability_owners_test" }),
 }));
 
 const TEST_FIRM = "firm_liability_owners_test";
@@ -253,6 +265,9 @@ d("Liability owners[] API — POST and PUT", () => {
     await cleanup();
     vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
     vi.mocked(helpers.requireOrgAndUser).mockResolvedValue({ orgId: TEST_FIRM, userId: "user_test" });
+    const authz = await import("@/lib/clients/authz");
+    vi.mocked(authz.requireClientEditAccess).mockResolvedValue({ firmId: TEST_FIRM, access: "own" } as never);
+    vi.mocked(authz.verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: TEST_FIRM, access: "own" } as never);
   });
 
   // ── tests ─────────────────────────────────────────────────────────────────

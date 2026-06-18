@@ -31,10 +31,10 @@ function sseChunk(event: SolveSseEventName, payload: unknown): string {
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
-  let firmId: string;
+  let callerOrg: string;
   let clientId: string;
   try {
-    firmId = await requireOrgId();
+    callerOrg = await requireOrgId();
     ({ id: clientId } = await ctx.params);
   } catch (err) {
     const authResp = authErrorResponse(err);
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
   // Rate-limit before opening the stream so a denial is a normal 429/503,
   // not a mid-stream error event. Shares the projection budget (engine run).
-  const rl = await checkProjectionRateLimit(firmId);
+  const rl = await checkProjectionRateLimit(callerOrg);
   if (!rl.allowed) {
     return rateLimitErrorResponse(
       rl,
@@ -57,8 +57,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     );
   }
 
-  const inFirm = await verifyClientAccess(clientId, firmId);
-  if (!inFirm) {
+  const access = await verifyClientAccess(clientId);
+  if (!access.ok) {
     return new Response(JSON.stringify({ error: "Client not found" }), {
       status: 404,
       headers: { "content-type": "application/json" },
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, firmId, source, {});
+        const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, access.firmId, source, {});
         let result: SolveResultEvent;
         if (target.kind === "ss-claim-age") {
           // Deterministic argmax over claim ages 62–70 on the straight-line
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             signal: abortController.signal,
           });
         } else {
-          const mcPayload = await loadMonteCarloData(clientId, firmId, "base", extraAccountMixes ?? []);
+          const mcPayload = await loadMonteCarloData(clientId, access.firmId, "base", extraAccountMixes ?? []);
           result = await solveTarget({
             effectiveTree,
             mcPayload,

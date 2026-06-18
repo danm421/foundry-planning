@@ -11,8 +11,16 @@ vi.mock("@/lib/db-helpers", () => ({
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query the test already drives).
+// Task 17f1: sessionClaims.org_public_metadata.is_founder bypasses the subscription
+// gate so requireActiveSubscriptionForFirm passes without a live Clerk API call.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = FIRM (inlined — vi.mock is hoisted) so the real requireClientEditAccess
+  // own-firm path (`client.firmId === orgId`) matches the seeded client's firm.
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "test-firm-put-mirror",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
 import { PUT } from "../route";

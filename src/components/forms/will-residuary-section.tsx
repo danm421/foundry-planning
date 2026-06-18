@@ -14,7 +14,7 @@ import type {
 
 export interface WillResiduarySectionProps {
   rows: WillsPanelRecipient[];
-  onChange: (rows: WillsPanelRecipient[]) => void;
+  onChange?: (rows: WillsPanelRecipient[]) => void;
   grantor: WillGrantor;
   primary: WillsPanelPrimary;
   familyMembers: WillsPanelFamilyMember[];
@@ -54,7 +54,7 @@ function HelpIcon({ label }: { label: string }) {
 
 export default function WillResiduarySection({
   rows,
-  onChange,
+  onChange: onChangeProp,
   grantor,
   primary,
   familyMembers,
@@ -62,6 +62,7 @@ export default function WillResiduarySection({
   entities,
   saving,
 }: WillResiduarySectionProps) {
+  const canEdit = onChangeProp !== undefined;
   const primaryRows = tierRows(rows, "primary");
   const contingentRows = tierRows(rows, "contingent");
   const isEmpty = rows.length === 0;
@@ -75,6 +76,7 @@ export default function WillResiduarySection({
     nextPrimary: BequestRecipient[],
     nextContingent: BequestRecipient[],
   ) {
+    if (!onChangeProp) return;
     const combined: WillsPanelRecipient[] = [
       ...nextPrimary.map((r, i) => ({
         recipientKind: r.recipientKind,
@@ -91,7 +93,7 @@ export default function WillResiduarySection({
         sortOrder: nextPrimary.length + i,
       })),
     ];
-    onChange(combined);
+    onChangeProp(combined);
   }
 
   const column = (
@@ -122,7 +124,7 @@ export default function WillResiduarySection({
           default order — surviving spouse, then children, then other heirs.
         </p>
       )}
-      <fieldset disabled={saving}>
+      <fieldset disabled={saving || !canEdit}>
         {hasSpouse ? (
           <div className="grid gap-3 md:grid-cols-2">
             {column(

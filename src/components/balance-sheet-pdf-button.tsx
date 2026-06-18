@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface BalanceSheetPdfButtonProps {
   clientId: string;
 }
 
 export default function BalanceSheetPdfButton({ clientId }: BalanceSheetPdfButtonProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const searchParams = useSearchParams();
   const [busy, setBusy] = useState(false);
 
@@ -42,6 +45,8 @@ export default function BalanceSheetPdfButton({ clientId }: BalanceSheetPdfButto
       setBusy(false);
     }
   }
+
+  if (!canEdit) return null;
 
   return (
     <button

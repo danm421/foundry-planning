@@ -19,6 +19,7 @@ import {
 import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
@@ -147,6 +148,8 @@ async function persistGiftChange(
 // ── EstateFlowView ───────────────────────────────────────────────────────────
 
 export default function EstateFlowView(props: EstateFlowViewProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
   // Gift sandbox. New gifts are added via the change-owner dialog.
@@ -227,10 +230,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [props.ownerNames.clientName, props.ownerNames.spouseName],
   );
 
-  // One mutation entry point: every dialog calls this with an edit fn.
+  // One mutation entry point: every dialog calls this with an edit fn. Under a
+  // view-only share it becomes a no-op so any in-report edit affordance that
+  // slips through (gift/bequest dialogs reachable from the report tab) cannot
+  // build a sandbox edit — the persist Save buttons are hidden too.
   const applyEdit = useCallback(
-    (fn: (d: ClientData) => ClientData) => setWorking((cur) => fn(cur)),
-    [],
+    (fn: (d: ClientData) => ClientData) => {
+      if (!canEdit) return;
+      setWorking((cur) => fn(cur));
+    },
+    [canEdit],
   );
 
   // Resync the gift sandbox to the server baseline whenever `initialGifts`
@@ -270,6 +279,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
 
   const { submit } = writer;
   const handleSaveInPlace = useCallback(async () => {
+    if (!canEdit) return;
     if (pendingChanges.length === 0 && giftChanges.length === 0) return;
 
     // The base-case overlay channel writes directly to the client's real
@@ -376,9 +386,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [pendingChanges, giftChanges, isNamedScenario, submit, props.clientId, router]);
+  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, submit, props.clientId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
+    if (!canEdit) return;
     if (pendingChanges.length === 0 && giftChanges.length === 0) return;
     setIsSaving(true);
     setSaveError(null);
@@ -485,7 +496,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+  }, [canEdit, pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -493,13 +504,15 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-lg font-semibold">Estate Flow</h1>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setRemainderDialogOpen(true)}
-            className="rounded border border-hair px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-hair-2 hover:bg-paper"
-          >
-            Remainder estate
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setRemainderDialogOpen(true)}
+              className="rounded border border-hair px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-hair-2 hover:bg-paper"
+            >
+              Remainder estate
+            </button>
+          )}
           {props.isMarried && activeTab === "report" && (
             <DeathOrderToggle
               value={ordering}
@@ -597,44 +610,50 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                 </p>
               )}
             </div>
-            {/* Action buttons */}
-            <div className="flex shrink-0 items-center gap-2">
-              {/*
-                "Save in place" persists overlay edits (named scenario → overlay
-                rows; base case → direct writes to the client's real data) AND
-                gift changes (any scenario — gift routes write the gifts tables
-                directly). The panel only renders when `isDirty`, so the button
-                always has something to persist here.
-              */}
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={handleSaveInPlace}
-                className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSaving
-                  ? "Saving…"
-                  : isNamedScenario
-                    ? "Save to this scenario"
-                    : "Save to base plan"}
-              </button>
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={handleSaveAsNew}
-                className="rounded border border-amber-600 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSaving ? "Saving…" : "Save as new scenario"}
-              </button>
-            </div>
+            {/* Action buttons. Gated on `canEdit`: a view-only recipient never
+                sees the persist controls. (In practice `applyEdit` is a no-op
+                under view so the enclosing isDirty panel can't appear either —
+                this is the explicit belt-and-suspenders guard.) */}
+            {canEdit && (
+              <div className="flex shrink-0 items-center gap-2">
+                {/*
+                  "Save in place" persists overlay edits (named scenario → overlay
+                  rows; base case → direct writes to the client's real data) AND
+                  gift changes (any scenario — gift routes write the gifts tables
+                  directly). The panel only renders when `isDirty`, so the button
+                  always has something to persist here.
+                */}
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveInPlace}
+                  className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSaving
+                    ? "Saving…"
+                    : isNamedScenario
+                      ? "Save to this scenario"
+                      : "Save to base plan"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveAsNew}
+                  className="rounded border border-amber-600 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSaving ? "Saving…" : "Save as new scenario"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Residuary ("remainder estate") clause dialog. Opened from the
           control-bar button; the report/chart tab dialogs live in their
-          respective tab components. */}
-      {remainderDialogOpen && (
+          respective tab components. Gated on `canEdit` as defense-in-depth —
+          the trigger button is already hidden under view. */}
+      {canEdit && remainderDialogOpen && (
         <EstateFlowRemainderDialog
           clientData={working}
           isMarried={props.isMarried}

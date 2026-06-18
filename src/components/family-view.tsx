@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useClientAccess } from "./client-access-provider";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
@@ -326,6 +327,8 @@ export default function FamilyView({
   section,
 }: FamilyViewProps) {
   const writer = useScenarioWriter(clientId);
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
@@ -453,12 +456,14 @@ export default function FamilyView({
               <h2 className="text-xl font-bold text-gray-100">Household</h2>
               <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
             </div>
-            <button
-              onClick={() => setEditProfileOpen(true)}
-              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
-            >
-              Edit profile
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setEditProfileOpen(true)}
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
+              >
+                Edit profile
+              </button>
+            )}
           </header>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -505,7 +510,7 @@ export default function FamilyView({
             <p className="text-xs text-gray-400">Children, grandchildren, parents, and others.</p>
           </div>
           <div className="flex items-center gap-2">
-            {members.length > 0 && (
+            {canEdit && members.length > 0 && (
               <button
                 onClick={() => setMembersEdit((v) => !v)}
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
@@ -517,15 +522,17 @@ export default function FamilyView({
                 {membersEdit ? "Done" : "Edit"}
               </button>
             )}
-            <button
-              onClick={() => {
-                setEditingMember(undefined);
-                setMemberDialogOpen(true);
-              }}
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
-            >
-              + Add
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  setEditingMember(undefined);
+                  setMemberDialogOpen(true);
+                }}
+                className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
+              >
+                + Add
+              </button>
+            )}
           </div>
         </header>
 
@@ -548,12 +555,12 @@ export default function FamilyView({
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}
-                      className="cursor-pointer hover:bg-gray-800/50"
-                      onClick={() => {
+                      className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                      onClick={canEdit ? () => {
                         if (membersEdit) return;
                         setEditingMember(m);
                         setMemberDialogOpen(true);
-                      }}
+                      } : undefined}
                     >
                       <td className="px-4 py-2 text-sm text-gray-100">
                         {m.firstName} {m.lastName ?? ""}
@@ -596,7 +603,7 @@ export default function FamilyView({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {entities.length > 0 && (
+            {canEdit && entities.length > 0 && (
               <button
                 onClick={() => setEntitiesEdit((v) => !v)}
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
@@ -608,15 +615,17 @@ export default function FamilyView({
                 {entitiesEdit ? "Done" : "Edit"}
               </button>
             )}
-            <button
-              onClick={() => {
-                setEditingEntity(undefined);
-                setEntityDialogOpen(true);
-              }}
-              className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
-            >
-              + Add Trust
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => {
+                  setEditingEntity(undefined);
+                  setEntityDialogOpen(true);
+                }}
+                className="inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
+              >
+                + Add Trust
+              </button>
+            )}
           </div>
         </header>
 
@@ -637,11 +646,11 @@ export default function FamilyView({
                 {entities.map((e) => (
                   <tr
                     key={e.id}
-                    className="cursor-pointer hover:bg-gray-800/50"
-                    onClick={() => {
+                    className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                    onClick={canEdit ? () => {
                       if (entitiesEdit) return;
                       openEntityEditor(e);
-                    }}
+                    } : undefined}
                   >
                     <td className="px-4 py-2 text-sm text-gray-100">{e.name}</td>
                     <td className="px-4 py-2 text-sm text-gray-300">{ENTITY_LABELS[e.entityType]}</td>
@@ -679,15 +688,17 @@ export default function FamilyView({
               Living trusts that tag accounts for probate-avoidance tracking.
             </p>
           </div>
-          <button
-            onClick={() => {
-              setEditingRevocableTrust(undefined);
-              setRevocableTagDialogOpen(true);
-            }}
-            className="inline-flex items-center rounded-md border border-accent px-3 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/10"
-          >
-            + Add Revocable Trust
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => {
+                setEditingRevocableTrust(undefined);
+                setRevocableTagDialogOpen(true);
+              }}
+              className="inline-flex items-center rounded-md border border-accent px-3 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/10"
+            >
+              + Add Revocable Trust
+            </button>
+          )}
         </header>
 
         {revocableTrusts.length === 0 ? (
@@ -706,11 +717,11 @@ export default function FamilyView({
                 {revocableTrusts.map((t) => (
                   <tr
                     key={t.id}
-                    className="cursor-pointer hover:bg-card-2/50"
-                    onClick={() => {
+                    className={canEdit ? "cursor-pointer hover:bg-card-2/50" : ""}
+                    onClick={canEdit ? () => {
                       setEditingRevocableTrust(t);
                       setRevocableTagDialogOpen(true);
-                    }}
+                    } : undefined}
                   >
                     <td className="px-4 py-2 text-sm text-ink">{t.name}</td>
                     <td className="px-4 py-2 text-sm text-ink-3 tabular-nums">
@@ -732,6 +743,7 @@ export default function FamilyView({
           clientId={clientId}
           externals={externals}
           setExternals={setExternals}
+          canEdit={canEdit}
         />
       )}
 
@@ -749,6 +761,7 @@ export default function FamilyView({
         hasSpouse={primary.spouseName != null}
         onChangeGifts={setGiftsState}
         onChangeSeries={setGiftSeriesState}
+        canEdit={canEdit}
       />
       )}
 
@@ -759,19 +772,19 @@ export default function FamilyView({
         designations={designations}
         members={members}
         externals={externals}
-        onEditAccount={(accountId) => {
+        onEditAccount={canEdit ? (accountId) => {
           const acct = accounts.find((a) => a.id === accountId);
           if (!acct) return;
           setAccountDialogEditing(accountLiteToFormInitial(acct));
           setAccountDialogInitialTab("beneficiaries");
           setAccountDialogLockTab(true);
           setAccountDialogOpen(true);
-        }}
-        onEditEntity={(entityId) => {
+        } : undefined}
+        onEditEntity={canEdit ? (entityId) => {
           const ent = entities.find((e) => e.id === entityId);
           if (!ent) return;
           openEntityEditor(ent);
-        }}
+        } : undefined}
       />
       )}
 
@@ -952,6 +965,7 @@ function GiftsSection(props: {
   hasSpouse: boolean;
   onChangeGifts: (gifts: Gift[]) => void;
   onChangeSeries: (series: GiftSeriesLite[]) => void;
+  canEdit: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [editingGift, setEditingGift] = useState<Gift | null>(null);
@@ -990,13 +1004,15 @@ function GiftsSection(props: {
     <section className="mt-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">Gifts</h3>
-        <button
-          type="button"
-          onClick={() => { setEditingGift(null); setEditingSeries(null); setAdding(true); }}
-          className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-ink"
-        >
-          + Add gift
-        </button>
+        {props.canEdit && (
+          <button
+            type="button"
+            onClick={() => { setEditingGift(null); setEditingSeries(null); setAdding(true); }}
+            className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-ink"
+          >
+            + Add gift
+          </button>
+        )}
       </div>
 
       {dialogOpen && (
@@ -1054,8 +1070,12 @@ function GiftsSection(props: {
                 </td>
                 <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>
                 <td className="px-2 py-1 text-right">
-                  <button type="button" onClick={() => { setEditingGift(g); setEditingSeries(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
-                  <button type="button" onClick={() => deleteGift(g.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                  {props.canEdit && (
+                    <>
+                      <button type="button" onClick={() => { setEditingGift(g); setEditingSeries(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
+                      <button type="button" onClick={() => deleteGift(g.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1069,8 +1089,12 @@ function GiftsSection(props: {
                 <td className="px-2 py-1">{recipientLabel({ entity: s.recipientEntityId })}</td>
                 <td className="px-2 py-1">{s.useCrummeyPowers ? "✓" : ""}</td>
                 <td className="px-2 py-1 text-right">
-                  <button type="button" onClick={() => { setEditingSeries(s); setEditingGift(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
-                  <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                  {props.canEdit && (
+                    <>
+                      <button type="button" onClick={() => { setEditingSeries(s); setEditingGift(null); setAdding(false); }} className="mr-3 text-xs text-accent-ink hover:underline">Edit</button>
+                      <button type="button" onClick={() => deleteSeries(s.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1096,10 +1120,12 @@ function ExternalBeneficiariesSection({
   clientId,
   externals,
   setExternals,
+  canEdit,
 }: {
   clientId: string;
   externals: ExternalBeneficiary[];
   setExternals: React.Dispatch<React.SetStateAction<ExternalBeneficiary[]>>;
+  canEdit: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1117,7 +1143,7 @@ function ExternalBeneficiariesSection({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {externals.length > 0 && (
+          {canEdit && externals.length > 0 && (
             <button
               onClick={() => setEditMode((v) => !v)}
               className={`rounded-md border px-3 py-1 text-xs font-medium ${
@@ -1129,15 +1155,17 @@ function ExternalBeneficiariesSection({
               {editMode ? "Done" : "Edit"}
             </button>
           )}
-          <button
-            onClick={() => {
-              setEditingId(null);
-              setAdding(true);
-            }}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
-          >
-            + Add
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setAdding(true);
+              }}
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
+            >
+              + Add
+            </button>
+          )}
         </div>
       </header>
 
@@ -1177,11 +1205,11 @@ function ExternalBeneficiariesSection({
                 ) : (
                   <tr
                     key={x.id}
-                    className="cursor-pointer hover:bg-gray-800/50"
-                    onClick={() => {
+                    className={canEdit ? "cursor-pointer hover:bg-gray-800/50" : ""}
+                    onClick={canEdit ? () => {
                       if (editMode) return;
                       setEditingId(x.id);
-                    }}
+                    } : undefined}
                   >
                     <td className="px-4 py-2 text-sm text-gray-100">{x.name}</td>
                     <td className="px-4 py-2 text-sm text-gray-300 capitalize">{x.kind}</td>

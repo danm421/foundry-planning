@@ -3,9 +3,11 @@ import { db } from "@/db";
 import { savingsRules } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +17,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; ruleId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, ruleId } = await params;
-
-    const hasAccess = await verifyClientAccess(id, firmId);
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const {
@@ -79,14 +78,13 @@ export async function PUT(
       resourceId: ruleId,
       clientId: id,
       firmId,
-      metadata: { accountId: updated.accountId },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId: updated.accountId }),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/savings-rules/[ruleId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -98,13 +96,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; ruleId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, ruleId } = await params;
-
-    const hasAccess = await verifyClientAccess(id, firmId);
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     await db.transaction(async (tx) => {
       await tx
@@ -119,13 +114,13 @@ export async function DELETE(
       resourceId: ruleId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/savings-rules/[ruleId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

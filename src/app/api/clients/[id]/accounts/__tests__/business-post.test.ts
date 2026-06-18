@@ -21,6 +21,16 @@ vi.mock("@/lib/audit", async () => {
   return { ...actual, recordCreate: vi.fn().mockResolvedValue(undefined) };
 });
 
+vi.mock("@/lib/clients/authz", () => ({
+  verifyClientAccess: vi.fn().mockResolvedValue({ ok: true, permission: "edit", firmId: "firm_test", access: "own" }),
+  requireClientEditAccess: vi.fn().mockResolvedValue({ firmId: "firm_test", access: "own" }),
+}));
+
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return { ...actual, requireActiveSubscriptionForFirm: vi.fn().mockResolvedValue(undefined) };
+});
+
 vi.mock("@/lib/audit/snapshots/account", () => ({
   toAccountSnapshot: vi.fn().mockResolvedValue({}),
   ACCOUNT_FIELD_LABELS: {},

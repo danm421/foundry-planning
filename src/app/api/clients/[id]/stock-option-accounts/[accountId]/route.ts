@@ -11,7 +11,9 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { stockOptionAccountUpdateSchema } from "@/lib/schemas/stock-options";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +24,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
-
-    // Verify client belongs to this firm (+ staff scope).
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Tenant-isolation: confirm target account exists, belongs to this client,
     // and is a stock-options account.
@@ -148,14 +147,13 @@ export async function PUT(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { name: target.name, fieldsChanged: Object.keys(input) },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: target.name, fieldsChanged: Object.keys(input) }),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "PUT /api/clients/[id]/stock-option-accounts/[accountId] error:",
       err,
@@ -171,13 +169,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; accountId: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, accountId } = await params;
-
-    // Verify client belongs to this firm (+ staff scope).
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Tenant-isolation: same guard as PUT.
     const [target] = await db
@@ -204,14 +199,13 @@ export async function DELETE(
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { name: target.name ?? null },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: target.name ?? null }),
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error(
       "DELETE /api/clients/[id]/stock-option-accounts/[accountId] error:",
       err,

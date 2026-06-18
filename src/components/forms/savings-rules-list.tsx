@@ -11,9 +11,9 @@ interface Props {
   rules: SavingsRuleRow[];
   accountsById?: Record<string, AccountLabel>;
   showAccountColumn?: boolean;
-  onEdit: (rule: SavingsRuleRow) => void;
-  onDelete: (rule: SavingsRuleRow) => void;
-  onAdd: () => void;
+  onEdit?: (rule: SavingsRuleRow) => void;
+  onDelete?: (rule: SavingsRuleRow) => void;
+  onAdd?: () => void;
   emptyMessage?: string;
 }
 
@@ -93,36 +93,44 @@ export default function SavingsRulesList({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onEdit(rule)}
-                  className="rounded border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(rule)}
-                  className="rounded border border-red-800 bg-red-900/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/60"
-                >
-                  Delete
-                </button>
-              </div>
+              {(onEdit || onDelete) && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(rule)}
+                      className="rounded border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(rule)}
+                      className="rounded border border-red-800 bg-red-900/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/60"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             );
           })}
         </div>
       )}
-      <div className="mt-1">
-        <button
-          type="button"
-          onClick={onAdd}
-          className="w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-200"
-        >
-          + Add savings rule
-        </button>
-      </div>
+      {onAdd && (
+        <div className="mt-1">
+          <button
+            type="button"
+            onClick={onAdd}
+            className="w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-200"
+          >
+            + Add savings rule
+          </button>
+        </div>
+      )}
     </div>
   );
 }

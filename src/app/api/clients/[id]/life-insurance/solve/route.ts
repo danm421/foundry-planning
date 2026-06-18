@@ -72,9 +72,9 @@ function solveCase(
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
+    const callerOrg = await requireOrgId();
 
-    const rl = await checkProjectionRateLimit(firmId);
+    const rl = await checkProjectionRateLimit(callerOrg);
     if (!rl.allowed) {
       return rateLimitErrorResponse(
         rl,
@@ -84,8 +84,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const { id: clientId } = await ctx.params;
 
-    const inFirm = await verifyClientAccess(clientId, firmId);
-    if (!inFirm) {
+    const access = await verifyClientAccess(clientId);
+    if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -99,8 +99,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const body = parsed.data;
 
     const [{ effectiveTree }, proceeds] = await Promise.all([
-      loadEffectiveTree(clientId, firmId, "base", {}),
-      loadLiProceedsGrowth(firmId, body.modelPortfolioId, DEFAULT_LI_GROWTH),
+      loadEffectiveTree(clientId, access.firmId, "base", {}),
+      loadLiProceedsGrowth(access.firmId, body.modelPortfolioId, DEFAULT_LI_GROWTH),
     ]);
     const a: LifeInsuranceAssumptions = {
       deathYear: body.deathYear,

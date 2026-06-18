@@ -6,7 +6,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +31,13 @@ export async function GET(
     );
   }
 
-  if (!(await verifyClientAccess(id, firmId))) {
+  const access = await verifyClientAccess(id);
+  if (!access.ok) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
   try {
-    const payload = await loadMonteCarloData(id, firmId);
+    const payload = await loadMonteCarloData(id, access.firmId);
     return NextResponse.json(payload);
   } catch (err) {
     if (err instanceof ClientNotFoundError) {
@@ -55,12 +57,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
+    await requireOrgId();
+    const { firmId } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const [scenario] = await db
       .select()
@@ -72,9 +72,8 @@ export async function POST(
     await db.update(scenarios).set({ monteCarloSeed: seed }).where(eq(scenarios.id, scenario.id));
     return NextResponse.json({ seed });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/monte-carlo-data error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

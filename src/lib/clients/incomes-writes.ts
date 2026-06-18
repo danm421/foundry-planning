@@ -43,8 +43,9 @@ export async function createIncomeForClient(args: {
   firmId: string;
   actorId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<IncomeRow>> {
-  const { clientId, firmId, actorId, input } = args;
+  const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (!scenarioId) return writeError(404, "Client not found");
@@ -100,7 +101,7 @@ export async function createIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
-    metadata: { type: income.type, name: income.name },
+    metadata: { type: income.type, name: income.name, ...(crossFirmMeta ?? {}) },
   });
 
   return { ok: true, data: income, resourceId: income.id };
@@ -112,10 +113,12 @@ export async function updateIncomeForClient(args: {
   actorId: string;
   incomeId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<IncomeRow>> {
-  const { clientId, firmId, actorId, incomeId, input } = args;
+  const { clientId, firmId, actorId, incomeId, input, crossFirmMeta } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -192,7 +195,7 @@ export async function updateIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
-    metadata: { type: updated.type, name: updated.name },
+    metadata: { type: updated.type, name: updated.name, ...(crossFirmMeta ?? {}) },
   });
 
   return { ok: true, data: updated, resourceId: incomeId };
@@ -203,10 +206,12 @@ export async function deleteIncomeForClient(args: {
   firmId: string;
   actorId: string;
   incomeId: string;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<{ id: string }>> {
-  const { clientId, firmId, actorId, incomeId } = args;
+  const { clientId, firmId, actorId, incomeId, crossFirmMeta } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -225,6 +230,7 @@ export async function deleteIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
+    metadata: crossFirmMeta,
   });
 
   return { ok: true, data: { id: incomeId }, resourceId: incomeId };

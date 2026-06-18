@@ -19,7 +19,7 @@ const recordAudit = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: (c: string, f: string) => verifyClientAccess(c, f),
+  verifyClientAccess: (c: string) => verifyClientAccess(c),
 }));
 vi.mock("../guards", async (o) => ({
   ...(await o()),
@@ -103,7 +103,7 @@ const MOCK_ACTIVITY = [
 
 beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
   clientToHousehold.mockResolvedValue("hh-1");
   listHouseholdNotes.mockResolvedValue(MOCK_NOTES);
   listTasks.mockResolvedValue(MOCK_TASKS);
@@ -140,7 +140,7 @@ describe("meeting_prep", () => {
   });
 
   it("returns an error string when access is denied (never throws)", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("meeting_prep").invoke({});
     expect(typeof out).toBe("string");
     expect(out).toMatch(/not found or access denied/i);
@@ -333,7 +333,7 @@ describe("draft_follow_up", () => {
   });
 
   it("returns an error string when access is denied", async () => {
-    verifyClientAccess.mockResolvedValue(false);
+    verifyClientAccess.mockResolvedValue({ ok: false });
     const out = await byName("draft_follow_up").invoke({ noteId: "n1" });
     expect(typeof out).toBe("string");
     expect(out).toMatch(/not found or access denied/i);

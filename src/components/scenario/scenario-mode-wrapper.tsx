@@ -10,6 +10,7 @@ import {
 import { CreateScenarioDialog } from "./create-scenario-dialog";
 import { ScenarioInputStyling } from "./scenario-input-styling";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import { useClientAccess } from "@/components/client-access-provider";
 
 /**
  * Context value exposed by `<ScenarioModeWrapper>` to descendants.
@@ -53,20 +54,26 @@ export function ScenarioModeWrapper({
   scenarios: { id: string; name: string; isBaseCase: boolean }[];
   children: ReactNode;
 }) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [open, setOpen] = useState(false);
-  const openCreate = useCallback(() => setOpen(true), []);
+  const openCreate = useCallback(() => {
+    if (canEdit) setOpen(true);
+  }, [canEdit]);
   const onClose = useCallback(() => setOpen(false), []);
 
   return (
     <ScenarioModeCtx.Provider value={{ openCreate }}>
       <InputStylingMount clientId={clientId}>
         {children}
-        <CreateScenarioDialog
-          clientId={clientId}
-          scenarios={scenarios}
-          open={open}
-          onClose={onClose}
-        />
+        {canEdit && (
+          <CreateScenarioDialog
+            clientId={clientId}
+            scenarios={scenarios}
+            open={open}
+            onClose={onClose}
+          />
+        )}
       </InputStylingMount>
     </ScenarioModeCtx.Provider>
   );

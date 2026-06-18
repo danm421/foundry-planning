@@ -65,9 +65,18 @@ vi.mock("@/lib/audit", async () => {
   return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
 });
 
-// Clerk auth mock — promote route calls auth() for userId.
+// Clerk auth mock — promote route calls auth() for userId + requireOrgAndUser.
+// verifyClientAccess (via requireClientEditAccess) reads orgId from auth(); it
+// must equal the disposable FIRM_ID so the own-firm path is taken.
+// sessionClaims.org_public_metadata.is_founder bypasses requireActiveSubscriptionForFirm
+// without a live Clerk API call.
+// FIRM_ID is module-scoped (defined below), so we use a getter closure here.
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_promotetest" })),
+  auth: vi.fn(async () => ({
+    userId: "user_promotetest",
+    orgId: FIRM_ID,
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  })),
 }));
 
 // ── Disposable fixture ids — all randomised so tests never touch real data ───

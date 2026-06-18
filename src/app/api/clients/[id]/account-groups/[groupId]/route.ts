@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse } from "@/lib/authz";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { recordAudit } from "@/lib/audit";
 import { db } from "@/db";
 import { accountGroups } from "@/db/schema";
@@ -34,12 +35,10 @@ async function verifyGroup(
 // PATCH /api/clients/[id]/account-groups/[groupId] — update a custom account group
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId, groupId } = await ctx.params;
-
-    if (!(await verifyClientAccess(clientId, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     if (!(await verifyGroup(groupId, clientId))) {
       return NextResponse.json({ error: "Account group not found" }, { status: 404 });
@@ -62,7 +61,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       resourceId: groupId,
       clientId,
       firmId,
-      metadata: { fields: Object.keys(parsed.data) },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { fields: Object.keys(parsed.data) }),
     });
 
     return NextResponse.json({ ok: true });
@@ -89,12 +88,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 // DELETE /api/clients/[id]/account-groups/[groupId] — delete a custom account group
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId, groupId } = await ctx.params;
-
-    if (!(await verifyClientAccess(clientId, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     if (!(await verifyGroup(groupId, clientId))) {
       return NextResponse.json({ error: "Account group not found" }, { status: 404 });
@@ -108,6 +105,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
       resourceId: groupId,
       clientId,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ok: true });

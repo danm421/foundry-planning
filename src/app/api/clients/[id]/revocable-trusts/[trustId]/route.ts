@@ -3,16 +3,14 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
-
-async function verifyClient(clientId: string, firmId: string): Promise<boolean> {
-  return verifyClientAccess(clientId, firmId);
-}
 
 /** Verify the trust row belongs to clientId (and thus firmId by FK chain).
  *  Returns the trust row or null. */
@@ -31,12 +29,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; trustId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, trustId } = await params;
-
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const trust = await verifyTrust(trustId, id);
     if (!trust) {
@@ -122,14 +118,13 @@ export async function PATCH(
       resourceId: trustId,
       clientId: id,
       firmId,
-      metadata: { name, accountIds: finalAccountIds },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name, accountIds: finalAccountIds }),
     });
 
     return NextResponse.json({ ...updated, accountIds: finalAccountIds });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PATCH /api/clients/[id]/revocable-trusts/[trustId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -140,12 +135,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; trustId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, trustId } = await params;
-
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const trust = await verifyTrust(trustId, id);
     if (!trust) {
@@ -164,14 +157,13 @@ export async function DELETE(
       resourceId: trustId,
       clientId: id,
       firmId,
-      metadata: { name: trust.name },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: trust.name }),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/revocable-trusts/[trustId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

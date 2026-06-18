@@ -10,7 +10,9 @@ import {
 } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toAssetTransactionSnapshot, ASSET_TRANSACTION_FIELD_LABELS } from "@/lib/audit/snapshots/asset-transaction";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -230,8 +232,9 @@ export const dynamic = "force-dynamic";
 
 const toStr = (v: unknown) => (v != null ? String(v) : null);
 
-async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
 
   const [scenario] = await db
     .select()
@@ -247,10 +250,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -276,10 +278,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -434,13 +438,13 @@ export async function POST(
       clientId: id,
       firmId,
       snapshot: await toAssetTransactionSnapshot(created),
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/asset-transactions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -452,12 +456,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const body = await request.json();
     const parseResult = putBodySchema.safeParse(body);
@@ -623,13 +625,13 @@ export async function PUT(
       before: await toAssetTransactionSnapshot(existing),
       after: await toAssetTransactionSnapshot(updated),
       fieldLabels: ASSET_TRANSACTION_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/asset-transactions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -641,12 +643,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const { searchParams } = new URL(request.url);
     const transactionId = searchParams.get("transactionId");
@@ -676,13 +676,13 @@ export async function DELETE(
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/asset-transactions error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

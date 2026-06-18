@@ -10,7 +10,11 @@ import {
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ userId: "user_test_overview", orgId: "firm_test_overview" })),
+  auth: vi.fn(async () => ({
+    userId: "user_test_overview",
+    orgId: "firm_test_overview",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  })),
 }));
 
 const FIRM_A = "firm_test_overview";
@@ -87,11 +91,11 @@ describe("POST /api/clients/[id]/open-items", () => {
     expect(body.completedAt).toBeNull();
   });
 
-  it("404s when the client is in a different firm", async () => {
+  it("403s when the client is in a different firm", async () => {
     const res = await POST(makeReq({ title: "hack" }), {
       params: Promise.resolve({ id: clientB }),
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("400s on invalid body", async () => {

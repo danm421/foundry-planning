@@ -15,20 +15,21 @@ type Common = {
   clientId: string | null;
   firmId: string;
   actorId?: string;
+  extraMetadata?: Record<string, unknown>;
 };
 
 export async function recordCreate(
   args: Common & { snapshot: EntitySnapshot },
 ): Promise<void> {
-  const { snapshot, ...rest } = args;
-  await recordAudit({ ...rest, metadata: { kind: "create", snapshot } });
+  const { snapshot, extraMetadata, ...rest } = args;
+  await recordAudit({ ...rest, metadata: { kind: "create", snapshot, ...(extraMetadata ?? {}) } });
 }
 
 export async function recordDelete(
   args: Common & { snapshot: EntitySnapshot },
 ): Promise<void> {
-  const { snapshot, ...rest } = args;
-  await recordAudit({ ...rest, metadata: { kind: "delete", snapshot } });
+  const { snapshot, extraMetadata, ...rest } = args;
+  await recordAudit({ ...rest, metadata: { kind: "delete", snapshot, ...(extraMetadata ?? {}) } });
 }
 
 export async function recordUpdate(
@@ -38,7 +39,7 @@ export async function recordUpdate(
     fieldLabels: FieldLabels;
   },
 ): Promise<void> {
-  const { before, after, fieldLabels, ...rest } = args;
+  const { before, after, fieldLabels, extraMetadata, ...rest } = args;
 
   const keys = Array.from(
     new Set([...Object.keys(before), ...Object.keys(after)]),
@@ -66,5 +67,5 @@ export async function recordUpdate(
 
   if (changes.length === 0) return;
 
-  await recordAudit({ ...rest, metadata: { kind: "update", changes } });
+  await recordAudit({ ...rest, metadata: { kind: "update", changes, ...(extraMetadata ?? {}) } });
 }

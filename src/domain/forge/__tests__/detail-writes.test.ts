@@ -80,7 +80,7 @@ function getTool(name: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_session");
-  vi.mocked(verifyClientAccess).mockResolvedValue(true);
+  vi.mocked(verifyClientAccess).mockResolvedValue({ ok: true, permission: "edit", firmId: "org_session", access: "own" });
   vi.mocked(recordAudit).mockResolvedValue(undefined);
 });
 
@@ -98,7 +98,7 @@ describe("add_expense", () => {
     await getTool("add_expense").invoke({ type: "discretionary", name: "Vacation" });
 
     expect(requireOrgId).toHaveBeenCalled();
-    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
     expect(createExpenseForClient).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: "client_1",
@@ -151,7 +151,7 @@ describe("add_expense", () => {
   });
 
   it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("add_expense").invoke({
       type: "discretionary",
       name: "x",
@@ -266,7 +266,7 @@ describe("add_income", () => {
     await getTool("add_income").invoke({ type: "salary", name: "Salary" });
 
     expect(requireOrgId).toHaveBeenCalled();
-    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
     expect(createIncomeForClient).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: "client_1",
@@ -317,7 +317,7 @@ describe("add_income", () => {
   });
 
   it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("add_income").invoke({ type: "salary", name: "x" });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createIncomeForClient).not.toHaveBeenCalled();
@@ -435,7 +435,7 @@ describe("add_liability", () => {
     });
 
     expect(requireOrgId).toHaveBeenCalled();
-    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
     expect(createLiabilityForClient).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: "client_1",
@@ -493,7 +493,7 @@ describe("add_liability", () => {
   });
 
   it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("add_liability").invoke({
       name: "x",
       startYear: 2030,
@@ -611,7 +611,7 @@ describe("add_account", () => {
     await getTool("add_account").invoke({ name: "Brokerage", category: "taxable" });
 
     expect(requireOrgId).toHaveBeenCalled();
-    expect(verifyClientAccess).toHaveBeenCalledWith("client_1", "org_session");
+    expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
     expect(createAccountForClient).toHaveBeenCalledWith(
       expect.objectContaining({
         clientId: "client_1",
@@ -664,7 +664,7 @@ describe("add_account", () => {
   });
 
   it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
-    vi.mocked(verifyClientAccess).mockResolvedValue(false);
+    vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
     const result = await getTool("add_account").invoke({ name: "x", category: "taxable" });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createAccountForClient).not.toHaveBeenCalled();

@@ -6,12 +6,15 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient } from "@/lib/db-scoping";
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toTransferSnapshot, TRANSFER_FIELD_LABELS } from "@/lib/audit/snapshots/transfer";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
-async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
-  if (!(await verifyClientAccess(clientId, firmId))) return null;
+async function getBaseCaseScenarioId(clientId: string): Promise<string | null> {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok) return null;
 
   const [scenario] = await db
     .select()
@@ -27,10 +30,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
 
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -70,10 +72,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -142,13 +145,13 @@ export async function POST(
       clientId: id,
       firmId,
       snapshot: await toTransferSnapshot(created),
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ...created, schedules: insertedSchedules }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/clients/[id]/transfers error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -160,10 +163,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -254,13 +258,13 @@ export async function PUT(
       before: await toTransferSnapshot(before),
       after: await toTransferSnapshot(updated),
       fieldLabels: TRANSFER_FIELD_LABELS,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return NextResponse.json({ ...updated, schedules: updatedSchedules });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/transfers error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -272,10 +276,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+    const scenarioId = await getBaseCaseScenarioId(id);
     if (!scenarioId) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
@@ -309,13 +314,13 @@ export async function DELETE(
       clientId: id,
       firmId,
       snapshot,
+      extraMetadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/transfers error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

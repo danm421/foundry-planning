@@ -13,6 +13,8 @@ export interface SocialSecurityCardProps {
   planSettings: PlanSettings;
   incomes: Income[];
   onSaved: () => void;
+  /** When false, rows render as static (non-clickable) elements. Defaults to true. */
+  canEdit?: boolean;
 }
 
 function findRow(incomes: Income[], owner: "client" | "spouse"): Income | null {
@@ -62,44 +64,57 @@ function previewAmount(row: Income, clientInfo: ClientInfo): number | null {
   return Math.round(monthly * 12);
 }
 
-export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes, onSaved }: SocialSecurityCardProps) {
+export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes, onSaved, canEdit = true }: SocialSecurityCardProps) {
   const [editing, setEditing] = useState<"client" | "spouse" | null>(null);
 
   const hasSpouse = Boolean(clientInfo.spouseName || clientInfo.spouseDob);
   const clientRow = findRow(incomes, "client");
   const spouseRow = hasSpouse ? findRow(incomes, "spouse") : null;
 
+  const rowContent = (owner: "client" | "spouse", row: ReturnType<typeof findRow>) => (
+    <span className="text-sm">
+      <span className="font-medium text-gray-100">{owner === "client" ? clientInfo.firstName : (clientInfo.spouseName ?? "Spouse")}</span>
+      <span className="text-gray-400 ml-2">{summaryLabel(row, clientInfo, owner)}</span>
+    </span>
+  );
+
   return (
     <div className="mt-8">
       <h3 className="text-sm font-semibold mb-2">Social Security</h3>
       <div className="border border-gray-800 rounded divide-y divide-gray-800">
-        <button
-          type="button"
-          onClick={() => setEditing("client")}
-          className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
-        >
-          <span className="text-sm">
-            <span className="font-medium text-gray-100">{clientInfo.firstName}</span>
-            <span className="text-gray-400 ml-2">{summaryLabel(clientRow, clientInfo, "client")}</span>
-          </span>
-          <span className="text-gray-500">›</span>
-        </button>
-        {hasSpouse && (
+        {canEdit ? (
           <button
             type="button"
-            onClick={() => setEditing("spouse")}
+            onClick={() => setEditing("client")}
             className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
           >
-            <span className="text-sm">
-              <span className="font-medium text-gray-100">{clientInfo.spouseName ?? "Spouse"}</span>
-              <span className="text-gray-400 ml-2">{summaryLabel(spouseRow, clientInfo, "spouse")}</span>
-            </span>
+            {rowContent("client", clientRow)}
             <span className="text-gray-500">›</span>
           </button>
+        ) : (
+          <div className="w-full text-left px-4 py-3 flex items-center">
+            {rowContent("client", clientRow)}
+          </div>
+        )}
+        {hasSpouse && (
+          canEdit ? (
+            <button
+              type="button"
+              onClick={() => setEditing("spouse")}
+              className="w-full text-left px-4 py-3 hover:bg-gray-800/60 flex items-center justify-between"
+            >
+              {rowContent("spouse", spouseRow)}
+              <span className="text-gray-500">›</span>
+            </button>
+          ) : (
+            <div className="w-full text-left px-4 py-3 flex items-center">
+              {rowContent("spouse", spouseRow)}
+            </div>
+          )
         )}
       </div>
 
-      {editing && (
+      {canEdit && editing && (
         <SocialSecurityDialog
           clientId={clientId}
           owner={editing}

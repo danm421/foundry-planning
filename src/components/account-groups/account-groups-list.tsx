@@ -16,9 +16,9 @@ export type CustomGroup = {
 interface Props {
   allAccounts: AssetAccount[];
   customGroups: CustomGroup[];
-  onCreate: () => void;
-  onEdit: (groupId: string) => void;
-  onDelete: (groupId: string) => void;
+  onCreate?: () => void;
+  onEdit?: (groupId: string) => void;
+  onDelete?: (groupId: string) => void;
 }
 
 // Custom groups are liquid-only by design; illiquid members are flagged via the
@@ -159,13 +159,15 @@ export default function AccountGroupsList({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
             Custom groups
           </h3>
-          <button
-            type="button"
-            onClick={onCreate}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-semibold text-white hover:opacity-90"
-          >
-            + New group
-          </button>
+          {onCreate && (
+            <button
+              type="button"
+              onClick={onCreate}
+              className="rounded-md bg-accent px-3 py-1 text-xs font-semibold text-white hover:opacity-90"
+            >
+              + New group
+            </button>
+          )}
         </div>
         {customGroups.length === 0 ? (
           <p className="rounded-md border border-dashed border-hair bg-card/30 px-4 py-6 text-center text-sm text-ink-3">
@@ -221,20 +223,24 @@ export default function AccountGroupsList({
                         {g.memberAccountIds.length === 1 ? "account" : "accounts"}{" "}
                         · ${formatDollars(memberValue)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => onEdit(g.id)}
-                        className="text-xs text-ink-2 hover:text-ink"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(g.id)}
-                        className="text-xs text-crit hover:opacity-80"
-                      >
-                        Delete
-                      </button>
+                      {onEdit && (
+                        <button
+                          type="button"
+                          onClick={() => onEdit(g.id)}
+                          className="text-xs text-ink-2 hover:text-ink"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(g.id)}
+                          className="text-xs text-crit hover:opacity-80"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                   {isOpen && members.length > 0 && (

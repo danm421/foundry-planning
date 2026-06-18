@@ -10,6 +10,7 @@ import type {
 } from "@/db/schema";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
 import InsurancePolicyDialog from "./insurance-policy-dialog";
+import { useClientAccess } from "@/components/client-access-provider";
 
 type AccountRow = typeof accounts.$inferSelect;
 type EntityRow = typeof entities.$inferSelect;
@@ -93,6 +94,8 @@ interface PolicyRow {
 }
 
 export default function InsurancePanel(props: InsurancePanelProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [dialogState, setDialogState] = useState<
     { mode: "create" } | { mode: "edit"; policyId: string } | null
   >(null);
@@ -156,13 +159,15 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         {props.embed !== "wizard" && (
           <h1 className="text-2xl font-semibold text-gray-100">Insurance</h1>
         )}
-        <button
-          type="button"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink"
-          onClick={() => setDialogState({ mode: "create" })}
-        >
-          + Add policy
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink"
+            onClick={() => setDialogState({ mode: "create" })}
+          >
+            + Add policy
+          </button>
+        )}
       </header>
 
       {!hasAny && (
@@ -211,16 +216,18 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                       {currencyFmt.format(policy.premiumAmount)}/yr
                     </td>
                     <td className="text-right">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${account.name}`}
-                        className="text-accent hover:underline"
-                        onClick={() =>
-                          setDialogState({ mode: "edit", policyId: account.id })
-                        }
-                      >
-                        Edit
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          aria-label={`Edit ${account.name}`}
+                          className="text-accent hover:underline"
+                          onClick={() =>
+                            setDialogState({ mode: "edit", policyId: account.id })
+                          }
+                        >
+                          Edit
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -230,7 +237,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         );
       })}
 
-      {dialogState && (
+      {canEdit && dialogState && (
         <InsurancePolicyDialog
           clientId={props.clientId}
           clientFirstName={props.clientFirstName}

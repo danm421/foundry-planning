@@ -1,15 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: vi.fn(),
-}));
+vi.mock("@/lib/db-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
+  return {
+    ...actual,
+    requireOrgId: vi.fn(),
+  };
+});
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
 // Mock it so the staff-scope check is a no-op (undefined orgRole ⇒ non-staff ⇒
 // access turns purely on the firm-scoped clients query against the state bucket).
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test" }),
+  // orgId = FIRM_A_ID (inlined — vi.mock is hoisted) so the real requireClientEditAccess
+  // own-firm path (`client.firmId === orgId`) matches the seeded CLIENT_A in FIRM_A.
+  // sessionClaims.org_public_metadata.is_founder bypasses the subscription gate.
+  auth: vi.fn().mockResolvedValue({
+    userId: "user_test",
+    orgId: "10000000-0000-0000-0000-000000000011",
+    sessionClaims: { org_public_metadata: { is_founder: true } },
+  }),
 }));
 
 // ---------------------------------------------------------------------------

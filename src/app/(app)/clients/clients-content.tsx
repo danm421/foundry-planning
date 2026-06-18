@@ -1,11 +1,57 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
+import { db } from "@/db";
+import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   listCrmHouseholds,
   listRecentlyOpenedHouseholds,
 } from "@/lib/crm/households";
 import { CrmHouseholdSearch } from "@/components/crm-household-search";
 import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
+import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
+import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
+import { resolveActors } from "@/lib/activity/resolve-actors";
+import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
+
+// ---------------------------------------------------------------------------
+// Shared-row type — exported so the table component and tests can reference it.
+// ---------------------------------------------------------------------------
+
+export type SharedRow = {
+  clientId: string;
+  displayName: string;
+  ownerName: string;
+  firmName: string;
+  permission: "view" | "edit";
+};
+
+// ---------------------------------------------------------------------------
+// Row-building helper — pure function, exported for unit testing.
+// ---------------------------------------------------------------------------
+
+export function buildSharedRows(
+  shares: ShareDetail[],
+  ownerNames: Map<string, string>,
+  firmNames: Map<string, string>,
+  clientMeta: Map<string, { householdName: string; primaryName: string | null }>,
+): SharedRow[] {
+  return shares.map((s) => {
+    const meta = clientMeta.get(s.clientId);
+    const displayName = meta?.primaryName ?? meta?.householdName ?? "Unknown client";
+    return {
+      clientId: s.clientId,
+      displayName,
+      ownerName: ownerNames.get(s.ownerUserId) ?? "Unknown user",
+      firmName: firmNames.get(s.firmId) ?? "Unknown firm",
+      permission: s.permission,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export async function ClientsContent({
   searchParams,
@@ -17,9 +63,44 @@ export async function ClientsContent({
   const canManage = orgRole === "org:admin";
 
   const deletedView = params.view === "deleted";
-  // Default to the "Recently opened" view; ?view=all and ?view=deleted opt out.
-  const recentView = !deletedView && params.view !== "all";
+  const sharedView = params.view === "shared";
+  // Default to the "Recently opened" view; ?view=all, ?view=deleted, and
+  // ?view=shared opt out.
+  const recentView = !deletedView && !sharedView && params.view !== "all";
 
+  const tab = "text-sm text-ink-3 hover:text-ink";
+  const tabActive = "text-sm font-medium text-ink";
+
+  // ── "Shared with me" branch ────────────────────────────────────────────────
+  if (sharedView) {
+    const sharedRows = await resolveSharedView(userId);
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-ink">Clients</h1>
+        </div>
+        <div className="mt-2 flex gap-4">
+          <Link href="/clients" className={tab}>
+            Recently opened
+          </Link>
+          <Link href="/clients?view=all" className={tab}>
+            All
+          </Link>
+          <Link href="/clients?view=shared" className={tabActive}>
+            Shared with me
+          </Link>
+          {canManage && (
+            <Link href="/clients?view=deleted" className={tab}>
+              Trash
+            </Link>
+          )}
+        </div>
+        <SharedWithMeTable rows={sharedRows} />
+      </div>
+    );
+  }
+
+  // ── Normal branch (recently opened / all / deleted) ───────────────────────
   const households = deletedView
     ? await listCrmHouseholds({ search: params.search, status: params.status, deleted: true })
     : recentView && userId
@@ -49,9 +130,6 @@ export async function ClientsContent({
     };
   });
 
-  const tab = "text-sm text-ink-3 hover:text-ink";
-  const tabActive = "text-sm font-medium text-ink";
-
   return (
     <div className="p-6">
       <div className="flex items-center justify-between">
@@ -78,6 +156,9 @@ export async function ClientsContent({
         <Link href="/clients?view=all" className={!recentView && !deletedView ? tabActive : tab}>
           All
         </Link>
+        <Link href="/clients?view=shared" className={tab}>
+          Shared with me
+        </Link>
         {canManage && (
           <Link href="/clients?view=deleted" className={deletedView ? tabActive : tab}>
             Trash
@@ -98,4 +179,75 @@ export async function ClientsContent({
       />
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Data loader for the shared view — isolated to keep the component readable.
+// ---------------------------------------------------------------------------
+
+async function resolveSharedView(userId: string | null): Promise<SharedRow[]> {
+  if (!userId) return [];
+
+  // 1. Fetch all effective shares for this recipient.
+  const shares = await resolveSharesForRecipient(userId);
+  if (shares.length === 0) return [];
+
+  const sharedClientIds = shares.map((s) => s.clientId);
+
+  // 2+3. Resolve owner display names and firm names concurrently.
+  const ownerUserIds = [...new Set(shares.map((s) => s.ownerUserId))];
+  const firmIds = [...new Set(shares.map((s) => s.firmId))];
+  const [actorMap, firmNames] = await Promise.all([
+    resolveActors(ownerUserIds),
+    resolveFirmNames(firmIds),
+  ]);
+  const ownerNames = new Map(
+    [...actorMap.entries()].map(([id, a]) => [id, a.name]),
+  );
+
+  // 4. Resolve client display names.
+  //    Join clients → crmHouseholds → left join crmHouseholdContacts (primary only).
+  //    NO firmId filter — cross-firm, access is already authorized by the share.
+  const clientMeta = new Map<string, { householdName: string; primaryName: string | null }>();
+  if (sharedClientIds.length > 0) {
+    const rows = await db
+      .select({
+        clientId: clients.id,
+        householdName: crmHouseholds.name,
+        firstName: crmHouseholdContacts.firstName,
+        lastName: crmHouseholdContacts.lastName,
+      })
+      .from(clients)
+      .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
+      .leftJoin(
+        crmHouseholdContacts,
+        and(
+          eq(crmHouseholdContacts.householdId, crmHouseholds.id),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      )
+      .where(inArray(clients.id, sharedClientIds));
+
+    // A client may produce multiple rows when contacts exist. Gather primary
+    // contact from the contact rows; fall back to household name.
+    const gathered = new Map<
+      string,
+      { householdName: string; primaryName: string | null }
+    >();
+    for (const r of rows) {
+      if (!gathered.has(r.clientId)) {
+        gathered.set(r.clientId, { householdName: r.householdName, primaryName: null });
+      }
+      // leftJoin produces null firstName/lastName when no contacts exist.
+      if (r.firstName && r.lastName) {
+        const existing = gathered.get(r.clientId)!;
+        if (!existing.primaryName) {
+          existing.primaryName = `${r.firstName} ${r.lastName}`.trim();
+        }
+      }
+    }
+    for (const [id, meta] of gathered) clientMeta.set(id, meta);
+  }
+
+  return buildSharedRows(shares, ownerNames, firmNames, clientMeta);
 }

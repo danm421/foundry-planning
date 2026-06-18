@@ -11,9 +11,11 @@ import {
   familyMembers,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { cleanupWillRecipientReferences } from "@/lib/estate/cleanup-will-recipients";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
@@ -53,11 +55,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const [existing] = await db
       .select()
@@ -531,7 +532,7 @@ export async function PUT(
         resourceId: entityId,
         clientId: id,
         firmId,
-        metadata: {
+        metadata: crossFirmAuditMeta({ access }, callerOrg, {
           inceptionYear: si.inceptionYear,
           inceptionValue: si.inceptionValue,
           payoutPercent: si.payoutPercent,
@@ -540,7 +541,7 @@ export async function PUT(
           remainderFactor: interests.remainderFactor,
           originalIncomeInterest: interests.originalIncomeInterest,
           originalRemainderInterest: interests.originalRemainderInterest,
-        },
+        }),
       });
     }
 
@@ -550,7 +551,7 @@ export async function PUT(
       resourceId: entityId,
       clientId: id,
       firmId,
-      metadata: { name: updated.name, entityType: updated.entityType },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { name: updated.name, entityType: updated.entityType }),
     });
 
     const ownerRows = await db
@@ -564,9 +565,8 @@ export async function PUT(
     }));
     return NextResponse.json({ ...updated, owners: responseOwners });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("PUT /api/clients/[id]/entities/[entityId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -577,11 +577,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; entityId: string }> }
 ) {
   try {
-    const firmId = await requireOrgId();
     const { id, entityId } = await params;
-    if (!(await verifyClientAccess(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     // Delete the entity's default checking accounts explicitly. The accounts.owner_entity_id
     // FK is ON DELETE SET NULL, so other entity-owned accounts simply become household-
@@ -625,13 +624,13 @@ export async function DELETE(
       resourceId: entityId,
       clientId: id,
       firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg),
     });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("DELETE /api/clients/[id]/entities/[entityId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

@@ -12,11 +12,12 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -37,13 +38,10 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
-
-    const inFirm = await verifyClientAccess(clientId, firmId);
-    if (!inFirm) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const raw = await req.json();
     const parsed = BODY.safeParse(raw);
@@ -103,7 +101,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: newScenarioId,
       clientId,
       firmId,
-      metadata: { source: "solver", mutationCount: mutations.length },
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { source: "solver", mutationCount: mutations.length }),
     });
 
     const body: SolverSaveResponse = { scenarioId: newScenarioId };

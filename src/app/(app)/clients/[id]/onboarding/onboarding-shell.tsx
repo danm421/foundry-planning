@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useClientAccess } from "@/components/client-access-provider";
 import { STEPS, nextStep, prevStep, stepIndex } from "@/lib/onboarding/steps";
 import type { StepIconKey } from "@/lib/onboarding/steps";
 import type { StepSlug, StepStatus, StepStatusKind } from "@/lib/onboarding/types";
@@ -46,6 +47,8 @@ const STEP_ICONS: Record<StepIconKey, IconComponent> = {
 };
 
 export default function OnboardingShell({ clientId, activeStep, statuses, children }: OnboardingShellProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const def = STEPS.find((s) => s.slug === activeStep)!;
@@ -64,6 +67,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
   const Icon = STEP_ICONS[def.icon];
 
   async function patchLastVisited(slug: StepSlug) {
+    if (!canEdit) return; // viewer: navigation still works, but don't persist lastStepVisited
     try {
       await fetch(`/api/clients/${clientId}/onboarding`, {
         method: "PATCH",
@@ -172,7 +176,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
               Back
             </button>
           )}
-          {def.skippable && activeStatus.kind !== "complete" && activeStep !== "review" && (
+          {canEdit && def.skippable && activeStatus.kind !== "complete" && activeStep !== "review" && (
             <button
               type="button"
               onClick={onSkip}

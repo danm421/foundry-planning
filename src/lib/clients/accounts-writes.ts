@@ -106,8 +106,9 @@ export async function createAccountForClient(args: {
   firmId: string;
   actorId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<AccountRow>> {
-  const { clientId, firmId, actorId, input } = args;
+  const { clientId, firmId, actorId, input, crossFirmMeta } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (!scenarioId) return writeError(404, "Client not found");
@@ -314,6 +315,7 @@ export async function createAccountForClient(args: {
     firmId,
     actorId,
     snapshot: await toAccountSnapshot(account!),
+    extraMetadata: crossFirmMeta,
   });
 
   return { ok: true, data: account!, resourceId: account!.id };
@@ -325,10 +327,12 @@ export async function updateAccountForClient(args: {
   actorId: string;
   accountId: string;
   input: unknown;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<AccountRow>> {
-  const { clientId, firmId, actorId, accountId, input } = args;
+  const { clientId, firmId, actorId, accountId, input, crossFirmMeta } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -457,6 +461,7 @@ export async function updateAccountForClient(args: {
     before: await toAccountSnapshot(before),
     after: await toAccountSnapshot(updated!),
     fieldLabels: ACCOUNT_FIELD_LABELS,
+    extraMetadata: crossFirmMeta,
   });
 
   // Holdings-tab opt-in toggle: when an account is (re)enabled to derive from its
@@ -475,10 +480,12 @@ export async function deleteAccountForClient(args: {
   firmId: string;
   actorId: string;
   accountId: string;
+  crossFirmMeta?: Record<string, unknown>;
 }): Promise<EntityWriteResult<{ id: string }>> {
-  const { clientId, firmId, actorId, accountId } = args;
+  const { clientId, firmId, actorId, accountId, crossFirmMeta } = args;
 
-  if (!(await verifyClientAccess(clientId, firmId))) {
+  const a = await verifyClientAccess(clientId);
+  if (!a.ok || a.firmId !== firmId) {
     return writeError(404, "Client not found");
   }
 
@@ -512,6 +519,7 @@ export async function deleteAccountForClient(args: {
     firmId,
     actorId,
     snapshot,
+    extraMetadata: crossFirmMeta,
   });
 
   return { ok: true, data: { id: accountId }, resourceId: accountId };

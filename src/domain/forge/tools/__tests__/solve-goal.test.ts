@@ -39,7 +39,7 @@ const PAYLOAD = { seed: 424242, indices: [], correlation: [], accountMixes: [], 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  verifyClientAccess.mockResolvedValue(true);
+  verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "firm-1", access: "own" });
   loadEffectiveTree.mockResolvedValue({
     effectiveTree: { id: "tree" } as unknown as ClientData,
     warnings: [],

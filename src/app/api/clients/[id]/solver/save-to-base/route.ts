@@ -36,12 +36,13 @@ import type { Account, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient } from "@/lib/db-scoping";
-import { verifyClientAccess } from "@/lib/clients/authz";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -115,12 +116,10 @@ function savingsInsertValues(
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
-    const firmId = await requireOrgId();
     const { id: clientId } = await ctx.params;
-
-    if (!(await verifyClientAccess(clientId, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
+    const callerOrg = await requireOrgId();
+    const { firmId, access } = await requireClientEditAccess(clientId);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const raw = await req.json();
     const parsed = BODY.safeParse(raw);
@@ -359,7 +358,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       resourceId: clientId,
       clientId,
       firmId,
-      metadata: {
+      metadata: crossFirmAuditMeta({ access }, callerOrg, {
         source: "solver",
         requestSource: source,
         accountInserts: accountInserts.length,
@@ -373,7 +372,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         incomeUpdates: incomeUpdates.length,
         expenseUpdates: expenseUpdates.length,
         expenseInserts: expenseInserts.length,
-      },
+      }),
     });
 
     return NextResponse.json({
