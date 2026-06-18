@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import OpenItemDialog, { OpenItemDialogValue } from "./open-item-dialog";
+import { useClientAccess } from "@/components/client-access-provider";
 
 type Item = {
   id: string;
@@ -30,6 +31,8 @@ export default function OpenItemsList({
   clientId: string;
   items: Item[];
 }) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -66,12 +69,14 @@ export default function OpenItemsList({
         <h3 className="text-base font-semibold text-gray-100">
           Open Items ({open.length} open · {done.length} completed)
         </h3>
-        <button
-          className="rounded bg-accent px-3 py-1.5 text-sm text-accent-on"
-          onClick={() => { setEditing(null); setDialogOpen(true); }}
-        >
-          Add item
-        </button>
+        {canEdit && (
+          <button
+            className="rounded bg-accent px-3 py-1.5 text-sm text-accent-on"
+            onClick={() => { setEditing(null); setDialogOpen(true); }}
+          >
+            Add item
+          </button>
+        )}
       </div>
 
       {open.length === 0 ? (
@@ -90,8 +95,9 @@ export default function OpenItemsList({
               <input
                 type="checkbox"
                 checked={false}
-                onChange={() => update(i.id, { completedAt: new Date().toISOString() })}
+                onChange={canEdit ? () => update(i.id, { completedAt: new Date().toISOString() }) : undefined}
                 aria-label={`Complete ${i.title}`}
+                disabled={!canEdit}
               />
               <span className="flex-1 text-gray-100">{i.title}</span>
               <span className={`rounded px-2 py-0.5 text-xs ${PRIORITY_STYLES[i.priority]}`}>
@@ -102,12 +108,14 @@ export default function OpenItemsList({
                   {i.dueDate}
                 </span>
               )}
-              <button
-                className="text-sm text-gray-300 hover:text-gray-200"
-                onClick={() => { setEditing(i); setDialogOpen(true); }}
-              >
-                Edit
-              </button>
+              {canEdit && (
+                <button
+                  className="text-sm text-gray-300 hover:text-gray-200"
+                  onClick={() => { setEditing(i); setDialogOpen(true); }}
+                >
+                  Edit
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -124,35 +132,40 @@ export default function OpenItemsList({
                 <input
                   type="checkbox"
                   checked
-                  onChange={() => update(i.id, { completedAt: null })}
+                  onChange={canEdit ? () => update(i.id, { completedAt: null }) : undefined}
                   aria-label={`Reopen ${i.title}`}
+                  disabled={!canEdit}
                 />
                 <span className="flex-1 text-gray-300 line-through">{i.title}</span>
-                <button
-                  className="text-sm text-gray-400 hover:text-gray-200"
-                  onClick={() => remove(i.id)}
-                >
-                  Delete
-                </button>
+                {canEdit && (
+                  <button
+                    className="text-sm text-gray-400 hover:text-gray-200"
+                    onClick={() => remove(i.id)}
+                  >
+                    Delete
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </details>
       )}
 
-      <OpenItemDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        editing={
-          editing
-            ? { title: editing.title, priority: editing.priority, dueDate: editing.dueDate }
-            : undefined
-        }
-        onSubmit={(v) =>
-          editing ? update(editing.id, v) : create(v)
-        }
-        onDelete={editing ? () => remove(editing.id) : undefined}
-      />
+      {canEdit && (
+        <OpenItemDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          editing={
+            editing
+              ? { title: editing.title, priority: editing.priority, dueDate: editing.dueDate }
+              : undefined
+          }
+          onSubmit={(v) =>
+            editing ? update(editing.id, v) : create(v)
+          }
+          onDelete={editing ? () => remove(editing.id) : undefined}
+        />
+      )}
     </div>
   );
 }

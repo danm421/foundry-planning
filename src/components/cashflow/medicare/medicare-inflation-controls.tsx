@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface Props {
   rate: number;
@@ -14,6 +15,8 @@ function formatPct(n: number): string {
 }
 
 export function MedicareInflationControls({ rate, enabled, onChange, saveError }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [rateInput, setRateInput] = useState(formatPct(rate));
 
   // Keep the input in sync if the prop changes from elsewhere (e.g. fresh load).
@@ -40,7 +43,8 @@ export function MedicareInflationControls({ rate, enabled, onChange, saveError }
         <input
           type="checkbox"
           checked={enabled}
-          onChange={(e) => onChange({ enabled: e.target.checked })}
+          onChange={canEdit ? (e) => onChange({ enabled: e.target.checked }) : undefined}
+          disabled={!canEdit}
           className="h-3.5 w-3.5"
         />
         <span>Inflate Medicare premiums + IRMAA brackets forward</span>
@@ -55,9 +59,9 @@ export function MedicareInflationControls({ rate, enabled, onChange, saveError }
           min={0}
           max={100}
           value={rateInput}
-          disabled={!enabled}
+          disabled={!enabled || !canEdit}
           onChange={(e) => setRateInput(e.target.value)}
-          onBlur={commitRate}
+          onBlur={canEdit ? commitRate : undefined}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();

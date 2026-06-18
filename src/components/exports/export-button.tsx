@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ExportModal } from "./export-modal";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface Props {
   reportId: string;
@@ -12,7 +13,10 @@ interface Props {
 }
 
 export function ExportButton({ reportId, optsOverride }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [open, setOpen] = useState(false);
+  if (!canEdit) return null;
   return (
     <>
       <button

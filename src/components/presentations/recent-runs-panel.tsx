@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useClientAccess } from "@/components/client-access-provider";
 
 type RunStatus = "queued" | "running" | "done" | "failed";
 
@@ -53,6 +54,8 @@ const STATUS_PILL: Record<RunStatus, { label: string; className: string }> = {
 const POLL_MS = 3000;
 
 export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,7 +168,8 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
                           >
                             Failed
                           </span>
-                          {r.kind === "presentation" &&
+                          {canEdit &&
+                            r.kind === "presentation" &&
                             r.requestPayload != null && (
                               <button
                                 type="button"
