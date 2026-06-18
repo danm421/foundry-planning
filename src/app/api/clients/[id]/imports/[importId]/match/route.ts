@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 
-import { db } from "@/db";
-import { clientImports } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import {
     requireImportAccess,
@@ -12,17 +9,8 @@ import {
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
-import { recordAudit } from "@/lib/audit";
-import {
-    mergeExtractionResults,
-    type FileExtraction,
-} from "@/lib/imports/merge";
-import { runMatchingPass } from "@/lib/imports/match";
-import type {
-    ImportPayload,
-    ImportPayloadJson,
-    MatchKind,
-} from "@/lib/imports/types";
+import { runImportMatching } from "@/lib/imports/run-matching";
+import type { ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -85,10 +73,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
 
         const fileResults =
             (imp.payloadJson as ImportPayloadJson)?.fileResults ?? {};
-        const fileExtractions: FileExtraction[] = Object.entries(fileResults).map(
-            ([fileId, result]) => ({ fileId, result })
-        );
-        if (fileExtractions.length === 0) {
+        if (Object.keys(fileResults).length === 0) {
             return NextResponse.json(
                 { error: "No extracted files to match. Run extraction first." },
                 { status: 400 }
@@ -102,34 +87,13 @@ export async function POST(_request: NextRequest, { params }: Params) {
             );
         }
 
-        const merged = mergeExtractionResults(fileExtractions);
-        const annotated = await runMatchingPass({
-            payload: merged,
-            clientId,
-            scenarioId: imp.scenarioId ?? "",
-            mode: imp.mode,
-        });
-
-        const counts = countAnnotations(annotated);
-
-        await db
-            .update(clientImports)
-            .set({
-                payloadJson: { fileResults, payload: annotated },
-                updatedAt: new Date(),
-            })
-            .where(eq(clientImports.id, importId));
-
-        await recordAudit({
-            action: "import.match.run",
-            resourceType: "client_import",
-            resourceId: importId,
+        const counts = await runImportMatching({
+            importId,
             clientId,
             firmId,
-            metadata: {
-                mode: imp.mode,
-                ...counts,
-            },
+            mode: imp.mode,
+            scenarioId: imp.scenarioId,
+            fileResults,
         });
 
         return NextResponse.json({ ok: true, ...counts });
@@ -154,25 +118,4 @@ export async function POST(_request: NextRequest, { params }: Params) {
             { status: 500 }
         );
     }
-}
-
-function countAnnotations(payload: ImportPayload): Record<MatchKind, number> {
-    const counts: Record<MatchKind, number> = { exact: 0, fuzzy: 0, new: 0 };
-    const arrays = [
-        payload.accounts,
-        payload.incomes,
-        payload.expenses,
-        payload.liabilities,
-        payload.dependents,
-        payload.lifePolicies,
-        payload.wills,
-        payload.entities,
-    ];
-    for (const arr of arrays) {
-        for (const row of arr) {
-            const kind = row.match?.kind;
-            if (kind) counts[kind] += 1;
-        }
-    }
-    return counts;
 }
