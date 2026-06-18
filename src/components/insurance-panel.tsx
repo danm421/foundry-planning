@@ -215,8 +215,8 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                     <td className="text-right tabular-nums text-gray-100">
                       {currencyFmt.format(policy.premiumAmount)}/yr
                     </td>
-                    {canEdit && (
-                      <td className="text-right">
+                    <td className="text-right">
+                      {canEdit && (
                         <button
                           type="button"
                           aria-label={`Edit ${account.name}`}
@@ -227,9 +227,8 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                         >
                           Edit
                         </button>
-                      </td>
-                    )}
-                    {!canEdit && <td />}
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

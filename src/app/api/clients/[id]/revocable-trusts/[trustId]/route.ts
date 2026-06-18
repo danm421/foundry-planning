@@ -3,7 +3,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { db } from "@/db";
 import { revocableTrusts, accounts } from "@/db/schema";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { revocableTrustUpsertSchema } from "@/lib/schemas/revocable-trusts";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -125,9 +125,6 @@ export async function PATCH(
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     console.error("PATCH /api/clients/[id]/revocable-trusts/[trustId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -167,9 +164,6 @@ export async function DELETE(
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     console.error("DELETE /api/clients/[id]/revocable-trusts/[trustId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

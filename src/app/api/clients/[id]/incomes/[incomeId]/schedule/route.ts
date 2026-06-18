@@ -96,7 +96,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
     const { id, incomeId } = await params;
-    await requireOrgAndUser();
     const { firmId } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     if (!(await verifyOwnership(id, incomeId))) {

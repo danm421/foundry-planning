@@ -117,9 +117,6 @@ export async function POST(
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    if (err instanceof UnauthorizedError) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     console.error("POST /api/clients/[id]/revocable-trusts error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
