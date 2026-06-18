@@ -156,20 +156,31 @@ const EXPECTED_CRM_ALL_19 = [
   "suggest_tasks",
 ];
 
-describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 assembly)", () => {
-  it("returns exactly the 54 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report)", () => {
+const EXPECTED_MEMORY_TOOL_NAMES = ["read_memory", "write_memory"];
+
+describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly)", () => {
+  it("returns exactly the 56 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
-    // Phase-1, scenario-write, detail-write, and report tools all present
+    // Phase-1, scenario-write, detail-write, report, and memory tools all present
     for (const n of [
       ...EXPECTED_PHASE1,
       ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
       ...EXPECTED_DETAIL_WRITE_TOOL_NAMES,
       "generate_report",
+      ...EXPECTED_MEMORY_TOOL_NAMES,
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(54);
+    expect(tools).toHaveLength(56);
+  });
+
+  it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const n of EXPECTED_MEMORY_TOOL_NAMES) {
+      expect(names.has(n), `expected memory tool ${n} in buildTools output`).toBe(true);
+      expect(WRITE_TOOL_NAMES.has(n), `${n} must NOT be approval-gated`).toBe(false);
+    }
   });
 
   it("buildTools includes the 12 detail-write (expense + income + liability + account) tool names", () => {

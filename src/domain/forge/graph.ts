@@ -8,6 +8,7 @@ import { ForgeState, type ForgeAuthContext } from "./state";
 import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI factory
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
+import { getStore } from "./store";
 import { routeAfterAgent } from "./routing";
 import { selectHistoryWindow } from "./history-window";
 import { describeProposedWrite } from "@/domain/forge/preview";
@@ -147,5 +148,8 @@ export function buildGraph(
       { tools: "tools", approval: "approval", [END]: END },
     );
 
-  return graph.compile({ checkpointer });
+  // Attach the long-term store so memory tools (and any future store-from-config
+  // node) share one PostgresStore. getStore() is a lazy singleton (no connection
+  // until a memory tool actually queries), so this is safe at compile time.
+  return graph.compile({ checkpointer, store: getStore() });
 }

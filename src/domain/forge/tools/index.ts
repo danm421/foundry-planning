@@ -9,6 +9,7 @@ import { buildDetailWriteTools } from "./detail-writes";
 import { buildCrmTools } from "./crm";
 import { buildReportTools } from "./report";
 import { buildKnowledgeTools } from "./knowledge";
+import { buildMemoryTools } from "./memory";
 
 /**
  * Build the tool set for one conversation. EVERY tool closes over `toolCtx` for
@@ -27,6 +28,9 @@ import { buildKnowledgeTools } from "./knowledge";
  * Phase 4: adds the report tool (generate_report) — a NON-destructive enqueue
  * that queues a presentation deck and renders it in the background, so it is NOT
  * in WRITE_TOOL_NAMES and does not route through the approval gate.
+ * Tier-1 memory: read_memory / write_memory over the PostgresStore. write_memory
+ * stores non-destructive advisor/client preferences, so it is NOT in
+ * WRITE_TOOL_NAMES and does not route through the approval gate.
  */
 export function buildTools(toolCtx: ForgeToolContext): StructuredToolInterface[] {
   return [
@@ -38,6 +42,7 @@ export function buildTools(toolCtx: ForgeToolContext): StructuredToolInterface[]
     ...buildCrmTools(toolCtx),
     ...buildReportTools(toolCtx),
     ...buildKnowledgeTools(toolCtx),
+    ...buildMemoryTools(toolCtx),
   ];
 }
 
