@@ -4079,12 +4079,12 @@ export const solverMcCache = pgTable(
 export type SolverMcCacheRow = InferSelectModel<typeof solverMcCache>;
 export type NewSolverMcCacheRow = InferInsertModel<typeof solverMcCache>;
 
-// --- Planning Copilot ---
+// --- Planning Forge ---
 // One row per chat thread. id doubles as the LangGraph checkpointer thread_id.
 // userId/firmId are Clerk ids (text), matching clients.firmId (text). clientId
 // is the client-scoped thread target (null = firm-level thread, Phase 2+).
-export const copilotConversations = pgTable(
-  "copilot_conversations",
+export const forgeConversations = pgTable(
+  "forge_conversations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
@@ -4101,7 +4101,7 @@ export const copilotConversations = pgTable(
       .notNull(),
   },
   (t) => [
-    index("copilot_conversations_user_updated_idx").on(t.userId, t.updatedAt),
+    index("forge_conversations_user_updated_idx").on(t.userId, t.updatedAt),
   ],
 );
 

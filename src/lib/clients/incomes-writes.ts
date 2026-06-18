@@ -1,5 +1,5 @@
 // Income write-core. The single validation + write path shared by the API
-// routes (src/app/api/clients/[id]/incomes/**) and the Copilot write tools, so
+// routes (src/app/api/clients/[id]/incomes/**) and the Forge write tools, so
 // route and agent can never drift. Cloned from expenses-writes.ts — the shared
 // baseCaseScenarioId helper (./base-case), same FK-assert sequence, same
 // orphan-prune, same metadata-only audit; income-specific deltas noted inline.

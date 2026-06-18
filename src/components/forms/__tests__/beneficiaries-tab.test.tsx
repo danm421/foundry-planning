@@ -89,7 +89,7 @@ describe("BeneficiariesTab", () => {
     expect(await screen.findByText("sum: 100.00%")).toBeInTheDocument();
   });
 
-  it("omits household principals (client/spouse) from the family beneficiary list", async () => {
+  it("shows household principals by name under Household, not as family kin", async () => {
     mockFetch.mockReset();
     mockFetch
       .mockResolvedValueOnce({
@@ -124,8 +124,19 @@ describe("BeneficiariesTab", () => {
     render(<BeneficiariesTab clientId="c1" accountId="a1" active />);
     await screen.findByRole("heading", { name: /primary/i, level: 4 });
 
-    expect(screen.queryByRole("option", { name: /Pat Client/ })).toBeNull();
-    expect(screen.queryByRole("option", { name: /Sam Spouse/ })).toBeNull();
+    // Principals are not duplicated as "(child)" kin in the Family group...
+    expect(screen.queryByRole("option", { name: /Pat Client \(child\)/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Sam Spouse \(child\)/ })).toBeNull();
+    // ...but DO appear by real name in the Household group.
+    expect(screen.getAllByRole("option", { name: /Pat Client \(client\)/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: /Sam Spouse \(spouse\)/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: /Kid Smith/ }).length).toBeGreaterThan(0);
+
+    // Household is listed first: its options precede the family kin options.
+    const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    const householdIdx = options.findIndex((t) => /Pat Client \(client\)/.test(t));
+    const familyIdx = options.findIndex((t) => /Kid Smith/.test(t));
+    expect(householdIdx).toBeGreaterThanOrEqual(0);
+    expect(householdIdx).toBeLessThan(familyIdx);
   });
 });

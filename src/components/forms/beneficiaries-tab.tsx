@@ -28,10 +28,15 @@ function normalizeDesignations(rows: Designation[]): Designation[] {
   }));
 }
 
+function fullName(m: FamilyMember): string {
+  return m.lastName ? `${m.firstName} ${m.lastName}` : m.firstName;
+}
+
 function AccountBeneficiaryEditor({
   clientId,
   accountId,
   members,
+  household,
   externals,
   entities,
   initial,
@@ -40,6 +45,7 @@ function AccountBeneficiaryEditor({
   clientId: string;
   accountId: string;
   members: FamilyMember[];
+  household: { client: FamilyMember | null; spouse: FamilyMember | null };
   externals: ExternalBeneficiary[];
   entities: Array<{ id: string; name: string }>;
   initial: Designation[];
@@ -251,6 +257,16 @@ function AccountBeneficiaryEditor({
                 className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
               >
                 <option value="">— select beneficiary —</option>
+                <optgroup label="Household">
+                  <option value="hh:client">
+                    {household.client ? fullName(household.client) : "Client"} (client)
+                  </option>
+                  {(household.spouse || rows.some((x) => x.householdRole === "spouse")) && (
+                    <option value="hh:spouse">
+                      {household.spouse ? fullName(household.spouse) : "Spouse"} (spouse)
+                    </option>
+                  )}
+                </optgroup>
                 <optgroup label="Family">
                   {members.map((m) => (
                     <option key={m.id} value={`fm:${m.id}`}>
@@ -264,10 +280,6 @@ function AccountBeneficiaryEditor({
                       {x.name} ({x.kind})
                     </option>
                   ))}
-                </optgroup>
-                <optgroup label="Household">
-                  <option value="hh:client">Client</option>
-                  <option value="hh:spouse">Spouse</option>
                 </optgroup>
                 <optgroup label="Trusts">
                   {entities.map((ent) => (
@@ -341,6 +353,10 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
   const [loaded, setLoaded] = useState(false);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [household, setHousehold] = useState<{ client: FamilyMember | null; spouse: FamilyMember | null }>({
+    client: null,
+    spouse: null,
+  });
   const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
   const [entities, setEntities] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -368,8 +384,12 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
         setDesignations(normalizeDesignations(d));
         // Household principals (client/spouse) are stored as family_members
         // rows with a defaulted `relationship` of "child". They have their own
-        // "Household" optgroup below, so exclude them here to avoid showing
-        // them as kin — and to keep them out of the "child" beneficiary list.
+        // "Household" optgroup, so exclude them from the kin list here — and
+        // keep their rows so the Household options can show real names.
+        setHousehold({
+          client: m.find((fm) => fm.role === "client") ?? null,
+          spouse: m.find((fm) => fm.role === "spouse") ?? null,
+        });
         setMembers(m.filter((fm) => fm.role !== "client" && fm.role !== "spouse"));
         setExternals(e);
         setEntities(ent);
@@ -393,6 +413,7 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
       clientId={clientId}
       accountId={accountId}
       members={members}
+      household={household}
       externals={externals}
       entities={entities}
       initial={designations}

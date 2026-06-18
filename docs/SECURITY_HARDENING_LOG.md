@@ -177,3 +177,14 @@ appeared in this session.
 
 Last commit in the series at time of writing: `03fe8a8`
 (docs/future_work note about Clerk test keys + missing Azure creds).
+
+## 2026-06-17 — Vision-OCR fallback for scanned PDFs
+
+When a PDF has no embedded text layer, extraction now renders pages to images
+and transcribes them via the Azure OpenAI vision deployment. This is a narrow,
+deliberate relaxation of "redact SSNs before any AI call": page images are sent
+un-redacted because pixels cannot be SSN-masked pre-call. Residual exposure is
+limited to in-transit only — the Azure resource runs with Zero Data Retention.
+SSN redaction (`redactSsns`) still runs on the transcribed text before the
+structured-extraction call and before `rawResponseJson` is stored. Triggered
+only when there is no text layer; text-based PDFs are unaffected.

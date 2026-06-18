@@ -98,7 +98,7 @@ describe("reconcile-billing auto-heal", () => {
     mockGetOrg.mockResolvedValue({
       publicMetadata: {
         subscription_status: "trialing",
-        entitlements: ["ai_copilot", "ai_import"],
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
       },
     });
 
@@ -130,10 +130,10 @@ describe("reconcile-billing auto-heal", () => {
       items: { data: [{ id: "si_seat", quantity: 1, metadata: { kind: "seat" } }] },
     });
     mockGetOrg.mockResolvedValue({
-      // seat item → derived entitlements = ["ai_copilot", "ai_import"] (bundled into the plan)
+      // seat item → derived entitlements = ["ai_copilot", "ai_forge", "ai_import"] (bundled into the plan)
       publicMetadata: {
         subscription_status: "active",
-        entitlements: ["ai_copilot", "ai_import"],
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
       },
     });
 

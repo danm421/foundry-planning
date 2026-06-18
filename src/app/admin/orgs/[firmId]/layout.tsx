@@ -21,11 +21,11 @@ export default async function OrgDetailLayout({
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <Link href="/admin/orgs" className="text-xs text-sky-300 hover:underline">
+        <Link href="/admin/orgs" className="text-xs text-accent hover:underline">
           &larr; All organizations
         </Link>
-        <h1 className="text-lg font-medium">{firm.displayName ?? "(unnamed)"}</h1>
-        <p className="font-mono text-xs text-neutral-500">{firm.firmId}</p>
+        <h1 className="text-lg font-medium text-ink">{firm.displayName ?? "(unnamed)"}</h1>
+        <p className="tabular text-xs text-ink-3">{firm.firmId}</p>
       </div>
       <OrgTabs firmId={firmId} />
       {children}

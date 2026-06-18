@@ -1,0 +1,40 @@
+# Forge tool-selection + HITL + grounding evals (offline, non-blocking).
+#
+# Runs the REAL forge graph via provider.ts against the live (no-temperature)
+# Azure deployment chatModel() uses. Run: `npm run eval:forge` (needs DATABASE_URL
+# + AZURE_* from .env.local). This is a NON-BLOCKING lane — NOT part of `npm test`.
+#
+# Assertions read provider.ts's response metadata.trajectory via the version-
+# independent helpers in assertions.ts (promptfoo's file:// refs cannot pass call
+# args, so the expected tool is supplied through `vars.expectTool`).
+#
+# IMPORTANT: any model-graded grader MUST run with no temperature (Azure reasoning
+# models 400 on explicit temperature) or be pointed at a non-reasoning model.
+description: Forge tool-selection + HITL + grounding evals (offline, non-blocking)
+providers:
+  - file://./provider.ts
+prompts:
+  - "{{message}}"
+tests:
+  - vars:
+      message: "Add a $1,200 per year gym membership expense"
+      expectTool: "add_expense"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Run a projection for this client"
+      expectTool: "run_projection"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noInventedNumbers
+  - vars:
+      message: "What if they do a Roth conversion of $50,000 this year?"
+      expectTool: "whatif_roth"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool

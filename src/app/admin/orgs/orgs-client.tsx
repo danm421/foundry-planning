@@ -16,7 +16,7 @@ const STATUS_STYLE: Record<string, string> = {
   trialing: "bg-sky-500/15 text-sky-300",
   past_due: "bg-amber-500/15 text-amber-300",
   unpaid: "bg-amber-500/15 text-amber-300",
-  none: "bg-neutral-500/15 text-neutral-300",
+  none: "bg-ink-4/15 text-ink-2",
 };
 
 function fmt(iso: string | null) {
@@ -42,7 +42,7 @@ export default function OrgsClient({ rows }: { rows: OrgRow[] }) {
       col.accessor("displayName", {
         header: "Organization",
         cell: (c) => (
-          <Link href={`/admin/orgs/${c.row.original.firmId}`} className="text-sky-300 hover:underline">
+          <Link href={`/admin/orgs/${c.row.original.firmId}`} className="text-accent hover:underline">
             {c.getValue()}
           </Link>
         ),
@@ -59,7 +59,7 @@ export default function OrgsClient({ rows }: { rows: OrgRow[] }) {
       col.accessor("createdAt", { header: "Created", cell: (c) => fmt(c.getValue()) }),
       col.accessor("firmId", {
         header: "Org ID",
-        cell: (c) => <span className="font-mono text-xs text-neutral-400">{c.getValue()}</span>,
+        cell: (c) => <span className="tabular text-xs text-ink-3">{c.getValue()}</span>,
       }),
     ],
     [],
@@ -70,17 +70,17 @@ export default function OrgsClient({ rows }: { rows: OrgRow[] }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-medium">Organizations</h1>
+        <h1 className="text-lg font-medium text-ink">Organizations</h1>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search name or org id…"
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm placeholder:text-neutral-500"
+          className="rounded border border-hair-2 bg-card-2 px-3 py-1.5 text-sm text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
         />
       </div>
-      <div className="overflow-hidden rounded border border-neutral-800">
+      <div className="overflow-hidden rounded border border-hair">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-900 text-left text-xs uppercase tracking-wide text-neutral-400">
+          <thead className="bg-card text-left text-xs uppercase tracking-wide text-ink-3">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => (
@@ -93,7 +93,7 @@ export default function OrgsClient({ rows }: { rows: OrgRow[] }) {
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-t border-neutral-800">
+              <tr key={row.id} className="border-t border-hair">
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-3 py-2">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -103,7 +103,7 @@ export default function OrgsClient({ rows }: { rows: OrgRow[] }) {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={columns.length} className="px-3 py-6 text-center text-ink-3">
                   No organizations match.
                 </td>
               </tr>

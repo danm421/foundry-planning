@@ -9,14 +9,19 @@ import {
 } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
 
-/** Capability keys the Entitlements tab can toggle. Today just `ai_import`;
- *  structured to hold future AI capabilities (label/description drive the UI). */
+/** Capability keys the Entitlements tab can toggle (label/description drive the
+ *  UI). Both ship seat-included today; an override here grants/revokes per-firm. */
 export type CapabilityKey = { key: string; label: string; description: string };
 export const CAPABILITY_KEYS: CapabilityKey[] = [
   {
     key: "ai_import",
     label: "AI document import",
     description: "Extract client data from uploaded documents via AI.",
+  },
+  {
+    key: "ai_forge",
+    label: "Forge (AI planning assistant)",
+    description: "Conversational planning assistant powered by AI agents.",
   },
 ];
 

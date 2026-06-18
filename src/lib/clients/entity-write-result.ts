@@ -1,5 +1,5 @@
 // Shared result type for entity write cores (expenses, incomes, liabilities,
-// accounts). The cores are pure-ish functions the API routes AND the Copilot
+// accounts). The cores are pure-ish functions the API routes AND the Forge
 // tools both call, so they hand back a plain discriminated union instead of a
 // NextResponse — the route maps {ok:false} → NextResponse.json, the tool maps it
 // to a tool error. Keeping the shape uniform lets later cores be copied verbatim.

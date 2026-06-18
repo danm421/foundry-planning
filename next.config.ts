@@ -47,6 +47,14 @@ const apiNoCache = [
 ];
 
 const nextConfig: NextConfig = {
+  // @napi-rs/canvas ships a prebuilt native .node binary that its loader finds
+  // via __dirname-relative require(). Turbopack bundles Route Handler deps by
+  // default, which rewrites __dirname and breaks that lookup ("Cannot find
+  // native binding") even though the binary is on disk — so the scanned-PDF
+  // vision-OCR path (src/lib/extraction/vision-ocr.ts) throws at runtime. Opt it
+  // out of bundling so it loads via native Node require. sharp is already
+  // externalized by Next's default list; @napi-rs/canvas is not.
+  serverExternalPackages: ["@napi-rs/canvas"],
   experimental: {
     serverActions: {
       bodySizeLimit: "20mb",

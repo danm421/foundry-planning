@@ -349,7 +349,7 @@ d("liabilities-writes core", () => {
     // check_liability_owners_sum SKIP the sum check when the liability's
     // parent_account_id is non-null (a child of a business legitimately has zero
     // owner rows), so this commit succeeds with the REAL trigger ENABLED. This test
-    // therefore proves the live PUT route / Copilot tool reparent works end-to-end —
+    // therefore proves the live PUT route / Forge tool reparent works end-to-end —
     // before 0167 it required disabling the trigger, which proved nothing about prod.
     const res = await updateLiabilityForClient({
       clientId: COOPER_CLIENT_ID,

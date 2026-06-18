@@ -1,6 +1,6 @@
 # Planning Knowledge Base — Curated Seed
 
-This file is the tiny curated global seed for the copilot planning knowledge base.
+This file is the tiny curated global seed for the forge planning knowledge base.
 Each section below is one document: an HTML comment declares its `source` (one of
 `planning_playbook | tax_reference | client_document | firm_note | other`) and a
 human-readable `ref` (the citable `sourceRef`). The prose after the heading, up to

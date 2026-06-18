@@ -33,6 +33,7 @@ import ReviewStepWills, {
 } from "./review-step-wills";
 import type { MatchCandidate } from "./match-link-picker";
 import { SourceFilesContext } from "./source-badge";
+import WarningsBanner from "./warnings-banner";
 
 type WizardTabId =
   | "family"
@@ -382,6 +383,7 @@ export default function ReviewWizard({
   return (
     <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
+      <WarningsBanner warnings={payload.warnings} />
       <ImportTotalsBar
         accounts={accounts}
         liabilities={liabilities}
