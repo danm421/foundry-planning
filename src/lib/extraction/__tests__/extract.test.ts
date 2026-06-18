@@ -35,13 +35,14 @@ vi.mock("../vision-ocr", () => ({
 
 import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
-import { extractPdfText } from "../pdf-parser";
+import { extractPdfText, extractPdfPages } from "../pdf-parser";
 import { visionOcrPdf } from "../vision-ocr";
 import { FACT_FINDER_CLASSIFIER_PROMPT } from "../prompts/fact-finder-classifier";
 import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
+const mockedPages = vi.mocked(extractPdfPages);
 const mockedVision = vi.mocked(visionOcrPdf);
 
 beforeEach(() => {
@@ -189,6 +190,34 @@ describe("extractDocument", () => {
 
         expect(result.extracted.incomes).toHaveLength(1);
         expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+    });
+
+    it("comprehensive mode redacts SSNs before the AI call", async () => {
+        // Inject a recognizable SSN into one of the pages returned by extractPdfPages.
+        // The production path (extract.ts) runs redactSsns on each page BEFORE
+        // passing them to extractWithMultiPass → callAIExtraction. This test
+        // verifies that the raw SSN never reaches the AI boundary; if the
+        // redaction step were removed, the assertion below would fail.
+        mockedPages.mockResolvedValueOnce([
+            "page 1 content with enough text to pass the minimum length check",
+            "Client SSN: 123-45-6789. Account balance: $50,000.",
+            "page 3 content with enough text to pass the minimum length check",
+            "page 4 income and social security data for John SS 38400 per year",
+        ]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        await extractDocument(
+            Buffer.from("pdf"), "report.pdf", "auto", "mini", "pdf", false, /* comprehensive */ true,
+        );
+
+        // Every argument to every callAIExtraction call must be free of the raw SSN.
+        const allArgs = mockedCallAI.mock.calls.flat().join("\n");
+        expect(allArgs).not.toContain("123-45-6789");
+        expect(allArgs).toContain("[REDACTED-SSN]");
     });
 
     it("extracts stocks, a bond, and cash into nested holdings", async () => {
