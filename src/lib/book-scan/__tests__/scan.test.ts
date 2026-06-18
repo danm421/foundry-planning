@@ -216,3 +216,63 @@ describe("scanBook — relationship signals", () => {
     expect(row.pendingImport).toBe(true);
   });
 });
+
+describe("scanBook — filter / sort / paginate", () => {
+  async function seedThree() {
+    const mk = async (name: string, cash: string) => {
+      const [hh] = await db
+        .insert(crmHouseholds)
+        .values({ firmId: FIRM_A, advisorId: ADV_A, name })
+        .returning();
+      const [c] = await db
+        .insert(clients)
+        .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hh.id, retirementAge: 65, planEndAge: 95 })
+        .returning();
+      const [sc] = await db
+        .insert(scenarios)
+        .values({ clientId: c.id, name: "Base Case", isBaseCase: true })
+        .returning();
+      await db.insert(accounts).values({ clientId: c.id, scenarioId: sc.id, name: "Checking", category: "cash", subType: "checking", value: cash });
+    };
+    await mk("Low", "1000");
+    await mk("Mid", "50000");
+    await mk("High", "300000");
+  }
+
+  it("filters with cashAtLeast (AND semantics)", async () => {
+    await seedThree();
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { filters: { cashAtLeast: 40000 } });
+    expect(res.rows.map((r) => r.name).sort()).toEqual(["High", "Mid"]);
+    expect(res.totalCount).toBe(2);
+  });
+
+  it("sorts by cashBalance descending", async () => {
+    await seedThree();
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "cashBalance", direction: "desc" });
+    expect(res.rows.map((r) => r.name)).toEqual(["High", "Mid", "Low"]);
+  });
+
+  it("puts null lastContactDays last regardless of direction", async () => {
+    await seedThree(); // none contacted → all null
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "lastContactDays", direction: "asc" });
+    expect(res.rows).toHaveLength(3); // does not crash; nulls sink
+  });
+
+  it("paginates with limit/offset and reports totalCount + truncated", async () => {
+    await seedThree();
+    const res = await scanBook(
+      { firmId: FIRM_A, advisorId: ADV_A },
+      { sortBy: "cashBalance", direction: "desc", limit: 2, offset: 0 },
+    );
+    expect(res.rows.map((r) => r.name)).toEqual(["High", "Mid"]);
+    expect(res.totalCount).toBe(3);
+    expect(res.truncated).toBe(true);
+  });
+
+  it("clamps limit to the 200 max", async () => {
+    await seedThree();
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { limit: 9999 });
+    expect(res.rows).toHaveLength(3);
+    expect(res.truncated).toBe(false);
+  });
+});

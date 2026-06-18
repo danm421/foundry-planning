@@ -204,9 +204,37 @@ export async function scanBook(
     };
   });
 
-  // Filtering/sort/limit added in Task 3; for now return everything.
+  // Filters (all AND-ed).
+  const f = opts.filters ?? {};
+  const filtered = rows.filter((r) => {
+    if (f.cashAtLeast != null && r.cashBalance < f.cashAtLeast) return false;
+    if (f.liquidAtLeast != null && r.liquid < f.liquidAtLeast) return false;
+    if (f.netWorthUnder != null && r.netWorth >= f.netWorthUnder) return false;
+    if (f.hasPendingImport != null && r.pendingImport !== f.hasPendingImport) return false;
+    if (f.hasOpenItems != null && r.openItems > 0 !== f.hasOpenItems) return false;
+    if (f.minOpenTasks != null && r.openTasks < f.minOpenTasks) return false;
+    // never-contacted (null) is the MOST stale: kept by lastContactDaysOver,
+    // excluded by lastContactDaysUnder. Map null → Infinity for both.
+    if (f.lastContactDaysOver != null && (r.lastContactDays ?? Infinity) <= f.lastContactDaysOver) return false;
+    if (f.lastContactDaysUnder != null && (r.lastContactDays ?? Infinity) >= f.lastContactDaysUnder) return false;
+    return true;
+  });
+
+  // Sort — nulls always last regardless of direction.
+  const sortBy = opts.sortBy ?? "lastContactDays";
+  const dir = opts.direction ?? "desc";
+  filtered.sort((a, b) => {
+    const av = a[sortBy];
+    const bv = b[sortBy];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return dir === "asc" ? av - bv : bv - av;
+  });
+
+  const totalCount = filtered.length;
   const limit = Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
   const offset = opts.offset ?? 0;
-  const page = rows.slice(offset, offset + limit);
-  return { rows: page, totalCount: rows.length, truncated: offset + page.length < rows.length };
+  const page = filtered.slice(offset, offset + limit);
+  return { rows: page, totalCount, truncated: offset + page.length < totalCount };
 }
