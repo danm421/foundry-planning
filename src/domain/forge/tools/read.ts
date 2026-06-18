@@ -9,7 +9,7 @@
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios, clientImports } from "@/db/schema";
 import type {
@@ -341,7 +341,7 @@ export function buildReadTools(
       const [row] = await db
         .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId, extractHoldings: clientImports.extractHoldings })
         .from(clientImports)
-        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
       if (!row) return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
 
@@ -354,7 +354,7 @@ export function buildReadTools(
       const [after] = await db
         .select({ payloadJson: clientImports.payloadJson, status: clientImports.status })
         .from(clientImports)
-        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
       const fileResults = (after?.payloadJson as ImportPayloadJson | null)?.fileResults ?? {};
       if (Object.keys(fileResults).length > 0 && !(row.mode === "updating" && !row.scenarioId)) {
@@ -364,7 +364,7 @@ export function buildReadTools(
       const [final] = await db
         .select({ id: clientImports.id, status: clientImports.status, payloadJson: clientImports.payloadJson })
         .from(clientImports)
-        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
       if (!final) return JSON.stringify({ found: false, importId, note: "import disappeared after extraction" });
       const payload = (final.payloadJson as ImportPayloadJson | null)?.payload ?? null;
