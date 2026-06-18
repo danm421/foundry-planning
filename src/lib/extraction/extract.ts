@@ -265,7 +265,7 @@ export async function extractDocument(
             const extracted = flattenMultiPass(multi);
             warnings.push(...multi.warnings);
             return {
-                documentType: documentType === "auto" ? "fact_finder" : documentType,
+                documentType,
                 fileName,
                 extracted,
                 warnings,
