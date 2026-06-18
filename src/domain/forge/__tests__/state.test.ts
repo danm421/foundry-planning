@@ -42,6 +42,11 @@ describe("ForgeState", () => {
   it("exposes a toolErrorCounts channel", () => {
     expect(ForgeState.spec.toolErrorCounts).toBeDefined();
   });
+
+  it("declares verifyAttempts and verifyDecision channels", () => {
+    expect(ForgeState.spec).toHaveProperty("verifyAttempts");
+    expect(ForgeState.spec).toHaveProperty("verifyDecision");
+  });
 });
 
 describe("mergeToolErrorCounts", () => {

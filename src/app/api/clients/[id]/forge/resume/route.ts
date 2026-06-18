@@ -230,9 +230,12 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             send({ type: "tool_start", name: ev.name });
           } else if (ev.event === "on_tool_end") {
             send({ type: "tool_end", name: ev.name });
-          } else if (ev.event === "on_custom_event") {
-            // Forward the typed structured frame verbatim. Payloads are already
-            // masked/grounded by the emitting tool (custom-events contract).
+          } else if (ev.event === "on_custom_event" && ev.name !== "forge_verify") {
+            // Forward the typed structured frame verbatim (tool_render/navigate/
+            // activity). Payloads are already masked/grounded by the emitter
+            // (custom-events contract). forge_verify control frames are skipped:
+            // the resume route streams live (no answer buffer to gate), matching
+            // the stream route's verify scope.
             send({ type: ev.name, ...(ev.data as Record<string, unknown>) });
           }
         }

@@ -55,6 +55,11 @@ describe("parseForgeSse", () => {
       },
     ]);
   });
+
+  it("parses a verifying frame", () => {
+    const events = drain([`data: {"type":"verifying"}\n\n`]);
+    expect(events).toEqual([{ type: "verifying" }]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -80,6 +85,23 @@ const validArgs = {
   message: "Hello forge",
   scenarioId: "scen_1",
 };
+
+/** Build a streaming Response from an array of raw SSE frame strings. */
+function makeFramedResponse(frames: string[]): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) {
+        controller.enqueue(encoder.encode(frame));
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
 
 describe("useForgeStream.send", () => {
   beforeEach(() => {
@@ -162,5 +184,52 @@ describe("custom-streaming frames", () => {
     expect(result.current.lastToolRender).toMatchObject({ type: "tool_render", name: "run_projection" });
     expect(result.current.pendingNavigate).toBe("/clients/c1/scenarios/s2");
     expect(result.current.status).toBe("done");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useForgeStream — isVerifying state transitions
+// ---------------------------------------------------------------------------
+
+describe("useForgeStream — isVerifying", () => {
+  it("sets isVerifying to true when a verifying event arrives (no token follows)", async () => {
+    // Only a verifying frame — no token, no done. The flag should be set and
+    // nothing clears it (token never arrives).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeFramedResponse([`data: {"type":"verifying"}\n\n`]),
+      ),
+    );
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+
+    expect(result.current.isVerifying).toBe(true);
+  });
+
+  it("clears isVerifying to false when a token arrives after verifying", async () => {
+    // verifying → token → done: token should clear isVerifying.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeFramedResponse([
+          `data: {"type":"verifying"}\n\n`,
+          `data: {"type":"token","text":"Balance is $1."}\n\n`,
+          `data: {"type":"done"}\n\n`,
+        ]),
+      ),
+    );
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+
+    expect(result.current.isVerifying).toBe(false);
   });
 });

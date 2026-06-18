@@ -74,6 +74,7 @@ function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForg
     lastToolRender: null,
     pendingNavigate: null,
     setPendingNavigate: vi.fn(),
+    isVerifying: false,
     pendingApproval: null,
     setPendingApproval: vi.fn(),
     status: "idle",

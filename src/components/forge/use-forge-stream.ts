@@ -32,6 +32,7 @@ export type ForgeSseEvent =
   | { type: "navigate"; href: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
+  | { type: "verifying" }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -88,6 +89,12 @@ export interface SendArgs {
   pendingImportId?: string;
   /** Display-only filenames to show on the user bubble; never sent to the server. */
   attachments?: string[];
+  /**
+   * Skip pushing the user bubble — the caller already showed it (e.g. the
+   * attachment path renders the turn before the import runs so it appears
+   * immediately). When true, `send` only pushes the empty assistant bubble.
+   */
+  skipUserBubble?: boolean;
 }
 
 export interface UseForgeStreamResult {
@@ -100,6 +107,7 @@ export interface UseForgeStreamResult {
   /** Pending in-app navigation the panel may consume + clear. */
   pendingNavigate: string | null;
   setPendingNavigate: React.Dispatch<React.SetStateAction<string | null>>;
+  isVerifying: boolean;
   pendingApproval: PendingApproval | null;
   setPendingApproval: React.Dispatch<React.SetStateAction<PendingApproval | null>>;
   status: ForgeStatus;
@@ -123,6 +131,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     Extract<ForgeSseEvent, { type: "tool_render" }> | null
   >(null);
   const [pendingNavigate, setPendingNavigate] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [status, setStatus] = useState<ForgeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -139,7 +148,11 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       case "conversation":
         setConversationId(ev.conversationId);
         break;
+      case "verifying":
+        setIsVerifying(true);
+        break;
       case "token":
+        setIsVerifying(false);
         // Append to the trailing assistant bubble (created by `send` before fetch).
         setMessages((m) => {
           if (m.length === 0) return m;
@@ -172,6 +185,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         setPendingApproval({ previews: ev.previews, calls: ev.calls });
         break;
       case "error":
+        setIsVerifying(false);
         setStatus("error");
         setErrorMessage(ev.message);
         break;
@@ -221,12 +235,17 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       setErrorMessage(null);
       setStreamingText("");
       setToolStatus(null);
-      // Push the user turn + an empty assistant bubble to stream into.
-      setMessages((m) => [
-        ...m,
-        { role: "user", text: args.message, attachments: args.attachments },
-        { role: "assistant", text: "" },
-      ]);
+      setIsVerifying(false);
+      // Push the user turn (unless the caller already showed it) + an empty
+      // assistant bubble to stream into.
+      setMessages((m) => {
+        const next = [...m];
+        if (!args.skipUserBubble) {
+          next.push({ role: "user", text: args.message, attachments: args.attachments });
+        }
+        next.push({ role: "assistant", text: "" });
+        return next;
+      });
 
       let res: Response;
       try {
@@ -281,6 +300,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       setPendingApproval(null); // optimistic clear so the card unmounts
       setStatus("streaming");
       setErrorMessage(null);
+      setIsVerifying(false);
       // Push an empty assistant bubble to stream the response into,
       // matching the same shape `send` uses so the renderer is consistent.
       setMessages((m) => [...m, { role: "assistant", text: "" }]);
@@ -320,6 +340,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     lastToolRender,
     pendingNavigate,
     setPendingNavigate,
+    isVerifying,
     pendingApproval,
     setPendingApproval,
     status,

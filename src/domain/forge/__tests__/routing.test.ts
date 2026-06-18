@@ -20,4 +20,15 @@ describe("routeAfterAgent", () => {
   it("routes reads to tools even when the write set is empty (Phase 0)", () => {
     expect(routeAfterAgent([{ name: "find_client" }], new Set<string>())).toBe("tools");
   });
+  it("routes a no-tool answer WITH a number to verify", () => {
+    expect(routeAfterAgent([], WRITE, true)).toBe("verify");
+  });
+  it("ends a no-tool answer with NO number (hasNumber omitted defaults false)", () => {
+    expect(routeAfterAgent([], WRITE)).toBe("__end__");
+    expect(routeAfterAgent([], WRITE, false)).toBe("__end__");
+  });
+  it("ignores hasNumber when there are tool calls", () => {
+    expect(routeAfterAgent([{ name: "run_projection" }], WRITE, true)).toBe("tools");
+    expect(routeAfterAgent([{ name: "create_scenario" }], WRITE, true)).toBe("approval");
+  });
 });

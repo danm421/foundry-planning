@@ -35,15 +35,21 @@ vi.mock("../actions", () => ({
   resolveBaseScenarioId: vi.fn(async () => "base"),
 }));
 
+const IMPORT_RESULT = {
+  importId: "imp_1",
+  summary: { extract: { succeeded: 1, failed: 0 }, match: { exact: 1, fuzzy: 0, new: 0 } },
+  warnings: [] as string[],
+};
+
+// Controllable so a test can hold the import open and assert the user bubble
+// renders *before* the analysis resolves.
+const importMocks = vi.hoisted(() => ({ runImport: vi.fn() }));
+
 vi.mock("../use-forge-import", () => ({
   useForgeImport: () => ({
     status: "idle",
     errorMessage: null,
-    runImport: vi.fn(async () => ({
-      importId: "imp_1",
-      summary: { extract: { succeeded: 1, failed: 0 }, match: { exact: 1, fuzzy: 0, new: 0 } },
-      warnings: [],
-    })),
+    runImport: importMocks.runImport,
     reset: vi.fn(),
   }),
 }));
@@ -51,6 +57,8 @@ vi.mock("../use-forge-import", () => ({
 beforeEach(() => {
   currentSearch = "scenario=s1";
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
+  importMocks.runImport.mockReset();
+  importMocks.runImport.mockResolvedValue(IMPORT_RESULT);
 });
 
 function mountPanel() {
@@ -115,6 +123,45 @@ describe("ForgePanel", () => {
 
     // The attachment shows in the conversation (user bubble chip).
     expect(screen.getAllByText(/stmt\.pdf/).length).toBeGreaterThan(0);
+  });
+
+  it("posts the user's message immediately, before the import analysis finishes", async () => {
+    // Hold the import open so we can observe the moment between send and analysis.
+    let release!: (v: typeof IMPORT_RESULT) => void;
+    importMocks.runImport.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    mountPanel();
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "what is in this statement?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    // Import is STILL pending: the user's turn (text + attachment chip) is
+    // already in the thread, and the network turn has not fired yet.
+    expect(screen.getByText("what is in this statement?")).toBeInTheDocument();
+    expect(screen.getAllByText(/stmt\.pdf/).length).toBeGreaterThan(0);
+    const callsMidImport = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls;
+    expect(callsMidImport.find((c) => String(c[0]).includes("/forge/stream"))).toBeFalsy();
+
+    // Releasing the import fires the chat turn — and the message is not duplicated.
+    await act(async () => {
+      release(IMPORT_RESULT);
+    });
+    expect(await screen.findByTestId("forge-import-review")).toBeInTheDocument();
+    expect(screen.getAllByText("what is in this statement?")).toHaveLength(1);
   });
 
   it("clears the review link when starting a new chat", async () => {

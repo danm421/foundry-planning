@@ -13,6 +13,8 @@ import { parseResumeDecisions } from "./interrupts";
 import { routeAfterAgent } from "./routing";
 import { compactHistory } from "./history-window";
 import { classifyIntent } from "./dispatcher";
+import { verifyNode } from "./verify";
+import { containsNumber } from "./grounding";
 import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
 
@@ -220,6 +222,7 @@ export function buildGraph(
     .addNode("tools", toolsNode)
     .addNode("approval", approvalNode)
     .addNode("escalate", escalateNode)
+    .addNode("verify", verifyNode)
     .addEdge(START, "agent")
     // tools/approval → agent normally, but → escalate after N consecutive
     // failures of a single tool (deterministic stop instead of a retry loop).
@@ -231,10 +234,16 @@ export function buildGraph(
       (state) => {
         const last = state.messages[state.messages.length - 1] as AIMessage;
         const calls = (last.tool_calls ?? []).map((c) => ({ name: c.name }));
-        const route = routeAfterAgent(calls, WRITE_TOOL_NAMES);
+        const hasNumber = typeof last.content === "string" && containsNumber(last.content);
+        const route = routeAfterAgent(calls, WRITE_TOOL_NAMES, hasNumber);
         return route === "__end__" ? END : route;
       },
-      { tools: "tools", approval: "approval", [END]: END },
+      { tools: "tools", approval: "approval", verify: "verify", [END]: END },
+    )
+    .addConditionalEdges(
+      "verify",
+      (state) => (state.verifyDecision === "retry" ? "agent" : END),
+      { agent: "agent", [END]: END },
     );
 
   // Attach the long-term store so memory tools (and any future store-from-config
