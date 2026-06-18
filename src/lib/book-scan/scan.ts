@@ -5,8 +5,12 @@ import {
   accounts,
   entities,
   entityOwners,
+  crmActivity,
+  crmTasks,
+  clientOpenItems,
+  clientImports,
 } from "@/db/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export type SignalKey =
   | "netWorth"
@@ -130,7 +134,61 @@ export async function scanBook(
     businessShareByClient.set(e.clientId, (businessShareByClient.get(e.clientId) ?? 0) + v * familyShare);
   }
 
-  // 4. Assemble rows (relationship signals filled in Task 2).
+  const householdIds = baseRows.map((r) => r.householdId);
+
+  // lastContact: MAX(occurred_at) per household — returned as epoch seconds to
+  // avoid JS parsing ambiguity with timezone-unqualified timestamp strings.
+  const activityRows = await db
+    .select({
+      householdId: crmActivity.householdId,
+      lastEpochSec: sql<number>`extract(epoch from max(${crmActivity.occurredAt}))`,
+    })
+    .from(crmActivity)
+    .where(inArray(crmActivity.householdId, householdIds))
+    .groupBy(crmActivity.householdId);
+  const lastContactByHousehold = new Map<string, number>();
+  for (const r of activityRows) if (r.lastEpochSec != null) lastContactByHousehold.set(r.householdId, r.lastEpochSec);
+
+  // open CRM tasks per household.
+  const taskRows = await db
+    .select({ householdId: crmTasks.householdId, n: sql<number>`count(*)::int` })
+    .from(crmTasks)
+    .where(
+      and(
+        inArray(crmTasks.householdId, householdIds),
+        inArray(crmTasks.status, ["open", "in_progress", "blocked"]),
+      ),
+    )
+    .groupBy(crmTasks.householdId);
+  const openTasksByHousehold = new Map<string, number>();
+  for (const r of taskRows) openTasksByHousehold.set(r.householdId, r.n);
+
+  // open planning items per client (completed_at IS NULL).
+  const openItemRows = await db
+    .select({ clientId: clientOpenItems.clientId, n: sql<number>`count(*)::int` })
+    .from(clientOpenItems)
+    .where(and(inArray(clientOpenItems.clientId, clientIds), isNull(clientOpenItems.completedAt)))
+    .groupBy(clientOpenItems.clientId);
+  const openItemsByClient = new Map<string, number>();
+  for (const r of openItemRows) openItemsByClient.set(r.clientId, r.n);
+
+  // pending imports per client.
+  const pendingImportRows = await db
+    .selectDistinct({ clientId: clientImports.clientId })
+    .from(clientImports)
+    .where(
+      and(
+        inArray(clientImports.clientId, clientIds),
+        inArray(clientImports.status, ["draft", "extracting", "review"]),
+      ),
+    );
+  const pendingImportClients = new Set(pendingImportRows.map((r) => r.clientId));
+
+  const nowSec = Date.now() / 1000;
+  const daysSince = (epochSec: number | undefined): number | null =>
+    epochSec == null ? null : Math.floor((nowSec - epochSec) / 86400);
+
+  // 4. Assemble rows.
   const rows: ClientSignalRow[] = baseRows.map((b) => {
     const p = portfolio.get(b.clientId) ?? { net: 0, liquid: 0, cash: 0 };
     return {
@@ -139,10 +197,10 @@ export async function scanBook(
       netWorth: p.net + (businessShareByClient.get(b.clientId) ?? 0),
       liquid: p.liquid,
       cashBalance: p.cash,
-      lastContactDays: null,
-      openTasks: 0,
-      openItems: 0,
-      pendingImport: false,
+      lastContactDays: daysSince(lastContactByHousehold.get(b.householdId)),
+      openTasks: openTasksByHousehold.get(b.householdId) ?? 0,
+      openItems: openItemsByClient.get(b.clientId) ?? 0,
+      pendingImport: pendingImportClients.has(b.clientId),
     };
   });
 

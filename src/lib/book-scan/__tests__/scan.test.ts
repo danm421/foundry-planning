@@ -8,6 +8,10 @@ import {
   entityOwners,
   scenarios,
   familyMembers,
+  crmActivity,
+  crmTasks,
+  clientOpenItems,
+  clientImports,
 } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { scanBook } from "../scan";
@@ -50,25 +54,25 @@ async function makeClient(opts: {
 
 async function cleanup() {
   const firmIds = [FIRM_A, FIRM_B];
-  // children first (FK order): accounts/entities reference clients; owners reference entities
-  const cs = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(inArray(clients.firmId, firmIds));
+  const cs = await db.select({ id: clients.id }).from(clients).where(inArray(clients.firmId, firmIds));
   const clientIds = cs.map((c) => c.id);
+  const hhs = await db.select({ id: crmHouseholds.id }).from(crmHouseholds).where(inArray(crmHouseholds.firmId, firmIds));
+  const householdIds = hhs.map((h) => h.id);
   if (clientIds.length) {
-    const es = await db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(inArray(entities.clientId, clientIds));
+    const es = await db.select({ id: entities.id }).from(entities).where(inArray(entities.clientId, clientIds));
     const entIds = es.map((e) => e.id);
-    if (entIds.length)
-      await db.delete(entityOwners).where(inArray(entityOwners.entityId, entIds));
+    if (entIds.length) await db.delete(entityOwners).where(inArray(entityOwners.entityId, entIds));
     await db.delete(entities).where(inArray(entities.clientId, clientIds));
     await db.delete(accounts).where(inArray(accounts.clientId, clientIds));
+    await db.delete(clientOpenItems).where(inArray(clientOpenItems.clientId, clientIds));
+    await db.delete(clientImports).where(inArray(clientImports.clientId, clientIds));
     await db.delete(familyMembers).where(inArray(familyMembers.clientId, clientIds));
     // scenarios cascade from clients but delete explicitly for clarity
     await db.delete(scenarios).where(inArray(scenarios.clientId, clientIds));
+  }
+  if (householdIds.length) {
+    await db.delete(crmActivity).where(inArray(crmActivity.householdId, householdIds));
+    await db.delete(crmTasks).where(inArray(crmTasks.householdId, householdIds));
   }
   await db.delete(clients).where(inArray(clients.firmId, firmIds));
   await db.delete(crmHouseholds).where(inArray(crmHouseholds.firmId, firmIds));
@@ -146,5 +150,69 @@ describe("scanBook — portfolio signals + scoping", () => {
 
     const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, {});
     expect(res.rows.find((r) => r.name === "Dunn")!.netWorth).toBe(50000);
+  });
+});
+
+describe("scanBook — relationship signals", () => {
+  it("derives lastContactDays from the most recent activity, null when none", async () => {
+    const withHh = async (name: string) => {
+      const [hh] = await db
+        .insert(crmHouseholds)
+        .values({ firmId: FIRM_A, advisorId: ADV_A, name })
+        .returning();
+      const [c] = await db
+        .insert(clients)
+        .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hh.id, retirementAge: 65, planEndAge: 95 })
+        .returning();
+      return { clientId: c.id, householdId: hh.id };
+    };
+    const contacted = await withHh("Contacted");
+    await withHh("NeverContacted");
+
+    const tenDaysAgo = new Date(Date.now() - 10 * 86400000);
+    await db.insert(crmActivity).values({
+      householdId: contacted.householdId,
+      firmId: FIRM_A,
+      kind: "call",
+      title: "Check-in call",
+      occurredAt: tenDaysAgo,
+    });
+
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, {});
+    expect(res.rows.find((r) => r.name === "Contacted")!.lastContactDays).toBe(10);
+    expect(res.rows.find((r) => r.name === "NeverContacted")!.lastContactDays).toBeNull();
+  });
+
+  it("counts open CRM tasks (open/in_progress/blocked) and open planning items, and flags pending imports", async () => {
+    const [hh] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, name: "Workload" })
+      .returning();
+    const [c] = await db
+      .insert(clients)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hh.id, retirementAge: 65, planEndAge: 95 })
+      .returning();
+
+    await db.insert(crmTasks).values([
+      { firmId: FIRM_A, householdId: hh.id, title: "a", status: "open", createdByUserId: "u1" },
+      { firmId: FIRM_A, householdId: hh.id, title: "b", status: "in_progress", createdByUserId: "u1" },
+      { firmId: FIRM_A, householdId: hh.id, title: "c", status: "done", createdByUserId: "u1" }, // excluded
+    ]);
+    await db.insert(clientOpenItems).values([
+      { clientId: c.id, title: "x" }, // completedAt null → open
+    ]);
+    await db.insert(clientImports).values({
+      clientId: c.id,
+      orgId: FIRM_A,
+      mode: "onboarding",
+      status: "review",
+      createdByUserId: "u1",
+    });
+
+    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, {});
+    const row = res.rows.find((r) => r.name === "Workload")!;
+    expect(row.openTasks).toBe(2);
+    expect(row.openItems).toBe(1);
+    expect(row.pendingImport).toBe(true);
   });
 });
