@@ -197,6 +197,7 @@ describe("scanBook — relationship signals", () => {
       { firmId: FIRM_A, householdId: hh.id, title: "a", status: "open", createdByUserId: "u1" },
       { firmId: FIRM_A, householdId: hh.id, title: "b", status: "in_progress", createdByUserId: "u1" },
       { firmId: FIRM_A, householdId: hh.id, title: "c", status: "done", createdByUserId: "u1" }, // excluded
+      { firmId: FIRM_A, householdId: hh.id, title: "d", status: "blocked", createdByUserId: "u1" },
     ]);
     await db.insert(clientOpenItems).values([
       { clientId: c.id, title: "x" }, // completedAt null → open
@@ -211,14 +212,14 @@ describe("scanBook — relationship signals", () => {
 
     const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, {});
     const row = res.rows.find((r) => r.name === "Workload")!;
-    expect(row.openTasks).toBe(2);
+    expect(row.openTasks).toBe(3);
     expect(row.openItems).toBe(1);
     expect(row.pendingImport).toBe(true);
   });
 });
 
 describe("scanBook — filter / sort / paginate", () => {
-  async function seedThree() {
+  async function seedThree(): Promise<{ highHouseholdId: string }> {
     const mk = async (name: string, cash: string) => {
       const [hh] = await db
         .insert(crmHouseholds)
@@ -233,10 +234,12 @@ describe("scanBook — filter / sort / paginate", () => {
         .values({ clientId: c.id, name: "Base Case", isBaseCase: true })
         .returning();
       await db.insert(accounts).values({ clientId: c.id, scenarioId: sc.id, name: "Checking", category: "cash", subType: "checking", value: cash });
+      return { householdId: hh.id };
     };
     await mk("Low", "1000");
     await mk("Mid", "50000");
-    await mk("High", "300000");
+    const { householdId: highHouseholdId } = await mk("High", "300000");
+    return { highHouseholdId };
   }
 
   it("filters with cashAtLeast (AND semantics)", async () => {
@@ -246,6 +249,25 @@ describe("scanBook — filter / sort / paginate", () => {
     expect(res.totalCount).toBe(2);
   });
 
+  it("filters with cashAtLeast + minOpenTasks (strict AND — intersection is subset of each)", async () => {
+    const { highHouseholdId } = await seedThree();
+    // seed an open task ONLY for High's household
+    await db.insert(crmTasks).values({
+      firmId: FIRM_A,
+      householdId: highHouseholdId,
+      title: "Review portfolio",
+      status: "open",
+      createdByUserId: "u1",
+    });
+    // cashAtLeast 40000 → Mid + High; minOpenTasks 1 → only High; intersection = High
+    const res = await scanBook(
+      { firmId: FIRM_A, advisorId: ADV_A },
+      { filters: { cashAtLeast: 40000, minOpenTasks: 1 } },
+    );
+    expect(res.rows.map((r) => r.name)).toEqual(["High"]);
+    expect(res.totalCount).toBe(1);
+  });
+
   it("sorts by cashBalance descending", async () => {
     await seedThree();
     const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "cashBalance", direction: "desc" });
@@ -253,9 +275,68 @@ describe("scanBook — filter / sort / paginate", () => {
   });
 
   it("puts null lastContactDays last regardless of direction", async () => {
-    await seedThree(); // none contacted → all null
-    const res = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "lastContactDays", direction: "asc" });
-    expect(res.rows).toHaveLength(3); // does not crash; nulls sink
+    // Seed one contacted client + two never-contacted clients
+    const [hhContacted] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, name: "Contacted" })
+      .returning();
+    const [cContacted] = await db
+      .insert(clients)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hhContacted.id, retirementAge: 65, planEndAge: 95 })
+      .returning();
+    const [scContacted] = await db
+      .insert(scenarios)
+      .values({ clientId: cContacted.id, name: "Base Case", isBaseCase: true })
+      .returning();
+    await db.insert(accounts).values({ clientId: cContacted.id, scenarioId: scContacted.id, name: "Checking", category: "cash", subType: "checking", value: "1000" });
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86400000);
+    await db.insert(crmActivity).values({
+      householdId: hhContacted.id,
+      firmId: FIRM_A,
+      kind: "call",
+      title: "Check-in call",
+      occurredAt: fiveDaysAgo,
+    });
+
+    const [hhNever1] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, name: "NeverA" })
+      .returning();
+    const [cNever1] = await db
+      .insert(clients)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hhNever1.id, retirementAge: 65, planEndAge: 95 })
+      .returning();
+    const [scNever1] = await db
+      .insert(scenarios)
+      .values({ clientId: cNever1.id, name: "Base Case", isBaseCase: true })
+      .returning();
+    await db.insert(accounts).values({ clientId: cNever1.id, scenarioId: scNever1.id, name: "Checking", category: "cash", subType: "checking", value: "1000" });
+
+    const [hhNever2] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, name: "NeverB" })
+      .returning();
+    const [cNever2] = await db
+      .insert(clients)
+      .values({ firmId: FIRM_A, advisorId: ADV_A, crmHouseholdId: hhNever2.id, retirementAge: 65, planEndAge: 95 })
+      .returning();
+    const [scNever2] = await db
+      .insert(scenarios)
+      .values({ clientId: cNever2.id, name: "Base Case", isBaseCase: true })
+      .returning();
+    await db.insert(accounts).values({ clientId: cNever2.id, scenarioId: scNever2.id, name: "Checking", category: "cash", subType: "checking", value: "1000" });
+
+    // asc: non-null (contacted) sorts first, nulls last
+    const resAsc = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "lastContactDays", direction: "asc" });
+    expect(resAsc.rows[0].name).toBe("Contacted");
+    expect(resAsc.rows[resAsc.rows.length - 2].lastContactDays).toBeNull();
+    expect(resAsc.rows[resAsc.rows.length - 1].lastContactDays).toBeNull();
+
+    // desc: non-null (contacted) still sorts first (nulls last in both directions)
+    const resDesc = await scanBook({ firmId: FIRM_A, advisorId: ADV_A }, { sortBy: "lastContactDays", direction: "desc" });
+    expect(resDesc.rows[0].name).toBe("Contacted");
+    expect(resDesc.rows[resDesc.rows.length - 2].lastContactDays).toBeNull();
+    expect(resDesc.rows[resDesc.rows.length - 1].lastContactDays).toBeNull();
   });
 
   it("paginates with limit/offset and reports totalCount + truncated", async () => {

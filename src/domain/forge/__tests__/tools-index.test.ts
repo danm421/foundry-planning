@@ -162,7 +162,7 @@ const EXPECTED_MEMORY_TOOL_NAMES = ["read_memory", "write_memory"];
 
 const EXPECTED_BOOK = ["scan_book"];
 
-describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly)", () => {
+describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book)", () => {
   it("returns exactly the 57 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
