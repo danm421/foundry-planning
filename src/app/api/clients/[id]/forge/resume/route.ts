@@ -12,6 +12,7 @@ import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
+import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
@@ -243,9 +244,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             (t: { interrupts?: unknown[] }) => t.interrupts?.length,
           );
           if (pending) {
-            const intr = (pending.interrupts as Array<{
-              value: { previews: unknown; calls: unknown };
-            }>)[0].value;
+            const intr = parseApprovalInterrupt(
+              (pending.interrupts as Array<{ value: unknown }>)[0].value,
+            );
             send({
               type: "approval_required",
               previews: intr.previews,

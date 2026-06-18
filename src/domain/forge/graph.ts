@@ -9,6 +9,7 @@ import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI fac
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
 import { getStore } from "./store";
+import { parseResumeDecisions } from "./interrupts";
 import { routeAfterAgent } from "./routing";
 import { selectHistoryWindow } from "./history-window";
 import { describeProposedWrite } from "@/domain/forge/preview";
@@ -65,11 +66,13 @@ export function buildGraph(
     // throws on the FIRST pass (so nothing below it runs) and returns the resume
     // value on the SECOND (resume) pass. ALL tool execution AND the write_proposed
     // audit must happen AFTER interrupt() so each fires EXACTLY ONCE.
-    const decision = interrupt({
-      type: "approval_required",
-      previews,
-      calls: writeCalls.map((c) => ({ id: c.id, name: c.name, args: c.args })),
-    }) as { decisions: Record<string, "confirm" | "reject"> };
+    const decision = parseResumeDecisions(
+      interrupt({
+        type: "approval_required",
+        previews,
+        calls: writeCalls.map((c) => ({ id: c.id, name: c.name, args: c.args })),
+      }),
+    );
 
     // AUDIT OWNERSHIP SPLIT (do not "fix" to also emit write_approved here):
     //   • The NODE emits write_proposed (here, recorded ONCE on the resume pass —

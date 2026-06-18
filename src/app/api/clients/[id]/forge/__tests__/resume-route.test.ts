@@ -322,6 +322,7 @@ describe("POST /api/clients/[id]/forge/resume — happy path", () => {
           interrupts: [
             {
               value: {
+                type: "approval_required",
                 previews: [{ summary: "Add Roth conversion", name: "propose_changes" }],
                 calls: [{ id: "t2", name: "propose_changes", args: { scenarioId: "scenario_orig" } }],
               },
