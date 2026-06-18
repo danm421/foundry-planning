@@ -177,22 +177,49 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       send({ type: "conversation", conversationId: cid });
       try {
         const events = graph.streamEvents(
-          { messages: [new HumanMessage(modelMessage)], authContext },
+          { messages: [new HumanMessage(modelMessage)], authContext, verifyAttempts: 0 },
           { version: "v2", configurable: { thread_id: cid }, recursionLimit: 25 },
         );
+
+        // Hold the agent's answer tokens in a buffer; the verify node decides
+        // when they're allowed out. flush() replays the buffer as small chunks
+        // so the answer still "types" after the check.
+        const REPLAY_CHUNK = 240;
+        let buffer = "";
+        const flush = () => {
+          for (let i = 0; i < buffer.length; i += REPLAY_CHUNK) {
+            send({ type: "token", text: buffer.slice(i, i + REPLAY_CHUNK) });
+          }
+          buffer = "";
+        };
+
         for await (const ev of events) {
           if (ev.event === "on_chat_model_stream") {
             const chunk = ev.data?.chunk;
             // Phase 0 assumes string content (OpenAI text deltas). Array/multimodal content
             // blocks (Phase 1+ tool/reasoning output) would need normalizing here.
             const text = typeof chunk?.content === "string" ? chunk.content : "";
-            if (text) send({ type: "token", text });
+            if (text) buffer += text; // held, not forwarded
           } else if (ev.event === "on_tool_start") {
+            flush(); // release any interstitial prose before the tool runs
             send({ type: "tool_start", name: ev.name });
           } else if (ev.event === "on_tool_end") {
             send({ type: "tool_end", name: ev.name });
+          } else if (ev.event === "on_custom_event" && ev.name === "forge_verify") {
+            const data = (ev.data ?? {}) as { result?: string; caveat?: string };
+            if (data.result === "start") {
+              send({ type: "verifying" });
+            } else if (data.result === "pass") {
+              flush();
+            } else if (data.result === "retry") {
+              buffer = ""; // discard the rejected draft; the revision re-streams
+            } else if (data.result === "caveat") {
+              buffer = data.caveat ? `${data.caveat}\n\n${buffer}` : buffer;
+              flush();
+            }
           }
         }
+        flush(); // any final no-number answer that never hit verify
         await touchConversation(cid, userId);
 
         // A write tool (Phase 2) interrupts before executing; surface the approval
