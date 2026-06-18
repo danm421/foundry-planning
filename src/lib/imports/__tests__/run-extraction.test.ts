@@ -14,6 +14,10 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 //   4. update clientImportExtractions   → no-op
 //   5. update clientImports             → no-op
 let selectCallCount = 0;
+// Controls what the import-row SELECT (call 2) returns
+let importRowResult: unknown[] = [
+  { id: "imp1", payloadJson: null, extractHoldings: false, status: "draft" },
+];
 
 vi.mock("@/db", () => ({
   db: {
@@ -39,16 +43,7 @@ vi.mock("@/db", () => ({
             }
             // Second select: import row — supports .limit() chaining
             return {
-              limit: vi.fn(() =>
-                Promise.resolve([
-                  {
-                    id: "imp1",
-                    payloadJson: null,
-                    extractHoldings: false,
-                    status: "draft",
-                  },
-                ])
-              ),
+              limit: vi.fn(() => Promise.resolve(importRowResult)),
             };
           }),
         })),
@@ -69,10 +64,15 @@ vi.mock("@/db", () => ({
 
 import { runImportExtraction } from "../run-extraction";
 import { extractDocument } from "@/lib/extraction/extract";
+import { recordAudit } from "@/lib/audit";
 
 beforeEach(() => {
   vi.mocked(extractDocument).mockReset();
+  vi.mocked(recordAudit).mockReset();
   selectCallCount = 0;
+  importRowResult = [
+    { id: "imp1", payloadJson: null, extractHoldings: false, status: "draft" },
+  ];
 });
 
 describe("runImportExtraction", () => {
@@ -113,5 +113,27 @@ describe("runImportExtraction", () => {
     );
     expect(res.status).toBe("review");
     expect(res.succeeded).toBe(1);
+
+    // Audit assertions: both started and completed must be recorded.
+    const auditCalls = vi.mocked(recordAudit).mock.calls.map((c) => c[0].action);
+    expect(auditCalls).toContain("import.extraction.started");
+    expect(auditCalls).toContain("import.extraction.completed");
+  });
+
+  it("throws Import not found when the import row is missing", async () => {
+    importRowResult = []; // no import row returned
+
+    await expect(
+      runImportExtraction({
+        importId: "ghost-imp",
+        clientId: "c1",
+        firmId: "org_A",
+        model: "mini",
+        extractHoldings: false,
+        comprehensive: false,
+      }),
+    ).rejects.toThrow(/Import not found/);
+
+    expect(extractDocument).not.toHaveBeenCalled();
   });
 });

@@ -51,8 +51,10 @@ export async function runImportExtraction(
         .where(eq(clientImports.id, importId))
         .limit(1);
 
+    if (!importRow) throw new Error(`Import not found: ${importId}`);
+
     const fileResults: Record<string, ExtractionResult> = {
-        ...((importRow?.payloadJson as { fileResults?: Record<string, ExtractionResult> })
+        ...((importRow.payloadJson as { fileResults?: Record<string, ExtractionResult> })
             ?.fileResults ?? {}),
     };
 

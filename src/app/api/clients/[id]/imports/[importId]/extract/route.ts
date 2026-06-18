@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
@@ -109,7 +109,10 @@ export async function POST(request: NextRequest, { params }: Params) {
             .select()
             .from(clientImportFiles)
             .where(
-                eq(clientImportFiles.importId, importId),
+                and(
+                    eq(clientImportFiles.importId, importId),
+                    isNull(clientImportFiles.deletedAt),
+                ),
             );
 
         if (files.length === 0) {
