@@ -147,7 +147,7 @@ interface TechniquesViewProps {
   liabilities: LiabilityOption[];
   /** Top-level business accounts available as sell sources. */
   businesses: BusinessSaleOption[];
-  modelPortfolios: { id: string; name: string }[];
+  modelPortfolios: { id: string; name: string; growthRate?: number }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;

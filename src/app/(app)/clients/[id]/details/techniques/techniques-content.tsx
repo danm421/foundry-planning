@@ -58,7 +58,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     );
   }
 
-  const [planSettingsRows, { effectiveTree }, modelPortfolioRows, familyMemberRows] = await Promise.all([
+  const [planSettingsRows, loadedTree, modelPortfolioRows, familyMemberRows] = await Promise.all([
     db
       .select()
       .from(planSettings)
@@ -77,6 +77,18 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       .from(familyMembers)
       .where(eq(familyMembers.clientId, id)),
   ]);
+
+  const { effectiveTree } = loadedTree;
+
+  // Blended growth rate per model portfolio — same resolver the projection uses
+  // (asset-class geometric returns weighted by allocation, with client CMA
+  // overrides applied), so the reinvestment dropdown shows the rate it will
+  // actually apply on switch.
+  const growthResolver = loadedTree.resolutionContext?.resolver;
+  const modelPortfolioOptions = modelPortfolioRows.map((p) => ({
+    ...p,
+    growthRate: growthResolver?.resolvePortfolio(p.id).geoReturn,
+  }));
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const transferRows = [...(effectiveTree.transfers ?? [])].sort((a, b) =>
@@ -255,7 +267,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       accounts={accountOptions}
       liabilities={liabilityOptions}
       businesses={businessOptions}
-      modelPortfolios={modelPortfolioRows}
+      modelPortfolios={modelPortfolioOptions}
       milestones={milestones}
       clientFirstName={effectiveTree.client.firstName}
       spouseFirstName={effectiveTree.client.spouseName ?? undefined}

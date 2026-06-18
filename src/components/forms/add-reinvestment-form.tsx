@@ -41,7 +41,7 @@ export interface ReinvestmentInitialData {
 interface AddReinvestmentFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
-  modelPortfolios: { id: string; name: string }[];
+  modelPortfolios: { id: string; name: string; growthRate?: number }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -565,9 +565,9 @@ export default function AddReinvestmentForm({
                   type="button"
                   onClick={() => setTargetType(opt.value)}
                   aria-pressed={active}
-                  className={`rounded-[var(--radius-sm)] border px-3 py-2 text-left transition-colors ${
+                  className={`rounded-[var(--radius-sm)] border-2 px-3 py-2 text-left transition-colors ${
                     active
-                      ? "border-accent/50 bg-accent/10"
+                      ? "border-accent bg-accent/10"
                       : "border-hair bg-card-2 hover:border-hair-2"
                   }`}
                 >
@@ -611,7 +611,9 @@ export default function AddReinvestmentForm({
                   >
                     {modelPortfolios.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {p.growthRate != null
+                          ? `${(p.growthRate * 100).toFixed(2)}% — ${p.name}`
+                          : p.name}
                       </option>
                     ))}
                   </select>

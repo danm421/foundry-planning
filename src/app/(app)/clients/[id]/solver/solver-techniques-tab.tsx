@@ -54,7 +54,7 @@ interface Props {
     linkedPropertyId: string | null;
     balance: string;
   }[];
-  modelPortfolios: { id: string; name: string }[];
+  modelPortfolios: { id: string; name: string; growthRate?: number }[];
   milestones?: ClientMilestones;
   onChange: (m: SolverMutation) => void;
   /** Wired by the workspace. Starts a goal-seek solve on a roth conversion's
