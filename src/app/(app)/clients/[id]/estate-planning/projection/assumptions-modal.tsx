@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
+import { useClientAccess } from "@/components/client-access-provider";
 import type { PlanSettings } from "@/engine/types";
 
 interface Props {
@@ -85,6 +86,8 @@ function buildPayload(form: FormState): Record<string, unknown> {
 }
 
 export function AssumptionsModal({ open, clientId, planSettings, onClose }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const initial = useMemo(() => planSettingsToForm(planSettings), [planSettings]);
   const [form, setForm] = useState<FormState>(initial);
   const [busy, setBusy] = useState(false);
@@ -96,6 +99,7 @@ export function AssumptionsModal({ open, clientId, planSettings, onClose }: Prop
   }
 
   async function handleSave() {
+    if (!canEdit) return;
     setError(null);
     setBusy(true);
     try {
@@ -129,11 +133,14 @@ export function AssumptionsModal({ open, clientId, planSettings, onClose }: Prop
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title="Edit assumptions"
+      title={canEdit ? "Edit assumptions" : "Assumptions"}
       size="lg"
-      primaryAction={{ label: "Save", onClick: handleSave, loading: busy }}
-      secondaryAction={{ label: "Cancel", onClick: onClose, disabled: busy }}
+      // Hide the Save primary action for view-only recipients; only "Cancel"
+      // (close) remains. The fieldset below also disables every input.
+      primaryAction={canEdit ? { label: "Save", onClick: handleSave, loading: busy } : undefined}
+      secondaryAction={{ label: canEdit ? "Cancel" : "Close", onClick: onClose, disabled: busy }}
     >
+      <fieldset disabled={!canEdit} className="border-0 p-0 m-0">
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
         {FIELDS.map((f) => (
           <label key={f.key} className="flex flex-col gap-1">
@@ -164,6 +171,7 @@ export function AssumptionsModal({ open, clientId, planSettings, onClose }: Prop
           </select>
         </label>
       </div>
+      </fieldset>
       {error && (
         <p role="alert" className="mt-4 text-[12px] text-crit">
           {error}

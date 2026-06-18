@@ -16,6 +16,7 @@ import type { ClientData, Will } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import { resolveAnnualExclusion } from "@/lib/gifts/resolve-annual-exclusion";
 import { useToast } from "@/components/toast";
+import { useClientAccess } from "@/components/client-access-provider";
 import { DropPopup, type DropAction, type DropPopupProps } from "./drop/drop-popup";
 import {
   saveGiftOneTime,
@@ -156,6 +157,8 @@ export function CanvasDndProvider({
   taxInflationRate,
   annualExclusions,
 }: ProviderProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [active, setActive] = useState<DragPayload | null>(null);
   const [dropPopupState, setDropPopupState] = useState<DropPopupState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
@@ -173,9 +176,13 @@ export function CanvasDndProvider({
   const router = useRouter();
   const { showToast } = useToast();
 
+  // `useSensor` must run unconditionally (hook rules); we gate what's handed to
+  // `useSensors` instead. Under a view-only share, no sensors are registered, so
+  // the drag gesture itself is inert — a viewer can't even start a drag.
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 4 } });
+  const keyboardSensor = useSensor(KeyboardSensor);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor),
+    ...(canEdit ? [pointerSensor, keyboardSensor] : []),
   );
 
   function handleStart(e: DragStartEvent) {
@@ -266,6 +273,12 @@ export function CanvasDndProvider({
   }
 
   async function dispatchSave(action: DropAction) {
+    // View-only share: never persist a drop. Belt-and-suspenders — the DropPopup
+    // that calls this isn't rendered under view, so a drop can't open the save UI.
+    if (!canEdit) {
+      setDropPopupState(null);
+      return;
+    }
     if (!dropPopupState) return;
     const { source, target, payload } = dropPopupState;
     const account = tree.accounts.find((a) => a.id === source.accountId);
@@ -396,6 +409,9 @@ export function CanvasDndProvider({
   }
 
   async function handleEditSave(draft: BequestDraft) {
+    // View-only share: never PATCH a will. The edit dialog isn't rendered under
+    // view (and onEditBequest is a no-op), so this is defense-in-depth.
+    if (!canEdit) return;
     if (!editing) return;
     const will = (tree.wills ?? []).find((w) => w.id === editing.willId);
     if (!will) return;
@@ -435,7 +451,11 @@ export function CanvasDndProvider({
   const spouseAvailable = (tree.familyMembers ?? []).some((fm) => fm.role === "spouse");
 
   return (
-    <BequestEditContext.Provider value={{ onEditBequest: handleEditBequest }}>
+    // Under a view-only share, supply a no-op `onEditBequest` so heir/charity
+    // card "edit" buttons (which consume this context) become inert.
+    <BequestEditContext.Provider
+      value={{ onEditBequest: canEdit ? handleEditBequest : () => undefined }}
+    >
       <DndContext
         sensors={sensors}
         onDragStart={handleStart}
@@ -454,7 +474,7 @@ export function CanvasDndProvider({
           ) : null}
         </DragOverlay>
 
-        {dropPopupState && (
+        {canEdit && dropPopupState && (
           <DropPopup
             anchor={dropPopupState.anchor}
             source={dropPopupState.source}
@@ -472,7 +492,7 @@ export function CanvasDndProvider({
           />
         )}
 
-        {editing && (() => {
+        {canEdit && editing && (() => {
           const treeAccounts = tree.accounts ?? [];
           const entityOwnedAccountTotals = new Map<string, number>();
           for (const a of treeAccounts) {
