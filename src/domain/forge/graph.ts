@@ -3,7 +3,7 @@ import { StateGraph, START, END, interrupt } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import type { BaseCheckpointSaver, LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ForgeState, type ForgeAuthContext } from "./state";
 import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI factory
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
@@ -14,6 +14,47 @@ import { routeAfterAgent } from "./routing";
 import { selectHistoryWindow } from "./history-window";
 import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
+
+/** Max consecutive failures of a single tool before the graph escalates instead
+ *  of letting the agent retry-loop forever (12-factor Factors 8/9). */
+const TOOL_ERROR_ESCALATE_AT = 3;
+
+/** A tool result is a FAILURE if ToolNode marked it status:"error" (a thrown
+ *  tool) or the content is JSON carrying a truthy `error` field (tools that
+ *  return a sanitized error object rather than throwing). */
+function isToolFailure(content: unknown, status?: string): boolean {
+  if (status === "error") return true;
+  if (typeof content !== "string") return false;
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return (
+      !!parsed &&
+      typeof parsed === "object" &&
+      "error" in parsed &&
+      !!(parsed as { error?: unknown }).error
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Per-tool delta from a batch of tool results: 1 = failed this round, 0 =
+ *  succeeded (resets the streak via the toolErrorCounts reducer). */
+function countToolResults(messages: ToolMessage[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const m of messages) {
+    if (!m.name) continue;
+    counts[m.name] = isToolFailure(m.content, m.status) ? 1 : 0;
+  }
+  return counts;
+}
+
+/** After tools/approval execute: escalate when any tool has failed
+ *  TOOL_ERROR_ESCALATE_AT times in a row, else hand back to the agent. */
+function routeAfterToolExec(state: typeof ForgeState.State): "agent" | "escalate" {
+  const counts = state.toolErrorCounts ?? {};
+  return Object.values(counts).some((n) => n >= TOOL_ERROR_ESCALATE_AT) ? "escalate" : "agent";
+}
 
 /**
  * Compile the forge graph for one conversation.
@@ -46,6 +87,16 @@ export function buildGraph(
     const window = selectHistoryWindow(state.messages);
     const response = await model.invoke([system, ...window]);
     return { messages: [response] };
+  }
+
+  // Wrap the prebuilt ToolNode so we keep its on_tool_start/on_tool_end events
+  // (the routes forward them as status frames) while counting per-tool failures
+  // for the escalation edge. Pass config through so the inner tool runs inherit
+  // the streamEvents callbacks.
+  async function toolsNode(state: typeof ForgeState.State, config?: LangGraphRunnableConfig) {
+    const raw = await toolNode.invoke(state, config);
+    const messages = (Array.isArray(raw) ? raw : raw.messages) as ToolMessage[];
+    return { messages, toolErrorCounts: countToolResults(messages) };
   }
 
   async function approvalNode(state: typeof ForgeState.State) {
@@ -98,6 +149,10 @@ export function buildGraph(
     }
 
     const messages: ToolMessage[] = [];
+    // Count executed-tool failures here too (fires once on the resume pass, like
+    // the audit above) so a chronically-failing write also drives escalation. A
+    // rejection is NOT a failure — only actual execution results are counted.
+    const toolErrorCounts: Record<string, number> = {};
     for (const c of last.tool_calls ?? []) {
       // Azure always populates tool_call ids; guard malformed model output so a
       // missing id can't silently reject a confirmed write or break tool pairing.
@@ -108,8 +163,9 @@ export function buildGraph(
         if (verdict === "confirm") {
           // The tool emits forge.write_approved itself, only on real success.
           const t = toolsByName.get(c.name)!;
-          const result = await t.invoke(c.args);
-          messages.push(new ToolMessage({ tool_call_id: id, content: String(result) }));
+          const content = String(await t.invoke(c.args));
+          toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
+          messages.push(new ToolMessage({ tool_call_id: id, content }));
         } else {
           await recordAudit({
             action: "forge.write_rejected",
@@ -126,20 +182,35 @@ export function buildGraph(
       } else {
         // A read call mixed into a write turn: execute it immediately (no approval needed).
         const t = toolsByName.get(c.name);
-        const result = t ? await t.invoke(c.args) : "Unknown tool.";
-        messages.push(new ToolMessage({ tool_call_id: id, content: String(result) }));
+        const content = String(t ? await t.invoke(c.args) : "Unknown tool.");
+        if (t) toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
+        messages.push(new ToolMessage({ tool_call_id: id, content }));
       }
     }
-    return { messages };
+    return { messages, toolErrorCounts };
+  }
+
+  async function escalateNode() {
+    return {
+      messages: [
+        new AIMessage(
+          "I keep hitting an error with that action. Let's try a different approach or check the inputs.",
+        ),
+      ],
+    };
   }
 
   const graph = new StateGraph(ForgeState)
     .addNode("agent", agentNode)
-    .addNode("tools", toolNode)
+    .addNode("tools", toolsNode)
     .addNode("approval", approvalNode)
+    .addNode("escalate", escalateNode)
     .addEdge(START, "agent")
-    .addEdge("tools", "agent")
-    .addEdge("approval", "agent")
+    // tools/approval → agent normally, but → escalate after N consecutive
+    // failures of a single tool (deterministic stop instead of a retry loop).
+    .addConditionalEdges("tools", routeAfterToolExec, { agent: "agent", escalate: "escalate" })
+    .addConditionalEdges("approval", routeAfterToolExec, { agent: "agent", escalate: "escalate" })
+    .addEdge("escalate", END)
     .addConditionalEdges(
       "agent",
       (state) => {

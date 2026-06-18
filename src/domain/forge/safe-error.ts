@@ -14,13 +14,23 @@ import { ProjectionInputError } from "@/lib/projection/load-client-data";
 const GENERIC_FALLBACK = "Something went wrong while processing your request.";
 const PROJECTION_MESSAGE = "There was a problem loading this client's plan data.";
 
-export function safeForgeErrorMessage(err: unknown): string {
+/**
+ * Categorize an error into a SAFE user-facing message plus a coarse `category`
+ * label (no PII — a stable tag, not the raw message). The category feeds the
+ * 12-factor escalation path + observability; the message is what the SSE `error`
+ * event carries. `safeForgeErrorMessage` delegates here for the message.
+ */
+export function categorizeForgeError(err: unknown): { safeMessage: string; category: string } {
   // Known domain error from the projection loader → safe generic, never the raw
   // message (which embeds the client id / scenario id).
   if (err instanceof ProjectionInputError) {
-    return PROJECTION_MESSAGE;
+    return { safeMessage: PROJECTION_MESSAGE, category: "projection_input" };
   }
   // Everything else: do NOT echo arbitrary err.message — it may carry UUIDs or
   // internal detail. The safest posture is a single generic fallback.
-  return GENERIC_FALLBACK;
+  return { safeMessage: GENERIC_FALLBACK, category: "unknown" };
+}
+
+export function safeForgeErrorMessage(err: unknown): string {
+  return categorizeForgeError(err).safeMessage;
 }
