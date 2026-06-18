@@ -65,6 +65,13 @@ export function ForgePanel({
   const [attached, setAttached] = useState<File[]>([]);
   const [pendingImportId, setPendingImportId] = useState<string | undefined>();
   const [importResult, setImportResult] = useState<ForgeImportResult | null>(null);
+  // After the advisor resolves an approval, keep a read-only receipt of the
+  // decision in the thread (instead of the card vanishing) until the next turn.
+  // Reload-from-history receipts are deferred (needs loadConversationMessages to
+  // surface settled decisions).
+  const [resolvedApproval, setResolvedApproval] = useState<
+    (PendingApproval & { decisions: Record<string, "confirm" | "reject"> }) | null
+  >(null);
   const { status: importStatus, errorMessage: importError, runImport } = useForgeImport();
   const importing =
     importStatus === "creating" ||
@@ -130,6 +137,7 @@ export function ForgePanel({
     setConversationId(undefined);
     setMessages([]);
     setPendingApproval(null);
+    setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
     setInput("");
@@ -139,6 +147,7 @@ export function ForgePanel({
     if (busy || loadingThread || id === conversationId) return;
     setLoadingThread(true);
     setPendingApproval(null);
+    setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
     try {
@@ -153,6 +162,8 @@ export function ForgePanel({
 
   async function onSend() {
     if (locked) return;
+    // A new turn supersedes the prior approval receipt.
+    setResolvedApproval(null);
     // Send-with-files: run the import pipeline, then immediately engage the agent.
     if (attached.length > 0) {
       const files = attached;
@@ -379,13 +390,34 @@ export function ForgePanel({
               previews={pendingApproval.previews}
               calls={pendingApproval.calls}
               busy={status === "streaming"}
-              onSubmit={(decisions) => resume(decisions)}
+              onSubmit={(decisions) => {
+                setResolvedApproval({ ...pendingApproval, decisions });
+                resume(decisions);
+              }}
               onCancel={() => {
                 const rejectAll: Record<string, "confirm" | "reject"> = {};
                 for (const c of pendingApproval.calls) rejectAll[c.id] = "reject";
+                setResolvedApproval({ ...pendingApproval, decisions: rejectAll });
                 resume(rejectAll);
               }}
             />
+          )}
+
+          {/* Read-only receipt of the just-resolved approval (live path). */}
+          {!pendingApproval && resolvedApproval && (
+            <div data-testid="approval-receipt">
+              <ApprovalCard
+                previews={resolvedApproval.previews}
+                calls={resolvedApproval.calls}
+                busy={false}
+                onSubmit={() => {}}
+                onCancel={() => {}}
+                resolved={resolvedApproval.calls.map((c) => ({
+                  id: c.id,
+                  choice: resolvedApproval.decisions[c.id] ?? "reject",
+                }))}
+              />
+            </div>
           )}
 
           {status === "error" && errorMessage && (

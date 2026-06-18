@@ -22,10 +22,23 @@ interface ApprovalCardProps {
   busy: boolean;
   onSubmit: (decisions: Record<string, Verdict>) => void;
   onCancel: () => void;
+  /** When set, the card collapses to a READ-ONLY receipt of a settled decision
+   *  (per-call confirm/reject) — no live controls. Used after the advisor has
+   *  resolved the approval so the record stays in the thread instead of
+   *  vanishing. Render-only: a receipt NEVER derives or re-submits a decision. */
+  resolved?: { id: string; choice: Verdict }[];
 }
 
-export function ApprovalCard({ previews, calls, busy, onSubmit, onCancel }: ApprovalCardProps) {
-  // Default every row to "reject" — fail-safe.
+export function ApprovalCard({
+  previews,
+  calls,
+  busy,
+  onSubmit,
+  onCancel,
+  resolved,
+}: ApprovalCardProps) {
+  // Default every row to "reject" — fail-safe. (Hooks run unconditionally; the
+  // receipt branch below only changes what we render, never the hook order.)
   const [verdicts, setVerdicts] = useState<Verdict[]>(() => previews.map(() => "reject"));
 
   function setRow(i: number, v: Verdict) {
@@ -51,6 +64,40 @@ export function ApprovalCard({ previews, calls, busy, onSubmit, onCancel }: Appr
 
   const confirmedCount = verdicts.filter((v) => v === "confirm").length;
   const applyLabel = `Apply selected (${confirmedCount})`;
+
+  // Receipt mode: a compact, read-only record of a settled decision. No buttons.
+  if (resolved) {
+    const choiceById = new Map(resolved.map((r) => [r.id, r.choice]));
+    const approvedCount = resolved.filter((r) => r.choice === "confirm").length;
+    return (
+      <div className="rounded-[var(--radius)] border border-hair bg-card-2/40">
+        <div className="flex items-center gap-2 border-b border-hair px-4 py-2.5">
+          <span aria-hidden className="text-ink-3">✓</span>
+          <span className="text-[12px] font-medium text-ink-2">
+            {approvedCount} of {resolved.length} change{resolved.length === 1 ? "" : "s"} approved
+          </span>
+        </div>
+        <div className="divide-y divide-hair">
+          {previews.map((preview, i) => {
+            const choice = choiceById.get(calls[i]?.id ?? "") ?? "reject";
+            return (
+              <div key={i} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                <p className="text-[13px] text-ink-2">{preview.summary}</p>
+                <span
+                  className={[
+                    "shrink-0 rounded-[var(--radius-sm)] px-2 py-0.5 text-[11px] font-medium",
+                    choice === "confirm" ? "bg-accent/10 text-accent-ink" : "bg-crit/10 text-crit",
+                  ].join(" ")}
+                >
+                  {choice === "confirm" ? "Approved" : "Declined"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-[var(--radius)] border border-warn/40 bg-warn/5">

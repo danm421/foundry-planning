@@ -20,6 +20,29 @@ describe("ApprovalCard", () => {
     expect(screen.getByText("Moves end-of-plan portfolio by +$214k")).toBeTruthy();
     expect(screen.getByText(/Cascade: a \$2,000\/mo transfer/)).toBeTruthy();
   });
+  it("renders a read-only receipt when resolved (no live buttons)", () => {
+    render(
+      <ApprovalCard
+        previews={previews}
+        calls={calls}
+        busy={false}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        resolved={[
+          { id: "call_a", choice: "confirm" },
+          { id: "call_b", choice: "reject" },
+        ]}
+      />,
+    );
+    // No interactive controls in receipt mode.
+    expect(screen.queryByRole("button")).toBeNull();
+    // Per-call settled badges (exact, to distinguish from the header summary).
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    expect(screen.getByText("Declined")).toBeInTheDocument();
+    // Still shows the change summaries.
+    expect(screen.getByText("Add Roth conversion: $40,000 in 2026")).toBeInTheDocument();
+  });
+
   it("builds the decisions map from per-row choices on submit", () => {
     const onSubmit = vi.fn();
     render(<ApprovalCard previews={previews} calls={calls} busy={false} onSubmit={onSubmit} onCancel={vi.fn()} />);
