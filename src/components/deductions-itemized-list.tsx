@@ -6,6 +6,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AddDeductionForm } from "@/components/forms/add-deduction-form";
 import { HelpTip } from "@/components/help-tip";
 import type { ClientMilestones } from "@/lib/milestones";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface ItemizedRow {
   id: string;
@@ -52,6 +53,8 @@ export function DeductionsItemizedList({
   clientFirstName?: string;
   spouseFirstName?: string;
 }) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const [editing, setEditing] = useState<ItemizedRow | null>(null);
@@ -90,13 +93,15 @@ export function DeductionsItemizedList({
           </h2>
           <HelpTip text="The bracket engine compares your itemized total to the standard deduction (inflated by the tax-inflation rate) and uses whichever is larger. Each row inflates with its own growth rate." />
         </div>
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
-        >
-          + Add deduction
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
+          >
+            + Add deduction
+          </button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
@@ -135,32 +140,34 @@ export function DeductionsItemizedList({
                     <span className="justify-self-end tabular-nums text-xs text-gray-400">
                       {r.growthRate > 0 ? `${(r.growthRate * 100).toFixed(1)}%` : "—"}
                     </span>
-                    <div className="flex shrink-0 items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        title="Edit"
-                        aria-label={`Edit ${r.name ?? "deduction"}`}
-                        onClick={() => setEditing(r)}
-                        className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete"
-                        aria-label={`Delete ${r.name ?? "deduction"}`}
-                        onClick={() => handleDelete(r.id)}
-                        className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
-                      >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-                          <path
-                            fillRule="evenodd"
-                            d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex shrink-0 items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          title="Edit"
+                          aria-label={`Edit ${r.name ?? "deduction"}`}
+                          onClick={() => setEditing(r)}
+                          className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete"
+                          aria-label={`Delete ${r.name ?? "deduction"}`}
+                          onClick={() => handleDelete(r.id)}
+                          className="rounded p-1 text-white hover:bg-white/10 hover:text-white"
+                        >
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                            <path
+                              fillRule="evenodd"
+                              d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -174,7 +181,7 @@ export function DeductionsItemizedList({
         <span className="tabular-nums font-semibold text-gray-100">{fmt.format(itemizedTotal)}</span>
       </div>
 
-      {(adding || editing) && (
+      {canEdit && (adding || editing) && (
         <AddDeductionForm
           clientId={clientId}
           existing={editing}

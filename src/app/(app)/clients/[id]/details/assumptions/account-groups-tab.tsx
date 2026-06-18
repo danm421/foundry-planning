@@ -8,6 +8,7 @@ import AccountGroupForm, {
   type GroupFormInitial,
 } from "@/components/account-groups/account-group-form";
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface Props {
   clientId: string;
@@ -21,6 +22,8 @@ type Mode =
   | { kind: "edit"; group: GroupFormInitial };
 
 export default function AccountGroupsTab({ clientId, liquidAccounts, allAccounts }: Props) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const [groups, setGroups] = useState<CustomGroup[] | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +89,8 @@ export default function AccountGroupsTab({ clientId, liquidAccounts, allAccounts
       <AccountGroupsList
         allAccounts={allAccounts}
         customGroups={groups ?? []}
-        onCreate={() => setMode({ kind: "create" })}
-        onEdit={(groupId) => {
+        onCreate={canEdit ? () => setMode({ kind: "create" }) : undefined}
+        onEdit={canEdit ? (groupId) => {
           const g = (groups ?? []).find((x) => x.id === groupId);
           if (!g) return;
           setMode({
@@ -100,8 +103,8 @@ export default function AccountGroupsTab({ clientId, liquidAccounts, allAccounts
               memberAccountIds: g.memberAccountIds,
             },
           });
-        }}
-        onDelete={handleDelete}
+        } : undefined}
+        onDelete={canEdit ? handleDelete : undefined}
       />
     </div>
   );

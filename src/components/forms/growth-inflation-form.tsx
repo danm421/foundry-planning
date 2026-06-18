@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
 import { HelpTip } from "@/components/help-tip";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface ModelPortfolioOption {
   id: string;
@@ -80,6 +81,8 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
 }
 
 export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +223,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
 
+      <fieldset disabled={!canEdit} className="space-y-6 border-0 p-0 m-0">
       <section>
         <SectionTitle
           title="Inflation"
@@ -480,20 +484,23 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
         <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">{resetMessage}</p>
       )}
 
-      <div className="flex items-center justify-between pt-2">
-        <button
-          type="button"
-          onClick={handleResetAccounts}
-          disabled={resetting}
-          className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
-          title="Clear account-level overrides and fall back to the category defaults above"
-        >
-          {resetting ? "Resetting..." : "Reset all accounts to defaults"}
-        </button>
-        <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50">
-          {loading ? "Saving..." : "Save"}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="flex items-center justify-between pt-2">
+          <button
+            type="button"
+            onClick={handleResetAccounts}
+            disabled={resetting}
+            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+            title="Clear account-level overrides and fall back to the category defaults above"
+          >
+            {resetting ? "Resetting..." : "Reset all accounts to defaults"}
+          </button>
+          <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50">
+            {loading ? "Saving..." : "Save"}
+          </button>
+        </div>
+      )}
+      </fieldset>
     </form>
   );
 }

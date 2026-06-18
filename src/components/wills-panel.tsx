@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useClientAccess } from "@/components/client-access-provider";
 // Local copy — `BUSINESS_ENTITY_TYPES` was removed from `in-estate-weights.ts`
 // in the business-as-asset migration. This UI is being phased out separately;
 // keep the gate inline until then.
@@ -231,6 +232,8 @@ function draftToBequest(draft: BequestDraft): WillsPanelBequest {
 }
 
 export default function WillsPanel(props: WillsPanelProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const {
     primary,
     initialWills,
@@ -479,33 +482,35 @@ export default function WillsPanel(props: WillsPanelProps) {
               <h2 className="text-lg font-semibold text-gray-100">
                 {heading}&apos;s Will
               </h2>
-              <div className="flex items-center gap-2">
-                {will && (
+              {canEdit && (
+                <div className="flex items-center gap-2">
+                  {will && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={async () => {
+                        if (!confirm("Delete this will and all its bequests?")) return;
+                        await deleteWill(g, will.id);
+                      }}
+                      className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Delete will
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={async () => {
-                      if (!confirm("Delete this will and all its bequests?")) return;
-                      await deleteWill(g, will.id);
+                    className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => {
+                      setDialogEditing(undefined);
+                      setEditingIndex(null);
+                      setDialogOpenFor(g);
                     }}
-                    className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Delete will
+                    + Add bequest
                   </button>
-                )}
-                <button
-                  type="button"
-                  disabled={saving}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => {
-                    setDialogEditing(undefined);
-                    setEditingIndex(null);
-                    setDialogOpenFor(g);
-                  }}
-                >
-                  + Add bequest
-                </button>
-              </div>
+                </div>
+              )}
             </header>
             {grantorWarnings.length > 0 && (
               <div className="mb-3 rounded-md border border-amber-700 bg-amber-900/20 p-3 text-xs text-amber-300">
@@ -619,69 +624,71 @@ export default function WillsPanel(props: WillsPanelProps) {
                               </span>
                             )}
                           </p>
-                          <div className="col-span-2 col-start-2 flex shrink-0 items-center justify-end gap-1 md:col-span-1 md:col-start-auto">
-                            <button
-                              type="button"
-                              aria-label="Move up"
-                              title="Move up"
-                              disabled={idx === 0 || saving}
-                              onClick={async () => {
-                                const next = [...bequests];
-                                const tmp = next[idx - 1];
-                                next[idx - 1] = { ...next[idx], sortOrder: idx - 1 };
-                                next[idx] = { ...tmp, sortOrder: idx };
-                                await saveWill(g, next);
-                              }}
-                              className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
-                            >
-                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↑</span>
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Move down"
-                              title="Move down"
-                              disabled={idx === bequests.length - 1 || saving}
-                              onClick={async () => {
-                                const next = [...bequests];
-                                const tmp = next[idx + 1];
-                                next[idx + 1] = { ...next[idx], sortOrder: idx + 1 };
-                                next[idx] = { ...tmp, sortOrder: idx };
-                                await saveWill(g, next);
-                              }}
-                              className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
-                            >
-                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↓</span>
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Edit bequest"
-                              title="Edit"
-                              disabled={saving}
-                              onClick={() => {
-                                setDialogEditing(bequestToDraft(b));
-                                setEditingIndex(idx);
-                                setDialogOpenFor(g);
-                              }}
-                              className="ml-1 rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Delete bequest"
-                              title="Delete"
-                              disabled={saving}
-                              onClick={async () => {
-                                const next = bequests
-                                  .filter((_, i) => i !== idx)
-                                  .map((x, i) => ({ ...x, sortOrder: i }));
-                                await saveWill(g, next);
-                              }}
-                              className="rounded p-1 text-white hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">✕</span>
-                            </button>
-                          </div>
+                          {canEdit && (
+                            <div className="col-span-2 col-start-2 flex shrink-0 items-center justify-end gap-1 md:col-span-1 md:col-start-auto">
+                              <button
+                                type="button"
+                                aria-label="Move up"
+                                title="Move up"
+                                disabled={idx === 0 || saving}
+                                onClick={async () => {
+                                  const next = [...bequests];
+                                  const tmp = next[idx - 1];
+                                  next[idx - 1] = { ...next[idx], sortOrder: idx - 1 };
+                                  next[idx] = { ...tmp, sortOrder: idx };
+                                  await saveWill(g, next);
+                                }}
+                                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↑</span>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Move down"
+                                title="Move down"
+                                disabled={idx === bequests.length - 1 || saving}
+                                onClick={async () => {
+                                  const next = [...bequests];
+                                  const tmp = next[idx + 1];
+                                  next[idx + 1] = { ...next[idx], sortOrder: idx + 1 };
+                                  next[idx] = { ...tmp, sortOrder: idx };
+                                  await saveWill(g, next);
+                                }}
+                                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">↓</span>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Edit bequest"
+                                title="Edit"
+                                disabled={saving}
+                                onClick={() => {
+                                  setDialogEditing(bequestToDraft(b));
+                                  setEditingIndex(idx);
+                                  setDialogOpenFor(g);
+                                }}
+                                className="ml-1 rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Delete bequest"
+                                title="Delete"
+                                disabled={saving}
+                                onClick={async () => {
+                                  const next = bequests
+                                    .filter((_, i) => i !== idx)
+                                    .map((x, i) => ({ ...x, sortOrder: i }));
+                                  await saveWill(g, next);
+                                }}
+                                className="rounded p-1 text-white hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <span aria-hidden className="block h-4 w-4 text-center text-xs leading-4">✕</span>
+                              </button>
+                            </div>
+                          )}
                         </li>
                       );
                     })}
@@ -692,9 +699,9 @@ export default function WillsPanel(props: WillsPanelProps) {
 
             <WillResiduarySection
               rows={will?.residuaryRecipients ?? []}
-              onChange={async (next) => {
+              onChange={canEdit ? async (next) => {
                 await saveWillFull(g, will?.bequests ?? [], next);
-              }}
+              } : undefined}
               grantor={g}
               primary={primary}
               familyMembers={familyMembers}
@@ -704,7 +711,7 @@ export default function WillsPanel(props: WillsPanelProps) {
             />
             {/* Surface already-bequeathed liability ids so the editor disables them
                 in the dropdown when this section's "Add bequest" is active. */}
-            {dialogOpenFor === g && (
+            {canEdit && dialogOpenFor === g && (
               <BequestDialog
                 open
                 onOpenChange={(open) => {

@@ -7,6 +7,7 @@ import { CurrencyInput } from "@/components/currency-input";
 import { HelpTip } from "@/components/help-tip";
 import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
+import { useClientAccess } from "@/components/client-access-provider";
 
 interface TaxRatesFormProps {
   clientId: string;
@@ -110,6 +111,8 @@ export default function TaxRatesForm({
   spouseFirstName,
   initialMode = "flat",
 }: TaxRatesFormProps) {
+  const { permission } = useClientAccess();
+  const canEdit = permission === "edit";
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,7 +178,7 @@ export default function TaxRatesForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
-
+      <fieldset disabled={!canEdit} className="space-y-6 border-0 p-0 m-0">
       <section>
         <SectionTitle
           title="Income Tax"
@@ -364,11 +367,14 @@ export default function TaxRatesForm({
         </FieldTable>
       </section>
 
-      <div className="flex justify-end pt-2">
-        <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50">
-          {loading ? "Saving…" : "Save"}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="flex justify-end pt-2">
+          <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50">
+            {loading ? "Saving…" : "Save"}
+          </button>
+        </div>
+      )}
+      </fieldset>
     </form>
   );
 }

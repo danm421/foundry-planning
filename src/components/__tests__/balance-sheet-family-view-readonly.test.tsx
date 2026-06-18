@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 
 // ---------------------------------------------------------------------------
 // Mocks — declared before any module imports
@@ -231,6 +231,18 @@ describe("BalanceSheetView read-only gating", () => {
     expect(screen.getByText("Assets (in estate)")).toBeTruthy();
     // "Liabilities" appears in KPI strip and panel heading — both should be present
     expect(screen.getAllByText("Liabilities").length).toBeGreaterThan(0);
+
+    // Account row "Brokerage Account" must NOT be cursor-pointer (not clickable) under view.
+    // The Row component (balance-sheet-view.tsx ~1391) adds cursor-pointer only when onClick
+    // is defined, which is canEdit-gated. The accounts are in a collapsed CategoryGroup by
+    // default — expand "Taxable" first, then check.
+    const taxableToggles = screen.queryAllByRole("button", { name: /taxable/i });
+    expect(taxableToggles.length).toBeGreaterThan(0);
+    fireEvent.click(taxableToggles[0]);
+    const brokerageSpans = screen.queryAllByText("Brokerage Account");
+    expect(brokerageSpans.length).toBeGreaterThan(0);
+    const brokerageRowContainer = brokerageSpans[0].closest("div.flex.items-center.justify-between");
+    expect(brokerageRowContainer?.className).not.toContain("cursor-pointer");
   });
 
   it("shows Edit toggle, Add Asset, and Refresh prices under permission='edit'", () => {
@@ -254,6 +266,16 @@ describe("BalanceSheetView read-only gating", () => {
 
     // KPI values should still be visible
     expect(screen.getByText("Assets (in estate)")).toBeTruthy();
+
+    // Account row "Brokerage Account" must be cursor-pointer (clickable) under edit.
+    // Expand the "Taxable" category group first (collapsed by default).
+    const taxableToggles = screen.queryAllByRole("button", { name: /taxable/i });
+    expect(taxableToggles.length).toBeGreaterThan(0);
+    fireEvent.click(taxableToggles[0]);
+    const brokerageSpans = screen.queryAllByText("Brokerage Account");
+    expect(brokerageSpans.length).toBeGreaterThan(0);
+    const brokerageRowContainer = brokerageSpans[0].closest("div.flex.items-center.justify-between");
+    expect(brokerageRowContainer?.className).toContain("cursor-pointer");
   });
 });
 
