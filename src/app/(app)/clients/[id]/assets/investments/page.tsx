@@ -10,13 +10,13 @@ import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ group?: string; scenario?: string }>;
+  searchParams: Promise<{ group?: string; scenario?: string; view?: string }>;
 }
 
 export default async function InvestmentsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id: clientId } = await params;
-  const { group, scenario } = await searchParams;
+  const { group, scenario, view } = await searchParams;
 
   const [client] = await db
     .select()
@@ -31,6 +31,7 @@ export default async function InvestmentsPage({ params, searchParams }: PageProp
           clientId={clientId}
           firmId={firmId}
           groupKey={group ?? "all-liquid"}
+          view={view}
         />
       </Suspense>
     </ScenarioDrawerShell>

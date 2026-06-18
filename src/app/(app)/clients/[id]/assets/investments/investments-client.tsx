@@ -44,6 +44,7 @@ interface Props {
   accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
   fundPortfolios: { id: string; name: string }[];
   holdingsGroups: AccountHoldingsGroup[];
+  initialView?: "allocation" | "analysis" | "rebalance" | "holdings";
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -72,8 +73,9 @@ export default function InvestmentsClient({
   accountsWithHoldings,
   fundPortfolios,
   holdingsGroups,
+  initialView = "allocation",
 }: Props) {
-  const [pageView, setPageView] = useState<"allocation" | "analysis" | "rebalance" | "holdings">("allocation");
+  const [pageView, setPageView] = useState<"allocation" | "analysis" | "rebalance" | "holdings">(initialView);
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");

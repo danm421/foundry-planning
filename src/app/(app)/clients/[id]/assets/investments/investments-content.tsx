@@ -42,9 +42,10 @@ interface Props {
   clientId: string;
   firmId: string;
   groupKey: string;
+  view?: string;
 }
 
-export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) {
+export async function InvestmentsContent({ clientId, firmId, groupKey, view }: Props) {
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -353,6 +354,9 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       accountsWithHoldings={accountsWithHoldings}
       fundPortfolios={fundPortfolios}
       holdingsGroups={holdingsGroups}
+      initialView={
+        view === "analysis" || view === "rebalance" || view === "holdings" ? view : "allocation"
+      }
     />
   );
 }
