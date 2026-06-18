@@ -46,3 +46,11 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Extract everything from the document I just uploaded — accounts, income, family, all of it."
+      expectTool: "extract_import"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
