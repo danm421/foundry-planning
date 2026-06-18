@@ -71,6 +71,7 @@ function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForg
     setMessages: vi.fn(),
     streamingText: "",
     toolStatus: null,
+    isVerifying: false,
     pendingApproval: null,
     setPendingApproval: vi.fn(),
     status: "idle",

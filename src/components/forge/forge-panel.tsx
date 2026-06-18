@@ -43,6 +43,7 @@ export function ForgePanel({
     messages,
     setMessages,
     toolStatus,
+    isVerifying,
     pendingApproval,
     setPendingApproval,
     status,
@@ -330,6 +331,13 @@ export function ForgePanel({
             <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
               Running {toolStatus.replace(/_/g, " ")}…
+            </div>
+          )}
+
+          {isVerifying && (
+            <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
+              Checking the numbers…
             </div>
           )}
 

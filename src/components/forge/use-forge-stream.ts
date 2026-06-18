@@ -28,6 +28,7 @@ export type ForgeSseEvent =
   | { type: "tool_start"; name: string }
   | { type: "tool_end"; name: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
+  | { type: "verifying" }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -91,6 +92,7 @@ export interface UseForgeStreamResult {
   setMessages: React.Dispatch<React.SetStateAction<ForgeMessage[]>>;
   streamingText: string;
   toolStatus: string | null;
+  isVerifying: boolean;
   pendingApproval: PendingApproval | null;
   setPendingApproval: React.Dispatch<React.SetStateAction<PendingApproval | null>>;
   status: ForgeStatus;
@@ -108,6 +110,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
   const [messages, setMessages] = useState<ForgeMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [status, setStatus] = useState<ForgeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -124,7 +127,11 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       case "conversation":
         setConversationId(ev.conversationId);
         break;
+      case "verifying":
+        setIsVerifying(true);
+        break;
       case "token":
+        setIsVerifying(false);
         // Append to the trailing assistant bubble (created by `send` before fetch).
         setMessages((m) => {
           if (m.length === 0) return m;
@@ -147,6 +154,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         setPendingApproval({ previews: ev.previews, calls: ev.calls });
         break;
       case "error":
+        setIsVerifying(false);
         setStatus("error");
         setErrorMessage(ev.message);
         break;
@@ -196,6 +204,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       setErrorMessage(null);
       setStreamingText("");
       setToolStatus(null);
+      setIsVerifying(false);
       // Push the user turn + an empty assistant bubble to stream into.
       setMessages((m) => [
         ...m,
@@ -256,6 +265,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       setPendingApproval(null); // optimistic clear so the card unmounts
       setStatus("streaming");
       setErrorMessage(null);
+      setIsVerifying(false);
       // Push an empty assistant bubble to stream the response into,
       // matching the same shape `send` uses so the renderer is consistent.
       setMessages((m) => [...m, { role: "assistant", text: "" }]);
@@ -292,6 +302,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     setMessages,
     streamingText,
     toolStatus,
+    isVerifying,
     pendingApproval,
     setPendingApproval,
     status,
