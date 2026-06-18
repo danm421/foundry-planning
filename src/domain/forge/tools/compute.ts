@@ -4,6 +4,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
+import { withOutputRetry } from "./with-output-retry";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
@@ -57,6 +58,17 @@ const PAGES_NEEDING_UNLOADED_CONTEXT = new Set<string>([
   "retirementComparison", // needs bundlesByRef — use compare_scenarios
 ]);
 
+// Loose result schemas for withOutputRetry: validate the essential shape but
+// PRESERVE every other field (looseObject keeps unknown keys, so JSON.stringify
+// of the validated value doesn't truncate the payload). A non-object or a missing
+// discriminant is the only way to fail → retry once → safe error string.
+const RunProjectionResultSchema = z.looseObject({
+  scenarioId: z.string(),
+  taxGrounded: z.boolean(),
+  years: z.array(z.unknown()),
+});
+const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
+
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
   return {
@@ -78,34 +90,30 @@ export function buildComputeTools(
   const { ctx } = toolCtx;
 
   const runProjection = tool(
-    async ({ clientId }) => {
-      const firmId = await requireOrgId();
-      await assertClientReadable(ctx, clientId);
+    async ({ clientId }) =>
+      withOutputRetry(async () => {
+        const firmId = await requireOrgId();
+        await assertClientReadable(ctx, clientId);
 
-      // ALWAYS resolve the tree through loadEffectiveTree — hand-building
-      // ClientData skips numeric coercion and yields NaN.
-      const { effectiveTree } = await loadEffectiveTree(
-        clientId,
-        firmId,
-        ctx.scenarioId,
-        {},
-      );
-      const result = runProjectionWithEvents(effectiveTree);
+        // ALWAYS resolve the tree through loadEffectiveTree — hand-building
+        // ClientData skips numeric coercion and yields NaN.
+        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
+        const result = runProjectionWithEvents(effectiveTree);
 
-      // Tax numbers are only bracket-grounded when bracket mode is on AND the
-      // year rows actually loaded; otherwise the engine ran flat-mode fallback.
-      const taxGrounded =
-        effectiveTree.planSettings.taxEngineMode === "bracket" &&
-        (effectiveTree.taxYearRows?.length ?? 0) > 0;
+        // Tax numbers are only bracket-grounded when bracket mode is on AND the
+        // year rows actually loaded; otherwise the engine ran flat-mode fallback.
+        const taxGrounded =
+          effectiveTree.planSettings.taxEngineMode === "bracket" &&
+          (effectiveTree.taxYearRows?.length ?? 0) > 0;
 
-      return JSON.stringify({
-        scenarioId: ctx.scenarioId,
-        taxGrounded,
-        firstDeathYear: result.firstDeathEvent?.year ?? null,
-        secondDeathYear: result.secondDeathEvent?.year ?? null,
-        years: result.years.map(compactYear),
-      });
-    },
+        return {
+          scenarioId: ctx.scenarioId,
+          taxGrounded,
+          firstDeathYear: result.firstDeathEvent?.year ?? null,
+          secondDeathYear: result.secondDeathEvent?.year ?? null,
+          years: result.years.map(compactYear),
+        };
+      }, RunProjectionResultSchema),
     {
       name: "run_projection",
       description:
@@ -121,59 +129,51 @@ export function buildComputeTools(
   );
 
   const runMonteCarlo = tool(
-    async ({ clientId }) => {
-      const firmId = await requireOrgId();
-      await assertClientReadable(ctx, clientId);
+    async ({ clientId }) =>
+      withOutputRetry(async () => {
+        const firmId = await requireOrgId();
+        await assertClientReadable(ctx, clientId);
 
-      // Tree is needed for the summarize options (client + planSettings); the
-      // cache helper resolves its own tree internally too, but reusing the
-      // persisted per-scenario seed makes the PoS reproducible across turns.
-      const { effectiveTree } = await loadEffectiveTree(
-        clientId,
-        firmId,
-        ctx.scenarioId,
-        {},
-      );
+        // Tree is needed for the summarize options (client + planSettings); the
+        // cache helper resolves its own tree internally too, but reusing the
+        // persisted per-scenario seed makes the PoS reproducible across turns.
+        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
 
-      // Long-running + cache-backed. Handle null/throw by degrading — never
-      // assert, never invent a probability.
-      let cached: Awaited<ReturnType<typeof getOrComputeMonteCarlo>> | null = null;
-      try {
-        cached = await getOrComputeMonteCarlo({
-          clientId,
-          firmId,
+        // Long-running + cache-backed. Handle null/throw by degrading — never
+        // assert, never invent a probability.
+        let cached: Awaited<ReturnType<typeof getOrComputeMonteCarlo>> | null = null;
+        try {
+          cached = await getOrComputeMonteCarlo({ clientId, firmId, scenarioId: ctx.scenarioId });
+        } catch (err) {
+          console.error("[forge] monte-carlo compute failed", err);
+        }
+        // The compute cache returns `row.payload as T` with no shape validation, so
+        // a stale/partial cached result could be missing `raw` entirely. Degrade
+        // (don't deref `cached.raw.trialsRun` and throw an uncaught TypeError).
+        if (!cached?.raw || cached.raw.trialsRun === 0) {
+          return {
+            available: false,
+            note: "Monte Carlo could not be computed for this scenario right now.",
+          };
+        }
+
+        const summary = summarizeMonteCarlo(cached.raw, {
+          client: effectiveTree.client,
+          planSettings: effectiveTree.planSettings,
+          startingLiquidBalance: cached.meta?.startingLiquidBalance,
+        });
+
+        return {
+          available: true,
           scenarioId: ctx.scenarioId,
-        });
-      } catch (err) {
-        console.error("[forge] monte-carlo compute failed", err);
-      }
-      // The compute cache returns `row.payload as T` with no shape validation, so
-      // a stale/partial cached result could be missing `raw` entirely. Degrade
-      // (don't deref `cached.raw.trialsRun` and throw an uncaught TypeError).
-      if (!cached?.raw || cached.raw.trialsRun === 0) {
-        return JSON.stringify({
-          available: false,
-          note: "Monte Carlo could not be computed for this scenario right now.",
-        });
-      }
-
-      const summary = summarizeMonteCarlo(cached.raw, {
-        client: effectiveTree.client,
-        planSettings: effectiveTree.planSettings,
-        startingLiquidBalance: cached.meta?.startingLiquidBalance,
-      });
-
-      return JSON.stringify({
-        available: true,
-        scenarioId: ctx.scenarioId,
-        requestedTrials: summary.requestedTrials,
-        trialsRun: summary.trialsRun,
-        aborted: summary.aborted,
-        successRate: summary.successRate,
-        failureRate: summary.failureRate,
-        endingDistribution: summary.ending,
-      });
-    },
+          requestedTrials: summary.requestedTrials,
+          trialsRun: summary.trialsRun,
+          aborted: summary.aborted,
+          successRate: summary.successRate,
+          failureRate: summary.failureRate,
+          endingDistribution: summary.ending,
+        };
+      }, RunMonteCarloResultSchema),
     {
       name: "run_monte_carlo",
       description:
