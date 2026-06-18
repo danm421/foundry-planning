@@ -37,8 +37,6 @@ import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
 import { extractPdfText, extractPdfPages } from "../pdf-parser";
 import { visionOcrPdf } from "../vision-ocr";
-import { FACT_FINDER_CLASSIFIER_PROMPT } from "../prompts/fact-finder-classifier";
-import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
