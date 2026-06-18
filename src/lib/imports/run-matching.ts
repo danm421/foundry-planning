@@ -44,6 +44,10 @@ export async function runImportMatching(args: {
 }): Promise<RunMatchingResult> {
     const { importId, clientId, firmId, mode, scenarioId, fileResults } = args;
 
+    if (Object.keys(fileResults).length === 0) {
+        throw new Error("No extracted files to match. Run extraction first.");
+    }
+
     const fileExtractions = Object.entries(fileResults).map(
         ([fileId, result]) => ({ fileId, result }),
     );

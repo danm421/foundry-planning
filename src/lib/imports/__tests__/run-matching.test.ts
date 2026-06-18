@@ -36,10 +36,12 @@ vi.mock("@/db", () => ({
 import { runImportMatching } from "../run-matching";
 import { mergeExtractionResults } from "@/lib/imports/merge";
 import { runMatchingPass } from "@/lib/imports/match";
+import { recordAudit } from "@/lib/audit";
 
 beforeEach(() => {
     vi.mocked(mergeExtractionResults).mockClear();
     vi.mocked(runMatchingPass).mockClear();
+    vi.mocked(recordAudit).mockClear();
 });
 
 describe("runImportMatching", () => {
@@ -81,6 +83,10 @@ describe("runImportMatching", () => {
         expect(mergeExtractionResults).toHaveBeenCalledWith([
             { fileId: "f1", result: {} },
         ]);
+        expect(vi.mocked(recordAudit)).toHaveBeenCalledWith(expect.objectContaining({
+            action: "import.match.run",
+            metadata: expect.objectContaining({ mode: "updating", exact: 0, fuzzy: 0, new: 1 }),
+        }));
     });
 
     it("passes scenarioId ?? '' when scenarioId is null", async () => {
@@ -123,5 +129,21 @@ describe("runImportMatching", () => {
         expect(runMatchingPass).toHaveBeenCalledWith(
             expect.objectContaining({ scenarioId: "" }),
         );
+    });
+
+    it("throws when fileResults is empty and does not call merge or match", async () => {
+        await expect(
+            runImportMatching({
+                importId: "imp3",
+                clientId: "c1",
+                firmId: "org_A",
+                mode: "updating",
+                scenarioId: null,
+                fileResults: {},
+            }),
+        ).rejects.toThrow(/No extracted files to match/);
+
+        expect(mergeExtractionResults).not.toHaveBeenCalled();
+        expect(runMatchingPass).not.toHaveBeenCalled();
     });
 });
