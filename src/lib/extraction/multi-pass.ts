@@ -13,6 +13,7 @@ import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
 import { LIFE_INSURANCE_PROMPT } from "./prompts/life-insurance";
 import { WILL_PROMPT } from "./prompts/will";
 import { FAMILY_PROMPT } from "./prompts/family";
+import { ENTITIES_PROMPT } from "./prompts/entities";
 
 // Per-section prompt + payload key. Phase 4 wires in family / wills /
 // life-insurance prompts. Family is special-cased: its prompt returns a
@@ -31,6 +32,7 @@ const SECTION_PROMPTS: Partial<
     insurance: { prompt: LIFE_INSURANCE_PROMPT, responseKey: "lifePolicies" },
     wills: { prompt: WILL_PROMPT, responseKey: "wills" },
     family: { prompt: FAMILY_PROMPT, responseKey: "__self__", shape: "object" },
+    entities: { prompt: ENTITIES_PROMPT, responseKey: "entities" },
 };
 
 export interface SectionRow {

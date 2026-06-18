@@ -11,6 +11,7 @@ import { FAMILY_PROMPT } from "../prompts/family";
 import { WILL_PROMPT } from "../prompts/will";
 import { LIFE_INSURANCE_PROMPT } from "../prompts/life-insurance";
 import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
+import { ENTITIES_PROMPT } from "../prompts/entities";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 
@@ -256,5 +257,26 @@ describe("extractWithMultiPass", () => {
         expect(result?.sections.incomes.map((r) => r.type)).toEqual([
             "social_security", "social_security", "other",
         ]);
+    });
+
+    it("extracts a business-entity interest via the entities prompt", async () => {
+        mockedCallAI.mockImplementation(async (systemPrompt: string) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ entities: [[2, 2]] });
+            }
+            if (systemPrompt === ENTITIES_PROMPT) {
+                return JSON.stringify({
+                    entities: [{ name: "Americo Real Estate LP", entityType: "partnership" }],
+                });
+            }
+            return JSON.stringify({});
+        });
+
+        const pages = Array.from({ length: 3 }, (_, i) => pageText(i + 1));
+        const result = await extractWithMultiPass({ pages, outline: "o", anchors: "a", model: "mini" });
+
+        expect(result?.sections.entities).toHaveLength(1);
+        expect(result?.sections.entities[0].name).toBe("Americo Real Estate LP");
+        expect(result?.sections.entities[0].entityType).toBe("partnership");
     });
 });
