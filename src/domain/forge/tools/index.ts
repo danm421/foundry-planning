@@ -10,6 +10,7 @@ import { buildCrmTools } from "./crm";
 import { buildReportTools } from "./report";
 import { buildKnowledgeTools } from "./knowledge";
 import { buildMemoryTools } from "./memory";
+import { buildBookTools } from "./book";
 import { ALL_BUNDLES, type BundleName } from "../dispatcher";
 
 /**
@@ -31,6 +32,7 @@ export const TOOL_BUNDLES: Record<
   report: buildReportTools,
   knowledge: buildKnowledgeTools,
   memory: buildMemoryTools,
+  book: buildBookTools,
 };
 
 /**

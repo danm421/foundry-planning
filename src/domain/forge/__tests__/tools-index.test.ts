@@ -71,6 +71,8 @@ vi.mock("@/lib/crm/generation-runs", () => ({
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
 // Phase 4: stub the knowledge tool's embedding dep so this stays pure.
 vi.mock("../llm", () => ({ embeddings: vi.fn() }));
+// Book bundle: stub the book-scan lib so this stays pure (no DB).
+vi.mock("@/lib/book-scan/scan", () => ({ scanBook: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -158,8 +160,10 @@ const EXPECTED_CRM_ALL_19 = [
 
 const EXPECTED_MEMORY_TOOL_NAMES = ["read_memory", "write_memory"];
 
+const EXPECTED_BOOK = ["scan_book"];
+
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly)", () => {
-  it("returns exactly the 56 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory)", () => {
+  it("returns exactly the 57 named tools (17 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, and memory tools all present
@@ -172,7 +176,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly)",
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(56);
+    expect(tools).toHaveLength(57);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -275,9 +279,20 @@ describe("buildTools (Phase 4 report tool)", () => {
   });
 });
 
+describe("buildTools (book bundle)", () => {
+  it("includes the book bundle's single read tool", () => {
+    const names = buildTools(TOOL_CTX).map((t) => t.name);
+    for (const n of EXPECTED_BOOK) expect(names).toContain(n);
+  });
+
+  it("scan_book is NOT a write tool (read-only, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("scan_book")).toBe(false);
+  });
+});
+
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 56)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(56);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 57)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(57);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {

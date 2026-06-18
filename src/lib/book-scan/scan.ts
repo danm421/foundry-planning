@@ -161,7 +161,7 @@ export async function scanBook(
     )
     .groupBy(crmTasks.householdId);
   const openTasksByHousehold = new Map<string, number>();
-  for (const r of taskRows) openTasksByHousehold.set(r.householdId, r.n);
+  for (const r of taskRows) if (r.householdId != null) openTasksByHousehold.set(r.householdId, r.n);
 
   // open planning items per client (completed_at IS NULL).
   const openItemRows = await db
