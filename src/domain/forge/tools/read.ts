@@ -17,6 +17,9 @@ import type {
   ImportPayloadJson,
   MatchAnnotation,
 } from "@/lib/imports/types";
+import { runImportExtraction } from "@/lib/imports/run-extraction";
+import { runImportMatching } from "@/lib/imports/run-matching";
+import { checkImportRateLimit } from "@/lib/rate-limit";
 import { requireOrgId } from "@/lib/db-helpers";
 import { searchClients } from "@/lib/client-search";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
@@ -123,12 +126,14 @@ export function summarizeImport(
       lifePolicies: payload.lifePolicies.length,
       wills: payload.wills.length,
       entities: payload.entities.length,
+      dependents: payload.dependents.length,
     },
     matchTotals: {
       accounts: tally(payload.accounts),
       incomes: tally(payload.incomes),
       expenses: tally(payload.expenses),
       liabilities: tally(payload.liabilities),
+      dependents: tally(payload.dependents),
     },
     accounts,
     warnings: payload.warnings.map((w) => clean(w) ?? w),
@@ -328,5 +333,51 @@ export function buildReadTools(
     },
   );
 
-  return [findClient, clientBriefing, listScenarios, readDetail, readImport];
+  const extractImport = tool(
+    async ({ importId }: { importId: string }) => {
+      await assertClientReadable(ctx, ctx.clientId);
+      const firmId = await requireOrgId();
+
+      const [row] = await db
+        .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId, extractHoldings: clientImports.extractHoldings })
+        .from(clientImports)
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .limit(1);
+      if (!row) return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
+
+      const rl = await checkImportRateLimit(firmId, "extract");
+      if (!rl.allowed) return JSON.stringify({ found: true, importId, note: "rate_limited", status: row.status });
+
+      await runImportExtraction({ importId, clientId: ctx.clientId, firmId, model: "mini", extractHoldings: row.extractHoldings === true, comprehensive: true });
+
+      // Re-read fileResults the extraction just wrote, then match.
+      const [after] = await db
+        .select({ payloadJson: clientImports.payloadJson, status: clientImports.status })
+        .from(clientImports)
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .limit(1);
+      const fileResults = (after?.payloadJson as ImportPayloadJson | null)?.fileResults ?? {};
+      if (Object.keys(fileResults).length > 0 && !(row.mode === "updating" && !row.scenarioId)) {
+        await runImportMatching({ importId, clientId: ctx.clientId, firmId, mode: row.mode, scenarioId: row.scenarioId, fileResults });
+      }
+
+      const [final] = await db
+        .select({ id: clientImports.id, status: clientImports.status, payloadJson: clientImports.payloadJson })
+        .from(clientImports)
+        .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId)))
+        .limit(1);
+      const payload = (final?.payloadJson as ImportPayloadJson | null)?.payload ?? null;
+      return JSON.stringify(summarizeImport(final!.id, final!.status, payload));
+    },
+    {
+      name: "extract_import",
+      description:
+        "Re-extract a pending document import comprehensively — pulls EVERY entity type present (accounts, income incl. Social Security/pensions, family/DOB, business entities, real estate, liabilities, life insurance, wills), not just the document's primary type. Updates the pending import and re-matches against the client's base case, then returns per-entity counts. Use when the advisor asks to extract everything / find what's missing / pull a specific entity type from an uploaded document. Read-only w.r.t. the plan — never commits; direct the advisor to the review screen to apply.",
+      schema: z.object({
+        importId: z.string().describe("The import id surfaced by the chat after a document upload."),
+      }),
+    },
+  );
+
+  return [findClient, clientBriefing, listScenarios, readDetail, readImport, extractImport];
 }

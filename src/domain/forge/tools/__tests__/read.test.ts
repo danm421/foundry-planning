@@ -52,6 +52,21 @@ vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: (...a: unknown[]) => loadEffectiveTree(...a),
 }));
 
+const runImportExtraction = vi.fn();
+vi.mock("@/lib/imports/run-extraction", () => ({
+  runImportExtraction: (...a: unknown[]) => runImportExtraction(...a),
+}));
+
+const runImportMatching = vi.fn();
+vi.mock("@/lib/imports/run-matching", () => ({
+  runImportMatching: (...a: unknown[]) => runImportMatching(...a),
+}));
+
+const checkImportRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", () => ({
+  checkImportRateLimit: (...a: unknown[]) => checkImportRateLimit(...a),
+}));
+
 // The guard is async; the mock enforces clientId === ctx.clientId so the
 // rejection path is exercised without a DB round-trip.
 vi.mock("../../guards", () => {
@@ -74,7 +89,7 @@ vi.mock("../../guards", () => {
   };
 });
 
-import { buildReadTools } from "../read";
+import { buildReadTools, summarizeImport } from "../read";
 import { buildToolContext } from "../../context";
 import type { ForgeAuthContext } from "../../context";
 
@@ -105,6 +120,9 @@ beforeEach(() => {
   dbWhere.mockReset();
   loadPanelData.mockReset();
   loadEffectiveTree.mockReset();
+  runImportExtraction.mockReset();
+  runImportMatching.mockReset();
+  checkImportRateLimit.mockReset();
 });
 
 describe("read.ts — find_client", () => {
@@ -288,5 +306,33 @@ describe("read.ts — read_detail", () => {
 
     expect(out.rows[0].name).toContain("[REDACTED-SSN]");
     expect(raw).not.toContain("123-45-6789");
+  });
+});
+
+describe("summarizeImport — dependents count", () => {
+  it("includes dependents in counts and matchTotals", () => {
+    const payload = {
+      primary: undefined,
+      spouse: undefined,
+      dependents: [{}, {}],
+      accounts: [],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      lifePolicies: [],
+      wills: [],
+      entities: [],
+      warnings: [],
+    };
+    const out = summarizeImport("imp1", "review", payload as never);
+    expect(out.counts.dependents).toBe(2);
+    expect(out.matchTotals).toHaveProperty("dependents");
+  });
+});
+
+describe("buildReadTools — assembly", () => {
+  it("includes extract_import in the returned tool list", () => {
+    const TOOL_CTX = buildToolContext(ctx, "conv-1");
+    expect(buildReadTools(TOOL_CTX).map((t) => t.name)).toContain("extract_import");
   });
 });
