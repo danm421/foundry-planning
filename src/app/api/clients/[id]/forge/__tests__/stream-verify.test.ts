@@ -125,6 +125,36 @@ describe("POST /forge/stream — verification", () => {
     expect(text).toBe("CHECK THESE.\n\nBalance is $2.5M.");
   });
 
+  it("never streams the verify node's critic tokens into the answer", async () => {
+    // The critic (chatModel("mini")) runs INSIDE the verify node, so its own
+    // on_chat_model_stream tokens reach this loop too. They carry
+    // metadata.langgraph_node === "verify" and must be ignored — otherwise the
+    // verdict JSON would be flushed verbatim into the advisor's reply. (Safe
+    // today only because withStructuredOutput resolves to functionCalling and
+    // emits empty content; this guard makes it robust regardless.)
+    fakeGraph.streamEvents = async function* () {
+      yield {
+        event: "on_chat_model_stream",
+        name: "model",
+        metadata: { langgraph_node: "agent" },
+        data: { chunk: { content: "Balance is $1,000,000." } },
+      };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
+      yield {
+        event: "on_chat_model_stream",
+        name: "model",
+        metadata: { langgraph_node: "verify" },
+        data: { chunk: { content: '{"ok":true,"problems":[]}' } },
+      };
+      yield { event: "on_custom_event", name: "forge_verify", data: { result: "pass" } };
+    };
+    const res = await POST(makeReq({ message: "balance?", scenarioId: "base" }), ctx);
+    const events = await drainSse(res);
+    const text = events.filter((e) => e.type === "token").map((e) => e.text).join("");
+    expect(text).toBe("Balance is $1,000,000.");
+    expect(text).not.toContain('"ok"');
+  });
+
   it("discards the rejected draft on retry and streams only the revision", async () => {
     fakeGraph.streamEvents = async function* () {
       yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Draft says $1." } } };

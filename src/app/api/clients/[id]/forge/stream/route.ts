@@ -195,6 +195,13 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
 
         for await (const ev of events) {
           if (ev.event === "on_chat_model_stream") {
+            // Only the agent node produces user-facing answer tokens. The verify
+            // node's critic also calls a chat model, so its tokens surface here
+            // too — never buffer them, or the verdict would be flushed verbatim
+            // into the reply. (Safe today only because the critic resolves to
+            // functionCalling and emits empty content; this guard makes it
+            // robust if that ever changes.)
+            if (ev.metadata?.langgraph_node === "verify") continue;
             const chunk = ev.data?.chunk;
             // Phase 0 assumes string content (OpenAI text deltas). Array/multimodal content
             // blocks (Phase 1+ tool/reasoning output) would need normalizing here.
