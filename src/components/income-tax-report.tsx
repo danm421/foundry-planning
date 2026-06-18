@@ -164,7 +164,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
     [years, yearRange]
   );
 
-  // Optimistic + persist: update client-side data, re-run projection, fire-and-forget PATCH.
+  // Optimistic + persist: update client-side data, re-run projection, fire-and-forget PUT.
   // Surface a non-fatal error if persistence fails so the user knows their change
   // isn't saved — local state still reflects the new value either way.
   const [assumptionSaveError, setAssumptionSaveError] = useState<string | null>(null);
@@ -184,7 +184,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
     if (next.rate !== undefined) body.medicarePremiumInflationRate = next.rate;
     if (next.enabled !== undefined) body.medicarePremiumInflationEnabled = next.enabled;
     fetch(`/api/clients/${clientId}/plan-settings`, {
-      method: "PATCH",
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
