@@ -114,3 +114,53 @@ describe("useForgeStream.send", () => {
     expect(body.attachments).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Custom-streaming seam — structured frames (plumbing only)
+// ---------------------------------------------------------------------------
+
+describe("custom-streaming frames", () => {
+  it("parseForgeSse parses tool_render / navigate / activity frames", () => {
+    const events = drain([
+      `data: {"type":"tool_render","name":"run_projection","status":"complete","data":{"median":1}}\n\n` +
+        `data: {"type":"navigate","href":"/clients/c1/scenarios/s1"}\n\n` +
+        `data: {"type":"activity","label":"Loading"}\n\n`,
+    ]);
+    expect(events).toEqual([
+      { type: "tool_render", name: "run_projection", status: "complete", data: { median: 1 } },
+      { type: "navigate", href: "/clients/c1/scenarios/s1" },
+      { type: "activity", label: "Loading" },
+    ]);
+  });
+
+  it("send stashes lastToolRender + pendingNavigate without breaking the stream", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: {"type":"tool_render","name":"run_projection","status":"complete","data":{"median":2}}\n\n` +
+              `data: {"type":"navigate","href":"/clients/c1/scenarios/s2"}\n\n` +
+              `data: {"type":"done"}\n\n`,
+          ),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+      ),
+    );
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+    await act(async () => {
+      await result.current.send({ message: "go", scenarioId: "scen_1" });
+    });
+
+    expect(result.current.lastToolRender).toMatchObject({ type: "tool_render", name: "run_projection" });
+    expect(result.current.pendingNavigate).toBe("/clients/c1/scenarios/s2");
+    expect(result.current.status).toBe("done");
+  });
+});

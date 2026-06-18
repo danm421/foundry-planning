@@ -230,6 +230,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             send({ type: "tool_start", name: ev.name });
           } else if (ev.event === "on_tool_end") {
             send({ type: "tool_end", name: ev.name });
+          } else if (ev.event === "on_custom_event") {
+            // Forward the typed structured frame verbatim. Payloads are already
+            // masked/grounded by the emitting tool (custom-events contract).
+            send({ type: ev.name, ...(ev.data as Record<string, unknown>) });
           }
         }
         if (!closed) {

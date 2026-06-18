@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { sectionKeyForPath } from "@/lib/back-nav";
 import { useForge } from "./forge-provider";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
@@ -49,10 +50,13 @@ export function ForgePanel({
     errorMessage,
     conversationId,
     setConversationId,
+    pendingNavigate,
+    setPendingNavigate,
     send,
     cancel,
     resume,
   } = useForgeStream(clientId);
+  const router = useRouter();
 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [input, setInput] = useState("");
@@ -110,6 +114,16 @@ export function ForgePanel({
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages, toolStatus, pendingApproval, loadingThread]);
+
+  // Custom-streaming seam: consume a pending in-app navigation. Re-check the
+  // allowlist client-side (defense in depth — the server already gates emit).
+  // lastToolRender is intentionally NOT consumed yet: no renderer (plumbing only).
+  useEffect(() => {
+    if (!pendingNavigate) return;
+    const ok = ["/clients/", "/cma/"].some((p) => pendingNavigate.startsWith(p));
+    if (ok) router.push(pendingNavigate);
+    setPendingNavigate(null);
+  }, [pendingNavigate, router, setPendingNavigate]);
 
   function newChat() {
     if (busy) return;

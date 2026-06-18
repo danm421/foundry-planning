@@ -27,6 +27,10 @@ export type ForgeSseEvent =
   | { type: "token"; text: string }
   | { type: "tool_start"; name: string }
   | { type: "tool_end"; name: string }
+  // Structured custom-streaming frames (plumbing only — no renderer yet).
+  | { type: "tool_render"; name: string; status: "inProgress" | "complete"; data: unknown }
+  | { type: "navigate"; href: string }
+  | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -91,6 +95,11 @@ export interface UseForgeStreamResult {
   setMessages: React.Dispatch<React.SetStateAction<ForgeMessage[]>>;
   streamingText: string;
   toolStatus: string | null;
+  /** Latest structured render frame (custom-streaming seam; no renderer yet). */
+  lastToolRender: Extract<ForgeSseEvent, { type: "tool_render" }> | null;
+  /** Pending in-app navigation the panel may consume + clear. */
+  pendingNavigate: string | null;
+  setPendingNavigate: React.Dispatch<React.SetStateAction<string | null>>;
   pendingApproval: PendingApproval | null;
   setPendingApproval: React.Dispatch<React.SetStateAction<PendingApproval | null>>;
   status: ForgeStatus;
@@ -108,6 +117,12 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
   const [messages, setMessages] = useState<ForgeMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState<string | null>(null);
+  // Custom-streaming seam: stash the latest structured frame for a future
+  // renderer (no UI yet) + a pending in-app navigation the panel may consume.
+  const [lastToolRender, setLastToolRender] = useState<
+    Extract<ForgeSseEvent, { type: "tool_render" }> | null
+  >(null);
+  const [pendingNavigate, setPendingNavigate] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [status, setStatus] = useState<ForgeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -142,6 +157,16 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         break;
       case "tool_end":
         setToolStatus(null);
+        break;
+      case "tool_render":
+        // Plumbing only: stash the payload for a future renderer. No UI yet.
+        setLastToolRender(ev);
+        break;
+      case "navigate":
+        setPendingNavigate(ev.href);
+        break;
+      case "activity":
+        setToolStatus(ev.label);
         break;
       case "approval_required":
         setPendingApproval({ previews: ev.previews, calls: ev.calls });
@@ -292,6 +317,9 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     setMessages,
     streamingText,
     toolStatus,
+    lastToolRender,
+    pendingNavigate,
+    setPendingNavigate,
     pendingApproval,
     setPendingApproval,
     status,
