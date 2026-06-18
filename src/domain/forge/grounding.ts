@@ -1,7 +1,16 @@
 // src/domain/forge/grounding.ts
 
 // Matches $2.5M, $100,000, 92%, 2026, 0.92, etc. (M/K suffix case-insensitive)
-const NUMBER_TOKEN_RE = /\$?\d[\d,]*(?:\.\d+)?\s?(?:[MKmk])?%?/g;
+// One shared source string so the boolean helper and the token scanner agree.
+const NUMBER_TOKEN_SRC = String.raw`\$?\d[\d,]*(?:\.\d+)?\s?(?:[MKmk])?%?`;
+const NUMBER_TOKEN_RE = new RegExp(NUMBER_TOKEN_SRC, "g");
+
+/** True if `text` contains at least one numeric token. Used to decide whether a
+ *  final answer needs the verification pass. A FRESH regex avoids the shared
+ *  `lastIndex` state of the global `NUMBER_TOKEN_RE`. */
+export function containsNumber(text: string): boolean {
+  return new RegExp(NUMBER_TOKEN_SRC).test(text);
+}
 
 /** Reduce a token to the set of plain numeric strings it could mean, so a
  *  payload that stores 2500000 grounds an answer that wrote "$2.5M". */

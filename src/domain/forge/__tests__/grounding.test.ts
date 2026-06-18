@@ -1,6 +1,6 @@
 // src/domain/forge/__tests__/grounding.test.ts
 import { describe, it, expect } from "vitest";
-import { findUngroundedNumbers } from "../grounding";
+import { findUngroundedNumbers, containsNumber } from "../grounding";
 
 // Fixed mock plan: the exact JSON payloads run_projection + run_monte_carlo
 // would return for this client/scenario.
@@ -134,5 +134,18 @@ describe("CRM composite skills — grounding (no fabricated figures)", () => {
     const fabricatedPayload = JSON.stringify({ portfolioTotal: 999999 });
     const ungrounded = findUngroundedNumbers(fabricatedPayload, SEEDED_PAYLOADS);
     expect(ungrounded).toContain("999999");
+  });
+});
+
+describe("containsNumber", () => {
+  it("detects money, percent, M-suffix, and plain integers", () => {
+    expect(containsNumber("funds through age 95")).toBe(true);
+    expect(containsNumber("a $2.5M nest egg")).toBe(true);
+    expect(containsNumber("92% probability of success")).toBe(true);
+    expect(containsNumber("$100,000 of income")).toBe(true);
+  });
+  it("is false for prose with no figures", () => {
+    expect(containsNumber("The plan is on track and well funded.")).toBe(false);
+    expect(containsNumber("")).toBe(false);
   });
 });
