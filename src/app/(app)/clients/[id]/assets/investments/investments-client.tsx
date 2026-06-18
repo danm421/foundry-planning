@@ -40,6 +40,7 @@ interface Props {
   customGroups: Array<{ id: string; name: string; color: string | null }>;
   strippedMemberCount?: number;
   analysisRows: AnalysisRow[];
+  scenarioId?: string;
   holdingsByAccountClass: Record<string, Record<string, HoldingClassContribution[]>>;
   accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
   fundPortfolios: { id: string; name: string }[];
@@ -69,6 +70,7 @@ export default function InvestmentsClient({
   customGroups,
   strippedMemberCount,
   analysisRows,
+  scenarioId,
   holdingsByAccountClass,
   accountsWithHoldings,
   fundPortfolios,
@@ -172,7 +174,7 @@ export default function InvestmentsClient({
       {pageView === "holdings" && <HoldingsTab groups={holdingsGroups} />}
 
       {pageView === "analysis" && (
-        <PortfolioAnalysisClient clientId={clientId} analysisRows={analysisRows} />
+        <PortfolioAnalysisClient clientId={clientId} scenarioId={scenarioId} analysisRows={analysisRows} />
       )}
 
       {pageView === "rebalance" && (

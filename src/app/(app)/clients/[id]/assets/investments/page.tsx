@@ -32,6 +32,7 @@ export default async function InvestmentsPage({ params, searchParams }: PageProp
           firmId={firmId}
           groupKey={group ?? "all-liquid"}
           view={view}
+          scenarioId={scenario}
         />
       </Suspense>
     </ScenarioDrawerShell>

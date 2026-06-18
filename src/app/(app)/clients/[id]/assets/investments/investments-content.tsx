@@ -43,9 +43,10 @@ interface Props {
   firmId: string;
   groupKey: string;
   view?: string;
+  scenarioId?: string;
 }
 
-export async function InvestmentsContent({ clientId, firmId, groupKey, view }: Props) {
+export async function InvestmentsContent({ clientId, firmId, groupKey, view, scenarioId }: Props) {
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -350,6 +351,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey, view }: P
       customGroups={customGroupsForBar}
       strippedMemberCount={resolvedGroup.strippedMemberCount}
       analysisRows={analysisRows}
+      scenarioId={scenarioId}
       holdingsByAccountClass={holdingsByAccountClass}
       accountsWithHoldings={accountsWithHoldings}
       fundPortfolios={fundPortfolios}

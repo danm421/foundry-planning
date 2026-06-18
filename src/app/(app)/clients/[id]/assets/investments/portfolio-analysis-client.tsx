@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { PortfolioAnalysisScatter } from "./portfolio-analysis-scatter";
 import { AddToChartButton } from "./portfolio-analysis-picker";
 import { SERIES, labelForType, buildColorMap } from "./portfolio-analysis-series";
@@ -25,9 +26,11 @@ type SortKey = "name" | "arithmeticMean" | "geometricReturn" | "stdDev" | "sharp
 
 export default function PortfolioAnalysisClient({
   clientId,
+  scenarioId,
   analysisRows,
 }: {
   clientId: string;
+  scenarioId?: string;
   analysisRows: AnalysisRow[];
 }) {
   const availableKeys = useMemo(() => new Set(analysisRows.map((r) => r.key)), [analysisRows]);
@@ -35,6 +38,13 @@ export default function PortfolioAnalysisClient({
   const { selectedKeys, add, remove, clear } = useAnalysisSelection(clientId, availableKeys, defaultKeys);
   const [sortKey, setSortKey] = useState<SortKey>("stdDev");
   const [asc, setAsc] = useState(true);
+
+  const hrefFor = (r: AnalysisRow) => {
+    const qs = new URLSearchParams();
+    if (scenarioId) qs.set("scenario", scenarioId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return `/clients/${clientId}/assets/investments/analysis/${r.type}/${r.id}${suffix}`;
+  };
 
   const visible = useMemo(
     () => analysisRows.filter((r) => selectedKeys.has(r.key)),
@@ -140,7 +150,9 @@ export default function PortfolioAnalysisClient({
                       className="size-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: colorMap.get(r.key) }}
                     />
-                    <span className="truncate text-ink">{r.name}</span>
+                    <Link href={hrefFor(r)} className="truncate text-ink hover:text-accent hover:underline underline-offset-2">
+                      {r.name}
+                    </Link>
                     <span className="shrink-0 text-xs text-ink-4">{labelForType(r.type)}</span>
                   </span>
                   <button
@@ -195,17 +207,12 @@ export default function PortfolioAnalysisClient({
             <tr key={r.key} className="border-b border-hair">
               <td className="py-2">
                 <span className="inline-flex items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: colorMap.get(r.key) }}
-                  />
-                  <span>
+                  <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: colorMap.get(r.key) }} />
+                  <Link href={hrefFor(r)} className="hover:text-accent hover:underline underline-offset-2">
                     {r.name}
-                    {r.residualUnallocatedPct > 0.005
-                      ? ` (${pct(r.residualUnallocatedPct)} unallocated)`
-                      : ""}
-                  </span>
+                    {r.residualUnallocatedPct > 0.005 ? ` (${pct(r.residualUnallocatedPct)} unallocated)` : ""}
+                  </Link>
                 </span>
               </td>
               <td className="py-2">{labelForType(r.type)}</td>
