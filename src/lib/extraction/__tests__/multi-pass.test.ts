@@ -10,6 +10,7 @@ import { FACT_FINDER_CLASSIFIER_PROMPT } from "../prompts/fact-finder-classifier
 import { FAMILY_PROMPT } from "../prompts/family";
 import { WILL_PROMPT } from "../prompts/will";
 import { LIFE_INSURANCE_PROMPT } from "../prompts/life-insurance";
+import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 
@@ -229,5 +230,31 @@ describe("extractWithMultiPass", () => {
         expect(row.policyType).toBe("term");
         expect(row.faceValue).toBe(1000000);
         expect(result!.sections.insurance[0].__provenance.section).toBe("insurance");
+    });
+
+    it("extracts Social Security + pension income via the income-summary prompt", async () => {
+        mockedCallAI.mockImplementation(async (systemPrompt: string) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ incomes: [[4, 4]] });
+            }
+            if (systemPrompt === INCOME_SUMMARY_PROMPT) {
+                return JSON.stringify({
+                    incomes: [
+                        { type: "social_security", name: "John's Social Security", annualAmount: 38400, owner: "client" },
+                        { type: "social_security", name: "Carrine's Social Security", annualAmount: 55200, owner: "spouse" },
+                        { type: "other", name: "Transamerica pension", annualAmount: 8000, owner: "client", startYear: 2026, endYear: 2051 },
+                    ],
+                });
+            }
+            return JSON.stringify({});
+        });
+
+        const pages = Array.from({ length: 4 }, (_, i) => pageText(i + 1));
+        const result = await extractWithMultiPass({ pages, outline: "o", anchors: "a", model: "mini" });
+
+        expect(result?.sections.incomes).toHaveLength(3);
+        expect(result?.sections.incomes.map((r) => r.type)).toEqual([
+            "social_security", "social_security", "other",
+        ]);
     });
 });

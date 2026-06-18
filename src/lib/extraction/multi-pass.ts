@@ -8,7 +8,7 @@ import {
 import { completeExtractedAccounts } from "./holdings-completion";
 import type { ExtractedAccount } from "./types";
 import { ACCOUNT_STATEMENT_PROMPT } from "./prompts/account-statement";
-import { PAY_STUB_PROMPT } from "./prompts/pay-stub";
+import { INCOME_SUMMARY_PROMPT } from "./prompts/income-summary";
 import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
 import { LIFE_INSURANCE_PROMPT } from "./prompts/life-insurance";
 import { WILL_PROMPT } from "./prompts/will";
@@ -26,7 +26,7 @@ const SECTION_PROMPTS: Partial<
 > = {
     accounts: { prompt: ACCOUNT_STATEMENT_PROMPT, responseKey: "accounts" },
     liabilities: { prompt: ACCOUNT_STATEMENT_PROMPT, responseKey: "liabilities" },
-    incomes: { prompt: PAY_STUB_PROMPT, responseKey: "incomes" },
+    incomes: { prompt: INCOME_SUMMARY_PROMPT, responseKey: "incomes" },
     expenses: { prompt: EXPENSE_WORKSHEET_PROMPT, responseKey: "expenses" },
     insurance: { prompt: LIFE_INSURANCE_PROMPT, responseKey: "lifePolicies" },
     wills: { prompt: WILL_PROMPT, responseKey: "wills" },
