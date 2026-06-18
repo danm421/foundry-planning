@@ -17,6 +17,8 @@ export type ForgeAuthContext = {
   scenarioId: string;
 };
 
+export type VerifyDecision = "pass" | "retry" | "caveat";
+
 /**
  * Graph state. `...MessagesAnnotation.spec` gives the standard append/merge
  * message-log reducer (the FULL thread is checkpointed); `authContext` is a
@@ -25,4 +27,10 @@ export type ForgeAuthContext = {
 export const ForgeState = Annotation.Root({
   ...MessagesAnnotation.spec,
   authContext: Annotation<ForgeAuthContext>({ reducer: (_, b) => b }),
+  // How many times the verify node has bounced this turn's answer back for a
+  // rewrite. Seeded to 0 by the stream route on every POST so the budget resets
+  // per user turn (checkpointed state would otherwise carry it across turns).
+  verifyAttempts: Annotation<number>({ reducer: (_, b) => b, default: () => 0 }),
+  // The verify node's routing decision, read by the verify→(agent|END) edge.
+  verifyDecision: Annotation<VerifyDecision | null>({ reducer: (_, b) => b, default: () => null }),
 });

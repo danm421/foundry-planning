@@ -38,4 +38,9 @@ describe("ForgeState", () => {
     const next = { ...ctx, scenarioId: "scn_2" };
     expect(reduce(ctx, next)).toEqual(next);
   });
+
+  it("declares verifyAttempts and verifyDecision channels", () => {
+    expect(ForgeState.spec).toHaveProperty("verifyAttempts");
+    expect(ForgeState.spec).toHaveProperty("verifyDecision");
+  });
 });
