@@ -1,0 +1,42 @@
+name: Forge evals (non-blocking)
+
+# Offline trajectory / HITL-invariant / grounding evals for the forge agent.
+# NON-BLOCKING by design: the job and its run step are both continue-on-error, so
+# a failure never red-lines a PR — the eval lane is advisory (like Langfuse, it
+# stays effectively dormant until its gate is cleared). It is a SEPARATE workflow
+# from ci.yml's gating typecheck so it can't affect the required check.
+#
+# Scoped to forge changes via the path filter. Needs Azure + DB secrets to make
+# live model calls; without them the run step fails quietly (continue-on-error).
+# NOTE: the eval uses a fake eval-scope client (provider.ts EVAL_AUTH), so tool
+# EXECUTION against a real DB will error until a seeded eval client exists — the
+# trajectory/HITL assertions still exercise tool SELECTION. See AGENTS.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/domain/forge/**"
+
+jobs:
+  eval-forge:
+    name: Forge trajectory evals
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Run forge evals
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AZURE_API_VERSION: ${{ secrets.AZURE_API_VERSION }}
+          AZURE_MODEL: ${{ secrets.AZURE_MODEL }}
+          AZURE_ANALYSIS_MODEL: ${{ secrets.AZURE_ANALYSIS_MODEL }}
+        run: npm run eval:forge
