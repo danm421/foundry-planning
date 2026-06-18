@@ -300,6 +300,7 @@ export type AuditAction =
   | "forge.write_proposed" // a write tool produced a preview, awaiting approval
   | "forge.write_approved" // the advisor confirmed a proposed write (executed)
   | "forge.write_rejected" // the advisor rejected a proposed write
+  | "forge.undo" // the advisor reverted the conversation to a prior checkpoint
   | "copilot.query" // legacy (pre-2026-06-17 cutover)
   | "copilot.tool_call" // legacy
   | "copilot.write_proposed" // legacy
