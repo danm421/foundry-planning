@@ -9,6 +9,8 @@ import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI fac
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
 import { routeAfterAgent } from "./routing";
+import { verifyNode } from "./verify";
+import { containsNumber } from "./grounding";
 import { selectHistoryWindow } from "./history-window";
 import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
@@ -133,6 +135,7 @@ export function buildGraph(
     .addNode("agent", agentNode)
     .addNode("tools", toolNode)
     .addNode("approval", approvalNode)
+    .addNode("verify", verifyNode)
     .addEdge(START, "agent")
     .addEdge("tools", "agent")
     .addEdge("approval", "agent")
@@ -141,10 +144,16 @@ export function buildGraph(
       (state) => {
         const last = state.messages[state.messages.length - 1] as AIMessage;
         const calls = (last.tool_calls ?? []).map((c) => ({ name: c.name }));
-        const route = routeAfterAgent(calls, WRITE_TOOL_NAMES);
+        const hasNumber = typeof last.content === "string" && containsNumber(last.content);
+        const route = routeAfterAgent(calls, WRITE_TOOL_NAMES, hasNumber);
         return route === "__end__" ? END : route;
       },
-      { tools: "tools", approval: "approval", [END]: END },
+      { tools: "tools", approval: "approval", verify: "verify", [END]: END },
+    )
+    .addConditionalEdges(
+      "verify",
+      (state) => (state.verifyDecision === "retry" ? "agent" : END),
+      { agent: "agent", [END]: END },
     );
 
   return graph.compile({ checkpointer });
