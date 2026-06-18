@@ -179,8 +179,10 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
 
   // Load enriched holdings for ALL accounts once. The Holdings tab shows every
   // account that has holdings; the allocation drill + rebalance still scope to
-  // asset_mix accounts via assetMixAccountIdSet below (behavior-preserving —
-  // only asset_mix accounts carry holdings rows in practice).
+  // asset_mix accounts via assetMixAccountIdSet below (behavior-preserving — the
+  // drill/rebalance key off growthSource exactly as before, so any holdings on a
+  // non-asset_mix account — e.g. an import-guardrail account with
+  // deriveFromHoldings=false — surface only in the Holdings tab, never the drill).
   const enrichedByAccount = await loadEnrichedHoldings(acctRows.map((a) => a.id));
   const assetMixAccountIdSet = new Set(
     acctRows.filter((a) => toGrowthSource(a.growthSource) === "asset_mix").map((a) => a.id),
