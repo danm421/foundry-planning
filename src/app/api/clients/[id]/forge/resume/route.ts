@@ -11,6 +11,7 @@ import { touchConversation, userOwnsConversation } from "@/domain/forge/conversa
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
+import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
@@ -182,6 +183,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   const graph = buildGraph(authContext, getCheckpointer(), conversationId, systemPrompt);
+  // Same sessionId (== conversationId) so the resume attaches to the same Langfuse
+  // session as the original turn.
+  const langfuse = maybeLangfuseHandler(authContext, conversationId);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -213,6 +217,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
           configurable: { thread_id: conversationId },
           signal: req.signal,
           recursionLimit: 25,
+          ...(langfuse ? { callbacks: [langfuse] } : {}),
         });
         for await (const ev of events) {
           if (closed) break;
@@ -255,6 +260,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {
         req.signal.removeEventListener("abort", onAbort);
+        await flushLangfuse(langfuse);
         if (!closed) controller.close();
       }
     },
