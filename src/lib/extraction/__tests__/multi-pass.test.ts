@@ -12,6 +12,7 @@ import { WILL_PROMPT } from "../prompts/will";
 import { LIFE_INSURANCE_PROMPT } from "../prompts/life-insurance";
 import { INCOME_SUMMARY_PROMPT } from "../prompts/income-summary";
 import { ENTITIES_PROMPT } from "../prompts/entities";
+import { buildAccountStatementPrompt } from "../prompts/account-statement";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 
@@ -257,6 +258,25 @@ describe("extractWithMultiPass", () => {
         expect(result?.sections.incomes.map((r) => r.type)).toEqual([
             "social_security", "social_security", "other",
         ]);
+    });
+
+    it("uses the holdings-enabled accounts prompt when withHoldings is set", async () => {
+        const holdingsPrompt = buildAccountStatementPrompt(true);
+        let sawHoldingsPrompt = false;
+        mockedCallAI.mockImplementation(async (systemPrompt: string) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ accounts: [[1, 1]] });
+            }
+            if (systemPrompt === holdingsPrompt) {
+                sawHoldingsPrompt = true;
+                return JSON.stringify({ accounts: [{ name: "Brokerage", category: "taxable", subType: "brokerage", value: 1000 }] });
+            }
+            return JSON.stringify({});
+        });
+
+        const pages = [pageText(1)];
+        await extractWithMultiPass({ pages, outline: "o", anchors: "a", model: "mini", withHoldings: true });
+        expect(sawHoldingsPrompt).toBe(true);
     });
 
     it("extracts a business-entity interest via the entities prompt", async () => {
