@@ -15,6 +15,7 @@ import {
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
+import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
@@ -168,6 +169,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   }
 
   const graph = buildGraph(authContext, getCheckpointer(), cid, systemPrompt);
+  const langfuse = maybeLangfuseHandler(authContext, cid);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -178,7 +180,12 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       try {
         const events = graph.streamEvents(
           { messages: [new HumanMessage(modelMessage)], authContext },
-          { version: "v2", configurable: { thread_id: cid }, recursionLimit: 25 },
+          {
+            version: "v2",
+            configurable: { thread_id: cid },
+            recursionLimit: 25,
+            ...(langfuse ? { callbacks: [langfuse] } : {}),
+          },
         );
         for await (const ev of events) {
           if (ev.event === "on_chat_model_stream") {
@@ -214,6 +221,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         // §C: never emit raw err.message — it may leak client ids / internals.
         send({ type: "error", message: safeForgeErrorMessage(err) });
       } finally {
+        await flushLangfuse(langfuse);
         controller.close();
       }
     },
