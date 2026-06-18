@@ -140,6 +140,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   real_estate: "Real Estate", business: "Business",
   life_insurance: "Life Insurance", notes_receivable: "Notes Receivable",
 };
-function categoryLabel(category: string): string {
+export function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
 }
