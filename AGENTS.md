@@ -119,6 +119,15 @@ All specs, plans, future-work, and handoffs go to the Obsidian vault at
 
 - **Orphans only.** Remove imports/vars/functions *your* changes made unused. Leave pre-existing dead code alone — mention it instead of deleting.
 - **Senior-engineer test.** Before claiming done, ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify first.
+- **Forge tool policy.** Every NEW Forge tool ships, in the SAME PR, with at least
+  one trajectory eval case in `src/domain/forge/evals/promptfoo.yaml` (a `vars`
+  block with `expectTool: "<tool_name>"` + the `usedExpectedTool` assertion) AND
+  an updated `tools-index.test.ts` count/breakdown. Run `npm run eval:forge`
+  (non-blocking lane) before merge. NOTE: the eval runs the real graph against a
+  fake eval-scope client (`provider.ts` `EVAL_AUTH`), so tool *execution* errors
+  until a seeded eval client exists — the assertions still exercise tool
+  *selection* + the HITL invariant. Assertion logic is unit-tested in
+  `evals/__tests__/assertions.test.ts`.
 
 ## Gotchas
 
