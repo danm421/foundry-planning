@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval:forge": "promptfoo eval -c src/domain/forge/evals/promptfoo.yaml",
     "seed:tax-data": "tsx scripts/seed-tax-data.ts",
     "check:migrations": "tsx scripts/check-drizzle-migrations.ts",
     "recompute:cma-projected": "tsx scripts/recompute-cma-projected.ts"
@@ -80,6 +81,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "jsdom": "^29.0.2",
+    "promptfoo": "^0.121.17",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
