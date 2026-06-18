@@ -170,7 +170,7 @@ export default function InvestmentsClient({
       {pageView === "holdings" && <HoldingsTab groups={holdingsGroups} />}
 
       {pageView === "analysis" && (
-        <PortfolioAnalysisClient analysisRows={analysisRows} />
+        <PortfolioAnalysisClient clientId={clientId} analysisRows={analysisRows} />
       )}
 
       {pageView === "rebalance" && (

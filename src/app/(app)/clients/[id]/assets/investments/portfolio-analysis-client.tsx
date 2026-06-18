@@ -6,6 +6,7 @@ import { AddToChartButton } from "./portfolio-analysis-picker";
 import { SERIES, labelForType, buildColorMap } from "./portfolio-analysis-series";
 import { HelpTip } from "@/components/help-tip";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
+import { useAnalysisSelection } from "@/hooks/use-analysis-selection";
 
 // Categories pre-plotted on first load.
 const DEFAULT_CATEGORY_IDS = new Set(["taxable", "retirement"]);
@@ -23,13 +24,15 @@ const money = (v: number) =>
 type SortKey = "name" | "arithmeticMean" | "geometricReturn" | "stdDev" | "sharpe" | "value";
 
 export default function PortfolioAnalysisClient({
+  clientId,
   analysisRows,
 }: {
+  clientId: string;
   analysisRows: AnalysisRow[];
 }) {
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() =>
-    defaultSelection(analysisRows),
-  );
+  const availableKeys = useMemo(() => new Set(analysisRows.map((r) => r.key)), [analysisRows]);
+  const defaultKeys = useMemo(() => defaultSelection(analysisRows), [analysisRows]);
+  const { selectedKeys, add, remove, clear } = useAnalysisSelection(clientId, availableKeys, defaultKeys);
   const [sortKey, setSortKey] = useState<SortKey>("stdDev");
   const [asc, setAsc] = useState(true);
 
@@ -78,20 +81,6 @@ export default function PortfolioAnalysisClient({
     });
   }, [visible, sortKey, asc]);
 
-  const addKeys = (keys: string[]) =>
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      keys.forEach((k) => next.add(k));
-      return next;
-    });
-  const removeKey = (key: string) =>
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-  const clearAll = () => setSelectedKeys(new Set());
-
   const sortBtn = (key: SortKey, label: string) => (
     <button
       type="button"
@@ -122,13 +111,13 @@ export default function PortfolioAnalysisClient({
             <AddToChartButton
               rows={analysisRows}
               selectedKeys={selectedKeys}
-              onAdd={(key) => addKeys([key])}
-              onAddMany={addKeys}
+              onAdd={(key) => add([key])}
+              onAddMany={add}
             />
             {visible.length > 0 && (
               <button
                 type="button"
-                onClick={clearAll}
+                onClick={clear}
                 className="text-sm text-ink-3 hover:text-ink underline-offset-2 hover:underline"
               >
                 Clear all
@@ -156,7 +145,7 @@ export default function PortfolioAnalysisClient({
                   </span>
                   <button
                     type="button"
-                    onClick={() => removeKey(r.key)}
+                    onClick={() => remove(r.key)}
                     aria-label={`Remove ${r.name}`}
                     className="shrink-0 text-ink-4 transition-colors hover:text-ink"
                   >
