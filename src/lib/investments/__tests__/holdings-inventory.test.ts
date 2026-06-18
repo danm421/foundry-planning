@@ -86,3 +86,63 @@ describe("buildHoldingsInventory", () => {
     expect(g.holdings[0].pctOfTotal).toBe(0);
   });
 });
+
+import {
+  flattenInventory,
+  sortFlatHoldings,
+  type AccountHoldingsGroup,
+} from "../holdings-inventory";
+
+const GROUPS: AccountHoldingsGroup[] = [
+  {
+    accountId: "a1", accountName: "Brokerage", category: "taxable",
+    totalValue: 300, pctOfTotal: 0.6,
+    holdings: [
+      { id: "h1", ticker: "AAA", name: "Alpha", shares: 1, price: 100, priceAsOf: null, marketValue: 100, pctOfTotal: 0.2, costBasis: 50, gainLoss: 50, gainLossPct: 1 },
+      { id: "h2", ticker: "CCC", name: "Gamma", shares: 1, price: 200, priceAsOf: null, marketValue: 200, pctOfTotal: 0.4, costBasis: null, gainLoss: null, gainLossPct: null },
+    ],
+  },
+  {
+    accountId: "a2", accountName: "IRA", category: "retirement",
+    totalValue: 200, pctOfTotal: 0.4,
+    holdings: [
+      { id: "h3", ticker: "BBB", name: "Beta", shares: 1, price: 200, priceAsOf: null, marketValue: 200, pctOfTotal: 0.4, costBasis: 100, gainLoss: 100, gainLossPct: 1 },
+    ],
+  },
+];
+
+describe("flattenInventory", () => {
+  it("flattens groups in order and stamps account fields onto each row", () => {
+    const flat = flattenInventory(GROUPS);
+    expect(flat.map((r) => r.id)).toEqual(["h1", "h2", "h3"]);
+    expect(flat[2].accountName).toBe("IRA");
+    expect(flat[2].category).toBe("retirement");
+  });
+});
+
+describe("sortFlatHoldings", () => {
+  const flat = flattenInventory(GROUPS);
+
+  it("sorts numeric desc (default for marketValue)", () => {
+    const out = sortFlatHoldings(flat, "marketValue", "desc");
+    expect(out.map((r) => r.marketValue)).toEqual([200, 200, 100]);
+  });
+
+  it("sorts text asc with localeCompare", () => {
+    const out = sortFlatHoldings(flat, "ticker", "asc");
+    expect(out.map((r) => r.ticker)).toEqual(["AAA", "BBB", "CCC"]);
+  });
+
+  it("keeps null numeric values last in both directions", () => {
+    const asc = sortFlatHoldings(flat, "gainLoss", "asc");
+    const desc = sortFlatHoldings(flat, "gainLoss", "desc");
+    expect(asc[asc.length - 1].gainLoss).toBeNull();
+    expect(desc[desc.length - 1].gainLoss).toBeNull();
+  });
+
+  it("does not mutate its input", () => {
+    const before = flat.map((r) => r.id);
+    sortFlatHoldings(flat, "ticker", "desc");
+    expect(flat.map((r) => r.id)).toEqual(before);
+  });
+});

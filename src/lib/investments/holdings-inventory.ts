@@ -107,3 +107,50 @@ export function buildHoldingsInventory(
   groups.sort((a, b) => b.totalValue - a.totalValue);
   return groups;
 }
+
+export interface FlatHolding extends HoldingLite {
+  accountId: string;
+  accountName: string;
+  category: string;
+}
+
+export function flattenInventory(groups: readonly AccountHoldingsGroup[]): FlatHolding[] {
+  return groups.flatMap((g) =>
+    g.holdings.map((h) => ({
+      ...h,
+      accountId: g.accountId,
+      accountName: g.accountName,
+      category: g.category,
+    })),
+  );
+}
+
+export type SortKey =
+  | "accountName" | "ticker" | "name" | "shares" | "price"
+  | "marketValue" | "pctOfTotal" | "costBasis" | "gainLoss";
+export type SortDir = "asc" | "desc";
+
+const TEXT_KEYS: ReadonlySet<SortKey> = new Set(["accountName", "ticker", "name"]);
+
+/** Sort a flat holdings list. Returns a new array. Text keys use localeCompare;
+ *  numeric keys compare numerically with nulls forced to the end regardless of
+ *  direction. */
+export function sortFlatHoldings(
+  rows: readonly FlatHolding[],
+  key: SortKey,
+  dir: SortDir,
+): FlatHolding[] {
+  const mult = dir === "asc" ? 1 : -1;
+  const isText = TEXT_KEYS.has(key);
+  return [...rows].sort((a, b) => {
+    if (isText) {
+      return mult * String(a[key] ?? "").localeCompare(String(b[key] ?? ""));
+    }
+    const an = a[key] as number | null;
+    const bn = b[key] as number | null;
+    if (an == null && bn == null) return 0;
+    if (an == null) return 1;
+    if (bn == null) return -1;
+    return mult * (an - bn);
+  });
+}
