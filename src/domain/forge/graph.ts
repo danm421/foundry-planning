@@ -11,7 +11,7 @@ import { buildToolContext } from "./context";
 import { getStore } from "./store";
 import { parseResumeDecisions } from "./interrupts";
 import { routeAfterAgent } from "./routing";
-import { selectHistoryWindow } from "./history-window";
+import { compactHistory } from "./history-window";
 import { describeProposedWrite } from "@/domain/forge/preview";
 import { recordAudit } from "@/lib/audit";
 
@@ -82,9 +82,10 @@ export function buildGraph(
   async function agentNode(state: typeof ForgeState.State) {
     const system = new SystemMessage(systemPrompt());
     // The full thread is checkpointed; only send a bounded recent window so
-    // token cost/latency don't grow. The system prompt is the stable prefix
-    // (good for Azure's automatic prompt caching).
-    const window = selectHistoryWindow(state.messages);
+    // token cost/latency don't grow, with a numeric-preserving summary prepended
+    // when older turns are trimmed. The system prompt is the stable prefix (good
+    // for Azure's automatic prompt caching).
+    const window = compactHistory(state.messages);
     const response = await model.invoke([system, ...window]);
     return { messages: [response] };
   }
