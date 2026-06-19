@@ -27,6 +27,15 @@ export async function linkHousehold(input: {
     });
 }
 
+export async function getHouseholdLinkForClient(clientId: string) {
+  const [row] = await db
+    .select()
+    .from(orionHouseholdLinks)
+    .where(eq(orionHouseholdLinks.clientId, clientId))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function unlinkHousehold(firmId: string, clientId: string): Promise<void> {
   await db
     .delete(orionHouseholdLinks)

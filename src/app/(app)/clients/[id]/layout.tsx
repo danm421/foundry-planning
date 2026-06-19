@@ -2,8 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable } from "@/db/schema";
-import { eq, desc, asc } from "drizzle-orm";
+import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable, accounts } from "@/db/schema";
+import { eq, desc, asc, and, isNotNull } from "drizzle-orm";
 import { requireClientAccess } from "@/lib/clients/authz";
 import ClientHeader from "@/components/client-header";
 import HeaderSubtabs from "@/components/header-subtabs";
@@ -17,6 +17,8 @@ import { ForgeMount } from "@/components/forge/forge-mount";
 import { isForgeEnabled } from "@/domain/forge/flag";
 import ShareClientButton from "@/components/sharing/share-client-button";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import { getHouseholdLinkForClient } from "@/lib/orion/households";
+import { OrionClientStatus } from "@/components/OrionClientStatus";
 
 interface Props {
   children: React.ReactNode;
@@ -69,6 +71,18 @@ export default async function ClientLayout({ children, params }: Props): Promise
       .orderBy(desc(scenariosTable.isBaseCase), asc(scenariosTable.name)),
   ]);
 
+  const orionLink = await getHouseholdLinkForClient(id);
+  let orionLastSyncedAt: Date | null = null;
+  if (orionLink) {
+    const [recent] = await db
+      .select({ last: accounts.lastSyncedAt })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, id), eq(accounts.externalProvider, "orion"), isNotNull(accounts.lastSyncedAt)))
+      .orderBy(desc(accounts.lastSyncedAt))
+      .limit(1);
+    orionLastSyncedAt = recent?.last ?? null;
+  }
+
   const primary = contactRows.find((c) => c.role === "primary");
   const spouse = contactRows.find((c) => c.role === "spouse");
   if (!primary?.dateOfBirth) notFound();
@@ -115,6 +129,13 @@ export default async function ClientLayout({ children, params }: Props): Promise
                 isPrivate={clientRow.isPrivate}
                 canManage={canManageShares}
               />
+              {orionLink ? (
+                <OrionClientStatus
+                  clientId={id}
+                  isAdmin={orgRole === "org:admin"}
+                  lastSyncedAt={orionLastSyncedAt ? orionLastSyncedAt.toISOString() : null}
+                />
+              ) : null}
             </>
           }
         />

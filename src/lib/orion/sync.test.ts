@@ -7,7 +7,7 @@ import { accounts, clientImports, clients, crmHouseholds, orionConnections } fro
 import { createTestClientWithScenario } from "@/test/factories";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { OrionClient } from "./client";
-import { upsertConnection } from "./connections";
+import { getConnection, upsertConnection } from "./connections";
 import { linkHousehold } from "./households";
 import { syncFirm } from "./sync";
 
@@ -87,6 +87,10 @@ describe("syncFirm", () => {
     const first = await syncFirm(firmId, { trigger: "manual", clientId, client, userId: "u1" });
     expect(first.committed).toBe(1);
     expect(first.queued).toBe(0);
+
+    // The connection's lastSyncedAt is stamped after a successful sync.
+    const conn = await getConnection(firmId);
+    expect(conn?.lastSyncedAt).not.toBeNull();
 
     // The account was UPDATED in place (value refreshed, lastSyncedAt stamped).
     const afterFirst = await db

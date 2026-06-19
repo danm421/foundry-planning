@@ -2,7 +2,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { accounts, clientImports, orionSyncRuns, scenarios } from "@/db/schema";
+import { accounts, clientImports, orionConnections, orionSyncRuns, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
@@ -220,6 +220,7 @@ export async function syncFirm(
       .where(eq(orionSyncRuns.id, run.id));
 
     await setConnectionStatus(firmId, "connected", null);
+    await db.update(orionConnections).set({ lastSyncedAt: new Date() }).where(eq(orionConnections.firmId, firmId));
 
     await recordAudit({
       action: "orion_sync.run",
