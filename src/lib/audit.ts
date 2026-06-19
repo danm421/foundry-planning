@@ -309,7 +309,17 @@ export type AuditAction =
   | "copilot.write_proposed" // legacy
   | "copilot.write_approved" // legacy
   | "copilot.write_rejected" // legacy
-  | "feedback.submitted";
+  | "feedback.submitted"
+  // Client portal
+  | "portal.invite.sent"
+  | "portal.invite.revoked"
+  | "portal.access.disabled"
+  | "portal.edit_toggle"
+  | "portal.family.create"
+  | "portal.family.update"
+  | "portal.family.delete"
+  | "portal.trust.update"
+  | "portal.household.update";
 
 type Args = {
   action: AuditAction;

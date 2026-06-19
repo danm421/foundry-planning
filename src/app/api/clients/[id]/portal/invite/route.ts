@@ -1,0 +1,110 @@
+import { NextResponse } from "next/server";
+import { clerkClient } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { clients } from "@/db/schema";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { requireClientEditAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
+import { recordAudit } from "@/lib/audit";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(
+  req: Request,
+  ctx: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const { id } = await ctx.params;
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+
+    const limit = await checkPortalInviteRateLimit(firmId);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", reason: limit.reason },
+        { status: 429 },
+      );
+    }
+
+    const body = (await req.json().catch(() => ({}))) as { email?: string };
+    if (!body.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) {
+      return NextResponse.json({ error: "Valid email required" }, { status: 400 });
+    }
+
+    const cc = await clerkClient();
+    const invitation = await cc.invitations.createInvitation({
+      emailAddress: body.email,
+      publicMetadata: { clientId: id },
+      redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/sign-up`,
+    });
+
+    await db
+      .update(clients)
+      .set({ portalInvitedAt: new Date() })
+      .where(eq(clients.id, id));
+
+    await recordAudit({
+      action: "portal.invite.sent",
+      resourceType: "portal_invite",
+      resourceId: invitation.id,
+      clientId: id,
+      firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { email: body.email }),
+    });
+
+    return NextResponse.json({ ok: true, invitationId: invitation.id });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    console.error("POST /api/clients/[id]/portal/invite error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const { id } = await ctx.params;
+    const { orgId: callerOrg } = await requireOrgAndUser();
+    const { firmId, access } = await requireClientEditAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
+
+    const cc = await clerkClient();
+    const list = await cc.invitations.getInvitationList({ status: "pending" });
+    const matches = (list.data ?? []).filter(
+      (inv) =>
+        (inv.publicMetadata as { clientId?: string } | undefined)?.clientId === id,
+    );
+
+    for (const inv of matches) {
+      await cc.invitations.revokeInvitation(inv.id);
+    }
+
+    await db
+      .update(clients)
+      .set({ portalInvitedAt: null })
+      .where(eq(clients.id, id));
+
+    await recordAudit({
+      action: "portal.invite.revoked",
+      resourceType: "portal_invite",
+      resourceId: id,
+      clientId: id,
+      firmId,
+      metadata: crossFirmAuditMeta({ access }, callerOrg, { revoked: matches.length }),
+    });
+
+    return NextResponse.json({ ok: true, revoked: matches.length });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    console.error("DELETE /api/clients/[id]/portal/invite error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
