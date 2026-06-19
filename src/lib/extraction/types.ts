@@ -117,6 +117,9 @@ export interface ExtractedAccount {
   owners?: AccountOwner[];
   /** Individual positions, present only when holdings extraction was enabled. */
   holdings?: ExtractedHolding[];
+  /** Set when the account originated from a third-party sync (e.g. Orion). */
+  externalProvider?: string;
+  externalId?: string;
 }
 
 export interface ExtractedIncome {
