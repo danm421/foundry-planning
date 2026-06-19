@@ -65,10 +65,16 @@ export async function setConnectionStatus(
   firmId: string,
   status: "connected" | "disconnected" | "error",
   error?: string | null,
+  extra?: { lastSyncedAt?: Date },
 ): Promise<void> {
   await db
     .update(orionConnections)
-    .set({ status, lastSyncError: error ?? null, updatedAt: new Date() })
+    .set({
+      status,
+      lastSyncError: error ?? null,
+      updatedAt: new Date(),
+      ...(extra?.lastSyncedAt ? { lastSyncedAt: extra.lastSyncedAt } : {}),
+    })
     .where(eq(orionConnections.firmId, firmId));
 }
 

@@ -1,6 +1,8 @@
 // src/lib/orion/oauth.ts
 import { createHash, randomBytes } from "node:crypto";
 
+import { requireEnv } from "./env";
+
 export type OrionTokenResponse = {
   accessToken: string;
   refreshToken?: string;
@@ -84,8 +86,3 @@ async function tokenRequest(
   };
 }
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
-}

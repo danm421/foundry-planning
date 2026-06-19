@@ -40,16 +40,15 @@ export function mapOrionAccount(o: OrionAccount): ExtractedAccount {
 }
 
 export function mapOrionPosition(o: OrionPosition): ExtractedHolding {
-  const hasTicker = !!o.ticker;
   return {
-    ticker: hasTicker ? o.ticker! : undefined,
+    ticker: o.ticker ?? undefined,
     name: o.description ?? undefined,
     shares: o.units ?? undefined,
     price: o.price ?? undefined,
     costBasis: o.costBasis ?? undefined,
     // Tickered positions get live-priced at commit, so don't carry the statement value.
     // Untickered → carry marketValue so normalizeExtractedHolding treats it as authoritative.
-    marketValue: hasTicker ? undefined : (o.marketValue ?? undefined),
+    marketValue: o.ticker ? undefined : (o.marketValue ?? undefined),
   };
 }
 

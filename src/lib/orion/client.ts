@@ -1,6 +1,7 @@
 // src/lib/orion/client.ts
 import { z } from "zod";
 import { getValidAccessToken } from "./auth";
+import { requireEnv } from "./env";
 import { checkOrionApiLimit } from "@/lib/rate-limit";
 import {
   orionHouseholdSchema, orionAccountSchema, orionPositionSchema,
@@ -63,9 +64,4 @@ export class OrionClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
 }

@@ -52,7 +52,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
   // chip row — can run in parallel rather than back-to-back. Neither depends
   // on the other; serializing them just doubled the round-trips before the
   // shell could render.
-  const [contactRows, scenarioRows] = await Promise.all([
+  const [contactRows, scenarioRows, orionLink] = await Promise.all([
     db
       .select()
       .from(crmHouseholdContacts)
@@ -69,9 +69,11 @@ export default async function ClientLayout({ children, params }: Props): Promise
       .from(scenariosTable)
       .where(eq(scenariosTable.clientId, id))
       .orderBy(desc(scenariosTable.isBaseCase), asc(scenariosTable.name)),
+    // Orion link has no dependency on the other two — fetch it in the same
+    // round-trip rather than serially after.
+    getHouseholdLinkForClient(id),
   ]);
 
-  const orionLink = await getHouseholdLinkForClient(id);
   let orionLastSyncedAt: Date | null = null;
   if (orionLink) {
     const [recent] = await db
