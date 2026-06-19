@@ -64,6 +64,6 @@ describe("PUT /api/portal/trusts/[id]", () => {
     });
     expect(res.status).toBe(200);
     expect(updateChain).toHaveBeenCalled();
-    expect(recordUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "client" }));
+    expect(recordUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "client", firmId: "firm-1" }));
   });
 });

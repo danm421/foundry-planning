@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { entities, entityTypeEnum } from "@/db/schema";
+import { entities } from "@/db/schema";
 import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
 
-type EntityType = (typeof entityTypeEnum.enumValues)[number];
-
 type EditableFields = {
   name: string;
-  entityType: EntityType;
 };
 
 type RowWithFirmId = EditableFields & {
@@ -23,7 +20,6 @@ type RowWithFirmId = EditableFields & {
 
 const FIELD_LABELS = {
   name: { label: "Name", format: "text" as const },
-  entityType: { label: "Type", format: "text" as const },
 };
 
 async function loadRow(rowId: string): Promise<RowWithFirmId | null> {
@@ -32,7 +28,6 @@ async function loadRow(rowId: string): Promise<RowWithFirmId | null> {
       id: entities.id,
       clientId: entities.clientId,
       name: entities.name,
-      entityType: entities.entityType,
       firmId: sql<string>`(SELECT firm_id FROM clients WHERE id = ${entities.clientId})`,
     })
     .from(entities)
@@ -44,7 +39,6 @@ async function loadRow(rowId: string): Promise<RowWithFirmId | null> {
 function editable(row: EditableFields): EditableFields {
   return {
     name: row.name,
-    entityType: row.entityType,
   };
 }
 
@@ -64,14 +58,8 @@ export async function PUT(
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-    const patch: Partial<{ name: string; entityType: EntityType }> = {};
+    const patch: Partial<{ name: string }> = {};
     if (typeof body.name === "string") patch.name = body.name;
-    if (
-      typeof body.entityType === "string" &&
-      (entityTypeEnum.enumValues as readonly string[]).includes(body.entityType)
-    ) {
-      patch.entityType = body.entityType as EntityType;
-    }
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ ok: true, noop: true });

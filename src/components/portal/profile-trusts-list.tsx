@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 
 type Row = {
@@ -21,20 +21,27 @@ export default function ProfileTrustsList({
   editEnabled,
 }: Props): ReactElement {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   async function rename(id: string, current: string) {
     const next = prompt("Trust name", current);
     if (next == null || next === current) return;
-    await fetch(`/api/portal/trusts/${id}`, {
+    setError(null);
+    const res = await fetch(`/api/portal/trusts/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: next }),
     });
+    if (!res.ok) {
+      setError((await res.json().catch(() => ({ error: "Failed to rename trust" }))).error);
+      return;
+    }
     router.refresh();
   }
 
   return (
     <div>
+      {error && <p className="mb-2 text-[12px] text-bad">{error}</p>}
       <header className="flex items-center justify-between mb-3">
         <h1 className="text-[18px] font-semibold text-ink">Trusts</h1>
       </header>

@@ -76,6 +76,14 @@ export async function PUT(
     }
 
     const body = (await req.json().catch(() => ({}))) as Partial<EditableFields>;
+
+    if (
+      body.relationship !== undefined &&
+      !(familyRelationshipEnum.enumValues as readonly string[]).includes(body.relationship)
+    ) {
+      return NextResponse.json({ error: "invalid relationship" }, { status: 400 });
+    }
+
     const patch: Partial<{
       firstName: string;
       lastName: string | null;
@@ -84,7 +92,7 @@ export async function PUT(
     }> = {};
     if (body.firstName !== undefined) patch.firstName = body.firstName;
     if (body.lastName !== undefined) patch.lastName = body.lastName;
-    if (body.relationship !== undefined) patch.relationship = body.relationship;
+    if (body.relationship !== undefined) patch.relationship = body.relationship as Relationship;
     if (body.dateOfBirth !== undefined) patch.dateOfBirth = body.dateOfBirth;
 
     await db.update(familyMembers).set(patch).where(eq(familyMembers.id, id));

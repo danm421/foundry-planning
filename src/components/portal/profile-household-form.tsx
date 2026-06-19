@@ -26,23 +26,32 @@ export default function ProfileHouseholdForm({
   const [draftPrimary, setDraftPrimary] = useState(primary);
   const [draftSpouse, setDraftSpouse] = useState(spouse);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     JSON.stringify(draftPrimary) !== JSON.stringify(primary) ||
     JSON.stringify(draftSpouse) !== JSON.stringify(spouse);
 
   async function save() {
+    setError(null);
     setBusy(true);
-    await fetch("/api/portal/household", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        primary: draftPrimary && primary ? pick(draftPrimary, primary) : undefined,
-        spouse: draftSpouse && spouse ? pick(draftSpouse, spouse) : undefined,
-      }),
-    });
-    setBusy(false);
-    router.refresh();
+    try {
+      const res = await fetch("/api/portal/household", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          primary: draftPrimary && primary ? pick(draftPrimary, primary) : undefined,
+          spouse: draftSpouse && spouse ? pick(draftSpouse, spouse) : undefined,
+        }),
+      });
+      if (!res.ok) {
+        setError((await res.json().catch(() => ({ error: "Failed to save" }))).error);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -63,6 +72,7 @@ export default function ProfileHouseholdForm({
           readOnly={!editEnabled}
         />
       )}
+      {error && <p className="text-[12px] text-bad">{error}</p>}
       {editEnabled && dirty && (
         <footer className="flex gap-2 justify-end">
           <button

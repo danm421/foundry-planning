@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, familyMembers } from "@/db/schema";
+import { clients, familyMembers, familyRelationshipEnum } from "@/db/schema";
 import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
 
+type Relationship = (typeof familyRelationshipEnum.enumValues)[number];
+
 type Body = {
   firstName?: string;
   lastName?: string | null;
-  relationship?: "child" | "parent" | "sibling" | "other";
+  relationship?: string;
   dateOfBirth?: string | null;
 };
 
@@ -25,6 +27,13 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "firstName required" }, { status: 400 });
     }
 
+    if (
+      body.relationship !== undefined &&
+      !(familyRelationshipEnum.enumValues as readonly string[]).includes(body.relationship)
+    ) {
+      return NextResponse.json({ error: "invalid relationship" }, { status: 400 });
+    }
+
     const [client] = await db
       .select({ firmId: clients.firmId })
       .from(clients)
@@ -35,13 +44,15 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const relationship: Relationship = (body.relationship as Relationship) ?? "child";
+
     const [inserted] = await db
       .insert(familyMembers)
       .values({
         clientId,
         firstName: body.firstName.trim(),
         lastName: body.lastName ?? null,
-        relationship: body.relationship ?? "child",
+        relationship,
         dateOfBirth: body.dateOfBirth ?? null,
       })
       .returning();

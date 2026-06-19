@@ -31,37 +31,57 @@ export default function ProfileFamilyList({
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function add() {
+    setError(null);
     setBusy(true);
-    await fetch("/api/portal/family", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
-    });
-    setBusy(false);
-    setAdding(false);
-    setDraft(EMPTY_DRAFT);
-    router.refresh();
+    try {
+      const res = await fetch("/api/portal/family", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      if (!res.ok) {
+        setError((await res.json().catch(() => ({ error: "Failed to add" }))).error);
+        return;
+      }
+      setAdding(false);
+      setDraft(EMPTY_DRAFT);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function update(id: string, patch: Partial<Row>) {
-    await fetch(`/api/portal/family/${id}`, {
+    setError(null);
+    const res = await fetch(`/api/portal/family/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     });
+    if (!res.ok) {
+      setError((await res.json().catch(() => ({ error: "Failed to update" }))).error);
+      return;
+    }
     router.refresh();
   }
 
   async function remove(id: string) {
     if (!confirm("Delete this family member?")) return;
-    await fetch(`/api/portal/family/${id}`, { method: "DELETE" });
+    setError(null);
+    const res = await fetch(`/api/portal/family/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError("Failed to delete family member");
+      return;
+    }
     router.refresh();
   }
 
   return (
     <div>
+      {error && <p className="mb-2 text-[12px] text-bad">{error}</p>}
       <header className="flex items-center justify-between mb-3">
         <h1 className="text-[18px] font-semibold text-ink">Family</h1>
         {editEnabled && (

@@ -61,6 +61,15 @@ describe("POST /api/portal/family", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an invalid relationship value with 400", async () => {
+    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    const res = await POST(req({ firstName: "Kid", relationship: "bogus" }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid relationship");
+  });
+
   it("inserts a row scoped to the bound client and logs as actor 'client'", async () => {
     requirePortalMock.mockResolvedValue({ clientId: "c1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
