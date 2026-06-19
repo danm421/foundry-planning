@@ -10,6 +10,7 @@ import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { buildHouseholdName } from "@/lib/crm/household-name";
 import { CheckCircleIcon } from "@/components/icons";
+import { StateSelect } from "@/components/state-select";
 
 export interface ClientFormInitial {
   id: string;
@@ -85,6 +86,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
   // Edit mode skips both controls entirely.
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string | null>(null);
   const [createNewHousehold, setCreateNewHousehold] = useState(false);
+  const [householdState, setHouseholdState] = useState("");
 
   const isEdit = effectiveClientId !== null;
   // In create mode, identity fields (firstName/lastName/DOB) are rendered only
@@ -96,7 +98,10 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
   //   edit         -> always (depends on HTML validity)
   //   pick existing -> needs selectedHouseholdId
   //   create new   -> needs the checkbox on + HTML validity
-  const householdReady = isEdit || createNewHousehold || selectedHouseholdId !== null;
+  const householdReady =
+    isEdit ||
+    (createNewHousehold && householdState !== "") ||
+    selectedHouseholdId !== null;
 
   useEffect(() => {
     onSubmitStateChange?.({ canSubmit: !loading && householdReady && canSave, loading });
@@ -192,7 +197,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
     const hRes = await fetch("/api/crm/households", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id }),
+      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id, state: householdState }),
     });
     if (!hRes.ok) {
       const j = (await hRes.json().catch(() => ({}))) as { error?: string };
@@ -221,8 +226,8 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
     if (addr2) primaryBody.addressLine2 = addr2;
     const city = String(data.get("city") ?? "").trim();
     if (city) primaryBody.city = city;
-    const state = String(data.get("state") ?? "").trim();
-    if (state) primaryBody.state = state;
+    // Household state is authoritative for the primary contact's residence.
+    primaryBody.state = householdState;
     const postalCode = String(data.get("postalCode") ?? "").trim();
     if (postalCode) primaryBody.postalCode = postalCode;
     const country = String(data.get("country") ?? "").trim();
@@ -438,9 +443,25 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
               <span>Create a new household</span>
             </label>
             {createNewHousehold && (
-              <p className="text-xs text-gray-400">
-                A new CRM household will be created from the details below.
-              </p>
+              <div className="space-y-2">
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="householdState">
+                    State of residence <span className="text-red-500">*</span>
+                  </label>
+                  <StateSelect
+                    id="householdState"
+                    name="householdState"
+                    value={householdState}
+                    onChange={setHouseholdState}
+                    required
+                    className={`mt-1 ${selectClassName}`}
+                  />
+                </div>
+                <p className="text-xs text-gray-400">
+                  A new CRM household will be created from the details below. Drives
+                  state income &amp; estate tax for the plan.
+                </p>
+              </div>
             )}
           </div>
         )}
