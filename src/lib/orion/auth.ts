@@ -16,13 +16,16 @@ export function __setRefresher(fn: (rt: string) => Promise<OrionTokenResponse>):
   refresher = fn;
 }
 
-export async function getValidAccessToken(firmId: string): Promise<string> {
+export async function getValidAccessToken(
+  firmId: string,
+  opts?: { forceRefresh?: boolean },
+): Promise<string> {
   const conn = await getConnection(firmId);
   if (!conn || conn.status === "disconnected" || !conn.accessToken) {
     throw new OrionReconnectRequired(firmId);
   }
   const expired = conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() - SKEW_MS < Date.now();
-  if (!expired) return conn.accessToken;
+  if (!expired && !opts?.forceRefresh) return conn.accessToken;
 
   if (!conn.refreshToken) throw new OrionReconnectRequired(firmId);
   try {

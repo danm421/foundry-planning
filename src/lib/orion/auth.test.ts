@@ -37,4 +37,13 @@ describe("getValidAccessToken", () => {
     await expect(getValidAccessToken(firmId)).rejects.toBeInstanceOf(OrionReconnectRequired);
     expect((await getConnection(firmId))?.status).toBe("error");
   });
+
+  it("force-refreshes even when the stored token is unexpired", async () => {
+    await upsertConnection({
+      firmId, accessToken: "STILL_GOOD", refreshToken: "RT", userId: "u1",
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    __setRefresher(vi.fn().mockResolvedValue({ accessToken: "FORCED", refreshToken: "RT2", expiresInSec: 3600 }));
+    expect(await getValidAccessToken(firmId, { forceRefresh: true })).toBe("FORCED");
+  });
 });
