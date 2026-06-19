@@ -30,7 +30,17 @@ describe("secrets", () => {
   it("throws when the key is missing", () => {
     const saved = process.env.CREDENTIAL_ENCRYPTION_KEY;
     delete process.env.CREDENTIAL_ENCRYPTION_KEY;
-    expect(() => encryptSecret("x")).toThrow(/CREDENTIAL_ENCRYPTION_KEY/);
-    process.env.CREDENTIAL_ENCRYPTION_KEY = saved;
+    try {
+      expect(() => encryptSecret("x")).toThrow(/CREDENTIAL_ENCRYPTION_KEY/);
+    } finally {
+      process.env.CREDENTIAL_ENCRYPTION_KEY = saved;
+    }
+  });
+
+  it("rejects a tampered auth tag", () => {
+    const blob = encryptSecret("secret");
+    const parts = blob.split(":");
+    parts[2] = Buffer.from("0000000000000000").toString("base64");
+    expect(() => decryptSecret(parts.join(":"))).toThrow();
   });
 });
