@@ -8,6 +8,10 @@ import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
+// @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(id),
+// which verifies the target client belongs to the caller's firm (throws ForbiddenError
+// otherwise) before any mutation. The literal getOrgId/requireOrgId grep doesn't see this.
+
 export async function PUT(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
