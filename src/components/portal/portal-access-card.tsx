@@ -42,17 +42,27 @@ export default function PortalAccessCard({
   }
 
   async function revoke() {
+    setError(null);
     setBusy(true);
-    await fetch(`/api/clients/${clientId}/portal/invite`, { method: "DELETE" });
+    const res = await fetch(`/api/clients/${clientId}/portal/invite`, { method: "DELETE" });
     setBusy(false);
+    if (!res.ok) {
+      setError("Failed to revoke invite");
+      return;
+    }
     router.refresh();
   }
 
   async function disable() {
     if (!confirm("Disable portal access? The client's login will be deleted.")) return;
+    setError(null);
     setBusy(true);
-    await fetch(`/api/clients/${clientId}/portal/disable`, { method: "POST" });
+    const res = await fetch(`/api/clients/${clientId}/portal/disable`, { method: "POST" });
     setBusy(false);
+    if (!res.ok) {
+      setError("Failed to disable portal access");
+      return;
+    }
     router.refresh();
   }
 
@@ -89,10 +99,10 @@ export default function PortalAccessCard({
         <div className="space-y-2 text-[13px] text-ink-2">
           <p>Invitation sent {invitedAt ? new Date(invitedAt).toLocaleString() : ""}.</p>
           <div className="flex gap-2">
-            <button onClick={send} disabled={busy} className="rounded-md border border-hair px-3 py-1.5 text-ink">
+            <button type="button" onClick={send} disabled={busy} className="rounded-md border border-hair px-3 py-1.5 text-ink">
               Resend invite
             </button>
-            <button onClick={revoke} disabled={busy} className="rounded-md border border-bad px-3 py-1.5 text-bad">
+            <button type="button" onClick={revoke} disabled={busy} className="rounded-md border border-bad px-3 py-1.5 text-bad">
               Revoke invite
             </button>
           </div>
