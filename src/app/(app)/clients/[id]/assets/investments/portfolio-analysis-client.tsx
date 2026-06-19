@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { PortfolioAnalysisScatter } from "./portfolio-analysis-scatter";
 import { AddToChartButton } from "./portfolio-analysis-picker";
 import { SERIES, labelForType, buildColorMap } from "./portfolio-analysis-series";
 import { HelpTip } from "@/components/help-tip";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
+import { useAnalysisSelection } from "@/hooks/use-analysis-selection";
 
 // Categories pre-plotted on first load.
 const DEFAULT_CATEGORY_IDS = new Set(["taxable", "retirement"]);
@@ -23,15 +25,26 @@ const money = (v: number) =>
 type SortKey = "name" | "arithmeticMean" | "geometricReturn" | "stdDev" | "sharpe" | "value";
 
 export default function PortfolioAnalysisClient({
+  clientId,
+  scenarioId,
   analysisRows,
 }: {
+  clientId: string;
+  scenarioId?: string;
   analysisRows: AnalysisRow[];
 }) {
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() =>
-    defaultSelection(analysisRows),
-  );
+  const availableKeys = useMemo(() => new Set(analysisRows.map((r) => r.key)), [analysisRows]);
+  const defaultKeys = useMemo(() => defaultSelection(analysisRows), [analysisRows]);
+  const { selectedKeys, add, remove, clear } = useAnalysisSelection(clientId, availableKeys, defaultKeys);
   const [sortKey, setSortKey] = useState<SortKey>("stdDev");
   const [asc, setAsc] = useState(true);
+
+  const hrefFor = (r: AnalysisRow) => {
+    const qs = new URLSearchParams();
+    if (scenarioId) qs.set("scenario", scenarioId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return `/clients/${clientId}/assets/investments/analysis/${r.type}/${r.id}${suffix}`;
+  };
 
   const visible = useMemo(
     () => analysisRows.filter((r) => selectedKeys.has(r.key)),
@@ -78,20 +91,6 @@ export default function PortfolioAnalysisClient({
     });
   }, [visible, sortKey, asc]);
 
-  const addKeys = (keys: string[]) =>
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      keys.forEach((k) => next.add(k));
-      return next;
-    });
-  const removeKey = (key: string) =>
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-  const clearAll = () => setSelectedKeys(new Set());
-
   const sortBtn = (key: SortKey, label: string) => (
     <button
       type="button"
@@ -122,13 +121,13 @@ export default function PortfolioAnalysisClient({
             <AddToChartButton
               rows={analysisRows}
               selectedKeys={selectedKeys}
-              onAdd={(key) => addKeys([key])}
-              onAddMany={addKeys}
+              onAdd={(key) => add([key])}
+              onAddMany={add}
             />
             {visible.length > 0 && (
               <button
                 type="button"
-                onClick={clearAll}
+                onClick={clear}
                 className="text-sm text-ink-3 hover:text-ink underline-offset-2 hover:underline"
               >
                 Clear all
@@ -151,12 +150,14 @@ export default function PortfolioAnalysisClient({
                       className="size-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: colorMap.get(r.key) }}
                     />
-                    <span className="truncate text-ink">{r.name}</span>
+                    <Link href={hrefFor(r)} className="truncate text-ink hover:text-accent hover:underline underline-offset-2">
+                      {r.name}
+                    </Link>
                     <span className="shrink-0 text-xs text-ink-4">{labelForType(r.type)}</span>
                   </span>
                   <button
                     type="button"
-                    onClick={() => removeKey(r.key)}
+                    onClick={() => remove(r.key)}
                     aria-label={`Remove ${r.name}`}
                     className="shrink-0 text-ink-4 transition-colors hover:text-ink"
                   >
@@ -206,17 +207,12 @@ export default function PortfolioAnalysisClient({
             <tr key={r.key} className="border-b border-hair">
               <td className="py-2">
                 <span className="inline-flex items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: colorMap.get(r.key) }}
-                  />
-                  <span>
+                  <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: colorMap.get(r.key) }} />
+                  <Link href={hrefFor(r)} className="hover:text-accent hover:underline underline-offset-2">
                     {r.name}
-                    {r.residualUnallocatedPct > 0.005
-                      ? ` (${pct(r.residualUnallocatedPct)} unallocated)`
-                      : ""}
-                  </span>
+                    {r.residualUnallocatedPct > 0.005 ? ` (${pct(r.residualUnallocatedPct)} unallocated)` : ""}
+                  </Link>
                 </span>
               </td>
               <td className="py-2">{labelForType(r.type)}</td>

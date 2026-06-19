@@ -35,16 +35,18 @@ import type { AssetTypeId } from "@/lib/investments/asset-types";
 import { resolveGroup, type GroupKey } from "@/lib/account-groups/resolver";
 import { fetchAccountGroupForResolver, listAccountGroups } from "@/lib/account-groups/queries";
 import { buildStatsContext } from "@/lib/investments/portfolio-stats";
-import { buildAnalysisRows } from "@/lib/investments/portfolio-analysis";
+import { assembleAnalysisDataset } from "@/lib/investments/analysis-dataset";
 import InvestmentsClient from "./investments-client";
 
 interface Props {
   clientId: string;
   firmId: string;
   groupKey: string;
+  view?: string;
+  scenarioId?: string;
 }
 
-export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) {
+export async function InvestmentsContent({ clientId, firmId, groupKey, view, scenarioId }: Props) {
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -311,13 +313,11 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
     modelPortfolioId: a.modelPortfolioId ?? null,
     tickerPortfolioId: a.tickerPortfolioId ?? null,
   }));
-  const { rows: analysisRows } = buildAnalysisRows({
-    assetClasses: assetClassData,
+  const { rows: analysisRows } = assembleAnalysisDataset({
     assetClassMeta: assetClassLites,
+    assetClassData,
+    ctx: statsCtx,
     accounts: analysisAccounts,
-    // AnalysisAccount carries all fields the resolver reads at runtime; this cast
-    // aligns its declared parameter type with BuildAnalysisInput's looser { id }
-    // signature.
     resolver: resolver as (acct: { id: string }) => ReturnType<typeof resolver>,
     modelPortfolios: portfolioLites,
     modelPortfolioAllocationsByPortfolioId,
@@ -327,7 +327,6 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       color: g.color,
       accountIds: memberIdsByGroup.get(g.id) ?? [],
     })),
-    ctx: statsCtx,
   });
 
   const holdingsGroups = buildHoldingsInventory(
@@ -352,10 +351,14 @@ export async function InvestmentsContent({ clientId, firmId, groupKey }: Props) 
       customGroups={customGroupsForBar}
       strippedMemberCount={resolvedGroup.strippedMemberCount}
       analysisRows={analysisRows}
+      scenarioId={scenarioId}
       holdingsByAccountClass={holdingsByAccountClass}
       accountsWithHoldings={accountsWithHoldings}
       fundPortfolios={fundPortfolios}
       holdingsGroups={holdingsGroups}
+      initialView={
+        view === "analysis" || view === "rebalance" || view === "holdings" ? view : "allocation"
+      }
     />
   );
 }
