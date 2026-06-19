@@ -15,6 +15,9 @@ type Common = {
   clientId: string | null;
   firmId: string;
   actorId?: string;
+  // 'advisor' (default) for staff edits, 'client' for portal edits,
+  // 'system' for unattended jobs (webhooks, crons).
+  actorKind?: "advisor" | "client" | "system";
   extraMetadata?: Record<string, unknown>;
 };
 

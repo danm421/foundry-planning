@@ -324,6 +324,9 @@ type Args = {
   // such callers get logged as "system", losing the distinction from
   // admin-triggered actions.
   actorId?: string;
+  // 'advisor' (default) for staff edits, 'client' for portal edits,
+  // 'system' for unattended jobs (webhooks, crons).
+  actorKind?: "advisor" | "client" | "system";
 };
 
 export async function recordAudit(args: Args): Promise<void> {
@@ -348,6 +351,7 @@ export async function recordAudit(args: Args): Promise<void> {
     await db.insert(auditLog).values({
       firmId: args.firmId,
       actorId,
+      actorKind: args.actorKind ?? "advisor",
       action: args.action,
       resourceType: args.resourceType,
       resourceId: args.resourceId,
