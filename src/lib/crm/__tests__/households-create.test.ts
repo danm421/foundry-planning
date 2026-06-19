@@ -88,4 +88,27 @@ describe("createCrmHousehold with inline contacts", () => {
     });
     expect(contacts).toHaveLength(0);
   });
+
+  it("persists the household residence state and seeds the primary contact state", async () => {
+    const household = await createCrmHousehold({
+      name: "Stateful Household",
+      status: "prospect",
+      advisorId: "test_advisor",
+      state: "CA",
+      contacts: [
+        { role: "primary", firstName: "John", lastName: "Smith" },
+        { role: "spouse", firstName: "Jane", lastName: "Smith" },
+      ],
+    });
+
+    expect(household.state).toBe("CA");
+
+    const contacts = await db.query.crmHouseholdContacts.findMany({
+      where: eq(crmHouseholdContacts.householdId, household.id),
+    });
+    const primary = contacts.find((c) => c.role === "primary");
+    const spouse = contacts.find((c) => c.role === "spouse");
+    expect(primary?.state).toBe("CA");
+    expect(spouse?.state).toBeNull();
+  });
 });
