@@ -13,6 +13,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { GET } from "./route";
 import { consumeOauthState, upsertConnection } from "@/lib/orion/connections";
+import { exchangeCodeForTokens } from "@/lib/orion/oauth";
 import { auth } from "@clerk/nextjs/server";
 
 beforeEach(() => vi.clearAllMocks());
@@ -50,5 +51,18 @@ describe("orion callback", () => {
     const res = await GET(req("code=c&state=s"));
     expect([302, 307]).toContain(res.status); // redirect to settings
     expect(upsertConnection).toHaveBeenCalledWith(expect.objectContaining({ firmId: "firm_1", accessToken: "AT" }));
+  });
+
+  it("redirects with error marker when token exchange fails", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (consumeOauthState as any).mockResolvedValue({ firmId: "firm_1", userId: "u1", codeVerifier: "v" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (exchangeCodeForTokens as any).mockRejectedValueOnce(new Error("invalid_grant"));
+    const res = await GET(req("code=c&state=s"));
+    expect([302, 307]).toContain(res.status);
+    expect(res.headers.get("location")).toContain("error=orion_exchange_failed");
+    expect(upsertConnection).not.toHaveBeenCalled();
   });
 });

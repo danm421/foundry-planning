@@ -24,20 +24,25 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.json({ error: "Firm mismatch" }, { status: 403 });
   }
 
-  const tokens = await exchangeCodeForTokens({ code, codeVerifier: stateRow.codeVerifier });
-  await upsertConnection({
-    firmId: stateRow.firmId,
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    expiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
-    scope: tokens.scope,
-    userId: userId ?? stateRow.userId,
-  });
-  await recordAudit({
-    action: "orion_integration.connect",
-    resourceType: "orion_connection",
-    resourceId: stateRow.firmId,
-    firmId: stateRow.firmId,
-  });
-  return NextResponse.redirect(new URL(`${SETTINGS_PATH}?connected=orion`, req.url));
+  try {
+    const tokens = await exchangeCodeForTokens({ code, codeVerifier: stateRow.codeVerifier });
+    await upsertConnection({
+      firmId: stateRow.firmId,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null,
+      scope: tokens.scope,
+      userId: userId ?? stateRow.userId,
+    });
+    await recordAudit({
+      action: "orion_integration.connect",
+      resourceType: "orion_connection",
+      resourceId: stateRow.firmId,
+      firmId: stateRow.firmId,
+    });
+    return NextResponse.redirect(new URL(`${SETTINGS_PATH}?connected=orion`, req.url));
+  } catch (err) {
+    console.error("GET /api/integrations/orion/callback exchange failed:", err instanceof Error ? err.message : "unknown");
+    return NextResponse.redirect(new URL(`${SETTINGS_PATH}?error=orion_exchange_failed`, req.url));
+  }
 }
