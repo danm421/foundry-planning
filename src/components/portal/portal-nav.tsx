@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 
+// Accounts: Phase 2 — intentionally absent here.
 const ITEMS = [
   { label: "Household", suffix: "/profile" },
   { label: "Family", suffix: "/profile/family" },

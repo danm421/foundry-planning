@@ -18,8 +18,10 @@ export default async function PortalPreviewPage({
 }: Props): Promise<ReactElement> {
   const { id, slug } = await params;
 
-  // Firm-ownership of `id` is enforced by the parent
-  // clients/[id]/layout.tsx (calls notFound() if wrong firm).
+  // Firm-ownership of `id` is enforced by the parent clients/[id]/layout.tsx
+  // (requireClientAccess → notFound() on wrong firm). The by-id db reads below
+  // are safe ONLY because no ungated layout sits between that layout and this
+  // page — do not add a portal/ or preview/ layout without re-asserting access.
 
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
