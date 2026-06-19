@@ -100,6 +100,15 @@ describe("ForgePanel", () => {
     expect(screen.getByText("stmt.pdf")).toBeInTheDocument();
   });
 
+  it("moves focus to the composer after choosing a file so the advisor can type immediately", async () => {
+    mountPanel();
+    const input = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    expect(screen.getByLabelText("Ask Forge")).toHaveFocus();
+  });
+
   it("on send-with-file: shows the attachment in the thread, fires a chat turn with the import, and a review link", async () => {
     mountPanel();
     const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;

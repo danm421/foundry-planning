@@ -63,6 +63,7 @@ export function ForgePanel({
   const [input, setInput] = useState("");
   const [loadingThread, setLoadingThread] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
   const [pendingImportId, setPendingImportId] = useState<string | undefined>();
   const [importResult, setImportResult] = useState<ForgeImportResult | null>(null);
@@ -223,6 +224,11 @@ export function ForgePanel({
     // drop the attachment. Capturing here, before value="", keeps it stable.
     const files = Array.from(list);
     setAttached((prev) => [...prev, ...files]);
+    // Hand the cursor straight to the composer so the advisor can type their
+    // prompt without a second click. The picker button stole focus on open; the
+    // composer is mounted and unlocked at attach time (no import/stream yet), so
+    // focusing it is safe here.
+    composerRef.current?.focus();
   }
 
   const lastMsg = messages[messages.length - 1];
@@ -518,6 +524,7 @@ export function ForgePanel({
               </svg>
             </button>
             <textarea
+              ref={composerRef}
               aria-label="Ask Forge"
               rows={1}
               value={input}
