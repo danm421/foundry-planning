@@ -22,6 +22,9 @@ const row: typeof clients.$inferSelect = {
   createdAt: new Date(),
   updatedAt: new Date(),
   crmHouseholdId: "00000000-0000-0000-0000-000000000000",
+  clerkUserId: null,
+  portalInvitedAt: null,
+  portalEditEnabled: true,
 };
 
 describe("toClientSnapshot", () => {

@@ -1212,6 +1212,13 @@
       "when": 1781797790650,
       "tag": "0172_hesitant_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1781876752607,
+      "tag": "0173_client_portal_foundation",
+      "breakpoints": true
     }
   ]
 }
