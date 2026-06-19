@@ -24,6 +24,7 @@ import { clientCreateSchema, clientContactInfoSchema } from "@/lib/schemas/resou
 import { recordAudit } from "@/lib/audit";
 import { recordHouseholdOpen } from "@/lib/crm/households";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
+import { isUSPSStateCode } from "@/lib/usps-states";
 
 // Contact fields the POST body may carry. We extract them from the parsed
 // body and atomically mirror them onto the CRM primary/spouse contact rows
@@ -258,6 +259,11 @@ export async function POST(request: NextRequest) {
       scenarioId: scenario.id,
       planStartYear: currentYear,
       planEndYear: new Date(dateOfBirth).getFullYear() + planEndAge,
+      // Seed the plan's residence state from the household's canonical state so
+      // state income + estate tax compute on real brackets instead of the flat
+      // fallback. Seed-once: the assumptions page owns residenceState per
+      // scenario after this; later household-state edits don't re-propagate.
+      residenceState: isUSPSStateCode(household.state) ? household.state : null,
     });
 
     // Seed household family_members rows (role='client', and 'spouse' if married).
