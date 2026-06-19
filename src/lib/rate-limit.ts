@@ -282,6 +282,18 @@ export async function checkFeedbackRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Per-firm cap on portal invites — protects Clerk from runaway invite
+// scripts and gives a clear surfaceable error if an advisor mass-invites.
+const getPortalInviteLimiter = buildLimiter(5, "1 h", "rl:portal-invite");
+
+export async function checkPortalInviteRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getPortalInviteLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 /**
  * Build the standard error response for a denied rate-limit check.
  * Maps `exceeded` → 429, anything else → 503, and emits Retry-After
