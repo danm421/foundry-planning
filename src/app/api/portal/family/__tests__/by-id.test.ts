@@ -29,9 +29,11 @@ vi.mock("@/db", () => ({
   },
 }));
 
+const recordUpdateMock = vi.fn();
+const recordDeleteMock = vi.fn();
 vi.mock("@/lib/audit/record-helpers", () => ({
-  recordUpdate: vi.fn(),
-  recordDelete: vi.fn(),
+  recordUpdate: (...args: unknown[]) => recordUpdateMock(...args),
+  recordDelete: (...args: unknown[]) => recordDeleteMock(...args),
 }));
 
 import { PUT, DELETE } from "@/app/api/portal/family/[id]/route";
@@ -42,6 +44,8 @@ beforeEach(() => {
   selectChain.mockReset();
   updateChain.mockReset();
   deleteChain.mockReset();
+  recordUpdateMock.mockReset();
+  recordDeleteMock.mockReset();
 });
 
 function putReq(body: unknown) {
@@ -72,6 +76,7 @@ describe("PUT /api/portal/family/[id]", () => {
     });
     expect(res.status).toBe(200);
     expect(updateChain).toHaveBeenCalled();
+    expect(recordUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "client" }));
   });
 });
 
@@ -86,5 +91,6 @@ describe("DELETE /api/portal/family/[id]", () => {
     );
     expect(res.status).toBe(200);
     expect(deleteChain).toHaveBeenCalled();
+    expect(recordDeleteMock).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "client" }));
   });
 });

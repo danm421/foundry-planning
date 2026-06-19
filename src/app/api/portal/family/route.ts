@@ -31,6 +31,10 @@ export async function POST(req: Request): Promise<Response> {
       .where(eq(clients.id, clientId))
       .limit(1);
 
+    if (!client) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const [inserted] = await db
       .insert(familyMembers)
       .values({
