@@ -91,10 +91,20 @@ export async function syncFirm(
           positionsByAccount,
         );
 
+        // Scenario-scope to the same base scenario the EXACT update writes to
+        // (commitAccounts' UPDATE filters on scenarioId). Without this, a stray
+        // orion account under another scenario would classify as `exact` yet the
+        // scenario-filtered update would touch 0 rows — a silent committed miscount.
         const existing = await db
           .select({ id: accounts.id, externalId: accounts.externalId })
           .from(accounts)
-          .where(and(eq(accounts.clientId, link.clientId), eq(accounts.externalProvider, "orion")));
+          .where(
+            and(
+              eq(accounts.clientId, link.clientId),
+              eq(accounts.externalProvider, "orion"),
+              eq(accounts.scenarioId, scn.id),
+            ),
+          );
 
         const { exact, new: fresh } = reconcile({ mapped: mapped.accounts, existing });
 
@@ -123,19 +133,27 @@ export async function syncFirm(
 
           const resolvedHoldings = await resolveHoldingsForCommit(exactPayload);
           const holdingsAccountIds: string[] = [];
-          await commitTabs({
-            importId: vehicle.id,
-            payload: exactPayload,
-            tabs: ["accounts"],
-            ctx: {
-              clientId: link.clientId,
-              scenarioId: scn.id,
-              orgId: firmId,
-              userId,
-              resolvedHoldings,
-              holdingsAccountIds,
-            },
-          });
+          try {
+            await commitTabs({
+              importId: vehicle.id,
+              payload: exactPayload,
+              tabs: ["accounts"],
+              ctx: {
+                clientId: link.clientId,
+                scenarioId: scn.id,
+                orgId: firmId,
+                userId,
+                resolvedHoldings,
+                holdingsAccountIds,
+              },
+            });
+          } catch (err) {
+            // commitTabs rolls back its whole transaction on failure — drop the
+            // now-empty draft vehicle so it doesn't linger in the advisor's
+            // in-progress imports list, then surface to the per-household handler.
+            await db.delete(clientImports).where(eq(clientImports.id, vehicle.id));
+            throw err;
+          }
           await Promise.all(holdingsAccountIds.map(syncAccountFromHoldings));
 
           // Close out the vehicle import so it reads as a clean history row.
