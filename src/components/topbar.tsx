@@ -125,6 +125,7 @@ const TABS: ReadonlyArray<{
     ],
   },
   { label: "Presentations", href: "presentations" },
+  { label: "Portal", href: "portal" },
 ];
 
 interface TopbarProps {
@@ -295,20 +296,6 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
       )}
       <div className="flex items-center gap-2 justify-self-end">
         <ThemeToggle />
-        {clientId ? (
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            title="Coming soon"
-            className="inline-flex cursor-not-allowed items-center gap-2 rounded-md border border-hair bg-card-2 px-3 py-1.5 text-[13px] text-ink-3"
-          >
-            Client Portal
-            <span className="rounded-sm bg-ink-3/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
-              Soon
-            </span>
-          </button>
-        ) : null}
       </div>
     </header>
   );
