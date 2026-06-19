@@ -11,6 +11,7 @@ import {
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon, ArrowRightIcon } from "@/components/icons";
 import { buildHouseholdName } from "@/lib/crm/household-name";
+import { StateSelect } from "@/components/state-select";
 
 interface CrmHouseholdFormProps {
   mode: "create";
@@ -51,6 +52,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   // Household name: auto-derived from the contacts until the advisor edits it.
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
+  const [state, setState] = useState("");
 
   useEffect(() => {
     if (nameTouched) return;
@@ -68,6 +70,10 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
     e.preventDefault();
     if (!user?.id) {
       setError("Not signed in.");
+      return;
+    }
+    if (!state) {
+      setError("Pick the household's state of residence.");
       return;
     }
     setSubmitting(true);
@@ -106,6 +112,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           name: name.trim(),
           status: data.get("status"),
           advisorId: user.id,
+          state,
           contacts,
         }),
       });
@@ -232,6 +239,17 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* State of residence — drives plan state income & estate tax */}
+      <div className="border-t border-hair pt-4">
+        <label className={fieldLabelClassName} htmlFor="state">
+          State of residence
+        </label>
+        <StateSelect id="state" name="state" value={state} onChange={setState} required />
+        <p className="mt-1 text-[12px] text-ink-4">
+          Drives state income &amp; estate tax when this household gets a plan.
+        </p>
       </div>
 
       {/* Household name — auto, editable */}
