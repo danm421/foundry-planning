@@ -30,6 +30,10 @@ export async function PUT(req: Request): Promise<Response> {
       .where(eq(clients.id, clientId))
       .limit(1);
 
+    if (!client) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     for (const role of ["primary", "spouse"] as const) {
       const patch = body[role];
       if (!patch) continue;

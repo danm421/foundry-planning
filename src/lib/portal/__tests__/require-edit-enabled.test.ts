@@ -25,4 +25,8 @@ describe("requireEditEnabled", () => {
     selectChain.mockResolvedValue([{ portalEditEnabled: false }]);
     await expect(requireEditEnabled("c1")).rejects.toBeInstanceOf(ForbiddenError);
   });
+  it("throws ForbiddenError when no row exists for the clientId", async () => {
+    selectChain.mockResolvedValue([]);
+    await expect(requireEditEnabled("ghost")).rejects.toBeInstanceOf(ForbiddenError);
+  });
 });
