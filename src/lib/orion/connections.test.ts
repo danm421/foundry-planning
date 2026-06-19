@@ -26,6 +26,7 @@ describe("orion connections", () => {
     const conn = await getConnection(firmId);
     expect(conn?.status).toBe("disconnected");
     expect(conn?.refreshToken).toBeNull();
+    expect(conn?.accessToken).toBeNull();
   });
 
   it("oauth state is single-use", async () => {
