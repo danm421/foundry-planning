@@ -44,7 +44,17 @@ const TABS: ReadonlyArray<{
           { label: "By Entity", path: "/balance-sheet-report?view=entities" },
         ],
       },
-      { label: "Investments", path: "/investments" },
+      {
+        label: "Investments",
+        path: "/investments",
+        defaultView: "allocation",
+        views: [
+          { label: "Allocation", path: "/investments?view=allocation" },
+          { label: "Portfolio Analysis", path: "/investments?view=analysis" },
+          { label: "Rebalance", path: "/investments?view=rebalance" },
+          { label: "Holdings", path: "/investments?view=holdings" },
+        ],
+      },
     ],
   },
   {
