@@ -20,6 +20,7 @@ const TABS: {
   { label: "Sharing", href: "/settings/sharing", roles: ["org:admin", "org:member"] },
   { label: "Firm", href: "/settings/firm", roles: ["org:admin"] },
   { label: "Branding", href: "/settings/branding", roles: ["org:admin"] },
+  { label: "Integrations", href: "/settings/integrations", roles: ["org:admin"] },
   { label: "Billing", href: "/settings/billing", billingContact: true },
 ];
 
