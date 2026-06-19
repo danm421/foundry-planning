@@ -1,9 +1,13 @@
 // src/lib/orion/oauth.test.ts
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHash } from "node:crypto";
 import { generatePkce, generateState, buildAuthorizeUrl, exchangeCodeForTokens } from "./oauth";
 
 describe("orion oauth helpers", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("PKCE challenge is base64url(sha256(verifier))", () => {
     const { verifier, challenge } = generatePkce();
     const expected = createHash("sha256").update(verifier).digest("base64url");
@@ -11,9 +15,9 @@ describe("orion oauth helpers", () => {
   });
 
   it("authorize URL carries S256 challenge, state, redirect", () => {
-    process.env.ORION_CLIENT_ID = "cid";
-    process.env.ORION_REDIRECT_URI = "https://app.test/api/integrations/orion/callback";
-    process.env.ORION_API_BASE = "https://api.orion.test";
+    vi.stubEnv("ORION_CLIENT_ID", "cid");
+    vi.stubEnv("ORION_REDIRECT_URI", "https://app.test/api/integrations/orion/callback");
+    vi.stubEnv("ORION_API_BASE", "https://api.orion.test");
     const url = new URL(buildAuthorizeUrl({ state: "st", challenge: "ch" }));
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("state")).toBe("st");
@@ -21,10 +25,10 @@ describe("orion oauth helpers", () => {
   });
 
   it("exchangeCodeForTokens normalizes the token response", async () => {
-    process.env.ORION_CLIENT_ID = "cid";
-    process.env.ORION_CLIENT_SECRET = "cs";
-    process.env.ORION_REDIRECT_URI = "https://app.test/api/integrations/orion/callback";
-    process.env.ORION_API_BASE = "https://api.orion.test";
+    vi.stubEnv("ORION_CLIENT_ID", "cid");
+    vi.stubEnv("ORION_CLIENT_SECRET", "cs");
+    vi.stubEnv("ORION_REDIRECT_URI", "https://app.test/api/integrations/orion/callback");
+    vi.stubEnv("ORION_API_BASE", "https://api.orion.test");
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ access_token: "AT", refresh_token: "RT", expires_in: 3600, scope: "read" }),
