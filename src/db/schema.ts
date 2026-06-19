@@ -180,7 +180,17 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "insurance",
 ]);
 
-export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy"]);
+export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion"]);
+
+export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion"]);
+
+export const orionConnectionStatusEnum = pgEnum("orion_connection_status", [
+  "connected",
+  "disconnected",
+  "error",
+]);
+
+export const orionSyncTriggerEnum = pgEnum("orion_sync_trigger", ["manual", "cron"]);
 
 export const entityTypeEnum = pgEnum("entity_type", [
   "trust",
@@ -1720,12 +1730,21 @@ export const accounts = pgTable("accounts", {
     (): AnyPgColumn => revocableTrusts.id,
     { onDelete: "set null" },
   ),
+  // Orion integration: provider identifier + external account ID for accounts
+  // synced from Orion. Null for manually-created accounts.
+  externalProvider: text("external_provider"),
+  externalId: text("external_id"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   // Engine load path filters every projection by (client_id, scenario_id);
   // accounts is the hottest table and was previously full-scanned (audit F7).
   clientScenarioIdx: index("accounts_client_scenario_idx").on(t.clientId, t.scenarioId),
+  // Prevents duplicate external accounts per client+provider+externalId.
+  externalAccountUnique: uniqueIndex("accounts_client_external_uq")
+    .on(t.clientId, t.externalProvider, t.externalId)
+    .where(sql`${t.externalId} IS NOT NULL`),
 }));
 
 // Plaid linked-institution items. Dormant on `main` — the client-portal Plaid
@@ -3519,6 +3538,7 @@ export const clientImports = pgTable("client_imports", {
   perTabCommittedAt: jsonb("per_tab_committed_at")
     .notNull()
     .default(sql`'{}'::jsonb`),
+  origin: importOriginEnum("origin").notNull().default("extraction"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -4176,3 +4196,67 @@ export const clientShares = pgTable(
 
 export type ClientShareRow = InferSelectModel<typeof clientShares>;
 export type NewClientShareRow = InferInsertModel<typeof clientShares>;
+
+// ---------------------------------------------------------------------------
+// Orion Advisor Tech integration tables
+// ---------------------------------------------------------------------------
+
+export const orionConnections = pgTable("orion_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  firmId: text("firm_id").notNull().unique(),
+  accessTokenEnc: text("access_token_enc").notNull(),
+  refreshTokenEnc: text("refresh_token_enc"),
+  tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  status: orionConnectionStatusEnum("status").notNull().default("connected"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  lastSyncError: text("last_sync_error"),
+  connectedByUserId: text("connected_by_user_id"),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orionHouseholdLinks = pgTable(
+  "orion_household_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firmId: text("firm_id").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" })
+      .unique(),
+    orionHouseholdId: text("orion_household_id").notNull(),
+    linkedByUserId: text("linked_by_user_id"),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    firmHouseholdUnique: uniqueIndex("orion_household_firm_hh_uq").on(
+      t.firmId,
+      t.orionHouseholdId,
+    ),
+  }),
+);
+
+export const orionOauthStates = pgTable("orion_oauth_states", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  firmId: text("firm_id").notNull(),
+  userId: text("user_id").notNull(),
+  state: text("state").notNull().unique(),
+  codeVerifier: text("code_verifier").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+export const orionSyncRuns = pgTable("orion_sync_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  firmId: text("firm_id").notNull(),
+  trigger: orionSyncTriggerEnum("trigger").notNull(),
+  status: text("status").notNull(),
+  householdsSynced: integer("households_synced").notNull().default(0),
+  accountsCommitted: integer("accounts_committed").notNull().default(0),
+  accountsQueued: integer("accounts_queued").notNull().default(0),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
