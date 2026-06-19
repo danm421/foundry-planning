@@ -270,6 +270,31 @@ export async function checkBetaRedeemRateLimit(key: string): Promise<RateLimitRe
   return safeLimit(limiter, key);
 }
 
+// Orion integration. Three separate buckets: general read-API calls (120/min),
+// OAuth handshakes (10/min — rare and sensitive), and sync runs (6/min —
+// fan out to per-account fetches so we keep them tight). All fail-closed.
+const getOrionApiLimiter = buildLimiter(120, "1 m", "rl:orion");
+const getOrionOauthLimiter = buildLimiter(10, "1 m", "rl:orion:oauth");
+const getOrionSyncLimiter = buildLimiter(6, "1 m", "rl:orion:sync");
+
+export async function checkOrionApiLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getOrionApiLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkOrionOauthLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getOrionOauthLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkOrionSyncLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getOrionSyncLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // Support/feedback submissions. 5/min/firm — generous for a human filling a
 // form, tight enough to blunt abuse. Fail-closed like every other limiter.
 const getFeedbackLimiter = buildLimiter(5, "1 m", "rl:feedback");

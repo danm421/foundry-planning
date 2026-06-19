@@ -309,7 +309,11 @@ export type AuditAction =
   | "copilot.write_proposed" // legacy
   | "copilot.write_approved" // legacy
   | "copilot.write_rejected" // legacy
-  | "feedback.submitted";
+  | "feedback.submitted"
+  // Orion integration (third-party data sync)
+  | "orion_integration.connect"
+  | "orion_integration.disconnect"
+  | "orion_sync.run";
 
 type Args = {
   action: AuditAction;
