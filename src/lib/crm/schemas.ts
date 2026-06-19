@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUSPSStateCode } from "@/lib/usps-states";
 
 export const crmHouseholdStatusSchema = z.enum(["prospect", "active", "inactive", "archived"]);
 export const crmContactRoleSchema = z.enum(["primary", "spouse", "dependent", "other"]);
@@ -17,12 +18,26 @@ export const createCrmHouseholdContactSchema = z.object({
   dateOfBirth: z.iso.date().optional(),
 });
 
+// Canonical household residence: USPS 2-letter code (50 states + DC).
+// Optional at the base layer so bulk CSV import can omit it; required on the
+// interactive creation route via createCrmHouseholdInteractiveSchema.
+export const usStateSchema = z
+  .string()
+  .refine(isUSPSStateCode, { message: "Must be a valid US state or DC (USPS 2-letter code)" });
+
 export const createCrmHouseholdSchema = z.object({
   name: z.string().min(1).max(200),
   status: crmHouseholdStatusSchema.default("prospect"),
   advisorId: z.string().min(1),
+  state: usStateSchema.optional(),
   notes: z.string().max(5000).optional(),
   contacts: z.array(createCrmHouseholdContactSchema).optional(),
+});
+
+// Interactive creation (Add-client dialog, quick-create, standalone CRM form)
+// requires the state pick. `.extend` overrides `state` to be non-optional.
+export const createCrmHouseholdInteractiveSchema = createCrmHouseholdSchema.extend({
+  state: usStateSchema,
 });
 
 // `contacts` is a create-only concern (inline contacts on first creation).

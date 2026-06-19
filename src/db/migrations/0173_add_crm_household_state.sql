@@ -1,0 +1,1 @@
+ALTER TABLE "crm_households" ADD COLUMN "state" text;

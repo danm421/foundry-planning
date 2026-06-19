@@ -453,6 +453,10 @@ export const crmHouseholds = pgTable("crm_households", {
   name: text("name").notNull(),
   status: crmHouseholdStatusEnum("status").notNull().default("prospect"),
   notes: text("notes"),
+  // Canonical household residence (USPS 2-letter code; 50 states + DC).
+  // Nullable: pre-existing households predate this and are not backfilled.
+  // Required at creation via createCrmHouseholdInteractiveSchema, not NOT NULL.
+  state: text("state"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   // Soft-delete (Trash). null = live; set = in Trash, recoverable until the

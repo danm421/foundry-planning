@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
+import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
@@ -58,6 +59,13 @@ export function OverviewTab({
           <dt className="text-[12px] font-medium text-ink-3">Status</dt>
           <dd className="text-[14px] text-ink">
             {STATUS_LABELS[household.status] ?? household.status}
+          </dd>
+
+          <dt className="text-[12px] font-medium text-ink-3">State</dt>
+          <dd className="text-[14px] text-ink-2">
+            {isUSPSStateCode(household.state)
+              ? USPS_STATE_NAMES[household.state]
+              : <span className="text-ink-3">—</span>}
           </dd>
 
           <dt className="text-[12px] font-medium text-ink-3">Advisor</dt>

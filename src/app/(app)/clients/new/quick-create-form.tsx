@@ -18,6 +18,7 @@ import {
   SparkleIcon,
 } from "@/components/icons";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
+import { StateSelect } from "@/components/state-select";
 import { buildHouseholdName } from "@/lib/crm/household-name";
 import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
 
@@ -138,6 +139,7 @@ export default function QuickCreateForm() {
 
   // Step 1 dual-mode: pick existing household, or create a new one inline.
   const [createNewHousehold, setCreateNewHousehold] = useState(false);
+  const [newHouseholdState, setNewHouseholdState] = useState("");
   const [createSpouse, setCreateSpouse] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -187,6 +189,7 @@ export default function QuickCreateForm() {
   // contact info gets gathered later in the onboarding wizard.
   async function createHouseholdAndContacts(formEl: HTMLFormElement): Promise<string> {
     if (!user?.id) throw new Error("Not signed in.");
+    if (!newHouseholdState) throw new Error("Pick the household's state of residence.");
     const data = new FormData(formEl);
     const firstName = String(data.get("firstName") ?? "").trim();
     const lastName = String(data.get("lastName") ?? "").trim();
@@ -200,7 +203,7 @@ export default function QuickCreateForm() {
     const hRes = await fetch("/api/crm/households", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id }),
+      body: JSON.stringify({ name: householdName, status: "prospect", advisorId: user.id, state: newHouseholdState }),
     });
     if (!hRes.ok) {
       const j = (await hRes.json().catch(() => ({}))) as { error?: string };
@@ -211,7 +214,7 @@ export default function QuickCreateForm() {
     const pRes = await fetch(`/api/crm/households/${household.id}/contacts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ role: "primary", firstName, lastName, dateOfBirth }),
+      body: JSON.stringify({ role: "primary", firstName, lastName, dateOfBirth, state: newHouseholdState }),
     });
     if (!pRes.ok) {
       const j = (await pRes.json().catch(() => ({}))) as { error?: string };
@@ -476,6 +479,19 @@ export default function QuickCreateForm() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div>
+              <label className={fieldLabelClassName} htmlFor="newHouseholdState">
+                State of residence <span className="text-red-500">*</span>
+              </label>
+              <StateSelect
+                id="newHouseholdState"
+                name="newHouseholdState"
+                value={newHouseholdState}
+                onChange={setNewHouseholdState}
+                required
+              />
             </div>
 
             {createError && (
