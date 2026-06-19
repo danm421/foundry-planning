@@ -36,8 +36,9 @@ export async function getValidAccessToken(firmId: string): Promise<string> {
       userId: "system:orion-refresh",
     });
     return t.accessToken;
-  } catch {
-    await setConnectionStatus(firmId, "error", "token refresh failed");
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    await setConnectionStatus(firmId, "error", cause);
     throw new OrionReconnectRequired(firmId);
   }
 }

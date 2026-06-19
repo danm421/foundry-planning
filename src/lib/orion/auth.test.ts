@@ -1,11 +1,13 @@
 // src/lib/orion/auth.test.ts
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { randomBytes } from "node:crypto";
 import { upsertConnection, getConnection } from "./connections";
 import { getValidAccessToken, OrionReconnectRequired, __setRefresher } from "./auth";
+import { refreshTokens } from "./oauth";
 
 const firmId = `test_firm_${randomBytes(4).toString("hex")}`;
 beforeAll(() => { process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64"); });
+afterEach(() => { __setRefresher(refreshTokens); });
 
 describe("getValidAccessToken", () => {
   it("returns the stored token when unexpired", async () => {
