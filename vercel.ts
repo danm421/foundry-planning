@@ -28,5 +28,9 @@ export const config: VercelConfig = {
       path: "/api/cron/refresh-ticker-portfolios",
       schedule: "0 10 1 * *",
     },
+    {
+      path: "/api/cron/orion-sync",
+      schedule: "0 7 * * *",
+    },
   ],
 };

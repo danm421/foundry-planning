@@ -85,6 +85,14 @@ export async function disconnectConnection(firmId: string): Promise<void> {
     .where(eq(orionConnections.firmId, firmId));
 }
 
+export async function listConnectedFirmIds(): Promise<string[]> {
+  const rows = await db
+    .select({ firmId: orionConnections.firmId })
+    .from(orionConnections)
+    .where(eq(orionConnections.status, "connected"));
+  return rows.map((r) => r.firmId);
+}
+
 export async function createOauthState(input: {
   firmId: string;
   userId: string;
