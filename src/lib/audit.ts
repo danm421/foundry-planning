@@ -319,7 +319,8 @@ export type AuditAction =
   | "portal.family.update"
   | "portal.family.delete"
   | "portal.trust.update"
-  | "portal.household.update";
+  | "portal.household.update"
+  | "portal.invite.accepted";
 
 type Args = {
   action: AuditAction;
