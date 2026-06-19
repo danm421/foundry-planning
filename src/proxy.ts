@@ -4,6 +4,7 @@ import { stateFromMeta, type OrgMeta } from "@/lib/billing/subscription-state";
 import { decideAccess } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
 import { operationsBlocked } from "@/lib/operations-route-guard";
+import { getPortalClientId } from "@/lib/portal/get-portal-client";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -32,6 +33,8 @@ const isOrgPickerRoute = createRouteMatcher([
   "/select-organization(.*)",
   "/beta/redeem(.*)",
 ]);
+
+const isPortalRoute = createRouteMatcher(["/portal(.*)", "/api/portal(.*)"]);
 
 // Billing access enforcement (AD-1) must never block the very surface a
 // locked/blocked firm needs to fix billing — the billing settings page and
@@ -62,12 +65,29 @@ export default clerkMiddleware(async (auth, request) => {
     return passthroughResponse;
   }
 
-  // Signed in but no active Clerk org. API routes use requireOrgId()
-  // which would 401 — so for page navigation we push them to the org
-  // picker instead of dead-ending on an empty workspace. API routes
-  // skip the redirect so fetch()/XHR callers still get a clean 401.
-  if (!orgId && !isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.redirect(new URL("/select-organization", request.url));
+  // Advisor (has a Clerk org) trying to reach portal surfaces → send to /clients.
+  if (orgId && isPortalRoute(request)) {
+    return NextResponse.redirect(new URL("/clients", request.url));
+  }
+
+  // Signed in, no active Clerk org: could be a bound portal client, or an
+  // org-less advisor who hasn't picked an org yet. Resolve the binding once
+  // (React.cache'd). Only org-less requests pay this lookup; the hot advisor
+  // path has an orgId and never enters this block.
+  if (!orgId) {
+    const portalClientId = await getPortalClientId(userId);
+    if (portalClientId) {
+      // Bound portal user: allow /portal/*; allow API routes (their handlers
+      // gate via requireClientPortalAccess); bounce every other page to the
+      // portal home.
+      if (isPortalRoute(request)) return passthroughResponse;
+      if (request.nextUrl.pathname.startsWith("/api/")) return passthroughResponse;
+      return NextResponse.redirect(new URL("/portal/profile", request.url));
+    }
+    // Unbound + no org → existing org-picker behavior.
+    if (!isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.redirect(new URL("/select-organization", request.url));
+    }
   }
 
   // Role gate: operations is CRM + Tasks only. Block any other authenticated
