@@ -8,6 +8,7 @@ import type {
   FamilyMember,
   Tier,
 } from "./family-view";
+import { formatAccountCategory } from "@/lib/accounts/category-labels";
 
 interface BeneficiarySummaryProps {
   accounts: AccountLite[];
@@ -15,36 +16,46 @@ interface BeneficiarySummaryProps {
   designations: Designation[];
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
+  /** Household principal names — used to resolve `householdRole` designations,
+   *  which name the client/spouse without a `familyMemberId` (and the client and
+   *  spouse are excluded from `members`). */
+  clientName: string;
+  spouseName: string | null;
   onEditAccount?: (accountId: string) => void;
   onEditEntity?: (entityId: string) => void;
 }
 
-function beneficiaryName(
-  d: Designation,
-  members: FamilyMember[],
-  externals: ExternalBeneficiary[],
-): string {
+interface NameContext {
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  entities: Entity[];
+  clientName: string;
+  spouseName: string | null;
+}
+
+function beneficiaryName(d: Designation, ctx: NameContext): string {
+  if (d.householdRole === "client") return ctx.clientName;
+  if (d.householdRole === "spouse") return ctx.spouseName ?? "(spouse)";
   if (d.familyMemberId) {
-    const m = members.find((x) => x.id === d.familyMemberId);
+    const m = ctx.members.find((x) => x.id === d.familyMemberId);
     return m ? `${m.firstName}${m.lastName ? " " + m.lastName : ""}` : "(unknown member)";
   }
   if (d.externalBeneficiaryId) {
-    const e = externals.find((x) => x.id === d.externalBeneficiaryId);
+    const e = ctx.externals.find((x) => x.id === d.externalBeneficiaryId);
     return e ? e.name : "(unknown beneficiary)";
+  }
+  if (d.entityIdRef) {
+    const e = ctx.entities.find((x) => x.id === d.entityIdRef);
+    return e ? e.name : "(unknown trust)";
   }
   return "(unassigned)";
 }
 
-function formatTier(
-  tier: Tier,
-  rows: Designation[],
-  members: FamilyMember[],
-  externals: ExternalBeneficiary[],
-): string {
+function formatTier(tier: Tier, rows: Designation[], ctx: NameContext): string {
   const parts = rows
     .filter((r) => r.tier === tier)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((r) => `${beneficiaryName(r, members, externals)} — ${r.percentage}%`);
+    .map((r) => `${beneficiaryName(r, ctx)} — ${r.percentage}%`);
   return parts.join(", ");
 }
 
@@ -54,9 +65,13 @@ export default function BeneficiarySummary({
   designations,
   members,
   externals,
+  clientName,
+  spouseName,
   onEditAccount,
   onEditEntity,
 }: BeneficiarySummaryProps) {
+  const nameCtx: NameContext = { members, externals, entities, clientName, spouseName };
+
   const accountRows = accounts
     .map((a) => ({
       account: a,
@@ -102,8 +117,8 @@ export default function BeneficiarySummary({
           <div className="space-y-2">
             {accountRows.map(({ account, rows }) => {
               const isTOD = account.category === "cash" || account.category === "taxable";
-              const primaryLine = formatTier("primary", rows, members, externals);
-              const contingentLine = formatTier("contingent", rows, members, externals);
+              const primaryLine = formatTier("primary", rows, nameCtx);
+              const contingentLine = formatTier("contingent", rows, nameCtx);
               return (
                 <div
                   key={account.id}
@@ -115,8 +130,8 @@ export default function BeneficiarySummary({
                         <span className="text-sm font-semibold text-gray-100">
                           {account.name}
                         </span>
-                        <span className="text-xs uppercase tracking-wide text-gray-400">
-                          {account.category}
+                        <span className="text-xs tracking-wide text-gray-400">
+                          {formatAccountCategory(account.category)}
                         </span>
                         {isTOD && (
                           <span
@@ -166,8 +181,8 @@ export default function BeneficiarySummary({
           </h3>
           <div className="space-y-2">
             {trustRows.map(({ entity, rows }) => {
-              const primaryLine = formatTier("primary", rows, members, externals);
-              const contingentLine = formatTier("contingent", rows, members, externals);
+              const primaryLine = formatTier("primary", rows, nameCtx);
+              const contingentLine = formatTier("contingent", rows, nameCtx);
               return (
                 <div
                   key={entity.id}

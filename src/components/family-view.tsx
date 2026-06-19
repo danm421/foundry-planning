@@ -772,6 +772,12 @@ export default function FamilyView({
         designations={designations}
         members={members}
         externals={externals}
+        clientName={`${primary.firstName} ${primary.lastName}`.trim()}
+        spouseName={
+          primary.spouseName
+            ? `${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()
+            : null
+        }
         onEditAccount={canEdit ? (accountId) => {
           const acct = accounts.find((a) => a.id === accountId);
           if (!acct) return;

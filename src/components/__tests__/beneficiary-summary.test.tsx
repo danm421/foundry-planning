@@ -61,6 +61,14 @@ const cashAccount: AccountLite = {
   ownerEntityId: null,
 };
 
+const lifeInsuranceAccount: AccountLite = {
+  id: u("a4"),
+  name: "Cooper - Term",
+  category: "life_insurance",
+  ownerFamilyMemberId: null,
+  ownerEntityId: null,
+};
+
 const retirementDesignation: Designation = {
   id: u("d1"),
   accountId: u("a1"),
@@ -139,12 +147,53 @@ const trustDesignation: Designation = {
   targetKind: "trust",
 };
 
+// Primary beneficiary is the household spouse, named via householdRole
+// (client/spouse are NOT in `members`, so this can't resolve via familyMemberId).
+const spouseHouseholdDesignation: Designation = {
+  id: u("d6"),
+  accountId: u("a1"),
+  entityId: null,
+  tier: "primary",
+  percentage: 100,
+  familyMemberId: null,
+  externalBeneficiaryId: null,
+  entityIdRef: null,
+  householdRole: "spouse",
+  sortOrder: 0,
+  targetKind: "account",
+};
+
+// Primary beneficiary is the household client.
+const clientHouseholdDesignation: Designation = {
+  ...spouseHouseholdDesignation,
+  id: u("d7"),
+  householdRole: "client",
+};
+
+// Primary beneficiary is a named trust (entityIdRef), e.g. a life-insurance
+// policy paying into a trust.
+const entityRefDesignation: Designation = {
+  id: u("d8"),
+  accountId: u("a1"),
+  entityId: null,
+  tier: "primary",
+  percentage: 100,
+  familyMemberId: null,
+  externalBeneficiaryId: null,
+  entityIdRef: trustEntity.id,
+  householdRole: null,
+  sortOrder: 0,
+  targetKind: "account",
+};
+
 const baseProps = {
-  accounts: [rothAccount, brokerageAccount, cashAccount],
+  accounts: [rothAccount, brokerageAccount, cashAccount, lifeInsuranceAccount],
   entities: [trustEntity],
   designations: [] as Designation[],
   members: [spouse, daughter],
   externals: [charity],
+  clientName: "Cooper Smith",
+  spouseName: "Frank Smith",
   onEditAccount: () => {},
   onEditEntity: () => {},
 };
@@ -198,6 +247,35 @@ describe("BeneficiarySummary", () => {
     );
     expect(screen.getByText(/Primary:/i)).toBeDefined();
     expect(screen.getByText(/Contingent:/i)).toBeDefined();
+  });
+
+  it("renders a humanized account category, not the raw enum value", () => {
+    const liDesignation: Designation = {
+      ...spouseHouseholdDesignation,
+      id: u("d9"),
+      accountId: lifeInsuranceAccount.id,
+    };
+    render(<BeneficiarySummary {...baseProps} designations={[liDesignation]} />);
+    expect(screen.getByText("Life Insurance")).toBeDefined();
+    expect(screen.queryByText(/LIFE_INSURANCE/)).toBeNull();
+  });
+
+  it("resolves a household-spouse primary beneficiary to the spouse's name", () => {
+    render(<BeneficiarySummary {...baseProps} designations={[spouseHouseholdDesignation]} />);
+    expect(screen.getByText(/Frank Smith — 100%/)).toBeDefined();
+    expect(screen.queryByText(/unassigned/i)).toBeNull();
+  });
+
+  it("resolves a household-client primary beneficiary to the client's name", () => {
+    render(<BeneficiarySummary {...baseProps} designations={[clientHouseholdDesignation]} />);
+    expect(screen.getByText(/Cooper Smith — 100%/)).toBeDefined();
+    expect(screen.queryByText(/unassigned/i)).toBeNull();
+  });
+
+  it("resolves an entityIdRef primary beneficiary to the named trust", () => {
+    render(<BeneficiarySummary {...baseProps} designations={[entityRefDesignation]} />);
+    expect(screen.getByText(/Marital GST Trust — 100%/)).toBeDefined();
+    expect(screen.queryByText(/unassigned/i)).toBeNull();
   });
 
   it("renders a trust remainder card for a trust with designations", () => {
