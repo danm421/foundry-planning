@@ -86,7 +86,10 @@ export async function commitAccounts(
           rmdEnabled: row.rmdEnabled ?? isRmdEligibleSubType(subType),
           deriveFromHoldings: guard.deriveFromHoldings,
           notes: guard.note,
-          source: "extracted",
+          source: row.externalProvider ? "orion" : "extracted",
+          externalProvider: row.externalProvider ?? null,
+          externalId: row.externalId ?? null,
+          lastSyncedAt: row.externalProvider ? now : null,
         })
         .returning({ id: accounts.id });
 
@@ -145,6 +148,12 @@ export async function commitAccounts(
         updates.notes = sql`COALESCE(${accounts.notes} || E'\n', '') || ${guard.note}`;
         result.warnings.push(`${row.name}: ${guard.note}`);
       }
+    }
+    if (row.externalProvider) {
+      updates.source = "orion";
+      updates.externalProvider = row.externalProvider;
+      updates.externalId = row.externalId ?? null;
+      updates.lastSyncedAt = now;
     }
     await tx
       .update(accounts)
