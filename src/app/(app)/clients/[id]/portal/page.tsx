@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
@@ -51,6 +52,25 @@ export default async function PortalManagePage({ params }: Props): Promise<React
         invitedAt={row?.portalInvitedAt ?? null}
         clerkUserId={row?.clerkUserId ?? null}
       />
+      <div className="rounded-md border border-hair bg-card-2 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[14px] font-medium text-ink">
+              Preview as client
+            </div>
+            <div className="mt-0.5 text-[12px] text-ink-3">
+              See exactly what the client sees in their portal — even before
+              you send an invite. Read-only.
+            </div>
+          </div>
+          <Link
+            href={`/clients/${id}/portal/preview`}
+            className="inline-flex items-center rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent"
+          >
+            Open preview
+          </Link>
+        </div>
+      </div>
       <PortalEditToggle clientId={id} initialEnabled={row?.portalEditEnabled ?? false} />
       <PortalActivityFeed clientId={id} />
     </div>
