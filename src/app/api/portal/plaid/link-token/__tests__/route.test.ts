@@ -1,0 +1,114 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { NextResponse } from "next/server";
+
+const linkTokenCreate = vi.fn();
+vi.mock("@/lib/plaid/client", () => ({
+  getPlaidClient: () => ({ linkTokenCreate }),
+}));
+
+const requireClientPortalAccess = vi.fn();
+const requireEditEnabled = vi.fn();
+const checkPortalPlaidLinkRateLimit = vi.fn();
+const authErrorResponseMock = vi.fn();
+
+vi.mock("@/lib/authz", () => ({
+  requireClientPortalAccess: (...args: unknown[]) =>
+    requireClientPortalAccess(...args),
+  authErrorResponse: (e: unknown) => authErrorResponseMock(e),
+  ForbiddenError: class extends Error {},
+}));
+vi.mock("@/lib/portal/require-edit-enabled", () => ({
+  requireEditEnabled: (...args: unknown[]) => requireEditEnabled(...args),
+}));
+vi.mock("@/lib/rate-limit", () => ({
+  checkPortalPlaidLinkRateLimit: (...args: unknown[]) =>
+    checkPortalPlaidLinkRateLimit(...args),
+  rateLimitErrorResponse: (rl: unknown, msg: string) =>
+    NextResponse.json({ error: msg }, { status: 429 }),
+}));
+
+vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+
+vi.mock("@/lib/plaid/crypto", () => ({
+  decrypt: (s: string) => s.replace("enc:", ""),
+}));
+
+beforeEach(() => {
+  linkTokenCreate.mockReset();
+  requireClientPortalAccess.mockReset();
+  requireEditEnabled.mockReset();
+  checkPortalPlaidLinkRateLimit.mockReset();
+  authErrorResponseMock.mockReset().mockReturnValue(null);
+  requireClientPortalAccess.mockResolvedValue({
+    clientId: "client-1",
+    clerkUserId: "user-1",
+  });
+  requireEditEnabled.mockResolvedValue(undefined);
+  checkPortalPlaidLinkRateLimit.mockResolvedValue({ allowed: true });
+  linkTokenCreate.mockResolvedValue({
+    data: { link_token: "link-sandbox-abc", expiration: "2026-05-26T00:00:00Z" },
+  });
+});
+
+describe("POST /api/portal/plaid/link-token", () => {
+  it("returns a link token on happy path", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.linkToken).toBe("link-sandbox-abc");
+    expect(linkTokenCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { client_user_id: "client-1" },
+        client_name: expect.any(String),
+        products: ["auth", "investments"],
+        country_codes: ["US"],
+        language: "en",
+      }),
+    );
+  });
+
+  it("returns 403 when edit disabled", async () => {
+    requireEditEnabled.mockRejectedValue(new (class extends Error {})("disabled"));
+    authErrorResponseMock.mockReturnValue({ body: { error: "Forbidden" }, status: 403 });
+    const { POST } = await import("../route");
+    const res = await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 429 when rate-limited", async () => {
+    checkPortalPlaidLinkRateLimit.mockResolvedValue({
+      allowed: false,
+      reason: "exceeded",
+    });
+    const { POST } = await import("../route");
+    const res = await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(429);
+  });
+
+  it("requests update-mode token when itemId provided and item belongs to client", async () => {
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(linkTokenCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ access_token: "abc" }),
+    );
+  });
+});
