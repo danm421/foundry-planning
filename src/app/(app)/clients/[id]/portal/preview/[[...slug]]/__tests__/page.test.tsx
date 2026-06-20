@@ -20,6 +20,11 @@ vi.mock("@/components/portal/trusts-section", () => ({
     <div data-testid="section-trusts" data-client={clientId} data-preview={String(!!previewing)} />
   ),
 }));
+vi.mock("@/components/portal/accounts-section", () => ({
+  default: ({ clientId, previewing }: { clientId: string; previewing?: boolean }) => (
+    <div data-testid="section-accounts" data-client={clientId} data-preview={String(!!previewing)} />
+  ),
+}));
 vi.mock("@/components/portal/portal-nav", () => ({
   default: ({ basePath }: { basePath?: string }) => (
     <div data-testid="nav" data-basepath={basePath} />
@@ -91,7 +96,7 @@ describe("PortalPreview catch-all", () => {
   });
 
   it("calls notFound() for unknown slug", async () => {
-    await expect(renderPreview(["accounts"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["does-not-exist"])).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalled();
   });
 
@@ -102,5 +107,13 @@ describe("PortalPreview catch-all", () => {
     const banner = container.querySelector("[data-testid='banner']");
     expect(banner?.getAttribute("data-client")).toBe("c1");
     expect(banner?.getAttribute("data-edit")).toBe("true");
+  });
+
+  it("renders AccountsSection on slug=['accounts'] in preview mode", async () => {
+    const { container } = await renderPreview(["accounts"]);
+    const node = container.querySelector("[data-testid='section-accounts']");
+    expect(node).toBeTruthy();
+    expect(node?.getAttribute("data-client")).toBe("c1");
+    expect(node?.getAttribute("data-preview")).toBe("true");
   });
 });
