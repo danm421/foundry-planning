@@ -326,6 +326,8 @@ const ALLOWLIST: Record<string, string> = {
     "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
   "src/app/api/portal/plaid/exchange/commit/route.ts":
     "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/items/[id]/refresh/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
