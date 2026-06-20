@@ -43,8 +43,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   cash: "Cash",
   taxable: "Taxable",
   retirement: "Retirement",
+  annuity: "Annuity",
   real_estate: "Real estate",
   business: "Business",
+  stock_options: "Stock options",
   life_insurance: "Life insurance",
   notes_receivable: "Notes receivable",
 };
@@ -53,8 +55,10 @@ const CATEGORY_ORDER = [
   "cash",
   "taxable",
   "retirement",
+  "annuity",
   "real_estate",
   "business",
+  "stock_options",
   "life_insurance",
   "notes_receivable",
 ] as const;
@@ -63,8 +67,10 @@ const SUBTYPES_BY_CATEGORY: Record<string, string[]> = {
   cash: ["checking", "savings", "other"],
   taxable: ["brokerage", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
+  annuity: ["other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property", "other"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc", "other"],
+  stock_options: ["other"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life", "other"],
   notes_receivable: ["other"],
 };
@@ -236,7 +242,10 @@ export default function ProfileAccountsList({
         />
       )}
 
-      {CATEGORY_ORDER.filter((c) => grouped.has(c)).map((cat) => {
+      {[
+        ...CATEGORY_ORDER.filter((c) => grouped.has(c)),
+        ...[...grouped.keys()].filter((c) => !(CATEGORY_ORDER as readonly string[]).includes(c)),
+      ].map((cat) => {
         const list = grouped.get(cat)!;
         const subtotal = list.reduce((s, r) => s + Number(r.value || "0"), 0);
         return (
