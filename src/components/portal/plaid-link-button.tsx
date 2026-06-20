@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 
@@ -118,11 +118,13 @@ export function PlaidLinkButton(props: Props) {
   // When the linkToken is set and Plaid Link is ready, open the modal.
   // usePlaidLink requires the token at hook construction time, not at click
   // time. The first click mints the token; the re-render with the token causes
-  // `ready` to flip true; this inline check opens the modal once.
-  if (linkToken && ready) {
-    open();
-    setLinkToken(null);
-  }
+  // `ready` to flip true; this effect opens the modal once after commit.
+  useEffect(() => {
+    if (linkToken && ready) {
+      open();
+      setLinkToken(null);
+    }
+  }, [linkToken, ready, open]);
 
   const label = props.mode === "link" ? "Link bank" : "Re-authenticate";
 
