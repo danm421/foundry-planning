@@ -90,7 +90,6 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "401k",
   "403b",
   "529",
-  "hsa",
   "trust",
   "other",
   // real_estate sub types
@@ -108,6 +107,13 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "whole_life",
   "universal_life",
   "variable_life",
+  // Phase 3 — Plaid coverage (cash + retirement subtypes Plaid returns)
+  "hsa",
+  "cd",
+  "money_market",
+  "sep_ira",
+  "simple_ira",
+  "401a",
 ]);
 
 export const hsaCoverageEnum = pgEnum("hsa_coverage", ["self", "family"]);
@@ -1730,6 +1736,8 @@ export const accounts = pgTable("accounts", {
   plaidItemId: uuid("plaid_item_id").references(() => plaidItems.id, {
     onDelete: "set null",
   }),
+  // Plaid-side account identifier within the linked item (null = manual).
+  plaidAccountId: text("plaid_account_id"),
   notes: text("notes"),
   // Revocable-trust membership tag. Null = not in a revocable trust. ON DELETE
   // SET NULL so deleting a trust just untags its accounts (no asset loss).
@@ -1752,6 +1760,10 @@ export const accounts = pgTable("accounts", {
   externalAccountUnique: uniqueIndex("accounts_client_external_uq")
     .on(t.clientId, t.externalProvider, t.externalId)
     .where(sql`${t.externalId} IS NOT NULL`),
+  // Plaid: one Foundry row per (item, plaid account). Partial — manual rows have null plaid_account_id.
+  plaidAccountUnique: uniqueIndex("accounts_plaid_account_uniq")
+    .on(t.plaidItemId, t.plaidAccountId)
+    .where(sql`${t.plaidAccountId} IS NOT NULL`),
 }));
 
 // Plaid linked-institution items. Dormant on `main` — the client-portal Plaid
@@ -1775,7 +1787,9 @@ export const plaidItems = pgTable("plaid_items", {
   lastRefreshedAt: timestamp("last_refreshed_at"),
   lastRefreshError: text("last_refresh_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  clientIdx: index("plaid_items_client_idx").on(t.clientId),
+}));
 
 export const accountOwners = pgTable(
   "account_owners",
@@ -2960,6 +2974,18 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     relationName: "stockOptionAccount",
   }),
   stockOptionGrants: many(stockOptionGrants),
+  plaidItem: one(plaidItems, {
+    fields: [accounts.plaidItemId],
+    references: [plaidItems.id],
+  }),
+}));
+
+export const plaidItemsRelations = relations(plaidItems, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [plaidItems.clientId],
+    references: [clients.id],
+  }),
+  accounts: many(accounts),
 }));
 
 export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
