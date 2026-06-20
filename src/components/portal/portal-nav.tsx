@@ -5,11 +5,14 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 
-// Accounts: Phase 2 — intentionally absent here.
-const ITEMS = [
+const PROFILE_ITEMS = [
   { label: "Household", suffix: "/profile" },
   { label: "Family", suffix: "/profile/family" },
   { label: "Trusts", suffix: "/profile/trusts" },
+] as const;
+
+const OTHER_ITEMS = [
+  { label: "Accounts", suffix: "/accounts" },
 ] as const;
 
 interface Props {
@@ -24,6 +27,11 @@ export default function PortalNav({
   basePath = "/portal",
 }: Props): ReactElement {
   const pathname = usePathname();
+  function itemCls(active: boolean): string {
+    return active
+      ? "block rounded-md bg-accent/20 px-3 py-1.5 text-[13px] font-medium text-accent"
+      : "block rounded-md px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card hover:text-ink";
+  }
   return (
     <nav className="flex flex-col gap-2 border-r border-hair bg-card-2 p-5">
       <header className="mb-4">
@@ -36,15 +44,26 @@ export default function PortalNav({
           Profile
         </div>
         <ul className="space-y-0.5">
-          {ITEMS.map((item) => {
+          {PROFILE_ITEMS.map((item) => {
             const href = `${basePath}${item.suffix}`;
-            const active = pathname === href;
-            const cls = active
-              ? "block rounded-md bg-accent/20 px-3 py-1.5 text-[13px] font-medium text-accent"
-              : "block rounded-md px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card hover:text-ink";
             return (
               <li key={item.suffix}>
-                <Link href={href} className={cls}>
+                <Link href={href} className={itemCls(pathname === href)}>
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="mb-3">
+        <ul className="space-y-0.5">
+          {OTHER_ITEMS.map((item) => {
+            const href = `${basePath}${item.suffix}`;
+            return (
+              <li key={item.suffix}>
+                <Link href={href} className={itemCls(pathname === href)}>
                   {item.label}
                 </Link>
               </li>
