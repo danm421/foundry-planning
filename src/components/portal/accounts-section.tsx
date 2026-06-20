@@ -41,6 +41,7 @@ export default async function AccountsSection({
           subType: accounts.subType,
           value: accounts.value,
           accountNumberLast4: accounts.accountNumberLast4,
+          plaidItemId: accounts.plaidItemId,
         })
         .from(accounts)
         .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)))

@@ -17,6 +17,7 @@ interface AccountRow {
   subType: string;
   value: string;
   accountNumberLast4: string | null;
+  plaidItemId: string | null;
   owners: Owner[];
 }
 
@@ -255,40 +256,48 @@ export default function ProfileAccountsList({
               <span className="text-[12px] text-ink-3">{formatCurrency(String(subtotal))}</span>
             </header>
             <ul className="divide-y divide-hair">
-              {list.map((row) => (
-                <li key={row.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-                  <div className="min-w-0">
-                    <div className="font-medium text-ink">
-                      {row.name}
-                      {row.accountNumberLast4 ? (
-                        <span className="ml-1 text-[12px] text-ink-3">·· {row.accountNumberLast4}</span>
-                      ) : null}
+              {list.map((row) => {
+                const isPlaid = row.plaidItemId != null;
+                return (
+                  <li key={row.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                    <div className="min-w-0">
+                      <div className="font-medium text-ink">
+                        {row.name}
+                        {row.accountNumberLast4 ? (
+                          <span className="ml-1 text-[12px] text-ink-3">·· {row.accountNumberLast4}</span>
+                        ) : null}
+                        {isPlaid && (
+                          <span className="ml-2 inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                            Plaid
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[12px] text-ink-3">{ownerLabels(row) || "—"}</div>
                     </div>
-                    <div className="text-[12px] text-ink-3">{ownerLabels(row) || "—"}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="tabular-nums text-ink">{formatCurrency(row.value)}</span>
-                    {editEnabled && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => openEdit(row)}
-                          className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => remove(row)}
-                          className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
+                    <div className="flex items-center gap-3">
+                      <span className="tabular-nums text-ink">{formatCurrency(row.value)}</span>
+                      {editEnabled && !isPlaid && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(row)}
+                            className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => remove(row)}
+                            className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         );

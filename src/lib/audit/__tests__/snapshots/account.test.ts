@@ -50,6 +50,7 @@ const baseRow: typeof accounts.$inferSelect = {
   parentAccountId: null,
   revocableTrustId: null,
   plaidItemId: null,
+  plaidAccountId: null,
   externalProvider: null,
   externalId: null,
   lastSyncedAt: null,

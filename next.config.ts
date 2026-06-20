@@ -10,14 +10,14 @@ const csp = [
   "default-src 'self'",
   // Next.js' React runtime still needs 'unsafe-inline' for style elements
    // and Clerk ships inline bootstrapping. Revisit once nonces are wired.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://cdn.plaid.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.clerk.com https://*.public.blob.vercel-storage.com",
   "font-src 'self' data:",
   // Sentry ingest domains are only needed as a fallback — browser ingestion
   // normally tunnels through /monitoring (see `tunnelRoute` below).
-  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
-  "frame-src 'self' https://challenges.cloudflare.com",
+  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.plaid.com",
+  "frame-src 'self' https://challenges.cloudflare.com https://*.plaid.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",

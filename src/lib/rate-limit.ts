@@ -319,6 +319,54 @@ export async function checkPortalInviteRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Per-(client, item) cap on Plaid balance refreshes — protects Plaid
+// Balance/Investments billing and prevents accidental refresh loops.
+const getPortalPlaidItemRefreshLimiter = buildLimiter(
+  10,
+  "1 h",
+  "rl:portal-plaid-refresh-item",
+);
+const getPortalPlaidClientRefreshLimiter = buildLimiter(
+  30,
+  "1 h",
+  "rl:portal-plaid-refresh-client",
+);
+
+/**
+ * Check whether the bound portal client may refresh balances on `itemId`.
+ * Budget: 10/hr per (clientId, itemId) AND 30/hr per clientId — either
+ * exceeded → denied. Composes both checks.
+ */
+export async function checkPortalPlaidRefreshRateLimit(
+  clientId: string,
+  itemId: string,
+): Promise<RateLimitResult> {
+  const itemLimiter = getPortalPlaidItemRefreshLimiter();
+  const clientLimiter = getPortalPlaidClientRefreshLimiter();
+  if (!itemLimiter || !clientLimiter) {
+    return { allowed: false, reason: "unconfigured" };
+  }
+  const itemResult = await safeLimit(itemLimiter, `${clientId}:${itemId}`);
+  if (!itemResult.allowed) return itemResult;
+  return safeLimit(clientLimiter, clientId);
+}
+
+// Per-client cap on Plaid link-token mints — covers initial link + update mode.
+const getPortalPlaidLinkLimiter = buildLimiter(5, "1 h", "rl:portal-plaid-link");
+
+/**
+ * Check whether the bound portal client may mint a Plaid link_token.
+ * Budget: 5/hr per clientId — generous enough for retries on flaky banks,
+ * tight enough to flag a runaway client UI.
+ */
+export async function checkPortalPlaidLinkRateLimit(
+  clientId: string,
+): Promise<RateLimitResult> {
+  const limiter = getPortalPlaidLinkLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, clientId);
+}
+
 /**
  * Build the standard error response for a denied rate-limit check.
  * Maps `exceeded` → 429, anything else → 503, and emits Retry-After

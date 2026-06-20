@@ -320,6 +320,18 @@ const ALLOWLIST: Record<string, string> = {
     "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling family-members/[memberId] route)",
   "src/app/api/portal/trusts/[id]/route.ts":
     "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling entities/[entityId] route)",
+  "src/app/api/portal/plaid/link-token/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/exchange/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/exchange/commit/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/items/[id]/refresh/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/items/[id]/reauth-complete/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  "src/app/api/portal/plaid/items/[id]/route.ts":
+    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
