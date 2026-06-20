@@ -138,6 +138,7 @@ beforeEach(() => {
   deleteAccountsMock.mockReset();
   deleteOwnersMock.mockReset();
   insertOwnerMock.mockReset();
+  // mockClear (not mockReset) preserves the async wrapper implementation.
   transactionMock.mockClear();
   validateOwnersShapeMock.mockReset();
   validateOwnersTenantMock.mockReset();
@@ -206,15 +207,50 @@ describe("PUT /api/portal/accounts/[id]", () => {
         percent: "1",
       }),
     );
+    const auditCall = recordUpdateMock.mock.calls[0][0] as {
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+      action: string;
+    };
+    expect(auditCall).toMatchObject({
+      action: "portal.account.update",
+      resourceType: "account",
+      resourceId: "acct-1",
+      clientId: "c1",
+      firmId: "firm-1",
+      actorKind: "client",
+    });
+    // Fix 2: last4 must be mapped through snapshot key-space, not DB column key.
+    expect(auditCall.before.last4).toBeNull();
+    expect(auditCall.after.last4).toBe("9999");
+    expect(auditCall.after).not.toHaveProperty("accountNumberLast4");
+  });
+
+  it("owner-only update: skips db UPDATE but replaces owners and records audit", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    validateOwnersShapeMock.mockReturnValue({
+      owners: [{ kind: "family_member", familyMemberId: "fm2", percent: 1 }],
+    });
+    validateOwnersTenantMock.mockResolvedValue(null);
+    validateAccountOwnershipRulesMock.mockReturnValue(null);
+
+    const res = await PUT(
+      putReq({ owners: [{ kind: "family_member", familyMemberId: "fm2", percent: 1 }] }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    // No field patch — accounts UPDATE must NOT be called.
+    expect(updateMock).not.toHaveBeenCalled();
+    // Owners must be replaced.
+    expect(deleteOwnersMock).toHaveBeenCalled();
+    expect(insertOwnerMock).toHaveBeenCalledWith(
+      "accountOwners",
+      expect.objectContaining({ familyMemberId: "fm2" }),
+    );
+    // Audit must still be recorded.
     expect(recordUpdateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "portal.account.update",
-        resourceType: "account",
-        resourceId: "acct-1",
-        clientId: "c1",
-        firmId: "firm-1",
-        actorKind: "client",
-      }),
+      expect.objectContaining({ action: "portal.account.update" }),
     );
   });
 
@@ -228,6 +264,14 @@ describe("PUT /api/portal/accounts/[id]", () => {
 });
 
 describe("DELETE /api/portal/accounts/[id]", () => {
+  it("404s when account belongs to a different client", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c2", clerkUserId: "u1" });
+    // accountRow.clientId is "c1" — cross-client mismatch
+    const res = await DELETE(delReq(), ctx);
+    expect(res.status).toBe(404);
+    expect(deleteAccountsMock).not.toHaveBeenCalled();
+  });
+
   it("409s when account has a plaid_item_id", async () => {
     requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
     accountRow = { ...accountRow!, plaidItemId: "pli_1" };

@@ -177,7 +177,14 @@ export async function PUT(
     });
 
     const before = snapshot(row);
-    const after: EntitySnapshot = { ...before, ...(patch as EntitySnapshot) };
+    // Build `after` in snapshot key-space (name/category/subType/value/last4),
+    // NOT in DB column key-space, so the diff is labeled correctly.
+    const after: EntitySnapshot = { ...before };
+    if ("name" in patch) after.name = patch.name as string;
+    if ("category" in patch) after.category = patch.category as string;
+    if ("subType" in patch) after.subType = patch.subType as string;
+    if ("value" in patch) after.value = patch.value as string;
+    if ("accountNumberLast4" in patch) after.last4 = patch.accountNumberLast4 as string | null;
 
     await recordUpdate({
       action: "portal.account.update",
