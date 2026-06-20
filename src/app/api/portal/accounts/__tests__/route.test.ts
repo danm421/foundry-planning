@@ -24,13 +24,13 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
 // We toggle which "from" call is happening by inspecting the table arg.
 const scenarioRows = [{ id: "scenario-base-1" }];
 const clientRows = [{ firmId: "firm-1" }];
-let selectCallIdx = 0;
-const limitMock = vi.fn();
 vi.mock("@/db/schema", () => ({
   scenarios: { _name: "scenarios" },
   clients: { _name: "clients" },
   accounts: { _name: "accounts" },
   accountOwners: { _name: "accountOwners" },
+  accountCategoryEnum: { enumValues: ["taxable", "cash", "retirement", "annuity", "real_estate", "business", "life_insurance", "notes_receivable", "stock_options"] },
+  accountSubTypeEnum: { enumValues: ["brokerage", "savings", "checking", "traditional_ira", "roth_ira", "401k", "403b", "529", "hsa", "trust", "other", "primary_residence", "rental_property", "commercial_property", "sole_proprietorship", "partnership", "s_corp", "c_corp", "llc", "term", "whole_life"] },
 }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a }));
 
@@ -66,7 +66,6 @@ vi.mock("@/db", () => ({
       from: (tbl: { _name: string }) => ({
         where: () => ({
           limit: () => {
-            selectCallIdx += 1;
             if (tbl._name === "scenarios") return Promise.resolve(scenarioRows);
             if (tbl._name === "clients") return Promise.resolve(clientRows);
             return Promise.resolve([]);
@@ -111,8 +110,6 @@ beforeEach(() => {
   validateOwnersTenantMock.mockReset();
   validateAccountOwnershipRulesMock.mockReset();
   recordCreateMock.mockReset();
-  selectCallIdx = 0;
-  limitMock.mockReset();
 });
 
 function req(body: unknown): Request {
@@ -147,6 +144,21 @@ describe("POST /api/portal/accounts", () => {
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(req({ category: "cash", owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }] }));
     expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when category is not a valid enum value", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    const res = await POST(
+      req({
+        name: "Checking",
+        category: "not_a_real_category",
+        owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/category/i);
   });
 
   it("inserts account + owner rows in a transaction and audits", async () => {

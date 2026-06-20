@@ -4,6 +4,8 @@ import { db } from "@/db";
 import {
   accounts,
   accountOwners,
+  accountCategoryEnum,
+  accountSubTypeEnum,
   clients,
   scenarios,
 } from "@/db/schema";
@@ -41,6 +43,15 @@ export async function POST(req: Request): Promise<Response> {
     }
     if (!body.category) {
       return NextResponse.json({ error: "category required" }, { status: 400 });
+    }
+    if (!(accountCategoryEnum.enumValues as readonly string[]).includes(body.category)) {
+      return NextResponse.json({ error: "invalid category" }, { status: 400 });
+    }
+    if (
+      body.subType !== undefined &&
+      !(accountSubTypeEnum.enumValues as readonly string[]).includes(body.subType)
+    ) {
+      return NextResponse.json({ error: "invalid subType" }, { status: 400 });
     }
 
     const ownersResult = validateOwnersShape(body.owners);
@@ -123,10 +134,6 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    console.error("POST /api/portal/accounts error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    throw err;
   }
 }
