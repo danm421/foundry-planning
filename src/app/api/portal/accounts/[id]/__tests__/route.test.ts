@@ -263,6 +263,38 @@ describe("PUT /api/portal/accounts/[id]", () => {
   });
 });
 
+describe("PUT /api/portal/accounts/[id] — Plaid-locked field guards", () => {
+  it("rejects value patch on a Plaid-linked account with 400", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
+    const res = await PUT(putReq({ value: "999.00" }), ctx);
+    expect(res.status).toBe(400);
+    const json = await res.json() as { error: string };
+    expect(json.error).toMatch(/cannot edit (value|balance)/i);
+  });
+
+  it("rejects last4 patch on a Plaid-linked account with 400", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
+    const res = await PUT(putReq({ last4: "9999" }), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects custodian patch on a Plaid-linked account with 400", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
+    const res = await PUT(putReq({ custodian: "Hacked" }), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts name / category / subType / owners patches on a Plaid-linked account", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
+    const res = await PUT(putReq({ name: "New nickname" }), ctx);
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("DELETE /api/portal/accounts/[id]", () => {
   it("404s when account belongs to a different client", async () => {
     requireClientPortalAccessMock.mockResolvedValue({ clientId: "c2", clerkUserId: "u1" });

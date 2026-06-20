@@ -31,6 +31,8 @@ type AccountRow = {
   subType: string;
   value: string;
   accountNumberLast4: string | null;
+  custodian: string | null;
+  plaidItemId: string | null;
 };
 
 const ALLOWED_FIELDS = [
@@ -40,6 +42,8 @@ const ALLOWED_FIELDS = [
   "value",
   "last4",
 ] as const;
+
+const LOCKED_BY_PLAID = new Set(["value", "last4", "custodian"]);
 
 const FIELD_LABELS = {
   name: { label: "Name", format: "text" as const },
@@ -67,6 +71,8 @@ async function loadOwnedRow(
     subType: row.subType,
     value: row.value,
     accountNumberLast4: row.accountNumberLast4,
+    custodian: (row as { custodian?: string | null }).custodian ?? null,
+    plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
   };
 }
 
@@ -103,6 +109,18 @@ export async function PUT(
     }
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    // Guard Plaid-locked fields on linked accounts
+    if (row.plaidItemId) {
+      for (const k of Object.keys(body)) {
+        if (LOCKED_BY_PLAID.has(k)) {
+          return NextResponse.json(
+            { error: "Cannot edit balance/last4/custodian on a Plaid-linked account" },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     // Validate enum fields when present — mirrors the family/[id] pattern
     if (
@@ -247,6 +265,8 @@ export async function DELETE(
       subType: raw.subType,
       value: raw.value,
       accountNumberLast4: raw.accountNumberLast4,
+      custodian: (raw as { custodian?: string | null }).custodian ?? null,
+      plaidItemId,
     };
 
     await db.transaction(async (tx) => {
