@@ -327,7 +327,11 @@ export type AuditAction =
   | "portal.invite.accepted"
   | "portal.account.create"
   | "portal.account.update"
-  | "portal.account.delete";
+  | "portal.account.delete"
+  | "portal.plaid.link"
+  | "portal.plaid.refresh"
+  | "portal.plaid.unlink"
+  | "portal.plaid.reauth";
 
 type Args = {
   action: AuditAction;
