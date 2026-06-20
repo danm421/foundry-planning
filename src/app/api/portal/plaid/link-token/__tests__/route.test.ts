@@ -111,4 +111,28 @@ describe("POST /api/portal/plaid/link-token", () => {
       expect.objectContaining({ access_token: "abc" }),
     );
   });
+
+  it("returns 404 when itemId belongs to a different client (update mode cross-client)", async () => {
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:xyz", clientId: "other-client" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(linkTokenCreate).not.toHaveBeenCalled();
+  });
 });

@@ -158,4 +158,29 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
     );
     expect(res.status).toBe(409);
   });
+
+  it("rejects when link target account belongs to a different client", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }], // item — passes tenant check
+      [{ firmId: "firm-1" }],                                // firmId
+      [{ id: "scenario-1" }],                                // base scenario
+      [{ id: "manual-other", clientId: "other-client", plaidItemId: null }], // cross-client account
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({
+          itemId: "item-1",
+          decisions: [
+            { plaidAccountId: "pa-1", action: "link", existingAccountId: "manual-other" },
+          ],
+        }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(txInsert).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
 });
