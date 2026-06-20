@@ -22,6 +22,7 @@ describe("PortalNav basePath", () => {
         "/portal/profile",
         "/portal/profile/family",
         "/portal/profile/trusts",
+        "/portal/accounts",
       ]),
     );
   });
@@ -42,6 +43,7 @@ describe("PortalNav basePath", () => {
         "/clients/c1/portal/preview/profile",
         "/clients/c1/portal/preview/profile/family",
         "/clients/c1/portal/preview/profile/trusts",
+        "/clients/c1/portal/preview/accounts",
       ]),
     );
   });

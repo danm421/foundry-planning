@@ -6,6 +6,7 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 import HouseholdSection from "@/components/portal/household-section";
 import FamilySection from "@/components/portal/family-section";
 import TrustsSection from "@/components/portal/trusts-section";
+import AccountsSection from "@/components/portal/accounts-section";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 
@@ -32,6 +33,8 @@ export default async function PortalPreviewPage({
     section = <FamilySection clientId={id} previewing />;
   } else if (path === "profile/trusts") {
     section = <TrustsSection clientId={id} previewing />;
+  } else if (path === "accounts") {
+    section = <AccountsSection clientId={id} previewing />;
   } else {
     notFound();
   }
