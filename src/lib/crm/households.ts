@@ -226,6 +226,7 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
         advisorId: input.advisorId,
         name: input.name,
         status: input.status ?? "prospect",
+        state: input.state ?? null,
         notes: input.notes,
       })
       .returning();
@@ -240,6 +241,9 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
           firstName: c.firstName,
           lastName: c.lastName,
           dateOfBirth: resolveContactDateOfBirth(c.role, c.dateOfBirth),
+          // Seed the primary contact's address state from the household
+          // residence so the contacts tab renders a state immediately.
+          state: c.role === "primary" ? (input.state ?? null) : null,
         })
         .returning();
       insertedContacts.push(contact);

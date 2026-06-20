@@ -463,6 +463,10 @@ export const crmHouseholds = pgTable("crm_households", {
   name: text("name").notNull(),
   status: crmHouseholdStatusEnum("status").notNull().default("prospect"),
   notes: text("notes"),
+  // Canonical household residence (USPS 2-letter code; 50 states + DC).
+  // Nullable: pre-existing households predate this and are not backfilled.
+  // Required at creation via createCrmHouseholdInteractiveSchema, not NOT NULL.
+  state: text("state"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   // Soft-delete (Trash). null = live; set = in Trash, recoverable until the
@@ -696,6 +700,9 @@ export const clients = pgTable("clients", {
     .notNull()
     .unique()
     .references(() => crmHouseholds.id, { onDelete: "restrict" }),
+  clerkUserId: text("clerk_user_id").unique(),
+  portalInvitedAt: timestamp("portal_invited_at"),
+  portalEditEnabled: boolean("portal_edit_enabled").notNull().default(true),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
@@ -3506,6 +3513,7 @@ export const auditLog = pgTable(
     resourceId: text("resource_id").notNull(),
     clientId: uuid("client_id"),
     metadata: jsonb("metadata"),
+    actorKind: text("actor_kind").notNull().default("advisor"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [

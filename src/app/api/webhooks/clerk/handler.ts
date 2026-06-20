@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { seedCmaForFirm } from "@/lib/cma-seed-runner";
 import { recordAudit } from "@/lib/audit";
 import { dispatchClerkMembership } from "./membership-handlers";
+import { dispatchClerkInvitation } from "./invitation-handlers";
 
 export type ClerkEvent = {
   type: string;
@@ -22,6 +23,8 @@ export async function handleClerkEvent(
   svixId: string,
 ): Promise<Response> {
   if (evt.type !== "organization.created") {
+    const inv = await dispatchClerkInvitation(evt);
+    if (inv) return inv;
     const dispatched = await dispatchClerkMembership(evt, svixId);
     if (dispatched) return dispatched;
     return NextResponse.json({ ok: true, ignored: evt.type }, { status: 200 });

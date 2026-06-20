@@ -312,6 +312,14 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/save-to-base/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/portal/household/route.ts":
+    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to their own clientId); advisor-subscription gating deferred to the Phase 3.5 fleet sweep (parity with sibling family-members/entities/crm-contacts routes)",
+  "src/app/api/portal/family/route.ts":
+    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling family-members route)",
+  "src/app/api/portal/family/[id]/route.ts":
+    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling family-members/[memberId] route)",
+  "src/app/api/portal/trusts/[id]/route.ts":
+    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling entities/[entityId] route)",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;

@@ -83,7 +83,7 @@ describe("Topbar", () => {
     );
     const { container } = render(<Topbar />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links.length).toBeGreaterThanOrEqual(6);
+    expect(links.length).toBeGreaterThanOrEqual(7);
     for (const a of links) {
       expect(a.getAttribute("href")).toContain("?scenario=sc-1");
     }
@@ -171,6 +171,20 @@ describe("Topbar", () => {
     // `?view=state` → State Death Tax is the active view; the default (estate) is not.
     expect(viewLink("State Death Tax")?.className).toContain("text-accent");
     expect(viewLink("Estate Tax")?.className).not.toContain("text-accent");
+  });
+
+  it("renders Portal tab linking to /clients/:id/portal", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
+    const { container } = render(
+      <BackNavProvider>
+        <Topbar />
+      </BackNavProvider>,
+    );
+    const link = Array.from(container.querySelectorAll("a[role='tab']")).find(
+      (a) => a.textContent?.trim() === "Portal",
+    );
+    expect(link).toBeTruthy();
+    expect(link?.getAttribute("href")).toContain("/clients/c1/portal");
   });
 
   it("highlights a query-param sub-report's default view when ?view= is absent", () => {

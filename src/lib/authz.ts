@@ -1,5 +1,6 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { UnauthorizedError } from "./db-helpers";
+import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
 
@@ -108,6 +109,30 @@ export async function requireActiveSubscriptionForFirm(firmId: string): Promise<
     meta = (org.publicMetadata as Record<string, unknown>) ?? {};
   }
   if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
+}
+
+/**
+ * Portal-user gate. Returns the bound clientId for the session, or
+ * throws — UnauthorizedError if no session, ForbiddenError otherwise
+ * (advisor session, or signed-in user with no clients.clerk_user_id).
+ *
+ * Used by `/portal/*` pages and `/api/portal/*` route handlers. Pairs
+ * with the middleware branch that routes portal users to `/portal`.
+ */
+export async function requireClientPortalAccess(): Promise<{
+  clientId: string;
+  clerkUserId: string;
+}> {
+  const { userId, orgId } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (orgId) {
+    throw new ForbiddenError("Advisor session — portal access denied");
+  }
+  const clientId = await getPortalClientId(userId);
+  if (!clientId) {
+    throw new ForbiddenError("No portal binding for this user");
+  }
+  return { clientId, clerkUserId: userId };
 }
 
 /**

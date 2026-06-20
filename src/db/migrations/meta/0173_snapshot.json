@@ -1,5 +1,5 @@
 {
-  "id": "f09e23f7-ea46-44a5-b7ff-4281417a60a4",
+  "id": "437abffb-87a2-4f19-a64a-a79038777809",
   "prevId": "98f2c5b5-1e7e-4b49-8f28-c60a318b3ad5",
   "version": "7",
   "dialect": "postgresql",
@@ -965,24 +965,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "external_provider": {
-          "name": "external_provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1016,34 +998,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "accounts_client_external_uq": {
-          "name": "accounts_client_external_uq",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"accounts\".\"external_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3064,14 +3018,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "origin": {
-          "name": "origin",
-          "type": "import_origin",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'extraction'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -4840,6 +4786,12 @@
         },
         "notes": {
           "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -9732,350 +9684,6 @@
           "value": "\"ops_entitlement_overrides\".\"mode\" IN ('grant','revoke')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.orion_connections": {
-      "name": "orion_connections",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "firm_id": {
-          "name": "firm_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "access_token_enc": {
-          "name": "access_token_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refresh_token_enc": {
-          "name": "refresh_token_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "token_expires_at": {
-          "name": "token_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "orion_connection_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'connected'"
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_sync_error": {
-          "name": "last_sync_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connected_by_user_id": {
-          "name": "connected_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connected_at": {
-          "name": "connected_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "orion_connections_firm_id_unique": {
-          "name": "orion_connections_firm_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "firm_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.orion_household_links": {
-      "name": "orion_household_links",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "firm_id": {
-          "name": "firm_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "orion_household_id": {
-          "name": "orion_household_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "linked_by_user_id": {
-          "name": "linked_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "linked_at": {
-          "name": "linked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "orion_household_firm_hh_uq": {
-          "name": "orion_household_firm_hh_uq",
-          "columns": [
-            {
-              "expression": "firm_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "orion_household_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "orion_household_links_client_id_clients_id_fk": {
-          "name": "orion_household_links_client_id_clients_id_fk",
-          "tableFrom": "orion_household_links",
-          "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "orion_household_links_client_id_unique": {
-          "name": "orion_household_links_client_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.orion_oauth_states": {
-      "name": "orion_oauth_states",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "firm_id": {
-          "name": "firm_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code_verifier": {
-          "name": "code_verifier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "orion_oauth_states_state_unique": {
-          "name": "orion_oauth_states_state_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "state"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.orion_sync_runs": {
-      "name": "orion_sync_runs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "firm_id": {
-          "name": "firm_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "orion_sync_trigger",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "households_synced": {
-          "name": "households_synced",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "accounts_committed": {
-          "name": "accounts_committed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "accounts_queued": {
-          "name": "accounts_queued",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.plaid_items": {
@@ -16260,14 +15868,6 @@
         "updating"
       ]
     },
-    "public.import_origin": {
-      "name": "import_origin",
-      "schema": "public",
-      "values": [
-        "extraction",
-        "orion"
-      ]
-    },
     "public.import_status": {
       "name": "import_status",
       "schema": "public",
@@ -16366,23 +15966,6 @@
         "high"
       ]
     },
-    "public.orion_connection_status": {
-      "name": "orion_connection_status",
-      "schema": "public",
-      "values": [
-        "connected",
-        "disconnected",
-        "error"
-      ]
-    },
-    "public.orion_sync_trigger": {
-      "name": "orion_sync_trigger",
-      "schema": "public",
-      "values": [
-        "manual",
-        "cron"
-      ]
-    },
     "public.owner": {
       "name": "owner",
       "schema": "public",
@@ -16479,8 +16062,7 @@
       "values": [
         "manual",
         "extracted",
-        "policy",
-        "orion"
+        "policy"
       ]
     },
     "public.subscription_item_kind": {
