@@ -79,7 +79,6 @@ export function PlaidLinkButton(props: Props) {
       }
       router.refresh();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [props, router],
   );
 

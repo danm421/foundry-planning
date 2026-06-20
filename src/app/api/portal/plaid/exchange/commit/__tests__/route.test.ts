@@ -16,8 +16,6 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
 }));
 
 // db mocks: itemRow lookup, candidate-existing-row lookups, insert, update, scenario lookup.
-const limitFn = vi.fn();
-const txLimitFn = vi.fn();
 const dbSelect = vi.fn();
 const txInsertReturning = vi.fn();
 const txInsert = vi.fn().mockReturnValue({
