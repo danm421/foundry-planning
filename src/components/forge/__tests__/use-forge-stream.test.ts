@@ -191,6 +191,172 @@ describe("custom-streaming frames", () => {
 // useForgeStream — isVerifying state transitions
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// useForgeStream — error/cancel recovery (Task A3)
+// ---------------------------------------------------------------------------
+
+describe("useForgeStream — error/cancel recovery", () => {
+  it("(a) removes the trailing empty assistant bubble on a non-503 !res.ok error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("boom", { status: 500 })),
+    );
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+
+    expect(result.current.status).toBe("error");
+    // The empty assistant bubble must be dropped — only the user turn remains.
+    expect(result.current.messages).toEqual([
+      { role: "user", text: "Hello forge", attachments: undefined },
+    ]);
+    expect(result.current.messages.some((m) => m.role === "assistant")).toBe(false);
+  });
+
+  it("(b) suffixes a partial assistant bubble with ' (stopped)' on cancel", async () => {
+    // A stream that emits one token then stays open until the fetch signal
+    // aborts, at which point the reader errors (mirrors a real cancelled fetch).
+    const encoder = new TextEncoder();
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        const signal = init.signal as AbortSignal;
+        let enqueued = false;
+        const stream = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (!enqueued) {
+              enqueued = true;
+              controller.enqueue(encoder.encode(`data: {"type":"token","text":"Partial"}\n\n`));
+              return;
+            }
+            // Block until abort, then error the stream so reader.read() rejects.
+            return new Promise<void>((_resolve, reject) => {
+              signal.addEventListener("abort", () => {
+                const err = new DOMException("Aborted", "AbortError");
+                controller.error(err);
+                reject(err);
+              });
+            });
+          },
+        });
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        );
+      }),
+    );
+
+    // Fire send without awaiting — it will stream the token then block.
+    let sendPromise!: Promise<void>;
+    await act(async () => {
+      sendPromise = result.current.send(validArgs);
+      // Let the token frame flush into the assistant bubble.
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    // The partial assistant bubble should now hold "Partial".
+    expect(result.current.messages.at(-1)).toEqual({ role: "assistant", text: "Partial" });
+
+    await act(async () => {
+      result.current.cancel();
+      await sendPromise;
+    });
+
+    expect(result.current.status).toBe("cancelled");
+    expect(result.current.messages.at(-1)).toEqual({
+      role: "assistant",
+      text: "Partial (stopped)",
+    });
+  });
+
+  it("(c) parses Retry-After: 30 on a 503 into retryAfterSeconds === 30", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("rate limited", {
+          status: 503,
+          headers: { "retry-after": "30" },
+        }),
+      ),
+    );
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.retryAfterSeconds).toBe(30);
+  });
+
+  it("(d) retry() re-POSTs the last user message with the existing conversationId + scenario", async () => {
+    // First send: 503 (failure) so we have a stranded user turn to retry. It
+    // carries a conversation frame so conversationId is populated for retry.
+    const fetchMock = vi
+      .fn()
+      // initial send fails before streaming, but we still want a conversationId
+      // — set it manually via setConversationId below instead.
+      .mockResolvedValueOnce(new Response("boom", { status: 500 }))
+      // retry succeeds.
+      .mockResolvedValueOnce(makeStreamingResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    act(() => {
+      result.current.setConversationId("conv_99");
+    });
+
+    await act(async () => {
+      await result.current.send({ message: "What is my balance?", scenarioId: "scen_7" });
+    });
+
+    expect(result.current.status).toBe("error");
+
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    // The retry re-POSTed the same message + scenario + conversationId.
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(retryBody.message).toBe("What is my balance?");
+    expect(retryBody.scenarioId).toBe("scen_7");
+    expect(retryBody.conversationId).toBe("conv_99");
+    expect(result.current.status).toBe("done");
+  });
+
+  it("clears retryAfterSeconds at the top of a new send", async () => {
+    // First send: 503 with Retry-After sets retryAfterSeconds.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("rate limited", { status: 503, headers: { "retry-after": "12" } }),
+      )
+      .mockResolvedValueOnce(makeStreamingResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useForgeStream("client_42"));
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+    expect(result.current.retryAfterSeconds).toBe(12);
+
+    await act(async () => {
+      await result.current.send(validArgs);
+    });
+    expect(result.current.retryAfterSeconds).toBeNull();
+  });
+});
+
 describe("useForgeStream — isVerifying", () => {
   it("sets isVerifying to true when a verifying event arrives (no token follows)", async () => {
     // Only a verifying frame — no token, no done. The flag should be set and

@@ -117,6 +117,14 @@ export interface UseForgeStreamResult {
   /** POST a turn and stream the reply into the trailing assistant bubble. */
   send: (args: SendArgs) => Promise<void>;
   cancel: () => void;
+  /** Re-POST the last user turn on the same conversation + scenario after a failed/cancelled turn. */
+  retry: () => Promise<void>;
+  /**
+   * Seconds to wait before retrying, parsed from a `Retry-After` header on a
+   * 429/503 response. `null` when no countdown applies. Cleared at the top of
+   * every `send`.
+   */
+  retryAfterSeconds: number | null;
   /** Resume an interrupted conversation after the advisor submits approval decisions. */
   resume: (decisions: Record<string, "confirm" | "reject">) => Promise<void>;
 }
@@ -136,12 +144,43 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
   const [status, setStatus] = useState<ForgeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Scenario of the in-flight/last turn, so `retry` resends against the same one.
+  const lastScenarioRef = useRef<string>("base");
+  // Mirror of `status` for synchronous reads in callbacks (avoids a stale closure
+  // without a setStatus-updater side effect).
+  const statusRef = useRef<ForgeStatus>("idle");
+  statusRef.current = status;
+
+  // Strip an orphaned empty assistant bubble (error/cancel) or, on cancel,
+  // annotate a partial bubble so the user sees the turn was stopped. Called
+  // from the failure paths in `send`/`cancel`.
+  const finalizeFailedAssistantBubble = useCallback((mode: "error" | "cancel") => {
+    setMessages((m) => {
+      if (m.length === 0) return m;
+      const copy = [...m];
+      const last = copy[copy.length - 1];
+      if (last.role !== "assistant") return copy;
+      if (last.text === "") {
+        copy.pop(); // drop the orphaned empty bubble
+      } else if (mode === "cancel") {
+        copy[copy.length - 1] = { ...last, text: `${last.text} (stopped)` };
+      }
+      return copy;
+    });
+  }, []);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
-    setStatus((s) => (s === "streaming" ? "cancelled" : s));
-  }, []);
+    // Only annotate/strip when we actually interrupted a streaming turn —
+    // `send` calls cancel() at its top to abort any prior stream, and that
+    // turn's bubble is already finalized.
+    if (statusRef.current === "streaming") {
+      finalizeFailedAssistantBubble("cancel");
+      setStatus("cancelled");
+    }
+  }, [finalizeFailedAssistantBubble]);
 
   const applyEvent = useCallback((ev: ForgeSseEvent) => {
     switch (ev.type) {
@@ -231,8 +270,10 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       cancel();
       const ac = new AbortController();
       abortRef.current = ac;
+      lastScenarioRef.current = args.scenarioId;
       setStatus("streaming");
       setErrorMessage(null);
+      setRetryAfterSeconds(null);
       setStreamingText("");
       setToolStatus(null);
       setIsVerifying(false);
@@ -262,10 +303,12 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
           signal: ac.signal,
         });
       } catch (err) {
-        if (ac.signal.aborted) return setStatus("cancelled");
+        // An aborted fetch was already finalized by cancel(); don't re-annotate.
+        if (ac.signal.aborted) return;
         const msg = err instanceof Error ? err.message : String(err);
         setStatus("error");
         setErrorMessage(msg);
+        finalizeFailedAssistantBubble("error");
         return;
       }
 
@@ -277,21 +320,33 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
           res.status === 503
             ? text || "Forge is temporarily unavailable (rate limited). Try again shortly."
             : text || `Request failed (HTTP ${res.status}).`;
+        // Surface a Retry-After countdown on rate-limit responses (429/503).
+        if (res.status === 429 || res.status === 503) {
+          const ra = Number(res.headers.get("retry-after"));
+          setRetryAfterSeconds(Number.isFinite(ra) && ra > 0 ? ra : null);
+        }
         setStatus("error");
         setErrorMessage(msg);
+        finalizeFailedAssistantBubble("error");
         return;
       }
 
       try {
         await consumeStream(res);
+        // A2 may end the stream with an `error` frame (optionally preceded by a
+        // flushed-buffer token). consumeStream leaves status === "error" in that
+        // case; drop a still-empty trailing bubble so no blank reply is stranded.
+        if (statusRef.current === "error") finalizeFailedAssistantBubble("error");
       } catch (err) {
-        if (ac.signal.aborted) return setStatus("cancelled");
+        // An aborted fetch was already finalized by cancel(); don't re-annotate.
+        if (ac.signal.aborted) return;
         const msg = err instanceof Error ? err.message : String(err);
         setStatus("error");
         setErrorMessage(msg);
+        finalizeFailedAssistantBubble("error");
       }
     },
-    [clientId, conversationId, cancel, consumeStream],
+    [clientId, conversationId, cancel, consumeStream, finalizeFailedAssistantBubble],
   );
 
   const resume = useCallback(
@@ -332,6 +387,18 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     [clientId, conversationId, consumeStream],
   );
 
+  // Re-POST the last user turn after a failed/cancelled turn, on the same
+  // conversation + scenario. Used by the panel's Retry affordance (Task A4).
+  const retry = useCallback(async () => {
+    const lastUser = [...messages].reverse().find((x) => x.role === "user");
+    if (!lastUser) return;
+    await send({
+      message: lastUser.text,
+      scenarioId: lastScenarioRef.current,
+      conversationId,
+    });
+  }, [messages, conversationId, send]);
+
   return {
     messages,
     setMessages,
@@ -350,5 +417,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     send,
     cancel,
     resume,
+    retry,
+    retryAfterSeconds,
   };
 }
