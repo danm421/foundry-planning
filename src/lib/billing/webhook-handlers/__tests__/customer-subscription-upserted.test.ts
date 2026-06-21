@@ -20,6 +20,7 @@ const mockSelectFirms = vi.fn();
 const mockSelectActiveSub = vi.fn();
 const mockSubsUpsert = vi.fn();
 const mockItemsUpsert = vi.fn();
+const mockUpdateFirms = vi.fn();
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
   return {
@@ -41,6 +42,9 @@ vi.mock("@/db", async (orig) => {
               Array.isArray(v) ? mockItemsUpsert(v) : mockSubsUpsert(v),
           }),
         }),
+      }),
+      update: () => ({
+        set: (v: unknown) => ({ where: () => mockUpdateFirms(v) }),
       }),
     },
   };
@@ -75,6 +79,7 @@ beforeEach(() => {
   mockSelectActiveSub.mockReset();
   mockSelectActiveSub.mockResolvedValue([]); // default: no conflicting active sub
   mockCaptureMessage.mockReset();
+  mockUpdateFirms.mockReset();
 });
 
 describe("handleSubscriptionUpsert", () => {
@@ -310,6 +315,39 @@ describe("handleSubscriptionUpsert", () => {
     expect(mockCaptureMessage).toHaveBeenCalled();
     expect(mockSubsUpsert).not.toHaveBeenCalled();
     expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
+  });
+
+  it("clears the firm archive stamp and sends archived_at:null to Clerk when the sub is live again (resubscribe)", async () => {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_re",
+      customer: "cus_re",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_re" },
+      items: { data: [] },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_re", isFounder: false }]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-re" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_re",
+      type: "customer.subscription.created",
+      data: { object: { id: "sub_re" } },
+    } as never);
+
+    expect(mockUpdateFirms).toHaveBeenCalledWith(
+      expect.objectContaining({ archivedAt: null, dataRetentionUntil: null }),
+    );
+    expect(mockUpdateOrgMeta).toHaveBeenCalledWith(
+      "org_re",
+      expect.objectContaining({
+        publicMetadata: expect.objectContaining({ archived_at: null }),
+      }),
+    );
   });
 
   it("upserts normally when the only other subscription is canceled (cancel-then-resubscribe)", async () => {

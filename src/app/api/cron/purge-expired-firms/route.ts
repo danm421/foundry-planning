@@ -1,8 +1,8 @@
 // src/app/api/cron/purge-expired-firms/route.ts
 import { type NextRequest, NextResponse } from "next/server";
-import { and, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { firms } from "@/db/schema";
+import { firms, subscriptions } from "@/db/schema";
 import { purgeFirmById } from "@/lib/billing/purge-firm";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,12 @@ export async function GET(req: NextRequest): Promise<Response> {
         isNotNull(firms.archivedAt),
         lt(firms.dataRetentionUntil, new Date()),
         isNull(firms.purgedAt),
+        // Defense in depth: never even consider a firm that resubscribed.
+        sql`not exists (
+          select 1 from ${subscriptions}
+          where ${subscriptions.firmId} = ${firms.firmId}
+          and ${subscriptions.status} in ('trialing','active','past_due','unpaid')
+        )`,
       ),
     );
 

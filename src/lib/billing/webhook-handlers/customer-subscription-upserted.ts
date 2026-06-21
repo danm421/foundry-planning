@@ -173,6 +173,8 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
       .returning({ id: subscriptionItems.id });
   }
 
+  const isLive = LIVE_SUBSCRIPTION_STATUSES.includes(sub.status);
+
   const cc = await clerkClient();
   await Promise.all([
     cc.organizations.updateOrganizationMetadata(firmId, {
@@ -187,9 +189,22 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
         trial_ends_at: sub.trial_end
           ? new Date(sub.trial_end * 1000).toISOString()
           : null,
+        // Clear any prior cancellation shadow when the firm is live again so a
+        // stale archived_at can't influence enforcement or shadow the state.
+        ...(isLive ? { archived_at: null } : {}),
         entitlements,
       },
     }),
+    // When the firm is live again, lift the cancellation archive so the purge
+    // cron never deletes a paying customer (see purge-eligibility guard).
+    ...(isLive
+      ? [
+          db
+            .update(firms)
+            .set({ archivedAt: null, dataRetentionUntil: null, updatedAt: new Date() })
+            .where(eq(firms.firmId, firmId)),
+        ]
+      : []),
     recordAudit({
       action:
         event.type === "customer.subscription.created"
