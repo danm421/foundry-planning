@@ -126,6 +126,10 @@ function formatCurrency(n: string): string {
   return num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
+function PlaidSyncHint(): ReactElement {
+  return <span className="ml-1 text-[11px]">· Synced via Plaid</span>;
+}
+
 export default function ProfileAccountsList({
   rows,
   familyMembers,
@@ -139,6 +143,13 @@ export default function ProfileAccountsList({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm("cash", primaryFm?.id ?? null),
   );
+
+  // True when the row open for edit is Plaid-linked, so we lock the fields the
+  // PUT route's LOCKED_BY_PLAID set rejects (value/last4 — the form's locked fields).
+  const plaidLocked =
+    typeof openForm === "string" && openForm !== "new"
+      ? rows.find((r) => r.id === openForm)?.plaidItemId != null
+      : false;
 
   function openNew() {
     setForm(emptyForm("cash", primaryFm?.id ?? null));
@@ -160,14 +171,17 @@ export default function ProfileAccountsList({
       alert("Pick at least one owner.");
       return;
     }
-    const body = {
+    const body: Record<string, unknown> = {
       name: form.name,
-      last4: form.last4 || null,
       category: form.category,
       subType: form.subType,
-      value: form.value,
       owners,
     };
+    // Plaid owns value/last4 on linked accounts — sending them would 400.
+    if (!plaidLocked) {
+      body.last4 = form.last4 || null;
+      body.value = form.value;
+    }
     const isNew = openForm === "new";
     const res = await fetch(
       isNew ? "/api/portal/accounts" : `/api/portal/accounts/${openForm}`,
@@ -240,6 +254,7 @@ export default function ProfileAccountsList({
           onCancel={cancel}
           onSubmit={submit}
           disabled={isPending}
+          plaidLocked={plaidLocked}
         />
       )}
 
@@ -276,7 +291,7 @@ export default function ProfileAccountsList({
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="tabular-nums text-ink">{formatCurrency(row.value)}</span>
-                      {editEnabled && !isPlaid && (
+                      {editEnabled && (
                         <>
                           <button
                             type="button"
@@ -285,13 +300,16 @@ export default function ProfileAccountsList({
                           >
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => remove(row)}
-                            className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
-                          >
-                            Delete
-                          </button>
+                          {/* Delete stays manual-only — unlink the institution first. */}
+                          {!isPlaid && (
+                            <button
+                              type="button"
+                              onClick={() => remove(row)}
+                              className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -318,6 +336,7 @@ function FormPanel({
   onCancel,
   onSubmit,
   disabled,
+  plaidLocked,
 }: {
   form: FormState;
   setForm: (f: FormState) => void;
@@ -326,6 +345,7 @@ function FormPanel({
   onCancel: () => void;
   onSubmit: () => void;
   disabled: boolean;
+  plaidLocked: boolean;
 }): ReactElement {
   const subTypes = SUBTYPES_BY_CATEGORY[form.category] ?? ["other"];
   const eligibleOwners = familyMembers.filter((m) => m.role === "client" || m.role === "spouse");
@@ -345,6 +365,11 @@ function FormPanel({
 
   return (
     <div className="space-y-3 rounded-md border border-hair bg-card-2 p-4 text-[13px]">
+      {plaidLocked && (
+        <p className="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[12px] text-ink-2">
+          Balance and account number sync from your institution and can&apos;t be edited here.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-[12px] text-ink-3">Name</span>
@@ -356,14 +381,21 @@ function FormPanel({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[12px] text-ink-3">Last 4 (optional)</span>
-          <input
-            type="text"
-            value={form.last4}
-            maxLength={4}
-            onChange={(e) => setForm({ ...form, last4: e.target.value })}
-            className="rounded-md border border-hair bg-paper px-2 py-1"
-          />
+          <span className="text-[12px] text-ink-3">Last 4{plaidLocked ? "" : " (optional)"}</span>
+          {plaidLocked ? (
+            <span className="rounded-md border border-hair bg-card px-2 py-1 text-ink-3">
+              {form.last4 || "—"}
+              <PlaidSyncHint />
+            </span>
+          ) : (
+            <input
+              type="text"
+              value={form.last4}
+              maxLength={4}
+              onChange={(e) => setForm({ ...form, last4: e.target.value })}
+              className="rounded-md border border-hair bg-paper px-2 py-1"
+            />
+          )}
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[12px] text-ink-3">Category</span>
@@ -394,13 +426,20 @@ function FormPanel({
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[12px] text-ink-3">Value</span>
-          <input
-            type="number"
-            step="0.01"
-            value={form.value}
-            onChange={(e) => setForm({ ...form, value: e.target.value })}
-            className="rounded-md border border-hair bg-paper px-2 py-1"
-          />
+          {plaidLocked ? (
+            <span className="rounded-md border border-hair bg-card px-2 py-1 tabular-nums text-ink-3">
+              {formatCurrency(form.value)}
+              <PlaidSyncHint />
+            </span>
+          ) : (
+            <input
+              type="number"
+              step="0.01"
+              value={form.value}
+              onChange={(e) => setForm({ ...form, value: e.target.value })}
+              className="rounded-md border border-hair bg-paper px-2 py-1"
+            />
+          )}
         </label>
       </div>
 
