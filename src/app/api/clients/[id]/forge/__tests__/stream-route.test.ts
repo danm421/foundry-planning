@@ -187,6 +187,38 @@ describe("POST /api/clients/[id]/forge/stream — hello stream", () => {
     expect(out).not.toContain("internal detail");
   });
 
+  it("flushes the buffered answer with an honesty caveat + logs the category when the stream throws mid-turn", async () => {
+    // A mid-turn throw must NOT silently discard an already-generated answer. The
+    // agent's tokens are buffered behind the verify gate; if the run dies while
+    // tokens are held, the route releases them with a "couldn't verify" caveat
+    // BEFORE the error frame, and logs the (PII-free) failure category once.
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fakeGraph.streamEvents = async function* () {
+      yield { event: "on_chat_model_stream", data: { chunk: { content: "$1.2" } }, name: "model" };
+      yield { event: "on_chat_model_stream", data: { chunk: { content: "M" } }, name: "model" };
+      throw new Error("connection reset 1a2b3c4d-5e6f internal detail");
+    };
+    const res = await POST(makeReq({ message: "what's the balance?", scenarioId: "base" }), ctx);
+    expect(res.status).toBe(200);
+
+    const out = await drain(res);
+    // The buffered answer is released — its tokens reassemble to "$1.2M".
+    const tokenTexts = [...out.matchAll(/"type":"token","text":"((?:[^"\\]|\\.)*)"/g)]
+      .map((m) => JSON.parse(`"${m[1]}"`))
+      .join("");
+    expect(tokenTexts).toContain("$1.2M");
+    // ...prefixed with the honesty caveat...
+    expect(out).toMatch(/could not be automatically verified/i);
+    // ...and followed by an error frame (raw internals never leak).
+    expect(out).toContain('"type":"error"');
+    expect(out).not.toContain("1a2b3c4d-5e6f");
+    expect(out).not.toContain("internal detail");
+    // The PII-free failure is logged exactly once.
+    expect(errSpy).toHaveBeenCalledTimes(1);
+
+    errSpy.mockRestore();
+  });
+
   it("returns 400 when the body is missing message (malformed body)", async () => {
     const res = await POST(makeReq({}), ctx);
     expect(res.status).toBe(400);
