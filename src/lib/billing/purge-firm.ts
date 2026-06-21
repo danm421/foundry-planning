@@ -1,5 +1,6 @@
 // src/lib/billing/purge-firm.ts
-import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { isFirmPurgeable } from "@/lib/billing/purge-eligibility";
 import { del } from "@vercel/blob";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
@@ -26,6 +27,15 @@ import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { publicBlobToken } from "@/lib/blob-store";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { recordAudit } from "@/lib/audit";
+
+/** Thrown when purgeFirmById is asked to purge a firm that is not eligible
+ *  (e.g. it resubscribed). The cron logs + skips it; data is preserved. */
+export class FirmNotPurgeableError extends Error {
+  constructor(firmId: string) {
+    super(`firm ${firmId} is not eligible for purge`);
+    this.name = "FirmNotPurgeableError";
+  }
+}
 
 /**
  * Permanently purges one firm's PII once its retention window has elapsed.
@@ -70,6 +80,41 @@ import { recordAudit } from "@/lib/audit";
  */
 export async function purgeFirmById(firmId: string): Promise<void> {
   // 0. Collect every Blob reference BEFORE any DB row is deleted.
+
+  // GUARD: re-validate eligibility at delete time (TOCTOU). One firms query
+  // also carries branding URLs (read later) + a correlated live-subscription
+  // count, so a resubscribed firm can never be purged even if its archive
+  // stamp wasn't cleared.
+  const firmRows = await db
+    .select({
+      logoUrl: firms.logoUrl,
+      faviconUrl: firms.faviconUrl,
+      archivedAt: firms.archivedAt,
+      purgedAt: firms.purgedAt,
+      dataRetentionUntil: firms.dataRetentionUntil,
+      liveSubCount: sql<number>`(
+        select count(*)::int from ${subscriptions}
+        where ${subscriptions.firmId} = ${firms.firmId}
+        and ${subscriptions.status} in ('trialing','active','past_due','unpaid')
+      )`,
+    })
+    .from(firms)
+    .where(eq(firms.firmId, firmId));
+  const firm = firmRows[0];
+  if (
+    !firm ||
+    !isFirmPurgeable(
+      {
+        archivedAt: firm.archivedAt,
+        purgedAt: firm.purgedAt,
+        dataRetentionUntil: firm.dataRetentionUntil,
+        liveSubCount: Number(firm.liveSubCount ?? 0),
+      },
+      new Date(),
+    )
+  ) {
+    throw new FirmNotPurgeableError(firmId);
+  }
 
   // Household-document blobs (PRIVATE store). storageKey is null for
   // generated/import-ref docs; import_ref rows point at a shared import-file
@@ -129,10 +174,6 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   const taskFileUrls = taskFileRows.map((r) => r.storageKey).filter((u): u is string => !!u);
 
   // Branding blobs (PUBLIC store) live on the firms row itself.
-  const firmRows = await db
-    .select({ logoUrl: firms.logoUrl, faviconUrl: firms.faviconUrl })
-    .from(firms)
-    .where(eq(firms.firmId, firmId));
   const brandingUrls = [firmRows[0]?.logoUrl, firmRows[0]?.faviconUrl].filter(
     (u): u is string => !!u,
   );
