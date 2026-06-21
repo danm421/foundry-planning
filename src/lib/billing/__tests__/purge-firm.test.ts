@@ -258,5 +258,8 @@ describe("purgeFirmById — eligibility guard", () => {
   it("throws when the firm row is missing", async () => {
     mocks.selectFirm.mockResolvedValue([]);
     await expect(purgeFirmById("org_gone")).rejects.toBeInstanceOf(FirmNotPurgeableError);
+    expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+    expect(mocks.deleteSubs).not.toHaveBeenCalled();
+    expect(mocks.updateFirm).not.toHaveBeenCalled();
   });
 });
