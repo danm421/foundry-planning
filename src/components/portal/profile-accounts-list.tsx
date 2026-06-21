@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
+import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 
 interface Owner {
   familyMemberId: string | null;
@@ -138,6 +139,11 @@ export default function ProfileAccountsList({
 }: Props): ReactElement {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // True while a save/delete fetch is in flight. `isPending` only covers the
+  // post-success router.refresh(), so on its own it leaves the network round-trip
+  // unguarded. `inFlight` (busy || isPending) locks every mutating control end to
+  // end so a second click can't double-submit or fire a delete mid-save.
+  const [busy, setBusy] = useState(false);
   const [openForm, setOpenForm] = useState<"new" | string | null>(null);
   const primaryFm = familyMembers.find((m) => m.role === "client") ?? null;
   const [form, setForm] = useState<FormState>(() =>
@@ -145,7 +151,7 @@ export default function ProfileAccountsList({
   );
 
   // True when the row open for edit is Plaid-linked, so we lock the fields the
-  // PUT route's LOCKED_BY_PLAID set rejects (value/last4 — the form's locked fields).
+  // PUT route rejects (the PLAID_LOCKED_FIELDS set — value/last4 in the form).
   const plaidLocked =
     typeof openForm === "string" && openForm !== "new"
       ? rows.find((r) => r.id === openForm)?.plaidItemId != null
@@ -175,41 +181,55 @@ export default function ProfileAccountsList({
       name: form.name,
       category: form.category,
       subType: form.subType,
+      value: form.value,
+      last4: form.last4 || null,
       owners,
     };
-    // Plaid owns value/last4 on linked accounts — sending them would 400.
-    if (!plaidLocked) {
-      body.last4 = form.last4 || null;
-      body.value = form.value;
+    // Plaid owns these fields on linked accounts — sending them would 400.
+    // PLAID_LOCKED_FIELDS is the same set the PUT route guards against.
+    if (plaidLocked) {
+      for (const k of PLAID_LOCKED_FIELDS) delete body[k];
     }
     const isNew = openForm === "new";
-    const res = await fetch(
-      isNew ? "/api/portal/accounts" : `/api/portal/accounts/${openForm}`,
-      {
-        method: isNew ? "POST" : "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    );
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({}));
-      alert(detail.error ?? "Save failed");
-      return;
+    setBusy(true);
+    try {
+      const res = await fetch(
+        isNew ? "/api/portal/accounts" : `/api/portal/accounts/${openForm}`,
+        {
+          method: isNew ? "POST" : "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        alert(detail.error ?? "Save failed");
+        return;
+      }
+      setOpenForm(null);
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
     }
-    setOpenForm(null);
-    startTransition(() => router.refresh());
   }
 
   async function remove(row: AccountRow) {
     if (!window.confirm(`Delete "${row.name}"?`)) return;
-    const res = await fetch(`/api/portal/accounts/${row.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({}));
-      alert(detail.error ?? "Delete failed");
-      return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/portal/accounts/${row.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        alert(detail.error ?? "Delete failed");
+        return;
+      }
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
     }
-    startTransition(() => router.refresh());
   }
+
+  const inFlight = busy || isPending;
 
   function ownerLabels(row: AccountRow): string {
     const parts: string[] = [];
@@ -239,7 +259,8 @@ export default function ProfileAccountsList({
         <button
           type="button"
           onClick={openNew}
-          className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent"
+          disabled={inFlight}
+          className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent disabled:opacity-50"
         >
           + Add account
         </button>
@@ -253,7 +274,7 @@ export default function ProfileAccountsList({
           trustEntities={trustEntities}
           onCancel={cancel}
           onSubmit={submit}
-          disabled={isPending}
+          disabled={inFlight}
           plaidLocked={plaidLocked}
         />
       )}
@@ -296,7 +317,8 @@ export default function ProfileAccountsList({
                           <button
                             type="button"
                             onClick={() => openEdit(row)}
-                            className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
+                            disabled={inFlight}
+                            className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card disabled:opacity-50"
                           >
                             Edit
                           </button>
@@ -305,7 +327,8 @@ export default function ProfileAccountsList({
                             <button
                               type="button"
                               onClick={() => remove(row)}
-                              className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card"
+                              disabled={inFlight}
+                              className="rounded-md border border-hair px-2 py-1 text-[12px] text-ink-2 hover:bg-card disabled:opacity-50"
                             >
                               Delete
                             </button>
@@ -476,7 +499,7 @@ function FormPanel({
           type="button"
           onClick={onCancel}
           disabled={disabled}
-          className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2"
+          className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 disabled:opacity-50"
         >
           Cancel
         </button>
@@ -484,9 +507,9 @@ function FormPanel({
           type="button"
           onClick={onSubmit}
           disabled={disabled}
-          className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent"
+          className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent disabled:opacity-50"
         >
-          Save
+          {disabled ? "Saving…" : "Save"}
         </button>
       </div>
     </div>

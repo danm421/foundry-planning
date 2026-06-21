@@ -18,6 +18,8 @@ import {
   validateOwnersTenant,
   validateAccountOwnershipRules,
 } from "@/lib/ownership";
+import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
+import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
 
@@ -42,8 +44,6 @@ const ALLOWED_FIELDS = [
   "value",
   "last4",
 ] as const;
-
-const LOCKED_BY_PLAID = new Set(["value", "last4", "custodian"]);
 
 const FIELD_LABELS = {
   name: { label: "Name", format: "text" as const },
@@ -113,7 +113,7 @@ export async function PUT(
     // Guard Plaid-locked fields on linked accounts
     if (row.plaidItemId) {
       for (const k of Object.keys(body)) {
-        if (LOCKED_BY_PLAID.has(k)) {
+        if ((PLAID_LOCKED_FIELDS as readonly string[]).includes(k)) {
           return NextResponse.json(
             { error: "Cannot edit balance/last4/custodian on a Plaid-linked account" },
             { status: 400 },
@@ -156,6 +156,10 @@ export async function PUT(
       const tenantErr = await validateOwnersTenant(shapeResult.owners, clientId);
       if (tenantErr) {
         return NextResponse.json({ error: tenantErr.error }, { status: 400 });
+      }
+      const trustErr = await validateTrustOnlyEntityOwners(shapeResult.owners, clientId);
+      if (trustErr) {
+        return NextResponse.json({ error: trustErr.error }, { status: 400 });
       }
       const rulesErr = validateAccountOwnershipRules(
         shapeResult.owners,

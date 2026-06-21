@@ -92,6 +92,12 @@ vi.mock("@/lib/ownership", () => ({
   ) => validateAccountOwnershipRulesMock(owners, subType, isDefault),
 }));
 
+const validateTrustOnlyEntityOwnersMock = vi.fn();
+vi.mock("@/lib/portal/validate-trust-owners", () => ({
+  validateTrustOnlyEntityOwners: (owners: unknown, cid: string) =>
+    validateTrustOnlyEntityOwnersMock(owners, cid),
+}));
+
 const recordCreateMock = vi.fn();
 vi.mock("@/lib/audit/record-helpers", () => ({
   recordCreate: (args: unknown) => recordCreateMock(args),
@@ -109,6 +115,7 @@ beforeEach(() => {
   validateOwnersShapeMock.mockReset();
   validateOwnersTenantMock.mockReset();
   validateAccountOwnershipRulesMock.mockReset();
+  validateTrustOnlyEntityOwnersMock.mockReset().mockResolvedValue(null);
   recordCreateMock.mockReset();
 });
 
@@ -159,6 +166,30 @@ describe("POST /api/portal/accounts", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/category/i);
+  });
+
+  it("returns 400 and performs no insert when an entity owner is not a trust", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    validateOwnersShapeMock.mockReturnValue({
+      owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
+    });
+    validateOwnersTenantMock.mockResolvedValue(null);
+    validateAccountOwnershipRulesMock.mockReturnValue(null);
+    validateTrustOnlyEntityOwnersMock.mockResolvedValue({
+      error: "Account entity owners must be trusts",
+    });
+    const res = await POST(
+      req({
+        name: "Trust brokerage",
+        category: "taxable",
+        owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/trust/i);
+    expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it("inserts account + owner rows in a transaction and audits", async () => {

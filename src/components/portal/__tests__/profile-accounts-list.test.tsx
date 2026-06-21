@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -190,5 +190,79 @@ describe("ProfileAccountsList — PUT body", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.value).toBe("2000");
     expect(body.last4).toBe("9999");
+  });
+});
+
+describe("ProfileAccountsList — in-flight gating", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // A controllable fetch whose promise we resolve only after asserting the
+  // mid-flight disabled state. Returns the resolver so the test can settle it.
+  function deferredFetch() {
+    let resolve!: (v: { ok: boolean; json: () => Promise<unknown> }) => void;
+    const promise = new Promise<{ ok: boolean; json: () => Promise<unknown> }>(
+      (r) => { resolve = r; },
+    );
+    const fetchMock = vi.fn(() => promise);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("alert", vi.fn());
+    return { resolve };
+  }
+
+  it("disables Save and the row's Edit/Delete while a save is in flight", async () => {
+    const { resolve } = deferredFetch();
+    const manualRow = {
+      id: "m5", name: "Manual Savings", category: "cash", subType: "savings",
+      value: "2000", accountNumberLast4: "9999", plaidItemId: null, owners: OWNED_BY_FM1,
+    };
+    const { getByText } = render(
+      <ProfileAccountsList
+        editEnabled={true}
+        familyMembers={[CLIENT_FM]}
+        trustEntities={[]}
+        rows={[manualRow]}
+      />,
+    );
+    fireEvent.click(getByText("Edit"));
+    const saveBtn = getByText("Save") as HTMLButtonElement;
+    fireEvent.click(saveBtn);
+
+    // Mid-flight: the save request has fired but not resolved. Every mutating
+    // control must be locked so a second click can't double-submit.
+    expect(saveBtn.disabled).toBe(true);
+    expect((getByText("Edit") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText("Delete") as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      resolve({ ok: true, json: async () => ({}) });
+    });
+  });
+
+  it("disables row Edit/Delete and Add-account while a delete is in flight", async () => {
+    const { resolve } = deferredFetch();
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const manualRow = {
+      id: "m6", name: "Manual Savings", category: "cash", subType: "savings",
+      value: "2000", accountNumberLast4: "9999", plaidItemId: null, owners: OWNED_BY_FM1,
+    };
+    const { getByText } = render(
+      <ProfileAccountsList
+        editEnabled={true}
+        familyMembers={[CLIENT_FM]}
+        trustEntities={[]}
+        rows={[manualRow]}
+      />,
+    );
+    fireEvent.click(getByText("Delete"));
+
+    expect((getByText("Edit") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText("Delete") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText("+ Add account") as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      resolve({ ok: true, json: async () => ({}) });
+    });
   });
 });

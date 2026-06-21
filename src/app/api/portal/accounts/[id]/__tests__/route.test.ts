@@ -121,6 +121,12 @@ vi.mock("@/lib/ownership", () => ({
   ) => validateAccountOwnershipRulesMock(owners, subType, isDefault),
 }));
 
+const validateTrustOnlyEntityOwnersMock = vi.fn();
+vi.mock("@/lib/portal/validate-trust-owners", () => ({
+  validateTrustOnlyEntityOwners: (owners: unknown, cid: string) =>
+    validateTrustOnlyEntityOwnersMock(owners, cid),
+}));
+
 const recordUpdateMock = vi.fn();
 const recordDeleteMock = vi.fn();
 vi.mock("@/lib/audit/record-helpers", () => ({
@@ -143,6 +149,7 @@ beforeEach(() => {
   validateOwnersShapeMock.mockReset();
   validateOwnersTenantMock.mockReset();
   validateAccountOwnershipRulesMock.mockReset();
+  validateTrustOnlyEntityOwnersMock.mockReset().mockResolvedValue(null);
   recordUpdateMock.mockReset();
   recordDeleteMock.mockReset();
   accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null };
@@ -263,6 +270,29 @@ describe("PUT /api/portal/accounts/[id]", () => {
   });
 });
 
+describe("PUT /api/portal/accounts/[id] — trust-only entity owners", () => {
+  it("400s and performs no mutation when an entity owner is not a trust", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    validateOwnersShapeMock.mockReturnValue({
+      owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
+    });
+    validateOwnersTenantMock.mockResolvedValue(null);
+    validateAccountOwnershipRulesMock.mockReturnValue(null);
+    validateTrustOnlyEntityOwnersMock.mockResolvedValue({
+      error: "Account entity owners must be trusts",
+    });
+
+    const res = await PUT(
+      putReq({ owners: [{ kind: "entity", entityId: "llc1", percent: 1 }] }),
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/trust/i);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("PUT /api/portal/accounts/[id] — Plaid-locked field guards", () => {
   it("rejects value patch on a Plaid-linked account with 400", async () => {
     requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
@@ -292,6 +322,39 @@ describe("PUT /api/portal/accounts/[id] — Plaid-locked field guards", () => {
     accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
     const res = await PUT(putReq({ name: "New nickname" }), ctx);
     expect(res.status).toBe(200);
+  });
+});
+
+describe("portal account mutations — portalEditEnabled off", () => {
+  // requireEditEnabled throws ForbiddenError when the advisor toggle is off;
+  // the route's catch funnels it through authErrorResponse → 403. Mirror the
+  // real authErrorResponse mapping so the assertion exercises the true path.
+  function denyEdit() {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requireEditEnabledMock.mockRejectedValue(
+      new ForbiddenError("Portal editing disabled by advisor"),
+    );
+    authErrorResponseMock.mockImplementation((e: unknown) =>
+      e instanceof ForbiddenError ? { status: 403, body: { error: e.message } } : null,
+    );
+  }
+
+  it("PUT 403s and performs no update when editing is disabled", async () => {
+    denyEdit();
+    const res = await PUT(putReq({ name: "X", value: "1" }), ctx);
+    expect(res.status).toBe(403);
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(recordUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("DELETE 403s and performs no delete when editing is disabled", async () => {
+    denyEdit();
+    const res = await DELETE(delReq(), ctx);
+    expect(res.status).toBe(403);
+    expect(deleteAccountsMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(recordDeleteMock).not.toHaveBeenCalled();
   });
 });
 

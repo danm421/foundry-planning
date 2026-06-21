@@ -19,6 +19,7 @@ import {
   validateOwnersTenant,
   validateAccountOwnershipRules,
 } from "@/lib/ownership";
+import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,10 @@ export async function POST(req: Request): Promise<Response> {
     const tenantErr = await validateOwnersTenant(ownersResult.owners, clientId);
     if (tenantErr) {
       return NextResponse.json({ error: tenantErr.error }, { status: 400 });
+    }
+    const trustErr = await validateTrustOnlyEntityOwners(ownersResult.owners, clientId);
+    if (trustErr) {
+      return NextResponse.json({ error: trustErr.error }, { status: 400 });
     }
     const rulesErr = validateAccountOwnershipRules(
       ownersResult.owners,
