@@ -19,6 +19,11 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (id: string) => requireEditEnabledMock(id),
 }));
 
+const requirePortalActiveSubscriptionMock = vi.fn();
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: (id: string) => requirePortalActiveSubscriptionMock(id),
+}));
+
 // scenarios.id lookup (base case) — returns one row.
 // clients.firmId lookup — returns one row.
 // We toggle which "from" call is happening by inspecting the table arg.
@@ -116,6 +121,7 @@ beforeEach(() => {
   validateOwnersTenantMock.mockReset();
   validateAccountOwnershipRulesMock.mockReset();
   validateTrustOnlyEntityOwnersMock.mockReset().mockResolvedValue(null);
+  requirePortalActiveSubscriptionMock.mockReset().mockResolvedValue(undefined);
   recordCreateMock.mockReset();
 });
 
@@ -134,6 +140,15 @@ describe("POST /api/portal/accounts", () => {
     authErrorResponseMock.mockReturnValue({ body: { error: "Forbidden" }, status: 403 });
     const res = await POST(req({ name: "Checking", category: "cash" }));
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 and performs no insert when the firm subscription is inactive", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requirePortalActiveSubscriptionMock.mockRejectedValue(new ForbiddenError("Active subscription required"));
+    authErrorResponseMock.mockReturnValue({ body: { error: "Active subscription required" }, status: 403 });
+    const res = await POST(req({ name: "Checking", category: "cash", owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }] }));
+    expect(res.status).toBe(403);
+    expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it("returns 400 when owners[] is missing or empty", async () => {

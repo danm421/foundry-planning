@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { entities } from "@/db/schema";
 import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export async function PUT(
 ): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
     const { id } = await ctx.params;

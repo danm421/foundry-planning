@@ -7,6 +7,7 @@ import {
   requireClientPortalAccess,
 } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { mapPlaidToFoundry } from "@/lib/plaid/account-mapping";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
@@ -35,6 +36,7 @@ type Body = {
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
     const body = (await req.json().catch(() => ({}))) as Body;

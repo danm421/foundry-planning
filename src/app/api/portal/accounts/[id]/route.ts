@@ -13,6 +13,7 @@ import {
   requireClientPortalAccess,
 } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import {
   validateOwnersShape,
   validateOwnersTenant,
@@ -101,6 +102,7 @@ export async function PUT(
 ): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
     const row = await loadOwnedRow(id, clientId);
@@ -234,6 +236,7 @@ export async function DELETE(
 ): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
 

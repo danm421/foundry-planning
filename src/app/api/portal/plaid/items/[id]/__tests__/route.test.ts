@@ -17,6 +17,9 @@ vi.mock("@/lib/authz", () => ({
   requireClientPortalAccess: (...a: unknown[]) => requireClientPortalAccess(...a),
   authErrorResponse: () => null,
 }));
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: () => Promise.resolve(),
+}));
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (...a: unknown[]) => requireEditEnabled(...a),
 }));

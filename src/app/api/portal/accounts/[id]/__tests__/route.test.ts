@@ -19,6 +19,11 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (id: string) => requireEditEnabledMock(id),
 }));
 
+const requirePortalActiveSubscriptionMock = vi.fn();
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: (id: string) => requirePortalActiveSubscriptionMock(id),
+}));
+
 vi.mock("@/db/schema", () => ({
   accounts: { _name: "accounts" },
   accountOwners: { _name: "accountOwners" },
@@ -150,6 +155,7 @@ beforeEach(() => {
   validateOwnersTenantMock.mockReset();
   validateAccountOwnershipRulesMock.mockReset();
   validateTrustOnlyEntityOwnersMock.mockReset().mockResolvedValue(null);
+  requirePortalActiveSubscriptionMock.mockReset().mockResolvedValue(undefined);
   recordUpdateMock.mockReset();
   recordDeleteMock.mockReset();
   accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null };
@@ -289,6 +295,34 @@ describe("PUT /api/portal/accounts/[id] — trust-only entity owners", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toMatch(/trust/i);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("portal account mutations — inactive firm subscription", () => {
+  // requirePortalActiveSubscription throws ForbiddenError when the advisor firm
+  // is no longer on an active plan; the route's catch funnels it to 403.
+  function denySub() {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requirePortalActiveSubscriptionMock.mockRejectedValue(
+      new ForbiddenError("Active subscription required"),
+    );
+    authErrorResponseMock.mockImplementation((e: unknown) =>
+      e instanceof ForbiddenError ? { status: 403, body: { error: e.message } } : null,
+    );
+  }
+
+  it("PUT 403s and performs no mutation when the firm subscription is inactive", async () => {
+    denySub();
+    const res = await PUT(putReq({ name: "X" }), ctx);
+    expect(res.status).toBe(403);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("DELETE 403s and performs no mutation when the firm subscription is inactive", async () => {
+    denySub();
+    const res = await DELETE(delReq(), ctx);
+    expect(res.status).toBe(403);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 });

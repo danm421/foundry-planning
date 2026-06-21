@@ -17,6 +17,9 @@ vi.mock("@/lib/authz", () => ({
   authErrorResponse: (e: unknown) => authErrorResponseMock(e),
   ForbiddenError: class extends Error {},
 }));
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: () => Promise.resolve(),
+}));
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (...args: unknown[]) => requireEditEnabled(...args),
 }));

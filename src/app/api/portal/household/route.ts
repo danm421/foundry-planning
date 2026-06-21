@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ type Body = { primary?: ContactPatch; spouse?: ContactPatch };
 export async function PUT(req: Request): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
     const body = (await req.json().catch(() => ({}))) as Body;

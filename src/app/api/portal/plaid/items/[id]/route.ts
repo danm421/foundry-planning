@@ -7,6 +7,7 @@ import {
   requireClientPortalAccess,
 } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
 import { recordDelete } from "@/lib/audit/record-helpers";
@@ -19,6 +20,7 @@ export async function DELETE(
 ): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
 
