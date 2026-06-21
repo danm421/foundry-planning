@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ProjectionInputError } from "@/lib/projection/load-client-data";
-import { safeForgeErrorMessage } from "../safe-error";
+import { safeForgeErrorMessage, categorizeForgeError, logForgeError } from "../safe-error";
 
 describe("safeForgeErrorMessage", () => {
   it("maps a ProjectionInputError to a safe generic string, not its raw message", () => {
@@ -23,5 +23,27 @@ describe("safeForgeErrorMessage", () => {
     const out = safeForgeErrorMessage("some thrown string");
     expect(typeof out).toBe("string");
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe("categorizeForgeError — recursion", () => {
+  it("maps a GraphRecursionError to a narrow, advisor-friendly message", () => {
+    const err = Object.assign(new Error("Recursion limit of 25 reached"), {
+      name: "GraphRecursionError",
+    });
+    const { safeMessage, category } = categorizeForgeError(err);
+    expect(category).toBe("recursion_limit");
+    expect(safeMessage).toMatch(/smaller parts/i);
+    expect(safeMessage).not.toMatch(/25|recursion/i); // no internals leaked
+  });
+});
+
+describe("logForgeError", () => {
+  it("logs the category + conversationId, never the raw error", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    logForgeError("unknown", "conv-123");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(spy.mock.calls[0])).toContain("conv-123");
+    spy.mockRestore();
   });
 });
