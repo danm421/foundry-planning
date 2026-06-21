@@ -42,8 +42,10 @@ vi.mock("@/db", () => ({
           if (tbl._name === "accounts") {
             // Awaited directly (array of rows) — return thenable.
             const rows = [
-              { id: "a1", name: "Checking", category: "cash", subType: "checking", value: "100.00", accountNumberLast4: null },
-              { id: "a2", name: "Brokerage", category: "taxable", subType: "brokerage", value: "5000.00", accountNumberLast4: "1234" },
+              { id: "a1", name: "Checking", category: "cash", subType: "checking", value: "100.00", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null },
+              { id: "a2", name: "Brokerage", category: "taxable", subType: "brokerage", value: "5000.00", accountNumberLast4: "1234", plaidItemId: null, isDefaultChecking: false, parentAccountId: null },
+              { id: "a3", name: "Household Cash", category: "cash", subType: "checking", value: "9999.00", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: true, parentAccountId: null },
+              { id: "a4", name: "Family Note", category: "notes_receivable", subType: "other", value: "25000.00", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null },
             ];
             return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
           }
@@ -87,5 +89,15 @@ describe("AccountsSection", () => {
     const { container } = render(ui);
     const list = container.querySelector("[data-testid='accounts-list']")!;
     expect(list.getAttribute("data-edit")).toBe("true");
+  });
+
+  it("hides default-checking + advisor-only accounts and totals only visible assets", async () => {
+    const ui = await AccountsSection({ clientId: "c1" });
+    const { container } = render(ui);
+    const list = container.querySelector("[data-testid='accounts-list']")!;
+    // a1 (cash) + a2 (taxable) visible; a3 (isDefaultChecking) + a4 (notes_receivable) hidden.
+    expect(list.getAttribute("data-row-count")).toBe("2");
+    expect(container.textContent).toContain("Total assets");
+    expect(container.textContent).toContain("$5,100");
   });
 });

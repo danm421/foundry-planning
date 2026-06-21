@@ -10,10 +10,19 @@ import {
   scenarios,
 } from "@/db/schema";
 import ProfileAccountsList from "@/components/portal/profile-accounts-list";
+import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 
 interface Props {
   clientId: string;
   previewing?: boolean;
+}
+
+function fmtUsd(n: number): string {
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 export default async function AccountsSection({
@@ -32,7 +41,7 @@ export default async function AccountsSection({
     .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
     .limit(1);
 
-  const rows = scenario
+  const allRows = scenario
     ? await db
         .select({
           id: accounts.id,
@@ -42,10 +51,23 @@ export default async function AccountsSection({
           value: accounts.value,
           accountNumberLast4: accounts.accountNumberLast4,
           plaidItemId: accounts.plaidItemId,
+          isDefaultChecking: accounts.isDefaultChecking,
+          parentAccountId: accounts.parentAccountId,
         })
         .from(accounts)
         .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)))
     : [];
+
+  // Lean bank-style view: hide engine cash-flow buckets, business sub-accounts,
+  // and advisor-only planning categories. Single source of truth shared with
+  // the portal account POST/PUT/DELETE guards.
+  const rows = allRows.filter((r) =>
+    isPortalVisibleAccount({
+      category: r.category,
+      isDefaultChecking: r.isDefaultChecking,
+      parentAccountId: r.parentAccountId,
+    }),
+  );
 
   const accountIds = rows.map((r) => r.id);
   const owners = accountIds.length
@@ -84,10 +106,18 @@ export default async function AccountsSection({
     ownersByAccount.set(o.accountId, list);
   }
 
+  const totalAssets = rows.reduce((s, r) => s + Number(r.value || "0"), 0);
+
   return (
     <div className="max-w-3xl space-y-5 p-5">
       <header>
         <h1 className="text-[18px] font-semibold text-ink">Accounts</h1>
+        <p className="mt-0.5 text-[13px] text-ink-3">
+          Total assets{" "}
+          <span className="ml-1 font-semibold tabular-nums text-ink">
+            {fmtUsd(totalAssets)}
+          </span>
+        </p>
       </header>
       <ProfileAccountsList
         rows={rows.map((r) => ({
