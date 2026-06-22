@@ -7,22 +7,21 @@ import {
   clients,
   entities,
   familyMembers,
+  liabilities,
   scenarios,
 } from "@/db/schema";
 import ProfileAccountsList from "@/components/portal/profile-accounts-list";
+import { PortalNetWorthHeader } from "@/components/portal/portal-networth-header";
+import { PortalDebtList } from "@/components/portal/portal-debt-list";
+import { NetWorthTrendChart } from "@/components/portal/networth-trend-chart";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
+import { summarizeNetWorth } from "@/lib/portal/portal-networth";
+import { reconstructDailyNetWorth } from "@/lib/portal/networth-trend";
+import { loadPortalDebt, loadPortalTrendTransactions } from "@/lib/portal/load-portal-financials";
 
 interface Props {
   clientId: string;
   previewing?: boolean;
-}
-
-function fmtUsd(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
 }
 
 export default async function AccountsSection({
@@ -106,28 +105,55 @@ export default async function AccountsSection({
     ownersByAccount.set(o.accountId, list);
   }
 
+  const assetAccountIds = rows.map((r) => r.id);
   const totalAssets = rows.reduce((s, r) => s + Number(r.value || "0"), 0);
+
+  const debtRows = scenario ? await loadPortalDebt(clientId, scenario.id) : [];
+  const debtTotal = debtRows.reduce((s, r) => s + r.balance, 0);
+  const summary = summarizeNetWorth({ assets: totalAssets, debt: debtTotal });
+
+  // Collect Plaid account IDs from all household liabilities (for credit-card txns).
+  const liabilityPlaidAccountIds = (
+    scenario
+      ? await db
+          .select({ plaidAccountId: liabilities.plaidAccountId })
+          .from(liabilities)
+          .where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenario.id)))
+      : []
+  )
+    .map((r) => r.plaidAccountId)
+    .filter((x): x is string => x != null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const txns = await loadPortalTrendTransactions(clientId, assetAccountIds, liabilityPlaidAccountIds);
+  const startDate =
+    txns.length > 0
+      ? txns.reduce((min, t) => (t.date < min ? t.date : min), today)
+      : today;
+  const series = reconstructDailyNetWorth({
+    netWorthNow: summary.netWorth,
+    asOfDate: today,
+    startDate,
+    transactions: txns,
+  });
 
   return (
     <div className="max-w-3xl space-y-5 p-5">
-      <header>
-        <h1 className="text-[18px] font-semibold text-ink">Accounts</h1>
-        <p className="mt-0.5 text-[13px] text-ink-3">
-          Total assets{" "}
-          <span className="ml-1 font-semibold tabular-nums text-ink">
-            {fmtUsd(totalAssets)}
-          </span>
-        </p>
-      </header>
-      <ProfileAccountsList
-        rows={rows.map((r) => ({
-          ...r,
-          owners: ownersByAccount.get(r.id) ?? [],
-        }))}
-        familyMembers={fms}
-        trustEntities={trustEntities}
-        editEnabled={editEnabled}
-      />
+      <PortalNetWorthHeader assets={summary.assets} debt={summary.debt} netWorth={summary.netWorth} />
+      <NetWorthTrendChart series={series} asOfDate={today} />
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium text-ink-2">Accounts</h3>
+        <ProfileAccountsList
+          rows={rows.map((r) => ({
+            ...r,
+            owners: ownersByAccount.get(r.id) ?? [],
+          }))}
+          familyMembers={fms}
+          trustEntities={trustEntities}
+          editEnabled={editEnabled}
+        />
+      </section>
+      <PortalDebtList rows={debtRows} />
     </div>
   );
 }
