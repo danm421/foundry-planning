@@ -5,14 +5,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // non-allowlisted href (defence in depth) — model the same contract here so the
 // error-path test exercises the tool's try/catch, not the (stubbed) emitter.
 // Hoisted so the vi.mock factory (itself hoisted) can close over it safely.
-const { emitNavigate } = vi.hoisted(() => ({
+const { emitNavigate, emitPageLink } = vi.hoisted(() => ({
   emitNavigate: vi.fn(async (href: string) => {
     if (!href.startsWith("/clients/") && !href.startsWith("/cma/")) {
       throw new Error("navigate href not allowlisted");
     }
   }),
+  emitPageLink: vi.fn(async (href: string) => {
+    if (!href.startsWith("/clients/") && !href.startsWith("/cma/")) {
+      throw new Error("page_link href not allowlisted");
+    }
+  }),
 }));
-vi.mock("../../custom-events", () => ({ emitNavigate }));
+vi.mock("../../custom-events", () => ({ emitNavigate, emitPageLink }));
 
 import { buildNavigateTools } from "../navigate";
 import { buildTools, WRITE_TOOL_NAMES } from "../index";
@@ -27,11 +32,12 @@ const toolCtx: ForgeToolContext = {
 describe("open_page navigation tool", () => {
   beforeEach(() => {
     emitNavigate.mockClear();
+    emitPageLink.mockClear();
   });
 
-  it("exposes exactly one tool named open_page", () => {
+  it("exposes open_page and cite_page", () => {
     const tools = buildNavigateTools(toolCtx);
-    expect(tools.map((t) => t.name)).toEqual(["open_page"]);
+    expect(tools.map((t) => t.name)).toEqual(["open_page", "cite_page"]);
   });
 
   it("emits a navigate frame to the resolved /clients/<clientId>/<section> path and confirms", async () => {
@@ -82,5 +88,47 @@ describe("open_page navigation tool", () => {
 
   it("open_page is NON-mutating — NOT in WRITE_TOOL_NAMES (no HITL gate)", () => {
     expect(WRITE_TOOL_NAMES.has("open_page")).toBe(false);
+  });
+});
+
+describe("cite_page citation tool", () => {
+  beforeEach(() => { emitPageLink.mockClear(); });
+
+  const cite = (ctx = toolCtx) =>
+    buildNavigateTools(ctx).find((t) => t.name === "cite_page")!;
+
+  it("emits a page_link frame to the resolved path with a server-derived label and confirms", async () => {
+    const out = await cite().invoke({ section: "balance-sheet" });
+    expect(emitPageLink).toHaveBeenCalledWith(
+      "/clients/c1/assets/balance-sheet-report",
+      "balance-sheet",
+      "Balance Sheet",
+    );
+    expect(JSON.parse(out)).toMatchObject({ cited: true, section: "balance-sheet" });
+  });
+
+  it("resolves an expanded section (income-tax) to its real nested route", async () => {
+    await cite().invoke({ section: "income-tax" });
+    expect(emitPageLink).toHaveBeenCalledWith(
+      "/clients/c1/cashflow/income-tax",
+      "income-tax",
+      "Income Tax",
+    );
+  });
+
+  it("builds the path from ctx.clientId, never a model-supplied id", async () => {
+    await cite().invoke({ section: "overview" });
+    expect(emitPageLink).toHaveBeenCalledWith("/clients/c1/overview", "overview", "Overview");
+  });
+
+  it("returns an error string and does not confirm when emitPageLink rejects", async () => {
+    emitPageLink.mockRejectedValueOnce(new Error("page_link href not allowlisted"));
+    const out = await cite().invoke({ section: "cashflow" });
+    expect(JSON.parse(out)).toHaveProperty("error");
+    expect(JSON.parse(out)).not.toHaveProperty("cited");
+  });
+
+  it("cite_page is NON-mutating — NOT in WRITE_TOOL_NAMES (no HITL gate)", () => {
+    expect(WRITE_TOOL_NAMES.has("cite_page")).toBe(false);
   });
 });
