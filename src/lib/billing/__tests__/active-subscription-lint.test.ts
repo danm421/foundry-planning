@@ -312,30 +312,9 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/solver/save-to-base/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
-  "src/app/api/portal/household/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to their own clientId); advisor-subscription gating deferred to the Phase 3.5 fleet sweep (parity with sibling family-members/entities/crm-contacts routes)",
-  "src/app/api/portal/family/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling family-members route)",
-  "src/app/api/portal/family/[id]/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling family-members/[memberId] route)",
-  "src/app/api/portal/trusts/[id]/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled; advisor-subscription gating deferred to Phase 3.5 (parity with sibling entities/[entityId] route)",
-  "src/app/api/portal/plaid/link-token/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/plaid/exchange/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/plaid/exchange/commit/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/plaid/items/[id]/refresh/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/plaid/items/[id]/reauth-complete/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/plaid/items/[id]/route.ts":
-    "portal client Plaid mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/accounts/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
-  "src/app/api/portal/accounts/[id]/route.ts":
-    "portal client mutation — firm/tenant-scoped via requireClientPortalAccess + requireEditEnabled (client bound to own clientId); advisor-subscription gating deferred to Phase 3.5 (parity with sibling portal routes)",
+  // Portal mutation routes were here ("deferred to Phase 3.5"); Phase 3.5 (portal
+  // slice) now gates them via requirePortalActiveSubscription — see the matcher
+  // below. No portal allowlist entries should exist.
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
@@ -360,6 +339,10 @@ describe("active-subscription lint", () => {
       if (!MUTATION_VERBS.test(body)) continue;
       if (ALLOWLIST[rel]) continue;
       if (body.includes("requireActiveSubscription")) continue;
+      // Portal routes gate via the firm-keyed wrapper (portal users have no
+      // orgId). NB: "requirePortalActiveSubscription" does NOT contain the
+      // substring "requireActiveSubscription", so this needs its own check.
+      if (body.includes("requirePortalActiveSubscription")) continue;
       violations.push(rel);
     }
 

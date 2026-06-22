@@ -11,6 +11,9 @@ vi.mock("@/lib/authz", () => ({
 }));
 
 const requireEditEnabledMock = vi.fn();
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: () => Promise.resolve(),
+}));
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
   requireEditEnabled: (id: string) => requireEditEnabledMock(id),
 }));

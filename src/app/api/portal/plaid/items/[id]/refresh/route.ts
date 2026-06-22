@@ -7,6 +7,7 @@ import {
   requireClientPortalAccess,
 } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import {
   checkPortalPlaidRefreshRateLimit,
   rateLimitErrorResponse,
@@ -24,6 +25,7 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { clientId } = await requireClientPortalAccess();
+    await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
 

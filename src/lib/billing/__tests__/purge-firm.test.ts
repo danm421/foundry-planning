@@ -80,13 +80,20 @@ vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile 
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 vi.mock("@/lib/blob-store", () => ({ publicBlobToken: mocks.publicBlobToken }));
 
-import { purgeFirmById } from "../purge-firm";
+import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
 
 beforeEach(() => {
   Object.values(mocks).forEach((m) => m.mockReset());
   mocks.selectHouseholds.mockResolvedValue([{ id: "h1" }, { id: "h2" }]);
   mocks.selectFirm.mockResolvedValue([
-    { logoUrl: "https://pub.blob/logo.png", faviconUrl: "https://pub.blob/fav.png" },
+    {
+      logoUrl: "https://pub.blob/logo.png",
+      faviconUrl: "https://pub.blob/fav.png",
+      archivedAt: new Date("2026-03-01T00:00:00Z"),
+      purgedAt: null,
+      dataRetentionUntil: new Date("2026-03-15T00:00:00Z"),
+      liveSubCount: 0,
+    },
   ]);
   // The SQL WHERE already filters to non-null, non-import_ref rows, so the
   // query returns only the deletable upload doc.
@@ -180,7 +187,7 @@ describe("purgeFirmById", () => {
   });
 
   it("skips branding deletes when logo/favicon are null", async () => {
-    mocks.selectFirm.mockResolvedValue([{ logoUrl: null, faviconUrl: null }]);
+    mocks.selectFirm.mockResolvedValue([{ logoUrl: null, faviconUrl: null, archivedAt: new Date("2026-03-01T00:00:00Z"), purgedAt: null, dataRetentionUntil: new Date("2026-03-15T00:00:00Z"), liveSubCount: 0 }]);
     await purgeFirmById("org_1");
     expect(mocks.deleteBrandingAsset).not.toHaveBeenCalled();
   });
@@ -219,5 +226,40 @@ describe("purgeFirmById", () => {
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "firm.purged", firmId: "org_4" }),
     );
+  });
+});
+
+describe("purgeFirmById — eligibility guard", () => {
+  it("throws FirmNotPurgeableError and deletes nothing when a live subscription exists", async () => {
+    mocks.selectFirm.mockResolvedValue([
+      {
+        logoUrl: null,
+        faviconUrl: null,
+        archivedAt: new Date("2026-03-01T00:00:00Z"),
+        purgedAt: null,
+        dataRetentionUntil: new Date("2026-03-15T00:00:00Z"),
+        liveSubCount: 1,
+      },
+    ]);
+    await expect(purgeFirmById("org_live")).rejects.toBeInstanceOf(FirmNotPurgeableError);
+    expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+    expect(mocks.deleteSubs).not.toHaveBeenCalled();
+    expect(mocks.updateFirm).not.toHaveBeenCalled();
+  });
+
+  it("throws when the firm is not archived", async () => {
+    mocks.selectFirm.mockResolvedValue([
+      { logoUrl: null, faviconUrl: null, archivedAt: null, purgedAt: null, dataRetentionUntil: new Date("2026-03-15T00:00:00Z"), liveSubCount: 0 },
+    ]);
+    await expect(purgeFirmById("org_active")).rejects.toBeInstanceOf(FirmNotPurgeableError);
+    expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+  });
+
+  it("throws when the firm row is missing", async () => {
+    mocks.selectFirm.mockResolvedValue([]);
+    await expect(purgeFirmById("org_gone")).rejects.toBeInstanceOf(FirmNotPurgeableError);
+    expect(mocks.purgeHousehold).not.toHaveBeenCalled();
+    expect(mocks.deleteSubs).not.toHaveBeenCalled();
+    expect(mocks.updateFirm).not.toHaveBeenCalled();
   });
 });

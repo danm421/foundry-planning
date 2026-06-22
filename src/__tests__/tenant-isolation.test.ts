@@ -25,6 +25,7 @@ import { join } from "node:path";
 const API_ROOT = join(process.cwd(), "src/app/api/clients");
 const CMA_ROOT = join(process.cwd(), "src/app/api/cma");
 const CRM_ROOT = join(process.cwd(), "src/app/api/crm");
+const PORTAL_ROOT = join(process.cwd(), "src/app/api/portal");
 // These endpoints don't touch tenant-owned data or are read-only listing
 // of firm-scoped-by-default data and are OK to skip.
 const EXPLICIT_ALLOWLIST = new Set<string>([
@@ -42,7 +43,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("tenant isolation contract", () => {
-  const routes = [...walk(API_ROOT), ...walk(CMA_ROOT), ...walk(CRM_ROOT)];
+  const routes = [...walk(API_ROOT), ...walk(CMA_ROOT), ...walk(CRM_ROOT), ...walk(PORTAL_ROOT)];
 
   it("discovers route files", () => {
     // Sanity: if this drops to zero the walker broke, not the audit.
@@ -57,6 +58,13 @@ describe("tenant isolation contract", () => {
     expect(crmRoutes.length).toBeGreaterThan(10);
   });
 
+  it("includes portal routes in the scan", () => {
+    // The portal route group was previously unscanned. Assert the walker reaches
+    // it so this can't silently regress to "0 portal routes found, all green".
+    const portalRoutes = routes.filter((f) => f.startsWith(PORTAL_ROOT));
+    expect(portalRoutes.length).toBeGreaterThan(5);
+  });
+
   it.each(routes)("%s derives firmId from Clerk before mutating", (file) => {
     const rel = file.replace(process.cwd() + "/", "");
     if (EXPLICIT_ALLOWLIST.has(rel)) return;
@@ -66,13 +74,16 @@ describe("tenant isolation contract", () => {
     if (!hasMutation) return; // read-only, skip
 
     const derivesFirmId = /\b(getOrgId|requireOrgId)\s*\(/.test(src);
+    // Portal mutation routes scope by the session's own clientId via
+    // requireClientPortalAccess (portal users have no orgId), not getOrgId.
+    const isPortalScoped = /\brequireClientPortalAccess\s*\(/.test(src);
     const hasEscapeHatch = /@allow-firm-scope-exception/.test(src);
 
-    if (!derivesFirmId && !hasEscapeHatch) {
+    if (!derivesFirmId && !isPortalScoped && !hasEscapeHatch) {
       throw new Error(
-        `${rel}: mutating handler does not call getOrgId() / requireOrgId() — ` +
-          `add the call, or document the exception with an ` +
-          `@allow-firm-scope-exception comment.`
+        `${rel}: mutating handler does not call getOrgId() / requireOrgId() ` +
+          `(or requireClientPortalAccess() for portal routes) — add the call, or ` +
+          `document the exception with an @allow-firm-scope-exception comment.`
       );
     }
   });
