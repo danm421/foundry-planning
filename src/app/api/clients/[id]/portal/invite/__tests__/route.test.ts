@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 
 // --- Auth mocks (real idiom, not @/lib/authz-clients) ---
 vi.mock("@/lib/db-helpers", () => ({
@@ -100,6 +101,50 @@ describe("POST /api/clients/[id]/portal/invite", () => {
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({ portalInvitedAt: expect.any(Date) }),
     );
+  });
+
+  it("returns 409 with a clear message when the email already has an account", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock.mockRejectedValue(
+      new ClerkAPIResponseError("Unprocessable Entity", {
+        status: 422,
+        data: [
+          { code: "form_identifier_exists", message: "That email address is taken." },
+        ],
+      }),
+    );
+    const res = await POST(postReq({ email: "taken@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/already has an account/i);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 with a distinct message when an invitation is already pending", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock.mockRejectedValue(
+      new ClerkAPIResponseError("Bad Request", {
+        status: 400,
+        data: [
+          { code: "duplicate_record", message: "There is already a pending invitation." },
+        ],
+      }),
+    );
+    const res = await POST(postReq({ email: "pending@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/already pending/i);
+  });
+
+  it("still returns 500 for a non-Clerk failure", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock.mockRejectedValue(new Error("network down"));
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(500);
   });
 });
 
