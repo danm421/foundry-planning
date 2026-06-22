@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { accounts, plaidItems, plaidTransactions } from "@/db/schema";
 import { getPlaidClient } from "./client";
 import { decrypt } from "./crypto";
+import { plaidErrorCode, plaidErrorMessage } from "./errors";
 
 const FIRST_SYNC_DAYS_REQUESTED = 730; // Phase 2 decision: max trend depth
 
@@ -64,15 +65,6 @@ export type TransactionUpdates =
       nextCursor: string;
     }
   | { ok: false; errorCode: string; errorMessage: string };
-
-function plaidErrorCode(err: unknown): string {
-  const e = err as { response?: { data?: { error_code?: string } } };
-  return e.response?.data?.error_code ?? "UNKNOWN";
-}
-function plaidErrorMessage(err: unknown): string {
-  const e = err as { response?: { data?: { error_message?: string } }; message?: string };
-  return e.response?.data?.error_message ?? e.message ?? "Plaid error";
-}
 
 /**
  * Paginates Plaid /transactions/sync to exhaustion. First sync (cursor null)

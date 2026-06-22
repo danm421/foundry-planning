@@ -1,5 +1,6 @@
 import { getPlaidClient } from "./client";
 import { decrypt } from "./crypto";
+import { plaidErrorCode, plaidErrorMessage } from "./errors";
 
 export type LiabilityUpdate = {
   plaidAccountId: string;
@@ -15,15 +16,6 @@ export type LiabilitiesRefreshResult =
   | { ok: false; errorCode: string; errorMessage: string };
 
 type PlaidItemForRefresh = { accessToken: string };
-
-function plaidErrorCode(err: unknown): string {
-  const e = err as { response?: { data?: { error_code?: string } } };
-  return e.response?.data?.error_code ?? "UNKNOWN";
-}
-function plaidErrorMessage(err: unknown): string {
-  const e = err as { response?: { data?: { error_message?: string } }; message?: string };
-  return e.response?.data?.error_message ?? e.message ?? "Plaid error";
-}
 
 const dec2 = (n: number | null | undefined): string | null =>
   n == null ? null : n.toFixed(2);
@@ -51,7 +43,7 @@ export async function fetchLiabilitiesForItem(
         (c.aprs ?? []).find((a) => a.apr_type === "purchase_apr") ?? (c.aprs ?? [])[0];
       updates.push({
         plaidAccountId: c.account_id!,
-        balance: (balByAccount.get(c.account_id!) ?? 0)!.toFixed(2),
+        balance: (balByAccount.get(c.account_id!) ?? 0).toFixed(2),
         statementBalance: dec2(c.last_statement_balance),
         minimumPayment: dec2(c.minimum_payment_amount),
         aprPercentage:
@@ -62,7 +54,7 @@ export async function fetchLiabilitiesForItem(
     for (const m of liab.mortgage ?? []) {
       updates.push({
         plaidAccountId: m.account_id!,
-        balance: (balByAccount.get(m.account_id!) ?? 0)!.toFixed(2),
+        balance: (balByAccount.get(m.account_id!) ?? 0).toFixed(2),
         statementBalance: null,
         minimumPayment: dec2(m.next_monthly_payment),
         aprPercentage:
@@ -73,7 +65,7 @@ export async function fetchLiabilitiesForItem(
     for (const s of liab.student ?? []) {
       updates.push({
         plaidAccountId: s.account_id!,
-        balance: (balByAccount.get(s.account_id!) ?? 0)!.toFixed(2),
+        balance: (balByAccount.get(s.account_id!) ?? 0).toFixed(2),
         statementBalance: null,
         minimumPayment: dec2(s.minimum_payment_amount),
         aprPercentage:

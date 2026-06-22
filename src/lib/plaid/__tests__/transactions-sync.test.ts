@@ -67,10 +67,10 @@ vi.mock("@/db/schema", () => ({
 }));
 
 vi.mock("drizzle-orm", () => ({
-  eq: (_col: unknown, _val: unknown) => ({ type: "eq" }),
-  and: (..._args: unknown[]) => ({ type: "and" }),
-  inArray: (_col: unknown, _vals: unknown) => ({ type: "inArray" }),
-  isNotNull: (_col: unknown) => ({ type: "isNotNull" }),
+  eq: () => ({ type: "eq" }),
+  and: () => ({ type: "and" }),
+  inArray: () => ({ type: "inArray" }),
+  isNotNull: () => ({ type: "isNotNull" }),
 }));
 
 import {

@@ -1,5 +1,6 @@
 import { getPlaidClient } from "./client";
 import { decrypt } from "./crypto";
+import { plaidErrorCode, plaidErrorMessage } from "./errors";
 
 export type RefreshResult =
   | {
@@ -15,21 +16,6 @@ export type RefreshResult =
 type PlaidItemForRefresh = {
   accessToken: string; // encrypted blob
 };
-
-function plaidErrorCode(err: unknown): string {
-  const e = err as {
-    response?: { data?: { error_code?: string } };
-  };
-  return e.response?.data?.error_code ?? "UNKNOWN";
-}
-
-function plaidErrorMessage(err: unknown): string {
-  const e = err as {
-    response?: { data?: { error_message?: string } };
-    message?: string;
-  };
-  return e.response?.data?.error_message ?? e.message ?? "Plaid error";
-}
 
 /**
  * Fetches current balances for the given Plaid item, restricted to the

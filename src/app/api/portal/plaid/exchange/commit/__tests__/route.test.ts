@@ -25,11 +25,12 @@ const dbSelect = vi.fn();
 let liabilityInsertValues: Record<string, unknown> | null = null;
 // Spy on the liability insert (no .returning()).
 const liabilityInsertMock = vi.fn().mockResolvedValue(undefined);
-// Spy on the liability update (link-liability path).
+// Spy on the liability update (link-liability path). The .set() and .where()
+// spies are captured so we can assert the link writes {plaidItemId,
+// plaidAccountId} onto the correct existing liability id (tenant/identity).
 const liabilityUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const liabilityUpdateMock = vi.fn().mockReturnValue({
-  set: vi.fn().mockReturnValue({ where: liabilityUpdateWhere }),
-});
+const liabilityUpdateSet = vi.fn().mockReturnValue({ where: liabilityUpdateWhere });
+const liabilityUpdateMock = vi.fn().mockReturnValue({ set: liabilityUpdateSet });
 
 const txInsertReturning = vi.fn();
 // txInsert handles two cases:
@@ -107,6 +108,7 @@ beforeEach(() => {
   liabilityInsertValues = null;
   liabilityInsertMock.mockClear();
   liabilityUpdateMock.mockClear();
+  liabilityUpdateSet.mockClear();
   liabilityUpdateWhere.mockClear();
   txSelect.mockClear();
   txSelectResp = [];
@@ -332,6 +334,22 @@ describe("POST commit — Plaid debt → liabilities", () => {
     expect(res.status).toBe(200);
     // An update was called (set plaidItemId/plaidAccountId on liab-1).
     expect(txUpdate).toHaveBeenCalled();
+    // The link writes the Plaid keys (tenant/identity) onto the liability.
+    expect(liabilityUpdateSet).toHaveBeenCalledWith({
+      plaidItemId: "item-1", // == body.itemId
+      plaidAccountId: "plaid-mort",
+    });
+    // ...and targets the correct existing liability id (liab-1) via the where.
+    // drizzle eq() is real here; the id rides in a Param within queryChunks
+    // (the SQL object is circular, so pull the param value out, don't stringify).
+    expect(liabilityUpdateWhere).toHaveBeenCalledTimes(1);
+    const whereArg = liabilityUpdateWhere.mock.calls[0][0] as {
+      queryChunks?: { value?: unknown }[];
+    };
+    const paramValues = (whereArg.queryChunks ?? [])
+      .map((c) => c?.value)
+      .filter((v) => v !== undefined);
+    expect(paramValues).toContain("liab-1");
     // No liability insert.
     expect(liabilityInsertMock).not.toHaveBeenCalled();
   });
