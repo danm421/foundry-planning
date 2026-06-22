@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requirePortalMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requirePortalMock(),
   ForbiddenError: class ForbiddenError extends Error {},
   authErrorResponse: () => null,
 }));
@@ -42,7 +45,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { PUT, DELETE } from "@/app/api/portal/family/[id]/route";
 
 beforeEach(() => {
-  requirePortalMock.mockReset();
+  resolvePortalClientMock.mockReset();
   requireEditEnabledMock.mockReset();
   selectChain.mockReset();
   updateChain.mockReset();
@@ -61,7 +64,7 @@ function putReq(body: unknown) {
 
 describe("PUT /api/portal/family/[id]", () => {
   it("404s when the family member doesn't belong to the bound client", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValue([{ clientId: "other-client", id: "fm1" }]);
     const res = await PUT(putReq({ firstName: "X" }), {
@@ -71,7 +74,7 @@ describe("PUT /api/portal/family/[id]", () => {
   });
 
   it("rejects an invalid relationship value with 400", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValueOnce([{ clientId: "c1", firmId: "firm-1", id: "fm1", firstName: "Old" }]);
     const res = await PUT(putReq({ relationship: "bogus" }), {
@@ -83,7 +86,7 @@ describe("PUT /api/portal/family/[id]", () => {
   });
 
   it("updates fields when target row is owned by the bound client", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValueOnce([{ clientId: "c1", firmId: "firm-1", id: "fm1", firstName: "Old" }]);
     const res = await PUT(putReq({ firstName: "New" }), {
@@ -97,7 +100,7 @@ describe("PUT /api/portal/family/[id]", () => {
 
 describe("DELETE /api/portal/family/[id]", () => {
   it("deletes when target row is owned by the bound client", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValue([{ clientId: "c1", firmId: "firm-1", id: "fm1" }]);
     const res = await DELETE(

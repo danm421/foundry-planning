@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, familyMembers, familyRelationshipEnum } from "@/db/schema";
-import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -20,7 +21,7 @@ type Body = {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
@@ -65,7 +66,8 @@ export async function POST(req: Request): Promise<Response> {
       resourceId: inserted.id,
       clientId,
       firmId: client.firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: {
         firstName: inserted.firstName,
         lastName: inserted.lastName,

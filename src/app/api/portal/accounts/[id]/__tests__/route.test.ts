@@ -5,10 +5,13 @@ const { ForbiddenError } = vi.hoisted(() => {
   return { ForbiddenError };
 });
 
-const requireClientPortalAccessMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 const authErrorResponseMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireClientPortalAccessMock(),
   authErrorResponse: (e: unknown) => authErrorResponseMock(e),
   ForbiddenError,
   UnauthorizedError: class extends Error {},
@@ -142,7 +145,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { PUT, DELETE } from "@/app/api/portal/accounts/[id]/route";
 
 beforeEach(() => {
-  requireClientPortalAccessMock.mockReset();
+  resolvePortalClientMock.mockReset();
   authErrorResponseMock.mockReset().mockReturnValue(null);
   requireEditEnabledMock.mockReset().mockResolvedValue(undefined);
   updateMock.mockReset();
@@ -176,13 +179,13 @@ const ctx = { params: Promise.resolve({ id: "acct-1" }) };
 
 describe("PUT /api/portal/accounts/[id]", () => {
   it("404s when account belongs to a different client", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c2", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c2", mode: "client", clerkUserId: "u1" });
     const res = await PUT(putReq({ name: "X" }), ctx);
     expect(res.status).toBe(404);
   });
 
   it("updates editable fields, replaces owners, and records audit", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     validateOwnersShapeMock.mockReturnValue({
       owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
     });
@@ -240,7 +243,7 @@ describe("PUT /api/portal/accounts/[id]", () => {
   });
 
   it("owner-only update: skips db UPDATE but replaces owners and records audit", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     validateOwnersShapeMock.mockReturnValue({
       owners: [{ kind: "family_member", familyMemberId: "fm2", percent: 1 }],
     });
@@ -268,7 +271,7 @@ describe("PUT /api/portal/accounts/[id]", () => {
   });
 
   it("returns 400 when category is not a valid enum value", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     const res = await PUT(putReq({ category: "not_a_real_category" }), ctx);
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
@@ -278,7 +281,7 @@ describe("PUT /api/portal/accounts/[id]", () => {
 
 describe("PUT /api/portal/accounts/[id] — trust-only entity owners", () => {
   it("400s and performs no mutation when an entity owner is not a trust", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     validateOwnersShapeMock.mockReturnValue({
       owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
     });
@@ -303,7 +306,7 @@ describe("portal account mutations — inactive firm subscription", () => {
   // requirePortalActiveSubscription throws ForbiddenError when the advisor firm
   // is no longer on an active plan; the route's catch funnels it to 403.
   function denySub() {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requirePortalActiveSubscriptionMock.mockRejectedValue(
       new ForbiddenError("Active subscription required"),
     );
@@ -329,7 +332,7 @@ describe("portal account mutations — inactive firm subscription", () => {
 
 describe("PUT /api/portal/accounts/[id] — Plaid-locked field guards", () => {
   it("rejects value patch on a Plaid-linked account with 400", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
     const res = await PUT(putReq({ value: "999.00" }), ctx);
     expect(res.status).toBe(400);
@@ -338,21 +341,21 @@ describe("PUT /api/portal/accounts/[id] — Plaid-locked field guards", () => {
   });
 
   it("rejects last4 patch on a Plaid-linked account with 400", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
     const res = await PUT(putReq({ last4: "9999" }), ctx);
     expect(res.status).toBe(400);
   });
 
   it("rejects custodian patch on a Plaid-linked account with 400", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
     const res = await PUT(putReq({ custodian: "Hacked" }), ctx);
     expect(res.status).toBe(400);
   });
 
   it("accepts name / category / subType / owners patches on a Plaid-linked account", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: "item-x" };
     const res = await PUT(putReq({ name: "New nickname" }), ctx);
     expect(res.status).toBe(200);
@@ -364,7 +367,7 @@ describe("portal account mutations — portalEditEnabled off", () => {
   // the route's catch funnels it through authErrorResponse → 403. Mirror the
   // real authErrorResponse mapping so the assertion exercises the true path.
   function denyEdit() {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockRejectedValue(
       new ForbiddenError("Portal editing disabled by advisor"),
     );
@@ -394,7 +397,7 @@ describe("portal account mutations — portalEditEnabled off", () => {
 
 describe("DELETE /api/portal/accounts/[id]", () => {
   it("404s when account belongs to a different client", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c2", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c2", mode: "client", clerkUserId: "u1" });
     // accountRow.clientId is "c1" — cross-client mismatch
     const res = await DELETE(delReq(), ctx);
     expect(res.status).toBe(404);
@@ -402,7 +405,7 @@ describe("DELETE /api/portal/accounts/[id]", () => {
   });
 
   it("409s when account has a plaid_item_id", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { ...accountRow!, plaidItemId: "pli_1" };
     const res = await DELETE(delReq(), ctx);
     expect(res.status).toBe(409);
@@ -410,7 +413,7 @@ describe("DELETE /api/portal/accounts/[id]", () => {
   });
 
   it("deletes the account and records audit when manual", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     const res = await DELETE(delReq(), ctx);
     expect(res.status).toBe(200);
     expect(deleteAccountsMock).toHaveBeenCalled();
@@ -429,7 +432,7 @@ describe("DELETE /api/portal/accounts/[id]", () => {
 
 describe("PUT /api/portal/accounts/[id] — portal-hidden account guards", () => {
   it("403s when editing an isDefaultChecking (Household Cash) account", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Household Cash", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: true, parentAccountId: null };
     const res = await PUT(putReq({ name: "Hacked" }), ctx);
     expect(res.status).toBe(403);
@@ -437,7 +440,7 @@ describe("PUT /api/portal/accounts/[id] — portal-hidden account guards", () =>
   });
 
   it("403s when editing an advisor-only category (notes_receivable)", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Family Note", category: "notes_receivable", subType: "other", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null };
     const res = await PUT(putReq({ name: "X" }), ctx);
     expect(res.status).toBe(403);
@@ -446,7 +449,7 @@ describe("PUT /api/portal/accounts/[id] — portal-hidden account guards", () =>
 
 describe("DELETE /api/portal/accounts/[id] — portal-hidden account guards", () => {
   it("403s when deleting an isDefaultChecking account", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     accountRow = { id: "acct-1", clientId: "c1", name: "Household Cash", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: true, parentAccountId: null };
     const res = await DELETE(delReq(), ctx);
     expect(res.status).toBe(403);

@@ -5,10 +5,13 @@ const { ForbiddenError } = vi.hoisted(() => {
   return { ForbiddenError };
 });
 
-const requireClientPortalAccessMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 const authErrorResponseMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireClientPortalAccessMock(),
   authErrorResponse: (e: unknown) => authErrorResponseMock(e),
   ForbiddenError,
   UnauthorizedError: class extends Error {},
@@ -111,7 +114,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { POST } from "@/app/api/portal/accounts/route";
 
 beforeEach(() => {
-  requireClientPortalAccessMock.mockReset();
+  resolvePortalClientMock.mockReset();
   authErrorResponseMock.mockReset().mockReturnValue(null);
   requireEditEnabledMock.mockReset();
   insertAccountValuesMock.mockClear();
@@ -135,7 +138,7 @@ function req(body: unknown): Request {
 
 describe("POST /api/portal/accounts", () => {
   it("returns 403 when edit is disabled", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockRejectedValue(new ForbiddenError("edit disabled"));
     authErrorResponseMock.mockReturnValue({ body: { error: "Forbidden" }, status: 403 });
     const res = await POST(req({ name: "Checking", category: "cash" }));
@@ -143,7 +146,7 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("returns 403 and performs no insert when the firm subscription is inactive", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requirePortalActiveSubscriptionMock.mockRejectedValue(new ForbiddenError("Active subscription required"));
     authErrorResponseMock.mockReturnValue({ body: { error: "Active subscription required" }, status: 403 });
     const res = await POST(req({ name: "Checking", category: "cash", owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }] }));
@@ -152,7 +155,7 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("returns 400 when owners[] is missing or empty", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     validateOwnersShapeMock.mockReturnValue({ error: "owners must have at least one entry" });
     const res = await POST(req({ name: "Checking", category: "cash", owners: [] }));
@@ -162,14 +165,14 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("returns 400 when name is missing", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(req({ category: "cash", owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }] }));
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when category is not a valid enum value", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(
       req({
@@ -184,7 +187,7 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("returns 400 and performs no insert when an entity owner is not a trust", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     validateOwnersShapeMock.mockReturnValue({
       owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
@@ -208,7 +211,7 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("returns 400 when category is hidden from the portal (notes_receivable)", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(
       req({
@@ -223,7 +226,7 @@ describe("POST /api/portal/accounts", () => {
   });
 
   it("inserts account + owner rows in a transaction and audits", async () => {
-    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     validateOwnersShapeMock.mockReturnValue({
       owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
@@ -271,6 +274,41 @@ describe("POST /api/portal/accounts", () => {
         clientId: "c1",
         firmId: "firm-1",
         actorKind: "client",
+      }),
+    );
+  });
+
+  it("creates an account in advisor act-as mode (mode=advisor)", async () => {
+    resolvePortalClientMock.mockResolvedValue({
+      clientId: "c1",
+      mode: "advisor",
+      clerkUserId: "advisor-1",
+    });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    validateOwnersShapeMock.mockReturnValue({
+      owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
+    });
+    validateOwnersTenantMock.mockResolvedValue(null);
+    validateAccountOwnershipRulesMock.mockReturnValue(null);
+
+    const res = await POST(
+      req({
+        name: "Checking",
+        last4: "1234",
+        category: "cash",
+        subType: "checking",
+        value: "500.00",
+        owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(recordCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "portal.account.create",
+        actorKind: "advisor",
+        extraMetadata: { viaPreview: true },
       }),
     );
   });
