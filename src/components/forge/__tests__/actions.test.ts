@@ -23,8 +23,6 @@ import {
 } from "../actions";
 
 beforeEach(() => {
-  vi.mocked(auth).mockResolvedValue({ userId: "user_1" } as never);
-  vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.clearAllMocks();
   vi.mocked(auth).mockResolvedValue({ userId: "user_1" } as never);
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
