@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const listMock = vi.fn((_p: unknown): any => null);
 vi.mock("@/components/portal/transactions-list", () => ({ default: (p: unknown) => { listMock(p); return null; } }));
+vi.mock("@/components/portal/categories-manager", () => ({ default: () => null }));
 import TransactionsSection from "@/components/portal/transactions-section";
 
 describe("TransactionsSection", () => {
