@@ -59,18 +59,53 @@ function payloadNumbers(payloads: string[]): Set<string> {
   return set;
 }
 
+/** All payload numbers as raw floats (for magnitude/precision-tolerant matching). */
+function payloadFloats(payloads: string[]): number[] {
+  const out: number[] = [];
+  for (const m of payloads.join(" ").matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
+    const n = Number(m[0].replace(/,/g, ""));
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+/** True if `token` matches a payload value once both are rounded to the token's
+ *  DISPLAYED precision (the same display rules the prompt enforces): percentages
+ *  to whole/one-decimal, M/K magnitudes to one decimal. Plain numbers are left to
+ *  exact-candidate matching (return false here). */
+function groundedByRounding(token: string, floats: number[]): boolean {
+  const t = token.trim();
+  const isPct = t.endsWith("%");
+  const suffix = /([MKmk])%?$/.exec(t)?.[1]?.toUpperCase();
+  const base = Number(t.replace(/[$,%\sMKmk]/g, ""));
+  if (!Number.isFinite(base)) return false;
+  if (isPct) {
+    return floats.some(
+      (v) => Math.round(v * 100) === Math.round(base) || Math.abs(v * 100 - base) <= 0.05,
+    );
+  }
+  if (suffix === "M") return floats.some((v) => Math.round((v / 1e6) * 10) / 10 === base);
+  if (suffix === "K") {
+    return floats.some(
+      (v) => Math.round((v / 1e3) * 10) / 10 === base || Math.round(v / 1e3) === Math.round(base),
+    );
+  }
+  return false;
+}
+
 /**
  * Return the list of numeric tokens in `answer` that do NOT trace to any value
  * present in `payloads`. An empty array means every figure is grounded.
  */
 export function findUngroundedNumbers(answer: string, payloads: string[]): string[] {
   const known = payloadNumbers(payloads);
+  const floats = payloadFloats(payloads);
   const ungrounded: string[] = [];
   for (const m of answer.matchAll(NUMBER_TOKEN_RE)) {
     const token = m[0].trim();
     const candidates = candidateValues(token);
     if (candidates.length === 0) continue;
-    const grounded = candidates.some((c) => known.has(c));
+    const grounded = candidates.some((c) => known.has(c)) || groundedByRounding(token, floats);
     if (!grounded) {
       // Report the token without the leading "$" for stable assertions.
       ungrounded.push(token.replace(/^\$/, ""));

@@ -52,6 +52,21 @@ describe("grounding — anti-hallucination guard", () => {
     const payloads = [JSON.stringify({ successRate: 0.92 })];
     expect(findUngroundedNumbers("Probability of success is 92%.", payloads)).toEqual([]);
   });
+
+  it("grounds a correctly-rounded percentage (0.923 payload → '92%')", () => {
+    const payloads = [JSON.stringify({ successRate: 0.923 })];
+    expect(findUngroundedNumbers("Your probability of success is 92%.", payloads)).toEqual([]);
+  });
+  it("grounds a magnitude-rounded dollar figure (1242000.5 payload → '$1.2M')", () => {
+    const payloads = [JSON.stringify({ p50: 1242000.5 })];
+    expect(findUngroundedNumbers("Median ending wealth is about $1.2M.", payloads)).toEqual([]);
+  });
+  it("still flags a fabricated figure even with tolerance on", () => {
+    const payloads = [JSON.stringify({ successRate: 0.92, p50: 2500000 })];
+    const u = findUngroundedNumbers("A $1.7M portfolio with a 71% success rate.", payloads);
+    expect(u).toContain("1.7M");
+    expect(u).toContain("71%");
+  });
 });
 
 // ─── Task 25: CRM composite skill grounding guard ───────────────────────────
