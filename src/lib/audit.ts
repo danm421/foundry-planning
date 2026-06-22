@@ -332,7 +332,13 @@ export type AuditAction =
   | "portal.plaid.refresh"
   | "portal.plaid.sync"
   | "portal.plaid.unlink"
-  | "portal.plaid.reauth";
+  | "portal.plaid.reauth"
+  // Intake / data-collection forms
+  | "intake.form.sent"
+  | "intake.form.submitted"
+  | "intake.form.applied"
+  | "intake.form.discarded"
+  | "intake.form.revoked";
 
 type Args = {
   action: AuditAction;
