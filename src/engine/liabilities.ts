@@ -1,4 +1,5 @@
 import type { Liability } from "./types";
+import { isRevolvingLiability } from "./liability-kind";
 import {
   buildLiabilitySchedule,
   type LiabilityScheduleMap,
@@ -29,6 +30,17 @@ export function amortizeLiability(
   liability: Liability,
   year: number,
 ): AmortizationResult {
+  // Held-flat revolving debt (credit card): no schedule, no payment, no
+  // accrual; the balance carries forward unchanged. Card spending is already
+  // modeled as expenses, so amortizing here would double-count.
+  if (isRevolvingLiability(liability)) {
+    return {
+      annualPayment: 0,
+      interestPortion: 0,
+      principalPortion: 0,
+      endingBalance: liability.balance,
+    };
+  }
   const schedule = buildLiabilitySchedule(liability);
   const row = schedule.find((r) => r.year === year);
   if (!row) {
@@ -59,6 +71,16 @@ export function computeLiabilities(
   const interestByLiability: Record<string, number> = {};
 
   for (const liab of liabilities) {
+    // Held-flat revolving debt: no schedule, no payment, no accrual; the
+    // balance carries forward unchanged. Must NOT fall through to
+    // buildLiabilitySchedule (the `??` below would amortize it).
+    if (isRevolvingLiability(liab)) {
+      updatedLiabilities.push({ ...liab });
+      byLiability[liab.id] = 0;
+      interestByLiability[liab.id] = 0;
+      continue; // excluded from totalPayment (no outflow)
+    }
+
     const schedule = schedules?.get(liab.id) ?? buildLiabilitySchedule(liab);
     const row = schedule.find((r) => r.year === year);
     const annualPayment = row ? row.payment + row.extraPayment : 0;
