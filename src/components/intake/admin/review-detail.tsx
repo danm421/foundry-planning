@@ -47,7 +47,7 @@ function FieldRow({
         {diff.old !== undefined && (
           <span className="tabular text-ink-4 line-through">{fmt(diff.old)}</span>
         )}
-        <span className="tabular font-medium text-accent">{fmt(diff.new)}</span>
+        <span className="tabular font-medium text-ink">{fmt(diff.new)}</span>
       </span>
     </div>
   );
@@ -122,12 +122,13 @@ export default function ReviewDetail({ form, diff }: ReviewDetailProps) {
         setActionError("Something went wrong. Please try again.");
         return;
       }
+      // Bust the router cache (incl. the destination's stale entry) before navigating.
+      router.refresh();
       if (action === "apply" && form.clientId) {
         router.push(`/clients/${form.clientId}`);
       } else {
         router.push("/data-collection");
       }
-      router.refresh();
     } finally {
       setActing(null);
     }

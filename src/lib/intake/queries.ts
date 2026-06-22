@@ -81,7 +81,13 @@ export const hasUnsubmittedPrefilledForm = cache(async (
 
 /**
  * List all intake forms for a firm, newest first.
+ * React.cache'd for per-request dedup, consistent with the sibling queries.
  */
-export async function listFormsForFirm(firmId: string): Promise<IntakeFormRow[]> {
-  return db.select().from(intakeForms).where(eq(intakeForms.firmId, firmId)).orderBy(desc(intakeForms.createdAt));
-}
+export const listFormsForFirm = cache(
+  async (firmId: string): Promise<IntakeFormRow[]> =>
+    db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.firmId, firmId))
+      .orderBy(desc(intakeForms.createdAt)),
+);
