@@ -332,7 +332,15 @@ export type AuditAction =
   | "portal.plaid.refresh"
   | "portal.plaid.sync"
   | "portal.plaid.unlink"
-  | "portal.plaid.reauth";
+  | "portal.plaid.reauth"
+  // Phase 4 — spending transactions / categorization
+  | "portal.transaction.update"
+  | "portal.rule.create"
+  | "portal.rule.update"
+  | "portal.rule.delete"
+  | "portal.category.create"
+  | "portal.category.update"
+  | "portal.category.delete";
 
 type Args = {
   action: AuditAction;
