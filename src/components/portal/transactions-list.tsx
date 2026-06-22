@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryPicker } from "@/components/portal/category-picker";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
+import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
 
 export type PortalTransactionDTO = {
   id: string;
@@ -67,6 +68,7 @@ export default function TransactionsList({
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
+  const [ruleSeed, setRuleSeed] = useState<PortalTransactionDTO | null>(null);
 
   useEffect(() => {
     void fetch("/api/portal/categories")
@@ -254,10 +256,18 @@ export default function TransactionsList({
           <TransactionDetailPanel
             txn={selected}
             onClose={() => setSelected(null)}
-            onCreateRule={() => {}} // TODO(Task 14): setRuleSeed(selected)
+            onCreateRule={() => setRuleSeed(selected)}
           />,
           detailEl,
         )}
+      {ruleSeed && (
+        <RuleCreateDialog
+          seed={{ merchantName: ruleSeed.merchantName, name: ruleSeed.name, categoryId: ruleSeed.categoryId }}
+          categories={categories}
+          onClose={() => setRuleSeed(null)}
+          onCreated={() => { setRuleSeed(null); setSelected(null); void load(0, true); }}
+        />
+      )}
     </div>
   );
 }
