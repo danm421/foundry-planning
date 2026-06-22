@@ -72,7 +72,13 @@ function payloadFloats(payloads: string[]): number[] {
 /** True if `token` matches a payload value once both are rounded to the token's
  *  DISPLAYED precision (the same display rules the prompt enforces): percentages
  *  to whole/one-decimal, M/K magnitudes to one decimal. Plain numbers are left to
- *  exact-candidate matching (return false here). */
+ *  exact-candidate matching (return false here).
+ *
+ *  Magnitude rounding-tolerance applies ONLY at-or-above the suffix's own scale
+ *  (≥ $1.0M for "M", ≥ $1K for "K"). A sub-scale token (e.g. "$0.1M") is NOT
+ *  matched by this branch — otherwise an unrelated sub-million field (~$100k → 0.1
+ *  after /1e6) would falsely ground a fabricated "$0.xM" figure. Sub-scale tokens
+ *  fall back to exact-candidate matching. */
 function groundedByRounding(token: string, floats: number[]): boolean {
   const t = token.trim();
   const isPct = t.endsWith("%");
@@ -84,10 +90,15 @@ function groundedByRounding(token: string, floats: number[]): boolean {
       (v) => Math.round(v * 100) === Math.round(base) || Math.abs(v * 100 - base) <= 0.05,
     );
   }
-  if (suffix === "M") return floats.some((v) => Math.round((v / 1e6) * 10) / 10 === base);
+  if (suffix === "M") {
+    return base >= 1 && floats.some((v) => Math.round((v / 1e6) * 10) / 10 === base);
+  }
   if (suffix === "K") {
-    return floats.some(
-      (v) => Math.round((v / 1e3) * 10) / 10 === base || Math.round(v / 1e3) === Math.round(base),
+    return (
+      base >= 1 &&
+      floats.some(
+        (v) => Math.round((v / 1e3) * 10) / 10 === base || Math.round(v / 1e3) === Math.round(base),
+      )
     );
   }
   return false;

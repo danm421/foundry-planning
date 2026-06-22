@@ -67,6 +67,16 @@ describe("grounding — anti-hallucination guard", () => {
     expect(u).toContain("1.7M");
     expect(u).toContain("71%");
   });
+  it("does NOT ground a fabricated sub-million 'M' figure off an unrelated ~$100k field", () => {
+    // $120,000 income would, ungated, round to 0.1M and ground a fabricated "$0.1M" wealth figure.
+    const payloads = [JSON.stringify({ totalIncome: 120000, p50: 2500000 })];
+    const u = findUngroundedNumbers("Median ending wealth is about $0.1M.", payloads);
+    expect(u).toContain("0.1M");
+  });
+  it("still grounds a legitimate '$2.5M' figure at the magnitude's own scale", () => {
+    const payloads = [JSON.stringify({ p50: 2500000 })];
+    expect(findUngroundedNumbers("Median ending wealth is $2.5M.", payloads)).toEqual([]);
+  });
 });
 
 // ─── Task 25: CRM composite skill grounding guard ───────────────────────────
