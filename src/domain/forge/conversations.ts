@@ -26,8 +26,12 @@ export async function createConversation(input: {
   return row.id;
 }
 
-/** List the caller's own threads, newest-touched first. Org + user scoped. */
-export async function listMyConversations(userId: string, firmId: string) {
+/** List the caller's own threads, newest-touched first. Org + user scoped.
+ *  Pass `clientId` to narrow to threads for a single client. */
+export async function listMyConversations(userId: string, firmId: string, clientId?: string) {
+  const where = clientId
+    ? and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId), eq(forgeConversations.clientId, clientId))
+    : and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId));
   return db
     .select({
       id: forgeConversations.id,
@@ -36,7 +40,7 @@ export async function listMyConversations(userId: string, firmId: string) {
       updatedAt: forgeConversations.updatedAt,
     })
     .from(forgeConversations)
-    .where(and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId)))
+    .where(where)
     .orderBy(desc(forgeConversations.updatedAt))
     .limit(50);
 }
@@ -63,4 +67,20 @@ export async function userOwnsConversation(id: string, userId: string): Promise<
     .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)))
     .limit(1);
   return rows.length > 0;
+}
+
+/** Rename a thread (owner-only no-op for non-owners). Does NOT bump updatedAt. */
+export async function renameConversation(id: string, userId: string, title: string): Promise<void> {
+  await db
+    .update(forgeConversations)
+    .set({ title })
+    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)));
+}
+
+/** Delete a thread (owner-only no-op for non-owners). The checkpointer rows are
+ *  keyed by thread_id; they are left for the existing checkpoint-retention path. */
+export async function deleteConversation(id: string, userId: string): Promise<void> {
+  await db
+    .delete(forgeConversations)
+    .where(and(eq(forgeConversations.id, id), eq(forgeConversations.userId, userId)));
 }
