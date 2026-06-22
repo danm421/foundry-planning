@@ -5,6 +5,7 @@ import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 import type { AccountOwner } from "./ownership";
 import type { EntityCashFlowRow } from "./entity-cashflow";
 import type { NoteReceivable } from "./notes-receivable/types";
+import type { LiabilityType } from "./liability-kind";
 
 // ── Shared Tax / Medicare Types ──────────────────────────────────────────────
 
@@ -933,6 +934,9 @@ export interface Liability {
    *  for household-originated liabilities. */
   ownerFamilyMemberId?: string;
   isInterestDeductible?: boolean;
+  /** Debt-type discriminator. `credit_card` → held flat (non-amortizing) by
+   *  the engine. Null/absent → amortizing term loan (legacy behavior). */
+  liabilityType?: LiabilityType | null;
   extraPayments: ExtraPayment[];
   owners: AccountOwner[];
   /** Parent business account: lets a liability hang off the business that
