@@ -273,3 +273,82 @@ describe("ForgePanel", () => {
     expect(screen.getByTestId("chip-scenario").textContent).toContain("Delay SS to 70");
   });
 });
+
+// ---------------------------------------------------------------------------
+// A4 — Retry button + rate-limit countdown on the error state
+// ---------------------------------------------------------------------------
+// Drive error state through the real useForgeStream hook (same pattern as the
+// tests above) — return a non-ok Response from fetch so the hook sets
+// status === "error", then assert the Retry affordance renders and fires.
+describe("ForgePanel error state — A4", () => {
+  /** Returns a non-ok Response that drives the hook into status==="error". */
+  function makeErrorResponse(status = 500, body = "Server error", headers?: HeadersInit) {
+    return Promise.resolve(
+      new Response(body, {
+        status,
+        headers: { "content-type": "text/plain", ...headers },
+      }),
+    );
+  }
+
+  async function mountAndTriggerError(fetchResponse: Promise<Response>) {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(fetchResponse));
+    mountPanel();
+    // Type and send a message so the hook fires a request and enters error state.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "what is the plan?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+  }
+
+  it("shows a Retry button when status is error", async () => {
+    await mountAndTriggerError(makeErrorResponse(500));
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("clicking Retry re-fires a fetch (calls the hook's retry)", async () => {
+    const fetchMock = vi.fn().mockReturnValue(makeErrorResponse(500));
+    vi.stubGlobal("fetch", fetchMock);
+    mountPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "what is the plan?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    // Wait for the Retry button to appear.
+    const retryBtn = await screen.findByRole("button", { name: /retry/i });
+    const callsBefore = fetchMock.mock.calls.length;
+
+    // Stub a clean response so the retry doesn't recurse into another error.
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve(new Response(
+        new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(`data: {"type":"done"}\n\n`)); c.close(); } }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      )),
+    );
+
+    await act(async () => {
+      fireEvent.click(retryBtn);
+    });
+
+    // fetch must have been called at least once more after the Retry click.
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    // The new call must be the /forge/stream route.
+    const retryCalls = fetchMock.mock.calls.slice(callsBefore);
+    expect(retryCalls.some((c) => String(c[0]).includes("/forge/stream"))).toBe(true);
+  });
+
+  it("shows a rate-limit countdown when Retry-After is returned on 503", async () => {
+    await mountAndTriggerError(makeErrorResponse(503, "Forge is temporarily unavailable", { "retry-after": "30" }));
+    // The error block should show "try again in ~30s" (or similar countdown text).
+    expect(await screen.findByText(/try again in ~30s/i)).toBeInTheDocument();
+  });
+});

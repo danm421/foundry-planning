@@ -56,6 +56,8 @@ export function ForgePanel({
     send,
     cancel,
     resume,
+    retry,
+    retryAfterSeconds,
   } = useForgeStream(clientId);
   const router = useRouter();
 
@@ -444,6 +446,18 @@ export function ForgePanel({
           {status === "error" && errorMessage && (
             <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
               {errorMessage}
+              {retryAfterSeconds != null && (
+                <span className="ml-1">try again in ~{retryAfterSeconds}s</span>
+              )}
+              {pendingApproval == null && (
+                <button
+                  type="button"
+                  onClick={() => void retry()}
+                  className="ml-2 rounded-[var(--radius-sm)] border border-crit/40 px-2 py-0.5 text-[11px] font-medium hover:bg-crit/20"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
         </div>
