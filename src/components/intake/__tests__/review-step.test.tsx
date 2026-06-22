@@ -32,30 +32,12 @@ const richDraft: IntakeDraft = {
 function makeProps(overrides: Partial<Parameters<typeof ReviewStep>[0]> = {}) {
   return {
     value: richDraft,
-    onSubmit: vi.fn().mockResolvedValue(undefined),
     onEdit: vi.fn(),
-    busy: false,
     ...overrides,
   };
 }
 
 describe("ReviewStep", () => {
-  it("renders a Submit button that calls onSubmit when clicked", () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<ReviewStep {...makeProps({ onSubmit })} />);
-
-    const submitBtn = screen.getByRole("button", { name: /submit/i });
-    expect(submitBtn).toBeInTheDocument();
-    fireEvent.click(submitBtn);
-    expect(onSubmit).toHaveBeenCalledOnce();
-  });
-
-  it("disables the Submit button when busy is true", () => {
-    render(<ReviewStep {...makeProps({ busy: true })} />);
-    const submitBtn = screen.getByRole("button", { name: /submit/i });
-    expect(submitBtn).toBeDisabled();
-  });
-
   it("renders a summary of family information when populated", () => {
     render(<ReviewStep {...makeProps()} />);
     expect(screen.getByText(/jane/i)).toBeInTheDocument();
@@ -99,8 +81,8 @@ describe("ReviewStep", () => {
 
   it("shows empty-state text for sections with no data", () => {
     render(<ReviewStep {...makeProps({ value: emptyDraft })} />);
-    // With an empty draft, no family/account/income/property/goals data
-    // The submit button should still be present
-    expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+    // With an empty draft, empty-state messages are shown for each section.
+    // No in-body Submit button — the chrome's "Submit" button is the sole affordance.
+    expect(screen.queryByRole("button", { name: /^submit$/i })).not.toBeInTheDocument();
   });
 });

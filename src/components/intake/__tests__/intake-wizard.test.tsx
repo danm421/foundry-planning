@@ -83,4 +83,27 @@ describe("IntakeWizard", () => {
     render(<IntakeWizard {...makeProps({ error: "Something went wrong" })} />);
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
   });
+
+  it("clicking the chrome Submit button on the review step calls onSubmit", () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<IntakeWizard {...makeProps({ onSubmit })} />);
+
+    // Advance through all steps: Welcome → Family → Accounts → Income → Property → Goals → Review
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    // Step 1: Family
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    // Step 2: Accounts
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    // Step 3: Income (skipable)
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    // Step 4: Property (skipable)
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    // Step 5: Goals
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    // Step 6: Review — chrome button is now labelled "Submit"
+    const submitBtn = screen.getByRole("button", { name: /submit/i });
+    expect(submitBtn).toBeInTheDocument();
+    fireEvent.click(submitBtn);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
 });

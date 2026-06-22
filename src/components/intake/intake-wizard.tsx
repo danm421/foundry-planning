@@ -128,9 +128,8 @@ export function IntakeWizard({
   const chromeIndex = flatIndex - 1;
   const isReview = step.section === "review";
 
-  // On review: suppress the chrome Next button entirely (onNext=undefined).
-  // The ReviewStep body provides the sole Submit button.
-  const nextLabel = isReview ? undefined : step.skipable ? "Skip for now" : "Next";
+  // On review: the chrome Next button IS the Submit (single affordance).
+  const nextLabel = isReview ? "Submit" : step.skipable ? "Skip for now" : "Next";
 
   function renderBody() {
     switch (step.section) {
@@ -147,9 +146,7 @@ export function IntakeWizard({
         return (
           <ReviewStep
             value={value}
-            onSubmit={onSubmit}
             onEdit={goToSection}
-            busy={busy}
           />
         );
       default:
@@ -172,7 +169,7 @@ export function IntakeWizard({
         current={chromeIndex}
         title={step.title}
         onBack={goBack}
-        onNext={isReview ? undefined : goNext}
+        onNext={isReview ? () => void onSubmit() : goNext}
         nextLabel={nextLabel}
         backDisabled={false}
         nextDisabled={busy}

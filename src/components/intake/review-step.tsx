@@ -6,10 +6,8 @@ import type { IntakeDraft } from "@/lib/intake/schema";
 
 export interface ReviewStepProps {
   value: IntakeDraft;
-  onSubmit: () => Promise<void>;
   /** Called with the section name so the wizard can jump back. */
   onEdit: (section: "family" | "accounts" | "income" | "property" | "goals") => void;
-  busy?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -65,11 +63,11 @@ function formatMoney(n: number | undefined): string | undefined {
 
 // ─── ReviewStep ───────────────────────────────────────────────────────────────
 //
-// Submit affordance strategy: the in-body Submit button is the ONLY submit.
-// The WizardChrome Next button is hidden on the review step (onNext=undefined
-// is passed from the wizard shell), so there is exactly one Submit path.
+// Submit affordance strategy: WizardChrome's Next button (labelled "Submit")
+// is the SOLE submit control. ReviewStep renders only the accordion summary +
+// Edit jump-back affordances — no in-body Submit button.
 
-export function ReviewStep({ value, onSubmit, onEdit, busy }: ReviewStepProps) {
+export function ReviewStep({ value, onEdit }: ReviewStepProps) {
   const { family, accounts, income, property, goals } = value;
 
   const primary = family?.primary;
@@ -165,17 +163,6 @@ export function ReviewStep({ value, onSubmit, onEdit, busy }: ReviewStepProps) {
         )}
       </SectionCard>
 
-      {/* ── Submit ────────────────────────────────────────────────── */}
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={() => void onSubmit()}
-          disabled={busy}
-          className="btn-primary w-full py-3 text-[15px] font-medium disabled:opacity-40"
-        >
-          {busy ? "Submitting…" : "Submit"}
-        </button>
-      </div>
     </div>
   );
 }
