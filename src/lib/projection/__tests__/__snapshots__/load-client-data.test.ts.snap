@@ -165,6 +165,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "id": "00000000-0000-0000-0000-000000000060",
       "interestRate": 0.065,
       "isInterestDeductible": true,
+      "liabilityType": null,
       "linkedPropertyId": undefined,
       "monthlyPayment": 2530,
       "name": "Mortgage",
