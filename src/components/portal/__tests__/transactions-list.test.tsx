@@ -89,4 +89,61 @@ describe("TransactionsList", () => {
       expect(fetchedUrls.slice(urlsBefore).some((u) => u.includes("q=Starbucks"))).toBe(true),
     );
   });
+
+  it("picking a category fires PUT with categoryId and optimistically updates the pill label", async () => {
+    const cats = [
+      { id: "g1", name: "Food & Drink", kind: "group" as const, parentId: null },
+      { id: "l1", name: "Groceries", kind: "category" as const, parentId: "g1" },
+    ];
+
+    const putCalls: { url: string; method: string; body: unknown }[] = [];
+
+    // Override fetch to handle GET (categories + transactions) and PUT.
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (method === "PUT") {
+        const body = JSON.parse(init?.body as string) as unknown;
+        putCalls.push({ url, method, body });
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      // GET handlers
+      if (url.includes("/categories")) {
+        return { ok: true, json: async () => ({ categories: cats }) } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          transactions: [txn({ id: "t1", categoryId: null, categoryName: null })],
+          total: 1,
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<TransactionsList clientId="c1" editEnabled />);
+
+    // Wait for the row and the category picker to appear.
+    await waitFor(() => expect(screen.getByText("Amazon")).toBeTruthy());
+
+    // The CategoryPicker select should be present (editEnabled=true).
+    // There are two comboboxes: the filter dropdown (has "All categories") and the row picker (has "Uncategorized").
+    // Target the row-level picker by its "Uncategorized" option.
+    const allPickers = screen.getAllByRole("combobox");
+    const picker = allPickers.find((el) =>
+      Array.from((el as HTMLSelectElement).options).some((o) => o.text === "Uncategorized"),
+    )!;
+
+    // Pick "Groceries" (id = "l1").
+    fireEvent.change(picker, { target: { value: "l1" } });
+
+    // Assert the PUT was fired with the correct URL and body.
+    await waitFor(() => expect(putCalls.length).toBe(1));
+    expect(putCalls[0].url).toContain("/api/portal/transactions/t1");
+    expect(putCalls[0].method).toBe("PUT");
+    expect(putCalls[0].body).toEqual({ categoryId: "l1" });
+
+    // The picker's selected value should reflect the optimistic update.
+    expect((picker as HTMLSelectElement).value).toBe("l1");
+  });
 });

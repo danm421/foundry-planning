@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { CategoryPill } from "@/components/portal/category-pill";
+import { CategoryPicker } from "@/components/portal/category-picker";
 
 export type PortalTransactionDTO = {
   id: string;
@@ -52,9 +53,9 @@ export default function TransactionsList({
   editEnabled: boolean;
 }): ReactElement {
   void clientId;
-  void editEnabled;
 
   const [rows, setRows] = useState<PortalTransactionDTO[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -101,6 +102,29 @@ export default function TransactionsList({
     return () => controller.abort();
   }, [load]);
 
+  const patchTransaction = useCallback(
+    async (
+      id: string,
+      patch: { categoryId?: string | null; excluded?: boolean },
+      optimistic: (t: PortalTransactionDTO) => PortalTransactionDTO,
+    ) => {
+      setError(null);
+      const prev = rows;
+      setRows((rs) => rs.map((t) => (t.id === id ? optimistic(t) : t)));
+      try {
+        const res = await fetch(`/api/portal/transactions/${id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) { setRows(prev); setError("Couldn't save that change."); }
+      } catch {
+        setRows(prev); setError("Couldn't save that change.");
+      }
+    },
+    [rows],
+  );
+
   const leaves = categories.filter((c) => c.kind === "category");
   const hasMore = rows.length < total;
 
@@ -141,6 +165,8 @@ export default function TransactionsList({
         </div>
       </div>
 
+      {error && <p className="text-[12px] text-crit">{error}</p>}
+
       <div className="overflow-hidden rounded-xl border border-hair bg-card">
         {rows.length === 0 && !loading ? (
           <div className="p-6 text-center text-[13px] text-ink-3">No transactions in this window.</div>
@@ -158,10 +184,44 @@ export default function TransactionsList({
                     </div>
                     <div className="mt-0.5 flex items-center gap-2">
                       <span className="tabular text-[12px] text-ink-3">{t.date}</span>
-                      <CategoryPill name={t.categoryName} color={t.categoryColor} />
+                      <span onClick={(e) => e.stopPropagation()}>
+                        {editEnabled ? (
+                          <CategoryPicker
+                            categories={categories}
+                            value={t.categoryId}
+                            onPick={(catId) =>
+                              void patchTransaction(
+                                t.id,
+                                { categoryId: catId },
+                                (row) => {
+                                  const picked = categories.find((c) => c.id === catId);
+                                  return { ...row, categoryId: catId, categoryName: picked?.name ?? null, categorizedBy: "manual" };
+                                },
+                              )
+                            }
+                          />
+                        ) : (
+                          <CategoryPill name={t.categoryName} color={t.categoryColor} />
+                        )}
+                      </span>
                     </div>
                   </div>
-                  <div className={`tabular text-[14px] ${amt.cls}`}>{amt.text}</div>
+                  <div className="flex items-center gap-3">
+                    <span className={`tabular text-[14px] ${amt.cls}`}>{amt.text}</span>
+                    <span onClick={(e) => e.stopPropagation()}>
+                      {editEnabled && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void patchTransaction(t.id, { excluded: !t.excluded }, (row) => ({ ...row, excluded: !row.excluded }))
+                          }
+                          className="rounded-md border border-hair px-2 py-1 text-[11px] text-ink-3 hover:bg-card"
+                        >
+                          {t.excluded ? "Include" : "Exclude"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
                 </li>
               );
             })}
