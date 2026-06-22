@@ -10,7 +10,13 @@ import { useForgeStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
-import { listMyConversations, loadConversationMessages } from "./actions";
+import {
+  listMyConversations,
+  loadConversationMessages,
+  renameConversation,
+  deleteConversation,
+} from "./actions";
+import { ConversationList } from "./conversation-list";
 import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 
@@ -106,17 +112,24 @@ export function ForgePanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // Shared helper so all three refresh sites stay DRY.
+  function refetchThreads() {
+    listMyConversations(clientId)
+      .then((t) => setThreads(t as Thread[]))
+      .catch(() => {});
+  }
+
   // Load the thread list once the panel opens.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listMyConversations()
+    listMyConversations(clientId)
       .then((t) => !cancelled && setThreads(t as Thread[]))
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, clientId]);
 
   // Keep the latest bubble in view as it streams.
   useEffect(() => {
@@ -196,9 +209,7 @@ export function ForgePanel({
         pendingImportId: result.importId,
         skipUserBubble: true,
       });
-      listMyConversations()
-        .then((t) => setThreads(t as Thread[]))
-        .catch(() => {});
+      refetchThreads();
       return;
     }
     const msg = input.trim();
@@ -211,9 +222,7 @@ export function ForgePanel({
       currentPage: sectionKeyForPath(pathname),
       pendingImportId,
     });
-    listMyConversations()
-      .then((t) => setThreads(t as Thread[]))
-      .catch(() => {});
+    refetchThreads();
   }
 
   function onPickFiles(list: FileList | null) {
@@ -284,30 +293,46 @@ export function ForgePanel({
         </div>
 
         {/* Thread row */}
-        <div className="flex items-center gap-2 border-b border-hair px-4 py-2">
+        <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
           <button
             type="button"
             onClick={newChat}
             disabled={busy}
-            className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
+            className="self-start rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
           >
             + New chat
           </button>
           {threads.length > 0 && (
-            <select
-              aria-label="Conversation history"
-              value={conversationId ?? ""}
-              onChange={(e) => e.target.value && selectThread(e.target.value)}
-              disabled={busy || loadingThread}
-              className="min-w-0 flex-1 truncate rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1 text-[12px] text-ink-2 disabled:opacity-60"
-            >
-              <option value="">Recent conversations…</option>
-              {threads.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            <ConversationList
+              threads={threads}
+              activeId={conversationId}
+              onSelect={(id) => void selectThread(id)}
+              onRename={async (id, title) => {
+                // Optimistic local update
+                const prev = threads;
+                setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, title } : t)));
+                try {
+                  await renameConversation(id, title);
+                  refetchThreads();
+                } catch {
+                  // Revert on failure + refetch to restore server state
+                  setThreads(prev);
+                  refetchThreads();
+                }
+              }}
+              onDelete={async (id) => {
+                // Optimistic local removal
+                setThreads((ts) => ts.filter((t) => t.id !== id));
+                // If the deleted thread was active, start a new chat
+                if (id === conversationId) newChat();
+                try {
+                  await deleteConversation(id);
+                  refetchThreads();
+                } catch {
+                  refetchThreads();
+                }
+              }}
+            />
           )}
         </div>
 
