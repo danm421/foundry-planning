@@ -11,6 +11,7 @@ import { buildReportTools } from "./report";
 import { buildKnowledgeTools } from "./knowledge";
 import { buildMemoryTools } from "./memory";
 import { buildBookTools } from "./book";
+import { buildNavigateTools } from "./navigate";
 import { ALL_BUNDLES, type BundleName } from "../dispatcher";
 
 /**
@@ -33,6 +34,7 @@ export const TOOL_BUNDLES: Record<
   knowledge: buildKnowledgeTools,
   memory: buildMemoryTools,
   book: buildBookTools,
+  navigate: buildNavigateTools,
 };
 
 /**
