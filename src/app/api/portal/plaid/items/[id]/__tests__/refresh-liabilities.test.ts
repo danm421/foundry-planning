@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
+import { liabilities } from "@/db/schema";
 
 // Track top-level db.update().set().where() calls (outside the tx)
 const updateCalls: unknown[] = [];
@@ -116,13 +117,12 @@ describe("portal plaid refresh — liabilities", () => {
       params: Promise.resolve({ id: "item-1" }),
     });
     expect(res.status).toBe(200);
-    // At minimum one liability row was updated via top-level db.update()
-    const liabUpdates = updateCalls.filter((c) => {
-      // The liability block uses db.update(liabilities) outside tx
-      // We just assert at least one top-level update happened beyond the
-      // potential plaidItems error-write (which only fires on refresh failure)
-      return true;
-    });
-    expect(liabUpdates.length).toBeGreaterThanOrEqual(1);
+    // Assert exactly one top-level db.update(liabilities) call happened.
+    // The mock fixture has 1 Plaid liability update; plaidItems error-write
+    // only fires on refresh failure (not this happy-path case).
+    const liabUpdates = (updateCalls as { table: unknown; whereArgs: unknown[] }[]).filter(
+      (c) => c.table === liabilities,
+    );
+    expect(liabUpdates).toHaveLength(1);
   });
 });

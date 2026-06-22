@@ -150,8 +150,9 @@ export async function POST(
             );
         }
       }
-    } catch {
+    } catch (e) {
       // Item may not carry the Liabilities product; balance refresh already succeeded.
+      console.error("portal plaid liability refresh error:", e);
     }
 
     await recordCreate({
