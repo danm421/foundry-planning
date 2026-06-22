@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { WizardChrome } from "@/components/wizard-chrome";
 import { WelcomeScreen } from "./welcome-screen";
+import { FamilyStep } from "./steps/family-step";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 export interface IntakeWizardProps {
@@ -226,7 +227,7 @@ export function IntakeWizard({
   function renderBody() {
     switch (step.section) {
       case "family":
-        return <FamilyStepStub value={value.family} onChange={setFamily} />;
+        return <FamilyStep value={value.family} onChange={setFamily} />;
       case "assets":
         if (step.subStep === "accounts") return <AccountsStepStub value={value.accounts} onChange={setAccounts} />;
         if (step.subStep === "income")   return <IncomeStepStub value={value.income} onChange={setIncome} />;
