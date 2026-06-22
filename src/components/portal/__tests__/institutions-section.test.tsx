@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("@/db/schema", () => ({
-  plaidItems: { id: {}, clientId: {}, institutionName: {}, lastRefreshedAt: {}, lastRefreshError: {}, createdAt: {} },
+  plaidItems: { id: {}, clientId: {}, institutionName: {}, lastRefreshedAt: {}, lastRefreshError: {}, transactionsCursor: {}, createdAt: {} },
 }));
 
 vi.mock("@/db", () => ({
@@ -18,12 +18,14 @@ vi.mock("@/db", () => ({
                 institutionName: "Chase",
                 lastRefreshedAt: new Date(Date.now() - 2 * 3600_000),
                 lastRefreshError: null,
+                transactionsCursor: null,
               },
               {
                 id: "item-2",
                 institutionName: "Fidelity",
                 lastRefreshedAt: null,
                 lastRefreshError: "ITEM_LOGIN_REQUIRED",
+                transactionsCursor: "cursor-abc",
               },
             ]),
         }),
@@ -39,14 +41,16 @@ vi.mock("../institution-row", () => ({
   InstitutionRow: ({
     institutionName,
     statusLabel,
+    needsTransactionsConsent,
   }: {
     institutionName: string;
     statusLabel: string;
     itemId: string;
     needsReauth: boolean;
     editEnabled: boolean;
+    needsTransactionsConsent: boolean;
   }) => (
-    <li>
+    <li data-needs-transactions-consent={String(needsTransactionsConsent)}>
       <span>{institutionName}</span>
       <span>{statusLabel}</span>
     </li>
@@ -61,5 +65,19 @@ describe("InstitutionsSection", () => {
     expect(screen.getByText(/Last refreshed 2h ago|Last refreshed (less than an|about 2) hour/i)).toBeInTheDocument();
     expect(screen.getByText("Fidelity")).toBeInTheDocument();
     expect(screen.getByText(/Re-auth required/i)).toBeInTheDocument();
+  });
+
+  it("passes needsTransactionsConsent=true for null cursor, false for non-null", async () => {
+    const { InstitutionsSection } = await import("../institutions-section");
+    render(await InstitutionsSection({ clientId: "client-1", editEnabled: true }));
+    // item-1 has transactionsCursor: null → needsTransactionsConsent should be true
+    const chaseRow = screen.getByText("Chase").closest("li");
+    expect(chaseRow).toHaveAttribute("data-needs-transactions-consent", "true");
+    // item-2 has transactionsCursor: "cursor-abc" → needsTransactionsConsent should be false
+    const fidelityRow = screen.getByText("Fidelity").closest("li");
+    expect(fidelityRow).toHaveAttribute(
+      "data-needs-transactions-consent",
+      "false",
+    );
   });
 });

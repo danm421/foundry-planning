@@ -36,6 +36,10 @@ type Props =
   | {
       mode: "reauth";
       itemId: string;
+    }
+  | {
+      mode: "enable-products";
+      itemId: string;
     };
 
 export function PlaidLinkButton(props: Props) {
@@ -72,6 +76,21 @@ export function PlaidLinkButton(props: Props) {
         props.onLinkSuccess(payload);
         return;
       }
+      if (props.mode === "enable-products") {
+        const syncRes = await fetch(
+          `/api/portal/plaid/items/${props.itemId}/sync`,
+          { method: "POST" },
+        );
+        if (!syncRes.ok) {
+          alert("Could not enable spending insights. Please try again.");
+          return;
+        }
+        await fetch(`/api/portal/plaid/items/${props.itemId}/refresh`, {
+          method: "POST",
+        });
+        router.refresh();
+        return;
+      }
       // reauth mode: no exchange needed; just notify the server.
       const r = await fetch(
         `/api/portal/plaid/items/${props.itemId}/reauth-complete`,
@@ -100,7 +119,9 @@ export function PlaidLinkButton(props: Props) {
       const body =
         props.mode === "reauth"
           ? JSON.stringify({ itemId: props.itemId })
-          : "{}";
+          : props.mode === "enable-products"
+            ? JSON.stringify({ itemId: props.itemId, enableProducts: true })
+            : "{}";
       const r = await fetch("/api/portal/plaid/link-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,7 +153,12 @@ export function PlaidLinkButton(props: Props) {
     }
   }, [linkToken, ready, open]);
 
-  const label = props.mode === "link" ? "Link bank" : "Re-authenticate";
+  const label =
+    props.mode === "link"
+      ? "Link bank"
+      : props.mode === "reauth"
+        ? "Re-authenticate"
+        : "Enable spending insights";
 
   return (
     <button
