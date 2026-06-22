@@ -24,6 +24,39 @@ import { ImportReviewLink } from "./import-review-link";
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
 
+/**
+ * Human-readable labels for tool names that appear in the status line.
+ * Unmapped tools fall back to `deUnderscoreTool` below.
+ */
+const TOOL_LABELS: Record<string, string> = {
+  run_monte_carlo: "Running a Monte Carlo simulation",
+  run_projection: "Running the projection",
+  client_briefing: "Reading the client overview",
+  read_detail: "Reading the plan details",
+  explain_report: "Reading the report data",
+  open_page: "Opening the page",
+  read_import: "Reading the import",
+  extract_import: "Extracting import data",
+  scan_book: "Scanning the document",
+  search_planning_kb: "Searching the planning knowledge base",
+  generate_report: "Generating the report",
+  solve_goal: "Running the goal solver",
+  solve_max_spending: "Running the spending solver",
+  meeting_prep: "Preparing meeting notes",
+};
+
+/** Convert a snake_case tool name to a presentable label (e.g. "some_tool" → "Some tool"). */
+function deUnderscoreTool(name: string): string {
+  const words = name.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Resolve a toolStatus value to a human-readable label for the status line. */
+function toolStatusLabel(status: string): string {
+  if (status === "__working__") return "Working";
+  return TOOL_LABELS[status] ?? deUnderscoreTool(status);
+}
+
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
 interface ForgePanelProps {
@@ -391,11 +424,11 @@ export function ForgePanel({
             );
           })}
 
-          {/* Tool affordance, e.g. "Running run_monte_carlo…" */}
+          {/* Tool affordance — human-readable label (never raw snake_case identifiers). */}
           {toolStatus && (
             <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
-              Running {toolStatus.replace(/_/g, " ")}…
+              {toolStatusLabel(toolStatus)}…
             </div>
           )}
 

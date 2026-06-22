@@ -275,6 +275,114 @@ describe("ForgePanel", () => {
 });
 
 // ---------------------------------------------------------------------------
+// E2 — Human-readable tool-status labels + persistent "Working…" sentinel
+// ---------------------------------------------------------------------------
+// Drive via the real useForgeStream hook (same SSE-mock pattern as A4): emit
+// SSE frames from a controlled fetch and assert the rendered DOM.
+
+describe("ForgePanel — E2: tool-status labels + Working… sentinel", () => {
+  it("renders a human label for a mapped tool name (run_monte_carlo)", async () => {
+    // Stream: tool_start(run_monte_carlo) then done — the status line should
+    // show the human label, NOT the raw identifier.
+    // Use a paused stream so we can observe the status line before done clears it.
+    let releaseDone!: () => void;
+    const encoder = new TextEncoder();
+    const labelStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(`data: {"type":"tool_start","name":"run_monte_carlo"}\n\n`),
+        );
+        releaseDone = () => {
+          controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+          controller.close();
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(labelStream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+      ),
+    );
+    mountPanel();
+
+    // Phase 1: Start the send and let the first frame flush, then check mid-stream
+    // DOM (before done), then release and finish.
+    let sendResolve!: () => void;
+    // Kick off the send; we check mid-stream then release.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "run a monte carlo" },
+      });
+    });
+    // Send fires the fetch. Wrap click + small delay together in one awaited act.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+      await new Promise<void>((r) => { sendResolve = r; setTimeout(r, 20); });
+    });
+    // Mid-stream (tool_start fired, done not yet): the status line shows the human label.
+    expect(screen.getByText(/Running a Monte Carlo simulation/i)).toBeInTheDocument();
+    // The raw identifier must never leak through.
+    expect(screen.queryByText(/run_monte_carlo/)).toBeNull();
+    // Clean up: release the stream.
+    await act(async () => {
+      releaseDone();
+      sendResolve?.();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  });
+
+  it("shows 'Working…' after tool_end with no following token (no blank flicker)", async () => {
+    // Control the stream: emit tool_start + tool_end, hold it open, then check
+    // "Working…" is visible, then release done to confirm it clears.
+    let releaseDone!: () => void;
+    const encoder = new TextEncoder();
+    const sentinelStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: {"type":"tool_start","name":"run_monte_carlo"}\n\n` +
+            `data: {"type":"tool_end","name":"run_monte_carlo"}\n\n`,
+          ),
+        );
+        releaseDone = () => {
+          controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+          controller.close();
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(sentinelStream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    );
+    mountPanel();
+    // Fire send and wait for the initial frames to flush (tool_start + tool_end).
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "run monte carlo" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // After tool_end, before done: "Working…" must be visible (sentinel is set).
+    expect(screen.getByText(/Working…/)).toBeInTheDocument();
+    // Release done — sentinel clears and "Working…" disappears.
+    await act(async () => {
+      releaseDone();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.queryByText(/Working…/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A4 — Retry button + rate-limit countdown on the error state
 // ---------------------------------------------------------------------------
 // Drive error state through the real useForgeStream hook (same pattern as the

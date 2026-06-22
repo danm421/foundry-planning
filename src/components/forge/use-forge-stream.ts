@@ -178,6 +178,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     // turn's bubble is already finalized.
     if (statusRef.current === "streaming") {
       finalizeFailedAssistantBubble("cancel");
+      setToolStatus(null);
       setStatus("cancelled");
     }
   }, [finalizeFailedAssistantBubble]);
@@ -192,6 +193,8 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         break;
       case "token":
         setIsVerifying(false);
+        // Clear the between-tools sentinel before appending the token.
+        setToolStatus(null);
         // Append to the trailing assistant bubble (created by `send` before fetch).
         setMessages((m) => {
           if (m.length === 0) return m;
@@ -208,7 +211,9 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         setToolStatus(ev.name);
         break;
       case "tool_end":
-        setToolStatus(null);
+        // Set sentinel instead of null so the status line shows "Working…"
+        // between a tool completing and the next token arriving (no blank flicker).
+        setToolStatus("__working__");
         break;
       case "tool_render":
         // Plumbing only: stash the payload for a future renderer. No UI yet.
@@ -225,11 +230,13 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         break;
       case "error":
         setIsVerifying(false);
+        setToolStatus(null);
         setStatus("error");
         setErrorMessage(ev.message);
         break;
       case "done":
-        // terminal — handled by the read loop completing.
+        // Clear the sentinel so "Working…" doesn't persist after the turn ends.
+        setToolStatus(null);
         break;
     }
   }, []);
