@@ -330,6 +330,7 @@ export type AuditAction =
   | "portal.account.delete"
   | "portal.plaid.link"
   | "portal.plaid.refresh"
+  | "portal.plaid.sync"
   | "portal.plaid.unlink"
   | "portal.plaid.reauth";
 
