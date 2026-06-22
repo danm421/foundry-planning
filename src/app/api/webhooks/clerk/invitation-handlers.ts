@@ -34,7 +34,19 @@ export async function dispatchClerkInvitation(
     );
   }
 
-  const result = await bindClerkUserToClient(clientId, clerkUserId, "webhook");
+  // Wrap in try/catch so a transient DB failure returns 500 and signals
+  // Clerk to retry. bindClerkUserToClient is idempotent (a repeat bind to
+  // the same user is a no-op success), so retries are safe.
+  let result: Awaited<ReturnType<typeof bindClerkUserToClient>>;
+  try {
+    result = await bindClerkUserToClient(clientId, clerkUserId, "webhook");
+  } catch (err) {
+    console.error(
+      "[webhook.clerk] invitation.accepted bind failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json({ error: "bind failed" }, { status: 500 });
+  }
 
   if (!result.ok) {
     if (result.reason === "client_not_found") {
