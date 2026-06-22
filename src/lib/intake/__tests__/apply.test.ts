@@ -23,6 +23,7 @@ import {
   expenses,
   familyMembers,
   intakeForms,
+  scenarios,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 // `scenarios` is not imported — the base scenario id comes back from
@@ -235,5 +236,178 @@ describe("applyIntake (existing-client path)", () => {
       .from(familyMembers)
       .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
     expect(childRows2).toHaveLength(1);
+  });
+});
+
+const PFIRM = "test-firm-apply-intake-prospect-2026";
+const PADVISOR = "user_test_apply_prospect";
+
+describe("applyIntake (prospect path — creates client on approve)", () => {
+  let householdId: string | undefined;
+  let clientId: string | undefined;
+  let scenarioId: string | undefined;
+  let formId: string | undefined;
+
+  afterAll(async () => {
+    if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
+    if (clientId) {
+      await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
+      await db.delete(incomes).where(eq(incomes.clientId, clientId));
+      await db.delete(accounts).where(eq(accounts.clientId, clientId));
+      await db.delete(expenses).where(eq(expenses.clientId, clientId));
+      await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+      await db.delete(clients).where(eq(clients.id, clientId));
+    }
+    if (householdId) {
+      await db
+        .delete(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, householdId));
+      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
+    }
+  });
+
+  it("creates the household + client + base scenario, then applies the sections", async () => {
+    // A `submitted` form with NO client yet — the prospect path must build the
+    // whole tree from the staged payload.
+    const payload: IntakePayload = {
+      family: {
+        primary: {
+          firstName: "Robin",
+          lastName: "Newclient",
+          dateOfBirth: "1980-02-15",
+          maritalStatus: "married",
+        },
+        spouse: {
+          firstName: "Sam",
+          lastName: "Newclient",
+          dateOfBirth: "1982-06-20",
+          maritalStatus: "married",
+        },
+        stateOfResidence: "CA",
+        children: [
+          { firstName: "Junior", lastName: "Newclient", dateOfBirth: "2012-03-03" },
+        ],
+      },
+      accounts: [
+        { name: "Robin 401k", category: "retirement", value: 310000 },
+      ],
+      income: [
+        {
+          name: "Robin Salary",
+          type: "salary",
+          annualAmount: 200000,
+          owner: "client",
+        },
+      ],
+      property: [],
+      goals: {
+        clientRetirementAge: 66,
+        spouseRetirementAge: 64,
+        annualRetirementExpenses: 120000,
+      },
+      meta: { completedSections: [] },
+    };
+
+    const token = newIntakeToken();
+    const [form] = await db
+      .insert(intakeForms)
+      .values({
+        firmId: PFIRM,
+        clientId: null,
+        mode: "blank",
+        status: "submitted",
+        token,
+        recipientEmail: "robin@example.com",
+        recipientName: "Robin Newclient",
+        payload,
+        createdByUserId: PADVISOR,
+        submittedAt: new Date(),
+        expiresAt: defaultExpiry(new Date()),
+      })
+      .returning();
+    formId = form.id;
+
+    // ── Apply ─────────────────────────────────────────────────────────────
+    const result = await applyIntake({ formId, firmId: PFIRM, actorId: PADVISOR });
+    clientId = result.clientId;
+    expect(clientId).toBeTruthy();
+
+    // ── Assert: a NEW client row exists in the firm ───────────────────────
+    const [clientRow] = await db
+      .select()
+      .from(clients)
+      .where(eq(clients.id, clientId));
+    expect(clientRow).toBeTruthy();
+    expect(clientRow.firmId).toBe(PFIRM);
+    expect(clientRow.retirementAge).toBe(66);
+    expect(clientRow.spouseRetirementAge).toBe(64);
+    expect(clientRow.filingStatus).toBe("married_joint");
+    householdId = clientRow.crmHouseholdId;
+
+    // ── Assert: a base-case scenario for the new client ───────────────────
+    const baseScenarios = await db
+      .select()
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+    expect(baseScenarios).toHaveLength(1);
+    scenarioId = baseScenarios[0].id;
+
+    // ── Assert: account applied to that scenario ──────────────────────────
+    const accountRows = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId)));
+    const retirement = accountRows.find((a) => a.name === "Robin 401k");
+    expect(retirement).toBeTruthy();
+    expect(retirement?.category).toBe("retirement");
+    expect(retirement?.value).toBe("310000.00");
+
+    // ── Assert: salary income applied ─────────────────────────────────────
+    const incomeRows = await db
+      .select()
+      .from(incomes)
+      .where(and(eq(incomes.clientId, clientId), eq(incomes.scenarioId, scenarioId)));
+    const salary = incomeRows.find((i) => i.name === "Robin Salary");
+    expect(salary).toBeTruthy();
+    expect(salary?.annualAmount).toBe("200000.00");
+
+    // ── Assert: child applied ─────────────────────────────────────────────
+    const childRows = await db
+      .select()
+      .from(familyMembers)
+      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
+    expect(childRows).toHaveLength(1);
+    expect(childRows[0].firstName).toBe("Junior");
+
+    // ── Assert: household created (state from payload) ────────────────────
+    const [hhRow] = await db
+      .select()
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.id, householdId));
+    expect(hhRow).toBeTruthy();
+    expect(hhRow.firmId).toBe(PFIRM);
+    expect(hhRow.state).toBe("CA");
+
+    // ── Assert: primary AND spouse CRM contacts created ───────────────────
+    const contactRows = await db
+      .select()
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, householdId));
+    const primaryContact = contactRows.find((c) => c.role === "primary");
+    const spouseContact = contactRows.find((c) => c.role === "spouse");
+    expect(primaryContact).toBeTruthy();
+    expect(primaryContact?.firstName).toBe("Robin");
+    expect(primaryContact?.email).toBe("robin@example.com");
+    expect(spouseContact).toBeTruthy();
+    expect(spouseContact?.firstName).toBe("Sam");
+
+    // ── Assert: form now points to the new client and is applied ──────────
+    const [formAfter] = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.id, formId));
+    expect(formAfter.clientId).toBe(clientId);
+    expect(formAfter.status).toBe("applied");
+    expect(formAfter.appliedAt).toBeTruthy();
   });
 });

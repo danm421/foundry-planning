@@ -18,8 +18,17 @@
  *    "intake.form.applied" event. Audits ride the global db (best-effort,
  *    append-only) and run after the transaction commits.
  *
- * This task implements the EXISTING-CLIENT (merge) path. The prospect
- * (new-client) path reuses applySectionsToClient with opts.mode === "fresh".
+ * Two paths, one transaction shape:
+ *   - EXISTING-CLIENT (merge): form.clientId is set. Resolve the base scenario,
+ *     applySectionsToClient(..., { mode: "merge" }) — family scalars UPDATE,
+ *     accounts/incomes/children APPEND.
+ *   - PROSPECT (fresh): form.clientId is null. Create the household + CRM
+ *     contacts + client + base scenario from the staged payload (all on the same
+ *     tx, no nested transaction), then applySectionsToClient(..., { mode:
+ *     "fresh" }) and back-fill form.clientId. The whole tree is built atomically.
+ *
+ * Both paths emit the SAME post-commit audits: per-entity recordCreate/
+ * recordUpdate plus the "intake.form.applied" summary (see emitApplyAudits).
  */
 
 import { and, eq } from "drizzle-orm";
@@ -41,6 +50,7 @@ import {
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { loadFormForFirm } from "@/lib/intake/queries";
+import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 
 // Drizzle transaction handle — same convention as create-client.ts / ownership.ts.
@@ -320,62 +330,22 @@ async function applySectionsToClient(
 }
 
 /**
- * Apply a submitted intake form to its existing client. Idempotent + atomic.
+ * Emit the post-commit audit trail for an applied form. Best-effort, on the
+ * global db, identical for both the merge and prospect paths: per-entity
+ * recordCreate (accounts/incomes/children), a recordUpdate for the family
+ * scalars, and the "intake.form.applied" summary. Hoisted so the prospect path
+ * fires the SAME audits as the existing-client path (the section ids come back
+ * from applySectionsToClient regardless of which path created the client).
  */
-export async function applyIntake(args: {
-  formId: string;
+async function emitApplyAudits(args: {
+  applied: ApplyResult;
+  clientId: string;
   firmId: string;
   actorId: string;
-}): Promise<{ clientId: string }> {
-  const { formId, firmId, actorId } = args;
+  formId: string;
+}): Promise<void> {
+  const { applied, clientId, firmId, actorId, formId } = args;
 
-  const form = await loadFormForFirm(formId, firmId);
-  if (!form) throw new Error(`Intake form ${formId} not found in firm ${firmId}`);
-  if (!form.clientId) {
-    // Existing-client path only — a form with no client is the prospect path
-    // (next task), handled elsewhere.
-    throw new Error(`Intake form ${formId} has no clientId (prospect path)`);
-  }
-
-  // Idempotency guard: only a freshly submitted form applies. Anything else
-  // (applied/discarded/expired/draft) is a no-op.
-  if (form.status !== "submitted") {
-    return { clientId: form.clientId };
-  }
-
-  const clientId = form.clientId;
-  const payload = intakeSubmitSchema.parse(form.payload);
-
-  const applied = await db.transaction(async (tx) => {
-    // Resolve the base-case scenario directly (no Clerk auth() outside a request).
-    const [baseScenario] = await tx
-      .select({ id: scenarios.id })
-      .from(scenarios)
-      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
-      .limit(1);
-    if (!baseScenario) {
-      throw new Error(`No base-case scenario for client ${clientId}`);
-    }
-
-    const sectionResult = await applySectionsToClient(
-      tx,
-      clientId,
-      baseScenario.id,
-      firmId,
-      actorId,
-      payload,
-      { mode: "merge" },
-    );
-
-    await tx
-      .update(intakeForms)
-      .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
-      .where(eq(intakeForms.id, formId));
-
-    return sectionResult;
-  });
-
-  // ── Audits (best-effort, post-commit, on the global db) ───────────────────
   for (const id of applied.accountIds) {
     await recordCreate({
       action: "account.create",
@@ -445,6 +415,162 @@ export async function applyIntake(args: {
       children: applied.childIds.length,
     },
   });
+}
 
+/**
+ * Apply a submitted intake form. Idempotent + atomic. Two paths:
+ *  - form.clientId set  → existing-client (merge) onto the base scenario.
+ *  - form.clientId null → prospect: create household + contacts + client + base
+ *    scenario from the payload, then apply the sections (mode "fresh").
+ */
+export async function applyIntake(args: {
+  formId: string;
+  firmId: string;
+  actorId: string;
+}): Promise<{ clientId: string }> {
+  const { formId, firmId, actorId } = args;
+
+  const form = await loadFormForFirm(formId, firmId);
+  if (!form) throw new Error(`Intake form ${formId} not found in firm ${firmId}`);
+
+  // Idempotency guard governs BOTH paths: only a freshly submitted form applies.
+  // Anything else (applied/discarded/expired/draft) is a no-op. The prospect
+  // branch back-fills clientId in the same tx as the status flip, so a re-apply
+  // sees "applied" and short-circuits here before re-creating anything.
+  if (form.status !== "submitted") {
+    return { clientId: form.clientId ?? "" };
+  }
+
+  const payload = intakeSubmitSchema.parse(form.payload);
+
+  // ── Prospect path: no client yet — build the whole tree, then apply. ──────
+  if (!form.clientId) {
+    const { clientId, applied } = await db.transaction(async (tx) => {
+      const { primary, spouse } = payload.family;
+
+      // 1. Household — leave status at the enum default ("prospect").
+      const [household] = await tx
+        .insert(crmHouseholds)
+        .values({
+          firmId,
+          advisorId: form.createdByUserId,
+          name: `${primary.lastName} Household`,
+          state: payload.family.stateOfResidence ?? null,
+        })
+        .returning({ id: crmHouseholds.id });
+
+      // 2. CRM contacts — primary (carries recipientEmail), spouse if present.
+      await tx.insert(crmHouseholdContacts).values({
+        householdId: household.id,
+        role: "primary",
+        firstName: primary.firstName,
+        lastName: primary.lastName,
+        dateOfBirth: primary.dateOfBirth,
+        maritalStatus: primary.maritalStatus ?? null,
+        email: form.recipientEmail,
+      });
+      if (spouse) {
+        await tx.insert(crmHouseholdContacts).values({
+          householdId: household.id,
+          role: "spouse",
+          firstName: spouse.firstName,
+          lastName: spouse.lastName,
+          dateOfBirth: spouse.dateOfBirth,
+          maritalStatus: spouse.maritalStatus ?? null,
+        });
+      }
+
+      // 3. Client + base scenario + default rows. createClientForHousehold runs
+      //    every insert on the supplied tx (no nested transaction), so this is
+      //    atomic with the household/contacts above and the sections below.
+      const { clientId, scenarioId } = await createClientForHousehold({
+        household: {
+          id: household.id,
+          firmId,
+          advisorId: form.createdByUserId,
+          state: payload.family.stateOfResidence ?? null,
+        },
+        primaryContact: {
+          firstName: primary.firstName,
+          lastName: primary.lastName,
+          dateOfBirth: primary.dateOfBirth,
+        },
+        spouseContact: spouse
+          ? {
+              firstName: spouse.firstName,
+              lastName: spouse.lastName,
+              dateOfBirth: spouse.dateOfBirth,
+            }
+          : null,
+        retirementAge: payload.goals.clientRetirementAge ?? 65,
+        lifeExpectancy: 95,
+        spouseRetirementAge:
+          payload.goals.spouseRetirementAge ?? (spouse ? 65 : null),
+        filingStatus: maritalToFilingStatus(primary.maritalStatus),
+        tx,
+      });
+
+      // 4. Apply the staged sections onto the just-created client/scenario.
+      const sectionResult = await applySectionsToClient(
+        tx,
+        clientId,
+        scenarioId,
+        firmId,
+        actorId,
+        payload,
+        { mode: "fresh" },
+      );
+
+      // 5. Back-fill clientId + flip status, all in the same tx.
+      await tx
+        .update(intakeForms)
+        .set({
+          clientId,
+          status: "applied",
+          appliedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(intakeForms.id, formId));
+
+      return { clientId, applied: sectionResult };
+    });
+
+    await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+    return { clientId };
+  }
+
+  // ── Existing-client path: merge onto the base scenario. ───────────────────
+  const clientId = form.clientId;
+
+  const applied = await db.transaction(async (tx) => {
+    // Resolve the base-case scenario directly (no Clerk auth() outside a request).
+    const [baseScenario] = await tx
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+      .limit(1);
+    if (!baseScenario) {
+      throw new Error(`No base-case scenario for client ${clientId}`);
+    }
+
+    const sectionResult = await applySectionsToClient(
+      tx,
+      clientId,
+      baseScenario.id,
+      firmId,
+      actorId,
+      payload,
+      { mode: "merge" },
+    );
+
+    await tx
+      .update(intakeForms)
+      .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
+      .where(eq(intakeForms.id, formId));
+
+    return sectionResult;
+  });
+
+  await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
   return { clientId };
 }
