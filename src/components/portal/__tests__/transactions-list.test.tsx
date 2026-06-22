@@ -92,8 +92,8 @@ describe("TransactionsList", () => {
 
   it("picking a category fires PUT with categoryId and optimistically updates the pill label", async () => {
     const cats = [
-      { id: "g1", name: "Food & Drink", kind: "group" as const, parentId: null },
-      { id: "l1", name: "Groceries", kind: "category" as const, parentId: "g1" },
+      { id: "g1", name: "Food & Drink", kind: "group" as const, parentId: null, color: null },
+      { id: "l1", name: "Groceries", kind: "category" as const, parentId: "g1", color: "#4CAF50" },
     ];
 
     const putCalls: { url: string; method: string; body: unknown }[] = [];

@@ -19,7 +19,7 @@ export type PortalTransactionDTO = {
   categorizedBy: "plaid" | "rule" | "manual";
   accountId: string | null;
 };
-type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null };
+type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
 
 const WINDOWS = [
   { key: "1M", label: "1M", days: 30 },
@@ -195,7 +195,7 @@ export default function TransactionsList({
                                 { categoryId: catId },
                                 (row) => {
                                   const picked = categories.find((c) => c.id === catId);
-                                  return { ...row, categoryId: catId, categoryName: picked?.name ?? null, categorizedBy: "manual" };
+                                  return { ...row, categoryId: catId, categoryName: picked?.name ?? null, categoryColor: picked?.color ?? null, categorizedBy: "manual" };
                                 },
                               )
                             }
