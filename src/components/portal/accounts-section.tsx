@@ -105,7 +105,6 @@ export default async function AccountsSection({
     ownersByAccount.set(o.accountId, list);
   }
 
-  const assetAccountIds = rows.map((r) => r.id);
   const totalAssets = rows.reduce((s, r) => s + Number(r.value || "0"), 0);
 
   const debtRows = scenario ? await loadPortalDebt(clientId, scenario.id) : [];
@@ -125,7 +124,7 @@ export default async function AccountsSection({
     .filter((x): x is string => x != null);
 
   const today = new Date().toISOString().slice(0, 10);
-  const txns = await loadPortalTrendTransactions(clientId, assetAccountIds, liabilityPlaidAccountIds);
+  const txns = await loadPortalTrendTransactions(clientId, accountIds, liabilityPlaidAccountIds);
   const startDate =
     txns.length > 0
       ? txns.reduce((min, t) => (t.date < min ? t.date : min), today)

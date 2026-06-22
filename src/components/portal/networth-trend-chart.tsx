@@ -70,7 +70,7 @@ export function NetWorthTrendChart({
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-ink-2">Net worth trend</h3>
-        <div className="flex gap-1">
+        <div className="flex gap-1" role="group" aria-label="Chart time window">
           {WINDOWS.map((w) => (
             <button
               key={w}
