@@ -20,9 +20,9 @@ vi.mock("@/components/portal/trusts-section", () => ({
     <div data-testid="section-trusts" data-client={clientId} />
   ),
 }));
-vi.mock("@/components/portal/accounts-section", () => ({
-  default: ({ clientId }: { clientId: string }) => (
-    <div data-testid="section-accounts" data-client={clientId} />
+vi.mock("@/components/portal/portal-accounts-screen", () => ({
+  PortalAccountsScreen: ({ clientId }: { clientId: string }) => (
+    <div data-testid="screen-accounts" data-client={clientId} />
   ),
 }));
 vi.mock("@/components/portal/portal-nav", () => ({
@@ -108,9 +108,9 @@ describe("PortalPreview catch-all", () => {
     expect(banner?.getAttribute("data-edit")).toBe("true");
   });
 
-  it("renders AccountsSection on slug=['accounts']", async () => {
+  it("renders PortalAccountsScreen on slug=['accounts']", async () => {
     const { container } = await renderPreview(["accounts"]);
-    const node = container.querySelector("[data-testid='section-accounts']");
+    const node = container.querySelector("[data-testid='screen-accounts']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
   });
