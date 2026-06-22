@@ -12,6 +12,24 @@ export function containsNumber(text: string): boolean {
   return new RegExp(NUMBER_TOKEN_SRC).test(text);
 }
 
+/** Stricter than containsNumber: true only when the text carries a number that
+ *  plausibly states a planning FIGURE — a $ amount, a %, an M/K magnitude, or a
+ *  thousands-grouped/large bare number — and NOT merely a 4-digit year or a small
+ *  bare integer (age/count). Used ONLY to decide whether a no-tool final answer
+ *  needs the verify pass, so conversational year/age mentions don't stall. */
+export function containsFinancialFigure(text: string): boolean {
+  for (const m of text.matchAll(new RegExp(NUMBER_TOKEN_SRC, "g"))) {
+    const tok = m[0].trim();
+    if (/[$%]/.test(tok) || /[MKmk]%?$/.test(tok)) return true; // $, %, or magnitude suffix
+    const n = Number(tok.replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    const isYear = Number.isInteger(n) && n >= 1900 && n <= 2100;
+    if (isYear) continue;
+    if (Math.abs(n) >= 1000) return true; // financial-magnitude bare number
+  }
+  return false;
+}
+
 /** Reduce a token to the set of plain numeric strings it could mean, so a
  *  payload that stores 2500000 grounds an answer that wrote "$2.5M". */
 function candidateValues(token: string): string[] {

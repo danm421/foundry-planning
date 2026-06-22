@@ -1,6 +1,6 @@
 // src/domain/forge/__tests__/grounding.test.ts
 import { describe, it, expect } from "vitest";
-import { findUngroundedNumbers, containsNumber } from "../grounding";
+import { findUngroundedNumbers, containsNumber, containsFinancialFigure } from "../grounding";
 
 // Fixed mock plan: the exact JSON payloads run_projection + run_monte_carlo
 // would return for this client/scenario.
@@ -172,5 +172,16 @@ describe("containsNumber", () => {
   it("is false for prose with no figures", () => {
     expect(containsNumber("The plan is on track and well funded.")).toBe(false);
     expect(containsNumber("")).toBe(false);
+  });
+});
+
+describe("containsFinancialFigure", () => {
+  it("does NOT treat a year/age sentence as a financial figure", () => {
+    expect(containsFinancialFigure("They retire in 2026 at age 65.")).toBe(false);
+  });
+  it("treats $/%/magnitude/thousands as financial figures", () => {
+    expect(containsFinancialFigure("Ending wealth ~ $2.5M.")).toBe(true);
+    expect(containsFinancialFigure("Success rate 92%.")).toBe(true);
+    expect(containsFinancialFigure("Net worth is 1,250,000.")).toBe(true);
   });
 });
