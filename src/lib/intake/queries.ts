@@ -96,6 +96,7 @@ export const loadSubmittedFormForClient = cache(
           eq(intakeForms.status, "submitted"),
         ),
       )
+      .orderBy(desc(intakeForms.createdAt))
       .limit(1);
     return rows[0] ?? null;
   },

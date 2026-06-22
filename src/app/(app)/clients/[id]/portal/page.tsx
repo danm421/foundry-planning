@@ -32,6 +32,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   let primaryEmail = "";
   let spouseEmail: string | undefined;
   let primaryName: string | undefined;
+  let spouseName: string | undefined;
 
   if (row?.crmHouseholdId) {
     const contacts = await db
@@ -53,6 +54,10 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     if (primary) {
       const fullName = `${primary.firstName} ${primary.lastName}`.trim();
       primaryName = primary.preferredName ?? (fullName || undefined);
+    }
+    if (spouse) {
+      const fullName = `${spouse.firstName} ${spouse.lastName}`.trim();
+      spouseName = spouse.preferredName ?? (fullName || undefined);
     }
   }
 
@@ -79,6 +84,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
         primaryEmail={primaryEmail}
         spouseEmail={spouseEmail}
         primaryName={primaryName}
+        spouseName={spouseName}
         clientAlreadyBound={!!row?.clerkUserId}
         pendingFormId={pending?.id ?? null}
       />

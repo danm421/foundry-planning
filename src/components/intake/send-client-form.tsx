@@ -11,6 +11,7 @@ interface Props {
   primaryEmail: string;
   spouseEmail?: string;
   primaryName?: string;
+  spouseName?: string;
   clientAlreadyBound: boolean;
   pendingFormId: string | null;
 }
@@ -20,6 +21,7 @@ export default function SendClientForm({
   primaryEmail,
   spouseEmail,
   primaryName,
+  spouseName,
   clientAlreadyBound,
   pendingFormId,
 }: Props) {
@@ -40,6 +42,11 @@ export default function SendClientForm({
 
     setSending(true);
     try {
+      const recipientName =
+        spouseEmail && recipientEmail === spouseEmail
+          ? (spouseName ?? primaryName)
+          : primaryName;
+
       const res = await fetch("/api/data-collection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -47,7 +54,7 @@ export default function SendClientForm({
           mode,
           clientId,
           recipientEmail,
-          recipientName: primaryName,
+          recipientName,
         }),
       });
 

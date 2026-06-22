@@ -3,8 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import SendClientForm from "../send-client-form";
 
+const mockRefresh = vi.fn();
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: mockRefresh }),
 }));
 
 vi.mock("next/link", () => ({
@@ -25,6 +27,7 @@ const defaultProps = {
 
 describe("SendClientForm", () => {
   beforeEach(() => {
+    mockRefresh.mockClear();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
@@ -116,5 +119,68 @@ describe("SendClientForm", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /use spouse email/i }));
     expect(screen.getByLabelText(/recipient email/i)).toHaveValue("spouse@example.com");
+  });
+
+  it("calls router.refresh() after a successful blank send", async () => {
+    render(<SendClientForm {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+
+    await waitFor(() => {
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("posts recipientName: spouseName when sending to the spouse email", async () => {
+    render(
+      <SendClientForm
+        {...defaultProps}
+        primaryEmail="jane@example.com"
+        primaryName="Jane Smith"
+        spouseEmail="spouse@example.com"
+        spouseName="Bob Smith"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /use spouse email/i }));
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/data-collection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "blank",
+          clientId: "client-abc",
+          recipientEmail: "spouse@example.com",
+          recipientName: "Bob Smith",
+        }),
+      });
+    });
+  });
+
+  it("posts recipientName: primaryName when sending to the primary email (default path)", async () => {
+    render(
+      <SendClientForm
+        {...defaultProps}
+        primaryEmail="jane@example.com"
+        primaryName="Jane Smith"
+        spouseEmail="spouse@example.com"
+        spouseName="Bob Smith"
+      />,
+    );
+    // No toggle — stays on primary email
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/data-collection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "blank",
+          clientId: "client-abc",
+          recipientEmail: "jane@example.com",
+          recipientName: "Jane Smith",
+        }),
+      });
+    });
   });
 });
