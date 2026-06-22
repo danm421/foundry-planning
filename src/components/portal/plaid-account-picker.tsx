@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { LinkSuccessPayload } from "./plaid-link-button";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type Decision =
   | { plaidAccountId: string; action: "skip" }
@@ -49,6 +50,7 @@ export function PlaidAccountPicker({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const portalFetch = usePortalFetch();
   const [rows, setRows] = useState<Record<string, RowState>>(() => {
     const initial: Record<string, RowState> = {};
     for (const a of payload.accounts) {
@@ -105,7 +107,7 @@ export function PlaidAccountPicker({
       };
     });
     startTransition(async () => {
-      const res = await fetch("/api/portal/plaid/exchange/commit", {
+      const res = await portalFetch("/api/portal/plaid/exchange/commit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemId: payload.itemId, decisions }),
