@@ -13,6 +13,7 @@ const PROFILE_ITEMS = [
 
 const OTHER_ITEMS = [
   { label: "Accounts", suffix: "/accounts" },
+  { label: "Transactions", suffix: "/transactions" },
 ] as const;
 
 interface Props {
