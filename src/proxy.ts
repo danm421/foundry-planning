@@ -25,6 +25,9 @@ const isPublicRoute = createRouteMatcher([
   // Sentry tunnel route (configured in next.config.ts `tunnelRoute`).
   // Browser SDK POSTs error envelopes here without a session cookie.
   "/monitoring(.*)",
+  // Public intake forms — reachable without a Clerk session.
+  "/intake/(.*)",
+  "/api/intake/(.*)",
 ]);
 
 // The org picker is the one authenticated route that signed-in-but-
