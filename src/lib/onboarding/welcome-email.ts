@@ -37,7 +37,6 @@ export async function sendWelcomeEmail(args: {
 
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
       console.log(`[welcome-email] → ${args.to} (Resend not configured)`);
     }
     return;
