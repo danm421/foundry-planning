@@ -7,6 +7,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
+import SendClientForm from "@/components/intake/send-client-form";
+import { loadSubmittedFormForClient } from "@/lib/intake/queries";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -14,7 +16,7 @@ interface Props {
 
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
-  await requireOrgId(); // layout already enforces firm scoping on `clients`
+  const orgId = await requireOrgId();
 
   const [row] = await db
     .select({
@@ -28,13 +30,33 @@ export default async function PortalManagePage({ params }: Props): Promise<React
     .limit(1);
 
   let primaryEmail = "";
+  let spouseEmail: string | undefined;
+  let primaryName: string | undefined;
+
   if (row?.crmHouseholdId) {
     const contacts = await db
-      .select({ email: crmHouseholdContacts.email, role: crmHouseholdContacts.role })
+      .select({
+        email: crmHouseholdContacts.email,
+        role: crmHouseholdContacts.role,
+        firstName: crmHouseholdContacts.firstName,
+        lastName: crmHouseholdContacts.lastName,
+        preferredName: crmHouseholdContacts.preferredName,
+      })
       .from(crmHouseholdContacts)
       .where(eq(crmHouseholdContacts.householdId, row.crmHouseholdId));
-    primaryEmail = contacts.find((c) => c.role === "primary")?.email ?? "";
+
+    const primary = contacts.find((c) => c.role === "primary");
+    const spouse = contacts.find((c) => c.role === "spouse");
+
+    primaryEmail = primary?.email ?? "";
+    spouseEmail = spouse?.email ?? undefined;
+    if (primary) {
+      const fullName = `${primary.firstName} ${primary.lastName}`.trim();
+      primaryName = primary.preferredName ?? (fullName || undefined);
+    }
   }
+
+  const pending = await loadSubmittedFormForClient(id, orgId);
 
   const status: "not_invited" | "invited" | "active" = row?.clerkUserId
     ? "active"
@@ -51,6 +73,14 @@ export default async function PortalManagePage({ params }: Props): Promise<React
         primaryEmail={primaryEmail}
         invitedAt={row?.portalInvitedAt ?? null}
         clerkUserId={row?.clerkUserId ?? null}
+      />
+      <SendClientForm
+        clientId={id}
+        primaryEmail={primaryEmail}
+        spouseEmail={spouseEmail}
+        primaryName={primaryName}
+        clientAlreadyBound={!!row?.clerkUserId}
+        pendingFormId={pending?.id ?? null}
       />
       <div className="rounded-md border border-hair bg-card-2 p-4">
         <div className="flex items-center justify-between gap-3">

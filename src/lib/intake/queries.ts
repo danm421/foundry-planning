@@ -80,6 +80,28 @@ export const hasUnsubmittedPrefilledForm = cache(async (
 });
 
 /**
+ * Load the most recent submitted form for a client, scoped to the given firm.
+ * Used by the advisor's portal-management page to show a "pending review" indicator.
+ * React.cache'd for per-request dedup, consistent with the sibling queries.
+ */
+export const loadSubmittedFormForClient = cache(
+  async (clientId: string, firmId: string): Promise<IntakeFormRow | null> => {
+    const rows = await db
+      .select()
+      .from(intakeForms)
+      .where(
+        and(
+          eq(intakeForms.clientId, clientId),
+          eq(intakeForms.firmId, firmId),
+          eq(intakeForms.status, "submitted"),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  },
+);
+
+/**
  * List all intake forms for a firm, newest first.
  * React.cache'd for per-request dedup, consistent with the sibling queries.
  */
