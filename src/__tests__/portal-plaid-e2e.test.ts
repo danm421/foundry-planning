@@ -114,13 +114,14 @@ vi.mock("@/lib/plaid/refresh", () => ({
 }));
 
 // Auth boundaries — resolve to the seeded client (patched in beforeAll)
-const requireClientPortalAccessMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...a: unknown[]) => resolvePortalClientMock(...a),
+}));
 vi.mock("@/lib/authz", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/authz")>();
   return {
     ...actual,
-    requireClientPortalAccess: (...args: unknown[]) =>
-      requireClientPortalAccessMock(...args),
   };
 });
 
@@ -207,8 +208,9 @@ d("Plaid E2E: link-token → exchange → commit → refresh → unlink", () => 
     seededScenarioId = scenario.id;
 
     // Wire the auth mock to resolve to this client
-    requireClientPortalAccessMock.mockResolvedValue({
+    resolvePortalClientMock.mockResolvedValue({
       clientId: seededClientId,
+      mode: "client",
       clerkUserId: "clerk_user_e2e",
     });
   }, 30_000);

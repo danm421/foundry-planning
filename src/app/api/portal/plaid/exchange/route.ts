@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, liabilities, plaidItems } from "@/db/schema";
-import {
-  authErrorResponse,
-  requireClientPortalAccess,
-} from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { encrypt } from "@/lib/plaid/crypto";
@@ -20,7 +18,7 @@ type Body = {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 

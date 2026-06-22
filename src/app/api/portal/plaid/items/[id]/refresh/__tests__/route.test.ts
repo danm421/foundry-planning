@@ -18,10 +18,12 @@ vi.mock("@/lib/rate-limit", () => ({
     NextResponse.json({ error: msg }, { status: 429 }),
 }));
 
-const requireClientPortalAccess = vi.fn();
+const resolvePortalClient = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...a: unknown[]) => resolvePortalClient(...a),
+}));
 const requireEditEnabled = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: (...a: unknown[]) => requireClientPortalAccess(...a),
   authErrorResponse: () => null,
 }));
 vi.mock("@/lib/portal/require-portal-subscription", () => ({
@@ -60,14 +62,14 @@ beforeEach(() => {
   fetchBalancesForItem.mockReset();
   recordCreate.mockReset();
   checkRefresh.mockReset();
-  requireClientPortalAccess.mockReset();
+  resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   dbSelect.mockReset();
   dbUpdate.mockClear();
   tx.update.mockClear();
   txUpdateWhere.mockClear();
 
-  requireClientPortalAccess.mockResolvedValue({ clientId: "client-1", clerkUserId: "user-1" });
+  resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
   requireEditEnabled.mockResolvedValue(undefined);
   checkRefresh.mockResolvedValue({ allowed: true });
   dbSelect.mockImplementation(() => ({

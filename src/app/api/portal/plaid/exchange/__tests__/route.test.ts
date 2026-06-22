@@ -9,11 +9,12 @@ vi.mock("@/lib/plaid/crypto", () => ({
   encrypt: (s: string) => `enc:${s}`,
 }));
 
-const requireClientPortalAccess = vi.fn();
+const resolvePortalClient = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...args: unknown[]) => resolvePortalClient(...args),
+}));
 const requireEditEnabled = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: (...args: unknown[]) =>
-    requireClientPortalAccess(...args),
   authErrorResponse: () => null,
 }));
 vi.mock("@/lib/portal/require-portal-subscription", () => ({
@@ -36,14 +37,15 @@ vi.mock("@/db", () => ({
 beforeEach(() => {
   itemPublicTokenExchange.mockReset();
   accountsGet.mockReset();
-  requireClientPortalAccess.mockReset();
+  resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   insertReturning.mockClear();
   dbInsert.mockClear();
   dbSelect.mockReset();
 
-  requireClientPortalAccess.mockResolvedValue({
+  resolvePortalClient.mockResolvedValue({
     clientId: "client-1",
+    mode: "client",
     clerkUserId: "user-1",
   });
   requireEditEnabled.mockResolvedValue(undefined);
