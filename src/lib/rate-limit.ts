@@ -367,6 +367,24 @@ export async function checkPortalPlaidLinkRateLimit(
   return safeLimit(limiter, clientId);
 }
 
+// Client intake forms. Autosave fires frequently as the client types; 120/hr
+// per token is generous for normal use but caps runaway retries. Submit is
+// rare (one per session effectively) so 10/hr is more than enough.
+const getIntakeAutosaveLimiter = buildLimiter(120, "1 h", "rl:intake-autosave");
+const getIntakeSubmitLimiter = buildLimiter(10, "1 h", "rl:intake-submit");
+
+export async function checkIntakeAutosaveRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntakeAutosaveLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkIntakeSubmitRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntakeSubmitLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 /**
  * Build the standard error response for a denied rate-limit check.
  * Maps `exceeded` → 429, anything else → 503, and emits Retry-After
