@@ -14,6 +14,8 @@ const APP_URL =
  * `portalInvitedAt` on the client row, and records an audit entry.
  *
  * Callers are responsible for:
+ *  - Verifying `clientId` belongs to `firmId` (e.g. via requireClientEditAccess)
+ *    BEFORE calling — the `portalInvitedAt` update is keyed on clientId alone.
  *  - Rate-limiting (checkPortalInviteRateLimit) before calling.
  *  - Catching ClerkAPIResponseError / clerkInviteErrorResponse — this
  *    helper does NOT catch; it lets Clerk errors propagate so each route

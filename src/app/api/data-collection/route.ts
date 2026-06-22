@@ -1,7 +1,7 @@
 // @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(clientId) / requireOrgId; the literal getOrgId/requireOrgId grep doesn't see this.
 
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, intakeForms } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
@@ -126,7 +126,8 @@ export async function POST(req: Request): Promise<Response> {
       const [clientRow] = await db
         .select({ clerkUserId: clients.clerkUserId })
         .from(clients)
-        .where(eq(clients.id, clientIdStr!));
+        // firm-scoped belt-and-suspenders (requireClientEditAccess already verified ownership)
+        .where(and(eq(clients.id, clientIdStr!), eq(clients.firmId, firmId)));
 
       if (!clientRow?.clerkUserId) {
         // Not yet bound — send invite (Clerk dup errors are non-fatal here:
