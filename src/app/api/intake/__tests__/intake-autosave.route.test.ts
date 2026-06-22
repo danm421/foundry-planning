@@ -8,14 +8,13 @@ import type { IntakePayload } from "@/lib/intake/schema";
 // --- Rate-limit mock ---
 const checkAutosaveMock = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
-  extractClientIp: (_req: Request) => "127.0.0.1",
+  extractClientIp: () => "127.0.0.1",
   checkIntakeAutosaveRateLimit: (key: string) => checkAutosaveMock(key),
   rateLimitErrorResponse: (rl: { reason: string; reset?: number }) => {
-    const { NextResponse } = require("next/server");
-    return NextResponse.json(
-      { error: "Too many requests" },
-      { status: rl.reason === "exceeded" ? 429 : 503 },
-    );
+    return new Response(JSON.stringify({ error: "Too many requests" }), {
+      status: rl.reason === "exceeded" ? 429 : 503,
+      headers: { "Content-Type": "application/json" },
+    });
   },
 }));
 
