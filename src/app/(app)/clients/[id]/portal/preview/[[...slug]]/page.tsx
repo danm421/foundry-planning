@@ -28,13 +28,13 @@ export default async function PortalPreviewPage({
   const path = (slug ?? []).join("/");
   let section: ReactElement;
   if (path === "" || path === "profile") {
-    section = <HouseholdSection clientId={id} previewing />;
+    section = <HouseholdSection clientId={id} />;
   } else if (path === "profile/family") {
-    section = <FamilySection clientId={id} previewing />;
+    section = <FamilySection clientId={id} />;
   } else if (path === "profile/trusts") {
-    section = <TrustsSection clientId={id} previewing />;
+    section = <TrustsSection clientId={id} />;
   } else if (path === "accounts") {
-    section = <AccountsSection clientId={id} previewing />;
+    section = <AccountsSection clientId={id} />;
   } else {
     notFound();
   }

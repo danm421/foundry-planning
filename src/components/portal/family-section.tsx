@@ -6,12 +6,10 @@ import ProfileFamilyList from "@/components/portal/profile-family-list";
 
 interface Props {
   clientId: string;
-  previewing?: boolean;
 }
 
 export default async function FamilySection({
   clientId,
-  previewing = false,
 }: Props): Promise<ReactElement> {
   const [client] = await db
     .select({ portalEditEnabled: clients.portalEditEnabled })
@@ -30,7 +28,7 @@ export default async function FamilySection({
     .from(familyMembers)
     .where(eq(familyMembers.clientId, clientId));
 
-  const editEnabled = previewing ? false : (client?.portalEditEnabled ?? false);
+  const editEnabled = client?.portalEditEnabled ?? false;
 
   return (
     <div className="max-w-2xl p-5">

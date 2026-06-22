@@ -53,17 +53,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 import HouseholdSection from "../household-section";
 
 describe("HouseholdSection", () => {
-  it("renders in read-only mode (no inputs) when previewing=true, even though portalEditEnabled is true in DB", async () => {
-    const ui = await HouseholdSection({ clientId: "c1", previewing: true });
-    const { container } = render(ui);
-    // ProfileHouseholdForm renders <div>{value}</div> per field instead of
-    // <input> when editEnabled is false. Verify zero text inputs.
-    expect(container.querySelectorAll("input[type='text']").length).toBe(0);
-    // No Save button (only appears when dirty AND editEnabled).
-    expect(container.textContent).not.toContain("Save");
-  });
-
-  it("renders editable inputs when previewing is omitted and portalEditEnabled is true", async () => {
+  it("renders editable inputs when portalEditEnabled is true", async () => {
     const ui = await HouseholdSection({ clientId: "c1" });
     const { container } = render(ui);
     expect(container.querySelectorAll("input[type='text']").length).toBeGreaterThan(0);
