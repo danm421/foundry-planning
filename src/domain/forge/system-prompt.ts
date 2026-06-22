@@ -15,6 +15,13 @@ export type ForgePromptContext = {
   currentPage?: string;
   /** A document import the advisor just uploaded in chat, awaiting review. */
   pendingImport?: { importId: string };
+  /** Display name of the advisor in this conversation (Clerk user name). */
+  advisorName?: string;
+  /** Today's date as an ISO string (YYYY-MM-DD), supplied server-side so Forge
+   *  never guesses the date for "since"/"last"/relative-date reasoning. */
+  todayISO?: string;
+  /** Durable, non-sensitive preferences recalled from memory for this turn. */
+  knownPreferences?: string[];
 };
 
 /** No-hallucinated-numbers grounding rules. Lives IN the stable prefix so Azure
@@ -96,6 +103,18 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
     `Active scenario: ${scenarioLabel}.`,
     pageLine,
     ...(importLine ? [importLine] : []),
+    ...(ctx.advisorName ? [`You are assisting ${ctx.advisorName}.`] : []),
+    ...(ctx.todayISO
+      ? [
+          `Today's date is ${ctx.todayISO} — treat it as authoritative for any "since", "last", or relative-date reasoning; never guess the date.`,
+        ]
+      : []),
+    ...(ctx.knownPreferences && ctx.knownPreferences.length > 0
+      ? [
+          "Known preferences (durable, recalled from memory — apply unless the advisor's current message overrides them, which always takes precedence):",
+          ...ctx.knownPreferences.map((p) => `- ${p}`),
+        ]
+      : []),
   ].join("\n");
   return FORGE_SYSTEM_PREFIX + "\n" + tail;
 }
