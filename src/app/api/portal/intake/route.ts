@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, intakeForms } from "@/db/schema";
-import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
+import { requireClientPortalAccess, authErrorResponse, ForbiddenError } from "@/lib/authz";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { loadActivePrefilledForm } from "@/lib/intake/queries";
 import { snapshotClientToPayload } from "@/lib/intake/snapshot";
@@ -29,7 +29,7 @@ async function resolveAuth(): Promise<{ clientId: string; firmId: string }> {
     .limit(1);
 
   if (!clientRow) {
-    throw new Error("Forbidden: client not found");
+    throw new ForbiddenError("client not found");
   }
 
   return { clientId, firmId: clientRow.firmId };

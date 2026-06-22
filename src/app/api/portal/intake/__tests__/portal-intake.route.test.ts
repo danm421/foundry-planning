@@ -4,29 +4,35 @@ import { intakeForms, auditLog, clients, crmHouseholds, crmHouseholdContacts } f
 import { and, eq } from "drizzle-orm";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import type { IntakePayload } from "@/lib/intake/schema";
+import { ForbiddenError } from "@/lib/authz";
 
 // ── Auth chain mocks ──────────────────────────────────────────────────────────
 // Mirror the pattern from src/app/api/portal/family/__tests__/route.test.ts
 
 const requirePortalMock = vi.fn();
 
-vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requirePortalMock(),
-  ForbiddenError: class ForbiddenError extends Error {
-    constructor(m?: string) {
-      super(m ?? "Forbidden");
-      this.name = "ForbiddenError";
-    }
-  },
-  authErrorResponse: (e: unknown) => {
-    if (!(e instanceof Error)) return null;
-    if (e.message === "Unauthorized") return { status: 401 as const, body: { error: "Unauthorized" } };
-    if (e.name === "ForbiddenError" || e.message.startsWith("Forbidden")) {
-      return { status: 403 as const, body: { error: e.message } };
-    }
-    return null;
-  },
-}));
+vi.mock("@/lib/authz", async (importOriginal) => {
+  // Import the real module so we get the genuine ForbiddenError / UnauthorizedError
+  // classes — this is what makes instanceof checks faithful to production.
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return {
+    ...actual,
+    requireClientPortalAccess: () => requirePortalMock(),
+    // authErrorResponse mirrors the real implementation in src/lib/authz.ts
+    // (lines ~143-153): instanceof-based, NOT string-prefix matching.
+    authErrorResponse: (e: unknown) => {
+      if (e instanceof actual.ForbiddenError)
+        return { status: 403 as const, body: { error: (e as Error).message } };
+      // UnauthorizedError lives in db-helpers but is re-exported via authz in prod.
+      // Use the same instanceof check the real impl does.
+      if (e instanceof Error && (e as Error & { name: string }).name === "UnauthorizedError")
+        return { status: 401 as const, body: { error: "Unauthorized" } };
+      if (e instanceof Error && (e as Error).message === "Unauthorized")
+        return { status: 401 as const, body: { error: "Unauthorized" } };
+      return null;
+    },
+  };
+});
 
 vi.mock("@/lib/portal/require-portal-subscription", () => ({
   requirePortalActiveSubscription: () => Promise.resolve(),
@@ -306,9 +312,21 @@ describe("POST /api/portal/intake (submit)", () => {
 
 describe("Auth guard", () => {
   it("403 when requireClientPortalAccess throws a ForbiddenError", async () => {
-    const err = new Error("Forbidden: No portal binding for this user");
-    err.name = "ForbiddenError";
-    requirePortalMock.mockRejectedValue(err);
+    // Use the real ForbiddenError class so instanceof check in authErrorResponse works.
+    requirePortalMock.mockRejectedValue(new ForbiddenError("No portal binding for this user"));
+
+    const res = await GET();
+    expect(res.status).toBe(403);
+  }, 30000);
+
+  it("403 (not 500) when auth resolves a clientId but the clients row is missing", async () => {
+    // Simulate the scenario: requireClientPortalAccess returns a clientId that
+    // does NOT exist in the clients table (e.g. a deleted or dangling binding).
+    // The route's resolveAuth() SELECT returns [], and it must throw ForbiddenError
+    // (not a plain Error) so authErrorResponse maps it to 403 rather than re-throwing
+    // into an unhandled 500.
+    const phantomId = "00000000-0000-0000-0000-000000000001";
+    requirePortalMock.mockResolvedValue({ clientId: phantomId });
 
     const res = await GET();
     expect(res.status).toBe(403);
