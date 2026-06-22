@@ -18,7 +18,7 @@ import { decrypt } from "@/lib/plaid/crypto";
 
 export const dynamic = "force-dynamic";
 
-type Body = { itemId?: string };
+type Body = { itemId?: string; enableProducts?: boolean };
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -62,6 +62,9 @@ export async function POST(req: Request): Promise<Response> {
       const resp = await plaid.linkTokenCreate({
         ...baseRequest,
         access_token: decrypt(item.accessToken),
+        ...(body.enableProducts
+          ? { additional_consented_products: [Products.Transactions, Products.Liabilities] }
+          : {}),
       });
       return NextResponse.json({
         linkToken: resp.data.link_token,
@@ -72,7 +75,12 @@ export async function POST(req: Request): Promise<Response> {
     // New-link mode.
     const resp = await plaid.linkTokenCreate({
       ...baseRequest,
-      products: [Products.Auth, Products.Investments],
+      products: [
+        Products.Auth,
+        Products.Investments,
+        Products.Transactions,
+        Products.Liabilities,
+      ],
     });
     return NextResponse.json({
       linkToken: resp.data.link_token,

@@ -64,7 +64,7 @@ describe("POST /api/portal/plaid/link-token", () => {
       expect.objectContaining({
         user: { client_user_id: "client-1" },
         client_name: expect.any(String),
-        products: ["auth", "investments"],
+        products: ["auth", "investments", "transactions", "liabilities"],
         country_codes: ["US"],
         language: "en",
       }),
@@ -137,5 +137,69 @@ describe("POST /api/portal/plaid/link-token", () => {
     );
     expect(res.status).toBe(404);
     expect(linkTokenCreate).not.toHaveBeenCalled();
+  });
+
+  it("new link requests Transactions + Liabilities", async () => {
+    const { POST } = await import("../route");
+    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    const arg = linkTokenCreate.mock.calls[0][0];
+    expect(arg.products).toEqual(
+      expect.arrayContaining(["auth", "investments", "transactions", "liabilities"]),
+    );
+    expect(arg.additional_consented_products).toBeUndefined();
+  });
+
+  it("enableProducts uses update mode with additional_consented_products", async () => {
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1", enableProducts: true }),
+      }),
+    );
+    const arg = linkTokenCreate.mock.calls[0][0];
+    expect(arg.access_token).toBeDefined();
+    expect(arg.products).toBeUndefined();
+    expect(arg.additional_consented_products).toEqual(
+      expect.arrayContaining(["transactions", "liabilities"]),
+    );
+  });
+
+  it("plain re-auth (itemId only) omits products AND additional_consented_products", async () => {
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+    );
+    const arg = linkTokenCreate.mock.calls[0][0];
+    expect(arg.access_token).toBeDefined();
+    expect(arg.products).toBeUndefined();
+    expect(arg.additional_consented_products).toBeUndefined();
   });
 });
