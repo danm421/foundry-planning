@@ -77,9 +77,14 @@ export function PlaidLinkButton(props: Props) {
         return;
       }
       if (props.mode === "enable-products") {
-        await fetch(`/api/portal/plaid/items/${props.itemId}/sync`, {
-          method: "POST",
-        });
+        const syncRes = await fetch(
+          `/api/portal/plaid/items/${props.itemId}/sync`,
+          { method: "POST" },
+        );
+        if (!syncRes.ok) {
+          alert("Could not enable spending insights. Please try again.");
+          return;
+        }
         await fetch(`/api/portal/plaid/items/${props.itemId}/refresh`, {
           method: "POST",
         });

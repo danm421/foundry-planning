@@ -78,5 +78,13 @@ describe("PlaidLinkButton", () => {
         body: JSON.stringify({ itemId: "item-1", enableProducts: true }),
       }),
     );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/items/item-1/sync",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/items/item-1/refresh",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
