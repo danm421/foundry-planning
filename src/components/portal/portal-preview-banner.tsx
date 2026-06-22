@@ -15,10 +15,11 @@ export default function PortalPreviewBanner({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-accent/40 bg-accent/10 px-5 py-2 text-[12px] text-accent">
       <div>
-        Previewing client portal as{" "}
-        <span className="font-semibold">{clientName || "this client"}</span> —
-        read-only. Client edit toggle is{" "}
-        <span className="font-semibold">{editEnabled ? "on" : "off"}</span>.
+        Previewing the client portal as{" "}
+        <span className="font-semibold">{clientName || "this client"}</span>.
+        Editing is{" "}
+        <span className="font-semibold">{editEnabled ? "on" : "off"}</span> —
+        changes you make here save to the client&apos;s account.
       </div>
       <Link
         href={`/clients/${clientId}/portal`}

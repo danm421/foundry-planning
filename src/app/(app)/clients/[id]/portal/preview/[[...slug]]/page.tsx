@@ -9,6 +9,7 @@ import TrustsSection from "@/components/portal/trusts-section";
 import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
+import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 
 interface Props {
   params: Promise<{ id: string; slug?: string[] }>;
@@ -80,7 +81,9 @@ export default async function PortalPreviewPage({
           clientName={displayName}
           editEnabled={row?.portalEditEnabled ?? false}
         />
-        {section}
+        <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
+          {section}
+        </PortalModeProvider>
       </main>
       <aside id="portal-detail" className="p-4" />
     </div>

@@ -5,6 +5,7 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
+import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 
 export default async function PortalLayout({
   children,
@@ -55,7 +56,9 @@ export default async function PortalLayout({
       <PortalNav displayName={displayName} email={email} />
       <main className="border-x border-hair">
         {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
-        {children}
+        <PortalModeProvider value={{ mode: "client", clientId }}>
+          {children}
+        </PortalModeProvider>
       </main>
       <aside id="portal-detail" className="p-4" />
     </div>
