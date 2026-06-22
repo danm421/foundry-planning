@@ -104,6 +104,19 @@ describe("POST /api/data-collection/[id]/discard", () => {
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
 
+  it("returns 409 when form is already discarded (terminal — no spurious re-discard)", async () => {
+    loadFormForFirmMock.mockResolvedValue({
+      id: "form-1",
+      firmId: "firm-1",
+      status: "discarded",
+      clientId: "client-1",
+    });
+    const res = await POST(postReq(), ctx);
+    expect(res.status).toBe(409);
+    expect(dbUpdateMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when loadFormForFirm returns null (cross-firm / nonexistent)", async () => {
     loadFormForFirmMock.mockResolvedValue(null);
     const res = await POST(postReq(), crossFirmCtx);

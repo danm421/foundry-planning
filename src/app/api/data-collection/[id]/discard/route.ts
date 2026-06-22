@@ -24,11 +24,15 @@ export async function POST(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (form.status === "applied") {
-      return NextResponse.json(
-        { error: "Cannot discard an applied form — its data is live" },
-        { status: 409 },
-      );
+    // Only an open form (draft or submitted) can be discarded. Re-discarding a
+    // terminal form (applied/discarded/expired) is a no-op that would emit a
+    // spurious audit + bump updatedAt, so reject it.
+    if (form.status !== "draft" && form.status !== "submitted") {
+      const reason =
+        form.status === "applied"
+          ? "Cannot discard an applied form — its data is live"
+          : `Form is already ${form.status}`;
+      return NextResponse.json({ error: reason }, { status: 409 });
     }
 
     await db
