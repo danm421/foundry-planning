@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { intakeForms } from "@/db/schema";
 
@@ -78,3 +78,10 @@ export const hasUnsubmittedPrefilledForm = cache(async (
     .limit(1);
   return rows.length > 0;
 });
+
+/**
+ * List all intake forms for a firm, newest first.
+ */
+export async function listFormsForFirm(firmId: string): Promise<IntakeFormRow[]> {
+  return db.select().from(intakeForms).where(eq(intakeForms.firmId, firmId)).orderBy(desc(intakeForms.createdAt));
+}
