@@ -26,9 +26,25 @@ export function categorizeForgeError(err: unknown): { safeMessage: string; categ
   if (err instanceof ProjectionInputError) {
     return { safeMessage: PROJECTION_MESSAGE, category: "projection_input" };
   }
+  // A graph that exceeded its step budget (recursionLimit). Detect by name so we
+  // don't depend on the LangGraph export path. Give the advisor an actionable
+  // nudge instead of the generic fallback — never echo the raw limit text.
+  if (err instanceof Error && err.name === "GraphRecursionError") {
+    return {
+      safeMessage:
+        "That turned into a very long chain of steps — try asking it in smaller parts (for example, one scenario at a time).",
+      category: "recursion_limit",
+    };
+  }
   // Everything else: do NOT echo arbitrary err.message — it may carry UUIDs or
   // internal detail. The safest posture is a single generic fallback.
   return { safeMessage: GENERIC_FALLBACK, category: "unknown" };
+}
+
+/** Server-side, PII-free failure log. Category is a stable tag (never the raw
+ *  message, which may carry client UUIDs); conversationId is the trace key. */
+export function logForgeError(category: string, conversationId: string): void {
+  console.error("[forge] turn failed", { category, conversationId });
 }
 
 export function safeForgeErrorMessage(err: unknown): string {

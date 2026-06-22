@@ -192,3 +192,58 @@ it("no longer forces a 2–4 option menu or a 'which they'd like' ritual", () =>
   expect(prompt).not.toMatch(/offer .* options/i);
   expect(prompt).not.toMatch(/which they'd like/i);
 });
+
+describe("per-turn personalization tail (advisor name, today's date, recalled preferences)", () => {
+  const richCtx: ForgePromptContext = {
+    ...baseCtx,
+    advisorName: "Dana Reyes",
+    todayISO: "2026-06-22",
+    knownPreferences: [
+      "Frame projections in after-tax dollars.",
+      "This client is risk-averse; lead with downside.",
+    ],
+  };
+
+  it("names the advisor being assisted", () => {
+    const prompt = buildSystemPrompt(richCtx);
+    expect(prompt).toContain("You are assisting Dana Reyes.");
+  });
+
+  it("states today's date as authoritative and tells Forge never to guess it", () => {
+    const prompt = buildSystemPrompt(richCtx);
+    expect(prompt).toContain("2026-06-22");
+    expect(prompt).toMatch(/today's date is 2026-06-22/i);
+    expect(prompt).toMatch(/authoritative/i);
+    expect(prompt).toMatch(/never guess the date/i);
+  });
+
+  it("renders the recalled-preferences block with each preference bulleted", () => {
+    const prompt = buildSystemPrompt(richCtx);
+    expect(prompt).toMatch(/Known preferences \(durable, recalled from memory/);
+    expect(prompt).toContain("- Frame projections in after-tax dollars.");
+    expect(prompt).toContain("- This client is risk-averse; lead with downside.");
+  });
+
+  it("carries the supersede clause: the advisor's current message always wins", () => {
+    const prompt = buildSystemPrompt(richCtx);
+    expect(prompt).toMatch(
+      /apply unless the advisor's current message overrides them, which always takes precedence/i,
+    );
+  });
+
+  it("emits NONE of the personalization lines when all optional fields are absent (back-compat)", () => {
+    const prompt = buildSystemPrompt(baseCtx);
+    expect(prompt).not.toMatch(/You are assisting/);
+    expect(prompt).not.toMatch(/Today's date is/i);
+    expect(prompt).not.toMatch(/Known preferences/);
+  });
+
+  it("keeps the cacheable prefix free of advisor/date/preference text (cache safety)", () => {
+    // The new per-turn context must live ONLY in the variable tail. If a future
+    // change moves it into FORGE_SYSTEM_PREFIX, prompt caching breaks — catch it.
+    expect(FORGE_SYSTEM_PREFIX).not.toMatch(/You are assisting/);
+    expect(FORGE_SYSTEM_PREFIX).not.toMatch(/Today's date is/i);
+    expect(FORGE_SYSTEM_PREFIX).not.toMatch(/Known preferences/);
+    expect(FORGE_SYSTEM_PREFIX).not.toMatch(/recalled from memory/i);
+  });
+});

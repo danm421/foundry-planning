@@ -170,21 +170,24 @@ const EXPECTED_MEMORY_TOOL_NAMES = ["read_memory", "write_memory"];
 
 const EXPECTED_BOOK = ["scan_book"];
 
-describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book)", () => {
-  it("returns exactly the 58 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book)", () => {
+const EXPECTED_NAVIGATE = ["open_page"];
+
+describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
+  it("returns exactly the 59 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 1 navigate)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
-    // Phase-1, scenario-write, detail-write, report, and memory tools all present
+    // Phase-1, scenario-write, detail-write, report, memory, and navigate tools all present
     for (const n of [
       ...EXPECTED_PHASE1,
       ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
       ...EXPECTED_DETAIL_WRITE_TOOL_NAMES,
       "generate_report",
       ...EXPECTED_MEMORY_TOOL_NAMES,
+      ...EXPECTED_NAVIGATE,
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(58);
+    expect(tools).toHaveLength(59);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -302,9 +305,24 @@ describe("buildTools (book bundle)", () => {
   });
 });
 
+describe("buildTools (navigate bundle)", () => {
+  it("includes the navigate bundle's single tool", () => {
+    const names = buildTools(TOOL_CTX).map((t) => t.name);
+    for (const n of EXPECTED_NAVIGATE) expect(names).toContain(n);
+  });
+
+  it("open_page is NOT a write tool (non-destructive routing, no HITL)", () => {
+    expect(WRITE_TOOL_NAMES.has("open_page")).toBe(false);
+  });
+
+  it("routes open_page to tools (auto-apply, no approval gate)", () => {
+    expect(routeAfterAgent([{ name: "open_page" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+});
+
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 58)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(58);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 59)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(59);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {

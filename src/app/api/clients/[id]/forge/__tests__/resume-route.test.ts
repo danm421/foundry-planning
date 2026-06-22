@@ -7,7 +7,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // graph/Command capture used to assert the rebuilt ctx + the resume value.
 
 const auth = vi.fn();
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => auth() }));
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => auth(),
+  // D3: routes call currentUser() after auth() for the advisor display name.
+  currentUser: () => Promise.resolve({ firstName: "Ada", lastName: "Advisor" }),
+}));
 
 const requireOrgId = vi.fn<() => Promise<string>>();
 vi.mock("@/lib/db-helpers", () => ({

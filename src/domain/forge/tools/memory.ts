@@ -33,7 +33,10 @@ export function buildMemoryTools({ ctx }: ForgeToolContext): StructuredToolInter
 
   const write = tool(
     async ({ scope, key, value }: { scope: "client" | "advisor"; key: string; value: string }) => {
-      await getStore().put(namespace(ctx, scope), key, { value });
+      await getStore().put(namespace(ctx, scope), key, {
+        value,
+        updatedAt: new Date().toISOString(),
+      });
       return `Saved ${scope} memory '${key}'.`;
     },
     {

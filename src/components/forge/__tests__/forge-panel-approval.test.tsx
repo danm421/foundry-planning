@@ -84,6 +84,8 @@ function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForg
     send: vi.fn(),
     cancel: vi.fn(),
     resume: vi.fn(),
+    retry: vi.fn(),
+    retryAfterSeconds: null,
     ...overrides,
   };
 }
@@ -163,5 +165,31 @@ describe("ForgePanel approval slot — Phase 2", () => {
     mountPanel();
     expect(screen.getByRole("textbox", { name: /ask forge/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A4 — Retry button hidden while an approval is pending
+// (requires controlled mock to hold status===error AND pendingApproval!=null
+//  simultaneously — which is impossible to drive through the real hook)
+// ---------------------------------------------------------------------------
+describe("ForgePanel Retry button — A4 (pendingApproval guard)", () => {
+  beforeEach(() => {
+    mockStreamState = makeStreamState();
+  });
+
+  it("(5) hides the Retry button while pendingApproval is set", () => {
+    // status === "error" with a pending approval: the approval card takes
+    // precedence, so the Retry button must not render alongside it.
+    mockStreamState = makeStreamState({
+      status: "error",
+      errorMessage: "Something went wrong",
+      pendingApproval: SAMPLE_APPROVAL,
+    });
+    mountPanel();
+    // The error message itself is shown (error block is still rendered)…
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    // …but the Retry button is hidden while the approval is pending.
+    expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
   });
 });

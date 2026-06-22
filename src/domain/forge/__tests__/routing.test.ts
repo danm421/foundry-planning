@@ -1,6 +1,7 @@
 // src/domain/forge/__tests__/routing.test.ts
 import { describe, it, expect } from "vitest";
 import { routeAfterAgent } from "../routing";
+import { containsFinancialFigure } from "../grounding";
 
 // Phase 2 names; in Phase 0 the set is empty so the approval branch is unreachable.
 const WRITE = new Set(["create_scenario"]);
@@ -30,5 +31,17 @@ describe("routeAfterAgent", () => {
   it("ignores hasNumber when there are tool calls", () => {
     expect(routeAfterAgent([{ name: "run_projection" }], WRITE, true)).toBe("tools");
     expect(routeAfterAgent([{ name: "create_scenario" }], WRITE, true)).toBe("approval");
+  });
+
+  // Wiring contract for the graph's agent→{verify,__end__} edge: the final answer
+  // is fed through containsFinancialFigure, whose result is routeAfterAgent's
+  // hasNumber arg. A figure-bearing answer must verify; a bare year/age must not.
+  it("routes a no-tool answer carrying a financial figure to verify", () => {
+    const answer = "Your median ending wealth is about $2.5M with a 92% success rate.";
+    expect(routeAfterAgent([], WRITE, containsFinancialFigure(answer))).toBe("verify");
+  });
+  it("ends a no-tool answer carrying only a year/age (no stall on conversational figures)", () => {
+    const answer = "They retire in 2026 at age 65.";
+    expect(routeAfterAgent([], WRITE, containsFinancialFigure(answer))).toBe("__end__");
   });
 });

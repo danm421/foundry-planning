@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { Command } from "@langchain/langgraph";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
@@ -46,7 +46,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   let clientId: string;
   let userId: string;
   let firmName: string;
+  let advisorName: string | undefined;
   let entitlements: string[] | undefined;
+  const todayISO = new Date().toISOString().slice(0, 10);
   try {
     firmId = await requireOrgId();
     ({ id: clientId } = await ctx.params);
@@ -56,6 +58,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     const { userId: uid, sessionClaims } = await auth();
     if (!uid) return json(401, { error: "Unauthorized" });
     userId = uid;
+    const u = await currentUser();
+    advisorName = [u?.firstName, u?.lastName].filter(Boolean).join(" ") || undefined;
     const claims = sessionClaims as
       | { org_public_metadata?: { entitlements?: string[] }; org_name?: string }
       | null;
@@ -161,6 +165,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       firmId,
       scenarioId: authContext.scenarioId,
       firmName,
+      userId,
+      advisorName,
+      todayISO,
     });
     systemPrompt = () => buildSystemPrompt(promptCtx);
   } catch {
@@ -204,10 +211,11 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       // Cancel-on-disconnect: stop consuming and close once the client aborts.
       // The abort signal is also threaded into streamEvents so the graph run
       // itself is cancelled, not just the SSE write side.
-      // DIVERGENCE (intentional): this resume route handles req.signal
-      // cancel-on-disconnect; the stream route does NOT yet (logged open item in
-      // security-hardening.md "## Open — Forge Phase-0", "Abort the in-flight
-      // Azure request on client disconnect"). A future PR should backport this here.
+      // PARITY: the stream route (stream/route.ts) now runs the same
+      // cancel-on-disconnect + buffer-flush-on-error pattern (backported
+      // 2026-06-21; see SECURITY_HARDENING_LOG.md). The only intentional
+      // difference is the buffer flush: this resume route streams live (no
+      // verify-gate answer buffer to release), so its catch only emits the error.
       const onAbort = () => {
         closed = true;
         try {

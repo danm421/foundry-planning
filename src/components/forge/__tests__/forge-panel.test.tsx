@@ -273,3 +273,190 @@ describe("ForgePanel", () => {
     expect(screen.getByTestId("chip-scenario").textContent).toContain("Delay SS to 70");
   });
 });
+
+// ---------------------------------------------------------------------------
+// E2 — Human-readable tool-status labels + persistent "Working…" sentinel
+// ---------------------------------------------------------------------------
+// Drive via the real useForgeStream hook (same SSE-mock pattern as A4): emit
+// SSE frames from a controlled fetch and assert the rendered DOM.
+
+describe("ForgePanel — E2: tool-status labels + Working… sentinel", () => {
+  it("renders a human label for a mapped tool name (run_monte_carlo)", async () => {
+    // Stream: tool_start(run_monte_carlo) then done — the status line should
+    // show the human label, NOT the raw identifier.
+    // Use a paused stream so we can observe the status line before done clears it.
+    let releaseDone!: () => void;
+    const encoder = new TextEncoder();
+    const labelStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(`data: {"type":"tool_start","name":"run_monte_carlo"}\n\n`),
+        );
+        releaseDone = () => {
+          controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+          controller.close();
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(labelStream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+      ),
+    );
+    mountPanel();
+
+    // Phase 1: Start the send and let the first frame flush, then check mid-stream
+    // DOM (before done), then release and finish.
+    let sendResolve!: () => void;
+    // Kick off the send; we check mid-stream then release.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "run a monte carlo" },
+      });
+    });
+    // Send fires the fetch. Wrap click + small delay together in one awaited act.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+      await new Promise<void>((r) => { sendResolve = r; setTimeout(r, 20); });
+    });
+    // Mid-stream (tool_start fired, done not yet): the status line shows the human label.
+    expect(screen.getByText(/Running a Monte Carlo simulation/i)).toBeInTheDocument();
+    // The raw identifier must never leak through.
+    expect(screen.queryByText(/run_monte_carlo/)).toBeNull();
+    // Clean up: release the stream.
+    await act(async () => {
+      releaseDone();
+      sendResolve?.();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  });
+
+  it("shows 'Working…' after tool_end with no following token (no blank flicker)", async () => {
+    // Control the stream: emit tool_start + tool_end, hold it open, then check
+    // "Working…" is visible, then release done to confirm it clears.
+    let releaseDone!: () => void;
+    const encoder = new TextEncoder();
+    const sentinelStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `data: {"type":"tool_start","name":"run_monte_carlo"}\n\n` +
+            `data: {"type":"tool_end","name":"run_monte_carlo"}\n\n`,
+          ),
+        );
+        releaseDone = () => {
+          controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+          controller.close();
+        };
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(sentinelStream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      ),
+    );
+    mountPanel();
+    // Fire send and wait for the initial frames to flush (tool_start + tool_end).
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "run monte carlo" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // After tool_end, before done: "Working…" must be visible (sentinel is set).
+    expect(screen.getByText(/Working…/)).toBeInTheDocument();
+    // Release done — sentinel clears and "Working…" disappears.
+    await act(async () => {
+      releaseDone();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.queryByText(/Working…/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A4 — Retry button + rate-limit countdown on the error state
+// ---------------------------------------------------------------------------
+// Drive error state through the real useForgeStream hook (same pattern as the
+// tests above) — return a non-ok Response from fetch so the hook sets
+// status === "error", then assert the Retry affordance renders and fires.
+describe("ForgePanel error state — A4", () => {
+  /** Returns a non-ok Response that drives the hook into status==="error". */
+  function makeErrorResponse(status = 500, body = "Server error", headers?: HeadersInit) {
+    return Promise.resolve(
+      new Response(body, {
+        status,
+        headers: { "content-type": "text/plain", ...headers },
+      }),
+    );
+  }
+
+  async function mountAndTriggerError(fetchResponse: Promise<Response>) {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(fetchResponse));
+    mountPanel();
+    // Type and send a message so the hook fires a request and enters error state.
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "what is the plan?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+  }
+
+  it("shows a Retry button when status is error", async () => {
+    await mountAndTriggerError(makeErrorResponse(500));
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("clicking Retry re-fires a fetch (calls the hook's retry)", async () => {
+    const fetchMock = vi.fn().mockReturnValue(makeErrorResponse(500));
+    vi.stubGlobal("fetch", fetchMock);
+    mountPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "what is the plan?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    // Wait for the Retry button to appear.
+    const retryBtn = await screen.findByRole("button", { name: /retry/i });
+    const callsBefore = fetchMock.mock.calls.length;
+
+    // Stub a clean response so the retry doesn't recurse into another error.
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve(new Response(
+        new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(`data: {"type":"done"}\n\n`)); c.close(); } }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      )),
+    );
+
+    await act(async () => {
+      fireEvent.click(retryBtn);
+    });
+
+    // fetch must have been called at least once more after the Retry click.
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    // The new call must be the /forge/stream route.
+    const retryCalls = fetchMock.mock.calls.slice(callsBefore);
+    expect(retryCalls.some((c) => String(c[0]).includes("/forge/stream"))).toBe(true);
+  });
+
+  it("shows a rate-limit countdown when Retry-After is returned on 503", async () => {
+    await mountAndTriggerError(makeErrorResponse(503, "Forge is temporarily unavailable", { "retry-after": "30" }));
+    // The error block should show "try again in ~30s" (or similar countdown text).
+    expect(await screen.findByText(/try again in ~30s/i)).toBeInTheDocument();
+  });
+});
