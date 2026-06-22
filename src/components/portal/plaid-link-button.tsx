@@ -20,6 +20,12 @@ export type LinkSuccessPayload = {
     category: string;
     subType: string;
   }>;
+  existingLiabilityCandidates: Array<{
+    id: string;
+    name: string;
+    liabilityType: string | null;
+    balance: string;
+  }>;
 };
 
 type Props =
