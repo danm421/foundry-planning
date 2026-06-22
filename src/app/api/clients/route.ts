@@ -204,7 +204,6 @@ export async function POST(request: NextRequest) {
       spouseRetirementMonth,
       spouseLifeExpectancy,
       filingStatus,
-      actorId: userId,
     });
 
     // Mirror any contact-only fields from the POST body onto the CRM contacts.

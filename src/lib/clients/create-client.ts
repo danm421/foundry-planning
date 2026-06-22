@@ -52,10 +52,6 @@ export interface CreateClientForHouseholdArgs {
   spouseRetirementMonth?: number | null;
   spouseLifeExpectancy?: number | null;
   filingStatus: FilingStatus;
-  // When provided, the service records the `client.create` audit event
-  // attributed to this actor (the route passes the Clerk userId; the later
-  // prospect-apply path passes its advisor actorId). Omit to skip the audit.
-  actorId?: string;
   // Optional caller-supplied transaction handle (the prospect-apply path runs
   // this create inside a larger transaction). When omitted, the service wraps
   // all its inserts in its own db.transaction so the standalone path is atomic.
@@ -84,7 +80,6 @@ async function runCreate(
     spouseRetirementMonth,
     spouseLifeExpectancy,
     filingStatus,
-    actorId,
   } = args;
 
   const firstName = primaryContact.firstName;
@@ -276,19 +271,19 @@ async function runCreate(
     })),
   );
 
-  // Record the client.create audit when an actor is supplied. The route passes
-  // its Clerk userId; the prospect-apply path passes its advisor actorId.
-  if (actorId) {
-    await recordAudit({
-      action: "client.create",
-      resourceType: "client",
-      resourceId: client.id,
-      clientId: client.id,
-      firmId: household.firmId,
-      actorId,
-      metadata: { firstName, lastName, crmHouseholdId: household.id },
-    });
-  }
+  // Record the client.create audit. Mirror the original route: pass NO explicit
+  // actorId so recordAudit self-resolves the actor via Clerk auth() — preserving
+  // ops-impersonation attribution (the ops operator is recorded as the actor with
+  // an actingAsAdvisor stamp). Best-effort/append-only: runs on the global db
+  // path, outside the create transaction, exactly as before.
+  await recordAudit({
+    action: "client.create",
+    resourceType: "client",
+    resourceId: client.id,
+    clientId: client.id,
+    firmId: household.firmId,
+    metadata: { firstName, lastName, crmHouseholdId: household.id },
+  });
 
   return { clientId: client.id, scenarioId: scenario.id };
 }
@@ -297,8 +292,9 @@ async function runCreate(
  * Creates a full planning client for a CRM household: the `clients` row, a Base
  * Case `scenarios` row, default `planSettings`, `familyMembers` (client + spouse
  * when married), the default "Household Cash" checking account, two default
- * "living" expense rows, and Social Security `incomes` rows. Optionally records
- * the `client.create` audit when `actorId` is supplied.
+ * "living" expense rows, and Social Security `incomes` rows. Always records the
+ * `client.create` audit, self-resolving the actor via Clerk `auth()` (preserving
+ * ops-impersonation attribution) — matching the original route behavior.
  *
  * Shared between POST /api/clients and the prospect-apply path so both create a
  * client through one implementation. Pre-flight (household load, primary-DOB
