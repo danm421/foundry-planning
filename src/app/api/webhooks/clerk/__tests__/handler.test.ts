@@ -59,7 +59,7 @@ describe("handleClerkEvent", () => {
 
   it("returns 200 no-op for unrelated event types", async () => {
     const evt: ClerkEvent = {
-      type: "user.created",
+      type: "user.updated",
       data: { id: "user_abc" },
     };
 

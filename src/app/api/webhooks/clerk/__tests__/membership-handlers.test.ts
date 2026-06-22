@@ -69,6 +69,11 @@ vi.mock("@sentry/nextjs", () => ({
   captureException: (...a: unknown[]) => mockCaptureException(...a),
 }));
 
+const mockSendWelcomeEmail = vi.fn();
+vi.mock("@/lib/onboarding/welcome-email", () => ({
+  sendWelcomeEmail: (a: unknown) => mockSendWelcomeEmail(a),
+}));
+
 import { dispatchClerkMembership } from "../membership-handlers";
 
 beforeEach(() => {
@@ -346,6 +351,11 @@ describe("organizationMembership.created — billing contact pin", () => {
 });
 
 describe("user.created", () => {
+  beforeEach(() => {
+    mockSendWelcomeEmail.mockReset();
+    mockClerkEventInsert.mockReturnValue([{ id: "evt_new" }]); // default: new delivery
+  });
+
   it("writes a tos_acceptances row with acceptance_source clerk_signup when legal_consent is present", async () => {
     mockTosInsert.mockResolvedValue([]);
     await dispatchClerkMembership(
@@ -353,6 +363,9 @@ describe("user.created", () => {
         type: "user.created",
         data: {
           id: "user_signup",
+          email_addresses: [{ id: "idn_1", email_address: "sarah@example.com" }],
+          primary_email_address_id: "idn_1",
+          first_name: "Sarah",
           legal_consent: { tos_accepted_at: "2026-04-30T15:00:00Z", tos_version: "v1" },
         },
       } as never,
@@ -367,12 +380,86 @@ describe("user.created", () => {
     );
   });
 
-  it("ignores user.created when legal_consent is absent", async () => {
+  it("does not write a tos_acceptances row when legal_consent is absent", async () => {
     mockTosInsert.mockResolvedValue([]);
     await dispatchClerkMembership(
-      { type: "user.created", data: { id: "user_no_consent" } } as never,
+      {
+        type: "user.created",
+        data: {
+          id: "user_no_consent",
+          email_addresses: [{ id: "idn_1", email_address: "x@example.com" }],
+          primary_email_address_id: "idn_1",
+        },
+      } as never,
       "svix_noconsent",
     );
+    expect(mockTosInsert).not.toHaveBeenCalled();
+  });
+
+  it("sends a welcome email to the primary address with the first name", async () => {
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_welcome",
+          first_name: "Sarah",
+          email_addresses: [
+            { id: "idn_other", email_address: "old@example.com" },
+            { id: "idn_primary", email_address: "sarah@example.com" },
+          ],
+          primary_email_address_id: "idn_primary",
+        },
+      } as never,
+      "svix_welcome",
+    );
+    expect(mockSendWelcomeEmail).toHaveBeenCalledWith({
+      to: "sarah@example.com",
+      firstName: "Sarah",
+    });
+  });
+
+  it("falls back to the first email and null first name when no primary is flagged", async () => {
+    await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_nofirst",
+          email_addresses: [{ id: "idn_1", email_address: "first@example.com" }],
+        },
+      } as never,
+      "svix_nofirst",
+    );
+    expect(mockSendWelcomeEmail).toHaveBeenCalledWith({
+      to: "first@example.com",
+      firstName: null,
+    });
+  });
+
+  it("does not send when the payload has no email address", async () => {
+    await dispatchClerkMembership(
+      { type: "user.created", data: { id: "user_noemail", first_name: "Sarah" } } as never,
+      "svix_noemail",
+    );
+    expect(mockSendWelcomeEmail).not.toHaveBeenCalled();
+  });
+
+  it("skips a duplicate svix delivery — no welcome email, no tos insert", async () => {
+    mockClerkEventInsert.mockReturnValue([]); // duplicate delivery
+    const res = await dispatchClerkMembership(
+      {
+        type: "user.created",
+        data: {
+          id: "user_dup",
+          first_name: "Sarah",
+          email_addresses: [{ id: "idn_1", email_address: "sarah@example.com" }],
+          primary_email_address_id: "idn_1",
+          legal_consent: { tos_accepted_at: "2026-04-30T15:00:00Z", tos_version: "v1" },
+        },
+      } as never,
+      "svix_dup",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockSendWelcomeEmail).not.toHaveBeenCalled();
     expect(mockTosInsert).not.toHaveBeenCalled();
   });
 });
