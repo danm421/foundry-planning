@@ -352,8 +352,8 @@ async function loadClientData(clientId: string): Promise<ClientData> {
     })) as any,
     liabilities: liabilityRows.map((l) => ({
       id: l.id, name: l.name, balance: parseFloat(l.balance),
-      interestRate: parseFloat(l.interestRate), monthlyPayment: parseFloat(l.monthlyPayment),
-      startYear: l.startYear, startMonth: l.startMonth, termMonths: l.termMonths,
+      interestRate: parseFloat(l.interestRate), monthlyPayment: l.monthlyPayment != null ? parseFloat(l.monthlyPayment) : 0,
+      startYear: l.startYear, startMonth: l.startMonth, termMonths: l.termMonths ?? 0,
       balanceAsOfMonth: l.balanceAsOfMonth ?? undefined, balanceAsOfYear: l.balanceAsOfYear ?? undefined,
       linkedPropertyId: l.linkedPropertyId ?? undefined,
       isInterestDeductible: l.isInterestDeductible,
