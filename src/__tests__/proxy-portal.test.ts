@@ -134,8 +134,7 @@ describe("proxy soft-route: intake redirect", () => {
       authWith("u1", null) as never,
       makeReq("/portal/profile"),
     );
-    expect(res.status).toBeGreaterThanOrEqual(307);
-    expect(res.status).toBeLessThanOrEqual(308);
+    expect(res.status).toBe(307); // temporary, method-preserving — not 308
     expect(res.headers.get("location")).toContain("/portal/intake");
   });
 
