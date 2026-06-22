@@ -54,3 +54,11 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Open the Monte Carlo page so I can show the client their probability of success."
+      expectTool: "open_page"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite

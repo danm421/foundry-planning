@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { HumanMessage } from "@langchain/core/messages";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
@@ -14,7 +14,7 @@ import {
 } from "@/domain/forge/conversations";
 import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
-import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
+import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
@@ -53,7 +53,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   let clientId: string;
   let userId: string;
   let firmName: string;
+  let advisorName: string | undefined;
   let entitlements: string[] | undefined;
+  const todayISO = new Date().toISOString().slice(0, 10);
   try {
     firmId = await requireOrgId();
     ({ id: clientId } = await ctx.params);
@@ -61,6 +63,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     const { userId: uid, sessionClaims } = await auth();
     if (!uid) return json(401, { error: "Unauthorized" });
     userId = uid;
+    const u = await currentUser();
+    advisorName = [u?.firstName, u?.lastName].filter(Boolean).join(" ") || undefined;
     const claims = sessionClaims as
       | { org_public_metadata?: { entitlements?: string[] }; org_name?: string }
       | null;
@@ -160,6 +164,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       firmId,
       scenarioId: body.scenarioId,
       firmName,
+      userId,
+      advisorName,
+      todayISO,
     });
     systemPrompt = () =>
       buildSystemPrompt({
@@ -180,8 +187,30 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (obj: unknown) =>
+      let closed = false;
+      const send = (obj: unknown) => {
+        if (closed) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      };
+      // Cancel-on-disconnect: stop consuming and close once the client aborts.
+      // The abort signal is also threaded into streamEvents so the graph run
+      // itself is cancelled, not just the SSE write side — clicking Stop stops
+      // the server burning Azure/rate-limit budget, not just the client.
+      const onAbort = () => {
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      };
+      req.signal.addEventListener("abort", onAbort);
+
+      // Hold the agent's answer tokens in a buffer; the verify node decides when
+      // they're allowed out. Hoisted above the try so the catch can flush a
+      // fully-generated-but-still-buffered answer if the run dies mid-turn.
+      let buffer = "";
+
       send({ type: "conversation", conversationId: cid });
       try {
         const events = graph.streamEvents(
@@ -189,16 +218,15 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
           {
             version: "v2",
             configurable: { thread_id: cid },
+            signal: req.signal,
             recursionLimit: 25,
             ...(langfuse ? { callbacks: [langfuse] } : {}),
           },
         );
 
-        // Hold the agent's answer tokens in a buffer; the verify node decides
-        // when they're allowed out. flush() replays the buffer as small chunks
-        // so the answer still "types" after the check.
+        // flush() replays the buffer as small chunks so the answer still "types"
+        // after the verify check.
         const REPLAY_CHUNK = 240;
-        let buffer = "";
         const flush = () => {
           for (let i = 0; i < buffer.length; i += REPLAY_CHUNK) {
             send({ type: "token", text: buffer.slice(i, i + REPLAY_CHUNK) });
@@ -207,6 +235,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         };
 
         for await (const ev of events) {
+          if (closed) break;
           if (ev.event === "on_chat_model_stream") {
             // Only the agent node produces user-facing answer tokens. The verify
             // node's critic also calls a chat model, so its tokens surface here
@@ -248,29 +277,46 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
           }
         }
         flush(); // any final no-number answer that never hit verify
-        await touchConversation(cid, userId);
 
-        // A write tool (Phase 2) interrupts before executing; surface the approval
-        // payload. Phase-1 read/compute graphs never interrupt → tasks is empty and
-        // this branch is inert, but the wiring is here.
-        const snapshot = await graph.getState({ configurable: { thread_id: cid } });
-        const pending = snapshot.tasks?.find(
-          (t: { interrupts?: unknown[] }) => t.interrupts?.length,
-        );
-        if (pending) {
-          const intr = parseApprovalInterrupt(
-            (pending.interrupts as Array<{ value: unknown }>)[0].value,
+        if (!closed) {
+          await touchConversation(cid, userId);
+
+          // A write tool (Phase 2) interrupts before executing; surface the
+          // approval payload. Phase-1 read/compute graphs never interrupt → tasks
+          // is empty and this branch is inert, but the wiring is here.
+          const snapshot = await graph.getState({ configurable: { thread_id: cid } });
+          const pending = snapshot.tasks?.find(
+            (t: { interrupts?: unknown[] }) => t.interrupts?.length,
           );
-          send({ type: "approval_required", previews: intr.previews, calls: intr.calls });
-        }
+          if (pending) {
+            const intr = parseApprovalInterrupt(
+              (pending.interrupts as Array<{ value: unknown }>)[0].value,
+            );
+            send({ type: "approval_required", previews: intr.previews, calls: intr.calls });
+          }
 
-        send({ type: "done" });
+          send({ type: "done" });
+        }
       } catch (err) {
-        // §C: never emit raw err.message — it may leak client ids / internals.
-        send({ type: "error", message: safeForgeErrorMessage(err) });
+        const { safeMessage, category } = categorizeForgeError(err);
+        logForgeError(category, cid);
+        // Don't throw away a fully-generated answer: if we were holding verified-
+        // pending tokens when the stream died, release them with an honesty caveat
+        // before the error frame, so the advisor sees the work + knows it's unchecked.
+        if (buffer.length > 0) {
+          send({
+            type: "token",
+            text:
+              "The figures below could not be automatically verified before the connection dropped — double-check them.\n\n" +
+              buffer,
+          });
+          buffer = "";
+        }
+        send({ type: "error", message: safeMessage });
       } finally {
+        req.signal.removeEventListener("abort", onAbort);
         await flushLangfuse(langfuse);
-        controller.close();
+        if (!closed) controller.close();
       }
     },
   });
@@ -280,6 +326,7 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
+      "connection": "keep-alive",
       "x-accel-buffering": "no",
     },
   });

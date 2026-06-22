@@ -28,14 +28,36 @@ describe("memory tools", () => {
     const tools = buildMemoryTools(toolCtx);
     const write = tools.find((t) => t.name === "write_memory")!;
     await write.invoke({ scope: "client", key: "risk_pref", value: "conservative" });
-    expect(put).toHaveBeenCalledWith(["f1", "c1"], "risk_pref", { value: "conservative" });
+    expect(put).toHaveBeenCalledWith(
+      ["f1", "c1"],
+      "risk_pref",
+      expect.objectContaining({ value: "conservative" }),
+    );
   });
 
   it("write_memory under the advisor scope uses [firmId, userId]", async () => {
     const tools = buildMemoryTools(toolCtx);
     const write = tools.find((t) => t.name === "write_memory")!;
     await write.invoke({ scope: "advisor", key: "tone", value: "formal" });
-    expect(put).toHaveBeenCalledWith(["f1", "u1"], "tone", { value: "formal" });
+    expect(put).toHaveBeenCalledWith(
+      ["f1", "u1"],
+      "tone",
+      expect.objectContaining({ value: "formal" }),
+    );
+  });
+
+  it("write_memory stamps the stored item with an ISO updatedAt for recency/provenance", async () => {
+    const tools = buildMemoryTools(toolCtx);
+    const write = tools.find((t) => t.name === "write_memory")!;
+    await write.invoke({ scope: "client", key: "risk_pref", value: "conservative" });
+    expect(put).toHaveBeenCalledWith(
+      ["f1", "c1"],
+      "risk_pref",
+      expect.objectContaining({
+        value: "conservative",
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
   });
 
   it("read_memory searches the [firmId, clientId] namespace", async () => {

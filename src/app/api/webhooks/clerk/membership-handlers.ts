@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { recordAudit } from "@/lib/audit";
+import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
 import type { ClerkEvent } from "./handler";
 
 type MembershipEventData = {
@@ -22,6 +23,9 @@ type MembershipEventData = {
 
 type UserCreatedData = {
   id?: string;
+  first_name?: string | null;
+  email_addresses?: Array<{ id?: string; email_address?: string }>;
+  primary_email_address_id?: string | null;
   legal_consent?: { tos_accepted_at?: string; tos_version?: string };
 };
 
@@ -99,6 +103,20 @@ async function syncSeatQuantity(firmId: string): Promise<void> {
   }
 }
 
+/**
+ * Resolve the user's primary email from a Clerk user.created payload. Prefers
+ * the address flagged primary_email_address_id; falls back to the first entry.
+ * Returns null when no usable address is present.
+ */
+function resolvePrimaryEmail(d: UserCreatedData): string | null {
+  const list = d.email_addresses ?? [];
+  if (list.length === 0) return null;
+  const primary = d.primary_email_address_id
+    ? list.find((e) => e.id === d.primary_email_address_id)
+    : undefined;
+  return primary?.email_address ?? list[0]?.email_address ?? null;
+}
+
 export async function dispatchClerkMembership(
   evt: ClerkEvent,
   svixId: string,
@@ -167,6 +185,14 @@ export async function dispatchClerkMembership(
   if (t === "user.created") {
     const d = evt.data as UserCreatedData;
     const userIdNew = d.id;
+
+    // svix-id dedupe: a duplicate delivery must not re-send the welcome email.
+    const isNew = await claimSvixDelivery(svixId, t);
+    if (!isNew) {
+      return NextResponse.json({ ok: true, skipped_duplicate: t }, { status: 200 });
+    }
+
+    // Record ToS acceptance captured at Clerk signup (unchanged behavior).
     const consent = d.legal_consent;
     if (userIdNew && consent?.tos_accepted_at) {
       await db
@@ -180,6 +206,13 @@ export async function dispatchClerkMembership(
         .onConflictDoNothing()
         .returning({ id: tosAcceptances.id });
     }
+
+    // Welcome the new user. Best-effort — sendWelcomeEmail never throws.
+    const email = resolvePrimaryEmail(d);
+    if (email) {
+      await sendWelcomeEmail({ to: email, firstName: d.first_name ?? null });
+    }
+
     return NextResponse.json({ ok: true, handled: t }, { status: 200 });
   }
 

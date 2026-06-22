@@ -7,17 +7,43 @@ import { baseCaseScenarioId } from "@/lib/clients/base-case";
 import {
   listMyConversations as listConversationsForUser,
   userOwnsConversation,
+  renameConversation as domainRenameConversation,
+  deleteConversation as domainDeleteConversation,
 } from "@/domain/forge/conversations";
 import { getCheckpointer } from "@/domain/forge/checkpointer";
 import { toUiMessages } from "@/domain/forge/transcript";
 import type { WritePreview } from "@/domain/forge/types";
 
-/** Thread list for the signed-in advisor (panel calls this with no args). */
-export async function listMyConversations() {
+/** Thread list for the signed-in advisor. Pass `clientId` to narrow to one client. */
+export async function listMyConversations(clientId?: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const firmId = await requireOrgId();
-  return listConversationsForUser(userId, firmId);
+  return listConversationsForUser(userId, firmId, clientId);
+}
+
+/** Rename a conversation (owner only). Title is sanitized and must be non-empty. */
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  await requireOrgId();
+  const sanitized = String(title).slice(0, 80).trim();
+  if (!sanitized) throw new Error("Title must not be empty");
+  if (!(await userOwnsConversation(conversationId, userId))) {
+    throw new Error("Conversation not found");
+  }
+  await domainRenameConversation(conversationId, userId, sanitized);
+}
+
+/** Delete a conversation (owner only). */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  await requireOrgId();
+  if (!(await userOwnsConversation(conversationId, userId))) {
+    throw new Error("Conversation not found");
+  }
+  await domainDeleteConversation(conversationId, userId);
 }
 
 export interface LoadedConversation {

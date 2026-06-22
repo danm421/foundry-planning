@@ -12,6 +12,24 @@ export function containsNumber(text: string): boolean {
   return new RegExp(NUMBER_TOKEN_SRC).test(text);
 }
 
+/** Stricter than containsNumber: true only when the text carries a number that
+ *  plausibly states a planning FIGURE — a $ amount, a %, an M/K magnitude, or a
+ *  thousands-grouped/large bare number — and NOT merely a 4-digit year or a small
+ *  bare integer (age/count). Used ONLY to decide whether a no-tool final answer
+ *  needs the verify pass, so conversational year/age mentions don't stall. */
+export function containsFinancialFigure(text: string): boolean {
+  for (const m of text.matchAll(new RegExp(NUMBER_TOKEN_SRC, "g"))) {
+    const tok = m[0].trim();
+    if (/[$%]/.test(tok) || /[MKmk]%?$/.test(tok)) return true; // $, %, or magnitude suffix
+    const n = Number(tok.replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    const isYear = Number.isInteger(n) && n >= 1900 && n <= 2100;
+    if (isYear) continue;
+    if (Math.abs(n) >= 1000) return true; // financial-magnitude bare number
+  }
+  return false;
+}
+
 /** Reduce a token to the set of plain numeric strings it could mean, so a
  *  payload that stores 2500000 grounds an answer that wrote "$2.5M". */
 function candidateValues(token: string): string[] {
@@ -59,18 +77,64 @@ function payloadNumbers(payloads: string[]): Set<string> {
   return set;
 }
 
+/** All payload numbers as raw floats (for magnitude/precision-tolerant matching). */
+function payloadFloats(payloads: string[]): number[] {
+  const out: number[] = [];
+  for (const m of payloads.join(" ").matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
+    const n = Number(m[0].replace(/,/g, ""));
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+/** True if `token` matches a payload value once both are rounded to the token's
+ *  DISPLAYED precision (the same display rules the prompt enforces): percentages
+ *  to whole/one-decimal, M/K magnitudes to one decimal. Plain numbers are left to
+ *  exact-candidate matching (return false here).
+ *
+ *  Magnitude rounding-tolerance applies ONLY at-or-above the suffix's own scale
+ *  (≥ $1.0M for "M", ≥ $1K for "K"). A sub-scale token (e.g. "$0.1M") is NOT
+ *  matched by this branch — otherwise an unrelated sub-million field (~$100k → 0.1
+ *  after /1e6) would falsely ground a fabricated "$0.xM" figure. Sub-scale tokens
+ *  fall back to exact-candidate matching. */
+function groundedByRounding(token: string, floats: number[]): boolean {
+  const t = token.trim();
+  const isPct = t.endsWith("%");
+  const suffix = /([MKmk])%?$/.exec(t)?.[1]?.toUpperCase();
+  const base = Number(t.replace(/[$,%\sMKmk]/g, ""));
+  if (!Number.isFinite(base)) return false;
+  if (isPct) {
+    return floats.some(
+      (v) => Math.round(v * 100) === Math.round(base) || Math.abs(v * 100 - base) <= 0.05,
+    );
+  }
+  if (suffix === "M") {
+    return base >= 1 && floats.some((v) => Math.round((v / 1e6) * 10) / 10 === base);
+  }
+  if (suffix === "K") {
+    return (
+      base >= 1 &&
+      floats.some(
+        (v) => Math.round((v / 1e3) * 10) / 10 === base || Math.round(v / 1e3) === Math.round(base),
+      )
+    );
+  }
+  return false;
+}
+
 /**
  * Return the list of numeric tokens in `answer` that do NOT trace to any value
  * present in `payloads`. An empty array means every figure is grounded.
  */
 export function findUngroundedNumbers(answer: string, payloads: string[]): string[] {
   const known = payloadNumbers(payloads);
+  const floats = payloadFloats(payloads);
   const ungrounded: string[] = [];
   for (const m of answer.matchAll(NUMBER_TOKEN_RE)) {
     const token = m[0].trim();
     const candidates = candidateValues(token);
     if (candidates.length === 0) continue;
-    const grounded = candidates.some((c) => known.has(c));
+    const grounded = candidates.some((c) => known.has(c)) || groundedByRounding(token, floats);
     if (!grounded) {
       // Report the token without the leading "$" for stable assertions.
       ungrounded.push(token.replace(/^\$/, ""));

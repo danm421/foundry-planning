@@ -188,3 +188,35 @@ limited to in-transit only — the Azure resource runs with Zero Data Retention.
 SSN redaction (`redactSsns`) still runs on the transcribed text before the
 structured-extraction call and before `rawResponseJson` is stored. Triggered
 only when there is no text layer; text-based PDFs are unaffected.
+
+## 2026-06-21 — Abort the in-flight Azure request on client disconnect (Forge) — RESOLVED for both routes
+
+Previously open (referenced from a divergence comment in
+`src/app/api/clients/[id]/forge/resume/route.ts`): "Abort the in-flight Azure
+request on client disconnect." The resume route already cancelled the server
+run on disconnect; the Forge **stream** route did not — clicking Stop only
+stopped the client while the server kept consuming Azure / rate-limit budget,
+and a mid-turn throw silently discarded an already-generated answer and logged
+nothing.
+
+Now resolved for **both** routes. The stream route
+(`src/app/api/clients/[id]/forge/stream/route.ts`) backports the proven pattern:
+
+- **Cancel-on-disconnect** — a `closed` flag plus a `req.signal` `abort`
+  listener closes the SSE side, and `req.signal` is threaded into
+  `graph.streamEvents(...)` so the graph run itself (and its Azure call) is
+  cancelled, not just the write side. The `for await` loop breaks on `closed`,
+  and the post-loop `getState`/`touchConversation` snapshot is skipped when
+  `closed`.
+- **Buffer-flush-on-error** — if the run dies while answer tokens are still held
+  behind the verify gate, the catch releases the buffered text with an honesty
+  caveat ("The figures below could not be automatically verified before the
+  connection dropped — double-check them.") before the error frame, so a
+  fully-generated answer is no longer thrown away.
+- **Failure logging** — the catch logs a PII-free `category` via
+  `logForgeError` (no raw `err.message`, which can carry client UUIDs).
+
+The error frame still emits only `categorizeForgeError`'s vetted safe message —
+raw internals never leak. The divergence comment in `resume/route.ts` now notes
+parity (the only intentional difference is that the resume route streams live
+and so has no answer buffer to flush).

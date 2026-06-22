@@ -1,6 +1,6 @@
 // src/domain/forge/__tests__/grounding.test.ts
 import { describe, it, expect } from "vitest";
-import { findUngroundedNumbers, containsNumber } from "../grounding";
+import { findUngroundedNumbers, containsNumber, containsFinancialFigure } from "../grounding";
 
 // Fixed mock plan: the exact JSON payloads run_projection + run_monte_carlo
 // would return for this client/scenario.
@@ -51,6 +51,31 @@ describe("grounding — anti-hallucination guard", () => {
   it("grounds a percentage whose decimal form is in the payload", () => {
     const payloads = [JSON.stringify({ successRate: 0.92 })];
     expect(findUngroundedNumbers("Probability of success is 92%.", payloads)).toEqual([]);
+  });
+
+  it("grounds a correctly-rounded percentage (0.923 payload → '92%')", () => {
+    const payloads = [JSON.stringify({ successRate: 0.923 })];
+    expect(findUngroundedNumbers("Your probability of success is 92%.", payloads)).toEqual([]);
+  });
+  it("grounds a magnitude-rounded dollar figure (1242000.5 payload → '$1.2M')", () => {
+    const payloads = [JSON.stringify({ p50: 1242000.5 })];
+    expect(findUngroundedNumbers("Median ending wealth is about $1.2M.", payloads)).toEqual([]);
+  });
+  it("still flags a fabricated figure even with tolerance on", () => {
+    const payloads = [JSON.stringify({ successRate: 0.92, p50: 2500000 })];
+    const u = findUngroundedNumbers("A $1.7M portfolio with a 71% success rate.", payloads);
+    expect(u).toContain("1.7M");
+    expect(u).toContain("71%");
+  });
+  it("does NOT ground a fabricated sub-million 'M' figure off an unrelated ~$100k field", () => {
+    // $120,000 income would, ungated, round to 0.1M and ground a fabricated "$0.1M" wealth figure.
+    const payloads = [JSON.stringify({ totalIncome: 120000, p50: 2500000 })];
+    const u = findUngroundedNumbers("Median ending wealth is about $0.1M.", payloads);
+    expect(u).toContain("0.1M");
+  });
+  it("still grounds a legitimate '$2.5M' figure at the magnitude's own scale", () => {
+    const payloads = [JSON.stringify({ p50: 2500000 })];
+    expect(findUngroundedNumbers("Median ending wealth is $2.5M.", payloads)).toEqual([]);
   });
 });
 
@@ -147,5 +172,16 @@ describe("containsNumber", () => {
   it("is false for prose with no figures", () => {
     expect(containsNumber("The plan is on track and well funded.")).toBe(false);
     expect(containsNumber("")).toBe(false);
+  });
+});
+
+describe("containsFinancialFigure", () => {
+  it("does NOT treat a year/age sentence as a financial figure", () => {
+    expect(containsFinancialFigure("They retire in 2026 at age 65.")).toBe(false);
+  });
+  it("treats $/%/magnitude/thousands as financial figures", () => {
+    expect(containsFinancialFigure("Ending wealth ~ $2.5M.")).toBe(true);
+    expect(containsFinancialFigure("Success rate 92%.")).toBe(true);
+    expect(containsFinancialFigure("Net worth is 1,250,000.")).toBe(true);
   });
 });

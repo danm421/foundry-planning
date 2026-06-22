@@ -1,6 +1,12 @@
 // src/domain/forge/__tests__/transcript.test.ts
 import { describe, it, expect } from "vitest";
-import { HumanMessage, AIMessage, ToolMessage, SystemMessage } from "@langchain/core/messages";
+import {
+  HumanMessage,
+  AIMessage,
+  AIMessageChunk,
+  ToolMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import { toUiMessages } from "../transcript";
 
 describe("toUiMessages", () => {
@@ -24,6 +30,20 @@ describe("toUiMessages", () => {
       new AIMessage({ content: "   ", tool_calls: [{ id: "c1", name: "x", args: {} }] }),
     ]);
     expect(out).toEqual([{ role: "user", text: "hi" }]);
+  });
+
+  it("keeps a streamed assistant reply reloaded as an AIMessageChunk", () => {
+    // A streaming model's invoke() aggregates deltas into an AIMessageChunk, so
+    // that is the shape the assistant turn is checkpointed (and reloaded) as —
+    // NOT a plain AIMessage. Reloading a past conversation must still surface it.
+    const out = toUiMessages([
+      new HumanMessage("what capabilities do you have"),
+      new AIMessageChunk("I can help you explore the plan."),
+    ]);
+    expect(out).toEqual([
+      { role: "user", text: "what capabilities do you have" },
+      { role: "assistant", text: "I can help you explore the plan." },
+    ]);
   });
 
   it("flattens content-part arrays to text", () => {

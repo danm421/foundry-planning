@@ -10,13 +10,52 @@ import { useForgeStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
-import { listMyConversations, loadConversationMessages } from "./actions";
+import {
+  listMyConversations,
+  loadConversationMessages,
+  renameConversation,
+  deleteConversation,
+} from "./actions";
+import { ConversationList } from "./conversation-list";
 import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
+
+/**
+ * Human-readable labels for tool names that appear in the status line.
+ * Unmapped tools fall back to `deUnderscoreTool` below.
+ */
+const TOOL_LABELS: Record<string, string> = {
+  run_monte_carlo: "Running a Monte Carlo simulation",
+  run_projection: "Running the projection",
+  client_briefing: "Reading the client overview",
+  read_detail: "Reading the plan details",
+  explain_report: "Reading the report data",
+  open_page: "Opening the page",
+  read_import: "Reading the import",
+  extract_import: "Extracting import data",
+  scan_book: "Scanning the document",
+  search_planning_kb: "Searching the planning knowledge base",
+  generate_report: "Generating the report",
+  solve_goal: "Running the goal solver",
+  solve_max_spending: "Running the spending solver",
+  meeting_prep: "Preparing meeting notes",
+};
+
+/** Convert a snake_case tool name to a presentable label (e.g. "some_tool" → "Some tool"). */
+function deUnderscoreTool(name: string): string {
+  const words = name.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Resolve a toolStatus value to a human-readable label for the status line. */
+function toolStatusLabel(status: string): string {
+  if (status === "__working__") return "Working";
+  return TOOL_LABELS[status] ?? deUnderscoreTool(status);
+}
 
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
@@ -56,6 +95,8 @@ export function ForgePanel({
     send,
     cancel,
     resume,
+    retry,
+    retryAfterSeconds,
   } = useForgeStream(clientId);
   const router = useRouter();
 
@@ -104,17 +145,24 @@ export function ForgePanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // Shared helper so all three refresh sites stay DRY.
+  function refetchThreads() {
+    listMyConversations(clientId)
+      .then((t) => setThreads(t as Thread[]))
+      .catch(() => {});
+  }
+
   // Load the thread list once the panel opens.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listMyConversations()
+    listMyConversations(clientId)
       .then((t) => !cancelled && setThreads(t as Thread[]))
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, clientId]);
 
   // Keep the latest bubble in view as it streams.
   useEffect(() => {
@@ -194,9 +242,7 @@ export function ForgePanel({
         pendingImportId: result.importId,
         skipUserBubble: true,
       });
-      listMyConversations()
-        .then((t) => setThreads(t as Thread[]))
-        .catch(() => {});
+      refetchThreads();
       return;
     }
     const msg = input.trim();
@@ -209,9 +255,7 @@ export function ForgePanel({
       currentPage: sectionKeyForPath(pathname),
       pendingImportId,
     });
-    listMyConversations()
-      .then((t) => setThreads(t as Thread[]))
-      .catch(() => {});
+    refetchThreads();
   }
 
   function onPickFiles(list: FileList | null) {
@@ -282,30 +326,46 @@ export function ForgePanel({
         </div>
 
         {/* Thread row */}
-        <div className="flex items-center gap-2 border-b border-hair px-4 py-2">
+        <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
           <button
             type="button"
             onClick={newChat}
             disabled={busy}
-            className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
+            className="self-start rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
           >
             + New chat
           </button>
           {threads.length > 0 && (
-            <select
-              aria-label="Conversation history"
-              value={conversationId ?? ""}
-              onChange={(e) => e.target.value && selectThread(e.target.value)}
-              disabled={busy || loadingThread}
-              className="min-w-0 flex-1 truncate rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1 text-[12px] text-ink-2 disabled:opacity-60"
-            >
-              <option value="">Recent conversations…</option>
-              {threads.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            <ConversationList
+              threads={threads}
+              activeId={conversationId}
+              onSelect={(id) => void selectThread(id)}
+              onRename={async (id, title) => {
+                // Optimistic local update
+                const prev = threads;
+                setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, title } : t)));
+                try {
+                  await renameConversation(id, title);
+                  refetchThreads();
+                } catch {
+                  // Revert on failure + refetch to restore server state
+                  setThreads(prev);
+                  refetchThreads();
+                }
+              }}
+              onDelete={async (id) => {
+                // Optimistic local removal
+                setThreads((ts) => ts.filter((t) => t.id !== id));
+                // If the deleted thread was active, start a new chat
+                if (id === conversationId) newChat();
+                try {
+                  await deleteConversation(id);
+                  refetchThreads();
+                } catch {
+                  refetchThreads();
+                }
+              }}
+            />
           )}
         </div>
 
@@ -364,11 +424,11 @@ export function ForgePanel({
             );
           })}
 
-          {/* Tool affordance, e.g. "Running run_monte_carlo…" */}
+          {/* Tool affordance — human-readable label (never raw snake_case identifiers). */}
           {toolStatus && (
             <div className="flex items-center gap-2 text-[12px] text-secondary-ink" aria-live="polite">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-secondary" />
-              Running {toolStatus.replace(/_/g, " ")}…
+              {toolStatusLabel(toolStatus)}…
             </div>
           )}
 
@@ -444,6 +504,18 @@ export function ForgePanel({
           {status === "error" && errorMessage && (
             <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
               {errorMessage}
+              {retryAfterSeconds != null && (
+                <span className="ml-1">— try again in ~{retryAfterSeconds}s</span>
+              )}
+              {pendingApproval == null && (
+                <button
+                  type="button"
+                  onClick={() => void retry()}
+                  className="ml-2 rounded-[var(--radius-sm)] border border-crit/40 px-2 py-0.5 text-[11px] font-medium hover:bg-crit/20"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
         </div>
