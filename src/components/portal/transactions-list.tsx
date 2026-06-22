@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
+import { createPortal } from "react-dom";
 import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryPicker } from "@/components/portal/category-picker";
+import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 
 export type PortalTransactionDTO = {
   id: string;
@@ -63,6 +65,8 @@ export default function TransactionsList({
   const [categoryId, setCategoryId] = useState("");
   const [windowKey, setWindowKey] = useState<(typeof WINDOWS)[number]["key"]>("3M");
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
+  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     void fetch("/api/portal/categories")
@@ -70,6 +74,8 @@ export default function TransactionsList({
       .then((d: { categories: CategoryRow[] }) => setCategories(d.categories ?? []))
       .catch(() => setCategories([]));
   }, []);
+
+  useEffect(() => { setDetailEl(document.getElementById("portal-detail")); }, []);
 
   const load = useCallback(
     async (nextOffset: number, replace: boolean, signal?: AbortSignal) => {
@@ -176,7 +182,7 @@ export default function TransactionsList({
               const amt = fmtAmount(t.amount);
               return (
                 <li key={t.id} className="flex items-center justify-between gap-4 p-4">
-                  <div className="min-w-0">
+                  <div className="min-w-0 cursor-pointer" onClick={() => setSelected(t)}>
                     <div className="truncate text-[13px] font-medium text-ink">
                       {t.merchantName ?? t.name}
                       {t.pending && <span className="ml-2 text-[11px] text-warn">pending</span>}
@@ -242,6 +248,16 @@ export default function TransactionsList({
           </button>
         )}
       </div>
+
+      {selected && detailEl &&
+        createPortal(
+          <TransactionDetailPanel
+            txn={selected}
+            onClose={() => setSelected(null)}
+            onCreateRule={() => {}} // TODO(Task 14): setRuleSeed(selected)
+          />,
+          detailEl,
+        )}
     </div>
   );
 }
