@@ -1,5 +1,5 @@
 import type { Liability } from "./types";
-import { isRevolvingLiability } from "./liability-kind";
+import { isHeldFlatLiability } from "./liability-kind";
 import {
   buildLiabilitySchedule,
   type LiabilityScheduleMap,
@@ -30,10 +30,12 @@ export function amortizeLiability(
   liability: Liability,
   year: number,
 ): AmortizationResult {
-  // Held-flat revolving debt (credit card): no schedule, no payment, no
+  // Held-flat debt: revolving (credit card), or any liability with no
+  // amortization term (e.g. a Plaid-synced loan). No schedule, no payment, no
   // accrual; the balance carries forward unchanged. Card spending is already
-  // modeled as expenses, so amortizing here would double-count.
-  if (isRevolvingLiability(liability)) {
+  // modeled as expenses, so amortizing would double-count; a no-term loan has
+  // no schedule to amortize and would otherwise be silently zeroed.
+  if (isHeldFlatLiability(liability)) {
     return {
       annualPayment: 0,
       interestPortion: 0,
@@ -71,10 +73,12 @@ export function computeLiabilities(
   const interestByLiability: Record<string, number> = {};
 
   for (const liab of liabilities) {
-    // Held-flat revolving debt: no schedule, no payment, no accrual; the
+    // Held-flat debt (revolving cards, or any liability with no amortization
+    // term — e.g. a Plaid-synced loan): no schedule, no payment, no accrual; the
     // balance carries forward unchanged. Must NOT fall through to
-    // buildLiabilitySchedule (the `??` below would amortize it).
-    if (isRevolvingLiability(liab)) {
+    // buildLiabilitySchedule (the `??` below would build an empty schedule and
+    // silently zero the balance).
+    if (isHeldFlatLiability(liab)) {
       updatedLiabilities.push({ ...liab });
       byLiability[liab.id] = 0;
       interestByLiability[liab.id] = 0;
