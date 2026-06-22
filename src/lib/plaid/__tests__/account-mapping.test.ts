@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPlaidToFoundry } from "../account-mapping";
+import { mapPlaidToFoundry, mapPlaidToLiability } from "../account-mapping";
 
 describe("mapPlaidToFoundry", () => {
   it.each([
@@ -35,5 +35,23 @@ describe("mapPlaidToFoundry", () => {
     ["other", "anything"],
   ])("returns null for unsupported type %s.%s", (type, subtype) => {
     expect(mapPlaidToFoundry(type, subtype)).toBeNull();
+  });
+});
+
+describe("mapPlaidToLiability", () => {
+  it("maps credit → credit_card", () => {
+    expect(mapPlaidToLiability("credit", "credit card")).toEqual({ liabilityType: "credit_card" });
+  });
+  it("maps loan subtypes", () => {
+    expect(mapPlaidToLiability("loan", "mortgage")).toEqual({ liabilityType: "mortgage" });
+    expect(mapPlaidToLiability("loan", "auto")).toEqual({ liabilityType: "auto" });
+    expect(mapPlaidToLiability("loan", "student")).toEqual({ liabilityType: "student" });
+    expect(mapPlaidToLiability("loan", "home equity")).toEqual({ liabilityType: "heloc" });
+    expect(mapPlaidToLiability("loan", "line of credit")).toEqual({ liabilityType: "personal" });
+    expect(mapPlaidToLiability("loan", "other")).toEqual({ liabilityType: "other" });
+  });
+  it("returns null for non-debt Plaid types (so caller uses mapPlaidToFoundry)", () => {
+    expect(mapPlaidToLiability("depository", "checking")).toBeNull();
+    expect(mapPlaidToLiability("investment", "brokerage")).toBeNull();
   });
 });

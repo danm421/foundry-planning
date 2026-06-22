@@ -1,3 +1,5 @@
+import type { LiabilityType } from "@/engine/liability-kind";
+
 export type FoundryAccountTypeMapping = {
   category: "cash" | "retirement" | "taxable";
   subType:
@@ -80,5 +82,51 @@ export function mapPlaidToFoundry(
   }
 
   // loan / credit / mortgage / other are unsupported.
+  return null;
+}
+
+export type FoundryLiabilityMapping = { liabilityType: LiabilityType };
+
+/**
+ * Maps a Plaid `credit` / `loan` account to our liabilities.liabilityType.
+ * Returns null for non-debt Plaid types (depository / investment) so the
+ * caller falls through to mapPlaidToFoundry. Mortgages arrive as
+ * type="loan", subtype="mortgage" (and sometimes type="mortgage").
+ * Source: https://plaid.com/docs/api/accounts/#account-type-schema
+ */
+export function mapPlaidToLiability(
+  type: string,
+  subtype: string | null | undefined,
+): FoundryLiabilityMapping | null {
+  const norm = (subtype ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+
+  if (type === "credit") {
+    // credit card, paypal credit, etc. — all revolving.
+    return { liabilityType: "credit_card" };
+  }
+
+  if (type === "mortgage") {
+    return { liabilityType: "mortgage" };
+  }
+
+  if (type === "loan") {
+    switch (norm) {
+      case "mortgage":
+        return { liabilityType: "mortgage" };
+      case "home_equity":
+      case "heloc":
+        return { liabilityType: "heloc" };
+      case "auto":
+        return { liabilityType: "auto" };
+      case "student":
+        return { liabilityType: "student" };
+      case "line_of_credit":
+      case "personal":
+        return { liabilityType: "personal" };
+      default:
+        return { liabilityType: "other" };
+    }
+  }
+
   return null;
 }
