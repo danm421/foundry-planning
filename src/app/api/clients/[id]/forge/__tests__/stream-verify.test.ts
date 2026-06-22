@@ -4,7 +4,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // --- Mirror stream-tool-events.test.ts's mock setup (the REAL route's full dep set) ---
 
 const auth = vi.fn();
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => auth() }));
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => auth(),
+  // D3: routes call currentUser() after auth() for the advisor display name.
+  currentUser: () => Promise.resolve({ firstName: "Ada", lastName: "Advisor" }),
+}));
 
 const requireOrgId = vi.fn<() => Promise<string>>();
 vi.mock("@/lib/db-helpers", () => ({

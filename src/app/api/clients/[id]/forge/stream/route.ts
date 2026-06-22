@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { HumanMessage } from "@langchain/core/messages";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
@@ -53,7 +53,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   let clientId: string;
   let userId: string;
   let firmName: string;
+  let advisorName: string | undefined;
   let entitlements: string[] | undefined;
+  const todayISO = new Date().toISOString().slice(0, 10);
   try {
     firmId = await requireOrgId();
     ({ id: clientId } = await ctx.params);
@@ -61,6 +63,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
     const { userId: uid, sessionClaims } = await auth();
     if (!uid) return json(401, { error: "Unauthorized" });
     userId = uid;
+    const u = await currentUser();
+    advisorName = [u?.firstName, u?.lastName].filter(Boolean).join(" ") || undefined;
     const claims = sessionClaims as
       | { org_public_metadata?: { entitlements?: string[] }; org_name?: string }
       | null;
@@ -160,6 +164,9 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       firmId,
       scenarioId: body.scenarioId,
       firmName,
+      userId,
+      advisorName,
+      todayISO,
     });
     systemPrompt = () =>
       buildSystemPrompt({

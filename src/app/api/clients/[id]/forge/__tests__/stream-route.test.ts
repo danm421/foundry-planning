@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Clerk auth() seam (requireActiveSubscription runs REAL against this mock) ---
 const auth = vi.fn();
-vi.mock("@clerk/nextjs/server", () => ({ auth: () => auth() }));
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => auth(),
+  // D3: the routes now call currentUser() after auth() to derive the advisor's
+  // display name for the prompt tail. Resolve a user-like object so the happy
+  // path threads advisorName through loadPromptContext.
+  currentUser: () => Promise.resolve({ firstName: "Ada", lastName: "Advisor" }),
+}));
 
 const requireOrgId = vi.fn<() => Promise<string>>();
 vi.mock("@/lib/db-helpers", () => ({
