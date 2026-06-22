@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { recordAudit } from "@/lib/audit";
+import { bindClerkUserToClient } from "@/lib/portal/bind-portal-user";
 import type { ClerkEvent } from "./handler";
 
 type InvitationAcceptedData = {
@@ -37,31 +34,18 @@ export async function dispatchClerkInvitation(
     );
   }
 
-  const rows = await db
-    .select({ firmId: clients.firmId })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .limit(1);
-  const firmId = rows[0]?.firmId;
-  if (!firmId) {
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  const result = await bindClerkUserToClient(clientId, clerkUserId, "webhook");
+
+  if (!result.ok) {
+    if (result.reason === "client_not_found") {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    // already_bound_other: anomalous but harmless — ack so Clerk doesn't retry.
+    console.warn(
+      "[webhook.clerk] invitation.accepted for a client already bound to another user",
+    );
+    return NextResponse.json({ ok: false, reason: result.reason });
   }
-
-  await db
-    .update(clients)
-    .set({ clerkUserId })
-    .where(eq(clients.id, clientId));
-
-  await recordAudit({
-    action: "portal.invite.accepted",
-    resourceType: "portal_binding",
-    resourceId: clientId,
-    clientId,
-    firmId,
-    actorId: "clerk:webhook",
-    actorKind: "system",
-    metadata: { clerkUserId, event: "invitation.accepted" },
-  });
 
   return NextResponse.json({ ok: true, clientId, clerkUserId });
 }
