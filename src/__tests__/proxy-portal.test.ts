@@ -41,6 +41,11 @@ vi.mock("@/lib/portal/get-portal-client", () => ({
   getPortalClientId: (...a: unknown[]) => getPortalClientIdMock(...a),
 }));
 
+const claimPortalBindingMock = vi.fn();
+vi.mock("@/lib/portal/claim-portal-binding", () => ({
+  claimPortalBinding: (...a: unknown[]) => claimPortalBindingMock(...a),
+}));
+
 import "../proxy";
 
 function makeReq(pathname: string, method = "GET") {
@@ -66,6 +71,8 @@ function authWith(userId: string | null, orgId: string | null) {
 beforeEach(() => {
   recordAudit.mockClear();
   getPortalClientIdMock.mockReset();
+  claimPortalBindingMock.mockReset();
+  claimPortalBindingMock.mockResolvedValue(null);
   delete process.env.BILLING_ENFORCEMENT_MODE;
 });
 
@@ -114,5 +121,27 @@ describe("proxy portal branching", () => {
       makeReq("/clients"),
     );
     expect(res.status).not.toBe(307);
+  });
+
+  it("self-heals an org-less user with a pending claim and sends them to /portal/profile", async () => {
+    getPortalClientIdMock.mockResolvedValue(null);
+    claimPortalBindingMock.mockResolvedValue("client-2");
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/clients"),
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/portal/profile");
+  });
+
+  it("redirects to /select-organization when there is no binding and no claim", async () => {
+    getPortalClientIdMock.mockResolvedValue(null);
+    claimPortalBindingMock.mockResolvedValue(null);
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/clients"),
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/select-organization");
   });
 });

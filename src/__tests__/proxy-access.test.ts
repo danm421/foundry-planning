@@ -30,6 +30,10 @@ vi.mock("@clerk/nextjs/server", () => ({
 const recordAudit = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => recordAudit(...a) }));
 
+vi.mock("@/lib/portal/claim-portal-binding", () => ({
+  claimPortalBinding: vi.fn().mockResolvedValue(null),
+}));
+
 import "../proxy"; // evaluating the module captures the handler
 
 function makeReq(pathname: string, method = "GET") {
