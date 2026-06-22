@@ -68,7 +68,7 @@ vi.mock("@/db/schema", () => ({
 }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a }));
 
-let accountRow: Record<string, unknown> | null = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null };
+let accountRow: Record<string, unknown> | null = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null };
 let clientRow: Record<string, unknown> | null = { firmId: "firm-1" };
 
 const updateMock = vi.fn();
@@ -158,7 +158,7 @@ beforeEach(() => {
   requirePortalActiveSubscriptionMock.mockReset().mockResolvedValue(undefined);
   recordUpdateMock.mockReset();
   recordDeleteMock.mockReset();
-  accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null };
+  accountRow = { id: "acct-1", clientId: "c1", name: "Old", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null };
   clientRow = { firmId: "firm-1" };
 });
 
@@ -424,5 +424,32 @@ describe("DELETE /api/portal/accounts/[id]", () => {
         actorKind: "client",
       }),
     );
+  });
+});
+
+describe("PUT /api/portal/accounts/[id] — portal-hidden account guards", () => {
+  it("403s when editing an isDefaultChecking (Household Cash) account", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Household Cash", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: true, parentAccountId: null };
+    const res = await PUT(putReq({ name: "Hacked" }), ctx);
+    expect(res.status).toBe(403);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("403s when editing an advisor-only category (notes_receivable)", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Family Note", category: "notes_receivable", subType: "other", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null };
+    const res = await PUT(putReq({ name: "X" }), ctx);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("DELETE /api/portal/accounts/[id] — portal-hidden account guards", () => {
+  it("403s when deleting an isDefaultChecking account", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    accountRow = { id: "acct-1", clientId: "c1", name: "Household Cash", category: "cash", subType: "checking", value: "0", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: true, parentAccountId: null };
+    const res = await DELETE(delReq(), ctx);
+    expect(res.status).toBe(403);
+    expect(deleteAccountsMock).not.toHaveBeenCalled();
   });
 });

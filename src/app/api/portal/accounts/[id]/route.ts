@@ -23,6 +23,7 @@ import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owner
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
+import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ type AccountRow = {
   accountNumberLast4: string | null;
   custodian: string | null;
   plaidItemId: string | null;
+  isDefaultChecking: boolean;
+  parentAccountId: string | null;
 };
 
 const ALLOWED_FIELDS = [
@@ -74,6 +77,10 @@ async function loadOwnedRow(
     accountNumberLast4: row.accountNumberLast4,
     custodian: (row as { custodian?: string | null }).custodian ?? null,
     plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
+    isDefaultChecking:
+      (row as { isDefaultChecking?: boolean }).isDefaultChecking ?? false,
+    parentAccountId:
+      (row as { parentAccountId?: string | null }).parentAccountId ?? null,
   };
 }
 
@@ -108,6 +115,13 @@ export async function PUT(
     const row = await loadOwnedRow(id, clientId);
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!isPortalVisibleAccount(row)) {
+      return NextResponse.json(
+        { error: "This account can't be edited from the portal" },
+        { status: 403 },
+      );
     }
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -248,6 +262,22 @@ export async function DELETE(
     if (!raw || raw.clientId !== clientId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    if (
+      !isPortalVisibleAccount({
+        category: raw.category,
+        isDefaultChecking:
+          (raw as { isDefaultChecking?: boolean }).isDefaultChecking ?? false,
+        parentAccountId:
+          (raw as { parentAccountId?: string | null }).parentAccountId ?? null,
+      })
+    ) {
+      return NextResponse.json(
+        { error: "This account can't be deleted from the portal" },
+        { status: 403 },
+      );
+    }
+
     // Phase 3 introduces plaid_item_id; until then the column may be absent.
     // Do NOT import plaidItems — that table doesn't exist yet.
     const plaidItemId =
@@ -274,6 +304,10 @@ export async function DELETE(
       accountNumberLast4: raw.accountNumberLast4,
       custodian: (raw as { custodian?: string | null }).custodian ?? null,
       plaidItemId,
+      isDefaultChecking:
+        (raw as { isDefaultChecking?: boolean }).isDefaultChecking ?? false,
+      parentAccountId:
+        (raw as { parentAccountId?: string | null }).parentAccountId ?? null,
     };
 
     await db.transaction(async (tx) => {

@@ -22,6 +22,7 @@ import {
 } from "@/lib/ownership";
 import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
 import { recordCreate } from "@/lib/audit/record-helpers";
+import { isPortalVisibleCategory } from "@/lib/portal/account-visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,12 @@ export async function POST(req: Request): Promise<Response> {
     }
     if (!(accountCategoryEnum.enumValues as readonly string[]).includes(body.category)) {
       return NextResponse.json({ error: "invalid category" }, { status: 400 });
+    }
+    if (!isPortalVisibleCategory(body.category)) {
+      return NextResponse.json(
+        { error: "This account type can't be added from the portal" },
+        { status: 400 },
+      );
     }
     if (
       body.subType !== undefined &&

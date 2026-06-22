@@ -207,6 +207,21 @@ describe("POST /api/portal/accounts", () => {
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
+  it("returns 400 when category is hidden from the portal (notes_receivable)", async () => {
+    requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    const res = await POST(
+      req({
+        name: "Family Note",
+        category: "notes_receivable",
+        owners: [{ kind: "family_member", familyMemberId: "fm1", percent: 1 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/portal/i);
+  });
+
   it("inserts account + owner rows in a transaction and audits", async () => {
     requireClientPortalAccessMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
