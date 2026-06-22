@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, plaidItems } from "@/db/schema";
+import { accounts, liabilities, plaidItems } from "@/db/schema";
 import {
   authErrorResponse,
   requireClientPortalAccess,
@@ -63,6 +63,18 @@ export async function POST(req: Request): Promise<Response> {
       .where(and(eq(accounts.clientId, clientId), isNull(accounts.plaidItemId)))
       .orderBy(accounts.name);
 
+    // Advisor-entered liabilities the client could attach a Plaid debt to.
+    const liabilityCandidates = await db
+      .select({
+        id: liabilities.id,
+        name: liabilities.name,
+        liabilityType: liabilities.liabilityType,
+        balance: liabilities.balance,
+      })
+      .from(liabilities)
+      .where(and(eq(liabilities.clientId, clientId), isNull(liabilities.plaidItemId)))
+      .orderBy(liabilities.name);
+
     return NextResponse.json({
       itemId: inserted.id,
       accounts: accountsResp.data.accounts.map((a) => ({
@@ -74,6 +86,7 @@ export async function POST(req: Request): Promise<Response> {
         balance: a.balances.current,
       })),
       existingCandidates: candidates,
+      existingLiabilityCandidates: liabilityCandidates,
     });
   } catch (err) {
     const r = authErrorResponse(err);
