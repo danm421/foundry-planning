@@ -5,6 +5,11 @@ import type { IntakeDraft } from "@/lib/intake/schema";
 import { WizardChrome } from "@/components/wizard-chrome";
 import { WelcomeScreen } from "./welcome-screen";
 import { FamilyStep } from "./steps/family-step";
+import { AccountsStep } from "./steps/accounts-step";
+import { IncomeStep } from "./steps/income-step";
+import { PropertyStep } from "./steps/property-step";
+import { GoalsStep } from "./steps/goals-step";
+import { ReviewStep } from "./review-step";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 export interface IntakeWizardProps {
@@ -19,10 +24,6 @@ export interface IntakeWizardProps {
 // ─── Section / sub-step state machine ───────────────────────────────────────
 // Flat ordered list of all steps the wizard traverses:
 //   welcome → family → assets:accounts → assets:income → assets:property → goals → review
-//
-// Tasks 2.2-2.3 will swap the STUB bodies below for real child components.
-// The shell selects the right body via `STEPS[flatIndex]` and passes its
-// slice of `value` + a typed slice-setter down.
 
 interface StepDescriptor {
   section: "welcome" | "family" | "assets" | "goals" | "review";
@@ -49,7 +50,6 @@ const STEPS: readonly StepDescriptor[] = [
 const CHROME_STEP_LABELS = STEPS.slice(1).map((s) => s.label) as string[];
 
 // ─── Slice setters ──────────────────────────────────────────────────────────
-// Each one merges its section into the top-level draft and calls onChange.
 
 function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) => void) {
   const setFamily: (patch: IntakeDraft["family"]) => void = (patch) =>
@@ -65,115 +65,16 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
   return { setFamily, setAccounts, setIncome, setProperty, setGoals };
 }
 
-// ─── Step body stubs ─────────────────────────────────────────────────────────
-// These placeholders are replaced by Tasks 2.2 (family/accounts/income/property)
-// and 2.3 (goals, review). The interface each Task 2.2/2.3 component must satisfy
-// is documented in the comment above each stub.
+// ─── Section → flat index map ────────────────────────────────────────────────
+// Used by ReviewStep's onEdit to jump back to the right step.
 
-/** STUB: Task 2.2 will replace this with <FamilyStep value={family} onChange={setFamily} /> */
-function FamilyStepStub({ value }: { value: IntakeDraft["family"]; onChange: (v: IntakeDraft["family"]) => void }) {
-  return (
-    <div
-      role="region"
-      aria-label="Family"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Family step — Task 2.2 will replace this body.</p>
-      {value && null}
-    </div>
-  );
-}
-
-/** STUB: Task 2.2 will replace with <AccountsStep value={accounts} onChange={setAccounts} /> */
-function AccountsStepStub({ value }: { value: IntakeDraft["accounts"]; onChange: (v: IntakeDraft["accounts"]) => void }) {
-  return (
-    <div
-      role="region"
-      aria-label="Accounts"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Accounts step — Task 2.2 will replace this body.</p>
-      {value && null}
-    </div>
-  );
-}
-
-/** STUB: Task 2.2 will replace with <IncomeStep value={income} onChange={setIncome} /> */
-function IncomeStepStub({ value }: { value: IntakeDraft["income"]; onChange: (v: IntakeDraft["income"]) => void }) {
-  return (
-    <div
-      role="region"
-      aria-label="Income"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Income step — Task 2.2 will replace this body.</p>
-      {value && null}
-    </div>
-  );
-}
-
-/** STUB: Task 2.2 will replace with <PropertyStep value={property} onChange={setProperty} /> */
-function PropertyStepStub({ value }: { value: IntakeDraft["property"]; onChange: (v: IntakeDraft["property"]) => void }) {
-  return (
-    <div
-      role="region"
-      aria-label="Property"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Property step — Task 2.2 will replace this body.</p>
-      {value && null}
-    </div>
-  );
-}
-
-/** STUB: Task 2.3 will replace with <GoalsStep value={goals} onChange={setGoals} /> */
-function GoalsStepStub({ value }: { value: IntakeDraft["goals"]; onChange: (v: IntakeDraft["goals"]) => void }) {
-  return (
-    <div
-      role="region"
-      aria-label="Goals"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Goals step — Task 2.3 will replace this body.</p>
-      {value && null}
-    </div>
-  );
-}
-
-/** STUB: Task 2.3 will replace with <ReviewStep value={value} busy={busy} onSubmit={onSubmit} />
- *  The Submit button is wired here in the shell so the affordance exists even on the scaffold. */
-function ReviewStepStub({
-  busy,
-  onSubmit,
-}: {
-  value: IntakeDraft;
-  busy?: boolean;
-  onSubmit: () => Promise<void>;
-}) {
-  return (
-    <div
-      role="region"
-      aria-label="Review"
-      className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-6 text-center text-ink-3"
-    >
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em]">Placeholder</p>
-      <p className="mt-1 text-[13px]">Review accordion — Task 2.3 will replace this body.</p>
-      <button
-        type="button"
-        onClick={() => void onSubmit()}
-        disabled={busy}
-        className="mt-4 rounded-[var(--radius-sm)] bg-accent px-6 py-2 text-sm font-medium text-accent-on transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
-        {busy ? "Submitting…" : "Submit"}
-      </button>
-    </div>
-  );
-}
+const SECTION_TO_INDEX: Record<string, number> = {
+  family: 1,
+  accounts: 2,
+  income: 3,
+  property: 4,
+  goals: 5,
+};
 
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
@@ -200,6 +101,10 @@ export function IntakeWizard({
   function goBack() {
     if (!isFirst) setFlatIndex((i) => i - 1);
   }
+  function goToSection(section: "family" | "accounts" | "income" | "property" | "goals") {
+    const idx = SECTION_TO_INDEX[section];
+    if (idx !== undefined) setFlatIndex(idx);
+  }
 
   // Welcome screen uses its own full-page chrome
   if (step.section === "welcome") {
@@ -222,21 +127,31 @@ export function IntakeWizard({
   // flatIndex 1-6 → chrome step index 0-5
   const chromeIndex = flatIndex - 1;
   const isReview = step.section === "review";
-  const nextLabel = isReview ? "Submit" : step.skipable ? "Skip for now" : "Next";
+
+  // On review: suppress the chrome Next button entirely (onNext=undefined).
+  // The ReviewStep body provides the sole Submit button.
+  const nextLabel = isReview ? undefined : step.skipable ? "Skip for now" : "Next";
 
   function renderBody() {
     switch (step.section) {
       case "family":
         return <FamilyStep value={value.family} onChange={setFamily} />;
       case "assets":
-        if (step.subStep === "accounts") return <AccountsStepStub value={value.accounts} onChange={setAccounts} />;
-        if (step.subStep === "income")   return <IncomeStepStub value={value.income} onChange={setIncome} />;
-        if (step.subStep === "property") return <PropertyStepStub value={value.property} onChange={setProperty} />;
+        if (step.subStep === "accounts") return <AccountsStep value={value.accounts} onChange={setAccounts} />;
+        if (step.subStep === "income")   return <IncomeStep value={value.income} onChange={setIncome} />;
+        if (step.subStep === "property") return <PropertyStep value={value.property} onChange={setProperty} />;
         return null;
       case "goals":
-        return <GoalsStepStub value={value.goals} onChange={setGoals} />;
+        return <GoalsStep value={value.goals} onChange={setGoals} />;
       case "review":
-        return <ReviewStepStub value={value} busy={busy} onSubmit={onSubmit} />;
+        return (
+          <ReviewStep
+            value={value}
+            onSubmit={onSubmit}
+            onEdit={goToSection}
+            busy={busy}
+          />
+        );
       default:
         return null;
     }
