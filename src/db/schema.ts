@@ -26,6 +26,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { IrmaaTier } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
+import type { IntakePayload } from "@/lib/intake/schema";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -441,6 +442,15 @@ export const importDocumentTypeEnum = pgEnum("import_document_type", [
 ]);
 
 export const extractionModelEnum = pgEnum("extraction_model", ["mini", "full"]);
+
+export const intakeModeEnum = pgEnum("intake_mode", ["blank", "prefilled"]);
+export const intakeStatusEnum = pgEnum("intake_status", [
+  "draft",
+  "submitted",
+  "applied",
+  "discarded",
+  "expired",
+]);
 
 // ── CRM enums ────────────────────────────────────────────────────────────────
 
@@ -4405,3 +4415,29 @@ export const orionSyncRuns = pgTable("orion_sync_runs", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
+
+// ── Intake Forms ──────────────────────────────────────────────────────────────
+
+export const intakeForms = pgTable("intake_forms", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+  mode: intakeModeEnum("mode").notNull(),
+  status: intakeStatusEnum("status").notNull().default("draft"),
+  token: text("token").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name"),
+  payload: jsonb("payload").$type<IntakePayload>().notNull().default({} as unknown as IntakePayload),
+  createdByUserId: text("created_by_user_id").notNull(),
+  sentAt: timestamp("sent_at"),
+  submittedAt: timestamp("submitted_at"),
+  appliedAt: timestamp("applied_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("intake_forms_token_idx").on(t.token),
+  index("intake_forms_firm_idx").on(t.firmId),
+  index("intake_forms_client_idx").on(t.clientId),
+  index("intake_forms_status_idx").on(t.status),
+]);
