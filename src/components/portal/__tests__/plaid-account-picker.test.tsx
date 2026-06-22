@@ -24,6 +24,23 @@ describe("PlaidAccountPicker", () => {
       { id: "manual-1", name: "Chase Checking", category: "cash", subType: "checking" },
       { id: "manual-2", name: "Brokerage", category: "taxable", subType: "brokerage" },
     ],
+    existingLiabilityCandidates: [
+      { id: "liab-1", name: "Mortgage", liabilityType: "mortgage", balance: "450000.00" },
+    ],
+  };
+
+  const debtPayload = {
+    ...basePayload,
+    accounts: [
+      {
+        plaidAccountId: "pa-2",
+        name: "Visa Card",
+        mask: "1234",
+        type: "credit",
+        subtype: "credit card",
+        balance: 1200.5,
+      },
+    ],
   };
 
   it("orders matching-category candidates first in the link dropdown", async () => {
@@ -35,6 +52,12 @@ describe("PlaidAccountPicker", () => {
     const options = Array.from(select.options).map((o) => o.textContent ?? "");
     // First option (after placeholder) should be the matching-category one.
     expect(options[1]).toMatch(/Chase Checking/);
+  });
+
+  it("debt-typed account row shows Link to existing debt radio", async () => {
+    const { PlaidAccountPicker } = await import("../plaid-account-picker");
+    render(<PlaidAccountPicker payload={debtPayload} onClose={vi.fn()} />);
+    expect(screen.getByLabelText(/link to existing debt/i)).toBeInTheDocument();
   });
 
   it("submit posts decisions to /exchange/commit and refreshes", async () => {

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clients, plaidItems, scenarios } from "@/db/schema";
+import { accounts, clients, liabilities, plaidItems, scenarios } from "@/db/schema";
 import {
   authErrorResponse,
   requireClientPortalAccess,
 } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
-import { mapPlaidToFoundry } from "@/lib/plaid/account-mapping";
+import { mapPlaidToFoundry, mapPlaidToLiability } from "@/lib/plaid/account-mapping";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 type Decision =
   | { plaidAccountId: string; action: "skip" }
   | { plaidAccountId: string; action: "link"; existingAccountId: string }
+  | { plaidAccountId: string; action: "link-liability"; existingLiabilityId: string }
   | {
       plaidAccountId: string;
       action: "create";
@@ -111,6 +112,32 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
+    // 4b. Pre-validate every `link-liability` decision.
+    for (const d of body.decisions) {
+      if (d.action !== "link-liability") continue;
+      const [row] = await db
+        .select({
+          id: liabilities.id,
+          clientId: liabilities.clientId,
+          plaidItemId: liabilities.plaidItemId,
+        })
+        .from(liabilities)
+        .where(eq(liabilities.id, d.existingLiabilityId))
+        .limit(1);
+      if (!row || row.clientId !== clientId) {
+        return NextResponse.json(
+          { error: `Liability ${d.existingLiabilityId} not found` },
+          { status: 404 },
+        );
+      }
+      if (row.plaidItemId) {
+        return NextResponse.json(
+          { error: `Liability ${d.existingLiabilityId} is already linked to another institution` },
+          { status: 409 },
+        );
+      }
+    }
+
     // Validate that "create" decisions have a base scenario to attach to.
     const needsScenario = body.decisions.some((d) => d.action === "create");
     if (needsScenario && !scenarioId) {
@@ -142,10 +169,63 @@ export async function POST(req: Request): Promise<Response> {
           continue;
         }
 
+        if (d.action === "link-liability") {
+          await tx
+            .update(liabilities)
+            .set({ plaidItemId: body.itemId, plaidAccountId: d.plaidAccountId })
+            .where(eq(liabilities.id, d.existingLiabilityId));
+          linkedCount += 1;
+          continue;
+        }
+
         // d.action === "create"
+        const liabMapped = mapPlaidToLiability(d.accountData.type, d.accountData.subtype);
+        if (liabMapped) {
+          // Plaid-key upsert: never duplicate a debt across re-links.
+          const [existing] = await tx
+            .select({ id: liabilities.id })
+            .from(liabilities)
+            .where(
+              and(
+                eq(liabilities.plaidItemId, body.itemId!),
+                eq(liabilities.plaidAccountId, d.plaidAccountId),
+              ),
+            )
+            .limit(1);
+          const balanceStr = (d.accountData.balance ?? 0).toFixed(2);
+          if (existing) {
+            await tx
+              .update(liabilities)
+              .set({ balance: balanceStr, name: d.accountData.name })
+              .where(eq(liabilities.id, existing.id));
+          } else {
+            // Held-flat revolving/debt row: term/payment null, interestRate 0,
+            // NOT interest-deductible. startYear = current year (held-flat
+            // ignores it). Household-owned (no liability_owners row).
+            const currentYear = new Date().getFullYear();
+            await tx.insert(liabilities).values({
+              clientId,
+              scenarioId: scenarioId!,
+              name: d.accountData.name,
+              liabilityType: liabMapped.liabilityType,
+              balance: balanceStr,
+              interestRate: "0",
+              monthlyPayment: null,
+              termMonths: null,
+              startYear: currentYear,
+              startMonth: 1,
+              isInterestDeductible: false,
+              plaidItemId: body.itemId,
+              plaidAccountId: d.plaidAccountId,
+            });
+          }
+          addedCount += 1;
+          continue;
+        }
+
         const mapped = mapPlaidToFoundry(d.accountData.type, d.accountData.subtype);
         if (!mapped) {
-          // Unsupported Plaid type (loan/credit/mortgage). Skip silently.
+          // Unsupported Plaid type. Skip silently.
           skippedCount += 1;
           continue;
         }

@@ -34,6 +34,7 @@ import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
+import { isHeldFlatLiability } from "./liability-kind";
 import {
   buildLiabilitySchedule,
   buildLiabilitySchedules,
@@ -1025,7 +1026,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           currentLiabilities.push(newLiab);
           // Build a schedule for the new mortgage starting at its origination
           // year (== this projection year). BoY balance == mortgageAmount.
-          liabilitySchedules.set(newLiab.id, buildLiabilitySchedule(newLiab));
+          // Held-flat rows (revolving cards, or any liability with no term) get
+          // no schedule — the BoY fallback carries `liab.balance` forward
+          // unchanged instead of letting an empty schedule zero it.
+          if (!isHeldFlatLiability(newLiab)) {
+            liabilitySchedules.set(newLiab.id, buildLiabilitySchedule(newLiab));
+          }
         }
       }
     }

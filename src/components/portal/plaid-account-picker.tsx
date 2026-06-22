@@ -7,6 +7,7 @@ import type { LinkSuccessPayload } from "./plaid-link-button";
 type Decision =
   | { plaidAccountId: string; action: "skip" }
   | { plaidAccountId: string; action: "link"; existingAccountId: string }
+  | { plaidAccountId: string; action: "link-liability"; existingLiabilityId: string }
   | {
       plaidAccountId: string;
       action: "create";
@@ -21,8 +22,9 @@ type Decision =
     };
 
 type RowState = {
-  action: "create" | "link" | "skip";
+  action: "create" | "link" | "link-liability" | "skip";
   existingAccountId: string | null;
+  existingLiabilityId: string | null;
 };
 
 // Plaid type → Foundry category — kept here as a local string map to avoid
@@ -32,6 +34,10 @@ function plaidTypeToCategory(type: string): string | null {
   if (type === "depository") return "cash";
   if (type === "investment") return "taxable"; // most common; retirement also possible
   return null;
+}
+
+function plaidTypeIsDebt(type: string): boolean {
+  return type === "credit" || type === "loan" || type === "mortgage";
 }
 
 export function PlaidAccountPicker({
@@ -46,7 +52,7 @@ export function PlaidAccountPicker({
   const [rows, setRows] = useState<Record<string, RowState>>(() => {
     const initial: Record<string, RowState> = {};
     for (const a of payload.accounts) {
-      initial[a.plaidAccountId] = { action: "create", existingAccountId: null };
+      initial[a.plaidAccountId] = { action: "create", existingAccountId: null, existingLiabilityId: null };
     }
     return initial;
   });
@@ -76,6 +82,13 @@ export function PlaidAccountPicker({
           plaidAccountId: a.plaidAccountId,
           action: "link",
           existingAccountId: r.existingAccountId,
+        };
+      }
+      if (r.action === "link-liability" && r.existingLiabilityId) {
+        return {
+          plaidAccountId: a.plaidAccountId,
+          action: "link-liability",
+          existingLiabilityId: r.existingLiabilityId,
         };
       }
       return {
@@ -115,6 +128,8 @@ export function PlaidAccountPicker({
           const row = rows[a.plaidAccountId];
           const candidates = candidatesByPlaidAccount.get(a.plaidAccountId) ?? [];
           const preferred = plaidTypeToCategory(a.type);
+          const isDebt = plaidTypeIsDebt(a.type);
+          const liabilityCandidates = payload.existingLiabilityCandidates;
           const selectedCandidate = candidates.find((c) => c.id === row.existingAccountId);
           const mismatch =
             row.action === "link" &&
@@ -129,49 +144,100 @@ export function PlaidAccountPicker({
                 {" — "}
                 {a.balance != null ? `$${a.balance.toFixed(2)}` : "—"}
               </div>
-              <label>
-                <input
-                  type="radio"
-                  name={`action-${a.plaidAccountId}`}
-                  aria-label="Link to existing account"
-                  checked={row.action === "link"}
-                  onChange={() =>
-                    setRows((p) => ({
-                      ...p,
-                      [a.plaidAccountId]: {
-                        action: "link",
-                        existingAccountId: candidates[0]?.id ?? null,
-                      },
-                    }))
-                  }
-                />
-                Link to existing account
-              </label>
-              {row.action === "link" && (
+              {!isDebt && (
                 <>
-                  <select
-                    value={row.existingAccountId ?? ""}
-                    onChange={(e) =>
-                      setRows((p) => ({
-                        ...p,
-                        [a.plaidAccountId]: {
-                          action: "link",
-                          existingAccountId: e.target.value || null,
-                        },
-                      }))
-                    }
-                  >
-                    <option value="">— select —</option>
-                    {candidates.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.category}/{c.subType})
-                      </option>
-                    ))}
-                  </select>
-                  {mismatch && (
-                    <p role="alert">
-                      These look like different account types — sure?
-                    </p>
+                  <label>
+                    <input
+                      type="radio"
+                      name={`action-${a.plaidAccountId}`}
+                      aria-label="Link to existing account"
+                      checked={row.action === "link"}
+                      onChange={() =>
+                        setRows((p) => ({
+                          ...p,
+                          [a.plaidAccountId]: {
+                            action: "link",
+                            existingAccountId: candidates[0]?.id ?? null,
+                            existingLiabilityId: null,
+                          },
+                        }))
+                      }
+                    />
+                    Link to existing account
+                  </label>
+                  {row.action === "link" && (
+                    <>
+                      <select
+                        value={row.existingAccountId ?? ""}
+                        onChange={(e) =>
+                          setRows((p) => ({
+                            ...p,
+                            [a.plaidAccountId]: {
+                              action: "link",
+                              existingAccountId: e.target.value || null,
+                              existingLiabilityId: null,
+                            },
+                          }))
+                        }
+                      >
+                        <option value="">— select —</option>
+                        {candidates.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.category}/{c.subType})
+                          </option>
+                        ))}
+                      </select>
+                      {mismatch && (
+                        <p role="alert">
+                          These look like different account types — sure?
+                        </p>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+              {isDebt && (
+                <>
+                  <label>
+                    <input
+                      type="radio"
+                      name={`action-${a.plaidAccountId}`}
+                      aria-label="Link to existing debt"
+                      checked={row.action === "link-liability"}
+                      onChange={() =>
+                        setRows((p) => ({
+                          ...p,
+                          [a.plaidAccountId]: {
+                            action: "link-liability",
+                            existingAccountId: null,
+                            existingLiabilityId: liabilityCandidates[0]?.id ?? null,
+                          },
+                        }))
+                      }
+                    />
+                    Link to existing debt
+                  </label>
+                  {row.action === "link-liability" && (
+                    <select
+                      value={row.existingLiabilityId ?? ""}
+                      onChange={(e) =>
+                        setRows((p) => ({
+                          ...p,
+                          [a.plaidAccountId]: {
+                            action: "link-liability",
+                            existingAccountId: null,
+                            existingLiabilityId: e.target.value || null,
+                          },
+                        }))
+                      }
+                    >
+                      <option value="">— select —</option>
+                      {liabilityCandidates.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.liabilityType ?? "—"}, {c.balance})
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </>
               )}
@@ -183,7 +249,7 @@ export function PlaidAccountPicker({
                   onChange={() =>
                     setRows((p) => ({
                       ...p,
-                      [a.plaidAccountId]: { action: "create", existingAccountId: null },
+                      [a.plaidAccountId]: { action: "create", existingAccountId: null, existingLiabilityId: null },
                     }))
                   }
                 />
@@ -197,7 +263,7 @@ export function PlaidAccountPicker({
                   onChange={() =>
                     setRows((p) => ({
                       ...p,
-                      [a.plaidAccountId]: { action: "skip", existingAccountId: null },
+                      [a.plaidAccountId]: { action: "skip", existingAccountId: null, existingLiabilityId: null },
                     }))
                   }
                 />

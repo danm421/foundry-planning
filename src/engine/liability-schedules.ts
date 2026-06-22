@@ -1,4 +1,5 @@
 import type { Liability } from "./types";
+import { isHeldFlatLiability } from "./liability-kind";
 import {
   calcOriginalBalance,
   computeAmortizationSchedule,
@@ -47,7 +48,15 @@ export function buildLiabilitySchedules(
   liabilities: Liability[],
 ): LiabilityScheduleMap {
   const map: LiabilityScheduleMap = new Map();
-  for (const liab of liabilities) map.set(liab.id, buildLiabilitySchedule(liab));
+  for (const liab of liabilities) {
+    // Held-flat liabilities (revolving cards, or any liability with no
+    // amortization term — e.g. a Plaid-synced loan) are NOT amortized. Omitting
+    // them from the map makes projection.ts hold the balance flat via its BoY
+    // fallback (`sched ? scheduleBoYBalance(...) : liab.balance`), and
+    // computeLiabilities short-circuits them (below). See engine/liability-kind.ts.
+    if (isHeldFlatLiability(liab)) continue;
+    map.set(liab.id, buildLiabilitySchedule(liab));
+  }
   return map;
 }
 

@@ -84,6 +84,7 @@ export function applyLiabilityBequests(input: LiabilityBequestsInput): Liability
           startYear: liab.startYear,
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
+          liabilityType: liab.liabilityType, // keep revolving rows held-flat after bequest
           extraPayments: [],
           ownerFamilyMemberId: recipient.recipientId ?? undefined,  // kept: signals "distributed-to-heir"
           isInterestDeductible: liab.isInterestDeductible,
@@ -105,6 +106,7 @@ export function applyLiabilityBequests(input: LiabilityBequestsInput): Liability
           startYear: liab.startYear,
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
+          liabilityType: liab.liabilityType, // keep revolving rows held-flat after bequest
           extraPayments: [],
           isInterestDeductible: liab.isInterestDeductible,
           owners: recipient.recipientId != null
