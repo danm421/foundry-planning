@@ -447,7 +447,7 @@ export function ForgePanel({
             <div className="rounded-[var(--radius-sm)] border border-crit/40 bg-crit/10 px-3 py-2 text-[12px] text-crit">
               {errorMessage}
               {retryAfterSeconds != null && (
-                <span className="ml-1">try again in ~{retryAfterSeconds}s</span>
+                <span className="ml-1">— try again in ~{retryAfterSeconds}s</span>
               )}
               {pendingApproval == null && (
                 <button
