@@ -6,7 +6,7 @@ import { clients, intakeForms } from "@/db/schema";
 import { requireClientPortalAccess, authErrorResponse, ForbiddenError } from "@/lib/authz";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { loadActivePrefilledForm } from "@/lib/intake/queries";
-import { snapshotClientToPayload } from "@/lib/intake/snapshot";
+import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
 import {
   intakeDraftSchema,
   intakeSubmitSchema,
@@ -49,26 +49,12 @@ export async function GET(): Promise<Response> {
   try {
     const { clientId, firmId } = await resolveAuth();
 
-    const form = await loadActivePrefilledForm(clientId);
-    if (!form) {
+    const result = await loadOrSeedPortalIntakeForm(clientId, firmId);
+    if (!result) {
       return NextResponse.json({ error: "No active intake form" }, { status: 404 });
     }
 
-    const payload = form.payload as IntakePayload | Record<string, never>;
-    const isEmpty = !payload || !("family" in payload) || Object.keys(payload).length === 0;
-
-    if (isEmpty) {
-      // Lazy seed: snapshot client's live data into the form
-      const seed = await snapshotClientToPayload(clientId, firmId);
-      await db
-        .update(intakeForms)
-        .set({ payload: seed, updatedAt: new Date() })
-        .where(eq(intakeForms.id, form.id));
-
-      return NextResponse.json({ payload: seed, status: form.status });
-    }
-
-    return NextResponse.json({ payload, status: form.status });
+    return NextResponse.json({ payload: result.payload, status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

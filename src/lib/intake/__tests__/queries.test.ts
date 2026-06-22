@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { intakeForms } from "@/db/schema";
+import { intakeForms, clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import {
   loadFormByToken,
   loadFormForFirm,
@@ -9,6 +9,81 @@ import {
   hasUnsubmittedPrefilledForm,
 } from "../queries";
 import { newIntakeToken, defaultExpiry } from "../tokens";
+import type { IntakePayload } from "../schema";
+
+const FIRM_ID = "org_queries_test";
+const ADVISOR_ID = "advisor_queries_test";
+
+// IDs populated in beforeAll
+let draftClientId: string;
+let submittedClientId: string;
+const householdIds: string[] = [];
+
+async function seedClientAndHousehold(): Promise<string> {
+  const [hh] = await db
+    .insert(crmHouseholds)
+    .values({ firmId: FIRM_ID, advisorId: ADVISOR_ID, name: `HH ${Math.random()}` })
+    .returning({ id: crmHouseholds.id });
+  householdIds.push(hh.id);
+
+  await db.insert(crmHouseholdContacts).values({
+    householdId: hh.id,
+    role: "primary",
+    firstName: "Test",
+    lastName: "User",
+  });
+
+  const [client] = await db
+    .insert(clients)
+    .values({
+      firmId: FIRM_ID,
+      advisorId: ADVISOR_ID,
+      crmHouseholdId: hh.id,
+      retirementAge: 65,
+      planEndAge: 95,
+    })
+    .returning({ id: clients.id });
+
+  return client.id;
+}
+
+beforeAll(async () => {
+  draftClientId = await seedClientAndHousehold();
+  submittedClientId = await seedClientAndHousehold();
+
+  await db.insert(intakeForms).values([
+    {
+      firmId: FIRM_ID,
+      clientId: draftClientId,
+      mode: "prefilled" as const,
+      status: "draft" as const,
+      token: newIntakeToken(),
+      recipientEmail: "draft@example.com",
+      payload: {} as unknown as IntakePayload,
+      createdByUserId: "user_test",
+      expiresAt: defaultExpiry(new Date()),
+    },
+    {
+      firmId: FIRM_ID,
+      clientId: submittedClientId,
+      mode: "prefilled" as const,
+      status: "submitted" as const,
+      token: newIntakeToken(),
+      recipientEmail: "submitted@example.com",
+      payload: {} as unknown as IntakePayload,
+      createdByUserId: "user_test",
+      expiresAt: defaultExpiry(new Date()),
+    },
+  ]);
+}, 30000);
+
+afterAll(async () => {
+  await db.delete(intakeForms).where(eq(intakeForms.firmId, FIRM_ID));
+  await db.delete(clients).where(eq(clients.firmId, FIRM_ID));
+  for (const hhId of householdIds) {
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.id, hhId));
+  }
+}, 30000);
 
 describe("intake queries", () => {
   it("loads by token and scopes by firm", async () => {
@@ -45,4 +120,14 @@ describe("intake queries", () => {
     );
     expect(result).toBe(false);
   });
+
+  it("hasUnsubmittedPrefilledForm: draft→true, submitted→false (status filter is draft-only)", async () => {
+    // Draft form → true (the soft-gate should redirect this client to intake)
+    const draftResult = await hasUnsubmittedPrefilledForm(draftClientId);
+    expect(draftResult).toBe(true);
+
+    // Submitted form → false (the soft-gate must NOT redirect after submission)
+    const submittedResult = await hasUnsubmittedPrefilledForm(submittedClientId);
+    expect(submittedResult).toBe(false);
+  }, 30000);
 });

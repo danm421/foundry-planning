@@ -5,6 +5,7 @@ import { decideAccess } from "@/lib/billing/access-policy";
 import { recordAudit } from "@/lib/audit";
 import { operationsBlocked } from "@/lib/operations-route-guard";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
+import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -83,8 +84,22 @@ export default clerkMiddleware(async (auth, request) => {
       // Bound portal user: allow /portal/*; allow API routes (their handlers
       // gate via requireClientPortalAccess); bounce every other page to the
       // portal home.
+      //
+      // Soft first-run gate: redirect to /portal/intake when the client has
+      // an unsubmitted prefilled form (draft-only — not after submission).
+      // Excludes /portal/intake itself (no redirect loop) and /api/* so the
+      // wizard's autosave/submit fetches pass through.
+      const path = request.nextUrl.pathname;
+      if (
+        !path.startsWith("/api/") &&
+        path !== "/portal/intake" &&
+        (await hasUnsubmittedPrefilledForm(portalClientId))
+      ) {
+        return NextResponse.redirect(new URL("/portal/intake", request.url));
+      }
+
       if (isPortalRoute(request)) return passthroughResponse;
-      if (request.nextUrl.pathname.startsWith("/api/")) return passthroughResponse;
+      if (path.startsWith("/api/")) return passthroughResponse;
       return NextResponse.redirect(new URL("/portal/profile", request.url));
     }
     // Unbound + no org → existing org-picker behavior.

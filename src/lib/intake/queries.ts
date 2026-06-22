@@ -57,7 +57,9 @@ export async function loadFormForFirm(
 }
 
 /**
- * Returns true if the client has a prefilled form in draft or submitted state.
+ * Returns true if the client has a prefilled form in DRAFT state (not yet
+ * submitted). Used by the middleware soft-route to redirect clients to the
+ * intake page before they can access the rest of the portal.
  * Wrapped in React.cache for middleware + page deduplication.
  */
 export const hasUnsubmittedPrefilledForm = cache(async (
@@ -70,7 +72,7 @@ export const hasUnsubmittedPrefilledForm = cache(async (
       and(
         eq(intakeForms.clientId, clientId),
         eq(intakeForms.mode, "prefilled"),
-        inArray(intakeForms.status, ["draft", "submitted"]),
+        eq(intakeForms.status, "draft"),
       ),
     )
     .limit(1);
