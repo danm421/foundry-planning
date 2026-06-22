@@ -1240,6 +1240,13 @@
       "when": 1781963053441,
       "tag": "0176_wild_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1782136497714,
+      "tag": "0177_client_portal_spending_phase2",
+      "breakpoints": true
     }
   ]
 }

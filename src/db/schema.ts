@@ -188,6 +188,22 @@ export const expenseTypeEnum = pgEnum("expense_type", [
 
 export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion"]);
 
+export const liabilityTypeEnum = pgEnum("liability_type", [
+  "mortgage",
+  "heloc",
+  "auto",
+  "student",
+  "personal",
+  "credit_card",
+  "other",
+]);
+
+export const transactionCategorizedByEnum = pgEnum("transaction_categorized_by", [
+  "plaid",
+  "rule",
+  "manual",
+]);
+
 export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion"]);
 
 export const orionConnectionStatusEnum = pgEnum("orion_connection_status", [
@@ -1786,6 +1802,9 @@ export const plaidItems = pgTable("plaid_items", {
   institutionName: text("institution_name"),
   lastRefreshedAt: timestamp("last_refreshed_at"),
   lastRefreshError: text("last_refresh_error"),
+  // Incremental /transactions/sync cursor. NULL = never synced (first sync
+  // passes cursor undefined + options.days_requested).
+  transactionsCursor: text("transactions_cursor"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   clientIdx: index("plaid_items_client_idx").on(t.clientId),
@@ -2179,13 +2198,13 @@ export const liabilities = pgTable("liabilities", {
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
-  monthlyPayment: decimal("monthly_payment", { precision: 15, scale: 2 })
-    .notNull()
-    .default("0"),
+  // was: .notNull().default("0")  — revolving credit has no scheduled payment
+  monthlyPayment: decimal("monthly_payment", { precision: 15, scale: 2 }).default("0"),
   startYear: integer("start_year").notNull(),
   startMonth: integer("start_month").notNull().default(1),
   startYearRef: yearRefEnum("start_year_ref"),
-  termMonths: integer("term_months").notNull(),
+  // was: integer("term_months").notNull() — revolving credit has no term
+  termMonths: integer("term_months"),
   termUnit: text("term_unit").notNull().default("annual"),
   linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
     onDelete: "set null",
@@ -2196,11 +2215,30 @@ export const liabilities = pgTable("liabilities", {
   parentAccountId: uuid("parent_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  // Phase 2 (spending suite): debt-type discriminator. NULL = legacy amortizing
+  // row (treated as a term loan by the engine). `credit_card` = held flat
+  // (non-amortizing) by the projection engine — see engine/liability-kind.ts.
+  liabilityType: liabilityTypeEnum("liability_type"),
+  // Plaid Liabilities-product metadata (display-only; engine holds CC balances
+  // flat). Nullable — only set for Plaid-synced revolving debt.
+  minimumPayment: decimal("minimum_payment", { precision: 15, scale: 2 }),
+  statementBalance: decimal("statement_balance", { precision: 15, scale: 2 }),
+  aprPercentage: decimal("apr_percentage", { precision: 6, scale: 4 }),
+  nextPaymentDueDate: date("next_payment_due_date"),
+  // Plaid identity (mirrors accounts.plaidItemId / plaidAccountId). Lets a
+  // Plaid debt be the stable natural key — prevents re-sync duplicates.
+  plaidItemId: uuid("plaid_item_id").references(() => plaidItems.id, {
+    onDelete: "set null",
+  }),
+  plaidAccountId: text("plaid_account_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   // Engine load path filters liabilities by (client_id, scenario_id) (audit F7).
   clientScenarioIdx: index("liabilities_client_scenario_idx").on(t.clientId, t.scenarioId),
+  plaidAccountUnique: uniqueIndex("liabilities_plaid_account_uniq")
+    .on(t.plaidItemId, t.plaidAccountId)
+    .where(sql`${t.plaidAccountId} IS NOT NULL`),
 }));
 
 export const liabilityOwners = pgTable(
@@ -2986,6 +3024,75 @@ export const plaidItemsRelations = relations(plaidItems, ({ one, many }) => ({
     references: [clients.id],
   }),
   accounts: many(accounts),
+  liabilities: many(liabilities),
+  transactions: many(plaidTransactions),
+}));
+
+export const plaidTransactions = pgTable(
+  "plaid_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    plaidItemId: uuid("plaid_item_id")
+      .notNull()
+      .references(() => plaidItems.id, { onDelete: "cascade" }),
+    // Resolved at ingest when the Plaid account maps to one of our `accounts`
+    // rows. NULL when the source is a liability (credit card) or an untracked
+    // account — `plaidAccountId` keeps the linkage either way.
+    accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    // Raw Plaid account handle — the durable join key to accounts OR liabilities.
+    plaidAccountId: text("plaid_account_id").notNull(),
+    plaidTransactionId: text("plaid_transaction_id").notNull().unique(),
+    // Plaid sign convention: positive = money OUT (spend), negative = money in.
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    isoCurrencyCode: text("iso_currency_code"),
+    date: date("date").notNull(),
+    authorizedDate: date("authorized_date"),
+    merchantName: text("merchant_name"),
+    name: text("name").notNull(),
+    // Personal Finance Category v2 (raw). PFC→our-category mapping is Phase 4.
+    pfcPrimary: text("pfc_primary"),
+    pfcDetailed: text("pfc_detailed"),
+    pfcConfidence: text("pfc_confidence"),
+    paymentChannel: text("payment_channel"),
+    pending: boolean("pending").notNull().default(false),
+    // FK → transaction_categories — that table lands in Phase 4, so the FK
+    // constraint is added then; the column exists now to avoid a re-migration.
+    categoryId: uuid("category_id"),
+    categorizedBy: transactionCategorizedByEnum("categorized_by")
+      .notNull()
+      .default("plaid"),
+    excluded: boolean("excluded").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    clientDateIdx: index("plaid_transactions_client_date_idx").on(t.clientId, t.date),
+    clientCategoryIdx: index("plaid_transactions_client_category_idx").on(
+      t.clientId,
+      t.categoryId,
+    ),
+    accountDateIdx: index("plaid_transactions_account_date_idx").on(t.accountId, t.date),
+  }),
+);
+
+export const plaidTransactionsRelations = relations(plaidTransactions, ({ one }) => ({
+  client: one(clients, {
+    fields: [plaidTransactions.clientId],
+    references: [clients.id],
+  }),
+  plaidItem: one(plaidItems, {
+    fields: [plaidTransactions.plaidItemId],
+    references: [plaidItems.id],
+  }),
+  account: one(accounts, {
+    fields: [plaidTransactions.accountId],
+    references: [accounts.id],
+  }),
 }));
 
 export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
@@ -3093,6 +3200,10 @@ export const liabilitiesRelations = relations(liabilities, ({ one, many }) => ({
     references: [accounts.id],
   }),
   extraPayments: many(extraPayments),
+  plaidItem: one(plaidItems, {
+    fields: [liabilities.plaidItemId],
+    references: [plaidItems.id],
+  }),
 }));
 
 export const extraPaymentsRelations = relations(extraPayments, ({ one }) => ({
