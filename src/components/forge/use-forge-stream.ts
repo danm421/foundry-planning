@@ -22,6 +22,11 @@ export interface ApprovalCall {
   name: string;
   args: Record<string, unknown>;
 }
+export interface PageLink {
+  href: string;
+  section: string;
+  label: string;
+}
 export type ForgeSseEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "token"; text: string }
@@ -30,6 +35,7 @@ export type ForgeSseEvent =
   // Structured custom-streaming frames (plumbing only — no renderer yet).
   | { type: "tool_render"; name: string; status: "inProgress" | "complete"; data: unknown }
   | { type: "navigate"; href: string }
+  | { type: "page_link"; href: string; section: string; label: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
   | { type: "verifying" }
@@ -46,6 +52,9 @@ export interface ForgeMessage {
   text: string;
   /** Display-only filenames shown as chips on a user bubble (chat attachments). */
   attachments?: string[];
+  /** Server-built deep links attached to an assistant answer (ephemeral — not
+   *  persisted; absent when an old conversation is reloaded from history). */
+  pageLinks?: PageLink[];
 }
 export type ForgeStatus = "idle" | "streaming" | "done" | "error" | "cancelled";
 
@@ -221,6 +230,24 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
         break;
       case "navigate":
         setPendingNavigate(ev.href);
+        break;
+      case "page_link":
+        // Attach the link to the trailing assistant bubble (de-duped by
+        // section). Mirrors how `token` appends to the same message, so the
+        // chips lock with the answer when the turn ends.
+        setMessages((m) => {
+          if (m.length === 0) return m;
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          if (last.role !== "assistant") return copy;
+          const existing = last.pageLinks ?? [];
+          if (existing.some((l) => l.section === ev.section)) return copy;
+          copy[copy.length - 1] = {
+            ...last,
+            pageLinks: [...existing, { href: ev.href, section: ev.section, label: ev.label }],
+          };
+          return copy;
+        });
         break;
       case "activity":
         setToolStatus(ev.label);

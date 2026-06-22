@@ -155,6 +155,44 @@ describe("custom-streaming frames", () => {
     ]);
   });
 
+  it("parseForgeSse parses a page_link frame", () => {
+    const events = drain([
+      `data: {"type":"page_link","href":"/clients/c1/assets/balance-sheet-report","section":"balance-sheet","label":"Balance Sheet"}\n\n`,
+    ]);
+    expect(events).toEqual([
+      {
+        type: "page_link",
+        href: "/clients/c1/assets/balance-sheet-report",
+        section: "balance-sheet",
+        label: "Balance Sheet",
+      },
+    ]);
+  });
+
+  it("send accumulates page_link frames (de-duped by section) onto the trailing assistant message", async () => {
+    const frames = [
+      `data: {"type":"token","text":"Net worth is $4.2M."}\n\n`,
+      `data: {"type":"page_link","href":"/clients/c1/assets/balance-sheet-report","section":"balance-sheet","label":"Balance Sheet"}\n\n`,
+      // duplicate section — must NOT add a second chip
+      `data: {"type":"page_link","href":"/clients/c1/assets/balance-sheet-report","section":"balance-sheet","label":"Balance Sheet"}\n\n`,
+      `data: {"type":"page_link","href":"/clients/c1/details/net-worth","section":"net-worth","label":"Net Worth"}\n\n`,
+      `data: {"type":"done"}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFramedResponse(frames)));
+
+    const { result } = renderHook(() => useForgeStream("c1"));
+    await act(async () => {
+      await result.current.send({ message: "What's their net worth?", scenarioId: "base" });
+    });
+
+    const assistant = result.current.messages.at(-1)!;
+    expect(assistant.role).toBe("assistant");
+    expect(assistant.pageLinks).toEqual([
+      { href: "/clients/c1/assets/balance-sheet-report", section: "balance-sheet", label: "Balance Sheet" },
+      { href: "/clients/c1/details/net-worth", section: "net-worth", label: "Net Worth" },
+    ]);
+  });
+
   it("send stashes lastToolRender + pendingNavigate without breaking the stream", async () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
