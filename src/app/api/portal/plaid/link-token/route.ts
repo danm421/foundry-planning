@@ -16,7 +16,7 @@ import { decrypt } from "@/lib/plaid/crypto";
 
 export const dynamic = "force-dynamic";
 
-type Body = { itemId?: string; enableProducts?: boolean };
+type Body = { itemId?: string; enableProducts?: boolean; accountSelection?: boolean };
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -63,6 +63,7 @@ export async function POST(req: Request): Promise<Response> {
         ...(body.enableProducts
           ? { additional_consented_products: [Products.Transactions, Products.Liabilities] }
           : {}),
+        ...(body.accountSelection ? { update: { account_selection_enabled: true } } : {}),
       });
       return NextResponse.json({
         linkToken: resp.data.link_token,
