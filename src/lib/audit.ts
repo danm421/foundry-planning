@@ -346,7 +346,8 @@ export type AuditAction =
   | "portal.rule.delete"
   | "portal.category.create"
   | "portal.category.update"
-  | "portal.category.delete";
+  | "portal.category.delete"
+  | "portal.budget.update";
 
 type Args = {
   action: AuditAction;
