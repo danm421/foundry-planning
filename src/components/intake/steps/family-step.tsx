@@ -2,6 +2,7 @@
 
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { USPS_STATE_NAMES, USPS_STATE_CODES } from "@/lib/usps-states";
+import { inputCls, labelCls, selectCls } from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,12 +25,6 @@ const MARITAL_OPTIONS: { value: string; label: string }[] = [
   { value: "divorced", label: "Divorced" },
   { value: "widowed", label: "Widowed" },
 ];
-
-// ─── Shared input styles (design-system token classes) ───────────────────────
-const inputCls =
-  "w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[14px] text-ink placeholder:text-ink-4 focus:outline-none focus:ring-1 focus:ring-accent";
-const labelCls = "block text-[12px] font-medium uppercase tracking-[0.06em] text-ink-3 mb-1";
-const selectCls = inputCls;
 
 // ─── PersonFields sub-component ───────────────────────────────────────────────
 

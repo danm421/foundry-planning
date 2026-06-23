@@ -7,6 +7,7 @@ import { intakeForms } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
 import { loadFormForFirm } from "@/lib/intake/queries";
+import { isOpenStatus } from "@/lib/intake/tokens";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function POST(
     // Only an open form (draft or submitted) can be discarded. Re-discarding a
     // terminal form (applied/discarded/expired) is a no-op that would emit a
     // spurious audit + bump updatedAt, so reject it.
-    if (form.status !== "draft" && form.status !== "submitted") {
+    if (!isOpenStatus(form.status)) {
       const reason =
         form.status === "applied"
           ? "Cannot discard an applied form — its data is live"

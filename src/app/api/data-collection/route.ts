@@ -12,11 +12,11 @@ import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeFormEmail } from "@/lib/intake/email";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
+import { EMAIL_RE } from "@/lib/intake/schema";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
 

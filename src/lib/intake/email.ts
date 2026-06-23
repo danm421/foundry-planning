@@ -16,7 +16,7 @@ function buildIntakeEmailHtml(args: {
   const { link, advisorName, householdName } = args;
 
   const greeting = householdName
-    ? `<p>Hello${householdName ? ` ${esc(householdName)}` : ""},</p>`
+    ? `<p>Hello ${esc(householdName)},</p>`
     : `<p>Hello,</p>`;
 
   const advisorLine = advisorName

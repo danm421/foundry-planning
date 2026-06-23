@@ -86,3 +86,10 @@ export function maritalToFilingStatus(
 ): "single" | "married_joint" | "head_of_household" {
   return m === "married" ? "married_joint" : "single";
 }
+
+/**
+ * Lightweight recipient-email check shared by the intake send surfaces (advisor
+ * send-client + send-prospect forms and the create route). Intentionally
+ * permissive — the authoritative validation is Resend's / Clerk's at send time.
+ */
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;

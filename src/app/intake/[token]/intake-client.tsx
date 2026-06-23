@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
+import { IntakeThankYou } from "@/components/intake/thank-you";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -10,28 +11,6 @@ interface IntakeClientProps {
   token: string;
   recipientName: string | null;
   initialPayload: unknown; // IntakePayload from DB, cast to IntakeDraft on mount
-}
-
-// ─── Post-submit thank-you ────────────────────────────────────────────────────
-
-function ThankYouInline({ recipientName }: { recipientName: string | null }) {
-  const greeting = recipientName ? `Thank you, ${recipientName}` : "Thank you";
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-paper px-6 py-16 text-center">
-      <div className="max-w-md">
-        <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
-          Submitted
-        </p>
-        <h1 className="mb-4 text-3xl font-semibold tracking-tight text-ink">
-          {greeting}<span className="text-accent">.</span>
-        </h1>
-        <p className="text-base leading-relaxed text-ink-2">
-          We&rsquo;ve received your information. Your advisor will be in touch
-          soon.
-        </p>
-      </div>
-    </div>
-  );
 }
 
 // ─── Client wrapper ───────────────────────────────────────────────────────────
@@ -160,7 +139,7 @@ export function IntakeClient({
   }, [token, value]);
 
   if (submitted) {
-    return <ThankYouInline recipientName={recipientName} />;
+    return <IntakeThankYou recipientName={recipientName} />;
   }
 
   return (

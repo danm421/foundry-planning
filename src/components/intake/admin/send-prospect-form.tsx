@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+import { EMAIL_RE } from "@/lib/intake/schema";
 
 export default function SendProspectForm() {
   const router = useRouter();

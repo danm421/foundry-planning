@@ -22,10 +22,12 @@ export const loadFormByToken = cache(async (
 
 /**
  * Load the active (draft or submitted) prefilled form for a client.
+ * React.cache'd so the middleware soft-route check + the page render in the
+ * same request only hit the DB once, consistent with the sibling queries.
  */
-export async function loadActivePrefilledForm(
+export const loadActivePrefilledForm = cache(async (
   clientId: string,
-): Promise<IntakeFormRow | null> {
+): Promise<IntakeFormRow | null> => {
   const rows = await db
     .select()
     .from(intakeForms)
@@ -38,23 +40,25 @@ export async function loadActivePrefilledForm(
     )
     .limit(1);
   return rows[0] ?? null;
-}
+});
 
 /**
  * Load a form by ID, scoped to the given firm. Returns null if the form
  * belongs to a different firm (prevents cross-firm access).
+ * React.cache'd so the apply route's 404 guard and applyIntake's internal
+ * load share one DB round-trip, consistent with the sibling queries.
  */
-export async function loadFormForFirm(
+export const loadFormForFirm = cache(async (
   id: string,
   firmId: string,
-): Promise<IntakeFormRow | null> {
+): Promise<IntakeFormRow | null> => {
   const rows = await db
     .select()
     .from(intakeForms)
     .where(and(eq(intakeForms.id, id), eq(intakeForms.firmId, firmId)))
     .limit(1);
   return rows[0] ?? null;
-}
+});
 
 /**
  * Returns true if the client has a prefilled form in DRAFT state (not yet

@@ -36,7 +36,7 @@ function FieldRow({
     return (
       <div className="flex items-center justify-between gap-4 py-1 text-[14px]">
         <span className="text-ink-3">{label}</span>
-        <span className="tabular text-ink-2">{val === "—" ? val : val}</span>
+        <span className="tabular text-ink-2">{val}</span>
       </div>
     );
   }

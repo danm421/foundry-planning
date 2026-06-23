@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-// ─── Shared input/label tokens (mirrored from family-step) ───────────────────
+// ─── Shared input/label tokens (consumed by every intake step) ───────────────
 export const inputCls =
   "w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2 text-[14px] text-ink placeholder:text-ink-4 focus:outline-none focus:ring-1 focus:ring-accent";
 export const labelCls =

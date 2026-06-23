@@ -9,10 +9,20 @@ export function defaultExpiry(now: Date): Date {
   return new Date(now.getTime() + THIRTY_DAYS_MS);
 }
 
+/**
+ * A form is "open" while it can still be edited or acted on — draft (being
+ * filled) or submitted (awaiting advisor apply/discard). Everything else
+ * (applied/discarded/expired) is terminal. Centralizes the status vocabulary
+ * the lifecycle routes (discard, revoke) and expiry all reason about.
+ */
+export function isOpenStatus(status: string): boolean {
+  return status === "draft" || status === "submitted";
+}
+
 export function isExpired(
   form: { expiresAt: Date; status: string },
   now: Date,
 ): boolean {
-  if (form.status !== "draft" && form.status !== "submitted") return true;
+  if (!isOpenStatus(form.status)) return true;
   return form.expiresAt.getTime() <= now.getTime();
 }
