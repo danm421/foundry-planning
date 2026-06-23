@@ -9,6 +9,7 @@ import { TransactionDetailPanel } from "@/components/portal/transaction-detail-p
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { fmtAmount, formatDayHeader, badgeFor, type TxnType } from "@/components/portal/transaction-format";
 
 export type PortalTransactionDTO = {
   id: string;
@@ -25,6 +26,7 @@ export type PortalTransactionDTO = {
   accountId: string | null;
   accountName: string | null;
   accountMask: string | null;
+  type: TxnType;
 };
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
 
@@ -36,13 +38,6 @@ const WINDOWS = [
   { key: "ALL", label: "All", days: -1 },
 ] as const;
 const PAGE = 50;
-
-function fmtAmount(amount: string): { text: string; cls: string } {
-  const n = Number(amount);
-  // Plaid sign: positive = money out (spend). Show spend as plain, income as good.
-  const abs = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  return n < 0 ? { text: `+${abs}`, cls: "text-good" } : { text: abs, cls: "text-ink" };
-}
 
 function windowFrom(days: number): string | undefined {
   if (days < 0) return undefined;
@@ -156,6 +151,37 @@ export default function TransactionsList({
     if (res.ok) { setSelected(null); void load(0, true); }
   }
 
+  const changeType = useCallback(
+    async (id: string, nextType: TxnType): Promise<void> => {
+      const prev = rows;
+      setRows((rs) =>
+        rs.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                type: nextType,
+                ...(nextType === "transfer"
+                  ? { categoryId: null, categoryName: null, categoryColor: null, categorizedBy: "manual" as const }
+                  : {}),
+              }
+            : t,
+        ),
+      );
+      setSelected((s) => (s && s.id === id ? { ...s, type: nextType, ...(nextType === "transfer" ? { categoryId: null, categoryName: null, categoryColor: null } : {}) } : s));
+      try {
+        const res = await portalFetch(`/api/portal/transactions/${id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: nextType }),
+        });
+        if (!res.ok) { setRows(prev); setError("Couldn't change the type."); }
+      } catch {
+        setRows(prev); setError("Couldn't change the type.");
+      }
+    },
+    [rows, portalFetch],
+  );
+
   const leaves = categories.filter((c) => c.kind === "category");
   const hasMore = rows.length < total;
 
@@ -203,19 +229,43 @@ export default function TransactionsList({
           <div className="p-6 text-center text-[13px] text-ink-3">No transactions in this window.</div>
         ) : (
           <ul className="divide-y divide-hair">
-            {rows.map((t) => {
+            {rows.map((t, i) => {
               const amt = fmtAmount(t.amount);
+              const isRecurring = (t as PortalTransactionDTO & { recurringTransactionId?: string | null }).recurringTransactionId != null || t.categorizedBy === "recurring";
+              const badge = badgeFor(t.type, isRecurring);
+              const showDay = i === 0 || rows[i - 1].date !== t.date;
               return (
-                <li key={t.id} className="flex items-center justify-between gap-4 p-4">
-                  <div className="min-w-0 cursor-pointer" onClick={() => setSelected(t)}>
-                    <div className="truncate text-[13px] font-medium text-ink">
-                      {t.merchantName ?? t.name}
-                      {t.pending && <span className="ml-2 text-[11px] text-warn">pending</span>}
-                      {t.excluded && <span className="ml-2 text-[11px] text-ink-4">excluded</span>}
+                <li key={t.id} className="contents">
+                  {showDay && (
+                    <div className="bg-card-2 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-4">
+                      {formatDayHeader(t.date)}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      <span className="tabular text-[12px] text-ink-3">{t.date}</span>
-                      <span onClick={(e) => e.stopPropagation()}>
+                  )}
+                  <div className="flex items-center gap-3 px-4 py-2.5">
+                    <span
+                      className={
+                        badge
+                          ? "flex h-5 w-5 shrink-0 items-center justify-center rounded bg-card-2 text-[10px] font-semibold text-ink-3"
+                          : "h-5 w-5 shrink-0"
+                      }
+                      aria-hidden={badge ? undefined : true}
+                    >
+                      {badge}
+                    </span>
+                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setSelected(t)}>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[13px] font-medium text-ink">
+                          {t.merchantName ?? t.name}
+                        </span>
+                        {t.accountName && (
+                          <span className="truncate text-[12px] text-ink-4">{t.accountName}</span>
+                        )}
+                        {t.pending && <span className="text-[11px] text-warn">pending</span>}
+                        {t.excluded && <span className="text-[11px] text-ink-4">excluded</span>}
+                      </div>
+                    </div>
+                    {t.type !== "transfer" && (
+                      <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                         {editEnabled ? (
                           <CategoryPicker
                             categories={categories}
@@ -235,11 +285,9 @@ export default function TransactionsList({
                           <CategoryPill name={t.categoryName} color={t.categoryColor} />
                         )}
                       </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`tabular text-[14px] ${amt.cls}`}>{amt.text}</span>
-                    <span onClick={(e) => e.stopPropagation()}>
+                    )}
+                    <span className={`tabular shrink-0 text-[14px] ${amt.cls}`}>{amt.text}</span>
+                    <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                       {editEnabled && (
                         <button
                           type="button"
@@ -288,6 +336,8 @@ export default function TransactionsList({
             />
             <TransactionDetailPanel
               txn={selected}
+              editEnabled={editEnabled}
+              onChangeType={(nt: TxnType) => { if (selected) void changeType(selected.id, nt); }}
               onClose={() => setSelected(null)}
               onCreateRule={() => setRuleSeed(selected)}
               onCreateRecurring={() => setRecurringSeed(selected)}
