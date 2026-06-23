@@ -18,8 +18,10 @@ export default function PortalPreviewBanner({
         Previewing the client portal as{" "}
         <span className="font-semibold">{clientName || "this client"}</span>.
         Editing is{" "}
-        <span className="font-semibold">{editEnabled ? "on" : "off"}</span> —
-        changes you make here save to the client&apos;s account.
+        <span className="font-semibold">{editEnabled ? "on" : "off"}</span> —{" "}
+        {editEnabled
+          ? "changes you make here save to the client's account."
+          : "this is a read-only preview. Flip the client's edit toggle to make changes."}
       </div>
       <Link
         href={`/clients/${clientId}/portal`}
