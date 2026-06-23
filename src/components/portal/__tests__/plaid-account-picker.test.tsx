@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const refresh = vi.fn();
@@ -8,6 +8,15 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("PlaidAccountPicker", () => {
+  // Two tests below spy on `global.fetch` and read `mock.calls[0]`. Without
+  // per-test cleanup the spy (and its accumulated calls) leak across tests, so
+  // the later test would read the earlier test's stale request body. Restore
+  // the fetch spy and clear the router mock between every test.
+  afterEach(() => {
+    vi.restoreAllMocks();
+    refresh.mockClear();
+  });
+
   const basePayload = {
     itemId: "item-1",
     accounts: [
@@ -46,18 +55,29 @@ describe("PlaidAccountPicker", () => {
   it("orders matching-category candidates first in the link dropdown", async () => {
     const { PlaidAccountPicker } = await import("../plaid-account-picker");
     render(<PlaidAccountPicker payload={basePayload} onClose={vi.fn()} />);
-    // Select the "Link to existing" radio for pa-1.
-    fireEvent.click(screen.getByLabelText(/link to existing/i));
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    // Switch the row to "Link to existing account".
+    fireEvent.click(screen.getByRole("button", { name: /link to existing account/i }));
+    const select = screen.getByLabelText(/existing account/i) as HTMLSelectElement;
     const options = Array.from(select.options).map((o) => o.textContent ?? "");
-    // First option (after placeholder) should be the matching-category one.
-    expect(options[1]).toMatch(/Chase Checking/);
+    // No placeholder — the matching-category candidate (cash) leads.
+    expect(options[0]).toMatch(/Chase Checking/);
+    expect(options[1]).toMatch(/Brokerage/);
   });
 
-  it("debt-typed account row shows Link to existing debt radio", async () => {
+  it("debt-typed account row shows a Link to existing debt control", async () => {
     const { PlaidAccountPicker } = await import("../plaid-account-picker");
     render(<PlaidAccountPicker payload={debtPayload} onClose={vi.fn()} />);
-    expect(screen.getByLabelText(/link to existing debt/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /link to existing debt/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("defaults the Add-as-new type to the Plaid-detected type", async () => {
+    const { PlaidAccountPicker } = await import("../plaid-account-picker");
+    render(<PlaidAccountPicker payload={basePayload} onClose={vi.fn()} />);
+    // depository/checking → asset|cash|checking.
+    const typeSelect = screen.getByLabelText(/account type/i) as HTMLSelectElement;
+    expect(typeSelect.value).toBe("asset|cash|checking");
   });
 
   it("submit posts decisions to /exchange/commit and refreshes", async () => {
@@ -67,11 +87,54 @@ describe("PlaidAccountPicker", () => {
     const onClose = vi.fn();
     const { PlaidAccountPicker } = await import("../plaid-account-picker");
     render(<PlaidAccountPicker payload={basePayload} onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[0]).toBe("/api/portal/plaid/exchange/commit");
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.decisions[0]).toMatchObject({
+      plaidAccountId: "pa-1",
+      action: "create",
+      kind: "asset",
+      category: "cash",
+      subType: "checking",
+    });
     expect(onClose).toHaveBeenCalled();
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("changing the type emits a different create decision", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, linkedAccountIds: [] }), { status: 200 }),
+    );
+    const { PlaidAccountPicker } = await import("../plaid-account-picker");
+    render(<PlaidAccountPicker payload={basePayload} onClose={vi.fn()} />);
+    // Reclassify the depository account as a credit-card debt.
+    fireEvent.change(screen.getByLabelText(/account type/i), {
+      target: { value: "debt|credit_card" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.decisions[0]).toMatchObject({
+      action: "create",
+      kind: "debt",
+      liabilityType: "credit_card",
+    });
+    expect(body.decisions[0]).not.toHaveProperty("category");
+  });
+
+  it("skip then undo round-trips the row", async () => {
+    const { PlaidAccountPicker } = await import("../plaid-account-picker");
+    render(<PlaidAccountPicker payload={basePayload} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /skip plaid checking/i }));
+    expect(screen.getByText(/skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 of 1 selected/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /undo/i }));
+    expect(screen.getByLabelText(/account type/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 1 selected/i)).toBeInTheDocument();
   });
 });

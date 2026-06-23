@@ -2,6 +2,8 @@
 
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import PortalCard, { portalBtn, portalInput } from "@/components/portal/portal-card";
+import { KeyIcon } from "@/components/portal/portal-icons";
 
 type Status = "not_invited" | "invited" | "active";
 
@@ -11,6 +13,14 @@ interface Props {
   primaryEmail: string;
   invitedAt: Date | null;
   clerkUserId: string | null;
+}
+
+function formatDate(d: Date): string {
+  return new Date(d).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export default function PortalAccessCard({
@@ -67,42 +77,38 @@ export default function PortalAccessCard({
   }
 
   return (
-    <section className="rounded-md border border-hair bg-paper p-5">
-      <header className="flex items-center justify-between mb-3">
-        <h3 className="text-[15px] font-medium text-ink">Access</h3>
-        <StatusPill status={status} />
-      </header>
-
+    <PortalCard
+      icon={<KeyIcon />}
+      title="Portal access"
+      action={<StatusPill status={status} />}
+    >
       {status === "not_invited" && (
         <div className="flex items-end gap-2">
           <label className="flex-1">
-            <span className="block text-[12px] text-ink-3 mb-1">Client email</span>
+            <span className="mb-1 block text-[12px] text-ink-3">Client email</span>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-hair bg-card-2 px-3 py-1.5 text-[13px] text-ink"
+              className={portalInput}
             />
           </label>
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy || !email}
-            className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent disabled:opacity-50"
-          >
+          <button type="button" onClick={send} disabled={busy || !email} className={portalBtn.primary}>
             {busy ? "Sending…" : "Send invite"}
           </button>
         </div>
       )}
 
       {status === "invited" && (
-        <div className="space-y-2 text-[13px] text-ink-2">
-          <p>Invitation sent {invitedAt ? new Date(invitedAt).toLocaleString() : ""}.</p>
-          <div className="flex gap-2">
-            <button type="button" onClick={send} disabled={busy} className="rounded-md border border-hair px-3 py-1.5 text-ink">
+        <div className="space-y-3">
+          <p className="text-[13px] text-ink-2">
+            Invitation sent{invitedAt ? <> {formatDate(invitedAt)}</> : ""}. Awaiting sign-up.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={send} disabled={busy} className={portalBtn.ghost}>
               Resend invite
             </button>
-            <button type="button" onClick={revoke} disabled={busy} className="rounded-md border border-bad px-3 py-1.5 text-bad">
+            <button type="button" onClick={revoke} disabled={busy} className={portalBtn.danger}>
               Revoke invite
             </button>
           </div>
@@ -110,27 +116,41 @@ export default function PortalAccessCard({
       )}
 
       {status === "active" && (
-        <div className="space-y-2 text-[13px] text-ink-2">
-          <p>Portal user: <span className="text-ink">{clerkUserId}</span></p>
-          <button onClick={disable} disabled={busy} className="rounded-md border border-bad px-3 py-1.5 text-bad">
+        <div className="space-y-4">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 text-[13px]">
+            <dt className="text-ink-3">Portal user</dt>
+            <dd className="tabular min-w-0 truncate text-ink" title={clerkUserId ?? undefined}>
+              {clerkUserId}
+            </dd>
+            {invitedAt && (
+              <>
+                <dt className="text-ink-3">Invited</dt>
+                <dd className="tabular text-ink-2">{formatDate(invitedAt)}</dd>
+              </>
+            )}
+          </dl>
+          <button type="button" onClick={disable} disabled={busy} className={portalBtn.danger}>
             Disable portal access
           </button>
         </div>
       )}
 
-      {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
-    </section>
+      {error && <p className="mt-3 text-[12px] text-crit">{error}</p>}
+    </PortalCard>
   );
 }
 
 function StatusPill({ status }: { status: Status }): ReactElement {
   const { label, cls } = {
     not_invited: { label: "Not invited", cls: "border-hair text-ink-3" },
-    invited: { label: "Invited", cls: "border-warn text-warn" },
-    active: { label: "Active", cls: "border-good text-good" },
+    invited: { label: "Invited", cls: "border-warn/40 text-warn" },
+    active: { label: "Active", cls: "border-good/40 text-good" },
   }[status];
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${cls}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {label}
     </span>
   );

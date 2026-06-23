@@ -185,13 +185,12 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
             {
               plaidAccountId: "pa-create",
               action: "create",
-              accountData: {
-                name: "Plaid Savings",
-                mask: "1111",
-                type: "depository",
-                subtype: "savings",
-                balance: 50000,
-              },
+              kind: "asset",
+              name: "Plaid Savings",
+              mask: "1111",
+              balance: 50000,
+              category: "cash",
+              subType: "savings",
             },
             { plaidAccountId: "pa-skip", action: "skip" },
           ],
@@ -263,6 +262,62 @@ describe("POST /api/portal/plaid/exchange/commit", () => {
     expect(txInsert).not.toHaveBeenCalled();
     expect(recordCreate).not.toHaveBeenCalled();
   });
+
+  it("400s a create decision with an invalid asset type (enum allowlist)", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          {
+            plaidAccountId: "pa-bad",
+            action: "create",
+            kind: "asset",
+            name: "X",
+            mask: null,
+            balance: 1,
+            category: "definitely_not_a_category",
+            subType: "checking",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(txInsert).not.toHaveBeenCalled();
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
+  it("400s a create decision with an invalid debt type (enum allowlist)", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Chase" }],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+    );
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          {
+            plaidAccountId: "pa-bad",
+            action: "create",
+            kind: "debt",
+            name: "X",
+            mask: null,
+            balance: 1,
+            liabilityType: "not_a_real_debt",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(txInsert).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST commit — Plaid debt → liabilities", () => {
@@ -285,13 +340,11 @@ describe("POST commit — Plaid debt → liabilities", () => {
           {
             plaidAccountId: "plaid-cc",
             action: "create",
-            accountData: {
-              name: "Visa",
-              mask: "1234",
-              type: "credit",
-              subtype: "credit card",
-              balance: 5000,
-            },
+            kind: "debt",
+            name: "Visa",
+            mask: "1234",
+            balance: 5000,
+            liabilityType: "credit_card",
           },
         ],
       }),

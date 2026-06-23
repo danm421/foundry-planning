@@ -2,6 +2,8 @@
 
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import PortalCard from "@/components/portal/portal-card";
+import { PencilIcon } from "@/components/portal/portal-icons";
 
 interface Props {
   clientId: string;
@@ -33,23 +35,25 @@ export default function PortalEditToggle({
   }
 
   return (
-    <section className="rounded-md border border-hair bg-paper p-5">
-      <header className="flex items-center justify-between mb-2">
-        <h3 className="text-[15px] font-medium text-ink">Edit permission</h3>
-        <label className="inline-flex items-center gap-2 text-[13px] text-ink-2">
+    <PortalCard
+      icon={<PencilIcon />}
+      title="Edit permission"
+      description="When off, the client sees their profile and accounts but cannot change anything or link new accounts."
+      action={
+        <label className="inline-flex cursor-pointer items-center gap-2.5">
+          <span className="text-[12px] text-ink-3">{enabled ? "Editing on" : "Editing off"}</span>
           <input
             type="checkbox"
+            role="switch"
+            aria-label="Allow client to edit"
             checked={enabled}
             disabled={busy}
             onChange={(e) => flip(e.target.checked)}
+            className="peer sr-only"
           />
-          Allow client to edit
+          <span className="relative h-5 w-9 rounded-full bg-hair-2 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-ink after:shadow-sm after:transition-transform after:content-[''] peer-checked:bg-accent peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
         </label>
-      </header>
-      <p className="text-[12px] text-ink-3">
-        When off, the client sees their profile and accounts but cannot
-        change anything or link new accounts.
-      </p>
-    </section>
+      }
+    />
   );
 }

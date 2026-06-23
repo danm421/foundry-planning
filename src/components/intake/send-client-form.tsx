@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EMAIL_RE } from "@/lib/intake/schema";
+import PortalCard, { portalBtn, portalInput } from "@/components/portal/portal-card";
+import { MailIcon } from "@/components/portal/portal-icons";
 
 interface Props {
   clientId: string;
@@ -75,15 +77,13 @@ export default function SendClientForm({
   }
 
   return (
-    <div className="rounded-md border border-hair bg-card-2 p-4">
-      <div className="text-[14px] font-medium text-ink">Send intake form</div>
-      <div className="mt-0.5 text-[12px] text-ink-3">
-        Send a data-collection form to this client. Choose blank for a clean
-        slate or pre-filled to seed responses from their current plan.
-      </div>
-
-      <div className="mt-3">
-        <label htmlFor="recipient-email" className="block mb-1 text-[12px] text-ink-3">
+    <PortalCard
+      icon={<MailIcon />}
+      title="Send intake form"
+      description="Send a data-collection form to this client. Choose blank for a clean slate or pre-filled to seed responses from their current plan."
+    >
+      <div>
+        <label htmlFor="recipient-email" className="mb-1 block text-[12px] text-ink-3">
           Recipient email
         </label>
         <div className="flex items-center gap-2">
@@ -92,7 +92,7 @@ export default function SendClientForm({
             type="email"
             value={recipientEmail}
             onChange={(e) => setRecipientEmail(e.target.value)}
-            className="flex-1 rounded-[var(--radius-sm)] border border-hair bg-paper px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+            className={portalInput}
           />
           {spouseEmail && spouseEmail !== recipientEmail && (
             <button
@@ -115,56 +115,42 @@ export default function SendClientForm({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={sending}
-          onClick={() => send("blank")}
-          className="inline-flex items-center rounded-[var(--radius-sm)] border border-hair bg-paper px-3 py-1.5 text-[13px] font-medium text-ink transition-opacity hover:opacity-80 disabled:opacity-50"
-        >
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button type="button" disabled={sending} onClick={() => send("blank")} className={portalBtn.ghost}>
           {sending ? "Sending…" : "Send blank form"}
         </button>
-        <div className="flex flex-col gap-0.5">
-          <button
-            type="button"
-            disabled={sending}
-            onClick={() => send("prefilled")}
-            className="inline-flex items-center rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-on transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {sending ? "Sending…" : "Send pre-filled form"}
-          </button>
-          {clientAlreadyBound && (
-            <span className="text-[11px] text-ink-4">
-              Client already has portal access — no new invite will be sent.
-            </span>
-          )}
-        </div>
+        <button type="button" disabled={sending} onClick={() => send("prefilled")} className={portalBtn.primary}>
+          {sending ? "Sending…" : "Send pre-filled form"}
+        </button>
       </div>
+      {clientAlreadyBound && (
+        <p className="mt-2 text-[11px] text-ink-4">
+          Client already has portal access — no new invite will be sent.
+        </p>
+      )}
 
       {error && (
-        <p role="alert" className="mt-2 text-[12px] text-red-600">
+        <p role="alert" className="mt-3 text-[12px] text-crit">
           {error}
         </p>
       )}
       {successMsg && (
-        <p role="status" className="mt-2 text-[12px] text-ink">
+        <p role="status" className="mt-3 text-[12px] text-good">
           {successMsg}
         </p>
       )}
 
       {pendingFormId && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="chip rounded-full border border-hair bg-card px-2 py-0.5 text-[11px] text-ink-3">
-            Submitted
-          </span>
+        <div className="mt-4 flex items-center gap-2 border-t border-hair pt-3">
+          <span className="chip">Submitted</span>
           <Link
             href={`/data-collection/${pendingFormId}`}
-            className="text-[12px] text-ink-2 hover:underline"
+            className="text-[12px] text-ink-2 hover:text-ink hover:underline"
           >
             Submitted form awaiting review
           </Link>
         </div>
       )}
-    </div>
+    </PortalCard>
   );
 }

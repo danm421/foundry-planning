@@ -1,15 +1,31 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clients, liabilities, plaidItems, scenarios } from "@/db/schema";
+import {
+  accountCategoryEnum,
+  accountSubTypeEnum,
+  accounts,
+  clients,
+  liabilities,
+  liabilityTypeEnum,
+  plaidItems,
+  scenarios,
+} from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
-import { mapPlaidToFoundry, mapPlaidToLiability } from "@/lib/plaid/account-mapping";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
+
+// The client picks the Foundry type explicitly ("Add as new account" → type
+// dropdown), so the commit route no longer derives it from the Plaid type. We
+// re-validate every chosen enum against the schema's allowlist — never trust a
+// client-supplied enum value to reach an INSERT.
+const CATEGORY_VALUES = new Set<string>(accountCategoryEnum.enumValues);
+const SUBTYPE_VALUES = new Set<string>(accountSubTypeEnum.enumValues);
+const LIABILITY_VALUES = new Set<string>(liabilityTypeEnum.enumValues);
 
 type Decision =
   | { plaidAccountId: string; action: "skip" }
@@ -18,13 +34,21 @@ type Decision =
   | {
       plaidAccountId: string;
       action: "create";
-      accountData: {
-        name: string;
-        mask?: string | null;
-        type: string;
-        subtype: string | null;
-        balance: number | null;
-      };
+      kind: "asset";
+      name: string;
+      mask?: string | null;
+      balance: number | null;
+      category: string;
+      subType: string;
+    }
+  | {
+      plaidAccountId: string;
+      action: "create";
+      kind: "debt";
+      name: string;
+      mask?: string | null;
+      balance: number | null;
+      liabilityType: string;
     };
 
 type Body = {
@@ -136,6 +160,32 @@ export async function POST(req: Request): Promise<Response> {
       }
     }
 
+    // 4c. Validate every `create` decision's client-chosen type against the
+    //     schema enum allowlists before any write.
+    for (const d of body.decisions) {
+      if (d.action !== "create") continue;
+      if (d.kind === "asset") {
+        if (!CATEGORY_VALUES.has(d.category) || !SUBTYPE_VALUES.has(d.subType)) {
+          return NextResponse.json(
+            { error: `Invalid account type for ${d.plaidAccountId}` },
+            { status: 400 },
+          );
+        }
+      } else if (d.kind === "debt") {
+        if (!LIABILITY_VALUES.has(d.liabilityType)) {
+          return NextResponse.json(
+            { error: `Invalid debt type for ${d.plaidAccountId}` },
+            { status: 400 },
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: `Invalid create decision for ${(d as { plaidAccountId?: string }).plaidAccountId}` },
+          { status: 400 },
+        );
+      }
+    }
+
     // Validate that "create" decisions have a base scenario to attach to.
     const needsScenario = body.decisions.some((d) => d.action === "create");
     if (needsScenario && !scenarioId) {
@@ -176,9 +226,8 @@ export async function POST(req: Request): Promise<Response> {
           continue;
         }
 
-        // d.action === "create"
-        const liabMapped = mapPlaidToLiability(d.accountData.type, d.accountData.subtype);
-        if (liabMapped) {
+        // d.action === "create" — the client picked the Foundry type explicitly.
+        if (d.kind === "debt") {
           // Plaid-key upsert: never duplicate a debt across re-links.
           const [existing] = await tx
             .select({ id: liabilities.id })
@@ -190,11 +239,15 @@ export async function POST(req: Request): Promise<Response> {
               ),
             )
             .limit(1);
-          const balanceStr = (d.accountData.balance ?? 0).toFixed(2);
+          const balanceStr = (d.balance ?? 0).toFixed(2);
           if (existing) {
             await tx
               .update(liabilities)
-              .set({ balance: balanceStr, name: d.accountData.name })
+              .set({
+                balance: balanceStr,
+                name: d.name,
+                liabilityType: d.liabilityType as (typeof liabilityTypeEnum.enumValues)[number],
+              })
               .where(eq(liabilities.id, existing.id));
           } else {
             // Held-flat revolving/debt row: term/payment null, interestRate 0,
@@ -204,8 +257,8 @@ export async function POST(req: Request): Promise<Response> {
             await tx.insert(liabilities).values({
               clientId,
               scenarioId: scenarioId!,
-              name: d.accountData.name,
-              liabilityType: liabMapped.liabilityType,
+              name: d.name,
+              liabilityType: d.liabilityType as (typeof liabilityTypeEnum.enumValues)[number],
               balance: balanceStr,
               interestRate: "0",
               monthlyPayment: null,
@@ -221,22 +274,17 @@ export async function POST(req: Request): Promise<Response> {
           continue;
         }
 
-        const mapped = mapPlaidToFoundry(d.accountData.type, d.accountData.subtype);
-        if (!mapped) {
-          // Unsupported Plaid type. Skip silently.
-          skippedCount += 1;
-          continue;
-        }
+        // d.kind === "asset"
         const [created] = await tx
           .insert(accounts)
           .values({
             clientId,
             scenarioId: scenarioId!,
-            name: d.accountData.name,
-            category: mapped.category,
-            subType: mapped.subType,
-            value: (d.accountData.balance ?? 0).toFixed(2),
-            accountNumberLast4: d.accountData.mask ?? null,
+            name: d.name,
+            category: d.category as (typeof accountCategoryEnum.enumValues)[number],
+            subType: d.subType as (typeof accountSubTypeEnum.enumValues)[number],
+            value: (d.balance ?? 0).toFixed(2),
+            accountNumberLast4: d.mask ?? null,
             plaidItemId: body.itemId,
             plaidAccountId: d.plaidAccountId,
           })
