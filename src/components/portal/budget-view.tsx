@@ -74,11 +74,15 @@ export default function BudgetView({
       <div className="grid grid-cols-3 gap-3">
         <Metric label="Spent" value={fmtUsd(summary.totalSpent)} />
         <Metric label="Budget" value={summary.totalBudget > 0 ? fmtUsd(summary.totalBudget) : "—"} />
-        <Metric
-          label={overall >= 0 ? "Remaining" : "Over"}
-          value={fmtUsd(Math.abs(overall))}
-          tone={overall >= 0 ? "good" : "crit"}
-        />
+        {summary.totalBudget > 0 ? (
+          <Metric
+            label={overall >= 0 ? "Remaining" : "Over"}
+            value={fmtUsd(Math.abs(overall))}
+            tone={overall >= 0 ? "good" : "crit"}
+          />
+        ) : (
+          <Metric label="Remaining" value="—" />
+        )}
       </div>
 
       <BudgetDonut groups={summary.groups} totalSpent={summary.totalSpent} />

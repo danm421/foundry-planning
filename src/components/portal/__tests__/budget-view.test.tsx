@@ -50,6 +50,22 @@ it("hides edit controls when editEnabled is false", () => {
   expect(screen.queryByRole("button", { name: /edit budget/i })).toBeNull();
 });
 
+it("shows '—' not 'Over' for the third metric when no budget is set", () => {
+  const noBudgetSummary = {
+    month: "2026-06",
+    totalBudget: 0,
+    totalSpent: 230,
+    totalRemaining: -230,
+    incomeThisMonth: 0,
+    groups: [],
+  };
+  render(<BudgetView summary={noBudgetSummary} editEnabled={false} />);
+  expect(screen.queryByText("Over")).toBeNull();
+  // The "—" placeholder must appear for both Budget and Remaining metrics.
+  const dashes = screen.getAllByText("—");
+  expect(dashes.length).toBeGreaterThanOrEqual(2);
+});
+
 it("PUTs and refreshes when a budget is saved", async () => {
   portalFetchMock.mockResolvedValue({ ok: true });
   render(<BudgetView summary={summary} editEnabled />);
