@@ -4516,3 +4516,37 @@ export const transactionRules = pgTable(
     ),
   }),
 );
+
+export const budgets = pgTable(
+  "budgets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    // One budget per category. categoryId may reference a GROUP or a LEAF
+    // (group-level budgets are allowed; see the Phase 5 plan precedence rule).
+    // Globally unique → at most one budget per category per client.
+    categoryId: uuid("category_id")
+      .notNull()
+      .unique()
+      .references(() => transactionCategories.id, { onDelete: "cascade" }),
+    monthlyAmount: decimal("monthly_amount", { precision: 15, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    clientIdx: index("budgets_client_idx").on(t.clientId),
+  }),
+);
+
+export const budgetsRelations = relations(budgets, ({ one }) => ({
+  client: one(clients, {
+    fields: [budgets.clientId],
+    references: [clients.id],
+  }),
+  category: one(transactionCategories, {
+    fields: [budgets.categoryId],
+    references: [transactionCategories.id],
+  }),
+}));
