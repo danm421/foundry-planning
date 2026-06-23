@@ -4,29 +4,29 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
+import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
 
-const PROFILE_ITEMS = [
-  { label: "Household", suffix: "/profile" },
-  { label: "Family", suffix: "/profile/family" },
-  { label: "Trusts", suffix: "/profile/trusts" },
-] as const;
-
-const OTHER_ITEMS = [
-  { label: "Accounts", suffix: "/accounts" },
-  { label: "Transactions", suffix: "/transactions" },
-  { label: "Budget", suffix: "/budget" },
-] as const;
+const PROFILE_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "profile");
+const MONEY_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "money");
 
 interface Props {
   displayName: string;
   email: string;
   basePath?: string;
+  /**
+   * Display + visibility classes for the root <nav>. Defaults to `"flex"` so
+   * standalone consumers (advisor preview, tests) render unchanged. The client
+   * portal layout passes `"hidden lg:flex"` to make this a desktop-only rail —
+   * the base class list intentionally omits `flex` so that override wins.
+   */
+  className?: string;
 }
 
 export default function PortalNav({
   displayName,
   email,
   basePath = "/portal",
+  className = "flex",
 }: Props): ReactElement {
   const pathname = usePathname();
   function itemCls(active: boolean): string {
@@ -35,7 +35,9 @@ export default function PortalNav({
       : "block rounded-md px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card hover:text-ink";
   }
   return (
-    <nav className="flex flex-col gap-2 border-r border-hair bg-card-2 p-5">
+    <nav
+      className={`${className} flex-col gap-2 border-r border-hair bg-card-2 p-5`}
+    >
       <header className="mb-4">
         <div className="text-[14px] font-semibold text-ink">{displayName}</div>
         <div className="truncate text-[12px] text-ink-3">{email}</div>
@@ -61,7 +63,7 @@ export default function PortalNav({
 
       <div className="mb-3">
         <ul className="space-y-0.5">
-          {OTHER_ITEMS.map((item) => {
+          {MONEY_ITEMS.map((item) => {
             const href = `${basePath}${item.suffix}`;
             return (
               <li key={item.suffix}>
