@@ -21,12 +21,10 @@ import { loadPortalDebt, loadPortalTrendTransactions } from "@/lib/portal/load-p
 
 interface Props {
   clientId: string;
-  previewing?: boolean;
 }
 
 export default async function AccountsSection({
   clientId,
-  previewing = false,
 }: Props): Promise<ReactElement> {
   const [client] = await db
     .select({ portalEditEnabled: clients.portalEditEnabled })
@@ -96,7 +94,7 @@ export default async function AccountsSection({
     .from(entities)
     .where(and(eq(entities.clientId, clientId), eq(entities.entityType, "trust")));
 
-  const editEnabled = previewing ? false : (client?.portalEditEnabled ?? false);
+  const editEnabled = client?.portalEditEnabled ?? false;
 
   const ownersByAccount = new Map<string, Array<(typeof owners)[number]>>();
   for (const o of owners) {

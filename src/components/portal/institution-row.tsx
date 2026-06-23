@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PlaidLinkButton } from "./plaid-link-button";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 export function InstitutionRow({
   itemId,
@@ -21,10 +22,11 @@ export function InstitutionRow({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const portalFetch = usePortalFetch();
 
   const refresh = () =>
     startTransition(async () => {
-      const r = await fetch(`/api/portal/plaid/items/${itemId}/refresh`, {
+      const r = await portalFetch(`/api/portal/plaid/items/${itemId}/refresh`, {
         method: "POST",
       });
       const json = (await r.json().catch(() => ({}))) as {
@@ -44,7 +46,7 @@ export function InstitutionRow({
   const unlink = () => {
     if (!window.confirm(`Unlink ${institutionName}?`)) return;
     startTransition(async () => {
-      const r = await fetch(`/api/portal/plaid/items/${itemId}`, {
+      const r = await portalFetch(`/api/portal/plaid/items/${itemId}`, {
         method: "DELETE",
       });
       if (!r.ok) {

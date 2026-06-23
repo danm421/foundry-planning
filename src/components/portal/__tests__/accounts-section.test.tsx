@@ -125,21 +125,14 @@ beforeEach(() => {
 import AccountsSection from "../accounts-section";
 
 describe("AccountsSection", () => {
-  it("renders in read-only mode when previewing=true, even though portalEditEnabled is true", async () => {
-    const ui = await AccountsSection({ clientId: "c1", previewing: true });
-    const { container } = render(ui);
-    const list = container.querySelector("[data-testid='accounts-list']")!;
-    expect(list.getAttribute("data-edit")).toBe("false");
-    expect(list.getAttribute("data-row-count")).toBe("2");
-    expect(list.getAttribute("data-fm-count")).toBe("1");
-    expect(list.getAttribute("data-trust-count")).toBe("1");
-  });
-
-  it("respects DB toggle when previewing is omitted", async () => {
+  it("editEnabled follows portalEditEnabled (toggle on → edit)", async () => {
     const ui = await AccountsSection({ clientId: "c1" });
     const { container } = render(ui);
     const list = container.querySelector("[data-testid='accounts-list']")!;
     expect(list.getAttribute("data-edit")).toBe("true");
+    expect(list.getAttribute("data-row-count")).toBe("2");
+    expect(list.getAttribute("data-fm-count")).toBe("1");
+    expect(list.getAttribute("data-trust-count")).toBe("1");
   });
 
   it("hides default-checking + advisor-only accounts and totals only visible assets", async () => {

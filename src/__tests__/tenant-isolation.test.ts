@@ -76,7 +76,7 @@ describe("tenant isolation contract", () => {
     const derivesFirmId = /\b(getOrgId|requireOrgId)\s*\(/.test(src);
     // Portal mutation routes scope by the session's own clientId via
     // requireClientPortalAccess (portal users have no orgId), not getOrgId.
-    const isPortalScoped = /\brequireClientPortalAccess\s*\(/.test(src);
+    const isPortalScoped = /\b(requireClientPortalAccess|resolvePortalClient)\s*\(/.test(src);
     const hasEscapeHatch = /@allow-firm-scope-exception/.test(src);
 
     if (!derivesFirmId && !isPortalScoped && !hasEscapeHatch) {

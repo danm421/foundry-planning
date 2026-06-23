@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requirePortalMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requirePortalMock(),
   ForbiddenError: class ForbiddenError extends Error {},
   authErrorResponse: (e: unknown) =>
     e instanceof Error && e.message.includes("Forbidden")
@@ -41,7 +44,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { POST } from "@/app/api/portal/family/route";
 
 beforeEach(() => {
-  requirePortalMock.mockReset();
+  resolvePortalClientMock.mockReset();
   requireEditEnabledMock.mockReset();
   insertChain.mockReset();
   selectChain.mockReset();
@@ -58,14 +61,14 @@ function req(body: unknown) {
 
 describe("POST /api/portal/family", () => {
   it("rejects missing firstName", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(req({ relationship: "child" }));
     expect(res.status).toBe(400);
   });
 
   it("rejects an invalid relationship value with 400", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     const res = await POST(req({ firstName: "Kid", relationship: "bogus" }));
     expect(res.status).toBe(400);
@@ -74,7 +77,7 @@ describe("POST /api/portal/family", () => {
   });
 
   it("inserts a row scoped to the bound client and logs as actor 'client'", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValue([{ firmId: "firm-1" }]);
     insertChain.mockResolvedValue([{ id: "fm-new" }]);

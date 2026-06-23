@@ -39,11 +39,14 @@ vi.mock("@/lib/rate-limit", () => ({
     NextResponse.json({ error: msg }, { status: 429 }),
 }));
 
-vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: vi.fn(async () => ({
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: vi.fn(async () => ({
     clientId: "client-1",
+    mode: "client",
     clerkUserId: "user-1",
   })),
+}));
+vi.mock("@/lib/authz", () => ({
   authErrorResponse: () => null,
 }));
 

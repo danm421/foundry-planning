@@ -6,23 +6,23 @@ import { render } from "@testing-library/react";
 // the catch-all dispatch test. Each renders a marker div that captures
 // the props the page passed in.
 vi.mock("@/components/portal/household-section", () => ({
-  default: ({ clientId, previewing }: { clientId: string; previewing?: boolean }) => (
-    <div data-testid="section-household" data-client={clientId} data-preview={String(!!previewing)} />
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-household" data-client={clientId} />
   ),
 }));
 vi.mock("@/components/portal/family-section", () => ({
-  default: ({ clientId, previewing }: { clientId: string; previewing?: boolean }) => (
-    <div data-testid="section-family" data-client={clientId} data-preview={String(!!previewing)} />
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-family" data-client={clientId} />
   ),
 }));
 vi.mock("@/components/portal/trusts-section", () => ({
-  default: ({ clientId, previewing }: { clientId: string; previewing?: boolean }) => (
-    <div data-testid="section-trusts" data-client={clientId} data-preview={String(!!previewing)} />
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-trusts" data-client={clientId} />
   ),
 }));
-vi.mock("@/components/portal/accounts-section", () => ({
-  default: ({ clientId, previewing }: { clientId: string; previewing?: boolean }) => (
-    <div data-testid="section-accounts" data-client={clientId} data-preview={String(!!previewing)} />
+vi.mock("@/components/portal/portal-accounts-screen", () => ({
+  PortalAccountsScreen: ({ clientId }: { clientId: string }) => (
+    <div data-testid="screen-accounts" data-client={clientId} />
   ),
 }));
 vi.mock("@/components/portal/portal-nav", () => ({
@@ -71,12 +71,11 @@ async function renderPreview(slug: string[] | undefined) {
 }
 
 describe("PortalPreview catch-all", () => {
-  it("renders HouseholdSection on empty slug, with previewing=true", async () => {
+  it("renders HouseholdSection on empty slug", async () => {
     const { container } = await renderPreview(undefined);
     const node = container.querySelector("[data-testid='section-household']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
-    expect(node?.getAttribute("data-preview")).toBe("true");
   });
 
   it("renders HouseholdSection on slug=['profile']", async () => {
@@ -109,11 +108,10 @@ describe("PortalPreview catch-all", () => {
     expect(banner?.getAttribute("data-edit")).toBe("true");
   });
 
-  it("renders AccountsSection on slug=['accounts'] in preview mode", async () => {
+  it("renders PortalAccountsScreen on slug=['accounts']", async () => {
     const { container } = await renderPreview(["accounts"]);
-    const node = container.querySelector("[data-testid='section-accounts']");
+    const node = container.querySelector("[data-testid='screen-accounts']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
-    expect(node?.getAttribute("data-preview")).toBe("true");
   });
 });

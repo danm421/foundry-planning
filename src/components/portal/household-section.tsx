@@ -6,12 +6,10 @@ import ProfileHouseholdForm from "@/components/portal/profile-household-form";
 
 interface Props {
   clientId: string;
-  previewing?: boolean;
 }
 
 export default async function HouseholdSection({
   clientId,
-  previewing = false,
 }: Props): Promise<ReactElement> {
   const [client] = await db
     .select({
@@ -40,7 +38,7 @@ export default async function HouseholdSection({
   const primary = contacts.find((c) => c.role === "primary") ?? null;
   const spouse = contacts.find((c) => c.role === "spouse") ?? null;
 
-  const editEnabled = previewing ? false : client.portalEditEnabled;
+  const editEnabled = client.portalEditEnabled;
 
   return (
     <div className="max-w-2xl space-y-5 p-5">

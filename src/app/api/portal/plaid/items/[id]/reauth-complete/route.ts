@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, plaidItems } from "@/db/schema";
-import {
-  authErrorResponse,
-  requireClientPortalAccess,
-} from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
@@ -17,7 +15,7 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -54,7 +52,8 @@ export async function POST(
       resourceId: id,
       clientId,
       firmId: client.firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: { institutionName: item.institutionName },
     });
 

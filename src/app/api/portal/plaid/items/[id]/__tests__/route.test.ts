@@ -11,10 +11,12 @@ vi.mock("@/lib/audit/record-helpers", () => ({
   recordDelete: (...a: unknown[]) => recordDelete(...a),
 }));
 
-const requireClientPortalAccess = vi.fn();
+const resolvePortalClient = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...a: unknown[]) => resolvePortalClient(...a),
+}));
 const requireEditEnabled = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: (...a: unknown[]) => requireClientPortalAccess(...a),
   authErrorResponse: () => null,
 }));
 vi.mock("@/lib/portal/require-portal-subscription", () => ({
@@ -45,14 +47,14 @@ let currentResp: () => unknown[] = () => [];
 beforeEach(() => {
   itemRemove.mockReset();
   recordDelete.mockReset();
-  requireClientPortalAccess.mockReset();
+  resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   dbSelect.mockReset();
   tx.update.mockClear();
   tx.delete.mockClear();
   txUpdateWhere.mockClear();
   txDeleteWhere.mockClear();
-  requireClientPortalAccess.mockResolvedValue({ clientId: "client-1", clerkUserId: "user-1" });
+  resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
   requireEditEnabled.mockResolvedValue(undefined);
   dbSelect.mockImplementation(() => ({
     from: () => ({ where: () => ({ limit: () => Promise.resolve(currentResp()) }) }),

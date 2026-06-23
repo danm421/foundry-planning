@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entities } from "@/db/schema";
-import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
@@ -48,7 +49,7 @@ export async function PUT(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
@@ -78,7 +79,8 @@ export async function PUT(
       resourceId: id,
       clientId,
       firmId: row.firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       before,
       after,
       fieldLabels: FIELD_LABELS,
