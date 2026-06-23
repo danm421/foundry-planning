@@ -1,5 +1,9 @@
 import { Resend } from "resend";
 
+/** Email address intake messages are sent from. Must be on a Resend-verified
+ * domain — only the display name in front of it can be customized per-firm. */
+const INTAKE_FROM_ADDRESS = "noreply@foundryplanning.com";
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -7,13 +11,50 @@ function esc(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Build the `From` header for an intake email. The display name is the sending
+ * firm's organization name (so recipients see e.g. "Acme Wealth Management"
+ * rather than "Foundry"), falling back to "Foundry" when no org name resolves.
+ * The address stays on our verified domain regardless.
+ *
+ * An explicit `INTAKE_EMAIL_FROM` env var still wins — it's an operator-level
+ * full-`From` override and is assumed already well-formed.
+ *
+ * Exported for unit testing.
+ */
+export function buildIntakeFromHeader(orgName?: string): string {
+  const explicit = process.env.INTAKE_EMAIL_FROM;
+  if (explicit) return explicit;
+
+  const display = sanitizeDisplayName(orgName) ?? "Foundry";
+  // RFC 5322 quoted-string: escape backslash and double-quote so org names with
+  // commas/specials stay valid.
+  const quoted = `"${display.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
+  return `${quoted} <${INTAKE_FROM_ADDRESS}>`;
+}
+
+/** Strip control chars (incl. CR/LF — header-injection guard) and collapse
+ * whitespace. Returns undefined for empty/blank input so callers fall back. */
+function sanitizeDisplayName(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  // Strip C0 controls + DEL via unicode escapes (CR/LF guard).
+  const cleaned = raw
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || undefined;
+}
+
 /* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens */
 function buildIntakeEmailHtml(args: {
   link: string;
+  orgName?: string;
   advisorName?: string;
   householdName?: string;
 }): string {
-  const { link, advisorName, householdName } = args;
+  const { link, orgName, advisorName, householdName } = args;
+
+  const brand = sanitizeDisplayName(orgName) ?? "Foundry Planning";
 
   const greeting = householdName
     ? `<p>Hello ${esc(householdName)},</p>`
@@ -25,7 +66,7 @@ function buildIntakeEmailHtml(args: {
 
   return `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#111;max-width:560px;margin:0 auto">
   <div style="background:#1e3a5f;padding:20px 24px;border-radius:6px 6px 0 0">
-    <span style="color:#fff;font-size:18px;font-weight:600">Foundry Planning</span>
+    <span style="color:#fff;font-size:18px;font-weight:600">${esc(brand)}</span>
   </div>
   <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px">
     ${greeting}
@@ -50,14 +91,14 @@ function buildIntakeEmailHtml(args: {
 export async function sendIntakeFormEmail(args: {
   to: string;
   link: string;
+  orgName?: string;
   advisorName?: string;
   householdName?: string;
 }): Promise<void> {
-  const { to, link, advisorName, householdName } = args;
+  const { to, link, orgName, advisorName, householdName } = args;
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from =
-    process.env.INTAKE_EMAIL_FROM ?? "Foundry <noreply@foundryplanning.com>";
+  const from = buildIntakeFromHeader(orgName);
 
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
@@ -71,7 +112,7 @@ export async function sendIntakeFormEmail(args: {
 
   try {
     const resend = new Resend(apiKey);
-    const html = buildIntakeEmailHtml({ link, advisorName, householdName });
+    const html = buildIntakeEmailHtml({ link, orgName, advisorName, householdName });
     await resend.emails.send({
       from,
       to,

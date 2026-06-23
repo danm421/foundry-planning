@@ -31,7 +31,12 @@ vi.mock("@/lib/rate-limit", () => ({
 // ── Clerk mock ────────────────────────────────────────────────────────────────
 const createInvitationMock = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: async () => ({ userId: "advisor-1", orgId: "firm-1" }),
+  auth: async () => ({
+    userId: "advisor-1",
+    orgId: "firm-1",
+    sessionClaims: { org_name: "Acme Wealth Management" },
+  }),
+  currentUser: async () => ({ firstName: "Jane", lastName: "Advisor" }),
   clerkClient: async () => ({
     invitations: {
       createInvitation: (args: unknown) => createInvitationMock(args),
@@ -166,11 +171,13 @@ describe("POST /api/data-collection — blank mode with clientId", () => {
       }),
     );
 
-    // Email sent with correct link
+    // Email sent with correct link + per-firm sender/advisor names
     expect(sendIntakeFormEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "prospect@example.com",
         link: expect.stringContaining("/intake/test-token-abc"),
+        orgName: "Acme Wealth Management",
+        advisorName: "Jane Advisor",
       }),
     );
 

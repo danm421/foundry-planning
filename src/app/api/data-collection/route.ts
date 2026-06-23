@@ -1,6 +1,7 @@
 // @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(clientId) / requireOrgId; the literal getOrgId/requireOrgId grep doesn't see this.
 
 import { NextResponse } from "next/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, intakeForms } from "@/db/schema";
@@ -116,9 +117,18 @@ export async function POST(req: Request): Promise<Response> {
 
     if (mode === "blank") {
       const link = `${APP_URL}/intake/${token}`;
+      const { sessionClaims } = await auth();
+      const orgName =
+        (sessionClaims as { org_name?: string } | null)?.org_name ?? undefined;
+      const advisor = await currentUser();
+      const advisorName =
+        [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") ||
+        undefined;
       await sendIntakeFormEmail({
         to: recipientEmail,
         link,
+        orgName,
+        advisorName,
         householdName: recipientNameStr,
       });
     } else {
