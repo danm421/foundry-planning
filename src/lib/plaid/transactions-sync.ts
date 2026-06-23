@@ -5,6 +5,10 @@ import { accounts, plaidItems, plaidTransactions } from "@/db/schema";
 import { getPlaidClient } from "./client";
 import { decrypt } from "./crypto";
 import { plaidErrorCode, plaidErrorMessage } from "./errors";
+import { resolveTransactionCategory } from "@/lib/portal/resolve-category";
+import { ensureCategoriesSeeded } from "@/lib/portal/seed-categories";
+import { loadCategorizationContext } from "@/lib/portal/load-categorization-context";
+import type { CategorizationContext } from "@/lib/portal/load-categorization-context";
 
 const FIRST_SYNC_DAYS_REQUESTED = 730; // Phase 2 decision: max trend depth
 
@@ -25,7 +29,8 @@ export type NewPlaidTransactionRow = {
   pfcConfidence: string | null;
   paymentChannel: string | null;
   pending: boolean;
-  categorizedBy: "plaid";
+  categoryId: string | null;
+  categorizedBy: "plaid" | "rule";
 };
 
 export function mapPlaidTransaction(
@@ -53,6 +58,7 @@ export function mapPlaidTransaction(
     paymentChannel: t.payment_channel ?? null,
     pending: t.pending,
     categorizedBy: "plaid",
+    categoryId: null,
   };
 }
 
@@ -109,6 +115,7 @@ type ApplyCtx = {
   clientId: string;
   plaidItemId: string; // our plaid_items.id (uuid)
   accountIdByPlaidAccountId: Map<string, string>;
+  categorization: CategorizationContext;
 };
 
 /** Upserts added+modified on plaidTransactionId; deletes removed. Idempotent. */
@@ -117,9 +124,18 @@ export async function applyTransactionUpdates(
   ctx: ApplyCtx,
   updates: { added: Transaction[]; modified: Transaction[]; removed: string[] },
 ): Promise<void> {
-  const upserts = [...updates.added, ...updates.modified].map((t) =>
-    mapPlaidTransaction(ctx.clientId, ctx.plaidItemId, ctx.accountIdByPlaidAccountId, t),
-  );
+  const upserts = [...updates.added, ...updates.modified].map((t) => {
+    const row = mapPlaidTransaction(ctx.clientId, ctx.plaidItemId, ctx.accountIdByPlaidAccountId, t);
+    const resolved = resolveTransactionCategory({
+      rules: ctx.categorization.rules,
+      pfcPrimary: row.pfcPrimary,
+      pfcDetailed: row.pfcDetailed,
+      merchantName: row.merchantName,
+      name: row.name,
+      slugToId: ctx.categorization.slugToId,
+    });
+    return { ...row, categoryId: resolved.categoryId, categorizedBy: resolved.categorizedBy };
+  });
   for (const row of upserts) {
     await tx
       .insert(plaidTransactions)
@@ -175,6 +191,9 @@ export async function syncTransactionsForItem(item: {
   );
   if (!fetched.ok) return fetched;
 
+  await ensureCategoriesSeeded(item.clientId);
+  const categorization = await loadCategorizationContext(item.clientId);
+
   // Resolve our accountId for each Plaid account handle under this item.
   const linked = await db
     .select({ id: accounts.id, plaidAccountId: accounts.plaidAccountId })
@@ -188,6 +207,7 @@ export async function syncTransactionsForItem(item: {
       clientId: item.clientId,
       plaidItemId: item.id,
       accountIdByPlaidAccountId,
+      categorization,
     }, fetched);
     await tx
       .update(plaidItems)
