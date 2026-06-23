@@ -7,6 +7,7 @@ const PROVENANCE: Record<PortalTransactionDTO["categorizedBy"], string> = {
   plaid: "Auto-categorized",
   rule: "Categorized by a rule",
   manual: "Set by you",
+  recurring: "From a recurring",
 };
 
 export function TransactionDetailPanel({

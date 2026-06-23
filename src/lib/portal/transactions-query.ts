@@ -23,7 +23,7 @@ export type PortalTransactionDTO = {
   categoryId: string | null;
   categoryName: string | null;
   categoryColor: string | null;
-  categorizedBy: "plaid" | "rule" | "manual";
+  categorizedBy: "plaid" | "rule" | "manual" | "recurring";
   accountId: string | null;
   accountName: string | null;
   accountMask: string | null;

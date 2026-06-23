@@ -77,6 +77,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       categoryId: body.categoryId ?? existing.categoryId,
     };
 
+    if (Number(next.amountMin) > Number(next.amountMax)) {
+      return NextResponse.json({ error: "invalid amount range" }, { status: 400 });
+    }
+
     const [{ firmId } = { firmId: null as string | null }] = await db
       .select({ firmId: clients.firmId }).from(clients).where(eq(clients.id, clientId)).limit(1);
     if (!firmId) return NextResponse.json({ error: "Not found" }, { status: 404 });

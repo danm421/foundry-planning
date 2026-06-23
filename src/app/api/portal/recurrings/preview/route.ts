@@ -19,6 +19,9 @@ export async function GET(req: Request): Promise<Response> {
     if (!Number.isFinite(amountMin) || !Number.isFinite(amountMax)) {
       return NextResponse.json({ error: "invalid amount range" }, { status: 400 });
     }
+    if (amountMin > amountMax) {
+      return NextResponse.json({ error: "invalid amount range" }, { status: 400 });
+    }
     const result = await previewRecurringMatches(clientId, { matchType, pattern, amountMin, amountMax });
     return NextResponse.json(result);
   } catch (err) {

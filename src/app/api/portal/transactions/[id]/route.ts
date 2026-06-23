@@ -84,6 +84,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         patch.categorizedBy = "recurring";
         after.categoryId = rec.categoryId;
         before.categoryId = row.categoryId;
+      } else {
+        // Explicit unlink is a manual decision; reset provenance but keep the existing category.
+        patch.categorizedBy = "manual";
       }
       patch.recurringTransactionId = next;
       before.recurringTransactionId = row.recurringTransactionId;
