@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapPfcToSlug } from "@/lib/portal/pfc-mapping";
+import { mapPfcToSlug, pfcToType } from "@/lib/portal/pfc-mapping";
 import { DEFAULT_LEAF_SLUGS } from "@/lib/portal/default-categories";
 
 const PFC_PRIMARIES = [
@@ -31,5 +31,20 @@ describe("mapPfcToSlug", () => {
   it("detailed override: rent/mortgage beats RENT_AND_UTILITIES", () => {
     expect(mapPfcToSlug("RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT")).toBe("household-mortgage");
     expect(mapPfcToSlug("RENT_AND_UTILITIES", null)).toBe("household-utilities");
+  });
+});
+
+describe("pfcToType", () => {
+  it("maps INCOME → income", () => {
+    expect(pfcToType("INCOME")).toBe("income");
+  });
+  it("maps TRANSFER_IN and TRANSFER_OUT → transfer", () => {
+    expect(pfcToType("TRANSFER_IN")).toBe("transfer");
+    expect(pfcToType("TRANSFER_OUT")).toBe("transfer");
+  });
+  it("maps any other primary or null → expense", () => {
+    expect(pfcToType("FOOD_AND_DRINK")).toBe("expense");
+    expect(pfcToType("LOAN_PAYMENTS")).toBe("expense"); // card payments default to expense
+    expect(pfcToType(null)).toBe("expense");
   });
 });
