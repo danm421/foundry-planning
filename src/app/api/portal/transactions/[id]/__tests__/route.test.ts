@@ -96,6 +96,7 @@ describe("PUT /api/portal/transactions/[id]", () => {
       { params: Promise.resolve({ id: "t1" }) },
     );
     expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "invalid type" });
   });
   it("setting type=transfer nulls the category in the patch", async () => {
     txnRow = { id: "t1", clientId: "c1", categoryId: "cat-1", categorizedBy: "manual", excluded: false, recurringTransactionId: null, type: "expense" };
@@ -108,5 +109,9 @@ describe("PUT /api/portal/transactions/[id]", () => {
     );
     expect(res.status).toBe(200);
     expect(updateMock.mock.calls[0][0]).toMatchObject({ type: "transfer", categoryId: null, categorizedBy: "manual" });
+    expect(recordUpdateMock.mock.calls[0][0]).toMatchObject({
+      before: { categoryId: "cat-1" },
+      after: { categoryId: null },
+    });
   });
 });
