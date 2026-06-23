@@ -63,6 +63,7 @@ export async function loadBudgetSummary(
     .select({
       categoryId: plaidTransactions.categoryId,
       amount: plaidTransactions.amount,
+      type: plaidTransactions.type,
     })
     .from(plaidTransactions)
     .where(
@@ -151,6 +152,7 @@ export async function loadBudgetSummary(
     transactions: txns.map((t) => ({
       categoryId: t.categoryId,
       amount: Number(t.amount),
+      type: t.type,
     })),
     recurrings: recurringReservations,
   });

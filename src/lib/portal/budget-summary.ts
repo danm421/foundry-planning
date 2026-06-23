@@ -6,7 +6,10 @@
 //    of its leaf budgets for the group total (no double counting).
 //  - Pending transactions are included by the caller (we just sum what we get).
 //  - Expenses only: the seeded "income" group is excluded from groups/totals;
-//    income is reported separately as incomeThisMonth.
+//    income/transfer classification comes from transaction `type`, not group slug.
+//  - `transfer` rows are excluded from both spend and income.
+//  - `income` rows tally into incomeThisMonth (Plaid: money-in is negative).
+//  - `expense` rows roll up by leaf category as before.
 //  - "actual" is the SIGNED Plaid sum (positive = money out) so refunds net down.
 
 export type BudgetCategory = {
@@ -19,7 +22,7 @@ export type BudgetCategory = {
   sortOrder: number;
 };
 export type BudgetAmount = { categoryId: string; monthlyAmount: number };
-export type BudgetTransaction = { categoryId: string | null; amount: number };
+export type BudgetTransaction = { categoryId: string | null; amount: number; type: "income" | "expense" | "transfer" };
 
 export type LeafCell = {
   id: string;
@@ -75,17 +78,16 @@ export function computeBudgetSummary(input: {
 
   // Per-leaf signed actuals + income tally. Transactions are categorized to
   // leaves only (the PUT /transactions route rejects group categories).
+  // income/transfer come from transaction `type` (not group slug).
   const actualByLeaf = new Map<string, number>();
   let incomeThisMonth = 0;
   for (const t of transactions) {
-    if (t.categoryId == null) continue;
-    const cat = byId.get(t.categoryId);
-    if (!cat) continue;
-    const groupSlug = cat.parentId ? byId.get(cat.parentId)?.slug ?? null : cat.slug;
-    if (groupSlug === INCOME_GROUP_SLUG) {
-      incomeThisMonth += -t.amount; // Plaid: money in is negative
+    if (t.type === "transfer") continue;           // internal transfers never count
+    if (t.type === "income") {
+      incomeThisMonth += -t.amount;                // Plaid: money in is negative
       continue;
     }
+    if (t.categoryId == null) continue;            // uncategorized expense → no leaf
     actualByLeaf.set(t.categoryId, (actualByLeaf.get(t.categoryId) ?? 0) + t.amount);
   }
 

@@ -21,8 +21,8 @@ it("excludes the income group from groups and totals; reports income separately"
     categories: cats,
     budgets: [],
     transactions: [
-      { categoryId: "l-paycheck", amount: -5000 }, // money IN
-      { categoryId: "l-groceries", amount: 200 },
+      { categoryId: "l-paycheck", amount: -5000, type: "income" },
+      { categoryId: "l-groceries", amount: 200, type: "expense" },
     ],
   });
   expect(s.groups.map((g) => g.id)).toEqual(["g-food", "g-shopping"]); // no g-income
@@ -30,14 +30,29 @@ it("excludes the income group from groups and totals; reports income separately"
   expect(s.totalSpent).toBe(200);
 });
 
+it("excludes internal transfers from both spend and income", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [],
+    transactions: [
+      { categoryId: "l-groceries", amount: 200, type: "expense" },
+      { categoryId: null, amount: 2000, type: "transfer" },   // transfer out
+      { categoryId: null, amount: -2000, type: "transfer" },  // transfer in
+      { categoryId: "l-paycheck", amount: -5000, type: "income" },
+    ],
+  });
+  expect(s.totalSpent).toBe(200);        // transfers don't add to spend
+  expect(s.incomeThisMonth).toBe(5000);  // transfers don't add to income
+});
+
 it("sums leaf actuals into the group actual; refunds net down (signed)", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [],
     transactions: [
-      { categoryId: "l-groceries", amount: 200 },
-      { categoryId: "l-groceries", amount: -50 }, // refund
-      { categoryId: "l-restaurants", amount: 80 },
+      { categoryId: "l-groceries", amount: 200, type: "expense" },
+      { categoryId: "l-groceries", amount: -50, type: "expense" }, // refund
+      { categoryId: "l-restaurants", amount: 80, type: "expense" },
     ],
   });
   const food = s.groups.find((g) => g.id === "g-food")!;
@@ -52,7 +67,7 @@ it("group budget = sum of leaf budgets when no explicit group budget", () => {
       { categoryId: "l-groceries", monthlyAmount: 400 },
       { categoryId: "l-restaurants", monthlyAmount: 150 },
     ],
-    transactions: [{ categoryId: "l-groceries", amount: 100 }],
+    transactions: [{ categoryId: "l-groceries", amount: 100, type: "expense" }],
   });
   const food = s.groups.find((g) => g.id === "g-food")!;
   expect(food.budgetIsExplicit).toBe(false);
@@ -67,7 +82,7 @@ it("explicit group budget overrides the leaf-budget sum (no double count)", () =
       { categoryId: "g-food", monthlyAmount: 600 },
       { categoryId: "l-groceries", monthlyAmount: 400 }, // still shown on the leaf
     ],
-    transactions: [{ categoryId: "l-groceries", amount: 100 }],
+    transactions: [{ categoryId: "l-groceries", amount: 100, type: "expense" }],
   });
   const food = s.groups.find((g) => g.id === "g-food")!;
   expect(food.budgetIsExplicit).toBe(true);
@@ -87,7 +102,7 @@ it("totals: remaining can go negative (overspend)", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [{ categoryId: "g-food", monthlyAmount: 100 }],
-    transactions: [{ categoryId: "l-groceries", amount: 250 }],
+    transactions: [{ categoryId: "l-groceries", amount: 250, type: "expense" }],
   });
   expect(s.totalBudget).toBe(100);
   expect(s.totalSpent).toBe(250);
@@ -99,9 +114,9 @@ it("ignores transactions with a null or unknown categoryId", () => {
     categories: cats,
     budgets: [],
     transactions: [
-      { categoryId: null, amount: 999 },
-      { categoryId: "does-not-exist", amount: 999 },
-      { categoryId: "l-groceries", amount: 10 },
+      { categoryId: null, amount: 999, type: "expense" },
+      { categoryId: "does-not-exist", amount: 999, type: "expense" },
+      { categoryId: "l-groceries", amount: 10, type: "expense" },
     ],
   });
   expect(s.totalSpent).toBe(10);
@@ -111,7 +126,7 @@ it("adds recurring reservations into the leaf actual (blended Spent)", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
-    transactions: [{ categoryId: "l-groceries", amount: 300 }], // posted
+    transactions: [{ categoryId: "l-groceries", amount: 300, type: "expense" }], // posted
     recurrings: [{ categoryId: "l-groceries", reservation: 250 }], // unposted recurring
   });
   const food = s.groups.find((g) => g.id === "g-food")!;
@@ -124,7 +139,7 @@ it("a zero reservation (fully posted recurring) does not change Spent", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
-    transactions: [{ categoryId: "l-groceries", amount: 250 }],
+    transactions: [{ categoryId: "l-groceries", amount: 250, type: "expense" }],
     recurrings: [{ categoryId: "l-groceries", reservation: 0 }],
   });
   const groceries = s.groups
@@ -137,7 +152,7 @@ it("omitting recurrings is backward-compatible", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
-    transactions: [{ categoryId: "l-groceries", amount: 300 }],
+    transactions: [{ categoryId: "l-groceries", amount: 300, type: "expense" }],
   });
   const groceries = s.groups
     .find((g) => g.id === "g-food")!
