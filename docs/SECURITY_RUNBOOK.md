@@ -90,7 +90,59 @@ without breaking the app. Flip to enforcing once:
 3. Look specifically at: `@clerk/nextjs`, `drizzle-orm`, `drizzle-kit`,
    `next`, `exceljs`, `@upstash/*`, `openai`. Each one sits on the
    critical path.
-4. Record the review in the SOC-2 evidence folder with the audit
+4. **End-of-life (EOL) check.** Confirm the runtime (Node LTS line on
+   Vercel) and every critical-path dependency is still within its
+   supported/maintained window. Schedule an upgrade for anything within
+   ~6 months of EOL; do not run unsupported software in production.
+5. Record the review in the SOC-2 evidence folder with the audit
    output and any decisions to defer updates.
 
 **Owner:** Dan. Next review: 2026-07-20.
+
+---
+
+## 5. Quarterly access review
+
+Run alongside the dependency review (§4) so both happen in one cycle.
+
+1. **Console access.** Confirm who can sign into each production-asset
+   console — Vercel, Neon, Clerk (instance admin), GitHub, Upstash,
+   Azure. Access should be limited to the Founder. Remove any stale
+   collaborators/invites.
+2. **MFA check.** Verify MFA is still enabled on every console above.
+3. **API tokens & integrations.** List active API tokens / personal
+   access tokens / OAuth app authorizations (Vercel, GitHub, Neon,
+   Plaid). Revoke anything unused, expired, or over-scoped. Rotate any
+   token whose age or exposure is in doubt.
+4. **Third-party app authorizations.** Review apps/integrations granted
+   access to the GitHub org and the Google/identity accounts; revoke
+   what's no longer needed.
+5. Record the review (who/what was checked, anything revoked) in the
+   SOC-2 evidence folder.
+
+**Owner:** Dan. Next review: 2026-07-20.
+
+---
+
+## 6. Vulnerability remediation SLA
+
+Detection sources: GitHub Dependabot alerts (continuous), `npm audit`
+(continuous in CI + quarterly review §4), provider security bulletins
+(Vercel/Neon/Clerk), and the recurring internal security audits.
+
+Once a vulnerability is confirmed to affect production, remediate (patch,
+upgrade, mitigate, or document an accepted-risk decision) within:
+
+| Severity | Target | Notes |
+|---|---|---|
+| Critical (or any CISA KEV / actively exploited) | **7 days** | Out-of-cycle; deploy a fix or mitigation immediately. |
+| High | **30 days** | |
+| Medium | **90 days** | Often folded into the quarterly cycle (§4). |
+| Low | Next quarterly cycle | Best effort. |
+
+Managed infrastructure (Vercel compute, Neon Postgres) is patched by the
+provider; these SLAs apply to application code, dependencies, and any
+configuration under Foundry's control. Record each remediation (or
+accepted-risk decision) in the SOC-2 evidence folder.
+
+**Owner:** Dan. Reviewed: 2026-06-22.
