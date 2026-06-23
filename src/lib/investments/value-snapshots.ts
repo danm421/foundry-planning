@@ -7,6 +7,7 @@ import { inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { accountHoldings, accountValueSnapshots } from "@/db/schema";
 import { holdingMarketValue } from "@/lib/investments/holdings-rollup";
+import type { TrendPoint } from "@/lib/portal/networth-trend";
 
 /**
  * Compute Σ holdingMarketValue for each account and upsert one
@@ -60,4 +61,29 @@ export async function snapshotInvestmentValues(
     written += 1;
   }
   return written;
+}
+
+/** Per-account ascending TrendPoint series + a per-date summed total. */
+export async function loadInvestmentSeries(
+  accountIds: string[],
+): Promise<{ perAccount: Map<string, TrendPoint[]>; total: TrendPoint[] }> {
+  const perAccount = new Map<string, TrendPoint[]>();
+  if (accountIds.length === 0) return { perAccount, total: [] };
+  const snaps = await db
+    .select({ accountId: accountValueSnapshots.accountId, date: accountValueSnapshots.asOfDate, value: accountValueSnapshots.value })
+    .from(accountValueSnapshots)
+    .where(inArray(accountValueSnapshots.accountId, accountIds));
+
+  const totalByDate = new Map<string, number>();
+  for (const s of snaps) {
+    const list = perAccount.get(s.accountId) ?? [];
+    list.push({ date: s.date, netWorth: Number(s.value) });
+    perAccount.set(s.accountId, list);
+    totalByDate.set(s.date, (totalByDate.get(s.date) ?? 0) + Number(s.value));
+  }
+  for (const list of perAccount.values()) list.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const total = [...totalByDate.entries()]
+    .map(([date, netWorth]) => ({ date, netWorth }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  return { perAccount, total };
 }

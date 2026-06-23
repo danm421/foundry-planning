@@ -14,7 +14,7 @@ import {
   crmHouseholds,
 } from "@/db/schema";
 import { createTestClientWithScenario } from "@/test/factories";
-import { snapshotInvestmentValues } from "../value-snapshots";
+import { snapshotInvestmentValues, loadInvestmentSeries } from "../value-snapshots";
 
 // Track every firmId we insert so afterAll cleans up deterministically.
 const firmIds: string[] = [];
@@ -103,5 +103,17 @@ describe("snapshotInvestmentValues", () => {
   it("returns 0 for empty accountIds", async () => {
     const n = await snapshotInvestmentValues([], "2026-06-23");
     expect(n).toBe(0);
+  });
+});
+
+describe("loadInvestmentSeries", () => {
+  it("returns per-account series and a summed total", async () => {
+    const a = await seedAccountWithHoldings([{ shares: "1", price: "100", marketValue: null }]);
+    const b = await seedAccountWithHoldings([{ shares: "1", price: "200", marketValue: null }]);
+    await snapshotInvestmentValues([a, b], "2026-06-22");
+    await snapshotInvestmentValues([a, b], "2026-06-23");
+    const { perAccount, total } = await loadInvestmentSeries([a, b]);
+    expect(perAccount.get(a)!.map((p) => p.netWorth)).toEqual([100, 100]);
+    expect(total.map((p) => [p.date, p.netWorth])).toEqual([["2026-06-22", 300], ["2026-06-23", 300]]);
   });
 });
