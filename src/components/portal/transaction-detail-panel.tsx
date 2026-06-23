@@ -1,6 +1,7 @@
 "use client";
 import type { ReactElement } from "react";
 import type { PortalTransactionDTO } from "@/components/portal/transactions-list";
+import type { TxnType } from "@/components/portal/transaction-format";
 import { CategoryPill } from "@/components/portal/category-pill";
 
 const PROVENANCE: Record<PortalTransactionDTO["categorizedBy"], string> = {
@@ -17,6 +18,8 @@ export function TransactionDetailPanel({
   onCreateRecurring,
   recurrings,
   onLinkRecurring,
+  editEnabled = false,
+  onChangeType,
 }: {
   txn: PortalTransactionDTO;
   onClose: () => void;
@@ -24,6 +27,8 @@ export function TransactionDetailPanel({
   onCreateRecurring: () => void;
   recurrings: { id: string; name: string }[];
   onLinkRecurring: (recurringId: string) => void;
+  editEnabled?: boolean;
+  onChangeType?: (type: TxnType) => void;
 }): ReactElement {
   const n = Number(txn.amount);
   const abs = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -36,6 +41,24 @@ export function TransactionDetailPanel({
       <div className={`tabular text-[22px] ${n < 0 ? "text-good" : "text-ink"}`}>
         {n < 0 ? `+${abs}` : abs}
       </div>
+      {editEnabled && onChangeType && (
+        <div className="flex gap-1 rounded-lg bg-card-2 p-1">
+          {(["expense", "income", "transfer"] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onChangeType(opt)}
+              className={
+                txn.type === opt
+                  ? "flex-1 rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium capitalize text-accent"
+                  : "flex-1 rounded-md px-2 py-1 text-[12px] capitalize text-ink-3 hover:bg-card"
+              }
+            >
+              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       <dl className="space-y-2 text-[13px]">
         {txn.accountName && (
           <div className="flex justify-between gap-4">
@@ -48,7 +71,9 @@ export function TransactionDetailPanel({
         )}
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Date</dt><dd className="tabular text-ink-2">{txn.date}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Description</dt><dd className="max-w-[60%] truncate text-ink-2">{txn.name}</dd></div>
-        <div className="flex justify-between gap-4"><dt className="text-ink-3">Category</dt><dd><CategoryPill name={txn.categoryName} color={txn.categoryColor} /></dd></div>
+        {txn.type !== "transfer" && (
+          <div className="flex justify-between gap-4"><dt className="text-ink-3">Category</dt><dd><CategoryPill name={txn.categoryName} color={txn.categoryColor} /></dd></div>
+        )}
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Source</dt><dd className="text-ink-2">{PROVENANCE[txn.categorizedBy]}</dd></div>
         {txn.pending && <div className="flex justify-between gap-4"><dt className="text-ink-3">Status</dt><dd className="text-warn">Pending</dd></div>}
       </dl>

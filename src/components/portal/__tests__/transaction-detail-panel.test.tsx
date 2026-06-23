@@ -40,4 +40,30 @@ describe("TransactionDetailPanel", () => {
     );
     expect(screen.queryByText("Account")).toBeNull();
   });
+
+  it("renders the type switcher and fires onChangeType", () => {
+    const onChangeType = vi.fn();
+    render(
+      <TransactionDetailPanel
+        txn={{ ...txn, type: "expense" }}
+        editEnabled
+        onChangeType={onChangeType}
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
+    expect(onChangeType).toHaveBeenCalledWith("transfer");
+  });
+
+  it("hides the Category row for a transfer", () => {
+    render(
+      <TransactionDetailPanel
+        txn={{ ...txn, type: "transfer" }}
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}}
+      />,
+    );
+    expect(screen.queryByText("Category")).toBeNull();
+  });
 });
