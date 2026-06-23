@@ -59,6 +59,27 @@ describe("PlaidLinkButton", () => {
     );
   });
 
+  it("account-selection mode requests the right token and fires onSelectionComplete", async () => {
+    const onSelectionComplete = vi.fn();
+    usePlaidLink.mockImplementation((cfg: { onSuccess: () => void }) => ({
+      open: () => cfg.onSuccess(),
+      ready: true,
+    }));
+    const { PlaidLinkButton } = await import("../plaid-link-button");
+    render(
+      <PlaidLinkButton mode="account-selection" itemId="item-1" onSelectionComplete={onSelectionComplete} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /find more accounts/i }));
+    await waitFor(() => expect(onSelectionComplete).toHaveBeenCalled());
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/link-token",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1", accountSelection: true }),
+      }),
+    );
+  });
+
   it("posts link-token with enableProducts=true in 'enable-products' mode", async () => {
     // Simulate usePlaidLink immediately invoking onSuccess on open()
     usePlaidLink.mockImplementation((cfg: { onSuccess: () => void }) => ({
