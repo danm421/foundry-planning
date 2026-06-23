@@ -1268,6 +1268,13 @@
       "when": 1782228900531,
       "tag": "0180_client_portal_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1782232731684,
+      "tag": "0181_investments_plaid_holdings",
+      "breakpoints": true
     }
   ]
 }

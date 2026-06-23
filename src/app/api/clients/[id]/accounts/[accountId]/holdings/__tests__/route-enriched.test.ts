@@ -7,6 +7,7 @@ const baseRow: RawHoldingRow = {
   shares: "10", price: "100", priceAsOf: "2026-05-28", costBasis: "800",
   marketValue: null,
   sortOrder: 0, notes: null,
+  source: "manual", plaidSecurityId: null,
   createdAt: new Date("2026-05-28T00:00:00Z"), updatedAt: new Date("2026-05-28T00:00:00Z"),
 };
 

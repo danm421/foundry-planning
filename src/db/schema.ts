@@ -187,7 +187,9 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "insurance",
 ]);
 
-export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion"]);
+export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid"]);
+
+export const holdingSourceEnum = pgEnum("holding_source", ["manual", "plaid"]);
 
 export const liabilityTypeEnum = pgEnum("liability_type", [
   "mortgage",
@@ -1629,6 +1631,12 @@ export const accountHoldings = pgTable(
     marketValue: decimal("market_value", { precision: 18, scale: 2 }),
     sortOrder: integer("sort_order").notNull().default(0),
     notes: text("notes"),
+    // Provenance: 'plaid' rows are replaced wholesale on each Plaid sync; manual
+    // rows (advisor-entered) are never touched by the sync.
+    source: holdingSourceEnum("source").notNull().default("manual"),
+    // Plaid-side security_id for this position (null for manual). Diagnostic /
+    // future per-position matching; the sync currently replaces all plaid rows.
+    plaidSecurityId: text("plaid_security_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1651,6 +1659,26 @@ export const holdingAssetClassOverrides = pgTable(
     weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
   },
   (t) => [uniqueIndex("holding_acw_override_uniq").on(t.holdingId, t.assetClassId)]
+);
+
+// Daily point-in-time value of an investment account, used by the portal
+// Investments trend chart. Value = Σ holdingMarketValue (NOT accounts.value,
+// which the daily price cron does not update). One row per (account, day).
+export const accountValueSnapshots = pgTable(
+  "account_value_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    asOfDate: date("as_of_date").notNull(),
+    value: decimal("value", { precision: 18, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("account_value_snapshots_acct_date_uniq").on(t.accountId, t.asOfDate),
+    index("account_value_snapshots_acct_idx").on(t.accountId),
+  ],
 );
 
 // Audit row for one daily holding-price refresh cron run (see
