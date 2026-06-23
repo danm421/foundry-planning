@@ -19,11 +19,23 @@ function makeStreamingResponse(): Response {
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
+function makeFramedResponse(frames: string[]): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (const f of frames) c.enqueue(encoder.encode(f));
+      c.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
 // Drive the URL scope. `current` is reassigned per render to simulate drift.
 let currentSearch = "scenario=s1";
 const currentPath = "/clients/c1/overview";
+const navMocks = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: navMocks.push, refresh: vi.fn() }),
   usePathname: () => currentPath,
   useSearchParams: () => new URLSearchParams(currentSearch),
 }));
@@ -59,6 +71,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
   importMocks.runImport.mockReset();
   importMocks.runImport.mockResolvedValue(IMPORT_RESULT);
+  navMocks.push.mockReset();
 });
 
 function mountPanel() {
@@ -250,6 +263,34 @@ describe("ForgePanel", () => {
       fireEvent.change(input);
     });
     expect(screen.getByTestId("forge-attachment")).toHaveTextContent("stmt.pdf");
+  });
+
+  it("renders a page-citation chip after a page_link frame and navigates on click", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeFramedResponse([
+          `data: {"type":"token","text":"Net worth is $4.2M."}\n\n`,
+          `data: {"type":"page_link","href":"/clients/c1/assets/balance-sheet-report","section":"balance-sheet","label":"Balance Sheet"}\n\n`,
+          `data: {"type":"done"}\n\n`,
+        ]),
+      ),
+    );
+    mountPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "What's their net worth?" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    const chip = await screen.findByRole("button", { name: /balance sheet/i });
+    expect(chip).toHaveAttribute("data-href", "/clients/c1/assets/balance-sheet-report");
+
+    fireEvent.click(chip);
+    expect(navMocks.push).toHaveBeenCalledWith("/clients/c1/assets/balance-sheet-report");
   });
 
   it("updates the scenario chip when the URL scenario changes (drift)", () => {
