@@ -1,8 +1,13 @@
 // src/lib/portal/load-budget-data.ts
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { budgets, plaidTransactions, transactionCategories } from "@/db/schema";
+import { budgets, plaidTransactions, recurringTransactions, transactionCategories } from "@/db/schema";
 import { ensureCategoriesSeeded } from "@/lib/portal/seed-categories";
+import {
+  predictRecurringAmount,
+  isRecurringDueInMonth,
+  type RecurringLike,
+} from "@/lib/portal/recurring-matching";
 import {
   computeBudgetSummary,
   type BudgetCategory,
@@ -69,6 +74,74 @@ export async function loadBudgetSummary(
       ),
     );
 
+  const [recRows, claimed, hist] = await Promise.all([
+    db
+      .select()
+      .from(recurringTransactions)
+      .where(eq(recurringTransactions.clientId, clientId)),
+
+    db
+      .select({
+        recurringTransactionId: plaidTransactions.recurringTransactionId,
+        amount: plaidTransactions.amount,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          eq(plaidTransactions.excluded, false),
+          isNotNull(plaidTransactions.recurringTransactionId),
+          gte(plaidTransactions.date, from),
+          lte(plaidTransactions.date, to),
+        ),
+      ),
+
+    db
+      .select({
+        recurringTransactionId: plaidTransactions.recurringTransactionId,
+        amount: plaidTransactions.amount,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          isNotNull(plaidTransactions.recurringTransactionId),
+        ),
+      ),
+  ]);
+
+  const postedByRec = new Map<string, number>();
+  for (const c of claimed) {
+    if (!c.recurringTransactionId) continue;
+    postedByRec.set(
+      c.recurringTransactionId,
+      (postedByRec.get(c.recurringTransactionId) ?? 0) + Number(c.amount),
+    );
+  }
+  const histByRec = new Map<string, number[]>();
+  for (const h of hist) {
+    if (!h.recurringTransactionId) continue;
+    const l = histByRec.get(h.recurringTransactionId) ?? [];
+    l.push(Number(h.amount));
+    histByRec.set(h.recurringTransactionId, l);
+  }
+  const recurringReservations = recRows
+    .map((r) => {
+      const like: RecurringLike = {
+        id: r.id, matchType: r.matchType, pattern: r.pattern,
+        amountMin: Number(r.amountMin), amountMax: Number(r.amountMax),
+        cadence: r.cadence, dueDay: r.dueDay, dueMonth: r.dueMonth,
+        categoryId: r.categoryId, createdAt: r.createdAt,
+      };
+      if (!isRecurringDueInMonth(like, month)) return null;
+      const predicted = predictRecurringAmount(histByRec.get(r.id) ?? [], {
+        amountMin: like.amountMin, amountMax: like.amountMax,
+      });
+      const posted = postedByRec.get(r.id) ?? 0;
+      return { categoryId: r.categoryId, reservation: Math.max(0, predicted - posted) };
+    })
+    .filter((x): x is { categoryId: string; reservation: number } => x !== null);
+
   const summary = computeBudgetSummary({
     categories: cats as BudgetCategory[],
     budgets: buds.map((b) => ({
@@ -79,6 +152,7 @@ export async function loadBudgetSummary(
       categoryId: t.categoryId,
       amount: Number(t.amount),
     })),
+    recurrings: recurringReservations,
   });
   return { ...summary, month };
 }

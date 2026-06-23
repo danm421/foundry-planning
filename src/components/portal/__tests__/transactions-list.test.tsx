@@ -19,14 +19,18 @@ beforeEach(() => vi.restoreAllMocks());
 describe("TransactionsList", () => {
   it("renders fetched rows and totals", async () => {
     mockFetch((url) =>
-      url.includes("/categories") ? { categories: [] } : { transactions: [txn()], total: 1 });
+      url.includes("/categories") ? { categories: [] } :
+      url.includes("/recurrings") ? { recurrings: [] } :
+      { transactions: [txn()], total: 1 });
     render(<TransactionsList clientId="c1" editEnabled />);
     await waitFor(() => expect(screen.getByText("Amazon")).toBeTruthy());
     expect(screen.getByText("1 transactions")).toBeTruthy();
   });
   it("shows income (negative Plaid amount) as +$ in good color", async () => {
     mockFetch((url) =>
-      url.includes("/categories") ? { categories: [] } : { transactions: [txn({ amount: "-1000.00", merchantName: "Payroll" })], total: 1 });
+      url.includes("/categories") ? { categories: [] } :
+      url.includes("/recurrings") ? { recurrings: [] } :
+      { transactions: [txn({ amount: "-1000.00", merchantName: "Payroll" })], total: 1 });
     render(<TransactionsList clientId="c1" editEnabled />);
     await waitFor(() => expect(screen.getByText(/\+\$1,000\.00/)).toBeTruthy());
   });
@@ -41,6 +45,7 @@ describe("TransactionsList", () => {
     let txnCallCount = 0;
     mockFetch((url) => {
       if (url.includes("/categories")) return { categories: [] };
+      if (url.includes("/recurrings")) return { recurrings: [] };
       txnCallCount++;
       // First /transactions call → page 1 (total 51 so hasMore is true)
       // Second call → page 2
@@ -70,6 +75,7 @@ describe("TransactionsList", () => {
     const fetchedUrls: string[] = [];
     mockFetch((url) => {
       if (url.includes("/categories")) return { categories: [] };
+      if (url.includes("/recurrings")) return { recurrings: [] };
       fetchedUrls.push(url);
       return { transactions: [txn()], total: 1 };
     });
@@ -111,6 +117,9 @@ describe("TransactionsList", () => {
       // GET handlers
       if (url.includes("/categories")) {
         return { ok: true, json: async () => ({ categories: cats }) } as Response;
+      }
+      if (url.includes("/recurrings")) {
+        return { ok: true, json: async () => ({ recurrings: [] }) } as Response;
       }
       return {
         ok: true,

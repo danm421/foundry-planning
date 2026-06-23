@@ -30,7 +30,8 @@ export type NewPlaidTransactionRow = {
   paymentChannel: string | null;
   pending: boolean;
   categoryId: string | null;
-  categorizedBy: "plaid" | "rule";
+  categorizedBy: "plaid" | "rule" | "recurring";
+  recurringTransactionId: string | null;
 };
 
 export function mapPlaidTransaction(
@@ -59,6 +60,7 @@ export function mapPlaidTransaction(
     pending: t.pending,
     categorizedBy: "plaid",
     categoryId: null,
+    recurringTransactionId: null,
   };
 }
 
@@ -128,13 +130,21 @@ export async function applyTransactionUpdates(
     const row = mapPlaidTransaction(ctx.clientId, ctx.plaidItemId, ctx.accountIdByPlaidAccountId, t);
     const resolved = resolveTransactionCategory({
       rules: ctx.categorization.rules,
+      recurrings: ctx.categorization.recurrings,
       pfcPrimary: row.pfcPrimary,
       pfcDetailed: row.pfcDetailed,
       merchantName: row.merchantName,
       name: row.name,
+      amount: Number(row.amount),
+      date: row.date,
       slugToId: ctx.categorization.slugToId,
     });
-    return { ...row, categoryId: resolved.categoryId, categorizedBy: resolved.categorizedBy };
+    return {
+      ...row,
+      categoryId: resolved.categoryId,
+      categorizedBy: resolved.categorizedBy,
+      recurringTransactionId: resolved.recurringTransactionId,
+    };
   });
   for (const row of upserts) {
     await tx

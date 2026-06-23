@@ -7,6 +7,8 @@ import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryPicker } from "@/components/portal/category-picker";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
+import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 export type PortalTransactionDTO = {
   id: string;
@@ -19,7 +21,7 @@ export type PortalTransactionDTO = {
   categoryId: string | null;
   categoryName: string | null;
   categoryColor: string | null;
-  categorizedBy: "plaid" | "rule" | "manual";
+  categorizedBy: "plaid" | "rule" | "manual" | "recurring";
   accountId: string | null;
   accountName: string | null;
   accountMask: string | null;
@@ -71,6 +73,9 @@ export default function TransactionsList({
   const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   const [ruleSeed, setRuleSeed] = useState<PortalTransactionDTO | null>(null);
+  const [recurringSeed, setRecurringSeed] = useState<PortalTransactionDTO | null>(null);
+  const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
+  const portalFetch = usePortalFetch();
 
   useEffect(() => {
     void fetch("/api/portal/categories")
@@ -78,6 +83,13 @@ export default function TransactionsList({
       .then((d: { categories: CategoryRow[] }) => setCategories(d.categories ?? []))
       .catch(() => setCategories([]));
   }, []);
+
+  useEffect(() => {
+    void portalFetch("/api/portal/recurrings")
+      .then((r) => (r.ok ? r.json() : { recurrings: [] }))
+      .then((d: { recurrings: { id: string; name: string }[] }) => setRecurrings(d.recurrings ?? []))
+      .catch(() => setRecurrings([]));
+  }, [portalFetch]);
 
   useEffect(() => { setDetailEl(document.getElementById("portal-detail")); }, []);
 
@@ -134,6 +146,15 @@ export default function TransactionsList({
     },
     [rows],
   );
+
+  async function linkRecurring(txnId: string, recurringId: string): Promise<void> {
+    const res = await portalFetch(`/api/portal/transactions/${txnId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ recurringTransactionId: recurringId }),
+    });
+    if (res.ok) { setSelected(null); void load(0, true); }
+  }
 
   const leaves = categories.filter((c) => c.kind === "category");
   const hasMore = rows.length < total;
@@ -269,6 +290,9 @@ export default function TransactionsList({
               txn={selected}
               onClose={() => setSelected(null)}
               onCreateRule={() => setRuleSeed(selected)}
+              onCreateRecurring={() => setRecurringSeed(selected)}
+              recurrings={recurrings}
+              onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
             />
           </div>,
           detailEl,
@@ -279,6 +303,19 @@ export default function TransactionsList({
           categories={categories}
           onClose={() => setRuleSeed(null)}
           onCreated={() => { setRuleSeed(null); setSelected(null); void load(0, true); }}
+        />
+      )}
+      {recurringSeed && (
+        <RecurringCreateDialog
+          seed={{
+            name: recurringSeed.merchantName ?? recurringSeed.name,
+            merchantName: recurringSeed.merchantName,
+            categoryId: recurringSeed.categoryId,
+            amount: Number(recurringSeed.amount),
+          }}
+          categories={categories}
+          onClose={() => setRecurringSeed(null)}
+          onCreated={() => { setRecurringSeed(null); setSelected(null); void load(0, true); }}
         />
       )}
     </div>

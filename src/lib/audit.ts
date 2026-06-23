@@ -348,7 +348,10 @@ export type AuditAction =
   | "portal.category.create"
   | "portal.category.update"
   | "portal.category.delete"
-  | "portal.budget.update";
+  | "portal.budget.update"
+  | "portal.recurring.create"
+  | "portal.recurring.update"
+  | "portal.recurring.delete";
 
 type Args = {
   action: AuditAction;

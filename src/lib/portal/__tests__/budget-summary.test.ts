@@ -106,3 +106,41 @@ it("ignores transactions with a null or unknown categoryId", () => {
   });
   expect(s.totalSpent).toBe(10);
 });
+
+it("adds recurring reservations into the leaf actual (blended Spent)", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
+    transactions: [{ categoryId: "l-groceries", amount: 300 }], // posted
+    recurrings: [{ categoryId: "l-groceries", reservation: 250 }], // unposted recurring
+  });
+  const food = s.groups.find((g) => g.id === "g-food")!;
+  const groceries = food.leaves.find((l) => l.id === "l-groceries")!;
+  expect(groceries.actual).toBe(550); // 300 posted + 250 reserved
+  expect(food.remaining).toBe(250); // 800 - 550
+});
+
+it("a zero reservation (fully posted recurring) does not change Spent", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
+    transactions: [{ categoryId: "l-groceries", amount: 250 }],
+    recurrings: [{ categoryId: "l-groceries", reservation: 0 }],
+  });
+  const groceries = s.groups
+    .find((g) => g.id === "g-food")!
+    .leaves.find((l) => l.id === "l-groceries")!;
+  expect(groceries.actual).toBe(250);
+});
+
+it("omitting recurrings is backward-compatible", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
+    transactions: [{ categoryId: "l-groceries", amount: 300 }],
+  });
+  const groceries = s.groups
+    .find((g) => g.id === "g-food")!
+    .leaves.find((l) => l.id === "l-groceries")!;
+  expect(groceries.actual).toBe(300);
+});
