@@ -135,8 +135,11 @@ const TABS: ReadonlyArray<{
     ],
   },
   { label: "Presentations", href: "presentations" },
-  { label: "Portal", href: "portal" },
 ];
+
+// Portal is rendered separately on the right side of the header (next to the
+// theme toggle) rather than grouped with the planning tabs above.
+const PORTAL_TAB = { label: "Portal", href: "portal" } as const;
 
 interface TopbarProps {
   clientHouseholdTitle?: string;
@@ -305,6 +308,25 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
         <div />
       )}
       <div className="flex items-center gap-2 justify-self-end">
+        {clientId
+          ? (() => {
+              const portalHref = `/clients/${clientId}/${PORTAL_TAB.href}`;
+              const portalActive = pathname.startsWith(portalHref);
+              const portalClassName = portalActive
+                ? "inline-flex items-center rounded-md border border-accent bg-card-2 px-3 py-1.5 text-[13px] font-medium text-accent"
+                : "inline-flex items-center rounded-md border border-transparent px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 hover:text-ink";
+              return (
+                <Link
+                  href={withScenario(portalHref)}
+                  role="tab"
+                  aria-selected={portalActive || undefined}
+                  className={portalClassName}
+                >
+                  {PORTAL_TAB.label}
+                </Link>
+              );
+            })()
+          : null}
         <ThemeToggle />
       </div>
     </header>
