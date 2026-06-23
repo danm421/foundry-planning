@@ -246,11 +246,16 @@ export default function BudgetView({
       {detailEl &&
         selectedId &&
         createPortal(
-          <BudgetCategoryDetail
-            categoryId={selectedId}
-            editEnabled={editEnabled}
-            onBudgetSaved={() => router.refresh()}
-          />,
+          // The detail rail is an always-on two-pane companion on desktop.
+          // On mobile the budget list/donut is the whole view (the Copilot
+          // "Categories" screen), so the rail is hidden below `lg`.
+          <div className="max-lg:hidden">
+            <BudgetCategoryDetail
+              categoryId={selectedId}
+              editEnabled={editEnabled}
+              onBudgetSaved={() => router.refresh()}
+            />
+          </div>,
           detailEl,
         )}
     </div>

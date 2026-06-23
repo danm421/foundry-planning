@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import PortalNav from "@/components/portal/portal-nav";
+import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 
@@ -52,15 +53,28 @@ export default async function PortalLayout({
   }
 
   return (
-    <div className="grid grid-cols-[240px_minmax(0,1fr)_420px] min-h-screen bg-paper text-ink">
-      <PortalNav displayName={displayName} email={email} />
-      <main className="border-x border-hair">
+    <div className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)_420px]">
+      {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
+      <PortalNav
+        displayName={displayName}
+        email={email}
+        className="hidden lg:flex"
+      />
+      <main className="min-w-0 lg:border-x lg:border-hair">
+        {/* Mobile-only swipeable top tab bar. */}
+        <PortalMobileNav displayName={displayName} className="lg:hidden" />
         {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
         <PortalModeProvider value={{ mode: "client", clientId }}>
           {children}
         </PortalModeProvider>
       </main>
-      <aside id="portal-detail" className="p-4" />
+      {/*
+        Transaction detail target (createPortal). `empty:hidden` collapses the
+        slot when nothing is selected. On desktop it's the 3rd grid column
+        (`lg:p-4`); below `lg` the slot is a zero-height block and the portaled
+        content positions itself as a bottom sheet (see transactions-list).
+      */}
+      <aside id="portal-detail" className="empty:hidden lg:p-4" />
     </div>
   );
 }
