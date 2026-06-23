@@ -142,8 +142,9 @@ export async function fetchEodQuotes(
     for (const r of rows as Array<{ code?: unknown; close?: unknown; change_p?: unknown; timestamp?: unknown }>) {
       if (!r || typeof r.code !== "string") continue;
       const price = typeof r.close === "number" ? r.close : Number(r.close);
-      if (!Number.isFinite(price)) continue;
-      const changePct = typeof r.change_p === "number" ? r.change_p : null;
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const _cp = r.change_p == null ? null : Number(r.change_p);
+      const changePct: number | null = _cp !== null && Number.isFinite(_cp) ? _cp : null;
       const ts = typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp);
       const asOf = tsToDate(ts) ?? "";
       const sym = r.code.toUpperCase();

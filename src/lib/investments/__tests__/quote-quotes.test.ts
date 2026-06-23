@@ -10,6 +10,7 @@ describe("fetchEodQuotes", () => {
     ]);
     const out = await fetchEodQuotes(["VTI", "GLD"], { fetchRealtime });
     expect(out.get(eodhdSymbol("VTI"))).toMatchObject({ price: 280.5, changePct: 1.23 });
+    expect(out.get(eodhdSymbol("VTI"))!.asOf).toBe(new Date(1750636800 * 1000).toISOString().slice(0, 10));
     expect(out.get(eodhdSymbol("GLD"))!.changePct).toBeCloseTo(-5.6);
   });
   it("returns an empty map on fetch error (fail-soft)", async () => {
