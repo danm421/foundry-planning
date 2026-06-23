@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { authErrorResponse } from "@/lib/authz";
+import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { applyIntake } from "@/lib/intake/apply";
 
@@ -14,6 +14,10 @@ export async function POST(
 ): Promise<Response> {
   try {
     const { orgId, userId } = await requireOrgAndUser();
+    // Apply materializes staged intake into the live client/household — a
+    // billable write. Gate on an active subscription (unlike discard/revoke,
+    // which only flip the form's status and are allowlisted in the lint).
+    await requireActiveSubscriptionForFirm(orgId);
     const { id } = await ctx.params;
 
     const form = await loadFormForFirm(id, orgId);

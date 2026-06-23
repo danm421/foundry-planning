@@ -315,6 +315,17 @@ const ALLOWLIST: Record<string, string> = {
   // Portal mutation routes were here ("deferred to Phase 3.5"); Phase 3.5 (portal
   // slice) now gates them via requirePortalActiveSubscription — see the matcher
   // below. No portal allowlist entries should exist.
+
+  // Client intake / data-collection. The routes that write live planning data
+  // gate natively: POST /api/data-collection (send) and apply/route.ts both call
+  // requireActiveSubscriptionForFirm; /api/intake/[token]/submit + /api/portal/intake
+  // gate via their own sub helpers. The three below are deliberately exempt:
+  "src/app/api/intake/[token]/route.ts":
+    "public token-scoped autosave — staging-only (writes only intake_forms.payload, never live data); firm-active is gated at submit",
+  "src/app/api/data-collection/[id]/discard/route.ts":
+    "advisor lifecycle — flips a form to discarded; writes no live planning data",
+  "src/app/api/data-collection/[id]/revoke/route.ts":
+    "advisor lifecycle — flips a draft form to expired; writes no live planning data",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
