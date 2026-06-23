@@ -8,6 +8,7 @@ import FamilySection from "@/components/portal/family-section";
 import TrustsSection from "@/components/portal/trusts-section";
 import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
 import TransactionsSection from "@/components/portal/transactions-section";
+import BudgetSection from "@/components/portal/budget-section";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -39,6 +40,8 @@ export default async function PortalPreviewPage({
     section = <PortalAccountsScreen clientId={id} />;
   } else if (path === "transactions") {
     section = <TransactionsSection clientId={id} previewing />;
+  } else if (path === "budget") {
+    section = <BudgetSection clientId={id} />;
   } else {
     notFound();
   }

@@ -1,0 +1,134 @@
+// src/lib/portal/budget-summary.ts
+//
+// Pure budget-vs-actual rollup for the portal Budget page. NO DB/Next/Plaid
+// imports (so it is unit-testable in plain vitest). Phase 5 decisions:
+//  - Group-level budgets allowed: an explicit group budget overrides the sum
+//    of its leaf budgets for the group total (no double counting).
+//  - Pending transactions are included by the caller (we just sum what we get).
+//  - Expenses only: the seeded "income" group is excluded from groups/totals;
+//    income is reported separately as incomeThisMonth.
+//  - "actual" is the SIGNED Plaid sum (positive = money out) so refunds net down.
+
+export type BudgetCategory = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string | null;
+  color: string; // a var(--data-*) token
+  kind: "group" | "category";
+  sortOrder: number;
+};
+export type BudgetAmount = { categoryId: string; monthlyAmount: number };
+export type BudgetTransaction = { categoryId: string | null; amount: number };
+
+export type LeafCell = {
+  id: string;
+  name: string;
+  color: string;
+  budget: number | null;
+  actual: number;
+};
+export type GroupCell = {
+  id: string;
+  name: string;
+  color: string;
+  budget: number | null;
+  budgetIsExplicit: boolean;
+  actual: number;
+  remaining: number | null;
+  leaves: LeafCell[];
+};
+export type BudgetSummary = {
+  groups: GroupCell[];
+  totalBudget: number;
+  totalSpent: number;
+  totalRemaining: number;
+  incomeThisMonth: number;
+};
+
+const INCOME_GROUP_SLUG = "income";
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+export function computeBudgetSummary(input: {
+  categories: BudgetCategory[];
+  budgets: BudgetAmount[];
+  transactions: BudgetTransaction[];
+}): BudgetSummary {
+  const { categories, budgets, transactions } = input;
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const budgetByCat = new Map(budgets.map((b) => [b.categoryId, b.monthlyAmount]));
+
+  const leavesByGroup = new Map<string, BudgetCategory[]>();
+  for (const c of categories) {
+    if (c.kind === "category" && c.parentId) {
+      const list = leavesByGroup.get(c.parentId) ?? [];
+      list.push(c);
+      leavesByGroup.set(c.parentId, list);
+    }
+  }
+
+  // Per-leaf signed actuals + income tally. Transactions are categorized to
+  // leaves only (the PUT /transactions route rejects group categories).
+  const actualByLeaf = new Map<string, number>();
+  let incomeThisMonth = 0;
+  for (const t of transactions) {
+    if (t.categoryId == null) continue;
+    const cat = byId.get(t.categoryId);
+    if (!cat) continue;
+    const groupSlug = cat.parentId ? byId.get(cat.parentId)?.slug ?? null : cat.slug;
+    if (groupSlug === INCOME_GROUP_SLUG) {
+      incomeThisMonth += -t.amount; // Plaid: money in is negative
+      continue;
+    }
+    actualByLeaf.set(t.categoryId, (actualByLeaf.get(t.categoryId) ?? 0) + t.amount);
+  }
+
+  const groups = categories
+    .filter((c) => c.kind === "group" && c.slug !== INCOME_GROUP_SLUG)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const groupCells: GroupCell[] = groups.map((g) => {
+    const leafCats = (leavesByGroup.get(g.id) ?? []).sort(
+      (a, b) => a.sortOrder - b.sortOrder,
+    );
+    const leaves: LeafCell[] = leafCats.map((l) => ({
+      id: l.id,
+      name: l.name,
+      color: l.color,
+      budget: budgetByCat.has(l.id) ? budgetByCat.get(l.id)! : null,
+      actual: round2(actualByLeaf.get(l.id) ?? 0),
+    }));
+    const actual = round2(leaves.reduce((s, l) => s + l.actual, 0));
+    const explicit = budgetByCat.has(g.id);
+    const hasLeafBudget = leaves.some((l) => l.budget != null);
+    const budget = explicit
+      ? budgetByCat.get(g.id)!
+      : hasLeafBudget
+        ? round2(leaves.reduce((s, l) => s + (l.budget ?? 0), 0))
+        : null;
+    return {
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      budget,
+      budgetIsExplicit: explicit,
+      actual,
+      remaining: budget == null ? null : round2(budget - actual),
+      leaves,
+    };
+  });
+
+  const totalBudget = round2(groupCells.reduce((s, g) => s + (g.budget ?? 0), 0));
+  const totalSpent = round2(groupCells.reduce((s, g) => s + g.actual, 0));
+
+  return {
+    groups: groupCells,
+    totalBudget,
+    totalSpent,
+    totalRemaining: round2(totalBudget - totalSpent),
+    incomeThisMonth: round2(incomeThisMonth),
+  };
+}
