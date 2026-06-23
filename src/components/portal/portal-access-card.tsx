@@ -116,17 +116,22 @@ export default function PortalAccessCard({
       )}
 
       {status === "active" && (
-        <div className="space-y-4">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-6 gap-y-2 text-[13px]">
-            <dt className="text-ink-3">Portal user</dt>
-            <dd className="tabular min-w-0 truncate text-ink" title={clerkUserId ?? undefined}>
-              {clerkUserId}
-            </dd>
+        <div className="space-y-5">
+          <dl className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-[12px] text-ink-3">Portal user</dt>
+              <dd
+                className="tabular mt-1 truncate text-[13px] text-ink"
+                title={clerkUserId ?? undefined}
+              >
+                {clerkUserId}
+              </dd>
+            </div>
             {invitedAt && (
-              <>
-                <dt className="text-ink-3">Invited</dt>
-                <dd className="tabular text-ink-2">{formatDate(invitedAt)}</dd>
-              </>
+              <div>
+                <dt className="text-[12px] text-ink-3">Invited</dt>
+                <dd className="tabular mt-1 text-[13px] text-ink-2">{formatDate(invitedAt)}</dd>
+              </div>
             )}
           </dl>
           <button type="button" onClick={disable} disabled={busy} className={portalBtn.danger}>

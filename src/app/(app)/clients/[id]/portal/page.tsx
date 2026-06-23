@@ -8,6 +8,7 @@ import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
 import PortalCard, { portalBtn } from "@/components/portal/portal-card";
+import PortalManageShell from "@/components/portal/portal-manage-shell";
 import { EyeIcon } from "@/components/portal/portal-icons";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadSubmittedFormForClient } from "@/lib/intake/queries";
@@ -72,7 +73,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
       : "not_invited";
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <header className="space-y-1">
         <h2 className="text-[20px] font-semibold text-ink">Manage Portal</h2>
         <p className="text-[13px] text-ink-3">
@@ -80,34 +81,44 @@ export default async function PortalManagePage({ params }: Props): Promise<React
           client changes.
         </p>
       </header>
-      <PortalAccessCard
-        clientId={id}
-        status={status}
-        primaryEmail={primaryEmail}
-        invitedAt={row?.portalInvitedAt ?? null}
-        clerkUserId={row?.clerkUserId ?? null}
-      />
-      <SendClientForm
-        clientId={id}
-        primaryEmail={primaryEmail}
-        spouseEmail={spouseEmail}
-        primaryName={primaryName}
-        spouseName={spouseName}
-        clientAlreadyBound={!!row?.clerkUserId}
-        pendingFormId={pending?.id ?? null}
-      />
-      <PortalCard
-        icon={<EyeIcon />}
-        title="Preview as client"
-        description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
-        action={
-          <Link href={`/clients/${id}/portal/preview`} className={portalBtn.accent}>
-            Open preview
-          </Link>
+      <PortalManageShell
+        access={
+          <PortalAccessCard
+            clientId={id}
+            status={status}
+            primaryEmail={primaryEmail}
+            invitedAt={row?.portalInvitedAt ?? null}
+            clerkUserId={row?.clerkUserId ?? null}
+          />
         }
+        intake={
+          <SendClientForm
+            clientId={id}
+            primaryEmail={primaryEmail}
+            spouseEmail={spouseEmail}
+            primaryName={primaryName}
+            spouseName={spouseName}
+            clientAlreadyBound={!!row?.clerkUserId}
+            pendingFormId={pending?.id ?? null}
+          />
+        }
+        preview={
+          <PortalCard
+            icon={<EyeIcon />}
+            title="Preview as client"
+            description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
+            action={
+              <Link href={`/clients/${id}/portal/preview`} className={portalBtn.accent}>
+                Open preview
+              </Link>
+            }
+          />
+        }
+        editing={
+          <PortalEditToggle clientId={id} initialEnabled={row?.portalEditEnabled ?? false} />
+        }
+        activity={<PortalActivityFeed clientId={id} />}
       />
-      <PortalEditToggle clientId={id} initialEnabled={row?.portalEditEnabled ?? false} />
-      <PortalActivityFeed clientId={id} />
     </div>
   );
 }
