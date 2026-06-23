@@ -24,6 +24,7 @@ export type BudgetTransaction = { categoryId: string | null; amount: number };
 export type LeafCell = {
   id: string;
   name: string;
+  slug: string | null;
   color: string;
   budget: number | null;
   actual: number;
@@ -31,6 +32,7 @@ export type LeafCell = {
 export type GroupCell = {
   id: string;
   name: string;
+  slug: string | null;
   color: string;
   budget: number | null;
   budgetIsExplicit: boolean;
@@ -97,6 +99,7 @@ export function computeBudgetSummary(input: {
     const leaves: LeafCell[] = leafCats.map((l) => ({
       id: l.id,
       name: l.name,
+      slug: l.slug,
       color: l.color,
       budget: budgetByCat.has(l.id) ? budgetByCat.get(l.id)! : null,
       actual: round2(actualByLeaf.get(l.id) ?? 0),
@@ -112,6 +115,7 @@ export function computeBudgetSummary(input: {
     return {
       id: g.id,
       name: g.name,
+      slug: g.slug,
       color: g.color,
       budget,
       budgetIsExplicit: explicit,
