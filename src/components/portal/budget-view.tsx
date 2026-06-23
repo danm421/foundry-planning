@@ -46,7 +46,7 @@ function MiniBar({
       {has && (
         <div
           className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: over ? "var(--crit)" : "var(--good)" }}
+          style={{ width: `${pct}%`, background: over ? "var(--color-crit)" : "var(--color-good)" }}
         />
       )}
     </div>
