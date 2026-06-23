@@ -32,5 +32,9 @@ export const config: VercelConfig = {
       path: "/api/cron/orion-sync",
       schedule: "0 7 * * *",
     },
+    {
+      path: "/api/cron/snapshot-portal-investments",
+      schedule: "0 11 * * *",
+    },
   ],
 };

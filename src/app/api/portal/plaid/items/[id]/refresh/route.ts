@@ -170,6 +170,17 @@ export async function POST(
       console.error("portal plaid holdings ingestion error:", e);
     }
 
+    // Seed today's snapshot for this item's accounts (idempotent upsert).
+    // Runs after holdings ingestion so the snapshot reflects the freshest data.
+    try {
+      const linkedAccountIds = linked.map((a) => a.id);
+      const today = new Date().toISOString().slice(0, 10);
+      const { snapshotInvestmentValues } = await import("@/lib/investments/value-snapshots");
+      await snapshotInvestmentValues(linkedAccountIds, today);
+    } catch (e) {
+      console.error("portal plaid snapshot error:", e);
+    }
+
     await recordCreate({
       action: "portal.plaid.refresh",
       resourceType: "plaid_item",
