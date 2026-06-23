@@ -50,8 +50,8 @@ export function TransactionDetailPanel({
               onClick={() => onChangeType(opt)}
               className={
                 txn.type === opt
-                  ? "flex-1 rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium capitalize text-accent"
-                  : "flex-1 rounded-md px-2 py-1 text-[12px] capitalize text-ink-3 hover:bg-card"
+                  ? "flex-1 rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium text-accent"
+                  : "flex-1 rounded-md px-2 py-1 text-[12px] text-ink-3 hover:bg-card"
               }
             >
               {opt.charAt(0).toUpperCase() + opt.slice(1)}

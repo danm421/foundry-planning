@@ -64,7 +64,6 @@ export function computeBudgetSummary(input: {
   recurrings?: { categoryId: string; reservation: number }[];
 }): BudgetSummary {
   const { categories, budgets, transactions, recurrings = [] } = input;
-  const byId = new Map(categories.map((c) => [c.id, c]));
   const budgetByCat = new Map(budgets.map((b) => [b.categoryId, b.monthlyAmount]));
 
   const leavesByGroup = new Map<string, BudgetCategory[]>();

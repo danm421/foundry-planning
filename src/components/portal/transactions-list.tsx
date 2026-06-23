@@ -154,6 +154,8 @@ export default function TransactionsList({
   const changeType = useCallback(
     async (id: string, nextType: TxnType): Promise<void> => {
       const prev = rows;
+      let prevSelected: PortalTransactionDTO | null = null;
+      setSelected((s) => { prevSelected = s; return s && s.id === id ? { ...s, type: nextType, ...(nextType === "transfer" ? { categoryId: null, categoryName: null, categoryColor: null, categorizedBy: "manual" as const } : {}) } : s; });
       setRows((rs) =>
         rs.map((t) =>
           t.id === id
@@ -167,16 +169,15 @@ export default function TransactionsList({
             : t,
         ),
       );
-      setSelected((s) => (s && s.id === id ? { ...s, type: nextType, ...(nextType === "transfer" ? { categoryId: null, categoryName: null, categoryColor: null } : {}) } : s));
       try {
         const res = await portalFetch(`/api/portal/transactions/${id}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ type: nextType }),
         });
-        if (!res.ok) { setRows(prev); setError("Couldn't change the type."); }
+        if (!res.ok) { setRows(prev); setSelected(prevSelected); setError("Couldn't change the type."); }
       } catch {
-        setRows(prev); setError("Couldn't change the type.");
+        setRows(prev); setSelected(prevSelected); setError("Couldn't change the type.");
       }
     },
     [rows, portalFetch],
@@ -228,20 +229,20 @@ export default function TransactionsList({
         {rows.length === 0 && !loading ? (
           <div className="p-6 text-center text-[13px] text-ink-3">No transactions in this window.</div>
         ) : (
-          <ul className="divide-y divide-hair">
+          <ul>
             {rows.map((t, i) => {
               const amt = fmtAmount(t.amount);
-              const isRecurring = (t as PortalTransactionDTO & { recurringTransactionId?: string | null }).recurringTransactionId != null || t.categorizedBy === "recurring";
+              const isRecurring = t.categorizedBy === "recurring";
               const badge = badgeFor(t.type, isRecurring);
               const showDay = i === 0 || rows[i - 1].date !== t.date;
               return (
-                <li key={t.id} className="contents">
+                <li key={t.id}>
                   {showDay && (
                     <div className="bg-card-2 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-4">
                       {formatDayHeader(t.date)}
                     </div>
                   )}
-                  <div className="flex items-center gap-3 px-4 py-2.5">
+                  <div className={`flex items-center gap-3 px-4 py-2.5${!showDay ? " border-t border-hair" : ""}`}>
                     <span
                       className={
                         badge
