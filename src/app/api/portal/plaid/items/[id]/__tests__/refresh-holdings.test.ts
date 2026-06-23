@@ -12,8 +12,13 @@ vi.mock("@/lib/plaid/liabilities-refresh", () => ({
   fetchLiabilitiesForItem: vi.fn(async () => ({ ok: true, updates: [] })),
 }));
 
-// Holdings mocks — hoisted so tests can re-configure per-case
-const fetchInvestmentHoldingsForItem = vi.fn(async () => ({
+// Holdings mocks — hoisted so tests can re-configure per-case. The route only
+// forwards `holdings` to the mocked ingest fn, so a simplified holding shape is
+// fine; the union return type lets a test set the `{ ok: false }` error branch.
+type HoldingsMockResult =
+  | { ok: true; holdings: Array<{ plaidAccountId: string; securityId: string; quantity: string; costBasis: string }> }
+  | { ok: false; errorCode: string; errorMessage: string };
+const fetchInvestmentHoldingsForItem = vi.fn<() => Promise<HoldingsMockResult>>(async () => ({
   ok: true,
   holdings: [{ plaidAccountId: "pa1", securityId: "sec-1", quantity: "10", costBasis: "500.00" }],
 }));
