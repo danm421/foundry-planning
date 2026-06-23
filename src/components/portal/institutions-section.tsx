@@ -47,7 +47,7 @@ export async function InstitutionsSection({
           Linked Institutions
         </h2>
       </header>
-      <ul className="divide-y divide-border rounded-lg border border-border">
+      <ul className="divide-y divide-hair rounded-lg border border-hair">
         {items.map((it) => {
           const needsReauth =
             it.lastRefreshError != null &&

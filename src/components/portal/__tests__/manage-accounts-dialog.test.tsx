@@ -73,6 +73,31 @@ describe("ManageAccountsDialog", () => {
     );
   });
 
+  it("caps panel height, scrolls, and paints an opaque panel so content stays reachable", async () => {
+    const { ManageAccountsDialog } = await import("../manage-accounts-dialog");
+    render(<ManageAccountsDialog itemId="item-1" institutionName="Tartan Bank" editEnabled onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Checking")).toBeInTheDocument());
+    // Regression guard for the off-screen/no-scroll + transparent-panel bug.
+    // The earlier build used phantom tokens (bg-surface, border-border) that
+    // resolve to no CSS, so the panel was transparent and the institution row
+    // bled through; with no height cap a tall list also pushed the header and
+    // the "Add selected" action off-screen. jsdom can't measure layout, so
+    // assert the structural classes: a height-capped, opaque panel with an
+    // internal scroll region.
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toMatch(/max-h-/);
+    expect(dialog.className).toMatch(/bg-card/);
+    expect(dialog.querySelector(".overflow-y-auto")).not.toBeNull();
+  });
+
+  it("shows a sticky 'Add selected' footer with a selected count", async () => {
+    const { ManageAccountsDialog } = await import("../manage-accounts-dialog");
+    render(<ManageAccountsDialog itemId="item-1" institutionName="Tartan Bank" editEnabled onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /add selected/i })).toBeInTheDocument());
+    // One available account (Brokerage), un-skipped → "1 of 1 selected".
+    expect(screen.getByText(/1 of 1 selected/i)).toBeInTheDocument();
+  });
+
   it("shows reconnect prompt when needsReauth", async () => {
     portalFetch.mockReset().mockResolvedValue(
       new Response(JSON.stringify({ ...listPayload, needsReauth: true, available: [] }), { status: 200 }),

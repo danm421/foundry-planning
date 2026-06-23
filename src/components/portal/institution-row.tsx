@@ -70,7 +70,7 @@ export function InstitutionRow({
           className={
             needsReauth
               ? "text-[12px] text-amber-600"
-              : "text-[12px] text-ink-subtle"
+              : "text-[12px] text-ink-3"
           }
         >
           {statusLabel}
@@ -89,7 +89,7 @@ export function InstitutionRow({
                 type="button"
                 onClick={refresh}
                 disabled={pending}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 rounded-md border border-hair bg-card px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-card-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {/* refresh icon */}
                 <svg
@@ -115,7 +115,7 @@ export function InstitutionRow({
               type="button"
               onClick={() => setManaging(true)}
               disabled={pending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 rounded-md border border-hair bg-card px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-card-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5" aria-hidden="true">
                 <line x1="4" x2="4" y1="21" y2="14" /><line x1="4" x2="4" y1="10" y2="3" />
@@ -130,7 +130,7 @@ export function InstitutionRow({
             type="button"
             onClick={unlink}
             disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-red-600 shadow-xs hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 rounded-md border border-hair bg-card px-3 py-1.5 text-[13px] font-medium text-red-600 shadow-xs hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {/* unlink/trash icon */}
             <svg
