@@ -218,4 +218,30 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(arg.products).toBeUndefined();
     expect(arg.additional_consented_products).toBeUndefined();
   });
+
+  it("accountSelection adds update.account_selection_enabled in update mode", async () => {
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1", accountSelection: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(linkTokenCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { account_selection_enabled: true } }),
+    );
+  });
 });

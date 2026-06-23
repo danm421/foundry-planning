@@ -41,6 +41,11 @@ type Props =
   | {
       mode: "enable-products";
       itemId: string;
+    }
+  | {
+      mode: "account-selection";
+      itemId: string;
+      onSelectionComplete: () => void;
     };
 
 export function PlaidLinkButton(props: Props) {
@@ -76,6 +81,10 @@ export function PlaidLinkButton(props: Props) {
         }
         const payload = (await r.json()) as LinkSuccessPayload;
         props.onLinkSuccess(payload);
+        return;
+      }
+      if (props.mode === "account-selection") {
+        props.onSelectionComplete();
         return;
       }
       if (props.mode === "enable-products") {
@@ -123,7 +132,9 @@ export function PlaidLinkButton(props: Props) {
           ? JSON.stringify({ itemId: props.itemId })
           : props.mode === "enable-products"
             ? JSON.stringify({ itemId: props.itemId, enableProducts: true })
-            : "{}";
+            : props.mode === "account-selection"
+              ? JSON.stringify({ itemId: props.itemId, accountSelection: true })
+              : "{}";
       const r = await portalFetch("/api/portal/plaid/link-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,7 +171,9 @@ export function PlaidLinkButton(props: Props) {
       ? "Link bank"
       : props.mode === "reauth"
         ? "Re-authenticate"
-        : "Enable spending insights";
+        : props.mode === "account-selection"
+          ? "Find more accounts"
+          : "Enable spending insights";
 
   return (
     <button

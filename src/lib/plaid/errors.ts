@@ -18,3 +18,9 @@ export function plaidErrorMessage(err: unknown): string {
   };
   return e.response?.data?.error_message ?? e.message ?? "Plaid error";
 }
+
+export const REAUTH_CODES = new Set(["ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION"]);
+
+export function isReauthError(err: unknown): boolean {
+  return REAUTH_CODES.has(plaidErrorCode(err));
+}
