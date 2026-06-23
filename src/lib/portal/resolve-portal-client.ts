@@ -6,8 +6,6 @@ import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/portal-as-client-header";
 
-export { PORTAL_AS_CLIENT_HEADER };
-
 export type PortalActorMode = "client" | "advisor";
 
 /**
