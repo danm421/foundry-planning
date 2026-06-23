@@ -23,6 +23,7 @@ export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
   { label: "Family", suffix: "/profile/family", group: "profile" },
   { label: "Trusts", suffix: "/profile/trusts", group: "profile" },
   { label: "Accounts", suffix: "/accounts", group: "money" },
+  { label: "Investments", suffix: "/investments", group: "money" },
   { label: "Transactions", suffix: "/transactions", group: "money" },
   { label: "Budget", suffix: "/budget", group: "money" },
   { label: "Recurrings", suffix: "/recurrings", group: "money" },

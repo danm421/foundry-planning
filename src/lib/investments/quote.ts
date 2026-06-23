@@ -105,6 +105,59 @@ export async function fetchEodClose(
   }
 }
 
+export type LiveQuote = { price: number; changePct: number | null; asOf: string };
+
+const QUOTE_TTL_MS = 60_000;
+const quoteCache = new Map<string, { q: LiveQuote; at: number }>();
+
+/** Batched live quotes (price + daily change %) for the portal holdings list.
+ *  One EODHD real-time call for all symbols; 60s in-memory cache (skipped when a
+ *  custom fetchRealtime is injected). Never throws. */
+export async function fetchEodQuotes(
+  tickers: string[],
+  deps: QuoteDeps = {},
+): Promise<Map<string, LiveQuote>> {
+  const out = new Map<string, LiveQuote>();
+  const now = Date.now();
+  const symbols = [...new Set(tickers.map(eodhdSymbol))];
+  // The TTL cache only applies when using the live EODHD transport. An injected
+  // fetchRealtime (tests / overrides) always fetches fresh.
+  const useCache = !deps.fetchRealtime;
+  const miss: string[] = [];
+  for (const sym of symbols) {
+    const c = useCache ? quoteCache.get(sym) : undefined;
+    if (c && now - c.at < QUOTE_TTL_MS) out.set(sym, c.q);
+    else miss.push(sym);
+  }
+  if (miss.length === 0) return out;
+  let fetchRealtime: (symbols: string[]) => Promise<unknown>;
+  try {
+    fetchRealtime = resolveFetch(deps);
+  } catch {
+    return out; // missing key → fail-soft; cached hits are preserved
+  }
+  try {
+    const raw = await fetchRealtime(miss);
+    const rows = Array.isArray(raw) ? raw : [raw];
+    for (const r of rows as Array<{ code?: unknown; close?: unknown; change_p?: unknown; timestamp?: unknown }>) {
+      if (!r || typeof r.code !== "string") continue;
+      const price = typeof r.close === "number" ? r.close : Number(r.close);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const _cp = r.change_p == null ? null : Number(r.change_p);
+      const changePct: number | null = _cp !== null && Number.isFinite(_cp) ? _cp : null;
+      const ts = typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp);
+      const asOf = tsToDate(ts) ?? "";
+      const sym = r.code.toUpperCase();
+      const q: LiveQuote = { price, changePct, asOf };
+      out.set(sym, q);
+      if (useCache) quoteCache.set(sym, { q, at: now });
+    }
+  } catch {
+    // fail-soft: missing symbols simply absent; cached hits preserved
+  }
+  return out;
+}
+
 /** Latest close for many tickers in batched requests. Returns a map keyed by
  *  upper-case EODHD code. Dedups symbols, chunks at BATCH_SIZE, retries a failing
  *  chunk once, then skips it. Never throws (misconfig/transport → fewer entries). */

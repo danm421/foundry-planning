@@ -1,19 +1,18 @@
-// src/components/portal/networth-trend-chart.tsx
+// src/components/portal/investment-trend-chart.tsx
 "use client";
 import { type ReactElement } from "react";
 import { type TrendPoint } from "@/lib/portal/networth-trend";
 import { TrendLineChart } from "./trend-line-chart";
 
-export function NetWorthTrendChart({
-  series, asOfDate,
-}: { series: TrendPoint[]; asOfDate: string }): ReactElement | null {
+export function InvestmentTrendChart({
+  series, asOfDate, label = "Value",
+}: { series: TrendPoint[]; asOfDate: string; label?: string }): ReactElement | null {
   return (
     <TrendLineChart
       series={series}
       asOfDate={asOfDate}
-      heading="Net worth trend"
-      seriesLabel="Net worth"
-      initialWindow="1Y"
+      seriesLabel={label}
+      initialWindow="1M"
     />
   );
 }

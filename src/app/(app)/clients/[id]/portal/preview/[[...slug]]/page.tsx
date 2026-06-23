@@ -10,6 +10,7 @@ import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen
 import TransactionsSection from "@/components/portal/transactions-section";
 import BudgetSection from "@/components/portal/budget-section";
 import RecurringsSection from "@/components/portal/recurrings-section";
+import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-screen";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -45,6 +46,8 @@ export default async function PortalPreviewPage({
     section = <BudgetSection clientId={id} />;
   } else if (path === "recurrings") {
     section = <RecurringsSection clientId={id} />;
+  } else if (path === "investments") {
+    section = <PortalInvestmentsScreen clientId={id} />;
   } else {
     notFound();
   }

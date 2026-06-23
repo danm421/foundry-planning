@@ -12,6 +12,8 @@ import {
 } from "@/lib/rate-limit";
 import { fetchBalancesForItem } from "@/lib/plaid/refresh";
 import { fetchLiabilitiesForItem } from "@/lib/plaid/liabilities-refresh";
+import { fetchInvestmentHoldingsForItem } from "@/lib/plaid/holdings-refresh";
+import { ingestHoldingsForItem } from "@/lib/plaid/ingest-holdings";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +153,32 @@ export async function POST(
     } catch (e) {
       // Item may not carry the Liabilities product; balance refresh already succeeded.
       console.error("portal plaid liability refresh error:", e);
+    }
+
+    // Pull investment holdings into account_holdings (single source of truth),
+    // then re-derive value/basis/asset-mix. Outside the balance txn — a Plaid
+    // Investments-product error cannot roll back the committed balance updates.
+    try {
+      const holdingsResult = await fetchInvestmentHoldingsForItem(
+        { accessToken: item.accessToken },
+        linkedIds,
+      );
+      if (holdingsResult.ok && holdingsResult.holdings.length > 0) {
+        await ingestHoldingsForItem(id, holdingsResult.holdings);
+      }
+    } catch (e) {
+      console.error("portal plaid holdings ingestion error:", e);
+    }
+
+    // Seed today's snapshot for this item's accounts (idempotent upsert).
+    // Runs after holdings ingestion so the snapshot reflects the freshest data.
+    try {
+      const linkedAccountIds = linked.map((a) => a.id);
+      const today = new Date().toISOString().slice(0, 10);
+      const { snapshotInvestmentValues } = await import("@/lib/investments/value-snapshots");
+      await snapshotInvestmentValues(linkedAccountIds, today);
+    } catch (e) {
+      console.error("portal plaid snapshot error:", e);
     }
 
     await recordCreate({

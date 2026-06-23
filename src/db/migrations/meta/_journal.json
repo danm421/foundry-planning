@@ -1275,6 +1275,13 @@
       "when": 1782234888333,
       "tag": "0181_recurring_transactions",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1782242194651,
+      "tag": "0182_investments_plaid_holdings",
+      "breakpoints": true
     }
   ]
 }
