@@ -203,6 +203,12 @@ export const transactionCategorizedByEnum = pgEnum("transaction_categorized_by",
   "plaid",
   "rule",
   "manual",
+  "recurring",
+]);
+
+export const recurringCadenceEnum = pgEnum("recurring_cadence", [
+  "monthly",
+  "annually",
 ]);
 
 export const transactionCategoryKindEnum = pgEnum("transaction_category_kind", [
@@ -3087,6 +3093,12 @@ export const plaidTransactions = pgTable(
     categorizedBy: transactionCategorizedByEnum("categorized_by")
       .notNull()
       .default("plaid"),
+    // Claimed by a recurring transaction (set at ingest/retroactively/manually).
+    // SET NULL so deleting a recurring unclaims its transactions.
+    recurringTransactionId: uuid("recurring_transaction_id").references(
+      () => recurringTransactions.id,
+      { onDelete: "set null" },
+    ),
     excluded: boolean("excluded").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -3098,6 +3110,7 @@ export const plaidTransactions = pgTable(
       t.categoryId,
     ),
     accountDateIdx: index("plaid_transactions_account_date_idx").on(t.accountId, t.date),
+    recurringIdx: index("plaid_transactions_recurring_idx").on(t.recurringTransactionId),
   }),
 );
 
@@ -4550,3 +4563,47 @@ export const budgetsRelations = relations(budgets, ({ one }) => ({
     references: [transactionCategories.id],
   }),
 }));
+
+export const recurringTransactions = pgTable(
+  "recurring_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    matchType: transactionMatchTypeEnum("match_type").notNull(),
+    // Matched (case-insensitively) against merchantName then name.
+    pattern: text("pattern").notNull(),
+    // Inclusive amount window (spend-positive). A tx matches when amount is in [min, max].
+    amountMin: decimal("amount_min", { precision: 15, scale: 2 }).notNull(),
+    amountMax: decimal("amount_max", { precision: 15, scale: 2 }).notNull(),
+    cadence: recurringCadenceEnum("cadence").notNull(),
+    // Day-of-month expected (1-31), or NULL = "anytime in the month". Monthly only.
+    dueDay: integer("due_day"),
+    // Month it is due (1-12) for ANNUAL cadence; NULL for monthly.
+    dueMonth: integer("due_month"),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => transactionCategories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    clientIdx: index("recurring_transactions_client_idx").on(t.clientId),
+  }),
+);
+
+export const recurringTransactionsRelations = relations(
+  recurringTransactions,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [recurringTransactions.clientId],
+      references: [clients.id],
+    }),
+    category: one(transactionCategories, {
+      fields: [recurringTransactions.categoryId],
+      references: [transactionCategories.id],
+    }),
+  }),
+);
