@@ -56,8 +56,9 @@ export function computeBudgetSummary(input: {
   categories: BudgetCategory[];
   budgets: BudgetAmount[];
   transactions: BudgetTransaction[];
+  recurrings?: { categoryId: string; reservation: number }[];
 }): BudgetSummary {
-  const { categories, budgets, transactions } = input;
+  const { categories, budgets, transactions, recurrings = [] } = input;
   const byId = new Map(categories.map((c) => [c.id, c]));
   const budgetByCat = new Map(budgets.map((b) => [b.categoryId, b.monthlyAmount]));
 
@@ -84,6 +85,13 @@ export function computeBudgetSummary(input: {
       continue;
     }
     actualByLeaf.set(t.categoryId, (actualByLeaf.get(t.categoryId) ?? 0) + t.amount);
+  }
+
+  // Recurring reservations: committed-but-unposted spend, folded into the leaf
+  // actual so "Spent" reflects committed spend from day 1 (reserve & reconcile).
+  for (const r of recurrings) {
+    if (r.reservation <= 0) continue;
+    actualByLeaf.set(r.categoryId, (actualByLeaf.get(r.categoryId) ?? 0) + r.reservation);
   }
 
   const groups = categories
