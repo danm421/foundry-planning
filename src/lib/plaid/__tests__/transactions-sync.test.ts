@@ -114,6 +114,32 @@ import {
   applyTransactionUpdates,
 } from "@/lib/plaid/transactions-sync";
 
+function makePlaidTxn(over: Record<string, unknown> = {}) {
+  return {
+    account_id: "acc_1", transaction_id: "txn_1", amount: 12.5,
+    iso_currency_code: "USD", date: "2026-06-01", authorized_date: null,
+    merchant_name: "Coffee", name: "Coffee Shop", pending: false,
+    payment_channel: "in store",
+    personal_finance_category: { primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_COFFEE", confidence_level: "HIGH" },
+    ...over,
+  } as unknown as import("plaid").Transaction;
+}
+
+describe("mapPlaidTransaction type", () => {
+  const accMap = new Map<string, string>([["acc_1", "our-acc-1"]]);
+  it("defaults to expense for ordinary spend", () => {
+    expect(mapPlaidTransaction("c1", "item1", accMap, makePlaidTxn()).type).toBe("expense");
+  });
+  it("sets income for INCOME primary", () => {
+    const t = makePlaidTxn({ personal_finance_category: { primary: "INCOME", detailed: "INCOME_WAGES", confidence_level: "HIGH" } });
+    expect(mapPlaidTransaction("c1", "item1", accMap, t).type).toBe("income");
+  });
+  it("sets transfer for TRANSFER_OUT primary", () => {
+    const t = makePlaidTxn({ personal_finance_category: { primary: "TRANSFER_OUT", detailed: "TRANSFER_OUT_ACCOUNT_TRANSFER", confidence_level: "HIGH" } });
+    expect(mapPlaidTransaction("c1", "item1", accMap, t).type).toBe("transfer");
+  });
+});
+
 beforeEach(() => {
   transactionsSync.mockReset();
   mockInsertValues.mockReset();

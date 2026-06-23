@@ -9,6 +9,7 @@ import { resolveTransactionCategory } from "@/lib/portal/resolve-category";
 import { ensureCategoriesSeeded } from "@/lib/portal/seed-categories";
 import { loadCategorizationContext } from "@/lib/portal/load-categorization-context";
 import type { CategorizationContext } from "@/lib/portal/load-categorization-context";
+import { pfcToType } from "@/lib/portal/pfc-mapping";
 
 const FIRST_SYNC_DAYS_REQUESTED = 730; // Phase 2 decision: max trend depth
 
@@ -32,6 +33,7 @@ export type NewPlaidTransactionRow = {
   categoryId: string | null;
   categorizedBy: "plaid" | "rule" | "recurring";
   recurringTransactionId: string | null;
+  type: "income" | "expense" | "transfer";
 };
 
 export function mapPlaidTransaction(
@@ -61,6 +63,7 @@ export function mapPlaidTransaction(
     categorizedBy: "plaid",
     categoryId: null,
     recurringTransactionId: null,
+    type: pfcToType(pfc?.primary ?? null),
   };
 }
 
