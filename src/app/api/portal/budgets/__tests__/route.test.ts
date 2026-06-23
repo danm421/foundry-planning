@@ -117,3 +117,16 @@ it("400s when categoryId is missing", async () => {
   const res = await PUT(req({ monthlyAmount: 100 }));
   expect(res.status).toBe(400);
 });
+
+it("attributes the audit to the advisor with viaPreview when mode is advisor", async () => {
+  resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "advisor" });
+  selectQueue.push([{ id: "leaf-1", clientId: "c1", parentId: "grp-1", slug: "food-groceries" }]);
+  selectQueue.push([{ slug: "food" }]);
+  selectQueue.push([{ firmId: "firm-1" }]);
+  selectQueue.push([]);
+  const res = await PUT(req({ categoryId: "leaf-1", monthlyAmount: 250 }));
+  expect(res.status).toBe(200);
+  expect(recordUpdateMock).toHaveBeenCalledWith(
+    expect.objectContaining({ actorKind: "advisor", extraMetadata: { viaPreview: true } }),
+  );
+});
