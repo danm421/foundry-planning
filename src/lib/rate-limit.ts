@@ -352,12 +352,13 @@ export async function checkPortalPlaidRefreshRateLimit(
 }
 
 // Per-client cap on Plaid link-token mints — covers initial link + update mode.
-const getPortalPlaidLinkLimiter = buildLimiter(5, "1 h", "rl:portal-plaid-link");
+const getPortalPlaidLinkLimiter = buildLimiter(10, "1 h", "rl:portal-plaid-link");
 
 /**
  * Check whether the bound portal client may mint a Plaid link_token.
- * Budget: 5/hr per clientId — generous enough for retries on flaky banks,
- * tight enough to flag a runaway client UI.
+ * Budget: 10/hr per clientId — covers link + the three update modes (reauth,
+ * enable-products, account-selection) which all share this bucket; generous
+ * enough for retries on flaky banks, tight enough to flag a runaway client UI.
  */
 export async function checkPortalPlaidLinkRateLimit(
   clientId: string,

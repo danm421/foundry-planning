@@ -276,14 +276,25 @@ export default function TransactionsList({
 
       {selected && detailEl &&
         createPortal(
-          <TransactionDetailPanel
-            txn={selected}
-            onClose={() => setSelected(null)}
-            onCreateRule={() => setRuleSeed(selected)}
-            onCreateRecurring={() => setRecurringSeed(selected)}
-            recurrings={recurrings}
-            onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
-          />,
+          // Desktop: renders inline in the side column. Below `lg`: a
+          // full-screen overlay anchoring the panel to the bottom as a sheet,
+          // with a tap-to-dismiss scrim behind it.
+          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
+            <button
+              type="button"
+              aria-label="Close transaction details"
+              onClick={() => setSelected(null)}
+              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
+            />
+            <TransactionDetailPanel
+              txn={selected}
+              onClose={() => setSelected(null)}
+              onCreateRule={() => setRuleSeed(selected)}
+              onCreateRecurring={() => setRecurringSeed(selected)}
+              recurrings={recurrings}
+              onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
+            />
+          </div>,
           detailEl,
         )}
       {ruleSeed && (

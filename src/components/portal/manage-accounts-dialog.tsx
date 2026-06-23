@@ -149,65 +149,75 @@ export function ManageAccountsDialog({
     })();
   };
 
+  const availableCount = data?.available.length ?? 0;
+  const activeCount = data
+    ? data.available.filter((a) => !rows[a.plaidAccountId]?.skipped).length
+    : 0;
+  const showFooter = !!data && !data.needsReauth && editEnabled && availableCount > 0;
+
   const overlay = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-border bg-surface p-5 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-hair bg-card shadow-xl"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-hair px-5 py-4">
           <h2 className="text-[15px] font-semibold text-ink">Manage {institutionName} accounts</h2>
-          <button type="button" onClick={onClose} className="text-ink-subtle hover:text-ink" aria-label="Close">
+          <button type="button" onClick={onClose} className="text-ink-3 hover:text-ink" aria-label="Close">
             ✕
           </button>
         </div>
 
-        {!data ? (
-          <p className="text-[13px] text-ink-subtle">Loading…</p>
-        ) : data.needsReauth ? (
-          <div className="space-y-3">
-            <p className="text-[13px] text-amber-600">
-              This institution needs to be reconnected before you can manage its accounts.
-            </p>
-            <PlaidLinkButton mode="reauth" itemId={itemId} />
-          </div>
-        ) : (
-          <div className="space-y-5">
-            <section>
-              <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-ink-subtle">
-                Linked (in your plan)
-              </h3>
-              {data.linked.length === 0 ? (
-                <p className="text-[13px] text-ink-subtle">No linked accounts yet.</p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {data.linked.map((l) => (
-                    <li key={l.plaidAccountId} className="flex items-center justify-between gap-3 text-[13px]">
-                      <span className="text-ink">
-                        {l.name}
-                        {l.mask ? ` ••${l.mask}` : ""} · {fmt(l.value)}
-                      </span>
-                      {editEnabled && (
-                        <button
-                          type="button"
-                          onClick={() => detach(l.plaidAccountId)}
-                          disabled={pending}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-red-600 shadow-xs hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Unlink
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {!data ? (
+            <p className="text-[13px] text-ink-3">Loading…</p>
+          ) : data.needsReauth ? (
+            <div className="space-y-3">
+              <p className="text-[13px] text-amber-600">
+                This institution needs to be reconnected before you can manage its accounts.
+              </p>
+              <PlaidLinkButton mode="reauth" itemId={itemId} />
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <section>
+                <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-ink-3">
+                  Linked (in your plan)
+                </h3>
+                {data.linked.length === 0 ? (
+                  <p className="text-[13px] text-ink-3">No linked accounts yet.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {data.linked.map((l) => (
+                      <li key={l.plaidAccountId} className="flex items-center justify-between gap-3 text-[13px]">
+                        <span className="text-ink">
+                          {l.name}
+                          {l.mask ? ` ••${l.mask}` : ""} · {fmt(l.value)}
+                        </span>
+                        {editEnabled && (
+                          <button
+                            type="button"
+                            onClick={() => detach(l.plaidAccountId)}
+                            disabled={pending}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-hair bg-card px-3 py-1.5 text-[13px] font-medium text-red-600 shadow-xs hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Unlink
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
 
-            <section>
-              <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-ink-subtle">
-                Available to add
-              </h3>
-              {data.available.length === 0 ? (
-                <p className="text-[13px] text-ink-subtle">No additional accounts available.</p>
-              ) : (
-                <div className="space-y-2">
+              <section>
+                <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-ink-3">
+                  Available to add
+                </h3>
+                {data.available.length === 0 ? (
+                  <p className="text-[13px] text-ink-3">No additional accounts available.</p>
+                ) : (
                   <ul className="space-y-2">
                     {data.available.map((a) => (
                       <PlaidAccountDecisionRow
@@ -227,29 +237,35 @@ export function ManageAccountsDialog({
                       />
                     ))}
                   </ul>
-                  {editEnabled && (
-                    <button
-                      type="button"
-                      onClick={addSelected}
-                      disabled={pending}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Add selected
-                    </button>
-                  )}
-                </div>
-              )}
-            </section>
-
-            {editEnabled && (
-              <section className="border-t border-border pt-4">
-                <PlaidLinkButton
-                  mode="account-selection"
-                  itemId={itemId}
-                  onSelectionComplete={() => void load()}
-                />
+                )}
               </section>
-            )}
+
+              {editEnabled && (
+                <section className="border-t border-hair pt-4">
+                  <PlaidLinkButton
+                    mode="account-selection"
+                    itemId={itemId}
+                    onSelectionComplete={() => void load()}
+                  />
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+
+        {showFooter && (
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-hair px-5 py-3">
+            <span className="text-[12px] text-ink-3">
+              {activeCount} of {availableCount} selected
+            </span>
+            <button
+              type="button"
+              onClick={addSelected}
+              disabled={pending || activeCount === 0}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-on shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {pending ? "Adding…" : "Add selected"}
+            </button>
           </div>
         )}
       </div>

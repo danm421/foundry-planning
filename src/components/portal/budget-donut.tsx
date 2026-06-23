@@ -14,12 +14,17 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 /** Resolve a `var(--data-<key>)` token to a concrete hex Chart.js can paint. */
 function tokenToHex(token: string, pal: Record<string, string>): string {
   const key = token.match(/var\(--data-([a-z]+)\)/)?.[1];
-  return (key && pal[key]) || pal.grey || "#888888";
+  return (key && pal[key]) || pal.grey;
 }
 
 export function BudgetDonut({
-  groups, totalSpent,
-}: { groups: GroupCell[]; totalSpent: number }): ReactElement | null {
+  groups, totalSpent, showCenter = true, className = "h-56",
+}: {
+  groups: GroupCell[];
+  totalSpent: number;
+  showCenter?: boolean;
+  className?: string;
+}): ReactElement | null {
   const theme = useThemeName();
   const pal = dataPalette(theme) as unknown as Record<string, string>;
   const chrome = chartChrome(theme);
@@ -52,12 +57,14 @@ export function BudgetDonut({
     },
   };
   return (
-    <div className="relative h-56">
+    <div className={`relative ${className}`}>
       <Doughnut data={data} options={options} />
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[11px] text-ink-3">Spent</span>
-        <span className="tabular text-[18px] font-semibold text-ink">{fmtUsd(totalSpent)}</span>
-      </div>
+      {showCenter && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[11px] text-ink-3">Spent</span>
+          <span className="tabular text-[18px] font-semibold text-ink">{fmtUsd(totalSpent)}</span>
+        </div>
+      )}
     </div>
   );
 }
