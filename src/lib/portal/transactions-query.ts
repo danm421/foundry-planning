@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { plaidTransactions, transactionCategories } from "@/db/schema";
+import { accounts, plaidTransactions, transactionCategories } from "@/db/schema";
 import { and, eq, gte, lte, or, ilike, desc, sql } from "drizzle-orm";
 
 export type TransactionFilters = {
@@ -25,6 +25,8 @@ export type PortalTransactionDTO = {
   categoryColor: string | null;
   categorizedBy: "plaid" | "rule" | "manual";
   accountId: string | null;
+  accountName: string | null;
+  accountMask: string | null;
 };
 
 export function buildTransactionConditions(clientId: string, f: TransactionFilters) {
@@ -58,9 +60,12 @@ export async function loadPortalTransactions(
       accountId: plaidTransactions.accountId,
       categoryName: transactionCategories.name,
       categoryColor: transactionCategories.color,
+      accountName: accounts.name,
+      accountMask: accounts.accountNumberLast4,
     })
     .from(plaidTransactions)
     .leftJoin(transactionCategories, eq(transactionCategories.id, plaidTransactions.categoryId))
+    .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
     .where(and(...(buildTransactionConditions(clientId, f) as Parameters<typeof and>)))
     .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
     .limit(f.limit)

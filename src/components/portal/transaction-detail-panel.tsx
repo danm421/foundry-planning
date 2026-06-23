@@ -30,6 +30,15 @@ export function TransactionDetailPanel({
         {n < 0 ? `+${abs}` : abs}
       </div>
       <dl className="space-y-2 text-[13px]">
+        {txn.accountName && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-ink-3">Account</dt>
+            <dd className="max-w-[60%] truncate text-ink-2">
+              {txn.accountName}
+              {txn.accountMask && <span className="tabular text-ink-3"> ••{txn.accountMask}</span>}
+            </dd>
+          </div>
+        )}
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Date</dt><dd className="tabular text-ink-2">{txn.date}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Description</dt><dd className="max-w-[60%] truncate text-ink-2">{txn.name}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Category</dt><dd><CategoryPill name={txn.categoryName} color={txn.categoryColor} /></dd></div>

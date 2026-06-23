@@ -21,6 +21,8 @@ export type PortalTransactionDTO = {
   categoryColor: string | null;
   categorizedBy: "plaid" | "rule" | "manual";
   accountId: string | null;
+  accountName: string | null;
+  accountMask: string | null;
 };
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
 
