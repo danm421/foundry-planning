@@ -32,7 +32,7 @@ describe("buildTransactionConditions", () => {
   });
   it("adds an OR ilike across merchant_name and name for q", () => {
     const conds = buildTransactionConditions("c1", { q: "coffee", limit: 50, offset: 0 });
-    const orCond = conds.find((c: any) => c.op === "or");
+    const orCond = conds.find((c) => (c as { op: string }).op === "or");
     expect(orCond).toBeTruthy();
   });
 });

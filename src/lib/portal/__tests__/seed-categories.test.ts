@@ -17,7 +17,7 @@ vi.mock("@/db", () => ({
               const arr = rows as Array<{ slug: string; kind: string }>;
               if (arr[0]?.kind === "group") {
                 insertGroupsMock(arr);
-                return Promise.resolve(arr.map((r, i) => ({ id: `grp-${r.slug}`, slug: r.slug })));
+                return Promise.resolve(arr.map((r) => ({ id: `grp-${r.slug}`, slug: r.slug })));
               }
               insertLeavesMock(arr);
               return Promise.resolve(arr.map((r, i) => ({ id: `leaf-${i}` })));
