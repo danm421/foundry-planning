@@ -4,9 +4,9 @@ import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { requireClientEditAccess } from "@/lib/clients/authz";
+import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/portal-as-client-header";
 
-/** Header an advisor's browser sends in preview to act as a specific client. */
-export const PORTAL_AS_CLIENT_HEADER = "x-portal-as-client";
+export { PORTAL_AS_CLIENT_HEADER };
 
 export type PortalActorMode = "client" | "advisor";
 

@@ -3,7 +3,7 @@
 
 import { createContext, useCallback, useContext } from "react";
 import type { ReactNode } from "react";
-import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/resolve-portal-client";
+import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/portal-as-client-header";
 
 export type PortalMode = { mode: "client" | "advisor"; clientId: string };
 
