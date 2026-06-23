@@ -1,9 +1,10 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PlaidLinkButton } from "./plaid-link-button";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { ManageAccountsDialog } from "./manage-accounts-dialog";
 
 export function InstitutionRow({
   itemId,
@@ -23,6 +24,7 @@ export function InstitutionRow({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const portalFetch = usePortalFetch();
+  const [managing, setManaging] = useState(false);
 
   const refresh = () =>
     startTransition(async () => {
@@ -58,6 +60,7 @@ export function InstitutionRow({
   };
 
   return (
+    <>
     <li className="flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0">
         <p className="truncate text-[14px] font-medium text-ink">
@@ -107,6 +110,22 @@ export function InstitutionRow({
               </button>
             </>
           )}
+          {!needsReauth && (
+            <button
+              type="button"
+              onClick={() => setManaging(true)}
+              disabled={pending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-ink shadow-xs hover:bg-surface-raised disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5" aria-hidden="true">
+                <line x1="4" x2="4" y1="21" y2="14" /><line x1="4" x2="4" y1="10" y2="3" />
+                <line x1="12" x2="12" y1="21" y2="12" /><line x1="12" x2="12" y1="8" y2="3" />
+                <line x1="20" x2="20" y1="21" y2="16" /><line x1="20" x2="20" y1="12" y2="3" />
+                <line x1="2" x2="6" y1="14" y2="14" /><line x1="10" x2="14" y1="8" y2="8" /><line x1="18" x2="22" y1="16" y2="16" />
+              </svg>
+              Manage
+            </button>
+          )}
           <button
             type="button"
             onClick={unlink}
@@ -134,5 +153,14 @@ export function InstitutionRow({
         </div>
       )}
     </li>
+    {managing && (
+      <ManageAccountsDialog
+        itemId={itemId}
+        institutionName={institutionName}
+        editEnabled={editEnabled}
+        onClose={() => setManaging(false)}
+      />
+    )}
+    </>
   );
 }
