@@ -1,5 +1,5 @@
 // src/lib/portal/__tests__/load-budget-data.test.ts
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import { currentMonthRange } from "@/lib/portal/load-budget-data";
 
 it("derives inclusive month bounds in UTC", () => {

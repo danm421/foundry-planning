@@ -1,5 +1,5 @@
 // src/app/api/portal/budgets/__tests__/route.test.ts
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 
 const resolvePortalClientMock = vi.fn();
 vi.mock("@/lib/portal/resolve-portal-client", () => ({

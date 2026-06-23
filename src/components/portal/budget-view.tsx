@@ -30,7 +30,7 @@ function BudgetBar({
     <div className="mt-2 h-2 overflow-hidden rounded-full bg-card-2">
       <div
         className="h-full rounded-full"
-        style={{ width: `${budget ? pct : 0}%`, background: over ? "var(--crit)" : color }}
+        style={{ width: `${pct}%`, background: over ? "var(--crit)" : color }}
       />
     </div>
   );

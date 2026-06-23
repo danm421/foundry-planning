@@ -1,6 +1,6 @@
 // src/components/portal/__tests__/budget-donut.test.tsx
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("react-chartjs-2", () => ({

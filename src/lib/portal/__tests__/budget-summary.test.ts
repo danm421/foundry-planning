@@ -1,5 +1,5 @@
 // src/lib/portal/__tests__/budget-summary.test.ts
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import {
   computeBudgetSummary,
   type BudgetCategory,

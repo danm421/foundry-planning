@@ -1,6 +1,6 @@
 // src/components/portal/__tests__/budget-view.test.tsx
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const refreshMock = vi.fn();
