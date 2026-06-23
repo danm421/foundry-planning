@@ -9,6 +9,7 @@ import TrustsSection from "@/components/portal/trusts-section";
 import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
 import TransactionsSection from "@/components/portal/transactions-section";
 import BudgetSection from "@/components/portal/budget-section";
+import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-screen";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -42,6 +43,8 @@ export default async function PortalPreviewPage({
     section = <TransactionsSection clientId={id} previewing />;
   } else if (path === "budget") {
     section = <BudgetSection clientId={id} />;
+  } else if (path === "investments") {
+    section = <PortalInvestmentsScreen clientId={id} />;
   } else {
     notFound();
   }

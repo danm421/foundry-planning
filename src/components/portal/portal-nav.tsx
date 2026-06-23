@@ -13,6 +13,7 @@ const PROFILE_ITEMS = [
 
 const OTHER_ITEMS = [
   { label: "Accounts", suffix: "/accounts" },
+  { label: "Investments", suffix: "/investments" },
   { label: "Transactions", suffix: "/transactions" },
   { label: "Budget", suffix: "/budget" },
 ] as const;
