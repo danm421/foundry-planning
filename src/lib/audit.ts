@@ -332,6 +332,7 @@ export type AuditAction =
   | "portal.plaid.refresh"
   | "portal.plaid.sync"
   | "portal.plaid.unlink"
+  | "portal.plaid.account_detach"
   | "portal.plaid.reauth"
   // Intake / data-collection forms
   | "intake.form.sent"
