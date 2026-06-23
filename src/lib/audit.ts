@@ -333,6 +333,12 @@ export type AuditAction =
   | "portal.plaid.sync"
   | "portal.plaid.unlink"
   | "portal.plaid.reauth"
+  // Intake / data-collection forms
+  | "intake.form.sent"
+  | "intake.form.submitted"
+  | "intake.form.applied"
+  | "intake.form.discarded"
+  | "intake.form.revoked"
   // Phase 4 — spending transactions / categorization
   | "portal.transaction.update"
   | "portal.rule.create"

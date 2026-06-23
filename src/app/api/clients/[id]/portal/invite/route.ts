@@ -10,6 +10,7 @@ import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 
 export const dynamic = "force-dynamic";
 
@@ -40,28 +41,15 @@ export async function POST(
       return NextResponse.json({ error: "Valid email required" }, { status: 400 });
     }
 
-    const cc = await clerkClient();
-    const invitation = await cc.invitations.createInvitation({
-      emailAddress: body.email,
-      publicMetadata: { clientId: id },
-      redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/sign-up`,
-    });
-
-    await db
-      .update(clients)
-      .set({ portalInvitedAt: new Date() })
-      .where(eq(clients.id, id));
-
-    await recordAudit({
-      action: "portal.invite.sent",
-      resourceType: "portal_invite",
-      resourceId: invitation.id,
+    const { invitationId } = await sendPortalInvite({
       clientId: id,
+      email: body.email,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { email: body.email }),
+      callerOrg,
+      access,
     });
 
-    return NextResponse.json({ ok: true, invitationId: invitation.id });
+    return NextResponse.json({ ok: true, invitationId });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

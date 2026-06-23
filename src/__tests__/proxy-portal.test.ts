@@ -41,6 +41,12 @@ vi.mock("@/lib/portal/get-portal-client", () => ({
   getPortalClientId: (...a: unknown[]) => getPortalClientIdMock(...a),
 }));
 
+const hasUnsubmittedPrefilledFormMock = vi.fn();
+vi.mock("@/lib/intake/queries", () => ({
+  hasUnsubmittedPrefilledForm: (...a: unknown[]) =>
+    hasUnsubmittedPrefilledFormMock(...a),
+}));
+
 const claimPortalBindingMock = vi.fn();
 vi.mock("@/lib/portal/claim-portal-binding", () => ({
   claimPortalBinding: (...a: unknown[]) => claimPortalBindingMock(...a),
@@ -71,6 +77,8 @@ function authWith(userId: string | null, orgId: string | null) {
 beforeEach(() => {
   recordAudit.mockClear();
   getPortalClientIdMock.mockReset();
+  hasUnsubmittedPrefilledFormMock.mockReset();
+  hasUnsubmittedPrefilledFormMock.mockResolvedValue(false); // default: no pending form
   claimPortalBindingMock.mockReset();
   claimPortalBindingMock.mockResolvedValue(null);
   delete process.env.BILLING_ENFORCEMENT_MODE;
@@ -143,5 +151,43 @@ describe("proxy portal branching", () => {
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/select-organization");
+  });
+});
+
+describe("proxy soft-route: intake redirect", () => {
+  it("redirects bound portal client with pending intake from /portal/profile to /portal/intake", async () => {
+    getPortalClientIdMock.mockResolvedValue("client-intake-1");
+    hasUnsubmittedPrefilledFormMock.mockResolvedValue(true);
+
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/portal/profile"),
+    );
+    expect(res.status).toBe(307); // temporary, method-preserving — not 308
+    expect(res.headers.get("location")).toContain("/portal/intake");
+  });
+
+  it("does NOT redirect when client has no pending intake (hasUnsubmittedPrefilledForm=false)", async () => {
+    getPortalClientIdMock.mockResolvedValue("client-intake-1");
+    hasUnsubmittedPrefilledFormMock.mockResolvedValue(false);
+
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/portal/profile"),
+    );
+    // Should pass through, not redirect to /portal/intake
+    expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
+  });
+
+  it("does NOT redirect when client is already on /portal/intake (no redirect loop)", async () => {
+    getPortalClientIdMock.mockResolvedValue("client-intake-1");
+    hasUnsubmittedPrefilledFormMock.mockResolvedValue(true);
+
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/portal/intake"),
+    );
+    // Should pass through (isPortalRoute), not loop back to /portal/intake
+    expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
   });
 });

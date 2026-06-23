@@ -3,12 +3,6 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import {
   clients,
-  scenarios,
-  planSettings,
-  accounts,
-  expenses,
-  incomes,
-  familyMembers,
   crmHouseholds,
   crmHouseholdContacts,
 } from "@/db/schema";
@@ -18,13 +12,11 @@ import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibilit
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { requireActiveSubscription } from "@/lib/authz";
-import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema, clientContactInfoSchema } from "@/lib/schemas/resources";
-import { recordAudit } from "@/lib/audit";
 import { recordHouseholdOpen } from "@/lib/crm/households";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
-import { isUSPSStateCode } from "@/lib/usps-states";
+import { createClientForHousehold } from "@/lib/clients/create-client";
 
 // Contact fields the POST body may carry. We extract them from the parsed
 // body and atomically mirror them onto the CRM primary/spouse contact rows
@@ -171,223 +163,61 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const firstName = primary.firstName;
-    const lastName = primary.lastName;
-    const dateOfBirth = primary.dateOfBirth;
-    const spouseName = spouse?.firstName ?? null;
-    const spouseLastName = spouse?.lastName ?? null;
-    const spouseDob = spouse?.dateOfBirth ?? null;
-
-    // When the household has a spouse, their planning fields must never be blank
-    // — default retirement to 65 and life expectancy to 95. Some creation paths
-    // (e.g. AI import) never surface these inputs, so we default here at the
-    // single write chokepoint rather than in each form. No spouse → stay null.
-    const hasSpouse = spouse != null;
-    const effectiveSpouseRetirementAge = hasSpouse
-      ? Number(spouseRetirementAge ?? 65)
-      : null;
-    const effectiveSpouseRetirementMonth = hasSpouse
-      ? Number(spouseRetirementMonth ?? 1)
-      : null;
-    const effectiveSpouseLifeExpectancy = hasSpouse
-      ? Number(spouseLifeExpectancy ?? 95)
-      : null;
-
-    // Plan horizon is the year the last spouse dies; plan_end_age is derived
-    // from client + spouse life expectancies.
-    const planEndAge = computePlanEndAge({
-      clientDob: dateOfBirth,
-      clientLifeExpectancy: Number(lifeExpectancy),
-      spouseDob: spouseDob ?? null,
-      spouseLifeExpectancy: effectiveSpouseLifeExpectancy,
-    });
-
-    const currentYear = new Date().getFullYear();
-
-    // Extract any contact fields from the parsed body so we can atomically
-    // mirror them onto the CRM contact rows inside the same transaction as
-    // the clients insert.
+    // Extract any contact fields from the parsed body so we can mirror them
+    // onto the CRM contact rows. The mirror stays in the route (not the create
+    // service) — it's POST-body-specific and runs after the create so the new
+    // planning client and its CRM contact info land together.
     const contactPatch: Record<string, unknown> = {};
     const incoming = parsed.data as Record<string, unknown>;
     for (const key of CONTACT_FIELDS) {
       if (key in incoming) contactPatch[key] = incoming[key];
     }
 
-    // Insert client — identity lives on CRM contacts (linked via crmHouseholdId),
-    // so the clients row only carries planning fields. Wrapped in a transaction
-    // alongside the contact mirror so a partial failure can't leave the
-    // planning row out of sync with CRM. The downstream seeds (scenario,
-    // plan settings, family members, accounts, expenses, incomes, audit)
-    // are intentionally outside the tx — they're idempotent and not
-    // load-bearing for contact-info correctness.
-    const client = await db.transaction(async (tx) => {
-      const [c] = await tx
-        .insert(clients)
-        .values({
-          firmId,
-          advisorId: userId,
-          crmHouseholdId,
-          retirementAge: Number(retirementAge),
-          retirementMonth: retirementMonth != null ? Number(retirementMonth) : 1,
-          planEndAge,
-          lifeExpectancy: Number(lifeExpectancy),
-          filingStatus,
-          spouseRetirementAge: effectiveSpouseRetirementAge,
-          spouseRetirementMonth: effectiveSpouseRetirementMonth,
-          spouseLifeExpectancy: effectiveSpouseLifeExpectancy,
-        })
-        .returning();
-      if (Object.keys(contactPatch).length > 0) {
-        await mirrorContactToCrm(tx, crmHouseholdId, contactPatch);
-      }
-      return c;
-    });
-
-    // Insert base case scenario
-    const [scenario] = await db
-      .insert(scenarios)
-      .values({
-        clientId: client.id,
-        name: "Base Case",
-        isBaseCase: true,
-      })
-      .returning();
-
-    // Insert default plan settings
-    await db.insert(planSettings).values({
-      clientId: client.id,
-      scenarioId: scenario.id,
-      planStartYear: currentYear,
-      planEndYear: new Date(dateOfBirth).getFullYear() + planEndAge,
-      // Seed the plan's residence state from the household's canonical state so
-      // state income + estate tax compute on real brackets instead of the flat
-      // fallback. Seed-once: the assumptions page owns residenceState per
-      // scenario after this; later household-state edits don't re-propagate.
-      residenceState: isUSPSStateCode(household.state) ? household.state : null,
-    });
-
-    // Seed household family_members rows (role='client', and 'spouse' if married).
-    // OwnershipEditor's preset buttons and defaultOwners both key off these rows;
-    // without them, every newly-added account is rejected with
-    // "owners must have at least one entry". The relationship enum doesn't have
-    // 'client'/'spouse' values, so we use 'other' as a placeholder — the role
-    // column is what the UI keys off.
-    const familyRows: Array<typeof familyMembers.$inferInsert> = [
-      {
-        clientId: client.id,
-        role: "client",
-        relationship: "other",
-        firstName,
-        lastName,
-        dateOfBirth,
+    // Create the planning client + all default seeds (scenario, plan settings,
+    // family members, household cash, living expenses, SS incomes, audit) via
+    // the shared service. The standalone service path wraps every insert in its
+    // own transaction. We preserve today's behavior: advisorId comes from the
+    // household, so the route passes household.advisorId = userId.
+    const { clientId } = await createClientForHousehold({
+      household: {
+        id: crmHouseholdId,
+        firmId,
+        advisorId: userId,
+        state: household.state,
       },
-    ];
-    if (spouseName) {
-      familyRows.push({
-        clientId: client.id,
-        role: "spouse",
-        relationship: "other",
-        firstName: spouseName,
-        lastName: spouseLastName ?? lastName,
-        dateOfBirth: spouseDob ?? null,
+      primaryContact: {
+        firstName: primary.firstName,
+        lastName: primary.lastName,
+        dateOfBirth: primary.dateOfBirth,
+      },
+      spouseContact: spouse
+        ? {
+            firstName: spouse.firstName,
+            lastName: spouse.lastName,
+            dateOfBirth: spouse.dateOfBirth ?? null,
+          }
+        : null,
+      retirementAge: Number(retirementAge),
+      retirementMonth: retirementMonth != null ? Number(retirementMonth) : undefined,
+      lifeExpectancy: Number(lifeExpectancy),
+      spouseRetirementAge,
+      spouseRetirementMonth,
+      spouseLifeExpectancy,
+      filingStatus,
+    });
+
+    // Mirror any contact-only fields from the POST body onto the CRM contacts.
+    if (Object.keys(contactPatch).length > 0) {
+      await db.transaction(async (tx) => {
+        await mirrorContactToCrm(tx, crmHouseholdId, contactPatch);
       });
     }
-    await db.insert(familyMembers).values(familyRows);
 
-    // Insert default household cash account. Household income lands here and expenses
-    // are drawn from it; the projection engine pulls from the withdrawal strategy when
-    // this balance would go negative.
-    // Insert default household cash account. No account_owners rows are created here;
-    // joint FM ownership is inferred when family members are added via the family page.
-    await db.insert(accounts).values({
-      clientId: client.id,
-      scenarioId: scenario.id,
-      name: "Household Cash",
-      category: "cash",
-      subType: "checking",
-      value: "0",
-      basis: "0",
-      // null -> inherit the cash category default from plan_settings
-      growthRate: null,
-      rmdEnabled: false,
-      isDefaultChecking: true,
-    });
-
-    // Seed two living-expense rows at $0 so the advisor has an obvious prompt to
-    // fill in pre- and post-retirement spending. The retirement row is entered in
-    // today's dollars so inflation compounds from plan start through retirement.
-    const clientBirthYear = new Date(dateOfBirth).getFullYear();
-    const retirementStartYear = clientBirthYear + Number(retirementAge);
-    const planEndYearValue = clientBirthYear + Number(planEndAge);
-    // Living expenses are anchored to milestones so they track changes to
-    // retirement age and plan horizon: current-living runs plan_start →
-    // client_retirement, retirement-living runs client_retirement → plan_end.
-    const expenseSeeds = [
-      {
-        name: "Current Living Expenses",
-        startYear: currentYear,
-        startYearRef: "plan_start" as const,
-        endYear: Math.max(currentYear, retirementStartYear),
-        endYearRef: "client_retirement" as const,
-        inflationStartYear: null as number | null,
-      },
-      {
-        name: "Retirement Living Expenses",
-        startYear: retirementStartYear,
-        startYearRef: "client_retirement" as const,
-        endYear: planEndYearValue,
-        endYearRef: "plan_end" as const,
-        inflationStartYear: currentYear,
-      },
-    ];
-    await db.insert(expenses).values(
-      expenseSeeds.map((seed) => ({
-        clientId: client.id,
-        scenarioId: scenario.id,
-        type: "living" as const,
-        name: seed.name,
-        annualAmount: "0",
-        startYear: seed.startYear,
-        startYearRef: seed.startYearRef,
-        endYear: seed.endYear,
-        endYearRef: seed.endYearRef,
-        growthRate: "0.03",
-        inflationStartYear: seed.inflationStartYear,
-        isDefault: true,
-      }))
-    );
-
-    // Seed Social Security income entries at $0 — one per person on the household —
-    // so the advisor is prompted to enter benefit amounts and claiming ages.
-    const ssSeeds: { name: string; owner: "client" | "spouse" }[] = [
-      { name: `Social Security — ${firstName}`, owner: "client" },
-    ];
-    if (spouseName) {
-      ssSeeds.push({ name: `Social Security — ${spouseName}`, owner: "spouse" });
-    }
-    await db.insert(incomes).values(
-      ssSeeds.map((seed) => ({
-        clientId: client.id,
-        scenarioId: scenario.id,
-        type: "social_security" as const,
-        name: seed.name,
-        annualAmount: "0",
-        startYear: currentYear,
-        endYear: planEndYearValue,
-        growthRate: "0.02",
-        owner: seed.owner,
-        claimingAge: 67,
-      }))
-    );
-
-    await recordAudit({
-      action: "client.create",
-      resourceType: "client",
-      resourceId: client.id,
-      clientId: client.id,
-      firmId,
-      metadata: { firstName, lastName, crmHouseholdId },
-    });
+    // Re-fetch the created client so the response keeps its existing 201 shape.
+    const [client] = await db
+      .select()
+      .from(clients)
+      .where(eq(clients.id, clientId));
 
     // Surface the just-created household in this advisor's "Recently opened"
     // clients view (the default list). That view is driven by crm_household_views,

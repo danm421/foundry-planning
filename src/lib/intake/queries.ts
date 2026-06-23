@@ -1,0 +1,120 @@
+import { cache } from "react";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { intakeForms } from "@/db/schema";
+
+export type IntakeFormRow = typeof intakeForms.$inferSelect;
+
+/**
+ * Load a form by its public token. Wrapped in React.cache so middleware +
+ * page in the same request only hit the DB once.
+ */
+export const loadFormByToken = cache(async (
+  token: string,
+): Promise<IntakeFormRow | null> => {
+  const rows = await db
+    .select()
+    .from(intakeForms)
+    .where(eq(intakeForms.token, token))
+    .limit(1);
+  return rows[0] ?? null;
+});
+
+/**
+ * Load the active (draft or submitted) prefilled form for a client.
+ * React.cache'd so the middleware soft-route check + the page render in the
+ * same request only hit the DB once, consistent with the sibling queries.
+ */
+export const loadActivePrefilledForm = cache(async (
+  clientId: string,
+): Promise<IntakeFormRow | null> => {
+  const rows = await db
+    .select()
+    .from(intakeForms)
+    .where(
+      and(
+        eq(intakeForms.clientId, clientId),
+        eq(intakeForms.mode, "prefilled"),
+        inArray(intakeForms.status, ["draft", "submitted"]),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+});
+
+/**
+ * Load a form by ID, scoped to the given firm. Returns null if the form
+ * belongs to a different firm (prevents cross-firm access).
+ * React.cache'd so the apply route's 404 guard and applyIntake's internal
+ * load share one DB round-trip, consistent with the sibling queries.
+ */
+export const loadFormForFirm = cache(async (
+  id: string,
+  firmId: string,
+): Promise<IntakeFormRow | null> => {
+  const rows = await db
+    .select()
+    .from(intakeForms)
+    .where(and(eq(intakeForms.id, id), eq(intakeForms.firmId, firmId)))
+    .limit(1);
+  return rows[0] ?? null;
+});
+
+/**
+ * Returns true if the client has a prefilled form in DRAFT state (not yet
+ * submitted). Used by the middleware soft-route to redirect clients to the
+ * intake page before they can access the rest of the portal.
+ * Wrapped in React.cache for middleware + page deduplication.
+ */
+export const hasUnsubmittedPrefilledForm = cache(async (
+  clientId: string,
+): Promise<boolean> => {
+  const rows = await db
+    .select({ id: intakeForms.id })
+    .from(intakeForms)
+    .where(
+      and(
+        eq(intakeForms.clientId, clientId),
+        eq(intakeForms.mode, "prefilled"),
+        eq(intakeForms.status, "draft"),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+});
+
+/**
+ * Load the most recent submitted form for a client, scoped to the given firm.
+ * Used by the advisor's portal-management page to show a "pending review" indicator.
+ * React.cache'd for per-request dedup, consistent with the sibling queries.
+ */
+export const loadSubmittedFormForClient = cache(
+  async (clientId: string, firmId: string): Promise<IntakeFormRow | null> => {
+    const rows = await db
+      .select()
+      .from(intakeForms)
+      .where(
+        and(
+          eq(intakeForms.clientId, clientId),
+          eq(intakeForms.firmId, firmId),
+          eq(intakeForms.status, "submitted"),
+        ),
+      )
+      .orderBy(desc(intakeForms.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  },
+);
+
+/**
+ * List all intake forms for a firm, newest first.
+ * React.cache'd for per-request dedup, consistent with the sibling queries.
+ */
+export const listFormsForFirm = cache(
+  async (firmId: string): Promise<IntakeFormRow[]> =>
+    db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.firmId, firmId))
+      .orderBy(desc(intakeForms.createdAt)),
+);

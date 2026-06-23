@@ -6,6 +6,7 @@ import SidebarNavItem from "./sidebar-nav-item";
 import { useSidebar } from "./sidebar-provider";
 import {
   ClientsIcon,
+  DataCollectionIcon,
   FolderIcon,
   ListCheckIcon,
   SettingsIcon,
@@ -30,6 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
+      { icon: <DataCollectionIcon />, label: "Data Collection", href: "/data-collection" },
     ],
   },
   {
