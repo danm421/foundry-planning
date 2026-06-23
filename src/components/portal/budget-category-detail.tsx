@@ -1,6 +1,6 @@
 // src/components/portal/budget-category-detail.tsx
 "use client";
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { BudgetHistoryChart } from "@/components/portal/budget-history-chart";
 import type {
@@ -74,6 +74,17 @@ export function BudgetCategoryDetail({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // When edit mode opens, drop the cursor into the amount field (and select any
+  // existing value) so the user can type immediately — otherwise focus falls to
+  // <body> when the "Set budget" button unmounts and the field looks dead.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,15 +210,25 @@ export function BudgetCategoryDetail({
             </span>
           </span>
           {editing ? (
-            <div className="flex items-center gap-2">
-              <input
-                aria-label="Budget amount"
-                inputMode="decimal"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="0"
-                className="w-24 rounded-md border border-hair bg-card-2 px-2 py-1 text-right text-[13px] tabular text-ink"
-              />
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 items-center rounded-md border border-hair bg-card-2 pl-2 focus-within:ring-1 focus-within:ring-accent">
+                <span className="text-[13px] text-ink-3" aria-hidden>
+                  $
+                </span>
+                <input
+                  ref={inputRef}
+                  aria-label="Budget amount"
+                  inputMode="decimal"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveBudget();
+                    if (e.key === "Escape") setEditing(false);
+                  }}
+                  placeholder="0"
+                  className="w-20 rounded-r-md bg-transparent py-1 pl-1 pr-2 text-right text-[13px] tabular text-ink outline-none"
+                />
+              </div>
               <button
                 type="button"
                 disabled={saving}
