@@ -18,7 +18,13 @@ export interface ActivityFrame {
   type: "activity";
   label: string;
 }
-export type ForgeCustomFrame = ToolRenderFrame | NavigateFrame | ActivityFrame;
+export interface PageLinkFrame {
+  type: "page_link";
+  href: string;
+  section: string;
+  label: string;
+}
+export type ForgeCustomFrame = ToolRenderFrame | NavigateFrame | ActivityFrame | PageLinkFrame;
 
 /** Only in-app paths may be navigated; never an external URL. */
 export const NAVIGATE_ALLOWLIST_PREFIXES = ["/clients/", "/cma/"];
@@ -34,4 +40,13 @@ export async function emitNavigate(href: string) {
 }
 export async function emitActivity(label: string) {
   await dispatchCustomEvent("activity", { label });
+}
+/** Emit a non-navigating deep link the client attaches to the answer as a chip.
+ *  Same allowlist guard as emitNavigate (defence in depth); the advisor is NOT
+ *  routed — the chip is rendered for them to click. */
+export async function emitPageLink(href: string, section: string, label: string) {
+  if (!NAVIGATE_ALLOWLIST_PREFIXES.some((p) => href.startsWith(p))) {
+    throw new Error("page_link href not allowlisted");
+  }
+  await dispatchCustomEvent("page_link", { href, section, label });
 }

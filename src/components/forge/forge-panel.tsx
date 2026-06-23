@@ -1,7 +1,7 @@
 // src/components/forge/forge-panel.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sectionKeyForPath } from "@/lib/back-nav";
 import { useForge } from "./forge-provider";
@@ -35,6 +35,7 @@ const TOOL_LABELS: Record<string, string> = {
   read_detail: "Reading the plan details",
   explain_report: "Reading the report data",
   open_page: "Opening the page",
+  cite_page: "Finding the page to view",
   read_import: "Reading the import",
   extract_import: "Extracting import data",
   scan_book: "Scanning the document",
@@ -181,6 +182,15 @@ export function ForgePanel({
     if (ok) router.push(pendingNavigate);
     setPendingNavigate(null);
   }, [pendingNavigate, router, setPendingNavigate]);
+
+  // Click handler for a page-citation chip. Re-check the allowlist client-side
+  // (defence in depth — the server already gated the emit) before routing.
+  const jumpToPage = useCallback(
+    (href: string) => {
+      if (["/clients/", "/cma/"].some((p) => href.startsWith(p))) router.push(href);
+    },
+    [router],
+  );
 
   function newChat() {
     if (busy) return;
@@ -390,7 +400,7 @@ export function ForgePanel({
             const isUser = m.role === "user";
             const isStreamingThis = streamingEmpty && i === messages.length - 1;
             return (
-              <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+              <div key={i} className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
                 <div
                   className={
                     isUser
@@ -420,6 +430,26 @@ export function ForgePanel({
                     <MarkdownMessage text={m.text} />
                   )}
                 </div>
+
+                {!isUser && m.pageLinks && m.pageLinks.length > 0 && (
+                  <div className="mt-1.5 max-w-[90%]" data-testid="page-links">
+                    <div className="mb-1 text-[11px] text-secondary-ink/70">See this in the app</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {m.pageLinks.map((link) => (
+                        <button
+                          key={link.section}
+                          type="button"
+                          data-href={link.href}
+                          onClick={() => jumpToPage(link.href)}
+                          className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-2.5 py-1 text-[12px] text-secondary-ink transition-colors hover:bg-secondary/20"
+                        >
+                          {link.label}
+                          <span aria-hidden>→</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
