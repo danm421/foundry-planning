@@ -12,7 +12,7 @@ import {
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
 import { isReauthError } from "@/lib/plaid/errors";
-import { mapPlaidAccount, loadLinkCandidates } from "@/lib/plaid/portal-link-helpers";
+import { mapPlaidAccount, loadLinkCandidates, type PlaidMappedAccount } from "@/lib/plaid/portal-link-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +85,7 @@ export async function GET(
     ];
     const linkedSet = new Set(linked.map((r) => r.plaidAccountId));
 
-    let available;
+    let available: PlaidMappedAccount[];
     try {
       const plaid = getPlaidClient();
       const resp = await plaid.accountsGet({ access_token: decrypt(item.accessToken) });

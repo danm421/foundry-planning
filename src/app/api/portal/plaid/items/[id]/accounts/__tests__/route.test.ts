@@ -82,6 +82,30 @@ describe("GET /api/portal/plaid/items/[id]/accounts", () => {
     expect(res.status).toBe(404);
   });
 
+  it("excludes a linked liability's plaidAccountId from available", async () => {
+    nextResponses(
+      [{ clientId: "client-1", institutionName: "Tartan Bank", accessToken: "tok" }], // item
+      [], // linked accounts (none)
+      [{ id: "liab-1", name: "Auto Loan", value: "8000", plaidAccountId: "pa-1" }], // linked liabilities
+    );
+    accountsGet.mockResolvedValue({
+      data: {
+        accounts: [
+          { account_id: "pa-1", name: "Auto Loan", official_name: null, mask: "5555", type: "loan", subtype: "auto", balances: { current: 8000 } },
+          { account_id: "pa-2", name: "Savings", official_name: null, mask: "9999", type: "depository", subtype: "savings", balances: { current: 3000 } },
+        ],
+      },
+    });
+    const { GET } = await import("../route");
+    const res = await GET(new Request("https://x/"), { params: Promise.resolve({ id: "item-1" }) });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // pa-1 is linked as a liability — must NOT appear in available
+    expect(json.available.map((a: { plaidAccountId: string }) => a.plaidAccountId)).not.toContain("pa-1");
+    // pa-2 is unlinked — must still appear in available
+    expect(json.available.map((a: { plaidAccountId: string }) => a.plaidAccountId)).toContain("pa-2");
+  });
+
   it("returns needsReauth when accountsGet throws ITEM_LOGIN_REQUIRED", async () => {
     nextResponses(
       [{ clientId: "client-1", institutionName: "Tartan Bank", accessToken: "tok" }],

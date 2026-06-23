@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePortalFetch } from "./portal-mode-context";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { PlaidLinkButton } from "./plaid-link-button";
 import {
   PlaidAccountDecisionRow,
@@ -53,6 +55,20 @@ export function ManageAccountsDialog({
   const [data, setData] = useState<ListPayload | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [pending, setPending] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useBodyScrollLock(true);
+
+  // Escape closes the dialog. Mirrors plaid-account-picker.tsx behaviour.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !pending) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, pending]);
 
   const load = useCallback(async () => {
     const r = await portalFetch(`/api/portal/plaid/items/${itemId}/accounts`);
@@ -133,7 +149,7 @@ export function ManageAccountsDialog({
     })();
   };
 
-  return (
+  const overlay = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-lg border border-border bg-surface p-5 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
@@ -239,4 +255,7 @@ export function ManageAccountsDialog({
       </div>
     </div>
   );
+
+  if (!mounted) return null;
+  return createPortal(overlay, document.body);
 }
