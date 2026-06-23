@@ -1,6 +1,7 @@
 import { desc } from "drizzle-orm";
 import { db } from "@/db";
 import { betaCodes } from "@/db/schema";
+import { CAPABILITY_KEYS } from "@/lib/ops/entitlements";
 import BetaCodesClient, { type CodeRow } from "./beta-codes-client";
 
 export const dynamic = "force-dynamic";
@@ -24,5 +25,9 @@ export default async function BetaCodesPage() {
     redeemedByUserId: r.redeemedByUserId,
     redeemedOrgId: r.redeemedOrgId,
   }));
-  return <BetaCodesClient initialCodes={codes} />;
+  // CAPABILITY_KEYS lives in a server module (imports db/clerk); the server page
+  // reads it and hands the client this plain serializable list, so the "use
+  // client" file never pulls server code into the bundle. Forge (ai_forge) is an
+  // option automatically — add a key there and it shows up here.
+  return <BetaCodesClient initialCodes={codes} capabilities={CAPABILITY_KEYS} />;
 }
