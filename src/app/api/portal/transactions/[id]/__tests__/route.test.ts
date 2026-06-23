@@ -87,4 +87,26 @@ describe("PUT /api/portal/transactions/[id]", () => {
     const res = await PUT(putReq({ categoryId: "cat-1" }), ctx);
     expect(res.status).toBe(400);
   });
+  it("rejects an invalid type with 400", async () => {
+    const res = await PUT(
+      new Request("http://t/api/portal/transactions/t1", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "bogus" }),
+      }),
+      { params: Promise.resolve({ id: "t1" }) },
+    );
+    expect(res.status).toBe(400);
+  });
+  it("setting type=transfer nulls the category in the patch", async () => {
+    txnRow = { id: "t1", clientId: "c1", categoryId: "cat-1", categorizedBy: "manual", excluded: false, recurringTransactionId: null, type: "expense" };
+    const res = await PUT(
+      new Request("http://t/api/portal/transactions/t1", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "transfer" }),
+      }),
+      { params: Promise.resolve({ id: "t1" }) },
+    );
+    expect(res.status).toBe(200);
+    expect(updateMock.mock.calls[0][0]).toMatchObject({ type: "transfer", categoryId: null, categorizedBy: "manual" });
+  });
 });

@@ -10,12 +10,13 @@ import type { EntitySnapshot, FieldLabels } from "@/lib/audit/types";
 
 export const dynamic = "force-dynamic";
 
-type Body = { categoryId?: string | null; excluded?: boolean; recurringTransactionId?: string | null };
+type Body = { categoryId?: string | null; excluded?: boolean; recurringTransactionId?: string | null; type?: "income" | "expense" | "transfer" };
 
 const FIELD_LABELS: FieldLabels = {
   categoryId: { label: "Category", format: "reference" },
   excluded: { label: "Excluded", format: "text" },
   recurringTransactionId: { label: "Recurring", format: "reference" },
+  type: { label: "Type", format: "text" },
 };
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
@@ -34,6 +35,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         categorizedBy: plaidTransactions.categorizedBy,
         excluded: plaidTransactions.excluded,
         recurringTransactionId: plaidTransactions.recurringTransactionId,
+        type: plaidTransactions.type,
       })
       .from(plaidTransactions)
       .where(eq(plaidTransactions.id, id))
@@ -91,6 +93,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       patch.recurringTransactionId = next;
       before.recurringTransactionId = row.recurringTransactionId;
       after.recurringTransactionId = next;
+    }
+
+    if ("type" in body && body.type != null) {
+      if (body.type !== "income" && body.type !== "expense" && body.type !== "transfer") {
+        return NextResponse.json({ error: "invalid type" }, { status: 400 });
+      }
+      patch.type = body.type;
+      before.type = row.type;
+      after.type = body.type;
+      if (body.type === "transfer") {
+        // Internal transfers carry no category and never count toward budgets.
+        patch.categoryId = null;
+        patch.categorizedBy = "manual";
+        before.categoryId = row.categoryId;
+        after.categoryId = null;
+      }
     }
 
     if (Object.keys(patch).length === 0) {
