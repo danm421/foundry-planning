@@ -13,10 +13,16 @@ export function TransactionDetailPanel({
   txn,
   onClose,
   onCreateRule,
+  onCreateRecurring,
+  recurrings,
+  onLinkRecurring,
 }: {
   txn: PortalTransactionDTO;
   onClose: () => void;
   onCreateRule: () => void;
+  onCreateRecurring: () => void;
+  recurrings: { id: string; name: string }[];
+  onLinkRecurring: (recurringId: string) => void;
 }): ReactElement {
   const n = Number(txn.amount);
   const abs = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -52,6 +58,26 @@ export function TransactionDetailPanel({
       >
         Create rule from this merchant
       </button>
+      <button
+        type="button"
+        onClick={onCreateRecurring}
+        className="w-full rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2"
+      >
+        Create recurring from this
+      </button>
+      {recurrings.length > 0 && (
+        <label className="block space-y-1">
+          <span className="text-[12px] text-ink-3">Link to a recurring</span>
+          <select
+            defaultValue=""
+            onChange={(e) => { if (e.target.value) onLinkRecurring(e.target.value); }}
+            className="w-full rounded-md border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink-2"
+          >
+            <option value="" disabled>Pick a recurring…</option>
+            {recurrings.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

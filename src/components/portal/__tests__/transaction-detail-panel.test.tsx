@@ -12,7 +12,7 @@ const txn = {
 describe("TransactionDetailPanel", () => {
   it("shows merchant, provenance, and fires onCreateRule", () => {
     const onCreateRule = vi.fn();
-    render(<TransactionDetailPanel txn={txn} onClose={() => {}} onCreateRule={onCreateRule} />);
+    render(<TransactionDetailPanel txn={txn} onClose={() => {}} onCreateRule={onCreateRule} onCreateRecurring={() => {}} recurrings={[]} onLinkRecurring={() => {}} />);
     expect(screen.getByText("Amazon")).toBeTruthy();
     expect(screen.getByText("Set by you")).toBeTruthy();
     fireEvent.click(screen.getByText(/Create rule/));
@@ -20,7 +20,7 @@ describe("TransactionDetailPanel", () => {
   });
 
   it("shows the source account with its mask", () => {
-    render(<TransactionDetailPanel txn={txn} onClose={() => {}} onCreateRule={() => {}} />);
+    render(<TransactionDetailPanel txn={txn} onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}} recurrings={[]} onLinkRecurring={() => {}} />);
     expect(screen.getByText("Account")).toBeTruthy();
     expect(screen.getByText("Everyday Checking")).toBeTruthy();
     expect(screen.getByText(/4321/)).toBeTruthy();
@@ -32,6 +32,9 @@ describe("TransactionDetailPanel", () => {
         txn={{ ...txn, accountName: null, accountMask: null }}
         onClose={() => {}}
         onCreateRule={() => {}}
+        onCreateRecurring={() => {}}
+        recurrings={[]}
+        onLinkRecurring={() => {}}
       />,
     );
     expect(screen.queryByText("Account")).toBeNull();
