@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
+import { fmtUsd } from "@/lib/portal/format";
 
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null };
 type RecurringRow = {
@@ -11,9 +12,6 @@ type RecurringRow = {
   state: "paid" | "due" | "overdue"; postedThisMonth: number;
 };
 type Data = { recurrings: RecurringRow[]; paidSoFar: number; leftToPay: number; month: string };
-
-const money = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 const STATE_ORDER: Record<RecurringRow["state"], number> = { overdue: 0, due: 1, paid: 2 };
 const STATE_LABEL: Record<RecurringRow["state"], string> = {
@@ -47,11 +45,11 @@ export default function RecurringsView({
 
       <section className="flex gap-8 rounded-xl border border-hair bg-card p-5">
         <div>
-          <p className="tabular text-[20px] font-semibold text-ink">{money(data.leftToPay)}</p>
+          <p className="tabular text-[20px] font-semibold text-ink">{fmtUsd(data.leftToPay)}</p>
           <p className="text-[12px] text-ink-3">left to pay</p>
         </div>
         <div>
-          <p className="tabular text-[20px] font-semibold text-ink">{money(data.paidSoFar)}</p>
+          <p className="tabular text-[20px] font-semibold text-ink">{fmtUsd(data.paidSoFar)}</p>
           <p className="text-[12px] text-ink-3">paid so far</p>
         </div>
       </section>
@@ -76,7 +74,7 @@ export default function RecurringsView({
                   </span>
                 </div>
                 <span className="tabular text-[13px] text-ink">
-                  {money(r.state === "paid" ? r.postedThisMonth : r.predicted)}
+                  {fmtUsd(r.state === "paid" ? r.postedThisMonth : r.predicted)}
                 </span>
               </li>
             ))}

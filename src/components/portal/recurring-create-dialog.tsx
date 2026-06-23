@@ -23,7 +23,7 @@ export function RecurringCreateDialog({
   const [pattern, setPattern] = useState(seed.merchantName ?? seed.name);
   // Seed a ±20% window around the source transaction amount.
   const [amountMin, setAmountMin] = useState(String(Math.max(0, Math.round(seed.amount * 0.8))));
-  const [amountMax, setAmountMax] = useState(String(Math.round(seed.amount * 1.2) || 0));
+  const [amountMax, setAmountMax] = useState(String(Math.round(seed.amount * 1.2)));
   const [cadence, setCadence] = useState<"monthly" | "annually">("monthly");
   const [anytime, setAnytime] = useState(true);
   const [dueDay, setDueDay] = useState("1");

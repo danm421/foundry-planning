@@ -5,6 +5,7 @@ import {
   predictRecurringAmount,
   recurringPeriodState,
   isRecurringDueInMonth,
+  round2,
   type RecurringLike,
 } from "@/lib/portal/recurring-matching";
 import { currentMonthRange } from "@/lib/portal/load-budget-data";
@@ -33,27 +34,44 @@ export async function loadRecurringsData(
 ): Promise<{ recurrings: RecurringRowDTO[]; paidSoFar: number; leftToPay: number; month: string }> {
   const { from, to, month } = currentMonthRange(now);
 
-  const rows = await db
-    .select()
-    .from(recurringTransactions)
-    .where(eq(recurringTransactions.clientId, clientId));
+  const [rows, claimed, history] = await Promise.all([
+    db
+      .select()
+      .from(recurringTransactions)
+      .where(eq(recurringTransactions.clientId, clientId)),
 
-  // All of this client's claimed transactions in the current month, grouped by recurring.
-  const claimed = await db
-    .select({
-      recurringTransactionId: plaidTransactions.recurringTransactionId,
-      amount: plaidTransactions.amount,
-    })
-    .from(plaidTransactions)
-    .where(
-      and(
-        eq(plaidTransactions.clientId, clientId),
-        eq(plaidTransactions.excluded, false),
-        isNotNull(plaidTransactions.recurringTransactionId),
-        gte(plaidTransactions.date, from),
-        lte(plaidTransactions.date, to),
+    // All of this client's claimed transactions in the current month, grouped by recurring.
+    db
+      .select({
+        recurringTransactionId: plaidTransactions.recurringTransactionId,
+        amount: plaidTransactions.amount,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          eq(plaidTransactions.excluded, false),
+          isNotNull(plaidTransactions.recurringTransactionId),
+          gte(plaidTransactions.date, from),
+          lte(plaidTransactions.date, to),
+        ),
       ),
-    );
+
+    // History for prediction: all claimed amounts per recurring (any month).
+    db
+      .select({
+        recurringTransactionId: plaidTransactions.recurringTransactionId,
+        amount: plaidTransactions.amount,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          isNotNull(plaidTransactions.recurringTransactionId),
+        ),
+      ),
+  ]);
+
   const postedByRecurring = new Map<string, number>();
   for (const c of claimed) {
     if (!c.recurringTransactionId) continue;
@@ -63,19 +81,6 @@ export async function loadRecurringsData(
     );
   }
 
-  // History for prediction: all claimed amounts per recurring (any month).
-  const history = await db
-    .select({
-      recurringTransactionId: plaidTransactions.recurringTransactionId,
-      amount: plaidTransactions.amount,
-    })
-    .from(plaidTransactions)
-    .where(
-      and(
-        eq(plaidTransactions.clientId, clientId),
-        isNotNull(plaidTransactions.recurringTransactionId),
-      ),
-    );
   const historyByRecurring = new Map<string, number[]>();
   for (const h of history) {
     if (!h.recurringTransactionId) continue;
@@ -119,8 +124,8 @@ export async function loadRecurringsData(
 
   return {
     recurrings,
-    paidSoFar: Math.round((paidSoFar + Number.EPSILON) * 100) / 100,
-    leftToPay: Math.round((leftToPay + Number.EPSILON) * 100) / 100,
+    paidSoFar: round2(paidSoFar),
+    leftToPay: round2(leftToPay),
     month,
   };
 }

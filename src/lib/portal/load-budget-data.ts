@@ -74,36 +74,29 @@ export async function loadBudgetSummary(
       ),
     );
 
-  const recRows = await db
-    .select()
-    .from(recurringTransactions)
-    .where(eq(recurringTransactions.clientId, clientId));
-  const claimed = await db
-    .select({
-      recurringTransactionId: plaidTransactions.recurringTransactionId,
-      amount: plaidTransactions.amount,
-    })
-    .from(plaidTransactions)
-    .where(
-      and(
-        eq(plaidTransactions.clientId, clientId),
-        eq(plaidTransactions.excluded, false),
-        isNotNull(plaidTransactions.recurringTransactionId),
-        gte(plaidTransactions.date, from),
-        lte(plaidTransactions.date, to),
+  const [recRows, claimed, hist] = await Promise.all([
+    db
+      .select()
+      .from(recurringTransactions)
+      .where(eq(recurringTransactions.clientId, clientId)),
+
+    db
+      .select({
+        recurringTransactionId: plaidTransactions.recurringTransactionId,
+        amount: plaidTransactions.amount,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          eq(plaidTransactions.excluded, false),
+          isNotNull(plaidTransactions.recurringTransactionId),
+          gte(plaidTransactions.date, from),
+          lte(plaidTransactions.date, to),
+        ),
       ),
-    );
-  const postedByRec = new Map<string, number>();
-  for (const c of claimed) {
-    if (!c.recurringTransactionId) continue;
-    postedByRec.set(
-      c.recurringTransactionId,
-      (postedByRec.get(c.recurringTransactionId) ?? 0) + Number(c.amount),
-    );
-  }
-  const histByRec = new Map<string, number[]>();
-  {
-    const hist = await db
+
+    db
       .select({
         recurringTransactionId: plaidTransactions.recurringTransactionId,
         amount: plaidTransactions.amount,
@@ -114,13 +107,23 @@ export async function loadBudgetSummary(
           eq(plaidTransactions.clientId, clientId),
           isNotNull(plaidTransactions.recurringTransactionId),
         ),
-      );
-    for (const h of hist) {
-      if (!h.recurringTransactionId) continue;
-      const l = histByRec.get(h.recurringTransactionId) ?? [];
-      l.push(Number(h.amount));
-      histByRec.set(h.recurringTransactionId, l);
-    }
+      ),
+  ]);
+
+  const postedByRec = new Map<string, number>();
+  for (const c of claimed) {
+    if (!c.recurringTransactionId) continue;
+    postedByRec.set(
+      c.recurringTransactionId,
+      (postedByRec.get(c.recurringTransactionId) ?? 0) + Number(c.amount),
+    );
+  }
+  const histByRec = new Map<string, number[]>();
+  for (const h of hist) {
+    if (!h.recurringTransactionId) continue;
+    const l = histByRec.get(h.recurringTransactionId) ?? [];
+    l.push(Number(h.amount));
+    histByRec.set(h.recurringTransactionId, l);
   }
   const recurringReservations = recRows
     .map((r) => {

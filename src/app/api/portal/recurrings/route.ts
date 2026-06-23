@@ -63,22 +63,27 @@ export async function POST(req: Request): Promise<Response> {
     if (!body.categoryId) {
       return NextResponse.json({ error: "categoryId required" }, { status: 400 });
     }
-    const [cat] = await db
-      .select({ clientId: transactionCategories.clientId, kind: transactionCategories.kind })
-      .from(transactionCategories)
-      .where(eq(transactionCategories.id, body.categoryId))
-      .limit(1);
+    const [[cat], [clientRow]] = await Promise.all([
+      db
+        .select({ clientId: transactionCategories.clientId, kind: transactionCategories.kind })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.id, body.categoryId))
+        .limit(1),
+      db
+        .select({ firmId: clients.firmId })
+        .from(clients)
+        .where(eq(clients.id, clientId))
+        .limit(1),
+    ]);
     if (!cat || cat.clientId !== clientId || cat.kind !== "category") {
       return NextResponse.json({ error: "invalid category" }, { status: 400 });
     }
+    const firmId = clientRow?.firmId ?? null;
+    if (!firmId) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const dueDay =
       body.cadence === "monthly" && typeof body.dueDay === "number" ? body.dueDay : null;
     const dueMonth =
       body.cadence === "annually" && typeof body.dueMonth === "number" ? body.dueMonth : null;
-
-    const [{ firmId } = { firmId: null as string | null }] = await db
-      .select({ firmId: clients.firmId }).from(clients).where(eq(clients.id, clientId)).limit(1);
-    if (!firmId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const [row] = await db
       .insert(recurringTransactions)

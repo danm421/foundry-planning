@@ -16,10 +16,7 @@ export async function GET(req: Request): Promise<Response> {
     if (matchType !== "exact" && matchType !== "contains") {
       return NextResponse.json({ error: "invalid matchType" }, { status: 400 });
     }
-    if (!Number.isFinite(amountMin) || !Number.isFinite(amountMax)) {
-      return NextResponse.json({ error: "invalid amount range" }, { status: 400 });
-    }
-    if (amountMin > amountMax) {
+    if (!Number.isFinite(amountMin) || !Number.isFinite(amountMax) || amountMin > amountMax) {
       return NextResponse.json({ error: "invalid amount range" }, { status: 400 });
     }
     const result = await previewRecurringMatches(clientId, { matchType, pattern, amountMin, amountMax });
