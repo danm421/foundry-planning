@@ -26,8 +26,9 @@ const listPayload = {
   needsReauth: false,
 };
 
-afterEach(() => { vi.restoreAllMocks(); refresh.mockClear(); portalFetch.mockReset(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); refresh.mockClear(); portalFetch.mockReset(); });
 beforeEach(() => {
+  vi.stubGlobal("confirm", vi.fn(() => true));
   portalFetch.mockResolvedValue(new Response(JSON.stringify(listPayload), { status: 200 }));
 });
 
@@ -36,9 +37,9 @@ describe("ManageAccountsDialog", () => {
     const { ManageAccountsDialog } = await import("../manage-accounts-dialog");
     render(<ManageAccountsDialog itemId="item-1" institutionName="Tartan Bank" editEnabled onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Checking")).toBeInTheDocument());
-    // "Brokerage" appears both as the account name and as a <option> in the type selector;
-    // getAllByText confirms it is present (at least once).
-    expect(screen.getAllByText("Brokerage").length).toBeGreaterThan(0);
+    // "Brokerage" appears both as the account name row label and as a <option> in the type selector.
+    // Assert >= 2 to confirm the available account row rendered (not just the select option).
+    expect(screen.getAllByText("Brokerage").length).toBeGreaterThanOrEqual(2);
   });
 
   it("detach calls the detach endpoint and refetches", async () => {
@@ -60,7 +61,7 @@ describe("ManageAccountsDialog", () => {
   it("Add selected posts decisions to /exchange/commit", async () => {
     const { ManageAccountsDialog } = await import("../manage-accounts-dialog");
     render(<ManageAccountsDialog itemId="item-1" institutionName="Tartan Bank" editEnabled onClose={vi.fn()} />);
-    await waitFor(() => expect(screen.getAllByText("Brokerage").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("Brokerage").length).toBeGreaterThanOrEqual(2));
     portalFetch.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, linkedAccountIds: [] }), { status: 200 }));
     portalFetch.mockResolvedValueOnce(new Response(JSON.stringify(listPayload), { status: 200 }));
     fireEvent.click(screen.getByRole("button", { name: /add selected/i }));

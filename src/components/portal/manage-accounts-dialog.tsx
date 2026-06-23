@@ -83,6 +83,7 @@ export function ManageAccountsDialog({
   }, []);
 
   const detach = (plaidAccountId: string) => {
+    if (!window.confirm("Detach this account? It becomes a manually-maintained account.")) return;
     setPending(true);
     void (async () => {
       const r = await portalFetch(
@@ -191,23 +192,25 @@ export function ManageAccountsDialog({
                 <p className="text-[13px] text-ink-subtle">No additional accounts available.</p>
               ) : (
                 <div className="space-y-2">
-                  {data.available.map((a) => (
-                    <PlaidAccountDecisionRow
-                      key={a.plaidAccountId}
-                      account={a}
-                      state={
-                        rows[a.plaidAccountId] ?? {
-                          mode: "create",
-                          typeKey: defaultTypeKey(a.type, a.subtype),
-                          existingId: null,
-                          skipped: false,
+                  <ul className="space-y-2">
+                    {data.available.map((a) => (
+                      <PlaidAccountDecisionRow
+                        key={a.plaidAccountId}
+                        account={a}
+                        state={
+                          rows[a.plaidAccountId] ?? {
+                            mode: "create",
+                            typeKey: defaultTypeKey(a.type, a.subtype),
+                            existingId: null,
+                            skipped: false,
+                          }
                         }
-                      }
-                      onChange={(patch) => update(a.plaidAccountId, patch)}
-                      existingCandidates={data.existingCandidates}
-                      existingLiabilityCandidates={data.existingLiabilityCandidates}
-                    />
-                  ))}
+                        onChange={(patch) => update(a.plaidAccountId, patch)}
+                        existingCandidates={data.existingCandidates}
+                        existingLiabilityCandidates={data.existingLiabilityCandidates}
+                      />
+                    ))}
+                  </ul>
                   {editEnabled && (
                     <button
                       type="button"
