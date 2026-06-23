@@ -100,3 +100,33 @@ it("recurringPeriodState: due before the due day, overdue after", () => {
 it("recurringPeriodState: 'anytime' (null dueDay) never goes overdue mid-month", () => {
   expect(recurringPeriodState({ dueDay: null, today: "2026-06-28", hasMatchThisPeriod: false })).toBe("due");
 });
+
+it("matchesRecurring: amount exactly at amountMin (100) is inside the range", () => {
+  expect(
+    matchesRecurring(base, { merchantName: "Costco", name: "x", amount: 100, date: "2026-06-10" }),
+  ).toBe(true);
+});
+
+it("matchesRecurring: amount exactly at amountMax (400) is inside the range", () => {
+  expect(
+    matchesRecurring(base, { merchantName: "Costco", name: "x", amount: 400, date: "2026-06-10" }),
+  ).toBe(true);
+});
+
+it("matchesRecurring: exact matchType matches when field equals pattern exactly (case-insensitive)", () => {
+  const exact: RecurringLike = { ...base, matchType: "exact", pattern: "costco" };
+  expect(
+    matchesRecurring(exact, { merchantName: "Costco", name: "x", amount: 250, date: "2026-06-10" }),
+  ).toBe(true);
+});
+
+it("matchesRecurring: exact matchType rejects a superstring", () => {
+  const exact: RecurringLike = { ...base, matchType: "exact", pattern: "costco" };
+  expect(
+    matchesRecurring(exact, { merchantName: "COSTCO WHSE", name: "x", amount: 250, date: "2026-06-10" }),
+  ).toBe(false);
+});
+
+it("recurringPeriodState: due day itself is 'due' (not overdue)", () => {
+  expect(recurringPeriodState({ dueDay: 15, today: "2026-06-15", hasMatchThisPeriod: false })).toBe("due");
+});
