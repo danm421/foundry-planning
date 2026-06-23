@@ -62,3 +62,11 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "What's this client's net worth?"
+      expectTool: "cite_page"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
