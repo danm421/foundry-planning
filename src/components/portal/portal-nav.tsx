@@ -15,6 +15,7 @@ const OTHER_ITEMS = [
   { label: "Accounts", suffix: "/accounts" },
   { label: "Transactions", suffix: "/transactions" },
   { label: "Budget", suffix: "/budget" },
+  { label: "Recurrings", suffix: "/recurrings" },
 ] as const;
 
 interface Props {
