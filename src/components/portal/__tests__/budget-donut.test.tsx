@@ -21,8 +21,8 @@ vi.mock("@/lib/chart-colors", () => ({
 import { BudgetDonut } from "@/components/portal/budget-donut";
 
 const groups = [
-  { id: "g-food", name: "Food", color: "var(--data-orange)", budget: null, budgetIsExplicit: false, actual: 230, remaining: null, leaves: [] },
-  { id: "g-shop", name: "Shopping", color: "var(--data-purple)", budget: null, budgetIsExplicit: false, actual: 0, remaining: null, leaves: [] },
+  { id: "g-food", name: "Food", slug: "food", color: "var(--data-orange)", budget: null, budgetIsExplicit: false, actual: 230, remaining: null, leaves: [] },
+  { id: "g-shop", name: "Shopping", slug: "shopping", color: "var(--data-purple)", budget: null, budgetIsExplicit: false, actual: 0, remaining: null, leaves: [] },
 ];
 
 it("renders only groups with spend and shows total in the center", () => {
