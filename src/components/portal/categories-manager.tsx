@@ -17,12 +17,12 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    void fetch("/api/portal/categories")
-      .then((r) => (r.ok ? r.json() : { categories: [] }))
-      .then((d: { categories: CategoryRow[] }) => setCats(d.categories ?? []))
-      .catch(() => setCats([]));
+    return fetch("/api/portal/categories")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { categories: CategoryRow[] } | null) => { if (d) setCats(d.categories ?? []); })
+      .catch(() => {});
   }, []);
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload]);
 
   const mutate = useCallback(async (fn: () => Promise<Response>) => {
     setError(null);
@@ -74,6 +74,7 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
   );
 }
 
+// groupId is part of the call contract; the parent bakes it into the onAdd closure
 function AddLeaf({ onAdd }: { groupId: string; onAdd: (name: string) => Promise<void> }): ReactElement {
   const [name, setName] = useState("");
   return (
@@ -86,6 +87,7 @@ function AddLeaf({ onAdd }: { groupId: string; onAdd: (name: string) => Promise<
   );
 }
 
+// leaf is part of the call contract; the parent bakes leaf.id into the onDelete closure
 function DeleteLeaf({ otherLeaves, onDelete }: {
   leaf: CategoryRow; otherLeaves: CategoryRow[]; onDelete: (reassignToId: string | null) => Promise<void>;
 }): ReactElement {
