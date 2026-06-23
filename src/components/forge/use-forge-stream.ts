@@ -210,7 +210,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
           const copy = [...m];
           const last = copy[copy.length - 1];
           if (last.role === "assistant") {
-            copy[copy.length - 1] = { role: "assistant", text: last.text + ev.text };
+            copy[copy.length - 1] = { ...last, text: last.text + ev.text };
           }
           return copy;
         });
