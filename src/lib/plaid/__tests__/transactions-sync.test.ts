@@ -7,6 +7,7 @@ vi.mock("@/lib/portal/seed-categories", () => ({ ensureCategoriesSeeded: vi.fn()
 vi.mock("@/lib/portal/load-categorization-context", () => ({
   loadCategorizationContext: vi.fn().mockResolvedValue({
     rules: [{ matchType: "contains", pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+    recurrings: [],
     slugToId: new Map([["food-restaurants", "cat-rest"]]),
   }),
 }));
@@ -24,7 +25,7 @@ vi.mock("@/lib/portal/resolve-category", () => ({
       const pat = rule.pattern.toLowerCase();
       const fields = [merchantName, name].filter(Boolean) as string[];
       if (fields.some(f => f.toLowerCase().includes(pat))) {
-        return { categoryId: rule.categoryId, categorizedBy: "rule" };
+        return { categoryId: rule.categoryId, categorizedBy: "rule", recurringTransactionId: null };
       }
     }
     // PFC fallback
@@ -32,9 +33,9 @@ vi.mock("@/lib/portal/resolve-category", () => ({
     if (pfcPrimary && PRIMARY_MAP[pfcPrimary]) {
       const slug = PRIMARY_MAP[pfcPrimary];
       const id = slugToId.get(slug) ?? null;
-      return { categoryId: id, categorizedBy: "plaid" };
+      return { categoryId: id, categorizedBy: "plaid", recurringTransactionId: null };
     }
-    return { categoryId: null, categorizedBy: "plaid" };
+    return { categoryId: null, categorizedBy: "plaid", recurringTransactionId: null };
   }),
 }));
 
@@ -202,7 +203,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map([["plaid-acc", "acct-1"]]),
-      categorization: { rules: [], slugToId: new Map() },
+      categorization: { rules: [], recurrings: [], slugToId: new Map() },
     }, {
       added: [plaidTxn as never],
       modified: [],
@@ -222,7 +223,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
-      categorization: { rules: [], slugToId: new Map() },
+      categorization: { rules: [], recurrings: [], slugToId: new Map() },
     }, {
       added: [plaidTxn as never, plaidTxn as never],
       modified: [],
@@ -240,7 +241,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
-      categorization: { rules: [], slugToId: new Map() },
+      categorization: { rules: [], recurrings: [], slugToId: new Map() },
     }, {
       added: [],
       modified: [],
@@ -256,7 +257,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
-      categorization: { rules: [], slugToId: new Map() },
+      categorization: { rules: [], recurrings: [], slugToId: new Map() },
     }, {
       added: [],
       modified: [],
@@ -307,6 +308,7 @@ describe("applyTransactionUpdates categorization", () => {
     const { db } = await import("@/db");
     const categorization = {
       rules: [{ matchType: "contains" as const, pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+      recurrings: [],
       slugToId: new Map([["food-restaurants", "cat-rest"]]),
     };
     await applyTransactionUpdates(db as never, {
@@ -329,6 +331,7 @@ describe("applyTransactionUpdates categorization", () => {
     const { db } = await import("@/db");
     const categorization = {
       rules: [{ matchType: "contains" as const, pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+      recurrings: [],
       slugToId: new Map([["food-restaurants", "cat-rest"]]),
     };
     await applyTransactionUpdates(db as never, {
@@ -353,7 +356,7 @@ describe("applyTransactionUpdates categorization", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
-      categorization: { rules: [], slugToId: new Map() },
+      categorization: { rules: [], recurrings: [], slugToId: new Map() },
     }, {
       added: [plaidTxn as never],
       modified: [],
