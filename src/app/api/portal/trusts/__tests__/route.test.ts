@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requirePortalMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requirePortalMock(),
   ForbiddenError: class ForbiddenError extends Error {},
   authErrorResponse: () => null,
 }));
@@ -32,7 +35,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { PUT } from "@/app/api/portal/trusts/[id]/route";
 
 beforeEach(() => {
-  requirePortalMock.mockReset();
+  resolvePortalClientMock.mockReset();
   requireEditEnabledMock.mockReset();
   selectChain.mockReset();
   updateChain.mockReset();
@@ -49,7 +52,7 @@ function req(body: unknown) {
 
 describe("PUT /api/portal/trusts/[id]", () => {
   it("404s when trust is not owned by the bound client", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValue([{ clientId: "other", id: "t1" }]);
     const res = await PUT(req({ name: "Renamed" }), {
@@ -59,7 +62,7 @@ describe("PUT /api/portal/trusts/[id]", () => {
   });
 
   it("updates the allowed fields", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain.mockResolvedValueOnce([{ clientId: "c1", firmId: "firm-1", id: "t1", name: "Old", entityType: "trust" }]);
     const res = await PUT(req({ name: "New" }), {

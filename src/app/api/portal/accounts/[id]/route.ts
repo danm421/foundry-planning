@@ -8,10 +8,8 @@ import {
   accountSubTypeEnum,
   clients,
 } from "@/db/schema";
-import {
-  authErrorResponse,
-  requireClientPortalAccess,
-} from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import {
@@ -108,7 +106,7 @@ export async function PUT(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -230,7 +228,8 @@ export async function PUT(
       resourceId: id,
       clientId,
       firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       before,
       after,
       fieldLabels: FIELD_LABELS,
@@ -249,7 +248,7 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -321,7 +320,8 @@ export async function DELETE(
       resourceId: id,
       clientId,
       firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: snapshot(row),
     });
 

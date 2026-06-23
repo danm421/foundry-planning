@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, clients, plaidItems } from "@/db/schema";
-import {
-  authErrorResponse,
-  requireClientPortalAccess,
-} from "@/lib/authz";
+import { accounts, clients, liabilities, plaidItems } from "@/db/schema";
+import { authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import {
   checkPortalPlaidRefreshRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
 import { fetchBalancesForItem } from "@/lib/plaid/refresh";
+import { fetchLiabilitiesForItem } from "@/lib/plaid/liabilities-refresh";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +23,7 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -125,13 +124,43 @@ export async function POST(
         .where(eq(plaidItems.id, id));
     });
 
+    // Refresh liability metadata (statement balance, min payment, APR, due date).
+    // Runs outside the balance transaction so a Plaid Liabilities-product error
+    // cannot roll back the already-committed balance updates.
+    try {
+      const liabResult = await fetchLiabilitiesForItem({ accessToken: item.accessToken });
+      if (liabResult.ok) {
+        for (const u of liabResult.updates) {
+          await db
+            .update(liabilities)
+            .set({
+              balance: u.balance,
+              statementBalance: u.statementBalance,
+              minimumPayment: u.minimumPayment,
+              aprPercentage: u.aprPercentage,
+              nextPaymentDueDate: u.nextPaymentDueDate,
+            })
+            .where(
+              and(
+                eq(liabilities.plaidItemId, id),
+                eq(liabilities.plaidAccountId, u.plaidAccountId),
+              ),
+            );
+        }
+      }
+    } catch (e) {
+      // Item may not carry the Liabilities product; balance refresh already succeeded.
+      console.error("portal plaid liability refresh error:", e);
+    }
+
     await recordCreate({
       action: "portal.plaid.refresh",
       resourceType: "plaid_item",
       resourceId: id,
       clientId,
       firmId: client.firmId,
-      actorKind: "client",
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: {
         institutionName: item.institutionName,
         accountsRefreshed: refresh.updates.length,

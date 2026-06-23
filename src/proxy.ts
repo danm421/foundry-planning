@@ -6,6 +6,7 @@ import { recordAudit } from "@/lib/audit";
 import { operationsBlocked } from "@/lib/operations-route-guard";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
+import { claimPortalBinding } from "@/lib/portal/claim-portal-binding";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -79,7 +80,10 @@ export default clerkMiddleware(async (auth, request) => {
   // (React.cache'd). Only org-less requests pay this lookup; the hot advisor
   // path has an orgId and never enters this block.
   if (!orgId) {
-    const portalClientId = await getPortalClientId(userId);
+    // Resolve an existing binding; if none, attempt a one-time self-heal from
+    // the Clerk user's invitation metadata (fail-safe: returns null on error).
+    const portalClientId =
+      (await getPortalClientId(userId)) ?? (await claimPortalBinding(userId));
     if (portalClientId) {
       // Bound portal user: allow /portal/*; allow API routes (their handlers
       // gate via requireClientPortalAccess); bounce every other page to the

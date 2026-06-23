@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
-import { recordAudit } from "@/lib/audit";
+import { bindClerkUserToClient } from "@/lib/portal/bind-portal-user";
 import type { ClerkEvent } from "./handler";
 
 type InvitationAcceptedData = {
@@ -37,31 +34,30 @@ export async function dispatchClerkInvitation(
     );
   }
 
-  const rows = await db
-    .select({ firmId: clients.firmId })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .limit(1);
-  const firmId = rows[0]?.firmId;
-  if (!firmId) {
-    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  // Wrap in try/catch so a transient DB failure returns 500 and signals
+  // Clerk to retry. bindClerkUserToClient is idempotent (a repeat bind to
+  // the same user is a no-op success), so retries are safe.
+  let result: Awaited<ReturnType<typeof bindClerkUserToClient>>;
+  try {
+    result = await bindClerkUserToClient(clientId, clerkUserId, "webhook");
+  } catch (err) {
+    console.error(
+      "[webhook.clerk] invitation.accepted bind failed:",
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json({ error: "bind failed" }, { status: 500 });
   }
 
-  await db
-    .update(clients)
-    .set({ clerkUserId })
-    .where(eq(clients.id, clientId));
-
-  await recordAudit({
-    action: "portal.invite.accepted",
-    resourceType: "portal_binding",
-    resourceId: clientId,
-    clientId,
-    firmId,
-    actorId: "clerk:webhook",
-    actorKind: "system",
-    metadata: { clerkUserId, event: "invitation.accepted" },
-  });
+  if (!result.ok) {
+    if (result.reason === "client_not_found") {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    // already_bound_other: anomalous but harmless — ack so Clerk doesn't retry.
+    console.warn(
+      "[webhook.clerk] invitation.accepted for a client already bound to another user",
+    );
+    return NextResponse.json({ ok: false, reason: result.reason });
+  }
 
   return NextResponse.json({ ok: true, clientId, clerkUserId });
 }

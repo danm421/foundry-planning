@@ -26,6 +26,7 @@ export async function InstitutionsSection({
       institutionName: plaidItems.institutionName,
       lastRefreshedAt: plaidItems.lastRefreshedAt,
       lastRefreshError: plaidItems.lastRefreshError,
+      transactionsCursor: plaidItems.transactionsCursor,
     })
     .from(plaidItems)
     .where(eq(plaidItems.clientId, clientId))
@@ -61,6 +62,7 @@ export async function InstitutionsSection({
               }
               needsReauth={needsReauth}
               editEnabled={editEnabled}
+              needsTransactionsConsent={it.transactionsCursor == null}
             />
           );
         })}

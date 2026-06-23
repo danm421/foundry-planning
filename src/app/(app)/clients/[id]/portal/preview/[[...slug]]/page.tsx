@@ -6,9 +6,11 @@ import { clients, crmHouseholdContacts } from "@/db/schema";
 import HouseholdSection from "@/components/portal/household-section";
 import FamilySection from "@/components/portal/family-section";
 import TrustsSection from "@/components/portal/trusts-section";
-import AccountsSection from "@/components/portal/accounts-section";
+import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
+import TransactionsSection from "@/components/portal/transactions-section";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
+import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 
 interface Props {
   params: Promise<{ id: string; slug?: string[] }>;
@@ -28,13 +30,15 @@ export default async function PortalPreviewPage({
   const path = (slug ?? []).join("/");
   let section: ReactElement;
   if (path === "" || path === "profile") {
-    section = <HouseholdSection clientId={id} previewing />;
+    section = <HouseholdSection clientId={id} />;
   } else if (path === "profile/family") {
-    section = <FamilySection clientId={id} previewing />;
+    section = <FamilySection clientId={id} />;
   } else if (path === "profile/trusts") {
-    section = <TrustsSection clientId={id} previewing />;
+    section = <TrustsSection clientId={id} />;
   } else if (path === "accounts") {
-    section = <AccountsSection clientId={id} previewing />;
+    section = <PortalAccountsScreen clientId={id} />;
+  } else if (path === "transactions") {
+    section = <TransactionsSection clientId={id} previewing />;
   } else {
     notFound();
   }
@@ -80,7 +84,9 @@ export default async function PortalPreviewPage({
           clientName={displayName}
           editEnabled={row?.portalEditEnabled ?? false}
         />
-        {section}
+        <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
+          {section}
+        </PortalModeProvider>
       </main>
       <aside id="portal-detail" className="p-4" />
     </div>

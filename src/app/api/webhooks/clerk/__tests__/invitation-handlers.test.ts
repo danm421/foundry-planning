@@ -60,4 +60,16 @@ describe("dispatchClerkInvitation", () => {
     });
     expect(res?.status).toBe(400);
   });
+
+  it("returns 500 when the DB throws during bind (signals Clerk to retry)", async () => {
+    selectChain.mockRejectedValue(new Error("db down"));
+    const res = await dispatchClerkInvitation({
+      type: "invitation.accepted",
+      data: {
+        public_metadata: { clientId: "client-1" },
+        created_user_id: "user_xyz",
+      },
+    });
+    expect(res?.status).toBe(500);
+  });
 });

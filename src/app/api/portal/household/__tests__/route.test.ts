@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const requirePortalMock = vi.fn();
+const resolvePortalClientMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolvePortalClientMock(),
+}));
+
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requirePortalMock(),
   ForbiddenError: class ForbiddenError extends Error {},
   authErrorResponse: (e: unknown) =>
     e && (e as { name?: string }).name === "ForbiddenError"
@@ -41,7 +44,7 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 import { PUT } from "@/app/api/portal/household/route";
 
 beforeEach(() => {
-  requirePortalMock.mockReset();
+  resolvePortalClientMock.mockReset();
   requireEditEnabledMock.mockReset();
   updateChain.mockReset();
   selectChain.mockReset();
@@ -58,7 +61,7 @@ function req(body: unknown) {
 
 describe("PUT /api/portal/household", () => {
   it("403s when editing is disabled", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockRejectedValue(
       Object.assign(new Error("disabled"), { name: "ForbiddenError" }),
     );
@@ -67,7 +70,7 @@ describe("PUT /api/portal/household", () => {
   });
 
   it("updates primary contact fields", async () => {
-    requirePortalMock.mockResolvedValue({ clientId: "c1" });
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
     selectChain
       .mockResolvedValueOnce([{ firmId: "firm-1", crmHouseholdId: "h1" }])

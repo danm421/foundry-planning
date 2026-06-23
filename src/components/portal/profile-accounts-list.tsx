@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 interface Owner {
   familyMemberId: string | null;
@@ -139,6 +140,7 @@ export default function ProfileAccountsList({
 }: Props): ReactElement {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const portalFetch = usePortalFetch();
   // True while a save/delete fetch is in flight. `isPending` only covers the
   // post-success router.refresh(), so on its own it leaves the network round-trip
   // unguarded. `inFlight` (busy || isPending) locks every mutating control end to
@@ -193,7 +195,7 @@ export default function ProfileAccountsList({
     const isNew = openForm === "new";
     setBusy(true);
     try {
-      const res = await fetch(
+      const res = await portalFetch(
         isNew ? "/api/portal/accounts" : `/api/portal/accounts/${openForm}`,
         {
           method: isNew ? "POST" : "PUT",
@@ -217,7 +219,7 @@ export default function ProfileAccountsList({
     if (!window.confirm(`Delete "${row.name}"?`)) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/portal/accounts/${row.id}`, { method: "DELETE" });
+      const res = await portalFetch(`/api/portal/accounts/${row.id}`, { method: "DELETE" });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         alert(detail.error ?? "Delete failed");

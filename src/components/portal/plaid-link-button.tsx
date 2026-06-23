@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 export type LinkSuccessPayload = {
   itemId: string;
@@ -36,10 +37,15 @@ type Props =
   | {
       mode: "reauth";
       itemId: string;
+    }
+  | {
+      mode: "enable-products";
+      itemId: string;
     };
 
 export function PlaidLinkButton(props: Props) {
   const router = useRouter();
+  const portalFetch = usePortalFetch();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -51,7 +57,7 @@ export function PlaidLinkButton(props: Props) {
       },
     ) => {
       if (props.mode === "link") {
-        const r = await fetch("/api/portal/plaid/exchange", {
+        const r = await portalFetch("/api/portal/plaid/exchange", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -72,8 +78,23 @@ export function PlaidLinkButton(props: Props) {
         props.onLinkSuccess(payload);
         return;
       }
+      if (props.mode === "enable-products") {
+        const syncRes = await portalFetch(
+          `/api/portal/plaid/items/${props.itemId}/sync`,
+          { method: "POST" },
+        );
+        if (!syncRes.ok) {
+          alert("Could not enable spending insights. Please try again.");
+          return;
+        }
+        await portalFetch(`/api/portal/plaid/items/${props.itemId}/refresh`, {
+          method: "POST",
+        });
+        router.refresh();
+        return;
+      }
       // reauth mode: no exchange needed; just notify the server.
-      const r = await fetch(
+      const r = await portalFetch(
         `/api/portal/plaid/items/${props.itemId}/reauth-complete`,
         { method: "POST" },
       );
@@ -85,7 +106,7 @@ export function PlaidLinkButton(props: Props) {
       }
       router.refresh();
     },
-    [props, router],
+    [props, router, portalFetch],
   );
 
   const { open, ready } = usePlaidLink({
@@ -100,8 +121,10 @@ export function PlaidLinkButton(props: Props) {
       const body =
         props.mode === "reauth"
           ? JSON.stringify({ itemId: props.itemId })
-          : "{}";
-      const r = await fetch("/api/portal/plaid/link-token", {
+          : props.mode === "enable-products"
+            ? JSON.stringify({ itemId: props.itemId, enableProducts: true })
+            : "{}";
+      const r = await portalFetch("/api/portal/plaid/link-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
@@ -119,7 +142,7 @@ export function PlaidLinkButton(props: Props) {
     } finally {
       setBusy(false);
     }
-  }, [busy, props]);
+  }, [busy, props, portalFetch]);
 
   // When the linkToken is set and Plaid Link is ready, open the modal.
   // usePlaidLink requires the token at hook construction time, not at click
@@ -132,7 +155,12 @@ export function PlaidLinkButton(props: Props) {
     }
   }, [linkToken, ready, open]);
 
-  const label = props.mode === "link" ? "Link bank" : "Re-authenticate";
+  const label =
+    props.mode === "link"
+      ? "Link bank"
+      : props.mode === "reauth"
+        ? "Re-authenticate"
+        : "Enable spending insights";
 
   return (
     <button

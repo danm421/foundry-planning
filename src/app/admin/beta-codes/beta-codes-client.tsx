@@ -8,6 +8,9 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { mintCodesAction, revokeCodeAction } from "./actions";
+// Type-only import (erased at build time) — reuses the canonical capability
+// shape without pulling the server module's db/clerk imports into the bundle.
+import type { CapabilityKey } from "@/lib/ops/entitlements";
 
 export type CodeRow = {
   id: string;
@@ -36,14 +39,31 @@ function fmt(iso: string | null) {
   });
 }
 
-export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRow[] }) {
+export default function BetaCodesClient({
+  initialCodes,
+  capabilities,
+}: {
+  initialCodes: CodeRow[];
+  capabilities: CapabilityKey[];
+}) {
   const [pending, startTransition] = useTransition();
   const [minted, setMinted] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [count, setCount] = useState(1);
   const [label, setLabel] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
-  const [entitlements, setEntitlements] = useState("ai_import");
+  const [selected, setSelected] = useState<string[]>(["ai_import"]);
+
+  // Human label for an entitlement key; unknown/legacy keys (e.g. ai_copilot)
+  // fall back to the raw key so nothing renders blank.
+  const labelFor = (key: string) =>
+    capabilities.find((c) => c.key === key)?.label ?? key;
+
+  function toggleEntitlement(key: string, on: boolean) {
+    setSelected((prev) =>
+      on ? [...prev, key] : prev.filter((k) => k !== key),
+    );
+  }
 
   function onMint(e: React.FormEvent) {
     e.preventDefault();
@@ -54,10 +74,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
         count,
         label: label.trim() || null,
         expiresAt: expiresAt || null,
-        entitlements: entitlements
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        entitlements: selected,
       });
       if (res.ok) setMinted(res.codes);
       else setError(res.error);
@@ -83,6 +100,25 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
           ) : (
             <span className="text-ink-3">—</span>
           ),
+      }),
+      col.accessor("entitlements", {
+        header: "Entitlements",
+        cell: (c) => {
+          const ents = c.getValue();
+          if (!ents.length) return <span className="text-ink-3">—</span>;
+          return (
+            <div className="flex flex-wrap gap-1">
+              {ents.map((e) => (
+                <span
+                  key={e}
+                  className="rounded bg-card-2 px-1.5 py-0.5 text-xs text-ink-2"
+                >
+                  {labelFor(e)}
+                </span>
+              ))}
+            </div>
+          );
+        },
       }),
       col.accessor("createdAt", {
         header: "Created",
@@ -160,7 +196,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
       <section className="rounded-lg border border-hair bg-card p-5">
         <h2 className="mb-4 text-sm font-medium text-ink-2">Mint new codes</h2>
         <form onSubmit={onMint}>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="text-ink-2">Count</span>
               <input
@@ -190,24 +226,45 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
                 className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none"
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-ink-2">Entitlements</span>
-              <input
-                value={entitlements}
-                onChange={(e) => setEntitlements(e.target.value)}
-                placeholder="ai_import"
-                className="rounded border border-hair-2 bg-card-2 px-2.5 py-1.5 text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
-              />
-            </label>
           </div>
+          <fieldset className="mt-4 flex flex-col gap-2.5">
+            <legend className="mb-1 text-sm text-ink-2">
+              Entitlements granted on redemption
+            </legend>
+            {capabilities.map((cap) => {
+              const checked = selected.includes(cap.key);
+              return (
+                <label
+                  key={cap.key}
+                  className="flex items-start gap-2.5 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => toggleEntitlement(cap.key, e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  <span className="flex flex-col">
+                    <span className="text-ink">{cap.label}</span>
+                    <span className="text-xs text-ink-3">{cap.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
           <div className="mt-4 flex items-center gap-3">
             <button
               type="submit"
-              disabled={pending}
+              disabled={pending || selected.length === 0}
               className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >
               {pending ? "Minting…" : "Mint codes"}
             </button>
+            {selected.length === 0 && (
+              <span className="text-sm text-ink-3">
+                Select at least one entitlement.
+              </span>
+            )}
             {error && <span className="text-sm text-crit">{error}</span>}
           </div>
         </form>
@@ -284,7 +341,7 @@ export default function BetaCodesClient({ initialCodes }: { initialCodes: CodeRo
                 <tr>
                   <td
                     className="px-4 py-10 text-center text-sm text-ink-3"
-                    colSpan={6}
+                    colSpan={7}
                   >
                     No codes yet.
                   </td>

@@ -205,6 +205,16 @@ export const transactionCategorizedByEnum = pgEnum("transaction_categorized_by",
   "manual",
 ]);
 
+export const transactionCategoryKindEnum = pgEnum("transaction_category_kind", [
+  "group",
+  "category",
+]);
+
+export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
+  "exact",
+  "contains",
+]);
+
 export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion"]);
 
 export const orionConnectionStatusEnum = pgEnum("orion_connection_status", [
@@ -3070,9 +3080,10 @@ export const plaidTransactions = pgTable(
     pfcConfidence: text("pfc_confidence"),
     paymentChannel: text("payment_channel"),
     pending: boolean("pending").notNull().default(false),
-    // FK → transaction_categories — that table lands in Phase 4, so the FK
-    // constraint is added then; the column exists now to avoid a re-migration.
-    categoryId: uuid("category_id"),
+    // FK → transaction_categories — added in Phase 4 alongside that table.
+    categoryId: uuid("category_id").references(() => transactionCategories.id, {
+      onDelete: "set null",
+    }),
     categorizedBy: transactionCategorizedByEnum("categorized_by")
       .notNull()
       .default("plaid"),
@@ -4441,3 +4452,67 @@ export const intakeForms = pgTable("intake_forms", {
   index("intake_forms_client_idx").on(t.clientId),
   index("intake_forms_status_idx").on(t.status),
 ]);
+
+// ── Transaction Categories & Rules (client portal spending) ───────────────────
+
+export const transactionCategories = pgTable(
+  "transaction_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    // null = top-level group; set = leaf category belonging to that group.
+    parentId: uuid("parent_id"),
+    name: text("name").notNull(),
+    // Stable identifier for seeded system categories (PFC mapping target).
+    // null for user-created categories.
+    slug: text("slug"),
+    icon: text("icon"),
+    // A `var(--data-*)` token string, e.g. "var(--data-blue)".
+    color: text("color").notNull().default("var(--data-grey)"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    kind: transactionCategoryKindEnum("kind").notNull(),
+    isSystem: boolean("is_system").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    clientIdx: index("transaction_categories_client_idx").on(t.clientId),
+    // One system slug per client (user categories have null slug → not constrained).
+    clientSlugUniq: uniqueIndex("transaction_categories_client_slug_uniq")
+      .on(t.clientId, t.slug)
+      .where(sql`${t.slug} IS NOT NULL`),
+    parentFk: foreignKey({
+      columns: [t.parentId],
+      foreignColumns: [t.id],
+      name: "transaction_categories_parent_fk",
+    }).onDelete("cascade"),
+  }),
+);
+
+export const transactionRules = pgTable(
+  "transaction_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    matchType: transactionMatchTypeEnum("match_type").notNull(),
+    // Matched (case-insensitively) against merchantName then name.
+    pattern: text("pattern").notNull(),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => transactionCategories.id, { onDelete: "cascade" }),
+    // Lower wins when multiple rules match.
+    priority: integer("priority").notNull().default(100),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    clientPriorityIdx: index("transaction_rules_client_priority_idx").on(
+      t.clientId,
+      t.priority,
+    ),
+  }),
+);

@@ -2,6 +2,7 @@
 
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type Contact = {
   id: string;
@@ -23,6 +24,7 @@ export default function ProfileHouseholdForm({
   editEnabled,
 }: Props): ReactElement {
   const router = useRouter();
+  const portalFetch = usePortalFetch();
   const [draftPrimary, setDraftPrimary] = useState(primary);
   const [draftSpouse, setDraftSpouse] = useState(spouse);
   const [busy, setBusy] = useState(false);
@@ -36,7 +38,7 @@ export default function ProfileHouseholdForm({
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch("/api/portal/household", {
+      const res = await portalFetch("/api/portal/household", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

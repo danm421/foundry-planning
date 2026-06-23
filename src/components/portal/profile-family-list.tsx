@@ -2,6 +2,7 @@
 
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type Row = {
   id: string;
@@ -28,6 +29,7 @@ export default function ProfileFamilyList({
   editEnabled,
 }: Props): ReactElement {
   const router = useRouter();
+  const portalFetch = usePortalFetch();
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,7 @@ export default function ProfileFamilyList({
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch("/api/portal/family", {
+      const res = await portalFetch("/api/portal/family", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(draft),
@@ -56,7 +58,7 @@ export default function ProfileFamilyList({
 
   async function update(id: string, patch: Partial<Row>) {
     setError(null);
-    const res = await fetch(`/api/portal/family/${id}`, {
+    const res = await portalFetch(`/api/portal/family/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
@@ -71,7 +73,7 @@ export default function ProfileFamilyList({
   async function remove(id: string) {
     if (!confirm("Delete this family member?")) return;
     setError(null);
-    const res = await fetch(`/api/portal/family/${id}`, { method: "DELETE" });
+    const res = await portalFetch(`/api/portal/family/${id}`, { method: "DELETE" });
     if (!res.ok) {
       setError("Failed to delete family member");
       return;

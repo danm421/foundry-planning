@@ -5,10 +5,12 @@ vi.mock("@/lib/audit/record-helpers", () => ({
   recordCreate: (...a: unknown[]) => recordCreate(...a),
 }));
 
-const requireClientPortalAccess = vi.fn();
+const resolvePortalClient = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...a: unknown[]) => resolvePortalClient(...a),
+}));
 const requireEditEnabled = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: (...a: unknown[]) => requireClientPortalAccess(...a),
   authErrorResponse: () => null,
 }));
 vi.mock("@/lib/portal/require-portal-subscription", () => ({
@@ -98,7 +100,7 @@ vi.mock("@/db", () => ({
 
 beforeEach(() => {
   recordCreate.mockReset();
-  requireClientPortalAccess.mockReset();
+  resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   dbSelect.mockReset();
   txInsertReturning.mockReset();
@@ -113,7 +115,7 @@ beforeEach(() => {
   txSelect.mockClear();
   txSelectResp = [];
 
-  requireClientPortalAccess.mockResolvedValue({ clientId: "client-1", clerkUserId: "user-1" });
+  resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
   requireEditEnabled.mockResolvedValue(undefined);
   // Sequential dbSelect responses:
   //  1) item lookup

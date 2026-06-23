@@ -58,4 +58,33 @@ describe("PlaidLinkButton", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("posts link-token with enableProducts=true in 'enable-products' mode", async () => {
+    // Simulate usePlaidLink immediately invoking onSuccess on open()
+    usePlaidLink.mockImplementation((cfg: { onSuccess: () => void }) => ({
+      open: () => cfg.onSuccess(),
+      ready: true,
+    }));
+    const { PlaidLinkButton } = await import("../plaid-link-button");
+    render(<PlaidLinkButton mode="enable-products" itemId="item-1" />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /enable spending insights/i }),
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/link-token",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1", enableProducts: true }),
+      }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/items/item-1/sync",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/items/item-1/refresh",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

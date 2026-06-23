@@ -6,14 +6,15 @@ vi.mock("@/lib/plaid/client", () => ({
   getPlaidClient: () => ({ linkTokenCreate }),
 }));
 
-const requireClientPortalAccess = vi.fn();
+const resolvePortalClient = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: (...args: unknown[]) => resolvePortalClient(...args),
+}));
 const requireEditEnabled = vi.fn();
 const checkPortalPlaidLinkRateLimit = vi.fn();
 const authErrorResponseMock = vi.fn();
 
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: (...args: unknown[]) =>
-    requireClientPortalAccess(...args),
   authErrorResponse: (e: unknown) => authErrorResponseMock(e),
   ForbiddenError: class extends Error {},
 }));
@@ -38,12 +39,13 @@ vi.mock("@/lib/plaid/crypto", () => ({
 
 beforeEach(() => {
   linkTokenCreate.mockReset();
-  requireClientPortalAccess.mockReset();
+  resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   checkPortalPlaidLinkRateLimit.mockReset();
   authErrorResponseMock.mockReset().mockReturnValue(null);
-  requireClientPortalAccess.mockResolvedValue({
+  resolvePortalClient.mockResolvedValue({
     clientId: "client-1",
+    mode: "client",
     clerkUserId: "user-1",
   });
   requireEditEnabled.mockResolvedValue(undefined);
@@ -174,6 +176,20 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(arg.products).toBeUndefined();
     expect(arg.additional_consented_products).toEqual(
       expect.arrayContaining(["transactions", "liabilities"]),
+    );
+  });
+
+  it("works in advisor act-as mode (mode=advisor) — still mints a token", async () => {
+    resolvePortalClient.mockResolvedValue({
+      clientId: "client-1",
+      mode: "advisor",
+      clerkUserId: "advisor-1",
+    });
+    const { POST } = await import("../route");
+    const res = await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(200);
+    expect(linkTokenCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ user: { client_user_id: "client-1" } }),
     );
   });
 

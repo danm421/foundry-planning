@@ -3,6 +3,40 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const transactionsSync = vi.fn();
 vi.mock("@/lib/plaid/client", () => ({ getPlaidClient: () => ({ transactionsSync }) }));
 vi.mock("@/lib/plaid/crypto", () => ({ decrypt: (s: string) => s }));
+vi.mock("@/lib/portal/seed-categories", () => ({ ensureCategoriesSeeded: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/lib/portal/load-categorization-context", () => ({
+  loadCategorizationContext: vi.fn().mockResolvedValue({
+    rules: [{ matchType: "contains", pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+    slugToId: new Map([["food-restaurants", "cat-rest"]]),
+  }),
+}));
+vi.mock("@/lib/portal/resolve-category", () => ({
+  resolveTransactionCategory: vi.fn(({ pfcPrimary, merchantName, name, rules, slugToId }: {
+    pfcPrimary: string | null;
+    pfcDetailed: string | null;
+    merchantName: string | null;
+    name: string;
+    rules: Array<{ matchType: string; pattern: string; categoryId: string; priority: number }>;
+    slugToId: Map<string, string>;
+  }) => {
+    // Check rules first (contains match)
+    for (const rule of [...rules].sort((a, b) => a.priority - b.priority)) {
+      const pat = rule.pattern.toLowerCase();
+      const fields = [merchantName, name].filter(Boolean) as string[];
+      if (fields.some(f => f.toLowerCase().includes(pat))) {
+        return { categoryId: rule.categoryId, categorizedBy: "rule" };
+      }
+    }
+    // PFC fallback
+    const PRIMARY_MAP: Record<string, string> = { FOOD_AND_DRINK: "food-restaurants" };
+    if (pfcPrimary && PRIMARY_MAP[pfcPrimary]) {
+      const slug = PRIMARY_MAP[pfcPrimary];
+      const id = slugToId.get(slug) ?? null;
+      return { categoryId: id, categorizedBy: "plaid" };
+    }
+    return { categoryId: null, categorizedBy: "plaid" };
+  }),
+}));
 
 // DB mock — capture insert/delete chains
 const mockInsertValues = vi.fn();
@@ -168,6 +202,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map([["plaid-acc", "acct-1"]]),
+      categorization: { rules: [], slugToId: new Map() },
     }, {
       added: [plaidTxn as never],
       modified: [],
@@ -187,6 +222,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
+      categorization: { rules: [], slugToId: new Map() },
     }, {
       added: [plaidTxn as never, plaidTxn as never],
       modified: [],
@@ -204,6 +240,7 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
+      categorization: { rules: [], slugToId: new Map() },
     }, {
       added: [],
       modified: [],
@@ -219,11 +256,112 @@ describe("applyTransactionUpdates", () => {
       clientId: "c1",
       plaidItemId: "item-1",
       accountIdByPlaidAccountId: new Map(),
+      categorization: { rules: [], slugToId: new Map() },
     }, {
       added: [],
       modified: [],
       removed: [],
     });
     expect(mockDeleteWhere).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyTransactionUpdates categorization", () => {
+  const uberTxn = {
+    transaction_id: "t-uber",
+    account_id: "plaid-acc",
+    amount: 18.5,
+    iso_currency_code: "USD",
+    date: "2026-06-10",
+    authorized_date: "2026-06-09",
+    merchant_name: "Uber",
+    name: "UBER* TRIP",
+    payment_channel: "online",
+    pending: false,
+    personal_finance_category: {
+      primary: "TRANSPORTATION",
+      detailed: "TRANSPORTATION_TAXIS_AND_RIDE_SHARING",
+      confidence_level: "HIGH",
+    },
+  };
+
+  const foodTxn = {
+    transaction_id: "t-food",
+    account_id: "plaid-acc",
+    amount: 25.0,
+    iso_currency_code: "USD",
+    date: "2026-06-11",
+    authorized_date: "2026-06-10",
+    merchant_name: "Chipotle",
+    name: "CHIPOTLE #456",
+    payment_channel: "in store",
+    pending: false,
+    personal_finance_category: {
+      primary: "FOOD_AND_DRINK",
+      detailed: "FOOD_AND_DRINK_FAST_FOOD",
+      confidence_level: "HIGH",
+    },
+  };
+
+  it("sets categoryId + categorizedBy=rule on an added row that matches a rule", async () => {
+    const { db } = await import("@/db");
+    const categorization = {
+      rules: [{ matchType: "contains" as const, pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+      slugToId: new Map([["food-restaurants", "cat-rest"]]),
+    };
+    await applyTransactionUpdates(db as never, {
+      clientId: "c1",
+      plaidItemId: "item-1",
+      accountIdByPlaidAccountId: new Map([["plaid-acc", "acct-1"]]),
+      categorization,
+    }, {
+      added: [uberTxn as never],
+      modified: [],
+      removed: [],
+    });
+    expect(mockInsertValues).toHaveBeenCalledTimes(1);
+    const insertedRow = mockInsertValues.mock.calls[0][0];
+    expect(insertedRow.categoryId).toBe("cat-uber");
+    expect(insertedRow.categorizedBy).toBe("rule");
+  });
+
+  it("falls back to PFC mapping (categorizedBy=plaid) when no rule matches", async () => {
+    const { db } = await import("@/db");
+    const categorization = {
+      rules: [{ matchType: "contains" as const, pattern: "uber", categoryId: "cat-uber", priority: 10 }],
+      slugToId: new Map([["food-restaurants", "cat-rest"]]),
+    };
+    await applyTransactionUpdates(db as never, {
+      clientId: "c1",
+      plaidItemId: "item-1",
+      accountIdByPlaidAccountId: new Map([["plaid-acc", "acct-1"]]),
+      categorization,
+    }, {
+      added: [foodTxn as never],
+      modified: [],
+      removed: [],
+    });
+    expect(mockInsertValues).toHaveBeenCalledTimes(1);
+    const insertedRow = mockInsertValues.mock.calls[0][0];
+    expect(insertedRow.categoryId).toBe("cat-rest");
+    expect(insertedRow.categorizedBy).toBe("plaid");
+  });
+
+  it("onConflictDoUpdate set-block does NOT include categoryId/categorizedBy", async () => {
+    const { db } = await import("@/db");
+    await applyTransactionUpdates(db as never, {
+      clientId: "c1",
+      plaidItemId: "item-1",
+      accountIdByPlaidAccountId: new Map(),
+      categorization: { rules: [], slugToId: new Map() },
+    }, {
+      added: [plaidTxn as never],
+      modified: [],
+      removed: [],
+    });
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledTimes(1);
+    const conflictOpts = mockOnConflictDoUpdate.mock.calls[0][0];
+    expect(conflictOpts.set).not.toHaveProperty("categoryId");
+    expect(conflictOpts.set).not.toHaveProperty("categorizedBy");
   });
 });

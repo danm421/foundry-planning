@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
-import { requireClientPortalAccess, authErrorResponse } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
@@ -20,7 +21,7 @@ type Body = { primary?: ContactPatch; spouse?: ContactPatch };
 
 export async function PUT(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 
@@ -82,7 +83,8 @@ export async function PUT(req: Request): Promise<Response> {
         resourceId: existing.id,
         clientId,
         firmId: client.firmId,
-        actorKind: "client",
+        actorKind: mode === "advisor" ? "advisor" : "client",
+        extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
         before,
         after,
         fieldLabels: {
