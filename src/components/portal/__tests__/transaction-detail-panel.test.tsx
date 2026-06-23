@@ -7,6 +7,7 @@ const txn = {
   id: "t1", date: "2026-06-01", name: "AMZN MKTP", merchantName: "Amazon", amount: "42.00",
   pending: false, excluded: false, categoryId: "c", categoryName: "Shopping", categoryColor: "var(--data-purple)",
   categorizedBy: "manual" as const, accountId: "a1", accountName: "Everyday Checking", accountMask: "4321",
+  type: "expense" as const,
 };
 
 describe("TransactionDetailPanel", () => {
@@ -38,5 +39,31 @@ describe("TransactionDetailPanel", () => {
       />,
     );
     expect(screen.queryByText("Account")).toBeNull();
+  });
+
+  it("renders the type switcher and fires onChangeType", () => {
+    const onChangeType = vi.fn();
+    render(
+      <TransactionDetailPanel
+        txn={{ ...txn, type: "expense" }}
+        editEnabled
+        onChangeType={onChangeType}
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
+    expect(onChangeType).toHaveBeenCalledWith("transfer");
+  });
+
+  it("hides the Category row for a transfer", () => {
+    render(
+      <TransactionDetailPanel
+        txn={{ ...txn, type: "transfer" }}
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}}
+      />,
+    );
+    expect(screen.queryByText("Category")).toBeNull();
   });
 });

@@ -218,6 +218,12 @@ export const transactionCategoryKindEnum = pgEnum("transaction_category_kind", [
   "category",
 ]);
 
+export const transactionTypeEnum = pgEnum("transaction_type", [
+  "income",
+  "expense",
+  "transfer",
+]);
+
 export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
   "exact",
   "contains",
@@ -3128,6 +3134,9 @@ export const plaidTransactions = pgTable(
       { onDelete: "set null" },
     ),
     excluded: boolean("excluded").notNull().default(false),
+    // Classification source of truth: drives budget inclusion + list badge +
+    // category visibility. Seeded from PFC at ingest; user-overridable.
+    type: transactionTypeEnum("type").notNull().default("expense"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -1282,6 +1282,13 @@
       "when": 1782242194651,
       "tag": "0182_investments_plaid_holdings",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1782254202010,
+      "tag": "0183_portal_transaction_type",
+      "breakpoints": true
     }
   ]
 }

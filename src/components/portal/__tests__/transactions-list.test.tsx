@@ -6,7 +6,8 @@ import TransactionsList from "@/components/portal/transactions-list";
 const txn = (over: Partial<Record<string, unknown>> = {}) => ({
   id: "t1", date: "2026-06-01", name: "AMZN", merchantName: "Amazon", amount: "42.00",
   pending: false, excluded: false, categoryId: null, categoryName: null, categoryColor: null,
-  categorizedBy: "plaid", accountId: "a1", ...over,
+  categorizedBy: "plaid", accountId: "a1", accountName: "Everyday Checking", accountMask: "4321",
+  type: "expense", ...over,
 });
 
 function mockFetch(handler: (url: string) => unknown) {
@@ -94,6 +95,28 @@ describe("TransactionsList", () => {
     await waitFor(() =>
       expect(fetchedUrls.slice(urlsBefore).some((u) => u.includes("q=Starbucks"))).toBe(true),
     );
+  });
+
+  it("renders a day-group header and a signed expense amount", async () => {
+    mockFetch((url) =>
+      url.includes("/categories") ? { categories: [] } :
+      url.includes("/recurrings") ? { recurrings: [] } :
+      { transactions: [txn({ date: "2026-05-30", amount: "17.06" })], total: 1 });
+    render(<TransactionsList clientId="c1" editEnabled />);
+    await waitFor(() => expect(screen.getByText("SAT, MAY 30")).toBeTruthy());
+    expect(screen.getByText("-$17.06")).toBeTruthy();
+  });
+
+  it("hides the category control for an internal transfer and shows a T badge", async () => {
+    mockFetch((url) =>
+      url.includes("/categories") ? { categories: [] } :
+      url.includes("/recurrings") ? { recurrings: [] } :
+      { transactions: [txn({ type: "transfer", merchantName: "Online Transfer To Chk", amount: "2000.00", categoryName: null })], total: 1 });
+    render(<TransactionsList clientId="c1" editEnabled />);
+    await waitFor(() => expect(screen.getByText("Online Transfer To Chk")).toBeTruthy());
+    expect(screen.getByText("T")).toBeTruthy();
+    // No "Uncategorized" / category picker rendered for a transfer row.
+    expect(screen.queryByText("Uncategorized")).toBeNull();
   });
 
   it("picking a category fires PUT with categoryId and optimistically updates the pill label", async () => {

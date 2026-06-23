@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import type { PortalTransactionDTO } from "@/lib/portal/transactions-query";
 vi.mock("@/db/schema", () => ({ plaidTransactions: {
   clientId: "client_id", date: "date", categoryId: "category_id",
   merchantName: "merchant_name", name: "name", excluded: "excluded",
@@ -35,4 +36,14 @@ describe("buildTransactionConditions", () => {
     const orCond = conds.find((c) => (c as { op: string }).op === "or");
     expect(orCond).toBeTruthy();
   });
+});
+
+it("DTO includes a type field", () => {
+  const dto: PortalTransactionDTO = {
+    id: "t1", date: "2026-06-01", name: "n", merchantName: null, amount: "1.00",
+    pending: false, excluded: false, categoryId: null, categoryName: null,
+    categoryColor: null, categorizedBy: "plaid", accountId: null,
+    accountName: null, accountMask: null, type: "expense",
+  };
+  expect(dto.type).toBe("expense");
 });
