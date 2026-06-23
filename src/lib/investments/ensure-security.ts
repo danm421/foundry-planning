@@ -15,7 +15,7 @@ export async function ensureSecurityForTicker(ticker: string | null): Promise<st
   if (cached) return cached.security.id;
   const classified = await classifySecurity(t);
   if (!classified) return null;
-  await upsertClassifiedSecurity(classified);
-  const stored = await getSecurityByTicker(t);
-  return stored?.security.id ?? null;
+  // upsertClassifiedSecurity returns the canonical securities.id from its
+  // RETURNING clause — no need to re-fetch via getSecurityByTicker.
+  return await upsertClassifiedSecurity(classified);
 }
