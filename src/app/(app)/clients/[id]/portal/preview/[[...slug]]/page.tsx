@@ -11,6 +11,7 @@ import TransactionsSection from "@/components/portal/transactions-section";
 import BudgetSection from "@/components/portal/budget-section";
 import RecurringsSection from "@/components/portal/recurrings-section";
 import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-screen";
+import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -32,7 +33,9 @@ export default async function PortalPreviewPage({
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
   let section: ReactElement;
-  if (path === "" || path === "profile") {
+  if (path === "") {
+    section = <PortalDashboard clientId={id} />;
+  } else if (path === "profile") {
     section = <HouseholdSection clientId={id} />;
   } else if (path === "profile/family") {
     section = <FamilySection clientId={id} />;
