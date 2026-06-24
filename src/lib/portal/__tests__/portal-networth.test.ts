@@ -89,4 +89,18 @@ describe("buildPortalLiabilityRows", () => {
     );
     expect(rows[0].balance).toBe(1000);
   });
+  it("treats an ownerless liability as fully household-owned (Plaid 'Add as new' debt)", () => {
+    // Plaid debts added via the portal Manage modal carry no liability_owners
+    // row; they must still appear at full balance rather than be filtered out.
+    const rows = buildPortalLiabilityRows(
+      [{ id: "l1", name: "Plaid Student Loan", balance: "65262.00", liabilityType: "student",
+         plaidItemId: "it1", plaidAccountId: "pa1", minimumPayment: null,
+         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null }],
+      {}, // no owner rows at all
+      roles,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].balance).toBe(65262);
+    expect(rows[0].isPlaidLinked).toBe(true);
+  });
 });

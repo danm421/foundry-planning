@@ -69,7 +69,12 @@ export function buildPortalLiabilityRows(
 ): PortalDebtRow[] {
   const rows: PortalDebtRow[] = [];
   for (const l of rawLiabilities) {
-    const share = householdOwnedShare(ownersByLiabilityId[l.id] ?? [], roleByFamilyMemberId);
+    const owners = ownersByLiabilityId[l.id] ?? [];
+    // A liability with no owner rows is household-owned by default — this is how
+    // Plaid "Add as new" debts are created (commit route writes no liability_owners
+    // row). Liabilities WITH explicit owner rows (e.g. entity/trust-owned) are
+    // scored normally and may still be filtered out at share <= 0.
+    const share = owners.length === 0 ? 1 : householdOwnedShare(owners, roleByFamilyMemberId);
     if (share <= 0) continue;
     rows.push({
       id: l.id,
