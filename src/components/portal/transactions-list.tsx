@@ -70,6 +70,9 @@ export default function TransactionsList({
   const [ruleSeed, setRuleSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurringSeed, setRecurringSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
+  // After a manual category change, offer to make it a standing rule for that name.
+  const [ruleConfirm, setRuleConfirm] = useState<{ name: string; categoryId: string; categoryName: string } | null>(null);
+  const [creatingRule, setCreatingRule] = useState(false);
   const portalFetch = usePortalFetch();
 
   useEffect(() => {
@@ -141,6 +144,46 @@ export default function TransactionsList({
     },
     [rows, portalFetch],
   );
+
+  // Pick a new category for a row: save it, then (for a real category) offer to
+  // turn it into a standing rule for that merchant name.
+  const handleCategoryPick = useCallback(
+    (t: PortalTransactionDTO, catId: string | null) => {
+      if (catId === t.categoryId) return;
+      const picked = catId ? categories.find((c) => c.id === catId) : null;
+      void patchTransaction(t.id, { categoryId: catId }, (row) => ({
+        ...row,
+        categoryId: catId,
+        categoryName: picked?.name ?? null,
+        categoryColor: picked?.color ?? null,
+        categorizedBy: "manual",
+      }));
+      if (catId && picked) {
+        setRuleConfirm({ name: t.merchantName ?? t.name, categoryId: catId, categoryName: picked.name });
+      }
+    },
+    [categories, patchTransaction],
+  );
+
+  const createRuleFromConfirm = useCallback(async () => {
+    if (!ruleConfirm) return;
+    setCreatingRule(true);
+    setError(null);
+    try {
+      const res = await portalFetch("/api/portal/rules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ matchType: "contains", pattern: ruleConfirm.name, categoryId: ruleConfirm.categoryId }),
+      });
+      if (!res.ok) { setError("Couldn't create the rule."); return; }
+      setRuleConfirm(null);
+      void load(0, true); // reflect retroactive recategorization of matching rows
+    } catch {
+      setError("Couldn't create the rule.");
+    } finally {
+      setCreatingRule(false);
+    }
+  }, [ruleConfirm, portalFetch, load]);
 
   async function linkRecurring(txnId: string, recurringId: string): Promise<void> {
     const res = await portalFetch(`/api/portal/transactions/${txnId}`, {
@@ -242,7 +285,7 @@ export default function TransactionsList({
                       {formatDayHeader(t.date)}
                     </div>
                   )}
-                  <div className={`flex items-center gap-3 px-4 py-2.5${!showDay ? " border-t border-hair" : ""}`}>
+                  <div className={`flex items-center gap-2 px-4 py-2.5 sm:gap-3${!showDay ? " border-t border-hair" : ""}`}>
                     <span
                       className={
                         badge
@@ -265,31 +308,30 @@ export default function TransactionsList({
                         {t.excluded && <span className="text-[11px] text-ink-4">excluded</span>}
                       </div>
                     </div>
-                    {t.type !== "transfer" && (
-                      <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                        {editEnabled ? (
-                          <CategoryPicker
-                            categories={categories}
-                            value={t.categoryId}
-                            onPick={(catId) =>
-                              void patchTransaction(
-                                t.id,
-                                { categoryId: catId },
-                                (row) => {
-                                  const picked = categories.find((c) => c.id === catId);
-                                  return { ...row, categoryId: catId, categoryName: picked?.name ?? null, categoryColor: picked?.color ?? null, categorizedBy: "manual" };
-                                },
-                              )
-                            }
-                          />
-                        ) : (
+                    {/* Category column — fixed width so every colored dot lines up.
+                        When editable, an invisible <select> overlays the pill: one
+                        click opens the native picker; the colored pill shows through. */}
+                    <div className="relative w-28 shrink-0 sm:w-44" onClick={(e) => e.stopPropagation()}>
+                      {t.type === "transfer" ? (
+                        <span className="text-[12px] text-ink-4">—</span>
+                      ) : (
+                        <>
                           <CategoryPill name={t.categoryName} color={t.categoryColor} />
-                        )}
-                      </span>
-                    )}
-                    <span className={`tabular shrink-0 text-[14px] ${amt.cls}`}>{amt.text}</span>
-                    <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {editEnabled && (
+                          {editEnabled && (
+                            <CategoryPicker
+                              categories={categories}
+                              value={t.categoryId}
+                              ariaLabel="Change category"
+                              className="absolute inset-0 w-full cursor-pointer opacity-0"
+                              onPick={(catId) => handleCategoryPick(t, catId)}
+                            />
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <span className={`tabular w-24 shrink-0 text-right text-[14px] ${amt.cls}`}>{amt.text}</span>
+                    {editEnabled && (
+                      <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() =>
@@ -299,8 +341,8 @@ export default function TransactionsList({
                         >
                           {t.excluded ? "Include" : "Exclude"}
                         </button>
-                      )}
-                    </span>
+                      </span>
+                    )}
                   </div>
                 </li>
               );
@@ -368,6 +410,32 @@ export default function TransactionsList({
           onClose={() => setRecurringSeed(null)}
           onCreated={() => { setRecurringSeed(null); setSelected(null); void load(0, true); }}
         />
+      )}
+      {ruleConfirm && (
+        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="flex max-w-full items-center gap-3 rounded-xl border border-hair bg-card-2 px-4 py-3 shadow-lg">
+            <span className="text-[13px] text-ink-2">
+              Always categorize{" "}
+              <span className="font-medium text-ink">{ruleConfirm.name}</span> as{" "}
+              <span className="font-medium text-ink">{ruleConfirm.categoryName}</span>?
+            </span>
+            <button
+              type="button"
+              onClick={() => setRuleConfirm(null)}
+              className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-3 hover:bg-card"
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              disabled={creatingRule}
+              onClick={() => void createRuleFromConfirm()}
+              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
+            >
+              {creatingRule ? "Creating…" : "Create rule"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

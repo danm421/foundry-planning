@@ -41,7 +41,7 @@ export default async function PortalPreviewPage({
   } else if (path === "accounts") {
     section = <PortalAccountsScreen clientId={id} />;
   } else if (path === "transactions") {
-    section = <TransactionsSection clientId={id} previewing />;
+    section = <TransactionsSection clientId={id} />;
   } else if (path === "budget") {
     section = <BudgetSection clientId={id} />;
   } else if (path === "recurrings") {
