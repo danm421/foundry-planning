@@ -31,17 +31,19 @@ beforeAll(() => {
 });
 
 describe("PortalMobileNav", () => {
-  it("renders all seven portal destinations as links (default /portal basePath)", () => {
+  it("renders all nine portal destinations as links (default /portal basePath)", () => {
     mockPathname = "/portal/accounts";
     const { container } = render(<PortalMobileNav displayName="Jane Doe" />);
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
     );
     expect(hrefs).toEqual([
+      "/portal",
       "/portal/profile",
       "/portal/profile/family",
       "/portal/profile/trusts",
       "/portal/accounts",
+      "/portal/investments",
       "/portal/transactions",
       "/portal/budget",
       "/portal/recurrings",
