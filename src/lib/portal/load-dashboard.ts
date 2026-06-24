@@ -91,6 +91,7 @@ export async function loadPortalDashboard(
     budget,
     recurringsData,
     monthTxns,
+    monthAgg,
     priorAgg,
     uncategorized,
     accountRows,
@@ -110,6 +111,22 @@ export async function loadPortalDashboard(
           lte(plaidTransactions.date, to),
         ),
       ),
+    // Current-month income/spend raw posted totals for the net-this-month tile (like-for-like with priorAgg).
+    db
+      .select({
+        type: plaidTransactions.type,
+        total: sql<string>`sum(${plaidTransactions.amount})`,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          eq(plaidTransactions.excluded, false),
+          gte(plaidTransactions.date, from),
+          lte(plaidTransactions.date, to),
+        ),
+      )
+      .groupBy(plaidTransactions.type),
     // Prior-month income/spend totals for the net-this-month delta.
     db
       .select({
@@ -200,6 +217,13 @@ export async function loadPortalDashboard(
   });
 
   // ---- Net this month ----
+  let currentIncome = 0;
+  let currentSpent = 0;
+  for (const row of monthAgg) {
+    const total = Number(row.total ?? 0);
+    if (row.type === "income") currentIncome += -total; // Plaid: money in is negative
+    else if (row.type === "expense") currentSpent += total;
+  }
   let priorIncome = 0;
   let priorSpent = 0;
   for (const row of priorAgg) {
@@ -208,8 +232,8 @@ export async function loadPortalDashboard(
     else if (row.type === "expense") priorSpent += total;
   }
   const net = netThisMonth({
-    income: budget.incomeThisMonth,
-    spent: budget.totalSpent,
+    income: currentIncome,
+    spent: currentSpent,
     priorIncome,
     priorSpent,
   });
@@ -264,8 +288,8 @@ export async function loadPortalDashboard(
     topCategories: topCategories(budget.groups, 5),
     netThisMonth: {
       net: net.net,
-      income: budget.incomeThisMonth,
-      spent: budget.totalSpent,
+      income: currentIncome,
+      spent: currentSpent,
       prior: net.prior,
       deltaAbs: net.deltaAbs,
       deltaPct: net.deltaPct,

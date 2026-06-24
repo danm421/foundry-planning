@@ -27,7 +27,12 @@ const DTO: PortalDashboardDTO = {
     { day: 2, cumulative: 250, pace: 443 },
   ], underBy: 1176, month: "2026-06" },
   netWorth: { assets: 90999, debt: 55022, netWorth: 35977, series: [], asOfDate: "2026-06-24" },
-  toReview: { count: 0, sample: [] },
+  toReview: {
+    count: 1,
+    sample: [
+      { id: "txn1", date: "2026-06-12", name: "WHOLEFDS", merchantName: "Whole Foods", amount: 84.21, accountName: "Checking" },
+    ],
+  },
   topCategories: [
     { id: "cat1", name: "Food", color: "var(--data-blue)", spent: 382, budget: 1500 },
   ],
@@ -51,7 +56,8 @@ describe("DashboardGrid drawer", () => {
   it("opens a category drawer on row click and closes on Close", async () => {
     const user = userEvent.setup();
     render(<DashboardGrid dto={DTO} />);
-    await user.click(screen.getByRole("button", { name: /Food/ }));
+    // Use exact text to avoid matching "Whole Foods" from the to-review tile.
+    await user.click(screen.getByRole("button", { name: /^Food/ }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/Open in Budget/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
@@ -63,5 +69,12 @@ describe("DashboardGrid drawer", () => {
     render(<DashboardGrid dto={DTO} />);
     await user.click(screen.getByRole("button", { name: /Phone/ }));
     expect(screen.getByText(/Open in Recurrings/)).toBeInTheDocument();
+  });
+
+  it("opens a transaction drawer from the to-review tile", async () => {
+    const user = userEvent.setup();
+    render(<DashboardGrid dto={DTO} />);
+    await user.click(screen.getByRole("button", { name: /Whole Foods/ }));
+    expect(screen.getByText(/Open in Transactions/)).toBeInTheDocument();
   });
 });
