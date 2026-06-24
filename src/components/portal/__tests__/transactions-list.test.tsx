@@ -155,19 +155,12 @@ describe("TransactionsList", () => {
 
     render(<TransactionsList clientId="c1" editEnabled />);
 
-    // Wait for the row and the category picker to appear.
+    // Wait for the row; the category pill reads "Uncategorized" initially.
     await waitFor(() => expect(screen.getByText("Amazon")).toBeTruthy());
 
-    // The CategoryPicker select should be present (editEnabled=true).
-    // There are two comboboxes: the filter dropdown (has "All categories") and the row picker (has "Uncategorized").
-    // Target the row-level picker by its "Uncategorized" option.
-    const allPickers = screen.getAllByRole("combobox");
-    const picker = allPickers.find((el) =>
-      Array.from((el as HTMLSelectElement).options).some((o) => o.text === "Uncategorized"),
-    )!;
-
-    // Pick "Groceries" (id = "l1").
-    fireEvent.change(picker, { target: { value: "l1" } });
+    // Open the row's category popover and pick "Groceries" from the searchable list.
+    fireEvent.click(screen.getByTitle("Change category"));
+    fireEvent.click(await screen.findByRole("button", { name: /Groceries/ }));
 
     // Assert the PUT was fired with the correct URL and body.
     await waitFor(() => expect(putCalls.length).toBe(1));
@@ -175,7 +168,7 @@ describe("TransactionsList", () => {
     expect(putCalls[0].method).toBe("PUT");
     expect(putCalls[0].body).toEqual({ categoryId: "l1" });
 
-    // The picker's selected value should reflect the optimistic update.
-    expect((picker as HTMLSelectElement).value).toBe("l1");
+    // The trigger pill reflects the optimistic update.
+    await waitFor(() => expect(screen.getByTitle("Change category").textContent).toContain("Groceries"));
   });
 });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { CategoryPill } from "@/components/portal/category-pill";
-import { CategoryPicker } from "@/components/portal/category-picker";
+import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
@@ -309,24 +309,20 @@ export default function TransactionsList({
                       </div>
                     </div>
                     {/* Category column — fixed width so every colored dot lines up.
-                        When editable, an invisible <select> overlays the pill: one
-                        click opens the native picker; the colored pill shows through. */}
-                    <div className="relative w-28 shrink-0 sm:w-44" onClick={(e) => e.stopPropagation()}>
+                        When editable, the pill opens a compact searchable popover. */}
+                    <div className="w-28 shrink-0 sm:w-44" onClick={(e) => e.stopPropagation()}>
                       {t.type === "transfer" ? (
                         <span className="text-[12px] text-ink-4">—</span>
+                      ) : editEnabled ? (
+                        <CategoryComboBox
+                          categories={categories}
+                          value={t.categoryId}
+                          currentName={t.categoryName}
+                          currentColor={t.categoryColor}
+                          onPick={(catId) => handleCategoryPick(t, catId)}
+                        />
                       ) : (
-                        <>
-                          <CategoryPill name={t.categoryName} color={t.categoryColor} />
-                          {editEnabled && (
-                            <CategoryPicker
-                              categories={categories}
-                              value={t.categoryId}
-                              ariaLabel="Change category"
-                              className="absolute inset-0 w-full cursor-pointer opacity-0"
-                              onPick={(catId) => handleCategoryPick(t, catId)}
-                            />
-                          )}
-                        </>
+                        <CategoryPill name={t.categoryName} color={t.categoryColor} />
                       )}
                     </div>
                     <span className={`tabular w-24 shrink-0 text-right text-[14px] ${amt.cls}`}>{amt.text}</span>
