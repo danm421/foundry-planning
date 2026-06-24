@@ -54,9 +54,13 @@ vi.mock("@/lib/portal/claim-portal-binding", () => ({
 
 import "../proxy";
 
-function makeReq(pathname: string, method = "GET") {
+function makeReq(
+  pathname: string,
+  method = "GET",
+  headers?: Record<string, string>,
+) {
   const url = new URL(`https://app.foundryplanning.com${pathname}`);
-  const req = new Request(url, { method });
+  const req = new Request(url, { method, headers });
   return Object.defineProperty(req, "nextUrl", {
     value: url,
     writable: true,
@@ -129,6 +133,28 @@ describe("proxy portal branching", () => {
       makeReq("/clients"),
     );
     expect(res.status).not.toBe(307);
+  });
+
+  it("lets advisor act-as-client API calls through when x-portal-as-client header is present", async () => {
+    const res = await captured.handler!(
+      authWith("u1", "org_advisor") as never,
+      makeReq("/api/portal/plaid/link-token", "POST", {
+        "x-portal-as-client": "client-1",
+      }),
+    );
+    // Passes through to the route handler (which authorizes via
+    // resolvePortalClient → requireClientEditAccess); NOT 307'd to /clients.
+    expect(res.status).not.toBe(307);
+    expect(res.headers.get("location") ?? "").not.toContain("/clients");
+  });
+
+  it("still redirects advisor /api/portal/* calls that lack the act-as header", async () => {
+    const res = await captured.handler!(
+      authWith("u1", "org_advisor") as never,
+      makeReq("/api/portal/plaid/link-token", "POST"),
+    );
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/clients");
   });
 
   it("self-heals an org-less user with a pending claim and sends them to /portal/profile", async () => {

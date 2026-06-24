@@ -7,6 +7,7 @@ import { operationsBlocked } from "@/lib/operations-route-guard";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 import { claimPortalBinding } from "@/lib/portal/claim-portal-binding";
+import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/portal-as-client-header";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -71,7 +72,17 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // Advisor (has a Clerk org) trying to reach portal surfaces → send to /clients.
-  if (orgId && isPortalRoute(request)) {
+  // EXCEPTION: the interactive portal preview lets an advisor drive the real
+  // portal API *as* a specific client. Those fetches carry the
+  // x-portal-as-client header and are authorized in the route handler via
+  // resolvePortalClient → requireClientEditAccess. The header rides XHR/fetch
+  // only, never page navigations, so portal *pages* still redirect — only
+  // act-as API calls pass through to be authorized downstream.
+  if (
+    orgId &&
+    isPortalRoute(request) &&
+    !request.headers.get(PORTAL_AS_CLIENT_HEADER)
+  ) {
     return NextResponse.redirect(new URL("/clients", request.url));
   }
 
