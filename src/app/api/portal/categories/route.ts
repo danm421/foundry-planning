@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { transactionCategories, clients } from "@/db/schema";
-import { authErrorResponse, requireClientPortalAccess } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -14,7 +15,8 @@ type Body = { name?: string; kind?: string; parentId?: string | null; color?: st
 
 export async function GET(): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    // Act-as aware so advisor "preview as client" reads the client's categories.
+    const { clientId } = await resolvePortalClient();
     await ensureCategoriesSeeded(clientId);
     const categories = await db
       .select().from(transactionCategories)
@@ -30,7 +32,7 @@ export async function GET(): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -61,7 +63,9 @@ export async function POST(req: Request): Promise<Response> {
 
     await recordCreate({
       action: "portal.category.create", resourceType: "transaction_category", resourceId: row.id,
-      clientId, firmId, actorKind: "client",
+      clientId, firmId,
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: { name: body.name.trim(), kind: body.kind, parentId },
     });
     return NextResponse.json({ id: row.id });

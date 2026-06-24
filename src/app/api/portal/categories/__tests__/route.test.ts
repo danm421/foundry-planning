@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { ForbiddenError } = vi.hoisted(() => ({ ForbiddenError: class extends Error {} }));
-const requireMock = vi.fn();
+const resolveMock = vi.fn();
 const subMock = vi.fn();
 const editMock = vi.fn();
 const authErrMock = vi.fn();
@@ -22,8 +22,10 @@ const deleteMock = vi.fn();
 const txUpdateMock = vi.fn();
 const txDeleteMock = vi.fn();
 
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolveMock(),
+}));
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireMock(),
   authErrorResponse: (e: unknown) => authErrMock(e),
   ForbiddenError, UnauthorizedError: class extends Error {},
 }));
@@ -109,13 +111,13 @@ const deleteReq = (body: unknown = {}) =>
   });
 
 beforeEach(() => {
-  requireMock.mockReset(); subMock.mockReset(); editMock.mockReset();
+  resolveMock.mockReset(); subMock.mockReset(); editMock.mockReset();
   authErrMock.mockReset(); recordCreateMock.mockReset(); recordUpdateMock.mockReset();
   recordDeleteMock.mockReset(); seedMock.mockReset(); insertReturningMock.mockReset();
   updateMock.mockReset(); deleteMock.mockReset(); txUpdateMock.mockReset(); txDeleteMock.mockReset();
   selectCallCount = 0;
 
-  requireMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+  resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
   subMock.mockResolvedValue(undefined);
   editMock.mockResolvedValue(undefined);
   seedMock.mockResolvedValue(undefined);
@@ -154,7 +156,7 @@ describe("GET /api/portal/categories", () => {
   });
 
   it("401 when not authenticated", async () => {
-    requireMock.mockRejectedValue(new Error("Unauthorized"));
+    resolveMock.mockRejectedValue(new Error("Unauthorized"));
     authErrMock.mockReturnValue({ status: 401, body: { error: "Unauthorized" } });
     const res = await GET();
     expect(res.status).toBe(401);

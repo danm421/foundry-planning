@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 const { ForbiddenError } = vi.hoisted(() => ({ ForbiddenError: class extends Error {} }));
-const requireMock = vi.fn();
+const resolveMock = vi.fn();
 const authErrMock = vi.fn();
 const loadMock = vi.fn();
 const countMock = vi.fn();
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolveMock(),
+}));
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireMock(),
   authErrorResponse: (e: unknown) => authErrMock(e),
   ForbiddenError, UnauthorizedError: class extends Error {},
 }));
@@ -15,13 +17,13 @@ vi.mock("@/lib/portal/transactions-query", () => ({
 }));
 import { GET } from "@/app/api/portal/transactions/route";
 
-beforeEach(() => { requireMock.mockReset(); authErrMock.mockReset(); loadMock.mockReset(); countMock.mockReset(); });
+beforeEach(() => { resolveMock.mockReset(); authErrMock.mockReset(); loadMock.mockReset(); countMock.mockReset(); });
 
 const call = (qs = "") => GET(new Request(`http://localhost/api/portal/transactions${qs}`));
 
 describe("GET /api/portal/transactions", () => {
   it("returns transactions + total + hasMore", async () => {
-    requireMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     loadMock.mockResolvedValue([{ id: "t1" }]);
     countMock.mockResolvedValue(3);
     const res = await call("?limit=1&offset=0");
@@ -32,7 +34,7 @@ describe("GET /api/portal/transactions", () => {
     expect(body.transactions).toHaveLength(1);
   });
   it("clamps limit to MAX and passes filters through", async () => {
-    requireMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     loadMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);
     await call("?limit=9999&categoryId=cat&q=coffee");
@@ -41,8 +43,17 @@ describe("GET /api/portal/transactions", () => {
     expect(f.categoryId).toBe("cat");
     expect(f.q).toBe("coffee");
   });
+  it("advisor act-as preview reads the target client's transactions", async () => {
+    resolveMock.mockResolvedValue({ clientId: "previewed-client", mode: "advisor", clerkUserId: "advisor-1" });
+    loadMock.mockResolvedValue([{ id: "t1" }]);
+    countMock.mockResolvedValue(1);
+    const res = await call();
+    expect(res.status).toBe(200);
+    // The query is scoped to the previewed client, not the advisor.
+    expect(loadMock.mock.calls[0][0]).toBe("previewed-client");
+  });
   it("propagates a portal 403", async () => {
-    requireMock.mockRejectedValue(new ForbiddenError("nope"));
+    resolveMock.mockRejectedValue(new ForbiddenError("nope"));
     authErrMock.mockReturnValue({ status: 403, body: { error: "nope" } });
     const res = await call();
     expect(res.status).toBe(403);

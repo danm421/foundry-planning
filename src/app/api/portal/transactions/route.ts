@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { authErrorResponse, requireClientPortalAccess } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import {
   loadPortalTransactions,
   countPortalTransactions,
@@ -13,7 +14,8 @@ const DEFAULT_LIMIT = 50;
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    // Act-as aware so advisor "preview as client" reads the client's transactions.
+    const { clientId } = await resolvePortalClient();
     const url = new URL(req.url);
     const qp = url.searchParams;
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number(qp.get("limit")) || DEFAULT_LIMIT));

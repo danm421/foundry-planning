@@ -1,15 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 const { ForbiddenError } = vi.hoisted(() => ({ ForbiddenError: class extends Error {} }));
-const requireMock = vi.fn();
+const resolveMock = vi.fn();
 const subMock = vi.fn();
 const editMock = vi.fn();
 const authErrMock = vi.fn();
 const recordUpdateMock = vi.fn();
 let txnRow: any; let catRow: any; let clientRow: any; const updateMock = vi.fn();
 
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolveMock(),
+}));
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireMock(),
   authErrorResponse: (e: unknown) => authErrMock(e),
   ForbiddenError, UnauthorizedError: class extends Error {},
 }));
@@ -39,9 +41,9 @@ const ctx = { params: Promise.resolve({ id: "t1" }) };
 const putReq = (body: unknown) => new Request("http://localhost/api/portal/transactions/t1", { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 
 beforeEach(() => {
-  requireMock.mockReset(); subMock.mockReset(); editMock.mockReset(); authErrMock.mockReset();
+  resolveMock.mockReset(); subMock.mockReset(); editMock.mockReset(); authErrMock.mockReset();
   recordUpdateMock.mockReset(); updateMock.mockReset();
-  requireMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+  resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
   subMock.mockResolvedValue(undefined); editMock.mockResolvedValue(undefined);
   txnRow = { id: "t1", clientId: "c1", categoryId: null, categorizedBy: "plaid", excluded: false };
   catRow = { id: "cat-1", clientId: "c1", kind: "category" };
@@ -60,6 +62,15 @@ describe("PUT /api/portal/transactions/[id]", () => {
     const res = await PUT(putReq({ excluded: true }), ctx);
     expect(res.status).toBe(200);
     expect(updateMock.mock.calls[0][0]).toMatchObject({ excluded: true });
+  });
+  it("advisor act-as preview audits as advisor with viaPreview", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "advisor-1" });
+    const res = await PUT(putReq({ excluded: true }), ctx);
+    expect(res.status).toBe(200);
+    expect(recordUpdateMock.mock.calls[0][0]).toMatchObject({
+      actorKind: "advisor",
+      extraMetadata: { viaPreview: true },
+    });
   });
   it("403 when subscription inactive", async () => {
     subMock.mockRejectedValue(new ForbiddenError("Active subscription required"));

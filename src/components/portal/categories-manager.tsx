@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type CategoryRow = {
   id: string; name: string; kind: "group" | "category"; parentId: string | null;
@@ -15,13 +16,14 @@ const COLOR_TOKENS = [
 export default function CategoriesManager({ editEnabled }: { editEnabled: boolean }): ReactElement {
   const [cats, setCats] = useState<CategoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const portalFetch = usePortalFetch();
 
   const reload = useCallback(() => {
-    return fetch("/api/portal/categories")
+    return portalFetch("/api/portal/categories")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { categories: CategoryRow[] } | null) => { if (d) setCats(d.categories ?? []); })
       .catch(() => {});
-  }, []);
+  }, [portalFetch]);
   useEffect(() => { void reload(); }, [reload]);
 
   const mutate = useCallback(async (fn: () => Promise<Response>) => {
@@ -50,14 +52,14 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
                   <>
                     <select
                       value={l.color}
-                      onChange={(e) => void mutate(() => fetch(`/api/portal/categories/${l.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ color: e.target.value }) }))}
+                      onChange={(e) => void mutate(() => portalFetch(`/api/portal/categories/${l.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ color: e.target.value }) }))}
                       className="rounded-md border border-hair bg-card-2 px-1 py-0.5 text-[11px] text-ink-3"
                     >
                       {COLOR_TOKENS.map((c) => <option key={c} value={c}>{c.replace("var(--data-", "").replace(")", "")}</option>)}
                     </select>
                     {!l.isSystem && (
                       <DeleteLeaf leaf={l} otherLeaves={allLeaves.filter((x) => x.id !== l.id)} onDelete={(reassignToId) =>
-                        mutate(() => fetch(`/api/portal/categories/${l.id}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ reassignToId }) }))} />
+                        mutate(() => portalFetch(`/api/portal/categories/${l.id}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ reassignToId }) }))} />
                     )}
                   </>
                 )}
@@ -66,7 +68,7 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
           </ul>
           {editEnabled && (
             <AddLeaf groupId={g.id} onAdd={(name) =>
-              mutate(() => fetch("/api/portal/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, kind: "category", parentId: g.id }) }))} />
+              mutate(() => portalFetch("/api/portal/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, kind: "category", parentId: g.id }) }))} />
           )}
         </div>
       ))}

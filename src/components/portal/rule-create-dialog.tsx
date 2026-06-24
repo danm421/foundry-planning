@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { CategoryPicker } from "@/components/portal/category-picker";
+import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null };
 
@@ -22,25 +23,26 @@ export function RuleCreateDialog({
   const [count, setCount] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const portalFetch = usePortalFetch();
 
   useEffect(() => {
     if (!pattern.trim()) { setCount(null); return; }
     const handle = setTimeout(() => {
       const p = new URLSearchParams({ matchType, pattern: pattern.trim() });
-      void fetch(`/api/portal/rules/preview?${p.toString()}`)
+      void portalFetch(`/api/portal/rules/preview?${p.toString()}`)
         .then((r) => (r.ok ? r.json() : { count: null }))
         .then((d: { count: number | null }) => setCount(d.count))
         .catch(() => setCount(null));
     }, 300);
     return () => clearTimeout(handle);
-  }, [matchType, pattern]);
+  }, [matchType, pattern, portalFetch]);
 
   async function submit() {
     if (!categoryId || !pattern.trim()) { setError("Pick a category and a pattern."); return; }
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/portal/rules", {
+      const res = await portalFetch("/api/portal/rules", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ matchType, pattern: pattern.trim(), categoryId }),

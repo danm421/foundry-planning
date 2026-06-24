@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { authErrorResponse, requireClientPortalAccess } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { countRuleMatches } from "@/lib/portal/recategorize";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    // Act-as aware so advisor "preview as client" sees the same match count.
+    const { clientId } = await resolvePortalClient();
     const qp = new URL(req.url).searchParams;
     const matchType = qp.get("matchType");
     const pattern = qp.get("pattern") ?? "";

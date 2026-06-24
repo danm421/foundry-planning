@@ -73,11 +73,11 @@ export default function TransactionsList({
   const portalFetch = usePortalFetch();
 
   useEffect(() => {
-    void fetch("/api/portal/categories")
+    void portalFetch("/api/portal/categories")
       .then((r) => (r.ok ? r.json() : { categories: [] }))
       .then((d: { categories: CategoryRow[] }) => setCategories(d.categories ?? []))
       .catch(() => setCategories([]));
-  }, []);
+  }, [portalFetch]);
 
   useEffect(() => {
     void portalFetch("/api/portal/recurrings")
@@ -98,7 +98,7 @@ export default function TransactionsList({
       if (q.trim()) params.set("q", q.trim());
       if (categoryId) params.set("categoryId", categoryId);
       try {
-        const res = await fetch(`/api/portal/transactions?${params.toString()}`, { signal });
+        const res = await portalFetch(`/api/portal/transactions?${params.toString()}`, { signal });
         if (!res.ok) return;
         const data = (await res.json()) as { transactions: PortalTransactionDTO[]; total: number };
         setTotal(data.total);
@@ -110,7 +110,7 @@ export default function TransactionsList({
         setLoading(false);
       }
     },
-    [q, categoryId, windowKey],
+    [q, categoryId, windowKey, portalFetch],
   );
 
   useEffect(() => {
@@ -129,7 +129,7 @@ export default function TransactionsList({
       const prev = rows;
       setRows((rs) => rs.map((t) => (t.id === id ? optimistic(t) : t)));
       try {
-        const res = await fetch(`/api/portal/transactions/${id}`, {
+        const res = await portalFetch(`/api/portal/transactions/${id}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(patch),
@@ -139,7 +139,7 @@ export default function TransactionsList({
         setRows(prev); setError("Couldn't save that change.");
       }
     },
-    [rows],
+    [rows, portalFetch],
   );
 
   async function linkRecurring(txnId: string, recurringId: string): Promise<void> {

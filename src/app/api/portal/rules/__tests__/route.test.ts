@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { ForbiddenError } = vi.hoisted(() => ({ ForbiddenError: class extends Error {} }));
-const requireMock = vi.fn();
+const resolveMock = vi.fn();
 const subMock = vi.fn();
 const editMock = vi.fn();
 const authErrMock = vi.fn();
@@ -14,8 +14,10 @@ let clientRow: any;
 let ruleRows: any[];
 const insertReturningMock = vi.fn();
 
+vi.mock("@/lib/portal/resolve-portal-client", () => ({
+  resolvePortalClient: () => resolveMock(),
+}));
 vi.mock("@/lib/authz", () => ({
-  requireClientPortalAccess: () => requireMock(),
   authErrorResponse: (e: unknown) => authErrMock(e),
   ForbiddenError, UnauthorizedError: class extends Error {},
 }));
@@ -58,7 +60,7 @@ const postReq = (body: unknown) =>
   });
 
 beforeEach(() => {
-  requireMock.mockReset();
+  resolveMock.mockReset();
   subMock.mockReset();
   editMock.mockReset();
   authErrMock.mockReset();
@@ -66,7 +68,7 @@ beforeEach(() => {
   applyRetroMock.mockReset();
   insertReturningMock.mockReset();
 
-  requireMock.mockResolvedValue({ clientId: "c1", clerkUserId: "u1" });
+  resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
   subMock.mockResolvedValue(undefined);
   editMock.mockResolvedValue(undefined);
   catRow = { clientId: "c1", kind: "category" };
@@ -94,7 +96,7 @@ describe("GET /api/portal/rules", () => {
   });
 
   it("401 when not authenticated", async () => {
-    requireMock.mockRejectedValue(new Error("Unauthorized"));
+    resolveMock.mockRejectedValue(new Error("Unauthorized"));
     authErrMock.mockReturnValue({ status: 401, body: { error: "Unauthorized" } });
     const res = await GET();
     expect(res.status).toBe(401);

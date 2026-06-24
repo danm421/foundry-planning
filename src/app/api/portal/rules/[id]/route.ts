@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { transactionRules, transactionCategories, clients } from "@/db/schema";
-import { authErrorResponse, requireClientPortalAccess } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
@@ -28,7 +29,7 @@ async function getFirmId(clientId: string): Promise<string | null> {
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -59,7 +60,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
     await recordUpdate({
       action: "portal.rule.update", resourceType: "transaction_rule", resourceId: id,
-      clientId, firmId, actorKind: "client",
+      clientId, firmId,
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       before: { matchType: row.matchType, pattern: row.pattern, categoryId: row.categoryId, priority: row.priority },
       after: next, fieldLabels: FIELD_LABELS,
     });
@@ -73,7 +76,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -85,7 +88,9 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     await db.delete(transactionRules).where(eq(transactionRules.id, id));
     await recordDelete({
       action: "portal.rule.delete", resourceType: "transaction_rule", resourceId: id,
-      clientId, firmId, actorKind: "client",
+      clientId, firmId,
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: { matchType: row.matchType, pattern: row.pattern, categoryId: row.categoryId },
     });
     return NextResponse.json({ ok: true });

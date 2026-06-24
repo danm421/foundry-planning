@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { transactionCategories, plaidTransactions, clients } from "@/db/schema";
-import { authErrorResponse, requireClientPortalAccess } from "@/lib/authz";
+import { authErrorResponse } from "@/lib/authz";
+import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
@@ -27,7 +28,7 @@ async function getFirmId(clientId: string): Promise<string | null> {
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -46,7 +47,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     await db.update(transactionCategories).set({ ...next, updatedAt: new Date() }).where(eq(transactionCategories.id, id));
     await recordUpdate({
       action: "portal.category.update", resourceType: "transaction_category", resourceId: id,
-      clientId, firmId, actorKind: "client",
+      clientId, firmId,
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       before: { name: row.name, color: row.color, sortOrder: row.sortOrder },
       after: next, fieldLabels: FIELD_LABELS,
     });
@@ -60,7 +63,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const { clientId } = await requireClientPortalAccess();
+    const { clientId, mode } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -91,7 +94,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
 
     await recordDelete({
       action: "portal.category.delete", resourceType: "transaction_category", resourceId: id,
-      clientId, firmId, actorKind: "client",
+      clientId, firmId,
+      actorKind: mode === "advisor" ? "advisor" : "client",
+      extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
       snapshot: { name: row.name, kind: row.kind, reassignedTo: reassignToId },
     });
     return NextResponse.json({ ok: true });
