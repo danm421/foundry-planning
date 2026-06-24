@@ -7,7 +7,7 @@
  * (defaults to `/portal`; the advisor preview passes its own prefix), so the
  * items stay route-prefix agnostic.
  */
-export type PortalNavGroup = "profile" | "money";
+export type PortalNavGroup = "overview" | "profile" | "money";
 
 export interface PortalNavItem {
   /** Visible label. */
@@ -19,6 +19,7 @@ export interface PortalNavItem {
 }
 
 export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
+  { label: "Dashboard", suffix: "", group: "overview" },
   { label: "Household", suffix: "/profile", group: "profile" },
   { label: "Family", suffix: "/profile/family", group: "profile" },
   { label: "Trusts", suffix: "/profile/trusts", group: "profile" },

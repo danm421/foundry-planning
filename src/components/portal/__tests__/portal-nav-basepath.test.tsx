@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/clients/c1/portal/preview",
@@ -45,6 +45,22 @@ describe("PortalNav basePath", () => {
         "/clients/c1/portal/preview/profile/trusts",
         "/clients/c1/portal/preview/accounts",
       ]),
+    );
+  });
+
+  it("renders a Dashboard link resolving to the base path", () => {
+    render(<PortalNav displayName="A" email="a@b.c" basePath="/portal" />);
+    const link = screen.getByRole("link", { name: "Dashboard" });
+    expect(link).toHaveAttribute("href", "/portal");
+  });
+
+  it("resolves Dashboard under the advisor preview base path", () => {
+    render(
+      <PortalNav displayName="A" email="a@b.c" basePath="/clients/abc/portal/preview" />,
+    );
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      "/clients/abc/portal/preview",
     );
   });
 });

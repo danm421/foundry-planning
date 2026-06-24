@@ -6,6 +6,7 @@ import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
 
+const OVERVIEW_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "overview");
 const PROFILE_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "profile");
 const MONEY_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "money");
 
@@ -42,6 +43,21 @@ export default function PortalNav({
         <div className="text-[14px] font-semibold text-ink">{displayName}</div>
         <div className="truncate text-[12px] text-ink-3">{email}</div>
       </header>
+
+      <div className="mb-3">
+        <ul className="space-y-0.5">
+          {OVERVIEW_ITEMS.map((item) => {
+            const href = `${basePath}${item.suffix}`;
+            return (
+              <li key={item.suffix || "dashboard"}>
+                <Link href={href} className={itemCls(pathname === href)}>
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       <div className="mb-3">
         <div className="mb-1 text-[11px] uppercase tracking-wide text-ink-3">
