@@ -39,10 +39,12 @@ export function PortalDetailDrawer({
   let body: ReactElement;
   let footerHref = "/portal";
   let footerLabel = "Open";
+  let title = "Detail";
 
   if (payload.kind === "category") {
     footerHref = "/portal/budget";
     footerLabel = "Open in Budget";
+    title = payload.name;
     body = (
       <BudgetCategoryDetail
         categoryId={payload.categoryId}
@@ -54,6 +56,7 @@ export function PortalDetailDrawer({
     footerHref = "/portal/recurrings";
     footerLabel = "Open in Recurrings";
     const r = recurrings.find((x) => x.id === payload.id);
+    title = r?.name ?? "Recurring detail";
     body = r ? (
       <div className="space-y-3 rounded-xl border border-hair bg-card p-5">
         <h2 className="text-[20px] font-semibold text-ink">{r.name}</h2>
@@ -72,6 +75,7 @@ export function PortalDetailDrawer({
     footerHref = "/portal/transactions";
     footerLabel = "Open in Transactions";
     const t = toReview.sample.find((x) => x.id === payload.id);
+    title = t ? (t.merchantName ?? t.name) : "Transaction detail";
     body = t ? (
       <div className="space-y-3 rounded-xl border border-hair bg-card p-5">
         <h2 className="text-[20px] font-semibold text-ink">{t.merchantName ?? t.name}</h2>
@@ -87,7 +91,7 @@ export function PortalDetailDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={title}>
       <button
         type="button"
         aria-label="Close detail"
