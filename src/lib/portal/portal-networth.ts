@@ -45,17 +45,23 @@ export interface RawLiability {
   nextPaymentDueDate: string | null;
 }
 
-/** Presentational debt row consumed by PortalDebtList (household share applied). */
+/** Presentational debt row consumed by ProfileDebtList (household share applied). */
 export interface PortalDebtRow {
   id: string;
   name: string;
+  /** Household-share-applied balance (what the row displays). */
   balance: number;
+  /** Full stored balance, unscaled — what the edit form prefills. */
+  rawBalance: number;
   liabilityType: string | null;
   aprPercentage: number | null;
   statementBalance: number | null;
   minimumPayment: number | null;
   nextPaymentDueDate: string | null;
   isPlaidLinked: boolean;
+  /** Owner family-member / entity ids, for prefilling the edit form's checkboxes. */
+  ownerFmIds: string[];
+  ownerEntityIds: string[];
 }
 
 function num(s: string | null): number | null {
@@ -80,12 +86,19 @@ export function buildPortalLiabilityRows(
       id: l.id,
       name: l.name,
       balance: Number(l.balance) * share,
+      rawBalance: Number(l.balance),
       liabilityType: l.liabilityType,
       aprPercentage: num(l.aprPercentage),
       statementBalance: num(l.statementBalance),
       minimumPayment: num(l.minimumPayment),
       nextPaymentDueDate: l.nextPaymentDueDate,
       isPlaidLinked: l.plaidItemId != null,
+      ownerFmIds: owners
+        .filter((o) => o.kind === "family_member" && o.familyMemberId != null)
+        .map((o) => o.familyMemberId!),
+      ownerEntityIds: owners
+        .filter((o) => o.kind === "entity" && o.entityId != null)
+        .map((o) => o.entityId!),
     });
   }
   return rows;

@@ -102,5 +102,27 @@ describe("buildPortalLiabilityRows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].balance).toBe(65262);
     expect(rows[0].isPlaidLinked).toBe(true);
+    // Ownerless → no owner ids; rawBalance == full balance.
+    expect(rows[0].ownerFmIds).toEqual([]);
+    expect(rows[0].ownerEntityIds).toEqual([]);
+    expect(rows[0].rawBalance).toBe(65262);
+  });
+  it("exposes owner ids and the unscaled rawBalance for the edit form", () => {
+    const rows = buildPortalLiabilityRows(
+      [{ id: "l1", name: "Joint Auto", balance: "2000.00", liabilityType: "auto",
+         plaidItemId: null, plaidAccountId: null, minimumPayment: null,
+         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null }],
+      { l1: [
+        { kind: "family_member", familyMemberId: "fmA", entityId: null, percent: 0.5 },
+        { kind: "entity", familyMemberId: null, entityId: "e1", percent: 0.5 },
+      ] },
+      roles,
+    );
+    // Display balance is household-share-scaled (only fmA=client counts → 0.5)…
+    expect(rows[0].balance).toBe(1000);
+    // …but the form needs the full stored balance and the raw owner ids.
+    expect(rows[0].rawBalance).toBe(2000);
+    expect(rows[0].ownerFmIds).toEqual(["fmA"]);
+    expect(rows[0].ownerEntityIds).toEqual(["e1"]);
   });
 });

@@ -14,3 +14,13 @@
  * server-only deps, unlike the rest of `src/lib/portal/`).
  */
 export const PLAID_LOCKED_FIELDS = ["value", "last4", "custodian"] as const;
+
+/**
+ * The liability equivalent: the body fields Plaid owns on a linked debt. The
+ * portal liability PUT route rejects these with 400 on a Plaid-linked row, and
+ * the portal debt UI renders them read-only. Balance is institution-synced;
+ * name / liabilityType / owners stay client-editable. The synced display
+ * metadata (statementBalance / minimumPayment / aprPercentage / nextPaymentDueDate)
+ * is never sent by the form, so listing `balance` alone keeps the guard honest.
+ */
+export const LIABILITY_PLAID_LOCKED_FIELDS = ["balance"] as const;

@@ -12,7 +12,7 @@ import {
 } from "@/db/schema";
 import ProfileAccountsList from "@/components/portal/profile-accounts-list";
 import { PortalNetWorthHeader } from "@/components/portal/portal-networth-header";
-import { PortalDebtList } from "@/components/portal/portal-debt-list";
+import { ProfileDebtList } from "@/components/portal/profile-debt-list";
 import { NetWorthTrendChart } from "@/components/portal/networth-trend-chart";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
@@ -150,7 +150,12 @@ export default async function AccountsSection({
           editEnabled={editEnabled}
         />
       </section>
-      <PortalDebtList rows={debtRows} />
+      <ProfileDebtList
+        rows={debtRows}
+        familyMembers={fms}
+        trustEntities={trustEntities}
+        editEnabled={editEnabled}
+      />
     </div>
   );
 }
