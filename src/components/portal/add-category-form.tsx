@@ -129,14 +129,20 @@ export function AddCategoryForm({
         autoFocus
         aria-label="Category name"
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => {
+          setName(e.target.value);
+          setError(null);
+        }}
         placeholder="Category name"
         className={fieldCls}
       />
       <select
         aria-label="Group"
         value={groupId}
-        onChange={(e) => setGroupId(e.target.value)}
+        onChange={(e) => {
+          setGroupId(e.target.value);
+          setError(null);
+        }}
         className={fieldCls}
       >
         {groups.map((g) => (
@@ -150,7 +156,10 @@ export function AddCategoryForm({
         <input
           aria-label="New group name"
           value={newGroupName}
-          onChange={(e) => setNewGroupName(e.target.value)}
+          onChange={(e) => {
+            setNewGroupName(e.target.value);
+            setError(null);
+          }}
           placeholder="New group name"
           className={fieldCls}
         />

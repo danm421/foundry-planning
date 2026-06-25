@@ -52,7 +52,8 @@ it("creates a new group then the category in it with two sequential POSTs", asyn
   await waitFor(() => expect(portalFetchMock).toHaveBeenCalledTimes(2));
   const first = JSON.parse(portalFetchMock.mock.calls[0][1].body);
   const second = JSON.parse(portalFetchMock.mock.calls[1][1].body);
-  expect(first).toMatchObject({ name: "Transport", kind: "group" });
+  // 2 existing groups → palette index 2 → var(--data-orange) for the new group
+  expect(first).toMatchObject({ name: "Transport", kind: "group", color: "var(--data-orange)" });
   expect(second).toMatchObject({ name: "Tolls", kind: "category", parentId: "g-new" });
 });
 
