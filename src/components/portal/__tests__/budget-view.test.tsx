@@ -122,3 +122,10 @@ it("renders editable budget inputs seeded from the summary when editEnabled", ()
   // an unbudgeted leaf shows an empty input
   expect((screen.getByLabelText("Budget for Restaurants") as HTMLInputElement).value).toBe("");
 });
+
+it("shows the Add category affordance only when editEnabled", () => {
+  const { rerender } = render(<BudgetView summary={summary} editEnabled={false} />);
+  expect(screen.queryByRole("button", { name: /add category/i })).toBeNull();
+  rerender(<BudgetView summary={summary} editEnabled />);
+  expect(screen.getByRole("button", { name: /add category/i })).toBeTruthy();
+});

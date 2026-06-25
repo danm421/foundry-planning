@@ -8,6 +8,7 @@ import { categoryEmoji } from "@/lib/portal/category-emoji";
 import { BudgetDonut } from "@/components/portal/budget-donut";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
 import { BudgetAmountInput } from "@/components/portal/budget-amount-input";
+import { AddCategoryForm } from "@/components/portal/add-category-form";
 import type { BudgetSummary, GroupCell, LeafCell } from "@/lib/portal/budget-summary";
 
 type Summary = BudgetSummary & { month: string };
@@ -270,6 +271,13 @@ export default function BudgetView({
           );
         })}
       </div>
+
+      {editEnabled && (
+        <AddCategoryForm
+          groups={summary.groups.map((g) => ({ id: g.id, name: g.name, color: g.color }))}
+          groupCount={summary.groups.length}
+        />
+      )}
 
       {detailEl &&
         selectedId &&
