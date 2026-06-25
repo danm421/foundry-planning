@@ -15,6 +15,8 @@ export type ForgePromptContext = {
   currentPage?: string;
   /** A document import the advisor just uploaded in chat, awaiting review. */
   pendingImport?: { importId: string };
+  /** A meeting transcript stashed out-of-band, awaiting summarize+review. */
+  pendingTranscript?: { transcriptId: string };
   /** Display name of the advisor in this conversation (Clerk user name). */
   advisorName?: string;
   /** Today's date as an ISO string (YYYY-MM-DD), supplied server-side so Forge
@@ -96,6 +98,12 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
   const importLine = ctx.pendingImport
     ? `A document import (id ${ctx.pendingImport.importId}) is pending review — the advisor just attached it in chat. Call read_import to inspect what was extracted and how it matched existing accounts. Answer the advisor's question grounded in that data; if the extraction came back empty or failed, say so in one line with the real reason (e.g. a scanned image with no readable text). If they didn't ask anything specific, give a one- or two-line summary of what was extracted and how it matched. Do NOT commit the import; applying changes happens on the review screen. When the advisor asks to extract everything from an uploaded document, find what's missing, or pull a specific entity type (income, family, entities, real estate) that the initial import didn't capture, call extract_import with the import id. It re-extracts comprehensively and updates the pending import; then report the per-entity counts and direct them to the review screen to apply.`
     : null;
+  const transcriptLine = ctx.pendingTranscript
+    ? `A meeting transcript (id: ${ctx.pendingTranscript.transcriptId}) has been attached for this turn. ` +
+      `Call summarize_meeting_transcript with that exact transcriptId, then call save_meeting_record ` +
+      `with the resulting summary, title, meetingDate (use today if the transcript states none), and ` +
+      `proposedTasks so the advisor can review and approve. Do not paste the transcript text into chat.`
+    : null;
   const tail = [
     "",
     "--- Current context (server-provided; authoritative) ---",
@@ -104,6 +112,7 @@ export function buildSystemPrompt(ctx: ForgePromptContext): string {
     `Active scenario: ${scenarioLabel}.`,
     pageLine,
     ...(importLine ? [importLine] : []),
+    ...(transcriptLine ? [transcriptLine] : []),
     ...(ctx.advisorName ? [`You are assisting ${ctx.advisorName}.`] : []),
     ...(ctx.todayISO
       ? [
