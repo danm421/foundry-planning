@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, intakeForms } from "@/db/schema";
+import { clients, intakeForms, intakeEmailSettings } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -118,18 +118,29 @@ export async function POST(req: Request): Promise<Response> {
     if (mode === "blank") {
       const link = `${APP_URL}/intake/${token}`;
       const { sessionClaims } = await auth();
-      const orgName =
+      const firmName =
         (sessionClaims as { org_name?: string } | null)?.org_name ?? undefined;
       const advisor = await currentUser();
       const advisorName =
         [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") ||
         undefined;
+      const advisorEmail = advisor?.primaryEmailAddress?.emailAddress ?? undefined;
+
+      const [settings] = await db
+        .select()
+        .from(intakeEmailSettings)
+        .where(and(eq(intakeEmailSettings.firmId, firmId), eq(intakeEmailSettings.userId, userId)));
+
       await sendIntakeFormEmail({
         to: recipientEmail,
         link,
-        orgName,
+        fromName: settings?.fromName ?? undefined,
+        subject: settings?.subject ?? undefined,
+        introBody: settings?.introBody ?? undefined,
         advisorName,
-        householdName: recipientNameStr,
+        advisorEmail,
+        firmName,
+        clientName: recipientNameStr,
       });
     } else {
       // prefilled — send portal invite unless client is already bound
