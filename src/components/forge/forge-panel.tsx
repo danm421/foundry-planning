@@ -8,6 +8,8 @@ import { useForge } from "./forge-provider";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
 import { useForgeStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
+import { looksLikeTranscript } from "./detect-transcript";
+import { MeetingReviewCard } from "./meeting-review-card";
 import { MarkdownMessage } from "./markdown-message";
 import { SparkIcon } from "./spark-icon";
 import {
@@ -98,6 +100,8 @@ export function ForgePanel({
     resume,
     retry,
     retryAfterSeconds,
+    pendingMeetingReview,
+    resumeMeetingReview,
   } = useForgeStream(clientId);
   const router = useRouter();
 
@@ -108,6 +112,11 @@ export function ForgePanel({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
   const [pendingImportId, setPendingImportId] = useState<string | undefined>();
+  const [pendingTranscriptId, setPendingTranscriptId] = useState<string | undefined>();
+  // A detected paste held for the ask-first prompt: { text, wordCount } or null.
+  const [transcriptCandidate, setTranscriptCandidate] = useState<{ text: string; wordCount: number } | null>(null);
+  const [showTranscriptPaste, setShowTranscriptPaste] = useState(false);
+  const [transcriptPasteText, setTranscriptPasteText] = useState("");
   const [importResult, setImportResult] = useState<ForgeImportResult | null>(null);
   // After the advisor resolves an approval, keep a read-only receipt of the
   // decision in the thread (instead of the card vanishing) until the next turn.
@@ -130,7 +139,7 @@ export function ForgePanel({
   // corrupt the pending proposal, so lock the composer until it resolves.
   // (busy alone isn't enough: the stream emits `approval_required` then `done`,
   // so status is "done" — not "streaming" — while the card is up.)
-  const locked = busy || pendingApproval != null || importing;
+  const locked = busy || pendingApproval != null || pendingMeetingReview != null || importing || transcriptCandidate != null;
 
   // Mutual exclusion belt-and-braces: if the scenario drawer opens while the
   // forge is open, close the forge (the provider handles the inverse).
@@ -201,6 +210,40 @@ export function ForgePanel({
     setPendingImportId(undefined);
     setImportResult(null);
     setInput("");
+  }
+
+  async function processTranscript(text: string, source: "paste" | "explicit") {
+    setTranscriptCandidate(null);
+    setShowTranscriptPaste(false);
+    setTranscriptPasteText("");
+    const res = await fetch(`/api/clients/${clientId}/forge/transcript`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, conversationId, source }),
+    });
+    if (!res.ok) {
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", text: "I couldn't read that transcript. Please try again." },
+      ]);
+      return;
+    }
+    const { transcriptId } = (await res.json()) as { transcriptId: string };
+    setPendingTranscriptId(transcriptId);
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: "📄 Meeting transcript", attachments: ["Meeting transcript"] },
+    ]);
+    await send({
+      message: "",
+      scenarioId: scenarioId ?? "base",
+      conversationId,
+      currentPage: sectionKeyForPath(pathname),
+      pendingTranscriptId: transcriptId,
+      skipUserBubble: true,
+    });
+    setPendingTranscriptId(undefined);
+    refetchThreads();
   }
 
   async function selectThread(id: string) {
@@ -514,6 +557,24 @@ export function ForgePanel({
             />
           )}
 
+          {/* Meeting review card — parallel to approval, rendered after it. */}
+          {pendingMeetingReview && (
+            <MeetingReviewCard
+              review={pendingMeetingReview}
+              busy={busy}
+              onApprove={(payload) => void resumeMeetingReview(payload)}
+              onCancel={() =>
+                void resumeMeetingReview({
+                  approved: false,
+                  summaryTitle: pendingMeetingReview.summaryTitle,
+                  summary: pendingMeetingReview.summary,
+                  meetingDate: pendingMeetingReview.meetingDate ?? new Date().toISOString().slice(0, 10),
+                  tasks: [],
+                })
+              }
+            />
+          )}
+
           {/* Read-only receipt of the just-resolved approval (live path). */}
           {!pendingApproval && resolvedApproval && (
             <div data-testid="approval-receipt">
@@ -552,6 +613,75 @@ export function ForgePanel({
 
         {/* Composer */}
         <div className="border-t border-hair px-4 py-3">
+          {/* Ask-first prompt: shown when a pasted transcript is detected */}
+          {transcriptCandidate && (
+            <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
+              <p className="mb-2 text-[12px] text-ink-2">
+                This looks like a meeting transcript (~{transcriptCandidate.wordCount.toLocaleString()} words).
+                Summarize it and draft follow-up tasks?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void processTranscript(transcriptCandidate.text, "paste")}
+                  className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on"
+                >
+                  Yes, summarize
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInput((v) => v + transcriptCandidate.text);
+                    setTranscriptCandidate(null);
+                    composerRef.current?.focus();
+                  }}
+                  className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
+                >
+                  No, just paste it
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Explicit transcript paste affordance */}
+          {showTranscriptPaste && (
+            <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
+              <p className="mb-1.5 text-[11px] font-medium text-ink-3">Paste a meeting transcript</p>
+              <textarea
+                aria-label="Paste transcript here"
+                rows={4}
+                value={transcriptPasteText}
+                onChange={(e) => setTranscriptPasteText(e.target.value)}
+                placeholder="Paste transcript text here…"
+                className="mb-2 w-full resize-y rounded-[var(--radius-sm)] border border-hair bg-card px-2 py-1 text-[12px] text-ink placeholder:text-ink-4 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (transcriptPasteText.trim()) {
+                      void processTranscript(transcriptPasteText, "explicit");
+                    }
+                  }}
+                  disabled={!transcriptPasteText.trim()}
+                  className="rounded-[var(--radius-sm)] bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on disabled:opacity-40"
+                >
+                  Summarize
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTranscriptPaste(false);
+                    setTranscriptPasteText("");
+                  }}
+                  className="rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {attached.length > 0 && (
             <div className="mb-2 space-y-1.5">
               {attached.map((f, i) => (
@@ -625,12 +755,49 @@ export function ForgePanel({
                 <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
             </button>
+            {/* Explicit transcript affordance — opens an inline paste box. */}
+            <button
+              type="button"
+              onClick={() => setShowTranscriptPaste((v) => !v)}
+              disabled={locked}
+              aria-label="Paste a meeting transcript"
+              aria-pressed={showTranscriptPaste}
+              className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
+            >
+              {/* Inline doc-text icon */}
+              <svg
+                aria-hidden
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                <line x1="9" y1="13" x2="15" y2="13" />
+                <line x1="9" y1="17" x2="13" y2="17" />
+              </svg>
+              Transcript
+            </button>
             <textarea
               ref={composerRef}
               aria-label="Ask Forge"
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => {
+                if (locked) return;
+                const text = e.clipboardData.getData("text");
+                const { isCandidate, wordCount } = looksLikeTranscript(text);
+                if (isCandidate) {
+                  e.preventDefault(); // keep the big text OUT of the composer
+                  setTranscriptCandidate({ text, wordCount });
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
