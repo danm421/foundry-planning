@@ -125,4 +125,22 @@ describe("PUT /api/portal/transactions/[id]", () => {
       after: { categoryId: null },
     });
   });
+
+  it("reviewed:true sets reviewedAt + reviewedBy", async () => {
+    txnRow = { id: "t1", clientId: "c1", categoryId: null, categorizedBy: "plaid", excluded: false, reviewedAt: null };
+    const res = await PUT(putReq({ reviewed: true }), ctx);
+    expect(res.status).toBe(200);
+    const patch = updateMock.mock.calls[0][0];
+    expect(patch.reviewedAt).toBeInstanceOf(Date);
+    expect(patch.reviewedBy).toBe("u1");
+  });
+
+  it("reviewed:false clears reviewedAt and reviewedBy", async () => {
+    txnRow = { id: "t1", clientId: "c1", categoryId: null, categorizedBy: "plaid", excluded: false, reviewedAt: new Date() };
+    const res = await PUT(putReq({ reviewed: false }), ctx);
+    expect(res.status).toBe(200);
+    const patch = updateMock.mock.calls[0][0];
+    expect(patch.reviewedAt).toBeNull();
+    expect(patch.reviewedBy).toBeNull();
+  });
 });

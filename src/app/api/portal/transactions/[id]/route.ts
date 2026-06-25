@@ -11,18 +11,19 @@ import type { EntitySnapshot, FieldLabels } from "@/lib/audit/types";
 
 export const dynamic = "force-dynamic";
 
-type Body = { categoryId?: string | null; excluded?: boolean; recurringTransactionId?: string | null; type?: "income" | "expense" | "transfer" };
+type Body = { categoryId?: string | null; excluded?: boolean; recurringTransactionId?: string | null; type?: "income" | "expense" | "transfer"; reviewed?: boolean };
 
 const FIELD_LABELS: FieldLabels = {
   categoryId: { label: "Category", format: "reference" },
   excluded: { label: "Excluded", format: "text" },
   recurringTransactionId: { label: "Recurring", format: "reference" },
   type: { label: "Type", format: "text" },
+  reviewed: { label: "Reviewed", format: "text" },
 };
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
-    const { clientId, mode } = await resolvePortalClient();
+    const { clientId, mode, clerkUserId } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -37,6 +38,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         excluded: plaidTransactions.excluded,
         recurringTransactionId: plaidTransactions.recurringTransactionId,
         type: plaidTransactions.type,
+        reviewedAt: plaidTransactions.reviewedAt,
       })
       .from(plaidTransactions)
       .where(eq(plaidTransactions.id, id))
@@ -110,6 +112,13 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
         before.categoryId = row.categoryId;
         after.categoryId = null;
       }
+    }
+
+    if ("reviewed" in body && typeof body.reviewed === "boolean") {
+      patch.reviewedAt = body.reviewed ? new Date() : null;
+      patch.reviewedBy = body.reviewed ? clerkUserId : null;
+      before.reviewed = row.reviewedAt != null;
+      after.reviewed = body.reviewed;
     }
 
     if (Object.keys(patch).length === 0) {
