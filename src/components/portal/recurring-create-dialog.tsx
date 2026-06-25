@@ -12,24 +12,42 @@ export function RecurringCreateDialog({
   categories,
   onClose,
   onCreated,
+  recurringId,
+  initial,
 }: {
   seed: { name: string; merchantName: string | null; categoryId: string | null; amount: number };
   categories: CategoryRow[];
   onClose: () => void;
   onCreated: () => void;
+  recurringId?: string;
+  initial?: {
+    name: string;
+    matchType: "contains" | "exact";
+    pattern: string;
+    amountMin: number;
+    amountMax: number;
+    cadence: "monthly" | "annually";
+    dueDay: number | null;
+    dueMonth: number | null;
+    categoryId: string;
+  };
 }): ReactElement {
+  const isEdit = recurringId != null;
   const portalFetch = usePortalFetch();
-  const [name, setName] = useState(seed.merchantName ?? seed.name);
-  const [matchType, setMatchType] = useState<"contains" | "exact">("contains");
-  const [pattern, setPattern] = useState(seed.merchantName ?? seed.name);
-  // Seed a ±20% window around the source transaction amount.
-  const [amountMin, setAmountMin] = useState(String(Math.max(0, Math.round(seed.amount * 0.8))));
-  const [amountMax, setAmountMax] = useState(String(Math.round(seed.amount * 1.2)));
-  const [cadence, setCadence] = useState<"monthly" | "annually">("monthly");
-  const [anytime, setAnytime] = useState(true);
-  const [dueDay, setDueDay] = useState("1");
-  const [dueMonth, setDueMonth] = useState("1");
-  const [categoryId, setCategoryId] = useState<string | null>(seed.categoryId);
+  const [name, setName] = useState(initial?.name ?? seed.merchantName ?? seed.name);
+  const [matchType, setMatchType] = useState<"contains" | "exact">(initial?.matchType ?? "contains");
+  const [pattern, setPattern] = useState(initial?.pattern ?? seed.merchantName ?? seed.name);
+  const [amountMin, setAmountMin] = useState(
+    String(initial?.amountMin ?? Math.max(0, Math.round(seed.amount * 0.8))),
+  );
+  const [amountMax, setAmountMax] = useState(
+    String(initial?.amountMax ?? Math.round(seed.amount * 1.2)),
+  );
+  const [cadence, setCadence] = useState<"monthly" | "annually">(initial?.cadence ?? "monthly");
+  const [anytime, setAnytime] = useState(initial ? initial.dueDay == null : true);
+  const [dueDay, setDueDay] = useState(String(initial?.dueDay ?? 1));
+  const [dueMonth, setDueMonth] = useState(String(initial?.dueMonth ?? 1));
+  const [categoryId, setCategoryId] = useState<string | null>(initial?.categoryId ?? seed.categoryId);
   const [count, setCount] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,18 +76,21 @@ export function RecurringCreateDialog({
     }
     setSubmitting(true); setError(null);
     try {
-      const res = await portalFetch("/api/portal/recurrings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(), matchType, pattern: pattern.trim(),
-          amountMin: min, amountMax: max, cadence,
-          dueDay: cadence === "monthly" && !anytime ? Number(dueDay) : null,
-          dueMonth: cadence === "annually" ? Number(dueMonth) : null,
-          categoryId,
-        }),
-      });
-      if (!res.ok) { setError("Couldn't create the recurring."); return; }
+      const res = await portalFetch(
+        isEdit ? `/api/portal/recurrings/${recurringId}` : "/api/portal/recurrings",
+        {
+          method: isEdit ? "PUT" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(), matchType, pattern: pattern.trim(),
+            amountMin: min, amountMax: max, cadence,
+            dueDay: cadence === "monthly" && !anytime ? Number(dueDay) : null,
+            dueMonth: cadence === "annually" ? Number(dueMonth) : null,
+            categoryId,
+          }),
+        },
+      );
+      if (!res.ok) { setError(isEdit ? "Couldn't save the recurring." : "Couldn't create the recurring."); return; }
       onCreated();
     } finally {
       setSubmitting(false);
@@ -79,7 +100,9 @@ export function RecurringCreateDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4">
       <div className="w-full max-w-md space-y-4 rounded-xl border border-hair bg-card p-5">
-        <h2 className="text-[15px] font-semibold text-ink">New recurring transaction</h2>
+        <h2 className="text-[15px] font-semibold text-ink">
+          {isEdit ? "Edit recurring transaction" : "New recurring transaction"}
+        </h2>
 
         <label className="block space-y-1">
           <span className="text-[12px] text-ink-3">Name</span>
@@ -161,7 +184,7 @@ export function RecurringCreateDialog({
             className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2">Cancel</button>
           <button type="button" disabled={submitting} onClick={() => void submit()}
             className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-on disabled:opacity-50">
-            {submitting ? "Saving…" : "Create recurring"}
+            {submitting ? "Saving…" : isEdit ? "Save changes" : "Create recurring"}
           </button>
         </div>
       </div>
