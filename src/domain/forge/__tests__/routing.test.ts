@@ -1,6 +1,6 @@
 // src/domain/forge/__tests__/routing.test.ts
 import { describe, it, expect } from "vitest";
-import { routeAfterAgent } from "../routing";
+import { routeAfterAgent, MEETING_REVIEW_TOOL } from "../routing";
 import { containsFinancialFigure } from "../grounding";
 
 // Phase 2 names; in Phase 0 the set is empty so the approval branch is unreachable.
@@ -43,5 +43,20 @@ describe("routeAfterAgent", () => {
   it("ends a no-tool answer carrying only a year/age (no stall on conversational figures)", () => {
     const answer = "They retire in 2026 at age 65.";
     expect(routeAfterAgent([], WRITE, containsFinancialFigure(answer))).toBe("__end__");
+  });
+});
+
+// Meeting-review routing branch
+const WRITES = new Set(["add_expense", "save_meeting_record"]);
+
+describe("routeAfterAgent meeting_review", () => {
+  it("routes save_meeting_record to meeting_review (not approval)", () => {
+    expect(routeAfterAgent([{ name: MEETING_REVIEW_TOOL }], WRITES)).toBe("meeting_review");
+  });
+  it("still routes other writes to approval", () => {
+    expect(routeAfterAgent([{ name: "add_expense" }], WRITES)).toBe("approval");
+  });
+  it("routes reads to tools", () => {
+    expect(routeAfterAgent([{ name: "summarize_meeting_transcript" }], WRITES)).toBe("tools");
   });
 });

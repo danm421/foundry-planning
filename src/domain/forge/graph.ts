@@ -9,8 +9,8 @@ import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI fac
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
 import { buildToolContext } from "./context";
 import { getStore } from "./store";
-import { parseResumeDecisions } from "./interrupts";
-import { routeAfterAgent } from "./routing";
+import { parseResumeDecisions, parseMeetingReviewResume } from "./interrupts";
+import { routeAfterAgent, MEETING_REVIEW_TOOL } from "./routing";
 import { compactHistory } from "./history-window";
 import { classifyIntent } from "./dispatcher";
 import { verifyNode } from "./verify";
@@ -207,6 +207,73 @@ export function buildGraph(
     return { messages, toolErrorCounts };
   }
 
+  async function meetingReviewNode(state: typeof ForgeState.State) {
+    const ctx = authContext;
+    const last = state.messages[state.messages.length - 1] as AIMessage;
+    const call = (last.tool_calls ?? []).find((c) => c.name === MEETING_REVIEW_TOOL);
+    if (!call?.id) return { messages: [] };
+
+    const args = call.args as {
+      transcriptId: string;
+      summaryTitle: string;
+      summary: string;
+      meetingDate: string | null;
+      tasks?: unknown[];
+    };
+
+    // interrupt() throws on the first pass (pausing the graph) and returns the
+    // resume value on the second pass — everything below runs exactly once, on
+    // resume. Mirror the approvalNode pattern.
+    const resume = parseMeetingReviewResume(
+      interrupt({
+        type: "meeting_review",
+        summaryTitle: args.summaryTitle,
+        summary: args.summary,
+        meetingDate: args.meetingDate ?? null,
+        proposedTasks: args.tasks ?? [],
+      }),
+    );
+
+    await recordAudit({
+      action: "forge.write_proposed",
+      resourceType: "forge_conversation",
+      resourceId: conversationId,
+      clientId: ctx.clientId,
+      firmId: ctx.firmId,
+      metadata: { tool: MEETING_REVIEW_TOOL, toolCallId: call.id },
+    });
+
+    const toolErrorCounts: Record<string, number> = {};
+    let content: string;
+    if (resume.approved) {
+      // Invoke the tool with the advisor's EDITED payload (not the original args).
+      // transcriptId comes from the original call; everything else from the resume
+      // so the advisor's edits to the summary/tasks are persisted.
+      const t = toolsByName.get(MEETING_REVIEW_TOOL)!;
+      content = String(
+        await t.invoke({
+          transcriptId: args.transcriptId,
+          summaryTitle: resume.summaryTitle,
+          summary: resume.summary,
+          meetingDate: resume.meetingDate,
+          tasks: resume.tasks,
+        }),
+      );
+      toolErrorCounts[MEETING_REVIEW_TOOL] = isToolFailure(content) ? 1 : 0;
+    } else {
+      await recordAudit({
+        action: "forge.write_rejected",
+        resourceType: "forge_conversation",
+        resourceId: conversationId,
+        clientId: ctx.clientId,
+        firmId: ctx.firmId,
+        metadata: { tool: MEETING_REVIEW_TOOL, toolCallId: call.id },
+      });
+      content = "User declined to save the meeting record.";
+    }
+    return { messages: [new ToolMessage({ tool_call_id: call.id, content })], toolErrorCounts };
+  }
+
   async function escalateNode() {
     return {
       messages: [
@@ -221,13 +288,19 @@ export function buildGraph(
     .addNode("agent", agentNode)
     .addNode("tools", toolsNode)
     .addNode("approval", approvalNode)
+    .addNode("meeting_review", meetingReviewNode)
     .addNode("escalate", escalateNode)
     .addNode("verify", verifyNode)
     .addEdge(START, "agent")
-    // tools/approval → agent normally, but → escalate after N consecutive
-    // failures of a single tool (deterministic stop instead of a retry loop).
+    // tools/approval/meeting_review → agent normally, but → escalate after N
+    // consecutive failures of a single tool (deterministic stop instead of a
+    // retry loop).
     .addConditionalEdges("tools", routeAfterToolExec, { agent: "agent", escalate: "escalate" })
     .addConditionalEdges("approval", routeAfterToolExec, { agent: "agent", escalate: "escalate" })
+    .addConditionalEdges("meeting_review", routeAfterToolExec, {
+      agent: "agent",
+      escalate: "escalate",
+    })
     .addEdge("escalate", END)
     .addConditionalEdges(
       "agent",
@@ -239,7 +312,13 @@ export function buildGraph(
         const route = routeAfterAgent(calls, WRITE_TOOL_NAMES, hasFigure);
         return route === "__end__" ? END : route;
       },
-      { tools: "tools", approval: "approval", verify: "verify", [END]: END },
+      {
+        tools: "tools",
+        approval: "approval",
+        meeting_review: "meeting_review",
+        verify: "verify",
+        [END]: END,
+      },
     )
     .addConditionalEdges(
       "verify",
