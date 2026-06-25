@@ -344,7 +344,9 @@ export type AuditAction =
   | "intake.form.revoked"
   | "intake.email_settings.update"
   // Phase 4 — spending transactions / categorization
+  | "portal.transaction.create"
   | "portal.transaction.update"
+  | "portal.transaction.delete"
   | "portal.rule.create"
   | "portal.rule.update"
   | "portal.rule.delete"

@@ -24,6 +24,28 @@ import { isPortalVisibleCategory } from "@/lib/portal/account-visibility";
 
 export const dynamic = "force-dynamic";
 
+export async function GET(): Promise<Response> {
+  try {
+    const { clientId } = await resolvePortalClient();
+    const [scenario] = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+      .limit(1);
+    if (!scenario) return NextResponse.json({ accounts: [] });
+    const rows = await db
+      .select({ id: accounts.id, name: accounts.name, mask: accounts.accountNumberLast4 })
+      .from(accounts)
+      .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)))
+      .orderBy(accounts.name);
+    return NextResponse.json({ accounts: rows });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
+
 type Body = {
   name?: string;
   last4?: string | null;

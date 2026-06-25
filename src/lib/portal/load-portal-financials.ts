@@ -84,7 +84,7 @@ export async function loadPortalTrendTransactions(
     .filter(
       (r) =>
         (r.accountId != null && assetSet.has(r.accountId)) ||
-        (r.accountId == null && liabSet.has(r.plaidAccountId)),
+        (r.accountId == null && r.plaidAccountId != null && liabSet.has(r.plaidAccountId)),
     )
     .map((r) => ({ date: r.date, amount: Number(r.amount) }));
 }
