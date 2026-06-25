@@ -28,6 +28,7 @@ export type PortalTransactionDTO = {
   accountName: string | null;
   accountMask: string | null;
   type: "income" | "expense" | "transfer";
+  source: "plaid" | "manual";
 };
 
 export function buildTransactionConditions(clientId: string, f: TransactionFilters) {
@@ -64,6 +65,7 @@ export async function loadPortalTransactions(
       accountName: accounts.name,
       accountMask: accounts.accountNumberLast4,
       type: plaidTransactions.type,
+      source: plaidTransactions.source,
     })
     .from(plaidTransactions)
     .leftJoin(transactionCategories, eq(transactionCategories.id, plaidTransactions.categoryId))
