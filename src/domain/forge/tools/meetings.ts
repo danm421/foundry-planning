@@ -107,6 +107,12 @@ export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): St
         const tr = await getOwnedMeetingTranscript(args.transcriptId, ctx.clientId, g.firmId);
         if (!tr) return "Transcript not found for this client.";
 
+        // NOTE: this commit is not transactional (the document write also hits
+        // Vercel Blob, which can't enrol in a DB tx). A failure after the note is
+        // created leaves an orphan note + the staging row intact; the model may
+        // then re-propose, risking a duplicate note. Low-probability behind HITL;
+        // compensation/idempotency is tracked in future-work (client-data.md).
+
         // 1) Meeting note = the summary.
         const note = await createNote(g.householdId, g.firmId, ctx.userId, {
           subject: args.summaryTitle.slice(0, 300),
@@ -139,7 +145,7 @@ export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): St
           taskIds.push(created.id);
         }
 
-        await deleteMeetingTranscript(args.transcriptId);
+        await deleteMeetingTranscript(args.transcriptId, ctx.clientId, g.firmId);
         await recordAudit({
           action: "forge.write_approved",
           resourceType: "crm_note",

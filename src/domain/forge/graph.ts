@@ -271,7 +271,32 @@ export function buildGraph(
       });
       content = "User declined to save the meeting record.";
     }
-    return { messages: [new ToolMessage({ tool_call_id: call.id, content })], toolErrorCounts };
+
+    // Answer EVERY tool_call id in this turn, not just the meeting save — an
+    // unanswered id 400s the next agent turn (Azure requires one tool message
+    // per id). Mirrors approvalNode: the meeting call carries the save result;
+    // a read batched into the same turn runs inline; any OTHER write is NOT run
+    // here (HITL needs its own approval) but is still answered so the turn closes.
+    const messages: ToolMessage[] = [];
+    for (const c of last.tool_calls ?? []) {
+      if (!c.id) continue;
+      if (c.id === call.id) {
+        messages.push(new ToolMessage({ tool_call_id: c.id, content }));
+      } else if (WRITE_TOOL_NAMES.has(c.name)) {
+        messages.push(
+          new ToolMessage({
+            tool_call_id: c.id,
+            content: "Not run — submit this action on its own so it can be approved.",
+          }),
+        );
+      } else {
+        const rt = toolsByName.get(c.name);
+        const rc = String(rt ? await rt.invoke(c.args) : "Unknown tool.");
+        if (rt) toolErrorCounts[c.name] = isToolFailure(rc) ? 1 : 0;
+        messages.push(new ToolMessage({ tool_call_id: c.id, content: rc }));
+      }
+    }
+    return { messages, toolErrorCounts };
   }
 
   async function escalateNode() {

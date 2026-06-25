@@ -48,7 +48,9 @@ export function MeetingReviewCard({ review, busy, onApprove, onCancel }: Meeting
       approved: true,
       summaryTitle,
       summary,
-      meetingDate,
+      // A cleared date input yields "" — fall back to today so the note write
+      // never gets an empty/invalid date (createNote would reject it).
+      meetingDate: meetingDate || today,
       tasks: rows
         .filter((r) => r.included)
         // eslint-disable-next-line @typescript-eslint/no-unused-vars

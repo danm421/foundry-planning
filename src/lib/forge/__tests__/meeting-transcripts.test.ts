@@ -34,7 +34,7 @@ describe("meeting-transcripts DB round-trip", () => {
     // Wrong firm → not found (IDOR).
     const denied = await getOwnedMeetingTranscript(id, client.id, "firm_other");
     expect(denied).toBeNull();
-    await deleteMeetingTranscript(id);
+    await deleteMeetingTranscript(id, client.id, client.firmId);
     const gone = await getOwnedMeetingTranscript(id, client.id, client.firmId);
     expect(gone).toBeNull();
   });

@@ -35,4 +35,13 @@ describe("MeetingReviewCard", () => {
       tasks: expect.arrayContaining([expect.objectContaining({ title: "Send IPS to Jane" })]),
     }));
   });
+  it("falls back to today when the date is cleared (never emits an empty date)", () => {
+    const onApprove = vi.fn();
+    render(<MeetingReviewCard review={review} busy={false} onApprove={onApprove} onCancel={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/meeting date/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save to crm/i }));
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
+    );
+  });
 });

@@ -50,6 +50,21 @@ export async function getOwnedMeetingTranscript(
   return row ?? null;
 }
 
-export async function deleteMeetingTranscript(id: string): Promise<void> {
-  await db.delete(forgeMeetingTranscripts).where(eq(forgeMeetingTranscripts.id, id));
+/** Scoped delete — pinned to (id, clientId, firmId) so a bare id can never
+ *  remove a row outside the conversation's client/firm (defense in depth; the
+ *  only caller already gates via getOwnedMeetingTranscript first). */
+export async function deleteMeetingTranscript(
+  id: string,
+  clientId: string,
+  firmId: string,
+): Promise<void> {
+  await db
+    .delete(forgeMeetingTranscripts)
+    .where(
+      and(
+        eq(forgeMeetingTranscripts.id, id),
+        eq(forgeMeetingTranscripts.clientId, clientId),
+        eq(forgeMeetingTranscripts.firmId, firmId),
+      ),
+    );
 }

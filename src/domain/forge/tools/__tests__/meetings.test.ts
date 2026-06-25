@@ -97,7 +97,7 @@ describe("save_meeting_record", () => {
     expect(createNote).toHaveBeenCalledWith("hh_1", "firm_1", "u", expect.objectContaining({ noteKind: "meeting" }));
     expect(uploadCrmDocument).toHaveBeenCalledWith("hh_1", expect.any(File), expect.objectContaining({ folderId: "folder_1" }));
     expect(createTask).toHaveBeenCalledWith("firm_1", "u", expect.objectContaining({ householdId: "hh_1", title: "Send IPS" }));
-    expect(deleteMeetingTranscript).toHaveBeenCalledWith("tr_1");
+    expect(deleteMeetingTranscript).toHaveBeenCalledWith("tr_1", "client_1", "firm_1");
   });
 
   it("refuses a transcript outside the client (IDOR)", async () => {
