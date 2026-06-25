@@ -24,6 +24,11 @@ describe("buildIntakeFromHeader", () => {
     );
     expect(buildIntakeFromHeader('A"B')).toBe('"A\\"B" <noreply@foundryplanning.com>');
   });
+  it("preserves legitimate punctuation in the display name (hyphen, ampersand, parens)", () => {
+    expect(buildIntakeFromHeader("Smith-Jones & Co (Advisors)")).toBe(
+      '"Smith-Jones & Co (Advisors)" <noreply@foundryplanning.com>',
+    );
+  });
 });
 
 describe("resolveSubject", () => {
@@ -91,5 +96,15 @@ describe("buildIntakeEmailHtml", () => {
       advisorName: "Jane Advisor",
     });
     expect(html).not.toContain("mailto:");
+  });
+  it("preserves paragraph breaks in a multi-paragraph intro", () => {
+    const html = buildIntakeEmailHtml({ ...base, introBody: "First paragraph.\n\nSecond paragraph." });
+    expect(html).toContain("<p>First paragraph.</p>");
+    expect(html).toContain("<p>Second paragraph.</p>");
+  });
+
+  it("renders a single newline within a paragraph as a line break", () => {
+    const html = buildIntakeEmailHtml({ ...base, introBody: "Line one.\nLine two." });
+    expect(html).toContain("Line one.<br/>Line two.");
   });
 });

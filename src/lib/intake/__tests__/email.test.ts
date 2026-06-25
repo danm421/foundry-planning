@@ -29,7 +29,7 @@ describe("sendIntakeFormEmail", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("resolves without throwing with minimal args (no advisorName/householdName)", async () => {
+  it("resolves without throwing with minimal args (no advisorName/clientName)", async () => {
     await expect(
       sendIntakeFormEmail({
         to: "client@example.com",
