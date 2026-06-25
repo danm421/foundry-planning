@@ -175,6 +175,104 @@ export function computeYearlyMetrics(
     .sort((a, b) => b.year - a.year);
 }
 
+export type RecurringRowDTO = {
+  id: string;
+  name: string;
+  cadence: "monthly" | "annually";
+  dueDay: number | null;
+  dueMonth: number | null;
+  matchType: "exact" | "contains";
+  pattern: string;
+  amountMin: number;
+  amountMax: number;
+  categoryId: string;
+  categoryName: string | null;
+  categoryColor: string | null;
+  categoryIcon: string | null;
+  predicted: number;
+  state: "paid" | "due" | "overdue";
+  postedThisMonth: number;
+  nextPaymentDate: string | null;
+  timeline: { month: string; paid: boolean }[];
+  metricsByYear: { year: number; total: number; avg: number; count: number }[];
+};
+
+export type RecurringsData = {
+  recurrings: RecurringRowDTO[];
+  paidSoFar: number;
+  leftToPay: number;
+  month: string;
+};
+
+type AssembleInput = {
+  rows: {
+    id: string; name: string; matchType: "exact" | "contains"; pattern: string;
+    amountMin: number; amountMax: number; cadence: "monthly" | "annually";
+    dueDay: number | null; dueMonth: number | null; categoryId: string;
+  }[];
+  claimedThisMonth: { recurringTransactionId: string | null; amount: number }[];
+  history: { recurringTransactionId: string | null; amount: number; date: string }[];
+  categories: { id: string; name: string; color: string | null; icon: string | null }[];
+  month: string; // YYYY-MM
+  today: string; // YYYY-MM-DD
+  now: Date;
+};
+
+export function assembleRecurringView(input: AssembleInput): RecurringsData {
+  const { rows, claimedThisMonth, history, categories, month, today, now } = input;
+  const catById = new Map(categories.map((c) => [c.id, c]));
+
+  const postedByRecurring = new Map<string, number>();
+  for (const c of claimedThisMonth) {
+    if (!c.recurringTransactionId) continue;
+    postedByRecurring.set(
+      c.recurringTransactionId,
+      (postedByRecurring.get(c.recurringTransactionId) ?? 0) + c.amount,
+    );
+  }
+
+  const historyByRecurring = new Map<string, { date: string; amount: number }[]>();
+  for (const h of history) {
+    if (!h.recurringTransactionId) continue;
+    const list = historyByRecurring.get(h.recurringTransactionId) ?? [];
+    list.push({ date: h.date, amount: h.amount });
+    historyByRecurring.set(h.recurringTransactionId, list);
+  }
+
+  let paidSoFar = 0;
+  let leftToPay = 0;
+  const recurrings: RecurringRowDTO[] = [];
+
+  for (const r of rows) {
+    const dueThisMonth = isRecurringDueInMonth(r, month);
+    const postedThisMonth = postedByRecurring.get(r.id) ?? 0;
+    const matched = historyByRecurring.get(r.id) ?? [];
+    const predicted = predictRecurringAmount(matched.map((m) => m.amount), {
+      amountMin: r.amountMin, amountMax: r.amountMax,
+    });
+    const state = recurringPeriodState({
+      dueDay: r.dueDay, today, hasMatchThisPeriod: postedThisMonth > 0,
+    });
+    const cat = catById.get(r.categoryId);
+    recurrings.push({
+      id: r.id, name: r.name, cadence: r.cadence, dueDay: r.dueDay, dueMonth: r.dueMonth,
+      matchType: r.matchType, pattern: r.pattern, amountMin: r.amountMin, amountMax: r.amountMax,
+      categoryId: r.categoryId,
+      categoryName: cat?.name ?? null, categoryColor: cat?.color ?? null, categoryIcon: cat?.icon ?? null,
+      predicted, state, postedThisMonth,
+      nextPaymentDate: nextPaymentDate(r, today, postedThisMonth > 0),
+      timeline: buildTimeline(matched.map((m) => m.date), now),
+      metricsByYear: computeYearlyMetrics(matched),
+    });
+    if (dueThisMonth) {
+      if (postedThisMonth > 0) paidSoFar += postedThisMonth;
+      else leftToPay += predicted;
+    }
+  }
+
+  return { recurrings, paidSoFar: round2(paidSoFar), leftToPay: round2(leftToPay), month };
+}
+
 export function describeRules(r: {
   matchType: "exact" | "contains";
   pattern: string;

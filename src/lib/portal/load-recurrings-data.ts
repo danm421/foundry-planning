@@ -1,26 +1,11 @@
 import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { recurringTransactions, plaidTransactions } from "@/db/schema";
-import {
-  predictRecurringAmount,
-  recurringPeriodState,
-  isRecurringDueInMonth,
-  round2,
-  type RecurringLike,
-} from "@/lib/portal/recurring-matching";
+import { recurringTransactions, plaidTransactions, transactionCategories } from "@/db/schema";
+import { assembleRecurringView } from "@/lib/portal/recurring-matching";
+import type { RecurringsData } from "@/lib/portal/recurring-matching";
 import { currentMonthRange } from "@/lib/portal/load-budget-data";
 
-export type RecurringRowDTO = {
-  id: string;
-  name: string;
-  cadence: "monthly" | "annually";
-  dueDay: number | null;
-  dueMonth: number | null;
-  categoryId: string;
-  predicted: number;
-  state: "paid" | "due" | "overdue";
-  postedThisMonth: number;
-};
+export type { RecurringRowDTO, RecurringsData } from "@/lib/portal/recurring-matching";
 
 function ymd(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(
@@ -28,104 +13,59 @@ function ymd(now: Date): string {
   ).padStart(2, "0")}`;
 }
 
-export async function loadRecurringsData(
-  clientId: string,
-  now: Date,
-): Promise<{ recurrings: RecurringRowDTO[]; paidSoFar: number; leftToPay: number; month: string }> {
+export async function loadRecurringsData(clientId: string, now: Date): Promise<RecurringsData> {
   const { from, to, month } = currentMonthRange(now);
 
-  const [rows, claimed, history] = await Promise.all([
-    db
-      .select()
-      .from(recurringTransactions)
-      .where(eq(recurringTransactions.clientId, clientId)),
+  const [rows, claimed, history, cats] = await Promise.all([
+    db.select().from(recurringTransactions).where(eq(recurringTransactions.clientId, clientId)),
 
-    // All of this client's claimed transactions in the current month, grouped by recurring.
+    db
+      .select({ recurringTransactionId: plaidTransactions.recurringTransactionId, amount: plaidTransactions.amount })
+      .from(plaidTransactions)
+      .where(and(
+        eq(plaidTransactions.clientId, clientId),
+        eq(plaidTransactions.excluded, false),
+        isNotNull(plaidTransactions.recurringTransactionId),
+        gte(plaidTransactions.date, from),
+        lte(plaidTransactions.date, to),
+      )),
+
     db
       .select({
         recurringTransactionId: plaidTransactions.recurringTransactionId,
         amount: plaidTransactions.amount,
+        date: plaidTransactions.date,
       })
       .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          isNotNull(plaidTransactions.recurringTransactionId),
-          gte(plaidTransactions.date, from),
-          lte(plaidTransactions.date, to),
-        ),
-      ),
+      .where(and(
+        eq(plaidTransactions.clientId, clientId),
+        isNotNull(plaidTransactions.recurringTransactionId),
+      )),
 
-    // History for prediction: all claimed amounts per recurring (any month).
     db
       .select({
-        recurringTransactionId: plaidTransactions.recurringTransactionId,
-        amount: plaidTransactions.amount,
+        id: transactionCategories.id,
+        name: transactionCategories.name,
+        color: transactionCategories.color,
+        icon: transactionCategories.icon,
       })
-      .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          isNotNull(plaidTransactions.recurringTransactionId),
-        ),
-      ),
+      .from(transactionCategories)
+      .where(eq(transactionCategories.clientId, clientId)),
   ]);
 
-  const postedByRecurring = new Map<string, number>();
-  for (const c of claimed) {
-    if (!c.recurringTransactionId) continue;
-    postedByRecurring.set(
-      c.recurringTransactionId,
-      (postedByRecurring.get(c.recurringTransactionId) ?? 0) + Number(c.amount),
-    );
-  }
-
-  const historyByRecurring = new Map<string, number[]>();
-  for (const h of history) {
-    if (!h.recurringTransactionId) continue;
-    const list = historyByRecurring.get(h.recurringTransactionId) ?? [];
-    list.push(Number(h.amount));
-    historyByRecurring.set(h.recurringTransactionId, list);
-  }
-
-  const today = ymd(now);
-  let paidSoFar = 0;
-  let leftToPay = 0;
-  const recurrings: RecurringRowDTO[] = [];
-
-  for (const r of rows) {
-    const like: RecurringLike = {
-      id: r.id, matchType: r.matchType, pattern: r.pattern,
-      amountMin: Number(r.amountMin), amountMax: Number(r.amountMax),
-      cadence: r.cadence, dueDay: r.dueDay, dueMonth: r.dueMonth,
-      categoryId: r.categoryId, createdAt: r.createdAt,
-    };
-    const dueThisMonth = isRecurringDueInMonth(like, month);
-    const postedThisMonth = postedByRecurring.get(r.id) ?? 0;
-    const predicted = predictRecurringAmount(historyByRecurring.get(r.id) ?? [], {
-      amountMin: like.amountMin, amountMax: like.amountMax,
-    });
-    const state = recurringPeriodState({
-      dueDay: r.dueDay, today, hasMatchThisPeriod: postedThisMonth > 0,
-    });
-    recurrings.push({
-      id: r.id, name: r.name, cadence: r.cadence, dueDay: r.dueDay,
-      dueMonth: r.dueMonth, categoryId: r.categoryId, predicted, state, postedThisMonth,
-    });
-    if (dueThisMonth) {
-      if (postedThisMonth > 0) {
-        paidSoFar += postedThisMonth;
-      } else {
-        leftToPay += predicted;
-      }
-    }
-  }
-
-  return {
-    recurrings,
-    paidSoFar: round2(paidSoFar),
-    leftToPay: round2(leftToPay),
-    month,
-  };
+  return assembleRecurringView({
+    rows: rows.map((r) => ({
+      id: r.id, name: r.name, matchType: r.matchType, pattern: r.pattern,
+      amountMin: Number(r.amountMin), amountMax: Number(r.amountMax), cadence: r.cadence,
+      dueDay: r.dueDay, dueMonth: r.dueMonth, categoryId: r.categoryId,
+    })),
+    claimedThisMonth: claimed.map((c) => ({
+      recurringTransactionId: c.recurringTransactionId, amount: Number(c.amount),
+    })),
+    history: history.map((h) => ({
+      recurringTransactionId: h.recurringTransactionId, amount: Number(h.amount), date: h.date,
+    })),
+    categories: cats,
+    month, today: ymd(now), now,
+  });
 }

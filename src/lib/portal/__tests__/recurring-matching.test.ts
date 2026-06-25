@@ -1,4 +1,4 @@
-import { it, expect } from "vitest";
+import { it, expect, describe } from "vitest";
 import {
   matchesRecurring,
   resolveRecurringClaim,
@@ -136,6 +136,7 @@ import {
   buildTimeline,
   computeYearlyMetrics,
   describeRules,
+  assembleRecurringView,
 } from "@/lib/portal/recurring-matching";
 
 describe("nextPaymentDate", () => {
@@ -206,5 +207,52 @@ describe("describeRules", () => {
       matchType: "exact", pattern: "Copilot", amountMin: 95, amountMax: 110,
       cadence: "annually", dueDay: null, dueMonth: 6,
     })).toEqual(["Named exactly Copilot", "from $95 to $110", "in June", "every year"]);
+  });
+});
+
+describe("assembleRecurringView", () => {
+  const cats = [{ id: "c1", name: "Subscriptions", color: "var(--data-purple)", icon: "📺" }];
+  const rows = [{
+    id: "r1", name: "Netflix", matchType: "contains" as const, pattern: "netflix",
+    amountMin: 10, amountMax: 20, cadence: "monthly" as const, dueDay: 8, dueMonth: null, categoryId: "c1",
+  }];
+
+  it("builds a rich DTO and splits paid vs left-to-pay", () => {
+    const out = assembleRecurringView({
+      rows,
+      claimedThisMonth: [{ recurringTransactionId: "r1", amount: 15 }],
+      history: [
+        { recurringTransactionId: "r1", amount: 15, date: "2026-06-02" },
+        { recurringTransactionId: "r1", amount: 14, date: "2026-05-02" },
+      ],
+      categories: cats,
+      month: "2026-06",
+      today: "2026-06-15",
+      now: new Date(Date.UTC(2026, 5, 15)),
+    });
+    expect(out.paidSoFar).toBe(15);
+    expect(out.leftToPay).toBe(0);
+    const r = out.recurrings[0];
+    expect(r.state).toBe("paid");
+    expect(r.categoryName).toBe("Subscriptions");
+    expect(r.categoryIcon).toBe("📺");
+    expect(r.nextPaymentDate).toBe("2026-07-08");
+    expect(r.metricsByYear[0]).toEqual({ year: 2026, total: 29, avg: 14.5, count: 2 });
+    expect(r.timeline.at(-1)).toEqual({ month: "2026-06", paid: true });
+  });
+
+  it("counts an unpaid due bill toward leftToPay using the predicted amount", () => {
+    const out = assembleRecurringView({
+      rows,
+      claimedThisMonth: [],
+      history: [],
+      categories: cats,
+      month: "2026-06",
+      today: "2026-06-01",
+      now: new Date(Date.UTC(2026, 5, 1)),
+    });
+    expect(out.paidSoFar).toBe(0);
+    expect(out.leftToPay).toBe(15); // (10 + 20) / 2
+    expect(out.recurrings[0].state).toBe("due");
   });
 });

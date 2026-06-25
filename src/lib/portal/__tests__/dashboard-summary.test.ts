@@ -57,7 +57,10 @@ describe("netThisMonth", () => {
 function rec(over: Partial<RecurringRowDTO>): RecurringRowDTO {
   return {
     id: "r", name: "Bill", cadence: "monthly", dueDay: 20, dueMonth: null,
-    categoryId: "c", predicted: 50, state: "due", postedThisMonth: 0, ...over,
+    matchType: "contains", pattern: "bill", amountMin: 0, amountMax: 0,
+    categoryId: "c", categoryName: null, categoryColor: null, categoryIcon: null,
+    predicted: 50, state: "due", postedThisMonth: 0,
+    nextPaymentDate: null, timeline: [], metricsByYear: [], ...over,
   };
 }
 
