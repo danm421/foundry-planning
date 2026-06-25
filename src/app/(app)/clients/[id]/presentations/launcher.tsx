@@ -82,7 +82,29 @@ function buildAutoFilename(
   return `${last}_${tpl}_${stamp}.pdf`;
 }
 
-function makeInitialState(): LauncherState {
+function makeInitialState(
+  initialTemplates: Props["initialTemplates"],
+): LauncherState {
+  // Default the launcher to the "Foundation Plan" built-in starter so advisors
+  // land on a ready-to-run deck instead of a bare cover/toc shell. Honor a
+  // dismissal: if the advisor hid the built-in (it then lives in builtInHidden),
+  // fall back to the minimal cover/toc/cashFlow deck below.
+  const foundation = initialTemplates.builtIn.find(
+    (t) => t.slug === "foundation-plan",
+  );
+  if (foundation) {
+    return {
+      topScenarioPickerValue: "base",
+      filename: "",
+      pages: foundation.pages.map((p) => ({
+        pageId: p.pageId,
+        options: p.options,
+        scenarioOverride: undefined,
+      })),
+      loadedTemplate: foundation,
+      isModified: false,
+    };
+  }
   return {
     topScenarioPickerValue: "base",
     filename: "",
@@ -111,7 +133,9 @@ function makeInitialState(): LauncherState {
 export function PresentationsLauncher(props: Props) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const [state, dispatch] = useLauncherState(makeInitialState());
+  const [state, dispatch] = useLauncherState(
+    makeInitialState(props.initialTemplates),
+  );
 
   const [templates, setTemplates] = useState(props.initialTemplates);
   const [showSaveModal, setShowSaveModal] = useState(false);
