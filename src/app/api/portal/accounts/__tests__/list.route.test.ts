@@ -21,7 +21,7 @@ vi.mock("@/lib/portal/account-visibility", () => ({ isPortalVisibleCategory: () 
 vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a, and: (...a: unknown[]) => a }));
 vi.mock("@/db", () => ({
   db: {
-    select: () => ({ from: (tbl: { _name: string }) => ({
+    select: () => ({ from: () => ({
       where: () => ({
         limit: () => Promise.resolve(scenarioRow ? [scenarioRow] : []),
         orderBy: () => Promise.resolve(acctRows ?? []),
