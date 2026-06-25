@@ -129,3 +129,21 @@ it("shows the Add category affordance only when editEnabled", () => {
   rerender(<BudgetView summary={summary} editEnabled />);
   expect(screen.getByRole("button", { name: /add category/i })).toBeTruthy();
 });
+
+// Layout-alignment guard (regression). The Budget column cell lives OUTSIDE the
+// row's selector button — an editable input can't legally nest in a button — so
+// it must carry its own horizontal margin to stay aligned under the "Budget"
+// header. When that margin was dropped, the cell rendered flush to the panel
+// edge and collided with the detail rail, so the whole column read as "gone".
+// jsdom can't measure layout, so we assert the spacing class is present.
+it("read-only budget cell carries the alignment margin", () => {
+  render(<BudgetView summary={summary} editEnabled={false} />);
+  // $400 is Groceries' budget — the only place that amount appears.
+  expect(screen.getByText("$400").className).toContain("mx-1.5");
+});
+
+it("editable budget input wrapper carries the alignment margin", () => {
+  render(<BudgetView summary={summary} editEnabled />);
+  const input = screen.getByLabelText("Budget for Groceries");
+  expect(input.parentElement?.className).toContain("mx-1.5");
+});

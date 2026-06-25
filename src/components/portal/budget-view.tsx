@@ -78,10 +78,18 @@ function SpentAndBar({
   );
 }
 
-/** Read-only Budget column cell (when editing is disabled). */
+/**
+ * Read-only Budget column cell (when editing is disabled). The `mx-1.5` keeps
+ * this cell aligned under the "Budget" column header: it sits OUTSIDE the row's
+ * selector button (an editable input can't nest in a button), so it must re-add
+ * the spacing the button's `gap-3`/`px-1.5` used to give it — a 6px trailing
+ * margin (the header's `px-1.5`) and a 6px leading margin that, with the button's
+ * own 6px right padding, reproduces the header's `gap-3`. Without it the cell is
+ * flush to the panel edge and collides with the detail rail (reads as "gone").
+ */
 function BudgetCell({ budget }: { budget: number | null }): ReactElement {
   return (
-    <span className="tabular w-14 shrink-0 text-right text-[12px] text-ink-4">
+    <span className="tabular mx-1.5 w-14 shrink-0 text-right text-[12px] text-ink-4">
       {budget != null ? fmtUsd(budget) : "—"}
     </span>
   );

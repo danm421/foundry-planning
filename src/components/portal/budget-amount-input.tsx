@@ -75,7 +75,10 @@ export function BudgetAmountInput({
 
   return (
     <span
-      className={`flex w-14 shrink-0 items-center justify-end rounded ${
+      // `mx-1.5` keeps this input aligned under the "Budget" column header — it
+      // lives OUTSIDE the row's selector button, so it must re-add the spacing
+      // `rowBase`'s gap-3/px-1.5 used to provide (matches the read-only cell).
+      className={`mx-1.5 flex w-14 shrink-0 items-center justify-end rounded ${
         error ? "ring-1 ring-crit" : ""
       }`}
     >
