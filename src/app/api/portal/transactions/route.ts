@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { plaidTransactions, transactionCategories, accounts, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
@@ -80,7 +80,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // Transfers never carry a category; otherwise validate the chosen leaf.
-    let categoryId: string | null = body.type === "transfer" ? null : body.categoryId ?? null;
+    const categoryId: string | null = body.type === "transfer" ? null : body.categoryId ?? null;
     if (categoryId !== null) {
       const [cat] = await db
         .select({ clientId: transactionCategories.clientId, kind: transactionCategories.kind })
