@@ -7,6 +7,7 @@ import { fmtUsd } from "@/lib/portal/format";
 import { categoryEmoji } from "@/lib/portal/category-emoji";
 import { BudgetDonut } from "@/components/portal/budget-donut";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
+import { BudgetAmountInput } from "@/components/portal/budget-amount-input";
 import type { BudgetSummary, GroupCell, LeafCell } from "@/lib/portal/budget-summary";
 
 type Summary = BudgetSummary & { month: string };
@@ -53,7 +54,7 @@ function MiniBar({
   );
 }
 
-function Amounts({
+function SpentAndBar({
   actual,
   budget,
   muted,
@@ -72,10 +73,16 @@ function Amounts({
       <span className="hidden w-24 shrink-0 sm:block">
         <MiniBar actual={actual} budget={budget} />
       </span>
-      <span className="tabular w-14 shrink-0 text-right text-[12px] text-ink-4">
-        {budget != null ? fmtUsd(budget) : "—"}
-      </span>
     </>
+  );
+}
+
+/** Read-only Budget column cell (when editing is disabled). */
+function BudgetCell({ budget }: { budget: number | null }): ReactElement {
+  return (
+    <span className="tabular w-14 shrink-0 text-right text-[12px] text-ink-4">
+      {budget != null ? fmtUsd(budget) : "—"}
+    </span>
   );
 }
 
@@ -226,25 +233,36 @@ export default function BudgetView({
                   <span className="flex-1 truncate text-[13px] font-medium text-ink">
                     {g.name}
                   </span>
-                  <Amounts actual={g.actual} budget={g.budget} />
+                  <SpentAndBar actual={g.actual} budget={g.budget} />
                 </button>
+                {editEnabled ? (
+                  <BudgetAmountInput categoryId={g.id} value={g.budget} label={g.name} />
+                ) : (
+                  <BudgetCell budget={g.budget} />
+                )}
               </div>
 
               {open && (
                 <div className="space-y-0.5 pl-6">
                   {g.leaves.map((l: LeafCell) => (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => setSelectedId(l.id)}
-                      className={`${rowBase} ${selectedId === l.id ? selCls : hovCls}`}
-                    >
-                      <span className="w-5 shrink-0 text-center text-[13px]" aria-hidden>
-                        {categoryEmoji(l.slug)}
-                      </span>
-                      <span className="flex-1 truncate text-[13px] text-ink-2">{l.name}</span>
-                      <Amounts actual={l.actual} budget={l.budget} muted />
-                    </button>
+                    <div key={l.id} className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(l.id)}
+                        className={`${rowBase} ${selectedId === l.id ? selCls : hovCls}`}
+                      >
+                        <span className="w-5 shrink-0 text-center text-[13px]" aria-hidden>
+                          {categoryEmoji(l.slug)}
+                        </span>
+                        <span className="flex-1 truncate text-[13px] text-ink-2">{l.name}</span>
+                        <SpentAndBar actual={l.actual} budget={l.budget} muted />
+                      </button>
+                      {editEnabled ? (
+                        <BudgetAmountInput categoryId={l.id} value={l.budget} label={l.name} muted />
+                      ) : (
+                        <BudgetCell budget={l.budget} />
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
