@@ -1310,6 +1310,13 @@
       "when": 1782412061910,
       "tag": "0186_portal_transaction_reviewed",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1782414742335,
+      "tag": "0187_forge_meeting_transcripts",
+      "breakpoints": true
     }
   ]
 }
