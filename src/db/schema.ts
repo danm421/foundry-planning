@@ -3137,6 +3137,10 @@ export const plaidTransactions = pgTable(
     // Classification source of truth: drives budget inclusion + list badge +
     // category visibility. Seeded from PFC at ingest; user-overridable.
     type: transactionTypeEnum("type").notNull().default("expense"),
+    // Explicit client/advisor "I've seen this charge" flag — independent of
+    // category. NULL = unreviewed; a timestamp = reviewed, and when.
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedBy: text("reviewed_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -3148,6 +3152,10 @@ export const plaidTransactions = pgTable(
     ),
     accountDateIdx: index("plaid_transactions_account_date_idx").on(t.accountId, t.date),
     recurringIdx: index("plaid_transactions_recurring_idx").on(t.recurringTransactionId),
+    clientReviewedIdx: index("plaid_transactions_client_reviewed_idx").on(
+      t.clientId,
+      t.reviewedAt,
+    ),
   }),
 );
 
