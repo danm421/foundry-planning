@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_INTAKE_SUBJECT,
   DEFAULT_INTAKE_INTRO,
+  INTAKE_EMAIL_TOKENS,
 } from "@/lib/intake/defaults";
 
 type Props = {
@@ -95,7 +96,10 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
             <textarea id="es-intro" rows={6} value={introBody} onChange={(e) => setIntroBody(e.target.value)}
               placeholder={DEFAULT_INTAKE_INTRO} className={`${inputCls} resize-y`} />
             <p className="mt-1 text-[11px] text-ink-4">
-              Tokens: <code>{"{{advisorName}}"}</code> <code>{"{{firmName}}"}</code> <code>{"{{clientName}}"}</code>
+              Tokens:{" "}
+              {INTAKE_EMAIL_TOKENS.map((t) => (
+                <code key={t} className="mr-1">{`{{${t}}}`}</code>
+              ))}
             </p>
           </div>
           <div className="flex items-center gap-3">

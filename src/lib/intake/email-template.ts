@@ -40,6 +40,10 @@ function sanitizeIntroBody(raw?: string): string | undefined {
  * Address always stays on the verified domain.
  */
 export function buildIntakeFromHeader(fromName?: string, firmName?: string): string {
+  // Server-only operator override (no NEXT_PUBLIC_ prefix): resolves to
+  // undefined in the client live-preview, so the preview shows the computed
+  // display name while a configured send uses the override. Intentional — the
+  // var is normally unset, so preview and send agree in practice.
   const explicit = process.env.INTAKE_EMAIL_FROM;
   if (explicit) return explicit;
 
