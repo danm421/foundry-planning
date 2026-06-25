@@ -12,6 +12,7 @@ import { buildKnowledgeTools } from "./knowledge";
 import { buildMemoryTools } from "./memory";
 import { buildBookTools } from "./book";
 import { buildNavigateTools } from "./navigate";
+import { buildMeetingTools } from "./meetings";
 import { ALL_BUNDLES, type BundleName } from "../dispatcher";
 
 /**
@@ -35,6 +36,7 @@ export const TOOL_BUNDLES: Record<
   memory: buildMemoryTools,
   book: buildBookTools,
   navigate: buildNavigateTools,
+  meetings: buildMeetingTools,
 };
 
 /**

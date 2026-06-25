@@ -19,6 +19,7 @@ export const ALL_BUNDLES = [
   "memory",
   "book",
   "navigate",
+  "meetings",
 ] as const;
 export type BundleName = (typeof ALL_BUNDLES)[number];
 

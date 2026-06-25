@@ -70,7 +70,8 @@ vi.mock("@/lib/crm/generation-runs", () => ({
 }));
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn() }));
 // Phase 4: stub the knowledge tool's embedding dep so this stays pure.
-vi.mock("../llm", () => ({ embeddings: vi.fn() }));
+// Also stub chatModel for the meetings bundle (called at runtime, but imported at load).
+vi.mock("../llm", () => ({ embeddings: vi.fn(), chatModel: vi.fn() }));
 // Book bundle: stub the book-scan lib so this stays pure (no DB). book.ts reads
 // SIGNAL_KEYS/limit constants at tool-build time, so the stub must provide them
 // (values mirror src/lib/book-scan/scan.ts).
@@ -80,6 +81,8 @@ vi.mock("@/lib/book-scan/scan", () => ({
   DEFAULT_LIMIT: 25,
   MAX_LIMIT: 200,
 }));
+// Meetings bundle: stub transcript lib so assembly stays pure (no DB).
+vi.mock("@/lib/forge/meeting-transcripts", () => ({ getOwnedMeetingTranscript: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -173,10 +176,10 @@ const EXPECTED_BOOK = ["scan_book"];
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 60 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate)", () => {
+  it("returns exactly the 61 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate + 1 meetings)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
-    // Phase-1, scenario-write, detail-write, report, memory, and navigate tools all present
+    // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
     for (const n of [
       ...EXPECTED_PHASE1,
       ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
@@ -184,10 +187,11 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
       "generate_report",
       ...EXPECTED_MEMORY_TOOL_NAMES,
       ...EXPECTED_NAVIGATE,
+      "summarize_meeting_transcript",
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(60);
+    expect(tools).toHaveLength(61);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -329,8 +333,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 60)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(60);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 61)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(61);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
