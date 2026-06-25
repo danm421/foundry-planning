@@ -224,6 +224,8 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "transfer",
 ]);
 
+export const transactionSourceEnum = pgEnum("transaction_source", ["plaid", "manual"]);
+
 export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
   "exact",
   "contains",
@@ -3096,7 +3098,6 @@ export const plaidTransactions = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     plaidItemId: uuid("plaid_item_id")
-      .notNull()
       .references(() => plaidItems.id, { onDelete: "cascade" }),
     // Resolved at ingest when the Plaid account maps to one of our `accounts`
     // rows. NULL when the source is a liability (credit card) or an untracked
@@ -3105,8 +3106,8 @@ export const plaidTransactions = pgTable(
       onDelete: "set null",
     }),
     // Raw Plaid account handle — the durable join key to accounts OR liabilities.
-    plaidAccountId: text("plaid_account_id").notNull(),
-    plaidTransactionId: text("plaid_transaction_id").notNull().unique(),
+    plaidAccountId: text("plaid_account_id"),
+    plaidTransactionId: text("plaid_transaction_id").unique(),
     // Plaid sign convention: positive = money OUT (spend), negative = money in.
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     isoCurrencyCode: text("iso_currency_code"),
@@ -3137,6 +3138,7 @@ export const plaidTransactions = pgTable(
     // Classification source of truth: drives budget inclusion + list badge +
     // category visibility. Seeded from PFC at ingest; user-overridable.
     type: transactionTypeEnum("type").notNull().default("expense"),
+    source: transactionSourceEnum("source").notNull().default("plaid"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
