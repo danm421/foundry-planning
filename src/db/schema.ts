@@ -4503,6 +4503,32 @@ export const intakeForms = pgTable("intake_forms", {
   index("intake_forms_status_idx").on(t.status),
 ]);
 
+// Per-advisor customization of the client data-collection invitation email.
+// One row per (firm, advisor). Every editable column is nullable — a null
+// means "use the system default" (see src/lib/intake/defaults.ts), so an
+// advisor who never opens the editor needs no row at all.
+export const intakeEmailSettings = pgTable(
+  "intake_email_settings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(), // Clerk advisor id (the owner)
+    fromName: text("from_name"),
+    subject: text("subject"),
+    introBody: text("intro_body"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("intake_email_settings_firm_user_idx").on(t.firmId, t.userId),
+  ],
+);
+
+export type IntakeEmailSettingsRow = InferSelectModel<typeof intakeEmailSettings>;
+export type NewIntakeEmailSettingsRow = InferInsertModel<typeof intakeEmailSettings>;
+
 // ── Transaction Categories & Rules (client portal spending) ───────────────────
 
 export const transactionCategories = pgTable(

@@ -36,7 +36,7 @@ vi.mock("@clerk/nextjs/server", () => ({
     orgId: "firm-1",
     sessionClaims: { org_name: "Acme Wealth Management" },
   }),
-  currentUser: async () => ({ firstName: "Jane", lastName: "Advisor" }),
+  currentUser: async () => ({ firstName: "Jane", lastName: "Advisor", primaryEmailAddress: { emailAddress: "jane@acme.com" } }),
   clerkClient: async () => ({
     invitations: {
       createInvitation: (args: unknown) => createInvitationMock(args),
@@ -171,13 +171,18 @@ describe("POST /api/data-collection — blank mode with clientId", () => {
       }),
     );
 
-    // Email sent with correct link + per-firm sender/advisor names
+    // Email sent with correct link + advisor/firm names. The per-advisor
+    // settings pass-through (fromName/subject/introBody) is asserted in
+    // route-email-settings.test.ts, which mocks a real intakeEmailSettings
+    // row; this suite's shared select mock returns a client-shaped row.
     expect(sendIntakeFormEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "prospect@example.com",
         link: expect.stringContaining("/intake/test-token-abc"),
-        orgName: "Acme Wealth Management",
+        firmName: "Acme Wealth Management",
         advisorName: "Jane Advisor",
+        advisorEmail: "jane@acme.com",
+        clientName: "Smith Family",
       }),
     );
 

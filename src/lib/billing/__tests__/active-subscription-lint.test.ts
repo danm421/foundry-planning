@@ -326,6 +326,8 @@ const ALLOWLIST: Record<string, string> = {
     "advisor lifecycle — flips a form to discarded; writes no live planning data",
   "src/app/api/data-collection/[id]/revoke/route.ts":
     "advisor lifecycle — flips a draft form to expired; writes no live planning data",
+  "src/app/api/data-collection/email-settings/route.ts":
+    "advisor email-template config — writes only intake_email_settings (the advisor's own invitation copy), no live planning data; the send path POST /api/data-collection is itself sub-gated",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;

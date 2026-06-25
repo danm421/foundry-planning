@@ -1,87 +1,9 @@
 import { Resend } from "resend";
-
-/** Email address intake messages are sent from. Must be on a Resend-verified
- * domain — only the display name in front of it can be customized per-firm. */
-const INTAKE_FROM_ADDRESS = "noreply@foundryplanning.com";
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-/**
- * Build the `From` header for an intake email. The display name is the sending
- * firm's organization name (so recipients see e.g. "Acme Wealth Management"
- * rather than "Foundry"), falling back to "Foundry" when no org name resolves.
- * The address stays on our verified domain regardless.
- *
- * An explicit `INTAKE_EMAIL_FROM` env var still wins — it's an operator-level
- * full-`From` override and is assumed already well-formed.
- *
- * Exported for unit testing.
- */
-export function buildIntakeFromHeader(orgName?: string): string {
-  const explicit = process.env.INTAKE_EMAIL_FROM;
-  if (explicit) return explicit;
-
-  const display = sanitizeDisplayName(orgName) ?? "Foundry";
-  // RFC 5322 quoted-string: escape backslash and double-quote so org names with
-  // commas/specials stay valid.
-  const quoted = `"${display.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
-  return `${quoted} <${INTAKE_FROM_ADDRESS}>`;
-}
-
-/** Strip control chars (incl. CR/LF — header-injection guard) and collapse
- * whitespace. Returns undefined for empty/blank input so callers fall back. */
-function sanitizeDisplayName(raw?: string): string | undefined {
-  if (!raw) return undefined;
-  // Strip C0 controls + DEL via unicode escapes (CR/LF guard).
-  const cleaned = raw
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned || undefined;
-}
-
-/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens */
-function buildIntakeEmailHtml(args: {
-  link: string;
-  orgName?: string;
-  advisorName?: string;
-  householdName?: string;
-}): string {
-  const { link, orgName, advisorName, householdName } = args;
-
-  const brand = sanitizeDisplayName(orgName) ?? "Foundry Planning";
-
-  const greeting = householdName
-    ? `<p>Hello ${esc(householdName)},</p>`
-    : `<p>Hello,</p>`;
-
-  const advisorLine = advisorName
-    ? `<p style="color:#6b7280;font-size:13px">Sent by ${esc(advisorName)}</p>`
-    : "";
-
-  return `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#111;max-width:560px;margin:0 auto">
-  <div style="background:#1e3a5f;padding:20px 24px;border-radius:6px 6px 0 0">
-    <span style="color:#fff;font-size:18px;font-weight:600">${esc(brand)}</span>
-  </div>
-  <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 6px 6px">
-    ${greeting}
-    <p>Your advisor has shared a data-collection form with you. Please take a few minutes to fill it out — it helps us build an accurate picture of your financial situation.</p>
-    <p style="margin:24px 0">
-      <a href="${esc(link)}" style="background:#1e3a5f;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:500;display:inline-block">
-        Open My Form
-      </a>
-    </p>
-    <p style="color:#6b7280;font-size:12px">Or copy this link into your browser:<br/>${esc(link)}</p>
-    ${advisorLine}
-  </div>
-</div>`;
-}
-/* eslint-enable brand/no-raw-hex */
+import {
+  buildIntakeEmailHtml,
+  buildIntakeFromHeader,
+  resolveSubject,
+} from "@/lib/intake/email-template";
 
 /**
  * Send a client intake form invitation email via Resend. Best-effort: if
@@ -91,32 +13,33 @@ function buildIntakeEmailHtml(args: {
 export async function sendIntakeFormEmail(args: {
   to: string;
   link: string;
-  orgName?: string;
+  fromName?: string;
+  subject?: string;
+  introBody?: string;
   advisorName?: string;
-  householdName?: string;
+  advisorEmail?: string;
+  firmName?: string;
+  clientName?: string;
 }): Promise<void> {
-  const { to, link, orgName, advisorName, householdName } = args;
+  const { to, link, fromName, subject, introBody, advisorName, advisorEmail, firmName, clientName } = args;
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from = buildIntakeFromHeader(orgName);
+  const from = buildIntakeFromHeader(fromName, firmName);
 
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
-      console.log("[intake-email] Resend not configured — skipping send", {
-        to,
-        link,
-      });
+      console.log("[intake-email] Resend not configured — skipping send", { to, link });
     }
     return;
   }
 
   try {
     const resend = new Resend(apiKey);
-    const html = buildIntakeEmailHtml({ link, orgName, advisorName, householdName });
+    const html = buildIntakeEmailHtml({ link, introBody, advisorName, advisorEmail, firmName, clientName });
     await resend.emails.send({
       from,
       to,
-      subject: "Your financial planning form is ready",
+      subject: resolveSubject(subject),
       html,
     });
   } catch (err) {

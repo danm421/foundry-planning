@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { sendIntakeFormEmail, buildIntakeFromHeader } from "../email";
+import { sendIntakeFormEmail } from "../email";
+import { buildIntakeFromHeader } from "../email-template";
 
 describe("sendIntakeFormEmail", () => {
   let savedApiKey: string | undefined;
@@ -23,12 +24,12 @@ describe("sendIntakeFormEmail", () => {
         to: "client@example.com",
         link: "https://foundryplanning.com/intake/abc123",
         advisorName: "Jane Advisor",
-        householdName: "Smith Family",
+        clientName: "Smith Family",
       }),
     ).resolves.toBeUndefined();
   });
 
-  it("resolves without throwing with minimal args (no advisorName/householdName)", async () => {
+  it("resolves without throwing with minimal args (no advisorName/clientName)", async () => {
     await expect(
       sendIntakeFormEmail({
         to: "client@example.com",
