@@ -15,7 +15,7 @@ export default function SignUpPage() {
         Create your account<span className="dot">.</span>
       </h1>
       <p className="mt-2 text-sm text-[var(--color-ink-3)]">
-        14-day trial · cancel anytime · no card required up front
+        14-day free trial · cancel anytime
       </p>
 
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
