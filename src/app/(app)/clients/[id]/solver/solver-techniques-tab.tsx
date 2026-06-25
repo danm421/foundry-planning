@@ -65,10 +65,44 @@ interface Props {
   ) => void;
 }
 
+/** Quiet, non-interactive placeholder for an empty Base (read-only) column.
+ *  Mirrors the add-tile's footprint so Base and Scenario columns stay aligned. */
+function TechniqueEmpty({ label }: { label: string }) {
+  return (
+    <div className="col-span-2 flex items-center justify-center rounded-md border border-dashed border-hair px-3 py-2.5 text-[12px] text-ink-4">
+      {label}
+    </div>
+  );
+}
+
+/** Dashed "add" tile that lives in the Scenario (working) column — the affordance
+ *  for adding a new technique, and the whole empty state when there are none. */
+function TechniqueAddTile({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-hair-2 px-3 py-2.5 text-[12px] font-medium text-ink-3 transition-colors hover:border-accent/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+    >
+      <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5">
+        <path
+          d="M8 3.5v9M3.5 8h9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+      Add {label}
+    </button>
+  );
+}
+
 /**
  * Side-aware list of technique rows. `SolverSection` renders its children
  * twice — once per column — exposing the active side via `useSolverSide()`.
- * The base column is read-only; the working column gets Edit / Remove.
+ * The base column is read-only (or a quiet placeholder when empty); the working
+ * column gets Edit / Remove per row and a trailing add-tile.
  */
 function TechniqueGroup<T extends { id: string; name: string }>({
   base,
@@ -76,6 +110,9 @@ function TechniqueGroup<T extends { id: string; name: string }>({
   summarize,
   onEdit,
   onRemove,
+  onAdd,
+  addLabel,
+  emptyLabel,
   renderExtraAction,
 }: {
   base: T[];
@@ -83,34 +120,44 @@ function TechniqueGroup<T extends { id: string; name: string }>({
   summarize: (t: T) => string;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Opens the add form for this technique kind (Scenario column only). */
+  onAdd: () => void;
+  /** Noun for the add tile, e.g. "Roth conversion" → "Add Roth conversion". */
+  addLabel: string;
+  /** Placeholder when the Base column is empty, e.g. "No Roth conversions". */
+  emptyLabel: string;
   /** Working-side-only per-row control (e.g. a Solve button). */
   renderExtraAction?: (t: T) => ReactNode;
 }) {
   const side = useSolverSide();
-  const rows = side === "base" ? base : working;
 
-  if (rows.length === 0) {
+  // Base column: read-only rows, or a quiet placeholder when empty.
+  if (side === "base") {
+    if (base.length === 0) return <TechniqueEmpty label={emptyLabel} />;
     return (
-      <div className="col-span-2 text-[12px] text-ink-4">None</div>
+      <div className="col-span-2 space-y-2">
+        {base.map((t) => (
+          <SolverTechniqueRow key={t.id} name={t.name} summary={summarize(t)} />
+        ))}
+      </div>
     );
   }
 
+  // Scenario column: editable rows followed by the add-tile (the add-tile is
+  // the whole empty state when there are no working techniques).
   return (
     <div className="col-span-2 space-y-2">
-      {rows.map((t) =>
-        side === "base" ? (
-          <SolverTechniqueRow key={t.id} name={t.name} summary={summarize(t)} />
-        ) : (
-          <SolverTechniqueRow
-            key={t.id}
-            name={t.name}
-            summary={summarize(t)}
-            onEdit={() => onEdit(t.id)}
-            onRemove={() => onRemove(t.id)}
-            extraAction={renderExtraAction?.(t)}
-          />
-        ),
-      )}
+      {working.map((t) => (
+        <SolverTechniqueRow
+          key={t.id}
+          name={t.name}
+          summary={summarize(t)}
+          onEdit={() => onEdit(t.id)}
+          onRemove={() => onRemove(t.id)}
+          extraAction={renderExtraAction?.(t)}
+        />
+      ))}
+      <TechniqueAddTile label={addLabel} onClick={onAdd} />
     </div>
   );
 }
@@ -136,18 +183,6 @@ export function SolverTechniquesTab({
   const workingAsset = workingTree.assetTransactions ?? [];
   const baseReinv = baseClientData.reinvestments ?? [];
   const workingReinv = workingTree.reinvestments ?? [];
-
-  function addButton(kind: TechniqueKind, label: string): ReactNode {
-    return (
-      <button
-        type="button"
-        onClick={() => setEditor({ kind })}
-        className="rounded-md border border-dashed border-hair-2 px-2.5 py-1 text-[11px] font-medium text-ink-3 normal-case tracking-normal hover:border-accent/60 hover:text-ink"
-      >
-        + Add {label}
-      </button>
-    );
-  }
 
   // Active editor form.
   let form: ReactNode = null;
@@ -214,10 +249,7 @@ export function SolverTechniquesTab({
 
   return (
     <div>
-      <SolverSection
-        title="Roth Conversions"
-        action={addButton("roth", "Roth conversion")}
-      >
+      <SolverSection title="Roth Conversions">
         <TechniqueGroup
           base={baseRoth}
           working={workingRoth}
@@ -226,6 +258,9 @@ export function SolverTechniquesTab({
           onRemove={(id) =>
             onChange({ kind: "roth-conversion-upsert", id, value: null })
           }
+          onAdd={() => setEditor({ kind: "roth" })}
+          addLabel="Roth conversion"
+          emptyLabel="No Roth conversions"
           renderExtraAction={(rc) =>
             onSolveStart && rc.conversionType === "fixed_amount" ? (
               <button
@@ -245,10 +280,7 @@ export function SolverTechniquesTab({
         />
       </SolverSection>
 
-      <SolverSection
-        title="Asset Transactions"
-        action={addButton("asset", "asset transaction")}
-      >
+      <SolverSection title="Asset Transactions">
         <TechniqueGroup
           base={baseAsset}
           working={workingAsset}
@@ -257,13 +289,13 @@ export function SolverTechniquesTab({
           onRemove={(id) =>
             onChange({ kind: "asset-transaction-upsert", id, value: null })
           }
+          onAdd={() => setEditor({ kind: "asset" })}
+          addLabel="asset transaction"
+          emptyLabel="No asset transactions"
         />
       </SolverSection>
 
-      <SolverSection
-        title="Reinvestments"
-        action={addButton("reinvestment", "reinvestment")}
-      >
+      <SolverSection title="Reinvestments">
         <TechniqueGroup
           base={baseReinv}
           working={workingReinv}
@@ -272,6 +304,9 @@ export function SolverTechniquesTab({
           onRemove={(id) =>
             onChange({ kind: "reinvestment-upsert", id, value: null })
           }
+          onAdd={() => setEditor({ kind: "reinvestment" })}
+          addLabel="reinvestment"
+          emptyLabel="No reinvestments"
         />
       </SolverSection>
 

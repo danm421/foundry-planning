@@ -46,6 +46,25 @@ describe("SolverTechniquesTab", () => {
     ).toBe(1);
   });
 
+  it("shows a quiet placeholder (no Add control) for an empty Base column", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        baseClientData={tree([])}
+        workingTree={tree([])}
+        onChange={vi.fn()}
+      />,
+    );
+    // Base column renders a non-interactive placeholder per technique group.
+    expect(screen.getByText("No Roth conversions")).toBeTruthy();
+    expect(screen.getByText("No asset transactions")).toBeTruthy();
+    expect(screen.getByText("No reinvestments")).toBeTruthy();
+    // The only "Add" affordance lives in the Scenario (working) column.
+    expect(
+      screen.getAllByRole("button", { name: /add roth conversion/i }).length,
+    ).toBe(1);
+  });
+
   it("emits a removal mutation when a working row's Remove is clicked", () => {
     const onChange = vi.fn();
     render(
