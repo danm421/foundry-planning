@@ -7,6 +7,8 @@ import { fmtUsd } from "@/lib/portal/format";
 import { categoryEmoji } from "@/lib/portal/category-emoji";
 import { BudgetDonut } from "@/components/portal/budget-donut";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
+import { BudgetAmountInput } from "@/components/portal/budget-amount-input";
+import { AddCategoryForm } from "@/components/portal/add-category-form";
 import type { BudgetSummary, GroupCell, LeafCell } from "@/lib/portal/budget-summary";
 
 type Summary = BudgetSummary & { month: string };
@@ -53,7 +55,7 @@ function MiniBar({
   );
 }
 
-function Amounts({
+function SpentAndBar({
   actual,
   budget,
   muted,
@@ -72,10 +74,37 @@ function Amounts({
       <span className="hidden w-24 shrink-0 sm:block">
         <MiniBar actual={actual} budget={budget} />
       </span>
-      <span className="tabular w-14 shrink-0 text-right text-[12px] text-ink-4">
-        {budget != null ? fmtUsd(budget) : "—"}
-      </span>
     </>
+  );
+}
+
+/** Read-only Budget column cell (when editing is disabled). */
+function BudgetCell({ budget }: { budget: number | null }): ReactElement {
+  return (
+    <span className="tabular w-14 shrink-0 text-right text-[12px] text-ink-4">
+      {budget != null ? fmtUsd(budget) : "—"}
+    </span>
+  );
+}
+
+/** Budget column for a row: an inline editable input (edit mode) or read-only text. */
+function BudgetColumn({
+  categoryId,
+  budget,
+  label,
+  editEnabled,
+  muted,
+}: {
+  categoryId: string;
+  budget: number | null;
+  label: string;
+  editEnabled: boolean;
+  muted?: boolean;
+}): ReactElement {
+  return editEnabled ? (
+    <BudgetAmountInput categoryId={categoryId} value={budget} label={label} muted={muted} />
+  ) : (
+    <BudgetCell budget={budget} />
   );
 }
 
@@ -226,25 +255,39 @@ export default function BudgetView({
                   <span className="flex-1 truncate text-[13px] font-medium text-ink">
                     {g.name}
                   </span>
-                  <Amounts actual={g.actual} budget={g.budget} />
+                  <SpentAndBar actual={g.actual} budget={g.budget} />
                 </button>
+                <BudgetColumn
+                  categoryId={g.id}
+                  budget={g.budget}
+                  label={g.name}
+                  editEnabled={editEnabled}
+                />
               </div>
 
               {open && (
                 <div className="space-y-0.5 pl-6">
                   {g.leaves.map((l: LeafCell) => (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => setSelectedId(l.id)}
-                      className={`${rowBase} ${selectedId === l.id ? selCls : hovCls}`}
-                    >
-                      <span className="w-5 shrink-0 text-center text-[13px]" aria-hidden>
-                        {categoryEmoji(l.slug)}
-                      </span>
-                      <span className="flex-1 truncate text-[13px] text-ink-2">{l.name}</span>
-                      <Amounts actual={l.actual} budget={l.budget} muted />
-                    </button>
+                    <div key={l.id} className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(l.id)}
+                        className={`${rowBase} ${selectedId === l.id ? selCls : hovCls}`}
+                      >
+                        <span className="w-5 shrink-0 text-center text-[13px]" aria-hidden>
+                          {categoryEmoji(l.slug)}
+                        </span>
+                        <span className="flex-1 truncate text-[13px] text-ink-2">{l.name}</span>
+                        <SpentAndBar actual={l.actual} budget={l.budget} muted />
+                      </button>
+                      <BudgetColumn
+                        categoryId={l.id}
+                        budget={l.budget}
+                        label={l.name}
+                        editEnabled={editEnabled}
+                        muted
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -252,6 +295,12 @@ export default function BudgetView({
           );
         })}
       </div>
+
+      {editEnabled && (
+        <AddCategoryForm
+          groups={summary.groups.map((g) => ({ id: g.id, name: g.name, color: g.color }))}
+        />
+      )}
 
       {detailEl &&
         selectedId &&

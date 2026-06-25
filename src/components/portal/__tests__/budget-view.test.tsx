@@ -5,6 +5,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 const refreshMock = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refreshMock }) }));
+vi.mock("@/components/portal/portal-mode-context", () => ({
+  usePortalFetch: () => vi.fn(),
+}));
 
 // Stub the donut so jsdom never draws a canvas.
 vi.mock("@/components/portal/budget-donut", () => ({
@@ -41,6 +44,7 @@ const summary = {
       color: "var(--data-orange)",
       budget: 600,
       budgetIsExplicit: true,
+      unallocated: 200,
       actual: 230,
       remaining: 370,
       leaves: [
@@ -55,6 +59,7 @@ const summary = {
       color: "var(--data-purple)",
       budget: null,
       budgetIsExplicit: false,
+      unallocated: 0,
       actual: 0,
       remaining: null,
       leaves: [
@@ -103,4 +108,24 @@ it("expands a collapsed (no-spend) group to reveal its leaves", () => {
   expect(screen.queryByText("Clothing")).toBeNull();
   fireEvent.click(screen.getByText("Shopping"));
   expect(screen.getByText("Clothing")).toBeTruthy();
+});
+
+it("renders read-only budget text (no inputs) when editEnabled is false", () => {
+  render(<BudgetView summary={summary} editEnabled={false} />);
+  expect(screen.queryByLabelText(/^Budget for /)).toBeNull();
+});
+
+it("renders editable budget inputs seeded from the summary when editEnabled", () => {
+  render(<BudgetView summary={summary} editEnabled />);
+  expect((screen.getByLabelText("Budget for Food & Drink") as HTMLInputElement).value).toBe("600");
+  expect((screen.getByLabelText("Budget for Groceries") as HTMLInputElement).value).toBe("400");
+  // an unbudgeted leaf shows an empty input
+  expect((screen.getByLabelText("Budget for Restaurants") as HTMLInputElement).value).toBe("");
+});
+
+it("shows the Add category affordance only when editEnabled", () => {
+  const { rerender } = render(<BudgetView summary={summary} editEnabled={false} />);
+  expect(screen.queryByRole("button", { name: /add category/i })).toBeNull();
+  rerender(<BudgetView summary={summary} editEnabled />);
+  expect(screen.getByRole("button", { name: /add category/i })).toBeTruthy();
 });
