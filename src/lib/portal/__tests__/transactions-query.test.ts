@@ -3,6 +3,7 @@ import type { PortalTransactionDTO } from "@/lib/portal/transactions-query";
 vi.mock("@/db/schema", () => ({ plaidTransactions: {
   clientId: "client_id", date: "date", categoryId: "category_id",
   merchantName: "merchant_name", name: "name", excluded: "excluded",
+  reviewedAt: "reviewed_at",
 } }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => ({ op: "and", a }),
@@ -12,6 +13,8 @@ vi.mock("drizzle-orm", () => ({
   or: (...a: unknown[]) => ({ op: "or", a }),
   ilike: (c: unknown, v: unknown) => ({ op: "ilike", c, v }),
   desc: (c: unknown) => ({ op: "desc", c }),
+  isNull: (c: unknown) => ({ op: "isNull", c }),
+  isNotNull: (c: unknown) => ({ op: "isNotNull", c }),
 }));
 import { buildTransactionConditions } from "@/lib/portal/transactions-query";
 
@@ -38,12 +41,32 @@ describe("buildTransactionConditions", () => {
   });
 });
 
+const base = { limit: 50, offset: 0 };
+
+describe("buildTransactionConditions — reviewed filter", () => {
+  it("adds no reviewed condition when undefined", () => {
+    const before = buildTransactionConditions("c1", { ...base }).length;
+    const after = buildTransactionConditions("c1", { ...base, reviewed: undefined }).length;
+    expect(after).toBe(before);
+  });
+  it("adds one condition when reviewed=false (unreviewed only)", () => {
+    const before = buildTransactionConditions("c1", { ...base }).length;
+    const after = buildTransactionConditions("c1", { ...base, reviewed: false }).length;
+    expect(after).toBe(before + 1);
+  });
+  it("adds one condition when reviewed=true", () => {
+    const before = buildTransactionConditions("c1", { ...base }).length;
+    const after = buildTransactionConditions("c1", { ...base, reviewed: true }).length;
+    expect(after).toBe(before + 1);
+  });
+});
+
 it("DTO includes a type field", () => {
   const dto: PortalTransactionDTO = {
     id: "t1", date: "2026-06-01", name: "n", merchantName: null, amount: "1.00",
     pending: false, excluded: false, categoryId: null, categoryName: null,
     categoryColor: null, categorizedBy: "plaid", accountId: null,
-    accountName: null, accountMask: null, type: "expense",
+    accountName: null, accountMask: null, type: "expense", reviewed: false,
   };
   expect(dto.type).toBe("expense");
 });

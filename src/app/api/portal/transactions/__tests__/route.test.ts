@@ -58,4 +58,11 @@ describe("GET /api/portal/transactions", () => {
     const res = await call();
     expect(res.status).toBe(403);
   });
+  it("passes the reviewed filter through (unreviewed only)", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    loadMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    await call("?reviewed=false");
+    expect(loadMock.mock.calls[0][1].reviewed).toBe(false);
+  });
 });

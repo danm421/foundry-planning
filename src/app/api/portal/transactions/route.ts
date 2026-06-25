@@ -26,6 +26,7 @@ export async function GET(req: Request): Promise<Response> {
       categoryId: qp.get("categoryId") ?? undefined,
       q: qp.get("q") ?? undefined,
       includeExcluded: qp.get("includeExcluded") === "true",
+      reviewed: qp.get("reviewed") === null ? undefined : qp.get("reviewed") === "true",
       limit,
       offset,
     };

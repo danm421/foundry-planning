@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { accounts, plaidTransactions, transactionCategories } from "@/db/schema";
-import { and, eq, gte, lte, or, ilike, desc, sql } from "drizzle-orm";
+import { and, eq, gte, lte, or, ilike, desc, sql, isNull, isNotNull } from "drizzle-orm";
 
 export type TransactionFilters = {
   from?: string;
@@ -8,6 +8,7 @@ export type TransactionFilters = {
   categoryId?: string;
   q?: string;
   includeExcluded?: boolean;
+  reviewed?: boolean;
   limit: number;
   offset: number;
 };
@@ -28,6 +29,7 @@ export type PortalTransactionDTO = {
   accountName: string | null;
   accountMask: string | null;
   type: "income" | "expense" | "transfer";
+  reviewed: boolean;
 };
 
 export function buildTransactionConditions(clientId: string, f: TransactionFilters) {
@@ -36,6 +38,8 @@ export function buildTransactionConditions(clientId: string, f: TransactionFilte
   if (f.from) conds.push(gte(plaidTransactions.date, f.from));
   if (f.to) conds.push(lte(plaidTransactions.date, f.to));
   if (f.categoryId) conds.push(eq(plaidTransactions.categoryId, f.categoryId));
+  if (f.reviewed === false) conds.push(isNull(plaidTransactions.reviewedAt));
+  else if (f.reviewed === true) conds.push(isNotNull(plaidTransactions.reviewedAt));
   if (f.q && f.q.trim()) {
     const like = `%${f.q.trim()}%`;
     conds.push(or(ilike(plaidTransactions.merchantName, like), ilike(plaidTransactions.name, like)));
@@ -64,6 +68,7 @@ export async function loadPortalTransactions(
       accountName: accounts.name,
       accountMask: accounts.accountNumberLast4,
       type: plaidTransactions.type,
+      reviewedAt: plaidTransactions.reviewedAt,
     })
     .from(plaidTransactions)
     .leftJoin(transactionCategories, eq(transactionCategories.id, plaidTransactions.categoryId))
@@ -72,7 +77,7 @@ export async function loadPortalTransactions(
     .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
     .limit(f.limit)
     .offset(f.offset);
-  return rows as PortalTransactionDTO[];
+  return rows.map(({ reviewedAt, ...r }) => ({ ...r, reviewed: reviewedAt != null })) as PortalTransactionDTO[];
 }
 
 export async function countPortalTransactions(
