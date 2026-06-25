@@ -70,3 +70,17 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Here's the transcript id tr_eval_1 — summarize the meeting and draft tasks."
+      expectTool: "summarize_meeting_transcript"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Save the meeting summary and these tasks to the CRM for transcript tr_eval_1."
+      expectTool: "save_meeting_record"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
