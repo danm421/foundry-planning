@@ -1289,6 +1289,13 @@
       "when": 1782254202010,
       "tag": "0183_portal_transaction_type",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1782397425501,
+      "tag": "0184_intake_email_settings",
+      "breakpoints": true
     }
   ]
 }
