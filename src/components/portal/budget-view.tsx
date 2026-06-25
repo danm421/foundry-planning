@@ -134,22 +134,20 @@ export default function BudgetView({
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(summary.groups.filter((g) => g.actual > 0).map((g) => g.id)),
   );
-  // Resolve the detail rail (#portal-detail), which the portal layout renders as a
-  // sibling. The lazy initializer is the fast path on a hard load (the SSR'd aside
-  // is already in the DOM, so no extra render / flash). But on a client-side
-  // navigation INTO this page the aside mounts in the same commit, so it isn't in
-  // the DOM during this render — the initializer returns null. The post-commit
-  // effect then resolves it; without this fallback createPortal would never fire
-  // and the detail pane would silently disappear.
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(() =>
-    typeof document === "undefined" ? null : document.getElementById("portal-detail"),
-  );
+  // Resolve the detail rail target (#portal-detail) AFTER commit — the exact
+  // pattern transactions-list uses (and which works). The previous render-phase
+  // lazy-init (`document.getElementById` during render) was the bug: in the
+  // advisor preview the aside lives in the PAGE, not a persistent layout, so a
+  // mid-render read can pin this to a stale / not-yet-committed node. The guarded
+  // `if (!detailEl)` then treats that stale element as resolved and never
+  // re-points, so createPortal targets a detached node and the rail silently
+  // collapses. Resolving once, unconditionally, post-mount always points at the
+  // committed aside (works for both the page aside and the layout aside).
+  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    // Resolving a DOM node owned by the parent layout is a legitimate
-    // external-system sync; the guard makes it a one-shot resolve, not a loop.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!detailEl) setDetailEl(document.getElementById("portal-detail"));
-  }, [detailEl]);
+    setDetailEl(document.getElementById("portal-detail"));
+  }, []);
 
   function selectGroup(g: GroupCell): void {
     setSelectedId(g.id);
