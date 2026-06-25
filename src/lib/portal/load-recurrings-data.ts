@@ -39,6 +39,7 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
       .from(plaidTransactions)
       .where(and(
         eq(plaidTransactions.clientId, clientId),
+        eq(plaidTransactions.excluded, false),
         isNotNull(plaidTransactions.recurringTransactionId),
       )),
 
