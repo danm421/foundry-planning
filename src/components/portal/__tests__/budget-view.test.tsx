@@ -41,6 +41,7 @@ const summary = {
       color: "var(--data-orange)",
       budget: 600,
       budgetIsExplicit: true,
+      unallocated: 200,
       actual: 230,
       remaining: 370,
       leaves: [
@@ -55,6 +56,7 @@ const summary = {
       color: "var(--data-purple)",
       budget: null,
       budgetIsExplicit: false,
+      unallocated: 0,
       actual: 0,
       remaining: null,
       leaves: [

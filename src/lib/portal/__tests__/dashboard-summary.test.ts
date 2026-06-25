@@ -91,7 +91,7 @@ describe("dueWithinDays", () => {
 function grp(over: Partial<GroupCell>): GroupCell {
   return {
     id: "g", name: "G", slug: null, color: "var(--data-blue)", budget: 100,
-    budgetIsExplicit: true, actual: 0, remaining: 100, leaves: [], ...over,
+    budgetIsExplicit: true, unallocated: 0, actual: 0, remaining: 100, leaves: [], ...over,
   };
 }
 

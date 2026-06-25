@@ -39,6 +39,7 @@ export type GroupCell = {
   color: string;
   budget: number | null;
   budgetIsExplicit: boolean;
+  unallocated: number;
   actual: number;
   remaining: number | null;
   leaves: LeafCell[];
@@ -116,11 +117,20 @@ export function computeBudgetSummary(input: {
     const actual = round2(leaves.reduce((s, l) => s + l.actual, 0));
     const explicit = budgetByCat.has(g.id);
     const hasLeafBudget = leaves.some((l) => l.budget != null);
-    const budget = explicit
-      ? budgetByCat.get(g.id)!
-      : hasLeafBudget
-        ? round2(leaves.reduce((s, l) => s + (l.budget ?? 0), 0))
-        : null;
+    const leafSum = round2(leaves.reduce((s, l) => s + (l.budget ?? 0), 0));
+    // The category sum is the FLOOR for the group. An explicit group budget only
+    // raises the total above that sum; the difference is unallocated "excess"
+    // room within the group. (Replaces the old override rule, where an explicit
+    // group budget could sit BELOW the leaf sum.)
+    const explicitGroup = explicit ? budgetByCat.get(g.id)! : null;
+    const budget =
+      explicitGroup != null
+        ? Math.max(explicitGroup, leafSum)
+        : hasLeafBudget
+          ? leafSum
+          : null;
+    const unallocated =
+      explicitGroup != null ? round2(Math.max(0, explicitGroup - leafSum)) : 0;
     return {
       id: g.id,
       name: g.name,
@@ -128,6 +138,7 @@ export function computeBudgetSummary(input: {
       color: g.color,
       budget,
       budgetIsExplicit: explicit,
+      unallocated,
       actual,
       remaining: budget == null ? null : round2(budget - actual),
       leaves,

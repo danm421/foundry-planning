@@ -75,20 +75,62 @@ it("group budget = sum of leaf budgets when no explicit group budget", () => {
   expect(food.remaining).toBe(450); // 550 - 100
 });
 
-it("explicit group budget overrides the leaf-budget sum (no double count)", () => {
+it("explicit group budget ABOVE the leaf sum raises the total; surfaces unallocated excess", () => {
   const s = computeBudgetSummary({
     categories: cats,
     budgets: [
       { categoryId: "g-food", monthlyAmount: 600 },
-      { categoryId: "l-groceries", monthlyAmount: 400 }, // still shown on the leaf
+      { categoryId: "l-groceries", monthlyAmount: 400 }, // l-restaurants unbudgeted → leafSum 400
     ],
     transactions: [{ categoryId: "l-groceries", amount: 100, type: "expense" }],
   });
   const food = s.groups.find((g) => g.id === "g-food")!;
   expect(food.budgetIsExplicit).toBe(true);
-  expect(food.budget).toBe(600);
+  expect(food.budget).toBe(600); // max(600, 400)
+  expect(food.unallocated).toBe(200); // 600 - 400 free within the group
   expect(food.leaves.find((l) => l.id === "l-groceries")!.budget).toBe(400);
-  expect(s.totalBudget).toBe(600); // not 600+400
+  expect(s.totalBudget).toBe(600); // not 600 + 400
+});
+
+it("the category sum is the FLOOR: an explicit group budget below it is ignored", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [
+      { categoryId: "g-food", monthlyAmount: 300 }, // below the leaf sum
+      { categoryId: "l-groceries", monthlyAmount: 400 },
+      { categoryId: "l-restaurants", monthlyAmount: 150 }, // leafSum 550
+    ],
+    transactions: [],
+  });
+  const food = s.groups.find((g) => g.id === "g-food")!;
+  expect(food.budget).toBe(550); // max(300, 550) → the floor wins
+  expect(food.unallocated).toBe(0); // explicit < sum → nothing free
+});
+
+it("a group budget with no leaf budgets is fully unallocated", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [{ categoryId: "g-shopping", monthlyAmount: 500 }], // l-general unbudgeted
+    transactions: [],
+  });
+  const shopping = s.groups.find((g) => g.id === "g-shopping")!;
+  expect(shopping.budget).toBe(500);
+  expect(shopping.unallocated).toBe(500);
+});
+
+it("unallocated is 0 when the group budget is just the leaf-sum rollup", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [
+      { categoryId: "l-groceries", monthlyAmount: 400 },
+      { categoryId: "l-restaurants", monthlyAmount: 150 },
+    ],
+    transactions: [],
+  });
+  const food = s.groups.find((g) => g.id === "g-food")!;
+  expect(food.budget).toBe(550);
+  expect(food.budgetIsExplicit).toBe(false);
+  expect(food.unallocated).toBe(0);
 });
 
 it("unbudgeted group has null budget and null remaining", () => {
