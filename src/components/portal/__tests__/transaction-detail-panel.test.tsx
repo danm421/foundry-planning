@@ -7,7 +7,7 @@ const txn = {
   id: "t1", date: "2026-06-01", name: "AMZN MKTP", merchantName: "Amazon", amount: "42.00",
   pending: false, excluded: false, categoryId: "c", categoryName: "Shopping", categoryColor: "var(--data-purple)",
   categorizedBy: "manual" as const, accountId: "a1", accountName: "Everyday Checking", accountMask: "4321",
-  type: "expense" as const,
+  type: "expense" as const, reviewed: false,
 };
 
 describe("TransactionDetailPanel", () => {

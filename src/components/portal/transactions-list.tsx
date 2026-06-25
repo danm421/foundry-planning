@@ -27,6 +27,7 @@ export type PortalTransactionDTO = {
   accountName: string | null;
   accountMask: string | null;
   type: TxnType;
+  reviewed: boolean;
 };
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
 
@@ -64,6 +65,7 @@ export default function TransactionsList({
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [windowKey, setWindowKey] = useState<(typeof WINDOWS)[number]["key"]>("3M");
+  const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
@@ -100,6 +102,7 @@ export default function TransactionsList({
       if (from) params.set("from", from);
       if (q.trim()) params.set("q", q.trim());
       if (categoryId) params.set("categoryId", categoryId);
+      if (unreviewedOnly) params.set("reviewed", "false");
       try {
         const res = await portalFetch(`/api/portal/transactions?${params.toString()}`, { signal });
         if (!res.ok) return;
@@ -113,7 +116,7 @@ export default function TransactionsList({
         setLoading(false);
       }
     },
-    [q, categoryId, windowKey, portalFetch],
+    [q, categoryId, windowKey, unreviewedOnly, portalFetch],
   );
 
   useEffect(() => {
@@ -226,6 +229,27 @@ export default function TransactionsList({
     [rows, portalFetch],
   );
 
+  const toggleReviewed = useCallback(
+    async (id: string, next: boolean): Promise<void> => {
+      setError(null);
+      const prev = rows;
+      let prevSelected: PortalTransactionDTO | null = null;
+      setSelected((s) => { prevSelected = s; return s && s.id === id ? { ...s, reviewed: next } : s; });
+      setRows((rs) => rs.map((t) => (t.id === id ? { ...t, reviewed: next } : t)));
+      try {
+        const res = await portalFetch(`/api/portal/transactions/${id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reviewed: next }),
+        });
+        if (!res.ok) { setRows(prev); setSelected(prevSelected); setError("Couldn't save that change."); }
+      } catch {
+        setRows(prev); setSelected(prevSelected); setError("Couldn't save that change.");
+      }
+    },
+    [rows, portalFetch],
+  );
+
   const leaves = categories.filter((c) => c.kind === "category");
   const hasMore = rows.length < total;
 
@@ -248,6 +272,18 @@ export default function TransactionsList({
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => setUnreviewedOnly((v) => !v)}
+          aria-pressed={unreviewedOnly}
+          className={
+            unreviewedOnly
+              ? "rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium text-accent"
+              : "rounded-md border border-hair px-2 py-1 text-[12px] text-ink-3 hover:bg-card"
+          }
+        >
+          Unreviewed
+        </button>
         <div className="ml-auto flex items-center gap-1">
           {WINDOWS.map((w) => (
             <button
@@ -326,6 +362,31 @@ export default function TransactionsList({
                       )}
                     </div>
                     <span className={`tabular w-24 shrink-0 text-right text-[14px] ${amt.cls}`}>{amt.text}</span>
+                    <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {editEnabled ? (
+                        <button
+                          type="button"
+                          aria-label={t.reviewed ? "Reviewed" : "Mark as reviewed"}
+                          aria-pressed={t.reviewed}
+                          onClick={() => void toggleReviewed(t.id, !t.reviewed)}
+                          className={
+                            t.reviewed
+                              ? "flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-accent"
+                              : "flex h-6 w-6 items-center justify-center rounded-full border border-hair text-ink-4 hover:border-accent hover:text-accent"
+                          }
+                        >
+                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      ) : t.reviewed ? (
+                        <span aria-label="Reviewed" className="flex h-6 w-6 items-center justify-center text-accent">
+                          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                      ) : null}
+                    </span>
                     {editEnabled && (
                       <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
