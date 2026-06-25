@@ -25,10 +25,8 @@ const GROUP_COLORS = [
  */
 export function AddCategoryForm({
   groups,
-  groupCount,
 }: {
   groups: { id: string; name: string; color: string }[];
-  groupCount: number;
 }): ReactElement {
   const router = useRouter();
   const portalFetch = usePortalFetch();
@@ -73,9 +71,9 @@ export function AddCategoryForm({
     setError(null);
     try {
       let parentId = groupId;
-      let leafColor = groups.find((g) => g.id === groupId)?.color ?? "var(--data-grey)";
+      let leafColor: string;
       if (creatingGroup) {
-        const color = GROUP_COLORS[groupCount % GROUP_COLORS.length];
+        const color = GROUP_COLORS[groups.length % GROUP_COLORS.length];
         const g = await post({ name: newGroupName.trim(), kind: "group", color });
         if (!g.ok || !g.id) {
           setError("Couldn't create the group.");
@@ -83,6 +81,10 @@ export function AddCategoryForm({
         }
         parentId = g.id;
         leafColor = color;
+      } else {
+        // The select only offers existing groups + "New group…", so a
+        // non-creating submit always resolves to a real group color.
+        leafColor = groups.find((g) => g.id === groupId)!.color;
       }
       const leaf = await post({
         name: catName,

@@ -87,6 +87,27 @@ function BudgetCell({ budget }: { budget: number | null }): ReactElement {
   );
 }
 
+/** Budget column for a row: an inline editable input (edit mode) or read-only text. */
+function BudgetColumn({
+  categoryId,
+  budget,
+  label,
+  editEnabled,
+  muted,
+}: {
+  categoryId: string;
+  budget: number | null;
+  label: string;
+  editEnabled: boolean;
+  muted?: boolean;
+}): ReactElement {
+  return editEnabled ? (
+    <BudgetAmountInput categoryId={categoryId} value={budget} label={label} muted={muted} />
+  ) : (
+    <BudgetCell budget={budget} />
+  );
+}
+
 export default function BudgetView({
   summary,
   editEnabled,
@@ -236,11 +257,12 @@ export default function BudgetView({
                   </span>
                   <SpentAndBar actual={g.actual} budget={g.budget} />
                 </button>
-                {editEnabled ? (
-                  <BudgetAmountInput categoryId={g.id} value={g.budget} label={g.name} />
-                ) : (
-                  <BudgetCell budget={g.budget} />
-                )}
+                <BudgetColumn
+                  categoryId={g.id}
+                  budget={g.budget}
+                  label={g.name}
+                  editEnabled={editEnabled}
+                />
               </div>
 
               {open && (
@@ -258,11 +280,13 @@ export default function BudgetView({
                         <span className="flex-1 truncate text-[13px] text-ink-2">{l.name}</span>
                         <SpentAndBar actual={l.actual} budget={l.budget} muted />
                       </button>
-                      {editEnabled ? (
-                        <BudgetAmountInput categoryId={l.id} value={l.budget} label={l.name} muted />
-                      ) : (
-                        <BudgetCell budget={l.budget} />
-                      )}
+                      <BudgetColumn
+                        categoryId={l.id}
+                        budget={l.budget}
+                        label={l.name}
+                        editEnabled={editEnabled}
+                        muted
+                      />
                     </div>
                   ))}
                 </div>
@@ -275,7 +299,6 @@ export default function BudgetView({
       {editEnabled && (
         <AddCategoryForm
           groups={summary.groups.map((g) => ({ id: g.id, name: g.name, color: g.color }))}
-          groupCount={summary.groups.length}
         />
       )}
 

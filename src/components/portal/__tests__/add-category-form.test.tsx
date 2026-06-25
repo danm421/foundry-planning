@@ -23,7 +23,7 @@ beforeEach(() => {
 
 it("creates a category in an existing group with one POST (inheriting the group color)", async () => {
   portalFetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "new-leaf" }) });
-  render(<AddCategoryForm groups={groups} groupCount={2} />);
+  render(<AddCategoryForm groups={groups} />);
   fireEvent.click(screen.getByRole("button", { name: /add category/i }));
   fireEvent.change(screen.getByLabelText("Category name"), { target: { value: "Coffee" } });
   fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
@@ -43,7 +43,7 @@ it("creates a new group then the category in it with two sequential POSTs", asyn
   portalFetchMock
     .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "g-new" }) })
     .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "l-new" }) });
-  render(<AddCategoryForm groups={groups} groupCount={2} />);
+  render(<AddCategoryForm groups={groups} />);
   fireEvent.click(screen.getByRole("button", { name: /add category/i }));
   fireEvent.change(screen.getByLabelText("Category name"), { target: { value: "Tolls" } });
   fireEvent.change(screen.getByLabelText("Group"), { target: { value: "__new__" } });
@@ -57,7 +57,7 @@ it("creates a new group then the category in it with two sequential POSTs", asyn
 });
 
 it("validates that a category name is required", () => {
-  render(<AddCategoryForm groups={groups} groupCount={2} />);
+  render(<AddCategoryForm groups={groups} />);
   fireEvent.click(screen.getByRole("button", { name: /add category/i }));
   fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
   expect(screen.getByText(/category name/i)).toBeTruthy();
