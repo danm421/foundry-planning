@@ -1,9 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { currentUser } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { intakeEmailSettings } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { auth } from "@clerk/nextjs/server";
 import EmailSettingsEditor from "@/components/intake/admin/email-settings-editor";
 
 export const dynamic = "force-dynamic";

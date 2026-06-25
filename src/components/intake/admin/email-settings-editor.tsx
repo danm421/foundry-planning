@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   buildIntakeEmailHtml,
@@ -30,6 +30,8 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(savedTimerRef.current), []);
 
   const previewHtml = useMemo(
     () =>
@@ -62,7 +64,8 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
       }
       setSaved(true);
       router.refresh();
-      setTimeout(() => setSaved(false), 3000);
+      clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 3000);
     } finally {
       setSaving(false);
     }

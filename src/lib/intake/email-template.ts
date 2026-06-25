@@ -77,6 +77,7 @@ function renderIntroHtml(
     .join("\n    ");
 }
 
+/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens */
 function buildSignatureHtml(args: {
   advisorName?: string;
   firmName?: string;
@@ -97,7 +98,6 @@ function buildSignatureHtml(args: {
     </div>`;
 }
 
-/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens */
 export function buildIntakeEmailHtml(args: {
   link: string;
   introBody?: string;
