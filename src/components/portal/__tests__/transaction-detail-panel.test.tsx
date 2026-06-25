@@ -7,7 +7,7 @@ const txn = {
   id: "t1", date: "2026-06-01", name: "AMZN MKTP", merchantName: "Amazon", amount: "42.00",
   pending: false, excluded: false, categoryId: "c", categoryName: "Shopping", categoryColor: "var(--data-purple)",
   categorizedBy: "manual" as const, accountId: "a1", accountName: "Everyday Checking", accountMask: "4321",
-  type: "expense" as const, reviewed: false,
+  type: "expense" as const, source: "plaid" as const, reviewed: false,
 };
 
 describe("TransactionDetailPanel", () => {
@@ -65,5 +65,39 @@ describe("TransactionDetailPanel", () => {
       />,
     );
     expect(screen.queryByText("Category")).toBeNull();
+  });
+
+  it("shows Edit/Delete for a manual row and hides them for a plaid row", () => {
+    const base = {
+      id: "t1", date: "2026-02-02", name: "Cash lunch", merchantName: null, amount: "12.00",
+      pending: false, excluded: false, categoryId: null, categoryName: null, categoryColor: null,
+      categorizedBy: "manual" as const, accountId: null, accountName: null, accountMask: null,
+      type: "expense" as const, reviewed: false,
+    };
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const { rerender } = render(
+      <TransactionDetailPanel
+        txn={{ ...base, source: "manual" }}
+        editEnabled
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}} onEdit={onEdit} onDelete={onDelete}
+      />,
+    );
+    fireEvent.click(screen.getByText("Edit"));
+    expect(onEdit).toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Delete"));
+    expect(onDelete).toHaveBeenCalled();
+
+    rerender(
+      <TransactionDetailPanel
+        txn={{ ...base, source: "plaid" }}
+        editEnabled
+        onClose={() => {}} onCreateRule={() => {}} onCreateRecurring={() => {}}
+        recurrings={[]} onLinkRecurring={() => {}}
+      />,
+    );
+    expect(screen.queryByText("Edit")).toBeNull();
+    expect(screen.queryByText("Delete")).toBeNull();
   });
 });

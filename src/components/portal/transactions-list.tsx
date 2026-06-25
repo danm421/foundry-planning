@@ -8,6 +8,7 @@ import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
+import { ManualTransactionDialog } from "@/components/portal/manual-transaction-dialog";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { fmtAmount, formatDayHeader, badgeFor, type TxnType } from "@/components/portal/transaction-format";
 
@@ -27,6 +28,7 @@ export type PortalTransactionDTO = {
   accountName: string | null;
   accountMask: string | null;
   type: TxnType;
+  source: "plaid" | "manual";
   reviewed: boolean;
 };
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null; color: string | null };
@@ -75,6 +77,8 @@ export default function TransactionsList({
   // After a manual category change, offer to make it a standing rule for that name.
   const [ruleConfirm, setRuleConfirm] = useState<{ name: string; categoryId: string; categoryName: string } | null>(null);
   const [creatingRule, setCreatingRule] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTxn, setEditTxn] = useState<PortalTransactionDTO | null>(null);
   const portalFetch = usePortalFetch();
 
   useEffect(() => {
@@ -250,6 +254,22 @@ export default function TransactionsList({
     [rows, portalFetch],
   );
 
+  const deleteTransaction = useCallback(
+    async (id: string): Promise<void> => {
+      const prev = rows;
+      setRows((rs) => rs.filter((t) => t.id !== id));
+      setSelected(null);
+      try {
+        const res = await portalFetch(`/api/portal/transactions/${id}`, { method: "DELETE" });
+        if (!res.ok) { setRows(prev); setError("Couldn't delete that transaction."); }
+        else { setTotal((n) => Math.max(0, n - 1)); }
+      } catch {
+        setRows(prev); setError("Couldn't delete that transaction.");
+      }
+    },
+    [rows, portalFetch],
+  );
+
   const leaves = categories.filter((c) => c.kind === "category");
   const hasMore = rows.length < total;
 
@@ -285,6 +305,15 @@ export default function TransactionsList({
           Unreviewed
         </button>
         <div className="ml-auto flex items-center gap-1">
+          {editEnabled && (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="mr-1 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-on hover:bg-accent/90"
+            >
+              + Add
+            </button>
+          )}
           {WINDOWS.map((w) => (
             <button
               key={w.key}
@@ -342,6 +371,7 @@ export default function TransactionsList({
                         )}
                         {t.pending && <span className="text-[11px] text-warn">pending</span>}
                         {t.excluded && <span className="text-[11px] text-ink-4">excluded</span>}
+                        {t.source === "manual" && <span className="text-[11px] text-ink-4">manual</span>}
                       </div>
                     </div>
                     {/* Category column — fixed width so every colored dot lines up.
@@ -444,6 +474,8 @@ export default function TransactionsList({
               recurrings={recurrings}
               onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
               onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
+              onEdit={selected.source === "manual" ? () => setEditTxn(selected) : undefined}
+              onDelete={selected.source === "manual" ? () => void deleteTransaction(selected.id) : undefined}
             />
           </div>,
           detailEl,
@@ -494,6 +526,21 @@ export default function TransactionsList({
             </button>
           </div>
         </div>
+      )}
+      {addOpen && (
+        <ManualTransactionDialog
+          categories={categories}
+          onClose={() => setAddOpen(false)}
+          onSaved={() => { setAddOpen(false); void load(0, true); }}
+        />
+      )}
+      {editTxn && (
+        <ManualTransactionDialog
+          txn={editTxn}
+          categories={categories}
+          onClose={() => setEditTxn(null)}
+          onSaved={() => { setEditTxn(null); setSelected(null); void load(0, true); }}
+        />
       )}
     </div>
   );

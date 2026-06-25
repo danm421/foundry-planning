@@ -66,7 +66,7 @@ it("DTO includes a type field", () => {
     id: "t1", date: "2026-06-01", name: "n", merchantName: null, amount: "1.00",
     pending: false, excluded: false, categoryId: null, categoryName: null,
     categoryColor: null, categorizedBy: "plaid", accountId: null,
-    accountName: null, accountMask: null, type: "expense", reviewed: false,
+    accountName: null, accountMask: null, type: "expense", source: "plaid", reviewed: false,
   };
   expect(dto.type).toBe("expense");
 });

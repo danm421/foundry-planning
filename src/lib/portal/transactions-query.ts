@@ -29,6 +29,7 @@ export type PortalTransactionDTO = {
   accountName: string | null;
   accountMask: string | null;
   type: "income" | "expense" | "transfer";
+  source: "plaid" | "manual";
   reviewed: boolean;
 };
 
@@ -68,6 +69,7 @@ export async function loadPortalTransactions(
       accountName: accounts.name,
       accountMask: accounts.accountNumberLast4,
       type: plaidTransactions.type,
+      source: plaidTransactions.source,
       reviewedAt: plaidTransactions.reviewedAt,
     })
     .from(plaidTransactions)

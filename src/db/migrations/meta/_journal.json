@@ -1300,8 +1300,15 @@
     {
       "idx": 185,
       "version": "7",
-      "when": 1782404253210,
-      "tag": "0185_portal_transaction_reviewed",
+      "when": 1782401953889,
+      "tag": "0185_portal_manual_transactions",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1782412061910,
+      "tag": "0186_portal_transaction_reviewed",
       "breakpoints": true
     }
   ]

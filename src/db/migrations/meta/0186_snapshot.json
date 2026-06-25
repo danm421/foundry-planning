@@ -1,6 +1,6 @@
 {
-  "id": "95013c9f-df6d-441e-8a01-b07be5ac013e",
-  "prevId": "dd996b3e-5f32-44e0-8ea8-5c1c94a41745",
+  "id": "78dc7bb0-5668-440e-ab43-89e642aeef29",
+  "prevId": "95013c9f-df6d-441e-8a01-b07be5ac013e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10991,6 +10991,18 @@
           "notNull": true,
           "default": "'plaid'"
         },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -11075,6 +11087,27 @@
           "columns": [
             {
               "expression": "recurring_transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "plaid_transactions_client_reviewed_idx": {
+          "name": "plaid_transactions_client_reviewed_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reviewed_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

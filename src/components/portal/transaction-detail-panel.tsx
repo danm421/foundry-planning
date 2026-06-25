@@ -21,6 +21,8 @@ export function TransactionDetailPanel({
   editEnabled = false,
   onChangeType,
   onMarkReviewed,
+  onEdit,
+  onDelete,
 }: {
   txn: PortalTransactionDTO;
   onClose: () => void;
@@ -31,6 +33,8 @@ export function TransactionDetailPanel({
   editEnabled?: boolean;
   onChangeType?: (type: TxnType) => void;
   onMarkReviewed?: (reviewed: boolean) => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }): ReactElement {
   const n = Number(txn.amount);
   const abs = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -62,7 +66,7 @@ export function TransactionDetailPanel({
         </div>
       )}
       <dl className="space-y-2 text-[13px]">
-        {txn.accountName && (
+        {txn.accountName ? (
           <div className="flex justify-between gap-4">
             <dt className="text-ink-3">Account</dt>
             <dd className="max-w-[60%] truncate text-ink-2">
@@ -70,7 +74,12 @@ export function TransactionDetailPanel({
               {txn.accountMask && <span className="tabular text-ink-3"> ••{txn.accountMask}</span>}
             </dd>
           </div>
-        )}
+        ) : txn.source === "manual" ? (
+          <div className="flex justify-between gap-4">
+            <dt className="text-ink-3">Account</dt>
+            <dd className="text-ink-2">Cash / Manual</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Date</dt><dd className="tabular text-ink-2">{txn.date}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Description</dt><dd className="max-w-[60%] truncate text-ink-2">{txn.name}</dd></div>
         {txn.type !== "transfer" && (
@@ -122,6 +131,28 @@ export function TransactionDetailPanel({
             {recurrings.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
+      )}
+      {editEnabled && txn.source === "manual" && (onEdit || onDelete) && (
+        <div className="flex gap-2 border-t border-hair pt-3">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex-1 rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex-1 rounded-md border border-hair px-3 py-1.5 text-[13px] text-crit hover:bg-card-2"
+            >
+              Delete
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
