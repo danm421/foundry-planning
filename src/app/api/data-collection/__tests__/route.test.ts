@@ -171,7 +171,10 @@ describe("POST /api/data-collection — blank mode with clientId", () => {
       }),
     );
 
-    // Email sent with correct link + advisor/firm names
+    // Email sent with correct link + advisor/firm names. The per-advisor
+    // settings pass-through (fromName/subject/introBody) is asserted in
+    // route-email-settings.test.ts, which mocks a real intakeEmailSettings
+    // row; this suite's shared select mock returns a client-shaped row.
     expect(sendIntakeFormEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "prospect@example.com",
