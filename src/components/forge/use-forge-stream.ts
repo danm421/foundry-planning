@@ -27,6 +27,26 @@ export interface PageLink {
   section: string;
   label: string;
 }
+export interface ProposedTaskView {
+  title: string;
+  description: string;
+  priority: "low" | "med" | "high";
+  dueDate: string | null;
+}
+export interface MeetingReviewPayload {
+  summaryTitle: string;
+  summary: string;
+  meetingDate: string | null;
+  proposedTasks: ProposedTaskView[];
+}
+export interface MeetingReviewResume {
+  approved: boolean;
+  summaryTitle: string;
+  summary: string;
+  meetingDate: string;
+  tasks: ProposedTaskView[];
+}
+
 export type ForgeSseEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "token"; text: string }
@@ -38,6 +58,7 @@ export type ForgeSseEvent =
   | { type: "page_link"; href: string; section: string; label: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
+  | { type: "meeting_review"; summaryTitle: string; summary: string; meetingDate: string | null; proposedTasks: ProposedTaskView[] }
   | { type: "verifying" }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -96,6 +117,8 @@ export interface SendArgs {
   currentPage?: string;
   /** When set, tells the forge a freshly-uploaded import is awaiting review. */
   pendingImportId?: string;
+  /** When set, tells the forge a freshly-uploaded meeting transcript is awaiting review. */
+  pendingTranscriptId?: string;
   /** Display-only filenames to show on the user bubble; never sent to the server. */
   attachments?: string[];
   /**
@@ -136,6 +159,8 @@ export interface UseForgeStreamResult {
   retryAfterSeconds: number | null;
   /** Resume an interrupted conversation after the advisor submits approval decisions. */
   resume: (decisions: Record<string, "confirm" | "reject">) => Promise<void>;
+  pendingMeetingReview: MeetingReviewPayload | null;
+  resumeMeetingReview: (payload: MeetingReviewResume) => Promise<void>;
 }
 
 export function useForgeStream(clientId: string): UseForgeStreamResult {
@@ -150,6 +175,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
   const [pendingNavigate, setPendingNavigate] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [pendingMeetingReview, setPendingMeetingReview] = useState<MeetingReviewPayload | null>(null);
   const [status, setStatus] = useState<ForgeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
@@ -255,6 +281,14 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       case "approval_required":
         setPendingApproval({ previews: ev.previews, calls: ev.calls });
         break;
+      case "meeting_review":
+        setPendingMeetingReview({
+          summaryTitle: ev.summaryTitle,
+          summary: ev.summary,
+          meetingDate: ev.meetingDate,
+          proposedTasks: ev.proposedTasks,
+        });
+        break;
       case "error":
         setIsVerifying(false);
         setToolStatus(null);
@@ -333,6 +367,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
             conversationId: args.conversationId ?? conversationId,
             currentPage: args.currentPage,
             pendingImportId: args.pendingImportId,
+            pendingTranscriptId: args.pendingTranscriptId,
           }),
           signal: ac.signal,
         });
@@ -421,6 +456,42 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     [clientId, conversationId, consumeStream],
   );
 
+  const resumeMeetingReview = useCallback(
+    async (payload: MeetingReviewResume) => {
+      if (!conversationId) return;
+      setPendingMeetingReview(null); // optimistic clear so the card unmounts
+      setStatus("streaming");
+      setErrorMessage(null);
+      setIsVerifying(false);
+      setMessages((m) => [...m, { role: "assistant", text: "" }]);
+      const ac = new AbortController();
+      abortRef.current = ac;
+      try {
+        const res = await fetch(`/api/clients/${clientId}/forge/resume`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ conversationId, meetingReview: payload }),
+          signal: ac.signal,
+        });
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => "");
+          setStatus("error");
+          setErrorMessage(text || `HTTP ${res.status}`);
+          return;
+        }
+        await consumeStream(res);
+      } catch (err) {
+        if (ac.signal.aborted) {
+          setStatus("cancelled");
+          return;
+        }
+        setStatus("error");
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [clientId, conversationId, consumeStream],
+  );
+
   // Re-POST the last user turn after a failed/cancelled turn, on the same
   // conversation + scenario. Used by the panel's Retry affordance (Task A4).
   const retry = useCallback(async () => {
@@ -451,6 +522,8 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
     send,
     cancel,
     resume,
+    pendingMeetingReview,
+    resumeMeetingReview,
     retry,
     retryAfterSeconds,
   };

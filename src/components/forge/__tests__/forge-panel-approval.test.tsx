@@ -84,6 +84,8 @@ function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForg
     send: vi.fn(),
     cancel: vi.fn(),
     resume: vi.fn(),
+    pendingMeetingReview: null,
+    resumeMeetingReview: vi.fn(),
     retry: vi.fn(),
     retryAfterSeconds: null,
     ...overrides,
