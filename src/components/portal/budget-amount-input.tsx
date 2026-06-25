@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { groupNumber } from "@/lib/portal/format";
 
 /**
  * Always-on budget cell for the portal Budget list. Commits on blur/Enter via
@@ -26,10 +27,17 @@ export function BudgetAmountInput({
   const portalFetch = usePortalFetch();
   const seed = value != null ? String(value) : "";
   const [draft, setDraft] = useState<string>(seed);
+  const [focused, setFocused] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
   const lastSaved = useRef<string>(seed);
   const reverting = useRef(false);
+
+  // While editing, show the raw digits the user is typing (commas mid-type fight
+  // the caret). When idle, show the value comma-grouped so it reads like the
+  // read-only cell / Spent column ("2,700", not "2700"). `draft` itself stays raw
+  // — only the *displayed* string is grouped — so `commit()` parses it unchanged.
+  const display = focused ? draft : groupNumber(draft);
 
   // Re-sync from server data after a router.refresh() changes the prop.
   useEffect(() => {
@@ -88,10 +96,17 @@ export function BudgetAmountInput({
       <input
         aria-label={`Budget for ${label}`}
         inputMode="decimal"
-        value={draft}
+        value={display}
+        // Size to content so the value hugs the leading "$" (right-aligned in the
+        // cell) instead of a `w-full` input shoving the digits to the far edge.
+        size={Math.max(2, display.length)}
         disabled={saving}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false);
+          void commit();
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") {
@@ -101,7 +116,7 @@ export function BudgetAmountInput({
           }
         }}
         placeholder="—"
-        className={`tabular w-full min-w-0 rounded bg-transparent py-0.5 pr-0.5 text-right text-[12px] outline-none focus:ring-1 focus:ring-accent ${
+        className={`tabular min-w-0 rounded bg-transparent py-0.5 pr-0.5 text-right text-[12px] outline-none focus:ring-1 focus:ring-accent ${
           muted ? "text-ink-3" : "text-ink-2"
         }`}
       />

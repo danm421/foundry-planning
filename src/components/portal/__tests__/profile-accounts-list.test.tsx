@@ -99,8 +99,8 @@ describe("ProfileAccountsList — Plaid-aware edit form", () => {
     expect(container.textContent).toContain(
       "Balance and account number sync from your institution",
     );
-    // Value renders read-only — no editable numeric input in the open form
-    expect(container.querySelector('input[type="number"]')).toBeNull();
+    // Value renders read-only — no editable amount input in the open form
+    expect(container.querySelector('input[inputmode="decimal"]')).toBeNull();
     // Both locked fields (value + last4) carry the "Synced via Plaid" hint
     const hints = container.textContent?.match(/Synced via Plaid/g) ?? [];
     expect(hints.length).toBe(2);
@@ -121,8 +121,8 @@ describe("ProfileAccountsList — Plaid-aware edit form", () => {
     );
     fireEvent.click(getByText("Edit"));
 
-    // Editable numeric Value input is present
-    expect(container.querySelector('input[type="number"]')).not.toBeNull();
+    // Editable Value amount input is present
+    expect(container.querySelector('input[inputmode="decimal"]')).not.toBeNull();
     // No Plaid hint/banner on a manual account
     expect(container.textContent).not.toContain("Synced via Plaid");
   });

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { CategoryPicker } from "@/components/portal/category-picker";
+import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null };
@@ -104,12 +105,12 @@ export function RecurringCreateDialog({
         <div className="flex gap-2">
           <label className="block flex-1 space-y-1">
             <span className="text-[12px] text-ink-3">Min amount</span>
-            <input value={amountMin} onChange={(e) => setAmountMin(e.target.value)} inputMode="decimal"
+            <CurrencyInput value={amountMin} onValueChange={setAmountMin}
               className="w-full rounded-md border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink" />
           </label>
           <label className="block flex-1 space-y-1">
             <span className="text-[12px] text-ink-3">Max amount</span>
-            <input value={amountMax} onChange={(e) => setAmountMax(e.target.value)} inputMode="decimal"
+            <CurrencyInput value={amountMax} onValueChange={setAmountMax}
               className="w-full rounded-md border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink" />
           </label>
         </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
 import { LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
+import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import type { PortalDebtRow } from "@/lib/portal/portal-networth";
 
@@ -307,11 +308,10 @@ function DebtFormPanel({
               <span className="ml-1 text-[11px]">· Synced via Plaid</span>
             </span>
           ) : (
-            <input
-              type="number"
-              step="0.01"
+            <CurrencyInput
+              aria-label="Balance"
               value={form.balance}
-              onChange={(e) => setForm({ ...form, balance: e.target.value })}
+              onValueChange={(v) => setForm({ ...form, balance: v })}
               className="rounded-md border border-hair bg-paper px-2 py-1"
             />
           )}

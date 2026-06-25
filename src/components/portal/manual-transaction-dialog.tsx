@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { CategoryPicker } from "@/components/portal/category-picker";
+import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import type { PortalTransactionDTO } from "@/components/portal/transactions-list";
 
@@ -107,11 +108,10 @@ export function ManualTransactionDialog({
 
         <label className="block space-y-1">
           <span className="text-[12px] text-ink-3">Amount</span>
-          <input
+          <CurrencyInput
             aria-label="Amount"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
+            onValueChange={setAmount}
             placeholder="0.00"
             className="w-full rounded-md border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink"
           />

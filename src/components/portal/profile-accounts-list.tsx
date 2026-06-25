@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
+import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 interface Owner {
@@ -457,11 +458,10 @@ function FormPanel({
               <PlaidSyncHint />
             </span>
           ) : (
-            <input
-              type="number"
-              step="0.01"
+            <CurrencyInput
+              aria-label="Value"
               value={form.value}
-              onChange={(e) => setForm({ ...form, value: e.target.value })}
+              onValueChange={(v) => setForm({ ...form, value: v })}
               className="rounded-md border border-hair bg-paper px-2 py-1"
             />
           )}

@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { CurrencyInput } from "@/components/portal/currency-input";
 import { BudgetHistoryChart } from "@/components/portal/budget-history-chart";
 import type {
   CategoryDetail,
@@ -215,12 +216,11 @@ export function BudgetCategoryDetail({
                 <span className="text-[13px] text-ink-3" aria-hidden>
                   $
                 </span>
-                <input
+                <CurrencyInput
                   ref={inputRef}
                   aria-label="Budget amount"
-                  inputMode="decimal"
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onValueChange={setDraft}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void saveBudget();
                     if (e.key === "Escape") setEditing(false);
