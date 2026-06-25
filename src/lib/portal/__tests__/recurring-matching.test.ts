@@ -130,3 +130,81 @@ it("matchesRecurring: exact matchType rejects a superstring", () => {
 it("recurringPeriodState: due day itself is 'due' (not overdue)", () => {
   expect(recurringPeriodState({ dueDay: 15, today: "2026-06-15", hasMatchThisPeriod: false })).toBe("due");
 });
+
+import {
+  nextPaymentDate,
+  buildTimeline,
+  computeYearlyMetrics,
+  describeRules,
+} from "@/lib/portal/recurring-matching";
+
+describe("nextPaymentDate", () => {
+  it("monthly: this month's due day when not yet passed and unpaid", () => {
+    expect(nextPaymentDate({ cadence: "monthly", dueDay: 20, dueMonth: null }, "2026-06-15", false))
+      .toBe("2026-06-20");
+  });
+  it("monthly: rolls to next month when the due day has passed", () => {
+    expect(nextPaymentDate({ cadence: "monthly", dueDay: 5, dueMonth: null }, "2026-06-15", false))
+      .toBe("2026-07-05");
+  });
+  it("monthly: rolls to next month when already paid this period", () => {
+    expect(nextPaymentDate({ cadence: "monthly", dueDay: 20, dueMonth: null }, "2026-06-15", true))
+      .toBe("2026-07-20");
+  });
+  it("monthly: clamps day 31 to the month's last day", () => {
+    expect(nextPaymentDate({ cadence: "monthly", dueDay: 31, dueMonth: null }, "2026-02-10", false))
+      .toBe("2026-02-28");
+  });
+  it("monthly: anytime (null dueDay) anchors to the 1st", () => {
+    expect(nextPaymentDate({ cadence: "monthly", dueDay: null, dueMonth: null }, "2026-06-15", false))
+      .toBe("2026-07-01");
+  });
+  it("annually: rolls to next year once this year's date passed", () => {
+    expect(nextPaymentDate({ cadence: "annually", dueDay: 2, dueMonth: 3 }, "2026-06-15", false))
+      .toBe("2027-03-02");
+  });
+  it("annually: null dueMonth yields null", () => {
+    expect(nextPaymentDate({ cadence: "annually", dueDay: 2, dueMonth: null }, "2026-06-15", false))
+      .toBeNull();
+  });
+});
+
+describe("buildTimeline", () => {
+  it("returns `months` trailing buckets ending at now, flagging paid months", () => {
+    const out = buildTimeline(["2026-06-02", "2026-04-30"], new Date(Date.UTC(2026, 5, 15)), 3);
+    expect(out).toEqual([
+      { month: "2026-04", paid: true },
+      { month: "2026-05", paid: false },
+      { month: "2026-06", paid: true },
+    ]);
+  });
+});
+
+describe("computeYearlyMetrics", () => {
+  it("sums and averages per calendar year, newest first", () => {
+    const out = computeYearlyMetrics([
+      { date: "2026-01-02", amount: 100 },
+      { date: "2026-02-02", amount: 200 },
+      { date: "2025-12-02", amount: 50 },
+    ]);
+    expect(out).toEqual([
+      { year: 2026, total: 300, avg: 150, count: 2 },
+      { year: 2025, total: 50, avg: 50, count: 1 },
+    ]);
+  });
+});
+
+describe("describeRules", () => {
+  it("monthly with a due day", () => {
+    expect(describeRules({
+      matchType: "contains", pattern: "Movement", amountMin: 1791, amountMax: 2580,
+      cadence: "monthly", dueDay: 2, dueMonth: null,
+    })).toEqual(["Named Movement", "from $1,791 to $2,580", "around the 2nd", "every month"]);
+  });
+  it("annual exact match", () => {
+    expect(describeRules({
+      matchType: "exact", pattern: "Copilot", amountMin: 95, amountMax: 110,
+      cadence: "annually", dueDay: null, dueMonth: 6,
+    })).toEqual(["Named exactly Copilot", "from $95 to $110", "in June", "every year"]);
+  });
+});

@@ -69,7 +69,10 @@ export function predictRecurringAmount(
   return round2((range.amountMin + range.amountMax) / 2);
 }
 
-export function isRecurringDueInMonth(r: RecurringLike, month: string): boolean {
+export function isRecurringDueInMonth(
+  r: { cadence: "monthly" | "annually"; dueMonth: number | null },
+  month: string,
+): boolean {
   if (r.cadence === "monthly") return true;
   // annually: due only in dueMonth (month param is YYYY-MM)
   if (r.dueMonth == null) return false;
@@ -86,4 +89,110 @@ export function recurringPeriodState(args: {
   if (args.dueDay == null) return "due"; // "anytime" never goes overdue mid-month
   const dayOfMonth = Number(args.today.slice(8, 10));
   return dayOfMonth > args.dueDay ? "overdue" : "due";
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function lastDayOfMonth(year: number, month1: number): number {
+  return new Date(Date.UTC(year, month1, 0)).getUTCDate();
+}
+function isoDate(year: number, month1: number, day: number): string {
+  return `${year}-${pad2(month1)}-${pad2(Math.min(day, lastDayOfMonth(year, month1)))}`;
+}
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+function fmtWhole(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+export function nextPaymentDate(
+  r: { cadence: "monthly" | "annually"; dueDay: number | null; dueMonth: number | null },
+  today: string,
+  paidThisPeriod: boolean,
+): string | null {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7)); // 1-12
+  const d = Number(today.slice(8, 10));
+  if (r.cadence === "monthly") {
+    const day = r.dueDay ?? 1;
+    let year = y;
+    let month = m;
+    if (d > day || paidThisPeriod) {
+      month += 1;
+      if (month > 12) { month = 1; year += 1; }
+    }
+    return isoDate(year, month, day);
+  }
+  if (r.dueMonth == null) return null;
+  const day = r.dueDay ?? 1;
+  let year = y;
+  const passed = m > r.dueMonth || (m === r.dueMonth && d > day);
+  if (passed || paidThisPeriod) year += 1;
+  return isoDate(year, r.dueMonth, day);
+}
+
+export function buildTimeline(
+  matchedDates: string[],
+  now: Date,
+  months = 12,
+): { month: string; paid: boolean }[] {
+  const paidMonths = new Set(matchedDates.map((d) => d.slice(0, 7)));
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth(); // 0-11
+  const out: { month: string; paid: boolean }[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const dt = new Date(Date.UTC(y, m - i, 1));
+    const key = `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}`;
+    out.push({ month: key, paid: paidMonths.has(key) });
+  }
+  return out;
+}
+
+export function computeYearlyMetrics(
+  matched: { date: string; amount: number }[],
+): { year: number; total: number; avg: number; count: number }[] {
+  const byYear = new Map<number, { total: number; count: number }>();
+  for (const t of matched) {
+    const year = Number(t.date.slice(0, 4));
+    const cur = byYear.get(year) ?? { total: 0, count: 0 };
+    cur.total += t.amount;
+    cur.count += 1;
+    byYear.set(year, cur);
+  }
+  return [...byYear.entries()]
+    .map(([year, { total, count }]) => ({
+      year, total: round2(total), count, avg: round2(total / count),
+    }))
+    .sort((a, b) => b.year - a.year);
+}
+
+export function describeRules(r: {
+  matchType: "exact" | "contains";
+  pattern: string;
+  amountMin: number;
+  amountMax: number;
+  cadence: "monthly" | "annually";
+  dueDay: number | null;
+  dueMonth: number | null;
+}): string[] {
+  const chips: string[] = [];
+  chips.push(r.matchType === "exact" ? `Named exactly ${r.pattern}` : `Named ${r.pattern}`);
+  chips.push(`from ${fmtWhole(r.amountMin)} to ${fmtWhole(r.amountMax)}`);
+  if (r.cadence === "monthly") {
+    chips.push(r.dueDay == null ? "anytime in the month" : `around the ${ordinal(r.dueDay)}`);
+    chips.push("every month");
+  } else {
+    if (r.dueMonth != null) chips.push(`in ${MONTH_NAMES[r.dueMonth - 1]}`);
+    chips.push("every year");
+  }
+  return chips;
 }
