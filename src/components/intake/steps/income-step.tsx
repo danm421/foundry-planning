@@ -1,16 +1,23 @@
 "use client";
 
 import type { IntakeDraft } from "@/lib/intake/schema";
-import { CardList, inputCls, labelCls, selectCls } from "./card-list";
+import { CardList, MoneyInput, inputCls, labelCls, selectCls } from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type IncomeSlice = IntakeDraft["income"];
 type IncomeItem = NonNullable<IncomeSlice>[number];
+type Owner = NonNullable<IncomeItem["owner"]>;
 
 export interface IncomeStepProps {
   value: IncomeSlice;
   onChange: (next: IncomeSlice) => void;
+  /** Display name for the primary client (falls back to "Client"). */
+  clientName?: string;
+  /** Display name for the spouse (falls back to "Spouse"); omit when none. */
+  spouseName?: string;
+  /** When false, only the client is offered as an owner. */
+  hasSpouse?: boolean;
 }
 
 // ─── Options ─────────────────────────────────────────────────────────────────
@@ -22,11 +29,20 @@ const TYPE_OPTIONS = [
   { value: "other",            label: "Other" },
 ] as const;
 
-const OWNER_OPTIONS = [
-  { value: "client",  label: "Client" },
-  { value: "spouse",  label: "Spouse" },
-  { value: "joint",   label: "Joint" },
-] as const;
+function ownerOptions(
+  clientName: string | undefined,
+  spouseName: string | undefined,
+  hasSpouse: boolean,
+): { value: Owner; label: string }[] {
+  const opts: { value: Owner; label: string }[] = [
+    { value: "client", label: clientName?.trim() || "Client" },
+  ];
+  if (hasSpouse) {
+    opts.push({ value: "spouse", label: spouseName?.trim() || "Spouse" });
+    opts.push({ value: "joint", label: "Joint" });
+  }
+  return opts;
+}
 
 // ─── Blank template ──────────────────────────────────────────────────────────
 
@@ -36,8 +52,16 @@ function blankIncome(): IncomeItem {
 
 // ─── IncomeStep ───────────────────────────────────────────────────────────────
 
-export function IncomeStep({ value, onChange }: IncomeStepProps) {
+export function IncomeStep({
+  value,
+  onChange,
+  clientName,
+  spouseName,
+  hasSpouse = false,
+}: IncomeStepProps) {
   const income = value ?? [];
+  const ownerOpts = ownerOptions(clientName, spouseName, hasSpouse);
+  const ownerValues = new Set<Owner>(ownerOpts.map((o) => o.value));
 
   function addIncome() {
     onChange([...income, blankIncome()]);
@@ -109,13 +133,13 @@ export function IncomeStep({ value, onChange }: IncomeStepProps) {
               <select
                 id={`${idp}-owner`}
                 className={selectCls}
-                value={item.owner ?? "client"}
+                value={item.owner && ownerValues.has(item.owner) ? item.owner : "client"}
                 onChange={(e) =>
                   updateIncome(i, { owner: e.target.value as IncomeItem["owner"] })
                 }
                 aria-label="Owner"
               >
-                {OWNER_OPTIONS.map((opt) => (
+                {ownerOpts.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -126,20 +150,14 @@ export function IncomeStep({ value, onChange }: IncomeStepProps) {
             {/* Annual amount */}
             <div className="sm:col-span-2">
               <label htmlFor={`${idp}-annualAmount`} className={labelCls}>
-                Annual amount ($)
+                Annual amount
               </label>
-              <input
+              <MoneyInput
                 id={`${idp}-annualAmount`}
-                type="number"
-                min={0}
-                className={`${inputCls} tabular`}
-                value={item.annualAmount ?? 0}
-                onChange={(e) =>
-                  updateIncome(i, {
-                    annualAmount: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
-                }
-                aria-label="Annual amount"
+                value={item.annualAmount}
+                onChange={(num) => updateIncome(i, { annualAmount: num })}
+                ariaLabel="Annual amount"
+                placeholder="0"
               />
             </div>
           </div>

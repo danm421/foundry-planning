@@ -137,7 +137,16 @@ export function IntakeWizard({
         return <FamilyStep value={value.family} onChange={setFamily} />;
       case "assets":
         if (step.subStep === "accounts") return <AccountsStep value={value.accounts} onChange={setAccounts} />;
-        if (step.subStep === "income")   return <IncomeStep value={value.income} onChange={setIncome} />;
+        if (step.subStep === "income")
+          return (
+            <IncomeStep
+              value={value.income}
+              onChange={setIncome}
+              clientName={value.family?.primary?.firstName}
+              spouseName={value.family?.spouse?.firstName ?? undefined}
+              hasSpouse={value.family?.spouse != null}
+            />
+          );
         if (step.subStep === "property") return <PropertyStep value={value.property} onChange={setProperty} />;
         return null;
       case "goals":

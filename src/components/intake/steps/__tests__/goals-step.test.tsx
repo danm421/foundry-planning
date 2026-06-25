@@ -15,12 +15,13 @@ function makeProps(overrides: Partial<{ value: GoalsSlice; onChange: (v: GoalsSl
 }
 
 describe("GoalsStep", () => {
-  it("renders the three number inputs", () => {
+  it("renders the retirement-age spinbuttons and the money expenses field", () => {
     render(<GoalsStep {...makeProps()} />);
 
     expect(screen.getByRole("spinbutton", { name: /client.*retirement age/i })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: /spouse.*retirement age/i })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: /annual retirement expenses/i })).toBeInTheDocument();
+    // annual expenses is now a formatted money field (text input)
+    expect(screen.getByRole("textbox", { name: /annual retirement expenses/i })).toBeInTheDocument();
   });
 
   it("renders existing values in the inputs", () => {
@@ -33,7 +34,8 @@ describe("GoalsStep", () => {
 
     expect((screen.getByRole("spinbutton", { name: /client.*retirement age/i }) as HTMLInputElement).value).toBe("65");
     expect((screen.getByRole("spinbutton", { name: /spouse.*retirement age/i }) as HTMLInputElement).value).toBe("63");
-    expect((screen.getByRole("spinbutton", { name: /annual retirement expenses/i }) as HTMLInputElement).value).toBe("80000");
+    // expenses formats with separators: 80000 → "80,000"
+    expect((screen.getByRole("textbox", { name: /annual retirement expenses/i }) as HTMLInputElement).value).toBe("80,000");
   });
 
   it("changing clientRetirementAge calls onChange with updated numeric value", () => {
@@ -64,7 +66,7 @@ describe("GoalsStep", () => {
     const onChange = vi.fn();
     render(<GoalsStep {...makeProps({ onChange })} />);
 
-    fireEvent.change(screen.getByRole("spinbutton", { name: /annual retirement expenses/i }), {
+    fireEvent.change(screen.getByRole("textbox", { name: /annual retirement expenses/i }), {
       target: { value: "90000" },
     });
 

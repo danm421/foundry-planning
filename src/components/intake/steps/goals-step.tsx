@@ -1,7 +1,7 @@
 "use client";
 
 import type { IntakeDraft } from "@/lib/intake/schema";
-import { inputCls, labelCls } from "./card-list";
+import { MoneyInput, inputCls, labelCls } from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -71,18 +71,17 @@ export function GoalsStep({ value, onChange }: GoalsStepProps) {
           {/* Annual retirement expenses */}
           <div className="sm:col-span-2">
             <label htmlFor="goals-annualRetirementExpenses" className={labelCls}>
-              Annual retirement expenses ($)
+              Annual retirement expenses
               <span className="ml-1 font-normal normal-case text-ink-4">(optional)</span>
             </label>
-            <input
+            <MoneyInput
               id="goals-annualRetirementExpenses"
-              type="number"
-              min={0}
-              className={`${inputCls} tabular`}
-              value={goals.annualRetirementExpenses ?? ""}
-              onChange={(e) => setField("annualRetirementExpenses", e.target.value)}
-              placeholder="e.g. 80,000"
-              aria-label="Annual retirement expenses"
+              value={goals.annualRetirementExpenses}
+              onChange={(num) =>
+                onChange({ ...goals, annualRetirementExpenses: num })
+              }
+              ariaLabel="Annual retirement expenses"
+              placeholder="80,000"
             />
           </div>
         </div>

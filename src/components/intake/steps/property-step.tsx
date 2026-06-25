@@ -1,7 +1,7 @@
 "use client";
 
 import type { IntakeDraft } from "@/lib/intake/schema";
-import { CardList, inputCls, labelCls, selectCls } from "./card-list";
+import { CardList, MoneyInput, inputCls, labelCls, selectCls } from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,20 +96,14 @@ export function PropertyStep({ value, onChange }: PropertyStepProps) {
             {/* Value */}
             <div>
               <label htmlFor={`${idp}-value`} className={labelCls}>
-                Estimated value ($)
+                Estimated value
               </label>
-              <input
+              <MoneyInput
                 id={`${idp}-value`}
-                type="number"
-                min={0}
-                className={`${inputCls} tabular`}
-                value={item.value ?? 0}
-                onChange={(e) =>
-                  updateProperty(i, {
-                    value: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
-                }
-                aria-label="Estimated value"
+                value={item.value}
+                onChange={(num) => updateProperty(i, { value: num })}
+                ariaLabel="Estimated value"
+                placeholder="0"
               />
             </div>
           </div>

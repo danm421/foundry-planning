@@ -39,7 +39,8 @@ describe("PropertyStep", () => {
 
     expect(screen.getByDisplayValue("Main residence")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /kind/i })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("850000")).toBeInTheDocument();
+    // value input is now a formatted money field: 850000 → "850,000"
+    expect(screen.getByDisplayValue("850,000")).toBeInTheDocument();
   });
 
   it("editing name calls onChange with updated name", () => {

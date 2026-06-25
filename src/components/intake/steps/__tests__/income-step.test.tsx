@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
@@ -39,7 +40,8 @@ describe("IncomeStep", () => {
 
     expect(screen.getByDisplayValue("Day job")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /type/i })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("120000")).toBeInTheDocument();
+    // annual amount is now a formatted money field: 120000 → "120,000"
+    expect(screen.getByDisplayValue("120,000")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /owner/i })).toBeInTheDocument();
   });
 
@@ -83,18 +85,61 @@ describe("IncomeStep", () => {
     expect(onChange.mock.calls[0][0]?.[0]?.annualAmount).toBe(95000);
   });
 
+  it("formats the amount with a separator as the user types (live)", () => {
+    // Stateful host so the controlled money field reflects committed values.
+    function Host() {
+      const [income, setIncome] = useState<IncomeSlice>([
+        { name: "Job", type: "salary", annualAmount: undefined, owner: "client" },
+      ]);
+      return <IncomeStep value={income} onChange={setIncome} />;
+    }
+    render(<Host />);
+
+    const amount = screen.getByLabelText(/annual amount/i);
+    fireEvent.change(amount, { target: { value: "50000" } });
+    expect(screen.getByDisplayValue("50,000")).toBeInTheDocument();
+
+    fireEvent.change(amount, { target: { value: "1234567" } });
+    expect(screen.getByDisplayValue("1,234,567")).toBeInTheDocument();
+  });
+
   it("changing owner calls onChange with the new owner", () => {
     const onChange = vi.fn();
     const value: IncomeSlice = [
       { name: "Joint income", type: "other", annualAmount: 10000, owner: "client" },
     ];
-    render(<IncomeStep {...makeProps({ value, onChange })} />);
+    // "joint"/"spouse" are only offered when a spouse exists
+    render(<IncomeStep {...makeProps({ value, onChange })} hasSpouse />);
 
     const ownerSelect = screen.getByRole("combobox", { name: /owner/i });
     fireEvent.change(ownerSelect, { target: { value: "joint" } });
 
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange.mock.calls[0][0]?.[0]?.owner).toBe("joint");
+  });
+
+  it("owner field lists the real client/spouse names when a spouse exists", () => {
+    const value: IncomeSlice = [
+      { name: "Job", type: "salary", annualAmount: 100000, owner: "client" },
+    ];
+    render(
+      <IncomeStep {...makeProps({ value })} clientName="Cooper" spouseName="Susan" hasSpouse />,
+    );
+
+    const ownerSelect = screen.getByRole("combobox", { name: /owner/i });
+    const labels = Array.from(ownerSelect.querySelectorAll("option")).map((o) => o.textContent);
+    expect(labels).toEqual(["Cooper", "Susan", "Joint"]);
+  });
+
+  it("owner field offers only the client when there is no spouse", () => {
+    const value: IncomeSlice = [
+      { name: "Job", type: "salary", annualAmount: 100000, owner: "client" },
+    ];
+    render(<IncomeStep {...makeProps({ value })} clientName="Cooper" />);
+
+    const ownerSelect = screen.getByRole("combobox", { name: /owner/i });
+    const labels = Array.from(ownerSelect.querySelectorAll("option")).map((o) => o.textContent);
+    expect(labels).toEqual(["Cooper"]);
   });
 
   it("clicking Remove calls onChange without that income entry", () => {

@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { cleanInput, formatDisplay } from "@/components/currency-input";
 
 // ─── Shared input/label tokens (consumed by every intake step) ───────────────
 export const inputCls =
@@ -9,6 +10,63 @@ export const labelCls =
   "block text-[12px] font-medium uppercase tracking-[0.06em] text-ink-3 mb-1";
 export const selectCls = inputCls;
 
+// ─── MoneyInput ───────────────────────────────────────────────────────────────
+//
+// Dollar field that formats with a "$" prefix + thousands separators as you
+// type (e.g. 50000 → "$50,000"), reusing the app's shared currency helpers but
+// styled to match the intake form. Keeps an internal raw string so partial
+// entries ("50000.", "0") survive while the numeric value flows up via onChange.
+
+export function MoneyInput({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+  placeholder,
+}: {
+  id?: string;
+  value: number | undefined;
+  onChange: (next: number | undefined) => void;
+  ariaLabel: string;
+  placeholder?: string;
+}) {
+  // Keep an internal raw string so partial entries survive (e.g. a trailing
+  // "." while typing "1234.50"). Re-sync from the prop only when `value` truly
+  // changes externally — re-render with the same numeric value (our own echo)
+  // is a no-op, which is what preserves the in-progress decimal. This is React's
+  // documented "adjust state during render on prop change" pattern.
+  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setRaw(value === undefined ? "" : String(value));
+  }
+
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-ink-3">
+        $
+      </span>
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        className={`${inputCls} pl-7 tabular`}
+        value={formatDisplay(raw)}
+        onChange={(e) => {
+          const cleaned = cleanInput(e.target.value);
+          setRaw(cleaned);
+          const num = cleaned === "" || cleaned === "." ? undefined : Number(cleaned);
+          setPrevValue(num);
+          onChange(num);
+        }}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+      />
+    </div>
+  );
+}
+
 // ─── RemoveButton ─────────────────────────────────────────────────────────────
 
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
@@ -16,12 +74,11 @@ function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void
     <button
       type="button"
       onClick={onRemove}
-      aria-label="Remove"
-      className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full text-ink-4 transition-colors hover:bg-hair hover:text-crit"
+      className="absolute right-3 top-3 flex items-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 py-1 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3 transition-colors hover:border-crit hover:text-crit"
     >
       <svg
-        width="14"
-        height="14"
+        width="12"
+        height="12"
         viewBox="0 0 14 14"
         fill="none"
         strokeWidth={1.5}
@@ -30,7 +87,8 @@ function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void
       >
         <path d="M2 2l10 10M12 2L2 12" />
       </svg>
-      <span className="sr-only">Remove {label}</span>
+      Remove
+      <span className="sr-only">{label}</span>
     </button>
   );
 }

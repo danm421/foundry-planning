@@ -13,6 +13,7 @@ import { isExpired } from "@/lib/intake/tokens";
 import {
   intakeDraftSchema,
   intakeSubmitSchema,
+  pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
@@ -115,10 +116,12 @@ export async function POST(
     throw e;
   }
 
-  // 7. Strict validation — the merged draft must now be complete.
+  // 7. Strict validation — the merged draft must now be complete. Drop any
+  //    optional rows the user added but left blank ("Add income" → "Skip for
+  //    now") so they don't read as incomplete required fields.
   let validatedPayload: ReturnType<typeof intakeSubmitSchema.parse>;
   try {
-    validatedPayload = intakeSubmitSchema.parse(finalPayload);
+    validatedPayload = intakeSubmitSchema.parse(pruneIntakeBlankRows(finalPayload));
   } catch (err) {
     if (err instanceof ZodError) {
       return NextResponse.json(

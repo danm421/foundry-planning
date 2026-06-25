@@ -136,13 +136,13 @@ function ChildCard({ index, value, onChange, onRemove }: ChildCardProps) {
       <button
         type="button"
         onClick={onRemove}
-        aria-label="Remove"
-        className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full text-ink-4 transition-colors hover:bg-hair hover:text-crit"
+        className="absolute right-3 top-3 flex items-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 py-1 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3 transition-colors hover:border-crit hover:text-crit"
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
           <path d="M2 2l10 10M12 2L2 12" />
         </svg>
-        <span className="sr-only">Remove child {index + 1}</span>
+        Remove
+        <span className="sr-only">child {index + 1}</span>
       </button>
 
       <p className={`${labelCls} mb-3`}>Child {index + 1}</p>

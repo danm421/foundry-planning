@@ -10,6 +10,7 @@ import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
 import {
   intakeDraftSchema,
   intakeSubmitSchema,
+  pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { recordAudit } from "@/lib/audit";
@@ -186,10 +187,11 @@ export async function POST(req: Request): Promise<Response> {
       finalPayload = merged;
     }
 
-    // Strict validation — the merged draft must now be complete
+    // Strict validation — the merged draft must now be complete. Drop optional
+    // rows added but left blank so they don't read as incomplete required fields.
     let validatedPayload: ReturnType<typeof intakeSubmitSchema.parse>;
     try {
-      validatedPayload = intakeSubmitSchema.parse(finalPayload);
+      validatedPayload = intakeSubmitSchema.parse(pruneIntakeBlankRows(finalPayload));
     } catch (err) {
       if (err instanceof ZodError) {
         return NextResponse.json(

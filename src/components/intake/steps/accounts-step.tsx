@@ -1,7 +1,7 @@
 "use client";
 
 import type { IntakeDraft } from "@/lib/intake/schema";
-import { CardList, inputCls, labelCls, selectCls } from "./card-list";
+import { CardList, MoneyInput, inputCls, labelCls, selectCls } from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -101,20 +101,14 @@ export function AccountsStep({ value, onChange }: AccountsStepProps) {
             {/* Value */}
             <div>
               <label htmlFor={`${idp}-value`} className={labelCls}>
-                Current value ($)
+                Current value
               </label>
-              <input
+              <MoneyInput
                 id={`${idp}-value`}
-                type="number"
-                min={0}
-                className={`${inputCls} tabular`}
-                value={account.value ?? 0}
-                onChange={(e) =>
-                  updateAccount(i, {
-                    value: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
-                }
-                aria-label="Current value"
+                value={account.value}
+                onChange={(num) => updateAccount(i, { value: num })}
+                ariaLabel="Current value"
+                placeholder="0"
               />
             </div>
 

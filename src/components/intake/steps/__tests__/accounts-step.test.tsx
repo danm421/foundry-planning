@@ -41,8 +41,8 @@ describe("AccountsStep", () => {
 
     expect(screen.getByDisplayValue("Fidelity Brokerage")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /category/i })).toBeInTheDocument();
-    // value input: 100000
-    expect(screen.getByDisplayValue("100000")).toBeInTheDocument();
+    // value input is now a formatted money field: 100000 → "100,000"
+    expect(screen.getByDisplayValue("100,000")).toBeInTheDocument();
   });
 
   it("editing the name calls onChange with updated account name", () => {
