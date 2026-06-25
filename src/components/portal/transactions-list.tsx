@@ -443,6 +443,7 @@ export default function TransactionsList({
               onCreateRecurring={() => setRecurringSeed(selected)}
               recurrings={recurrings}
               onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
+              onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
             />
           </div>,
           detailEl,

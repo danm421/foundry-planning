@@ -20,6 +20,7 @@ export function TransactionDetailPanel({
   onLinkRecurring,
   editEnabled = false,
   onChangeType,
+  onMarkReviewed,
 }: {
   txn: PortalTransactionDTO;
   onClose: () => void;
@@ -29,6 +30,7 @@ export function TransactionDetailPanel({
   onLinkRecurring: (recurringId: string) => void;
   editEnabled?: boolean;
   onChangeType?: (type: TxnType) => void;
+  onMarkReviewed?: (reviewed: boolean) => void;
 }): ReactElement {
   const n = Number(txn.amount);
   const abs = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -77,6 +79,23 @@ export function TransactionDetailPanel({
         <div className="flex justify-between gap-4"><dt className="text-ink-3">Source</dt><dd className="text-ink-2">{PROVENANCE[txn.categorizedBy]}</dd></div>
         {txn.pending && <div className="flex justify-between gap-4"><dt className="text-ink-3">Status</dt><dd className="text-warn">Pending</dd></div>}
       </dl>
+      {editEnabled && onMarkReviewed && (
+        <button
+          type="button"
+          onClick={() => onMarkReviewed(!txn.reviewed)}
+          aria-pressed={txn.reviewed}
+          className={
+            txn.reviewed
+              ? "flex w-full items-center justify-center gap-2 rounded-md bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent"
+              : "flex w-full items-center justify-center gap-2 rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2"
+          }
+        >
+          <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {txn.reviewed ? "Reviewed" : "Mark as reviewed"}
+        </button>
+      )}
       <button
         type="button"
         onClick={onCreateRule}

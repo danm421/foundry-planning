@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import TransactionsList from "@/components/portal/transactions-list";
 
 const portalFetchMock = vi.fn();
@@ -43,5 +43,23 @@ describe("TransactionsList — reviewed", () => {
       const calls = portalFetchMock.mock.calls.map((c) => String(c[0]));
       expect(calls.some((u) => u.includes("/api/portal/transactions?") && u.includes("reviewed=false"))).toBe(true);
     });
+  });
+
+  it("marks reviewed from the detail panel", async () => {
+    // #portal-detail target for createPortal
+    const host = document.createElement("div");
+    host.id = "portal-detail";
+    document.body.appendChild(host);
+    render(<TransactionsList clientId="c1" editEnabled={true} />);
+    await waitFor(() => expect(screen.getByText("Amazon")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Amazon")); // open the panel
+    // Scope to the portal host to avoid ambiguity with the row's "Mark as reviewed"
+    const markBtn = await within(host).findByRole("button", { name: "Mark as reviewed" });
+    fireEvent.click(markBtn);
+    await waitFor(() => {
+      const put = portalFetchMock.mock.calls.find((c) => c[1]?.method === "PUT");
+      expect(JSON.parse(put![1].body)).toEqual({ reviewed: true });
+    });
+    host.remove();
   });
 });
