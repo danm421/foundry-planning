@@ -11,6 +11,7 @@ export const SYSTEM_FOLDERS = [
   "Insurance",
   "Estate",
   "Imported Documents",
+  "Transcripts",
 ] as const;
 
 export type CrmDocumentFolderRow = typeof crmDocumentFolders.$inferSelect;
@@ -33,6 +34,28 @@ export async function ensureSystemFolders(householdId: string, firmId: string) {
       sortOrder: i,
     })),
   );
+}
+
+/** Find-or-create the household's "Transcripts" system folder. Idempotent on the
+ *  specific folder (unlike ensureSystemFolders, which bails if ANY system folder
+ *  exists — so it would skip backfilling Transcripts for pre-existing households). */
+export async function ensureTranscriptsFolder(
+  householdId: string,
+  firmId: string,
+): Promise<string> {
+  const existing = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.householdId, householdId),
+      eq(crmDocumentFolders.name, "Transcripts"),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+  const [folder] = await db
+    .insert(crmDocumentFolders)
+    .values({ householdId, firmId, name: "Transcripts", isSystem: true })
+    .returning({ id: crmDocumentFolders.id });
+  return folder.id;
 }
 
 export async function listFolders(
