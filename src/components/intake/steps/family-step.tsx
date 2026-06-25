@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { USPS_STATE_NAMES, USPS_STATE_CODES } from "@/lib/usps-states";
 import { inputCls, labelCls, selectCls } from "./card-list";
@@ -70,7 +71,10 @@ function PersonFields({ idPrefix, value, onChange, showMaritalStatus = true }: P
         />
       </div>
 
-      {/* Date of birth */}
+      {/* Date of birth — uncontrolled (defaultValue): a native <input type="date">
+          edits segment-by-segment and emits change events for momentarily-valid
+          dates while typing. Controlling value would rewrite .value mid-edit and
+          break the browser's segment auto-advance. onChange still feeds the draft. */}
       <div>
         <label htmlFor={`${idPrefix}-dob`} className={labelCls}>
           Date of birth
@@ -79,7 +83,7 @@ function PersonFields({ idPrefix, value, onChange, showMaritalStatus = true }: P
           id={`${idPrefix}-dob`}
           type="date"
           className={`${inputCls} tabular`}
-          value={value.dateOfBirth ?? ""}
+          defaultValue={value.dateOfBirth ?? ""}
           onChange={(e) => onChange({ ...value, dateOfBirth: e.target.value })}
           aria-label="Date of birth"
         />
@@ -175,7 +179,7 @@ function ChildCard({ index, value, onChange, onRemove }: ChildCardProps) {
           />
         </div>
 
-        {/* Date of birth */}
+        {/* Date of birth — uncontrolled (see PersonFields note above). */}
         <div>
           <label htmlFor={`${idPrefix}-dob`} className={labelCls}>
             Date of birth
@@ -184,7 +188,7 @@ function ChildCard({ index, value, onChange, onRemove }: ChildCardProps) {
             id={`${idPrefix}-dob`}
             type="date"
             className={`${inputCls} tabular`}
-            value={value.dateOfBirth ?? ""}
+            defaultValue={value.dateOfBirth ?? ""}
             onChange={(e) => onChange({ ...value, dateOfBirth: e.target.value })}
             aria-label="Date of birth"
           />
@@ -202,6 +206,18 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
   const children = family.children ?? [];
   const hasSpouse = family.spouse !== undefined && family.spouse !== null;
 
+  // Stable keys for the children list. The DOB inputs are uncontrolled
+  // (defaultValue), so a child card must REMOUNT when its slot identity changes —
+  // otherwise removing a non-last child reuses a sibling's DOM node and the
+  // uncontrolled date input keeps showing the removed child's value. Index keys
+  // can't express that. We maintain a parallel key array, kept in lockstep with
+  // `children` by the add/remove handlers (updateChild preserves length). The
+  // counter seeds past the initial keys so appended keys never collide.
+  const nextChildKey = useRef(children.length);
+  const [childKeys, setChildKeys] = useState<number[]>(() =>
+    children.map((_, i) => i),
+  );
+
   function setPrimary(patch: PersonPartial) {
     onChange({ ...family, primary: patch });
   }
@@ -216,6 +232,7 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
 
   function addChild() {
     const newChild: ChildPartial = { firstName: "", dateOfBirth: "" };
+    setChildKeys((ks) => [...ks, nextChildKey.current++]);
     onChange({ ...family, children: [...children, newChild] });
   }
 
@@ -225,6 +242,7 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
   }
 
   function removeChild(index: number) {
+    setChildKeys((ks) => ks.filter((_, i) => i !== index));
     const next = children.filter((_, i) => i !== index);
     onChange({ ...family, children: next });
   }
@@ -346,7 +364,7 @@ export function FamilyStep({ value, onChange }: FamilyStepProps) {
           <div className="space-y-3">
             {children.map((child, i) => (
               <ChildCard
-                key={i}
+                key={childKeys[i] ?? i}
                 index={i}
                 value={child}
                 onChange={(patch) => updateChild(i, patch)}

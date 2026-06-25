@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { FamilyStep } from "../family-step";
@@ -61,6 +62,41 @@ describe("FamilyStep", () => {
     expect(onChange).toHaveBeenCalledOnce();
     const next: FamilySlice = onChange.mock.calls[0][0];
     expect(next?.primary?.lastName).toBe("Smith");
+  });
+
+  it("still calls onChange when the date of birth changes (autosave wiring intact)", () => {
+    const onChange = vi.fn();
+    render(<FamilyStep {...makeProps({ onChange })} />);
+
+    const dob = screen.getByLabelText(/date of birth/i);
+    fireEvent.change(dob, { target: { value: "1980-12-31" } });
+
+    expect(onChange).toHaveBeenCalledOnce();
+    const next: FamilySlice = onChange.mock.calls[0][0];
+    expect(next?.primary?.dateOfBirth).toBe("1980-12-31");
+  });
+
+  it("date of birth is uncontrolled so React never clobbers an in-progress native segment edit", () => {
+    // Native <input type="date"> edits segment-by-segment (MM→DD→YYYY) and
+    // auto-advances as the user types. It also emits a change event for any
+    // momentarily-valid date — e.g. year 0001 while the user is mid-way through
+    // typing 1985. If the input were *controlled*, each of those events would
+    // re-render and rewrite .value into the DOM input mid-edit, resetting the
+    // segment selection and breaking auto-advance. Keeping it uncontrolled
+    // (defaultValue) means a new value prop must NOT overwrite the DOM value
+    // while the field is mounted/being edited.
+    const { rerender } = render(<FamilyStep value={baseValue} onChange={vi.fn()} />);
+    const dob = screen.getByLabelText(/date of birth/i) as HTMLInputElement;
+    expect(dob.value).toBe("1975-06-15");
+
+    rerender(
+      <FamilyStep
+        value={{ ...baseValue, primary: { ...basePrimary, dateOfBirth: "2000-01-01" } }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(dob.value).toBe("1975-06-15");
   });
 
   it("calls onChange with updated primary.maritalStatus when changed", () => {
@@ -145,6 +181,30 @@ describe("FamilyStep", () => {
     const next: FamilySlice = onChange.mock.calls[0][0];
     expect(next?.children).toHaveLength(1);
     expect(next?.children?.[0]?.firstName).toBe("Bob");
+  });
+
+  it("removing a non-last child remounts remaining cards so uncontrolled DOBs aren't stale", () => {
+    // Children DOB inputs are uncontrolled (defaultValue). With index keys, removing
+    // the first child would reuse the removed card's DOM node and the surviving
+    // child's date input would show the wrong (removed) value. Stable keys remount.
+    function Harness() {
+      const [value, setValue] = useState<FamilySlice>({
+        primary: { firstName: "Jane", dateOfBirth: "1975-06-15" },
+        children: [
+          { firstName: "Alice", dateOfBirth: "2010-03-22" },
+          { firstName: "Bob", dateOfBirth: "2013-07-04" },
+        ],
+      });
+      return <FamilyStep value={value} onChange={setValue} />;
+    }
+
+    render(<Harness />);
+    const [firstRemove] = screen.getAllByRole("button", { name: /remove/i });
+    fireEvent.click(firstRemove);
+
+    const dobs = screen.getAllByLabelText(/date of birth/i) as HTMLInputElement[];
+    // primary + the one surviving child (Bob)
+    expect(dobs[dobs.length - 1].value).toBe("2013-07-04");
   });
 
   it("toggling Add Spouse calls onChange with a spouse entry", () => {
