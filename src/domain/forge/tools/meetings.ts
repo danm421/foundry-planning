@@ -13,7 +13,12 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { clientToHousehold } from "../guards";
 import { chatModel } from "../llm";
-import { getOwnedMeetingTranscript } from "@/lib/forge/meeting-transcripts";
+import { getOwnedMeetingTranscript, deleteMeetingTranscript } from "@/lib/forge/meeting-transcripts";
+import { createNote } from "@/lib/crm/notes";
+import { uploadCrmDocument } from "@/lib/crm/documents";
+import { ensureTranscriptsFolder } from "@/lib/crm/folders";
+import { createTask } from "@/lib/crm-tasks/mutations";
+import { recordAudit } from "@/lib/audit";
 import type { ForgeAuthContext } from "../state";
 import type { ForgeToolContext } from "../context";
 
@@ -58,7 +63,7 @@ const SUMMARIZE_SYSTEM = [
   "invent nothing. If no action items are present, return an empty proposedTasks list.",
 ].join(" ");
 
-export function buildMeetingTools({ ctx }: ForgeToolContext): StructuredToolInterface[] {
+export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): StructuredToolInterface[] {
   const summarize = tool(
     async ({ transcriptId }: { transcriptId: string }) => {
       const g = await gate(ctx);
@@ -88,5 +93,81 @@ export function buildMeetingTools({ ctx }: ForgeToolContext): StructuredToolInte
     },
   );
 
-  return [summarize];
+  const save = tool(
+    async (args: {
+      transcriptId: string;
+      summaryTitle: string;
+      summary: string;
+      meetingDate: string;
+      tasks?: z.infer<typeof ProposedTaskSchema>[];
+    }) => {
+      const g = await gate(ctx);
+      if ("error" in g) return g.error;
+      try {
+        const tr = await getOwnedMeetingTranscript(args.transcriptId, ctx.clientId, g.firmId);
+        if (!tr) return "Transcript not found for this client.";
+
+        // 1) Meeting note = the summary.
+        const note = await createNote(g.householdId, g.firmId, ctx.userId, {
+          subject: args.summaryTitle.slice(0, 300),
+          body: args.summary.slice(0, 20_000),
+          noteKind: "meeting",
+          noteDate: args.meetingDate,
+        });
+
+        // 2) Full transcript → CRM document in the "Transcripts" folder.
+        const folderId = await ensureTranscriptsFolder(g.householdId, g.firmId);
+        const filename = `Transcript — ${args.meetingDate}.md`;
+        const file = new File([tr.rawText], filename, { type: "text/markdown" });
+        const doc = await uploadCrmDocument(g.householdId, file, {
+          folderId,
+          description: "Meeting transcript (filed by Forge)",
+        });
+
+        // 3) Approved tasks (householdId is server-resolved — never from the model).
+        const taskIds: string[] = [];
+        for (const t of args.tasks ?? []) {
+          const created = await createTask(g.firmId, ctx.userId, {
+            title: t.title,
+            description: t.description ?? "",
+            priority: t.priority ?? "med",
+            status: "open",
+            dueDate: t.dueDate ?? null,
+            recurrence: "none",
+            householdId: g.householdId,
+          });
+          taskIds.push(created.id);
+        }
+
+        await deleteMeetingTranscript(args.transcriptId);
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "crm_note",
+          resourceId: note.id,
+          firmId: g.firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "save_meeting_record", documentId: doc.id, tasksCreated: taskIds.length, conversationId },
+        });
+        return JSON.stringify({ noteId: note.id, documentId: doc.id, tasksCreated: taskIds.length });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to save the meeting record.";
+      }
+    },
+    {
+      name: "save_meeting_record",
+      description:
+        "File a reviewed meeting record: write the summary as a meeting note, store the full " +
+        "transcript as a CRM document in the Transcripts folder, and create the approved tasks. " +
+        "Requires human approval.",
+      schema: z.object({
+        transcriptId: z.string(),
+        summaryTitle: z.string().min(1).max(300),
+        summary: z.string().min(1).max(20_000),
+        meetingDate: z.string(), // YYYY-MM-DD
+        tasks: z.array(ProposedTaskSchema).max(25).default([]),
+      }),
+    },
+  );
+
+  return [summarize, save];
 }

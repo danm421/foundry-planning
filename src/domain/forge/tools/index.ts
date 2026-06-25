@@ -99,4 +99,6 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "crm_delete_note",
   "crm_delete_task",
   "crm_create_tasks",
+  // Meetings — commits note + transcript doc + tasks (destructive: deletes staging row)
+  "save_meeting_record",
 ]);

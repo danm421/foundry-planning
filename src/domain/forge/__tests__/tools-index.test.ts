@@ -82,7 +82,10 @@ vi.mock("@/lib/book-scan/scan", () => ({
   MAX_LIMIT: 200,
 }));
 // Meetings bundle: stub transcript lib so assembly stays pure (no DB).
-vi.mock("@/lib/forge/meeting-transcripts", () => ({ getOwnedMeetingTranscript: vi.fn() }));
+vi.mock("@/lib/forge/meeting-transcripts", () => ({ getOwnedMeetingTranscript: vi.fn(), deleteMeetingTranscript: vi.fn() }));
+// Meetings bundle: stub CRM write deps so assembly stays pure.
+vi.mock("@/lib/crm/documents", () => ({ uploadCrmDocument: vi.fn() }));
+vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -176,7 +179,7 @@ const EXPECTED_BOOK = ["scan_book"];
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 61 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate + 1 meetings)", () => {
+  it("returns exactly the 62 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 62, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
@@ -188,10 +191,11 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
       ...EXPECTED_MEMORY_TOOL_NAMES,
       ...EXPECTED_NAVIGATE,
       "summarize_meeting_transcript",
+      "save_meeting_record",
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(61);
+    expect(tools).toHaveLength(62);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -221,9 +225,10 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (20 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (21 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(20);
+    expect(WRITE_TOOL_NAMES.size).toBe(21);
+    expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
   it("WRITE_TOOL_NAMES contains the 12 detail-write (expense + income + liability + account) tool names", () => {
@@ -333,8 +338,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 61)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(61);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 62)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(62);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
