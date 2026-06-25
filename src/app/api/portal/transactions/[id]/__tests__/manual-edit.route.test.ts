@@ -10,6 +10,7 @@ const recordDeleteMock = vi.fn();
 
 let txnRow: any;
 let clientRow: any;
+let acctRow: any;
 let updateSet: any;
 let deleted = false;
 
@@ -34,6 +35,7 @@ vi.mock("@/db", () => ({
     select: () => ({ from: (tbl: { _name: string }) => ({ where: () => ({ limit: () => {
       if (tbl._name === "plaid_transactions") return Promise.resolve(txnRow ? [txnRow] : []);
       if (tbl._name === "clients") return Promise.resolve(clientRow ? [clientRow] : []);
+      if (tbl._name === "accounts") return Promise.resolve(acctRow ? [acctRow] : []);
       return Promise.resolve([]);
     } }) }) }),
     update: () => ({ set: (v: any) => { updateSet = v; return { where: () => Promise.resolve() }; } }),
@@ -54,6 +56,7 @@ beforeEach(() => {
   resolveMock.mockReset(); subMock.mockReset(); editMock.mockReset();
   authErrMock.mockReset(); recordUpdateMock.mockReset(); recordDeleteMock.mockReset();
   updateSet = undefined; deleted = false; clientRow = { firmId: "firm1" };
+  acctRow = undefined;
   resolveMock.mockResolvedValue({ clientId: "c1", mode: "client" });
   subMock.mockResolvedValue(undefined); editMock.mockResolvedValue(undefined);
   authErrMock.mockReturnValue(null);
@@ -80,6 +83,23 @@ describe("PUT manual edits", () => {
     const res = await PUT(putReq({ amount: 99 }), ctx("t1"));
     expect(res.status).toBe(400);
   });
+
+  it("reassigns accountId on a manual row when the account belongs to the same client", async () => {
+    txnRow = { id: "t1", clientId: "c1", source: "manual", type: "expense", amount: "10.00", date: "2026-01-01", name: "x", accountId: null, categoryId: null, categorizedBy: "manual", excluded: false, recurringTransactionId: null };
+    acctRow = { clientId: "c1" };
+    const res = await PUT(putReq({ accountId: "acct-abc" }), ctx("t1"));
+    expect(res.status).toBe(200);
+    expect(updateSet.accountId).toBe("acct-abc");
+    expect(recordUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ actorKind: "client" }));
+  });
+
+  it("rejects accountId that belongs to a different client", async () => {
+    txnRow = { id: "t1", clientId: "c1", source: "manual", type: "expense", amount: "10.00", date: "2026-01-01", name: "x", accountId: null, categoryId: null, categorizedBy: "manual", excluded: false, recurringTransactionId: null };
+    acctRow = { clientId: "other-client" };
+    const res = await PUT(putReq({ accountId: "acct-xyz" }), ctx("t1"));
+    expect(res.status).toBe(400);
+    expect(updateSet).toBeUndefined();
+  });
 });
 
 describe("DELETE", () => {
@@ -89,6 +109,7 @@ describe("DELETE", () => {
     expect(res.status).toBe(200);
     expect(deleted).toBe(true);
     expect(recordDeleteMock).toHaveBeenCalled();
+    expect(recordDeleteMock).toHaveBeenCalledWith(expect.objectContaining({ action: "portal.transaction.delete", actorKind: "client", extraMetadata: undefined }));
   });
 
   it("refuses to delete a synced (plaid) row", async () => {
