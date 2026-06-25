@@ -52,7 +52,7 @@ export function LiNeedOverTimeView({
   const activeDeathOf = isMarried ? deathOf : "client";
 
   return (
-    <div>
+    <div className="flex h-full flex-col">
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -102,13 +102,16 @@ export function LiNeedOverTimeView({
         </div>
       ) : null}
 
-      {rows && !isRunning ? (
-        <ChartPanel rows={rows} activeDeathOf={activeDeathOf} clientName={clientName} spouseName={spouseName} />
-      ) : !isRunning && !errorMessage ? (
-        <p className="mt-3 text-[12px] text-ink-3">
-          Run the solve to see life-insurance need by year of death.
-        </p>
-      ) : null}
+      {/* Fills the remaining height of the resizable panel below the controls. */}
+      <div className="mt-3 min-h-0 flex-1">
+        {rows && !isRunning ? (
+          <ChartPanel rows={rows} activeDeathOf={activeDeathOf} clientName={clientName} spouseName={spouseName} />
+        ) : !isRunning && !errorMessage ? (
+          <p className="text-[12px] text-ink-3">
+            Run the solve to see life-insurance need by year of death.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -183,7 +186,7 @@ function ChartPanel({
     },
   };
   return (
-    <div className="mt-3" style={{ height: 300 }}>
+    <div className="h-full">
       <Bar data={data} options={options} />
     </div>
   );

@@ -162,7 +162,7 @@ export function EstateComparisonChart({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="flex h-full flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-[13px] font-medium text-ink">
@@ -205,7 +205,10 @@ export function EstateComparisonChart({
         </div>
       ) : null}
 
-      <div style={{ height: 260 }}>
+      {/* Flexes to fill the resizable panel rather than a fixed height, so the
+          header/slider/toggle and the deltas grid below stay inside the panel
+          instead of overflowing onto the page when the chart is shrunk. */}
+      <div className="min-h-0 flex-1">
         <Bar data={chartData} options={chartOptions} />
       </div>
 

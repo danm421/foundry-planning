@@ -48,9 +48,19 @@ interface Props {
   showPortfolio: boolean;
   /** Set by the view to grab a PNG of the canvas for the PDF export. */
   chartRef?: Ref<ChartJS<"bar" | "line"> | undefined>;
+  /**
+   * Wrapper sizing. Defaults to the report view's fixed height; the solver
+   * panel passes `h-full w-full` so the chart fills its resizable container.
+   */
+  className?: string;
 }
 
-export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
+export function YearlyLiquidityChart({
+  rows,
+  showPortfolio,
+  chartRef,
+  className = "h-72 w-full",
+}: Props) {
   const theme = useThemeName();
 
   const chartData = useMemo(() => {
@@ -128,7 +138,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
   const chrome = chartChrome(theme);
 
   return (
-    <div className="h-72 w-full">
+    <div className={className}>
       <Chart
         ref={chartRef}
         type="bar"

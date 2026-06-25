@@ -33,8 +33,11 @@ const ESTATE_TAB: { id: ChartTab; label: string } = {
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
 // the data-entry grid shows on first paint; the advisor can drag it taller and
-// the choice persists per browser.
-const MIN_CHART_HEIGHT = 140;
+// the choice persists per browser. Every tab renders into this same height, so
+// the minimum has to leave room for the tabs that carry chrome above the plot
+// (the estate header/slider/toggle + deltas, the life-insurance controls)
+// without clipping it.
+const MIN_CHART_HEIGHT = 180;
 const MAX_CHART_HEIGHT = 560;
 const DEFAULT_CHART_HEIGHT = 240;
 const CHART_HEIGHT_KEY = "foundry:solver:chartHeight";
@@ -223,40 +226,39 @@ export function SolverChartPanel({
 
   return (
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
-      {tab === "portfolio" ? (
-        <div style={{ height: chartHeight }}>
+      {/* One shared, resizable height for every tab — so the drag handle below
+          always applies and no tab's content can overflow onto the page. */}
+      <div style={{ height: chartHeight }} className="overflow-hidden">
+        {tab === "portfolio" ? (
           <PortfolioBarsChart
             current={currentProjection}
             baseline={baseProjection}
           />
-        </div>
-      ) : null}
-      {tab === "cashflow" ? (
-        <div style={{ height: chartHeight }}>
+        ) : null}
+        {tab === "cashflow" ? (
           <SolverCashFlowChart years={currentProjection} />
-        </div>
-      ) : null}
-      {tab === "liquidity" ? (
-        <YearlyLiquidityChart
-          rows={liquidityRows}
-          showPortfolio={showPortfolioAssets}
-        />
-      ) : null}
-      {tab === "lifeInsurance" ? (
-        <LiNeedOverTimeView
-          rows={overTime.rows}
-          isRunning={overTime.isRunning}
-          progress={overTime.progress}
-          errorMessage={overTime.errorMessage}
-          onRun={() => overTime.run(liAssumptions)}
-          onCancel={overTime.cancel}
-          isMarried={isMarried}
-          clientName={clientName}
-          spouseName={spouseName}
-        />
-      ) : null}
-      {tab === "estate" ? (
-        <div style={{ height: chartHeight }}>
+        ) : null}
+        {tab === "liquidity" ? (
+          <YearlyLiquidityChart
+            rows={liquidityRows}
+            showPortfolio={showPortfolioAssets}
+            className="h-full w-full"
+          />
+        ) : null}
+        {tab === "lifeInsurance" ? (
+          <LiNeedOverTimeView
+            rows={overTime.rows}
+            isRunning={overTime.isRunning}
+            progress={overTime.progress}
+            errorMessage={overTime.errorMessage}
+            onRun={() => overTime.run(liAssumptions)}
+            onCancel={overTime.cancel}
+            isMarried={isMarried}
+            clientName={clientName}
+            spouseName={spouseName}
+          />
+        ) : null}
+        {tab === "estate" ? (
           <EstateComparisonChart
             baseProjection={baseProjection}
             proposedProjection={currentProjection}
@@ -264,35 +266,37 @@ export function SolverChartPanel({
             proposedTree={workingTree}
             isMarried={isMarried}
           />
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      {tab === "portfolio" || tab === "cashflow" || tab === "estate" ? (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize chart height"
-          aria-valuenow={chartHeight}
-          aria-valuemin={MIN_CHART_HEIGHT}
-          aria-valuemax={MAX_CHART_HEIGHT}
-          tabIndex={0}
-          title="Drag to resize · double-click to reset"
-          onPointerDown={startChartResize}
-          onDoubleClick={resetChartHeight}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              nudgeChartHeight(-16);
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              nudgeChartHeight(16);
-            }
-          }}
-          className="group mt-1 flex h-3 cursor-ns-resize touch-none items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          <span className="h-[3px] w-8 rounded-full bg-hair-2 transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
-        </div>
-      ) : null}
+      {/* Always present — the chevrons + grip read as a vertical resize handle
+          at rest, so the affordance is discoverable on every tab. */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize chart height"
+        aria-valuenow={chartHeight}
+        aria-valuemin={MIN_CHART_HEIGHT}
+        aria-valuemax={MAX_CHART_HEIGHT}
+        tabIndex={0}
+        title="Drag to resize chart · double-click to reset"
+        onPointerDown={startChartResize}
+        onDoubleClick={resetChartHeight}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            nudgeChartHeight(-16);
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            nudgeChartHeight(16);
+          }
+        }}
+        className="group mt-1 flex h-4 cursor-ns-resize touch-none items-center justify-center gap-1.5 rounded text-ink-4 outline-none transition-colors hover:text-accent focus-visible:text-accent focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <ResizeChevron direction="up" />
+        <span className="h-[3px] w-10 rounded-full bg-current opacity-70 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+        <ResizeChevron direction="down" />
+      </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
         <div
@@ -360,5 +364,24 @@ export function SolverChartPanel({
         </div>
       ) : null}
     </div>
+  );
+}
+
+// Small chevron for the resize handle. Inlined as SVG because lucide-react is
+// not a dependency in this repo; outline-only, 1.5px stroke per the design kit.
+function ResizeChevron({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-2.5 w-2.5"
+    >
+      <polyline points={direction === "up" ? "6 15 12 9 18 15" : "6 9 12 15 18 9"} />
+    </svg>
   );
 }

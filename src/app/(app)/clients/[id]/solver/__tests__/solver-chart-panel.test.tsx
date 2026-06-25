@@ -87,6 +87,24 @@ describe("SolverChartPanel", () => {
     );
   });
 
+  it("keeps the resize handle on every tab, including liquidity", async () => {
+    renderPanel();
+    const handle = () =>
+      screen.getByRole("separator", { name: /resize chart height/i });
+    // Default (portfolio) tab.
+    expect(handle()).toBeInTheDocument();
+    // Liquidity used to render with its own fixed height and no handle.
+    await userEvent.click(screen.getByRole("tab", { name: "Liquidity" }));
+    expect(handle()).toBeInTheDocument();
+  });
+
+  it("shows the resize handle on the Life Insurance Need tab", () => {
+    renderPanel({ showLifeInsuranceTab: true });
+    expect(
+      screen.getByRole("separator", { name: /resize chart height/i }),
+    ).toBeInTheDocument();
+  });
+
   it("shows the recalculating hint while computing", () => {
     render(
       <SolverChartPanel
