@@ -4,6 +4,7 @@
 // is an ApprovalInterrupt; the RESUME value (what the advisor sends back) is
 // ResumeDecisions. zod v4 two-arg z.record(keyType, valueType).
 import { z } from "zod";
+import { ProposedTaskSchema } from "./tools/meetings";
 
 export const WritePreviewSchema = z.object({
   summary: z.string(),
@@ -34,4 +35,31 @@ export function parseApprovalInterrupt(value: unknown): ApprovalInterrupt {
 }
 export function parseResumeDecisions(value: unknown): ResumeDecisions {
   return ResumeDecisionsSchema.parse(value);
+}
+
+// ─── Meeting review interrupt ────────────────────────────────────────────────
+
+export const MeetingReviewInterruptSchema = z.object({
+  type: z.literal("meeting_review"),
+  summaryTitle: z.string(),
+  summary: z.string(),
+  meetingDate: z.string().nullable(),
+  proposedTasks: z.array(ProposedTaskSchema),
+});
+export const MeetingReviewResumeSchema = z.object({
+  approved: z.boolean(),
+  summaryTitle: z.string(),
+  summary: z.string(),
+  meetingDate: z.string(), // YYYY-MM-DD (UI defaults null→today before resume)
+  tasks: z.array(ProposedTaskSchema),
+});
+
+export type MeetingReviewInterrupt = z.infer<typeof MeetingReviewInterruptSchema>;
+export type MeetingReviewResume = z.infer<typeof MeetingReviewResumeSchema>;
+
+export function parseMeetingReviewInterrupt(value: unknown): MeetingReviewInterrupt {
+  return MeetingReviewInterruptSchema.parse(value);
+}
+export function parseMeetingReviewResume(value: unknown): MeetingReviewResume {
+  return MeetingReviewResumeSchema.parse(value);
 }

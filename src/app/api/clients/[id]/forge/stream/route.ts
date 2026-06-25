@@ -16,7 +16,7 @@ import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
-import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
+import { parseApprovalInterrupt, parseMeetingReviewInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
@@ -30,6 +30,7 @@ type StreamBody = {
   scenarioId: string;
   currentPage?: string;
   pendingImportId?: string;
+  pendingTranscriptId?: string;
 };
 
 function json(status: number, body: unknown): Response {
@@ -116,11 +117,17 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   const message = body.message.trim();
   const hasPendingImport =
     typeof body.pendingImportId === "string" && body.pendingImportId.length > 0;
-  if (message.length === 0 && !hasPendingImport) {
+  const hasPendingTranscript =
+    typeof body.pendingTranscriptId === "string" && body.pendingTranscriptId.length > 0;
+  if (message.length === 0 && !hasPendingImport && !hasPendingTranscript) {
     return json(400, { error: "message must not be empty." });
   }
   const modelMessage =
-    message.length > 0 ? message : "I've attached a document for you to review.";
+    message.length > 0
+      ? message
+      : hasPendingTranscript
+        ? "I've pasted a meeting transcript — please summarize it and draft tasks."
+        : "I've attached a document for you to review.";
 
   let cid: string;
   let authContext: ForgeAuthContext;
@@ -175,6 +182,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
         pendingImport:
           typeof body.pendingImportId === "string" && body.pendingImportId.length > 0
             ? { importId: body.pendingImportId }
+            : undefined,
+        pendingTranscript:
+          typeof body.pendingTranscriptId === "string" && body.pendingTranscriptId.length > 0
+            ? { transcriptId: body.pendingTranscriptId }
             : undefined,
       });
   } catch {
@@ -289,10 +300,21 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             (t: { interrupts?: unknown[] }) => t.interrupts?.length,
           );
           if (pending) {
-            const intr = parseApprovalInterrupt(
-              (pending.interrupts as Array<{ value: unknown }>)[0].value,
-            );
-            send({ type: "approval_required", previews: intr.previews, calls: intr.calls });
+            const raw = (pending.interrupts as Array<{ value: unknown }>)[0].value;
+            const kind = (raw as { type?: string })?.type;
+            if (kind === "meeting_review") {
+              const mr = parseMeetingReviewInterrupt(raw);
+              send({
+                type: "meeting_review",
+                summaryTitle: mr.summaryTitle,
+                summary: mr.summary,
+                meetingDate: mr.meetingDate,
+                proposedTasks: mr.proposedTasks,
+              });
+            } else {
+              const intr = parseApprovalInterrupt(raw);
+              send({ type: "approval_required", previews: intr.previews, calls: intr.calls });
+            }
           }
 
           send({ type: "done" });

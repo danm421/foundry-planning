@@ -726,6 +726,28 @@ export const generationRuns = pgTable("generation_runs", {
   index("generation_runs_status_idx").on(t.status, t.createdAt),
 ]);
 
+// Forge meeting-transcript staging. A pasted/attached transcript is stashed here
+// out-of-band (never enters the model's chat context); summarize_meeting_transcript
+// reads it, save_meeting_record commits it to a CRM document + deletes the row.
+export const forgeMeetingTranscripts = pgTable("forge_meeting_transcripts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  householdId: uuid("household_id")
+    .notNull()
+    .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  conversationId: text("conversation_id"),
+  rawText: text("raw_text").notNull(),
+  wordCount: integer("word_count").notNull().default(0),
+  // 'paste' (auto-detected) | 'explicit' (advisor used the Transcript affordance)
+  source: text("source").notNull().default("paste"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("forge_meeting_transcripts_client_idx").on(t.clientId, t.createdAt),
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {

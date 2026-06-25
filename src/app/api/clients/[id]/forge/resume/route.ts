@@ -12,7 +12,7 @@ import { loadPromptContext } from "@/domain/forge/load-prompt-context";
 import { buildSystemPrompt } from "@/domain/forge/system-prompt";
 import { safeForgeErrorMessage } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
-import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
+import { parseApprovalInterrupt, parseMeetingReviewInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
 import type { ForgeAuthContext } from "@/domain/forge/state";
 
@@ -22,7 +22,14 @@ export const maxDuration = 300;
 type RouteCtx = { params: Promise<{ id: string }> };
 type ResumeBody = {
   conversationId: string;
-  decisions: Record<string, "confirm" | "reject">;
+  decisions?: Record<string, "confirm" | "reject">;
+  meetingReview?: {
+    approved: boolean;
+    summaryTitle: string;
+    summary: string;
+    meetingDate: string;
+    tasks: { title: string; description: string; priority: "low" | "med" | "high"; dueDate: string | null }[];
+  };
 };
 
 function json(status: number, body: unknown): Response {
@@ -100,20 +107,23 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   } catch {
     return json(400, { error: "Invalid request body." });
   }
-  if (
-    typeof body.conversationId !== "string" ||
-    typeof body.decisions !== "object" ||
-    body.decisions === null
-  ) {
-    return json(400, { error: "conversationId and decisions are required." });
+  if (typeof body.conversationId !== "string") {
+    return json(400, { error: "conversationId is required." });
   }
-  // Every decision verdict must be a recognized confirm|reject — reject anything
-  // else before it reaches the graph's resume Command.
-  if (!Object.values(body.decisions).every((v) => v === "confirm" || v === "reject")) {
-    return json(400, { error: "decisions must map to 'confirm' or 'reject'." });
+  const isMeeting = body.meetingReview != null;
+  if (!isMeeting) {
+    if (typeof body.decisions !== "object" || body.decisions === null) {
+      return json(400, { error: "decisions or meetingReview is required." });
+    }
+    // Every decision verdict must be a recognized confirm|reject — reject anything
+    // else before it reaches the graph's resume Command.
+    if (!Object.values(body.decisions).every((v) => v === "confirm" || v === "reject")) {
+      return json(400, { error: "decisions must map to 'confirm' or 'reject'." });
+    }
+  } else if (typeof body.meetingReview!.approved !== "boolean") {
+    return json(400, { error: "meetingReview.approved is required." });
   }
   const conversationId = body.conversationId;
-  const decisions = body.decisions;
 
   // --- IDOR (two pins; buildGraph runs only after BOTH pass) ---
 
@@ -180,19 +190,23 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   // decision is a confirm — an all-reject (or empty) resume approves nothing, and
   // the per-write write_approved (tools) + write_rejected (node) already cover
   // that case, so recording a route-level approval here would be a false positive.
-  const verdicts = Object.values(decisions);
-  const confirmed = verdicts.filter((v) => v === "confirm").length;
-  const rejected = verdicts.filter((v) => v === "reject").length;
-  if (confirmed > 0) {
-    await recordAudit({
-      action: "forge.write_approved",
-      resourceType: "forge_conversation",
-      resourceId: conversationId,
-      clientId,
-      firmId,
-      actorId: userId,
-      metadata: { confirmed, rejected },
-    });
+  // On the meeting path the meeting tool emits its own write_approved on success —
+  // do NOT double-audit here.
+  if (!isMeeting && body.decisions) {
+    const verdicts = Object.values(body.decisions);
+    const confirmed = verdicts.filter((v) => v === "confirm").length;
+    const rejected = verdicts.filter((v) => v === "reject").length;
+    if (confirmed > 0) {
+      await recordAudit({
+        action: "forge.write_approved",
+        resourceType: "forge_conversation",
+        resourceId: conversationId,
+        clientId,
+        firmId,
+        actorId: userId,
+        metadata: { confirmed, rejected },
+      });
+    }
   }
 
   const graph = buildGraph(authContext, getCheckpointer(), conversationId, systemPrompt);
@@ -226,7 +240,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
       };
       req.signal.addEventListener("abort", onAbort);
       try {
-        const events = graph.streamEvents(new Command({ resume: { decisions } }), {
+        const resumeValue = isMeeting ? body.meetingReview : { decisions: body.decisions };
+        const events = graph.streamEvents(new Command({ resume: resumeValue }), {
           version: "v2",
           configurable: { thread_id: conversationId },
           signal: req.signal,
@@ -264,14 +279,25 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
             (t: { interrupts?: unknown[] }) => t.interrupts?.length,
           );
           if (pending) {
-            const intr = parseApprovalInterrupt(
-              (pending.interrupts as Array<{ value: unknown }>)[0].value,
-            );
-            send({
-              type: "approval_required",
-              previews: intr.previews,
-              calls: intr.calls,
-            });
+            const raw = (pending.interrupts as Array<{ value: unknown }>)[0].value;
+            const kind = (raw as { type?: string })?.type;
+            if (kind === "meeting_review") {
+              const mr = parseMeetingReviewInterrupt(raw);
+              send({
+                type: "meeting_review",
+                summaryTitle: mr.summaryTitle,
+                summary: mr.summary,
+                meetingDate: mr.meetingDate,
+                proposedTasks: mr.proposedTasks,
+              });
+            } else {
+              const intr = parseApprovalInterrupt(raw);
+              send({
+                type: "approval_required",
+                previews: intr.previews,
+                calls: intr.calls,
+              });
+            }
           }
 
           send({ type: "done" });
