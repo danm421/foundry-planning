@@ -4,6 +4,13 @@ import { dark } from "@clerk/themes";
 export default function SignInPage() {
   return (
     <section className="rise-in relative rounded-2xl border border-[var(--color-hair)] bg-[var(--color-card)]/40 p-7 sm:p-9">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/fp-icon.svg"
+        alt="Foundry Planning"
+        className="mb-6 h-12 w-12 rounded-xl"
+      />
+
       <div className="mb-5 flex items-center gap-3">
         <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-[var(--color-ink-3)]">
           Welcome back
@@ -15,7 +22,7 @@ export default function SignInPage() {
         Sign in to Foundry<span className="dot">.</span>
       </h1>
       <p className="mt-2 text-sm text-[var(--color-ink-3)]">
-        Cash-flow planning, calibrated for advisors
+        Plans that hold up.
       </p>
 
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
