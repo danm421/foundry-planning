@@ -4,7 +4,7 @@
 // portal loaders + two focused queries and threads them through the pure
 // dashboard-summary module. Scenario = base case (matches AccountsSection). No
 // API route: this is consumed by the <PortalDashboard> server component.
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, liabilities, plaidTransactions, scenarios } from "@/db/schema";
 import { loadBudgetSummary, currentMonthRange } from "@/lib/portal/load-budget-data";
@@ -159,8 +159,8 @@ export async function loadPortalDashboard(
         and(
           eq(plaidTransactions.clientId, clientId),
           eq(plaidTransactions.excluded, false),
-          eq(plaidTransactions.type, "expense"),
-          isNull(plaidTransactions.categoryId),
+          ne(plaidTransactions.type, "transfer"),
+          isNull(plaidTransactions.reviewedAt),
         ),
       )
       .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
@@ -253,8 +253,8 @@ export async function loadPortalDashboard(
       and(
         eq(plaidTransactions.clientId, clientId),
         eq(plaidTransactions.excluded, false),
-        eq(plaidTransactions.type, "expense"),
-        isNull(plaidTransactions.categoryId),
+        ne(plaidTransactions.type, "transfer"),
+        isNull(plaidTransactions.reviewedAt),
       ),
     );
 
