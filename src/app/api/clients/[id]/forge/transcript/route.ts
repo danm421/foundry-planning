@@ -68,7 +68,10 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
   } catch {
     return json(400, { error: "Invalid request body." });
   }
-  const text = typeof body.text === "string" ? body.text : "";
+  if (typeof body.text !== "string") {
+    return json(400, { error: "text is required." });
+  }
+  const text = body.text;
   if (text.trim().length < 200) {
     return json(400, { error: "Transcript is too short." });
   }

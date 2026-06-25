@@ -13,8 +13,6 @@ describe("countWords", () => {
 
 import { createMeetingTranscript, getOwnedMeetingTranscript, deleteMeetingTranscript } from "../meeting-transcripts";
 import { db } from "@/db";
-import { clients, crmHouseholds } from "@/db/schema";
-import { eq } from "drizzle-orm";
 
 // Requires a seeded client+household; uses the dev branch. Skips cleanly if none.
 describe("meeting-transcripts DB round-trip", () => {

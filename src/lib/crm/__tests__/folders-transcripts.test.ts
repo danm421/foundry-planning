@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ensureTranscriptsFolder } from "../folders";
 import { db } from "@/db";
-import { crmHouseholds } from "@/db/schema";
 
 describe("ensureTranscriptsFolder", () => {
   it("creates a Transcripts folder when missing and is idempotent", async () => {

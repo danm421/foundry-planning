@@ -8,12 +8,13 @@
 const MIN_CHARS = 1_000;
 
 export function looksLikeTranscript(text: string): { isCandidate: boolean; wordCount: number } {
-  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const trimmed = text.trim();
+  const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
 
-  // Signal 3: explicit transcript container markers — strong enough to skip the
-  // length gate (WEBVTT/SRT are unambiguous file-format identifiers).
-  const hasVtt = /\bWEBVTT\b/.test(text) || /-->/.test(text);
-  if (hasVtt) return { isCandidate: true, wordCount };
+  // WEBVTT is an unambiguous file-format header — strong enough to bypass the
+  // length gate. A bare "-->" arrow is weaker (it also appears in git diffs and
+  // HTML comments), so it's length-gated below alongside the other signals.
+  if (/\bWEBVTT\b/.test(text)) return { isCandidate: true, wordCount };
 
   if (text.length < MIN_CHARS) return { isCandidate: false, wordCount };
 
@@ -25,6 +26,9 @@ export function looksLikeTranscript(text: string): { isCandidate: boolean; wordC
   // Signal 2: ≥2 timestamps (12:34, 1:02:03, or [00:00:00]).
   const timestamps = (text.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g) ?? []).length;
 
-  const isCandidate = speakerLines >= 3 || timestamps >= 2;
+  // Signal 3: a VTT/SRT cue arrow (length-gated — weaker than the WEBVTT header).
+  const hasVttArrow = /-->/.test(text);
+
+  const isCandidate = speakerLines >= 3 || timestamps >= 2 || hasVttArrow;
   return { isCandidate, wordCount };
 }

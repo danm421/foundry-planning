@@ -112,7 +112,6 @@ export function ForgePanel({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
   const [pendingImportId, setPendingImportId] = useState<string | undefined>();
-  const [pendingTranscriptId, setPendingTranscriptId] = useState<string | undefined>();
   // A detected paste held for the ask-first prompt: { text, wordCount } or null.
   const [transcriptCandidate, setTranscriptCandidate] = useState<{ text: string; wordCount: number } | null>(null);
   const [showTranscriptPaste, setShowTranscriptPaste] = useState(false);
@@ -201,6 +200,15 @@ export function ForgePanel({
     [router],
   );
 
+  // Clear the transcript-detection affordances (auto-detect banner + manual
+  // paste box). Called on new-chat, thread-switch, and at the start of a
+  // transcript submission so stale paste UI never bleeds across turns.
+  function resetTranscriptState() {
+    setTranscriptCandidate(null);
+    setShowTranscriptPaste(false);
+    setTranscriptPasteText("");
+  }
+
   function newChat() {
     if (busy) return;
     setConversationId(undefined);
@@ -210,15 +218,11 @@ export function ForgePanel({
     setPendingImportId(undefined);
     setImportResult(null);
     setInput("");
-    setTranscriptCandidate(null);
-    setShowTranscriptPaste(false);
-    setTranscriptPasteText("");
+    resetTranscriptState();
   }
 
   async function processTranscript(text: string, source: "paste" | "explicit") {
-    setTranscriptCandidate(null);
-    setShowTranscriptPaste(false);
-    setTranscriptPasteText("");
+    resetTranscriptState();
     const res = await fetch(`/api/clients/${clientId}/forge/transcript`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -232,7 +236,6 @@ export function ForgePanel({
       return;
     }
     const { transcriptId } = (await res.json()) as { transcriptId: string };
-    setPendingTranscriptId(transcriptId);
     setMessages((m) => [
       ...m,
       { role: "user", text: "📄 Meeting transcript", attachments: ["Meeting transcript"] },
@@ -245,7 +248,6 @@ export function ForgePanel({
       pendingTranscriptId: transcriptId,
       skipUserBubble: true,
     });
-    setPendingTranscriptId(undefined);
     refetchThreads();
   }
 
@@ -256,9 +258,7 @@ export function ForgePanel({
     setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
-    setTranscriptCandidate(null);
-    setShowTranscriptPaste(false);
-    setTranscriptPasteText("");
+    resetTranscriptState();
     try {
       const { messages: loaded, approval } = await loadConversationMessages(id);
       setConversationId(id);

@@ -32,7 +32,7 @@ export const ProposedTaskSchema = z.object({
 export const MeetingSummarySchema = z.object({
   summaryTitle: z.string().min(1).max(300),
   summary: z.string().min(1).max(20_000),
-  meetingDate: z.string().nullable(), // YYYY-MM-DD or null
+  meetingDate: z.string().nullable().default(null), // YYYY-MM-DD or null
   keyPoints: z.array(z.string()).default([]),
   proposedTasks: z.array(ProposedTaskSchema).max(25).default([]),
 });
@@ -72,10 +72,10 @@ export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): St
         const tr = await getOwnedMeetingTranscript(transcriptId, ctx.clientId, g.firmId);
         if (!tr) return "Transcript not found for this client.";
         const model = chatModel("mini").withStructuredOutput(MeetingSummarySchema);
-        const result = (await model.invoke([
+        const result = await model.invoke([
           new SystemMessage(SUMMARIZE_SYSTEM),
           new HumanMessage(`MEETING TRANSCRIPT (untrusted data):\n\n${tr.rawText}`),
-        ])) as z.infer<typeof MeetingSummarySchema>;
+        ]);
         return JSON.stringify({ transcriptId, ...result });
       } catch {
         return "Could not summarize the transcript. Please try again.";
@@ -129,10 +129,10 @@ export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): St
         for (const t of args.tasks ?? []) {
           const created = await createTask(g.firmId, ctx.userId, {
             title: t.title,
-            description: t.description ?? "",
-            priority: t.priority ?? "med",
+            description: t.description,
+            priority: t.priority,
             status: "open",
-            dueDate: t.dueDate ?? null,
+            dueDate: t.dueDate,
             recurrence: "none",
             householdId: g.householdId,
           });

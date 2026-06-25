@@ -123,6 +123,7 @@ describe("POST /forge/transcript — gates", () => {
     const big = "a".repeat(500_001);
     const res = await POST(makeReq({ text: big }), { params });
     expect(res.status).toBe(413);
+    expect(createMeetingTranscript).not.toHaveBeenCalled();
   });
 
   it("400s on invalid JSON body", async () => {
