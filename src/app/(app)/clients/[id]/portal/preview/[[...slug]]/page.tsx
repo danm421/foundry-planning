@@ -84,7 +84,7 @@ export default async function PortalPreviewPage({
   const basePath = `/clients/${id}/portal/preview`;
 
   return (
-    <div className="grid min-h-[calc(100vh-4rem)] grid-cols-[240px_minmax(0,1fr)_420px] border border-hair bg-paper text-ink">
+    <div className="grid min-h-[calc(100vh-4rem)] grid-cols-[240px_minmax(0,1fr)_auto] border border-hair bg-paper text-ink">
       <PortalNav
         displayName={displayName}
         email={primary?.email ?? ""}
@@ -100,7 +100,13 @@ export default async function PortalPreviewPage({
           {section}
         </PortalModeProvider>
       </main>
-      <aside id="portal-detail" className="p-4" />
+      {/*
+        Detail rail (createPortal target). `empty:hidden` collapses the slot —
+        and with the `auto` third track, the empty grid column too — so the main
+        content fills the full width when nothing is selected. When populated it
+        reserves a fixed 420px panel.
+      */}
+      <aside id="portal-detail" className="w-[420px] p-4 empty:hidden" />
     </div>
   );
 }

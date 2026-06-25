@@ -1,6 +1,6 @@
 // src/components/portal/budget-view.tsx
 "use client";
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { fmtUsd } from "@/lib/portal/format";
@@ -97,12 +97,22 @@ export default function BudgetView({
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(summary.groups.filter((g) => g.actual > 0).map((g) => g.id)),
   );
-  // The detail rail (#portal-detail) is server-rendered by the portal layout, so
-  // it's already in the DOM when this client component hydrates. Resolve it once
-  // (null on the server) without a setState-in-effect.
-  const [detailEl] = useState<HTMLElement | null>(() =>
+  // Resolve the detail rail (#portal-detail), which the portal layout renders as a
+  // sibling. The lazy initializer is the fast path on a hard load (the SSR'd aside
+  // is already in the DOM, so no extra render / flash). But on a client-side
+  // navigation INTO this page the aside mounts in the same commit, so it isn't in
+  // the DOM during this render — the initializer returns null. The post-commit
+  // effect then resolves it; without this fallback createPortal would never fire
+  // and the detail pane would silently disappear.
+  const [detailEl, setDetailEl] = useState<HTMLElement | null>(() =>
     typeof document === "undefined" ? null : document.getElementById("portal-detail"),
   );
+  useEffect(() => {
+    // Resolving a DOM node owned by the parent layout is a legitimate
+    // external-system sync; the guard makes it a one-shot resolve, not a loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!detailEl) setDetailEl(document.getElementById("portal-detail"));
+  }, [detailEl]);
 
   function selectGroup(g: GroupCell): void {
     setSelectedId(g.id);

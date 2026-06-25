@@ -53,7 +53,7 @@ export default async function PortalLayout({
   }
 
   return (
-    <div className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)_420px]">
+    <div className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)_auto]">
       {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
       <PortalNav
         displayName={displayName}
@@ -70,11 +70,13 @@ export default async function PortalLayout({
       </main>
       {/*
         Transaction detail target (createPortal). `empty:hidden` collapses the
-        slot when nothing is selected. On desktop it's the 3rd grid column
-        (`lg:p-4`); below `lg` the slot is a zero-height block and the portaled
-        content positions itself as a bottom sheet (see transactions-list).
+        slot when nothing is selected — and with the `auto` third track, the
+        empty grid column too — so the main content fills the full width. On
+        desktop it's the 3rd grid column (a fixed 420px panel, `lg:p-4`); below
+        `lg` the slot is a zero-height block and the portaled content positions
+        itself as a bottom sheet (see transactions-list).
       */}
-      <aside id="portal-detail" className="empty:hidden lg:p-4" />
+      <aside id="portal-detail" className="empty:hidden lg:w-[420px] lg:p-4" />
     </div>
   );
 }
