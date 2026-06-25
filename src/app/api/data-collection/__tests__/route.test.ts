@@ -41,6 +41,10 @@ vi.mock("@clerk/nextjs/server", () => ({
     invitations: {
       createInvitation: (args: unknown) => createInvitationMock(args),
     },
+    // Firm name is resolved live from the Clerk org (not session claims).
+    organizations: {
+      getOrganization: async () => ({ name: "Acme Wealth Management" }),
+    },
   }),
 }));
 

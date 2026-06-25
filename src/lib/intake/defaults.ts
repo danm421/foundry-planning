@@ -1,7 +1,7 @@
 // Default copy + merge tokens for the client intake invitation email.
 // Shared by the send path (src/lib/intake/email.ts), the settings API
 // resolver, and the editor UI (placeholder text + token hint).
-export const DEFAULT_INTAKE_SUBJECT = "Your financial planning form is ready.";
+export const DEFAULT_INTAKE_SUBJECT = "A few details to build your financial plan";
 
 export const DEFAULT_INTAKE_INTRO =
   "{{advisorName}} has shared a secure form to collect the financial details " +

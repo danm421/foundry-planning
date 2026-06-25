@@ -28,3 +28,13 @@ export async function resolveFirmNames(firmIds: string[]): Promise<Map<string, s
 
   return result;
 }
+
+/**
+ * Resolves a single Clerk organization ID to its display name (the firm name
+ * the advisor edits in Firm settings / Clerk's Organization Profile widget).
+ * Returns undefined when Clerk is unreachable or the org has no name, so callers
+ * apply their own fallback.
+ */
+export async function resolveFirmName(firmId: string): Promise<string | undefined> {
+  return (await resolveFirmNames([firmId])).get(firmId)?.trim() || undefined;
+}

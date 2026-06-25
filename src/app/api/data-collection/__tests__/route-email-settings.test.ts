@@ -4,11 +4,16 @@ import { sendIntakeFormEmail } from "@/lib/intake/email";
 vi.mock("@/lib/intake/email", () => ({ sendIntakeFormEmail: vi.fn(async () => {}) }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(async () => ({ orgId: "firm_1", userId: "user_1", sessionClaims: { org_name: "Acme Wealth" }, actor: null })),
   currentUser: vi.fn(async () => ({
     firstName: "Jane",
     lastName: "Advisor",
     primaryEmailAddress: { emailAddress: "jane@acme.com" },
+  })),
+  // Firm name is resolved live from the Clerk org (not session claims).
+  clerkClient: vi.fn(async () => ({
+    organizations: {
+      getOrganization: vi.fn(async () => ({ name: "Acme Wealth" })),
+    },
   })),
 }));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgAndUser: vi.fn(async () => ({ orgId: "firm_1", userId: "user_1" })) }));

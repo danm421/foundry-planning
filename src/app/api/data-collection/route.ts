@@ -1,7 +1,7 @@
 // @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(clientId) / requireOrgId; the literal getOrgId/requireOrgId grep doesn't see this.
 
 import { NextResponse } from "next/server";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, intakeForms, intakeEmailSettings } from "@/db/schema";
@@ -12,6 +12,7 @@ import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeFormEmail } from "@/lib/intake/email";
+import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import { EMAIL_RE } from "@/lib/intake/schema";
 import { recordAudit } from "@/lib/audit";
@@ -117,9 +118,7 @@ export async function POST(req: Request): Promise<Response> {
 
     if (mode === "blank") {
       const link = `${APP_URL}/intake/${token}`;
-      const { sessionClaims } = await auth();
-      const firmName =
-        (sessionClaims as { org_name?: string } | null)?.org_name ?? undefined;
+      const firmName = await resolveFirmName(firmId);
       const advisor = await currentUser();
       const advisorName =
         [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") ||

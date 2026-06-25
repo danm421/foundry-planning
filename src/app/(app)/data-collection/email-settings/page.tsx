@@ -1,16 +1,16 @@
 import { and, eq } from "drizzle-orm";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { intakeEmailSettings } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
+import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import EmailSettingsEditor from "@/components/intake/admin/email-settings-editor";
 
 export const dynamic = "force-dynamic";
 
 export default async function EmailSettingsPage() {
   const { orgId: firmId, userId } = await requireOrgAndUser();
-  const { sessionClaims } = await auth();
-  const firmName = (sessionClaims as { org_name?: string } | null)?.org_name ?? "";
+  const firmName = (await resolveFirmName(firmId)) ?? "";
   const advisor = await currentUser();
   const advisorName =
     [advisor?.firstName, advisor?.lastName].filter(Boolean).join(" ") || "";
