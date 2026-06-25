@@ -214,6 +214,10 @@ describe("ForgePanel transcript paste-detection", () => {
 
     // Prompt should be dismissed
     expect(screen.queryByText(/looks like a meeting transcript/i)).toBeNull();
+
+    // Transcript text should be in the composer textarea
+    const composer = screen.getByRole("textbox", { name: /ask forge/i });
+    expect(composer).toHaveValue(BIG_TRANSCRIPT);
   });
 
   it("(5) shows an error bubble when stash route fails", async () => {
@@ -273,5 +277,50 @@ describe("ForgePanel transcript paste-detection", () => {
     const cancelBtn = screen.getByRole("button", { name: /cancel/i });
     await userEvent.click(cancelBtn);
     expect(screen.queryByRole("textbox", { name: /paste transcript here/i })).toBeNull();
+  });
+
+  it("(7) explicit affordance Summarize POSTs to /forge/transcript with source=explicit and calls send with pendingTranscriptId", async () => {
+    const sendMock = vi.fn().mockResolvedValue(undefined);
+    const setMessagesMock = vi.fn();
+    mockStreamState = makeStreamState({ send: sendMock, setMessages: setMessagesMock });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ transcriptId: "txid-explicit-456" }),
+    } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    mountPanel();
+
+    // Open the explicit paste box
+    const transcriptBtn = screen.getByRole("button", { name: /paste a meeting transcript/i });
+    await userEvent.click(transcriptBtn);
+
+    // Type transcript text into the box
+    const pasteBox = screen.getByRole("textbox", { name: /paste transcript here/i });
+    await userEvent.type(pasteBox, BIG_TRANSCRIPT.slice(0, 100));
+
+    // Click Summarize
+    const summarizeBtn = screen.getByRole("button", { name: /summarize/i });
+    await userEvent.click(summarizeBtn);
+
+    // fetch should have been called with source=explicit
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/c1/forge/transcript",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({ "content-type": "application/json" }),
+          body: expect.stringContaining('"source":"explicit"'),
+        }),
+      );
+    });
+
+    // send should have been called with pendingTranscriptId
+    await waitFor(() => {
+      expect(sendMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pendingTranscriptId: "txid-explicit-456", skipUserBubble: true }),
+      );
+    });
   });
 });

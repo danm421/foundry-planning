@@ -210,6 +210,9 @@ export function ForgePanel({
     setPendingImportId(undefined);
     setImportResult(null);
     setInput("");
+    setTranscriptCandidate(null);
+    setShowTranscriptPaste(false);
+    setTranscriptPasteText("");
   }
 
   async function processTranscript(text: string, source: "paste" | "explicit") {
@@ -253,6 +256,9 @@ export function ForgePanel({
     setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
+    setTranscriptCandidate(null);
+    setShowTranscriptPaste(false);
+    setTranscriptPasteText("");
     try {
       const { messages: loaded, approval } = await loadConversationMessages(id);
       setConversationId(id);
