@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireOrgId } from "@/lib/db-helpers";
 import { listFormsForFirm } from "@/lib/intake/queries";
 import Queue from "@/components/intake/admin/queue";
@@ -27,6 +28,10 @@ export default async function DataCollectionPage() {
         <p className="mt-1 text-[14px] text-ink-3">
           Review submitted intake forms and send new ones to prospects.
         </p>
+        <Link href="/data-collection/email-settings"
+          className="mt-3 inline-block text-[13px] font-medium text-accent hover:underline">
+          Customize invitation email →
+        </Link>
       </div>
       <div className="space-y-8">
         <Queue groups={groups} />
