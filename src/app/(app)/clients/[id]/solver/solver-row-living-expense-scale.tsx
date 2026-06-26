@@ -8,6 +8,7 @@ import {
   type SolverMutationKey,
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
+import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
@@ -140,30 +141,15 @@ function formatPct(decimal: number): string {
   return pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(2)}%`;
 }
 
-function detailParts(expense: Expense): string[] {
-  return [
-    expense.growthRate != null && expense.growthRate > 0
-      ? `${formatPct(expense.growthRate)} growth`
-      : null,
-    expense.startYear != null && expense.endYear != null
-      ? `${expense.startYear}–${expense.endYear}`
-      : null,
-  ].filter((s): s is string => s != null);
-}
-
-function DetailLine({ expense }: { expense: Expense }) {
-  const parts = detailParts(expense);
-  if (parts.length === 0) return null;
-  return (
-    <div className="mt-1 text-[11px] text-ink-3 leading-snug">
-      {parts.map((p, i) => (
-        <span key={i}>
-          {i > 0 ? <span className="text-ink-4"> · </span> : null}
-          <span>{p}</span>
-        </span>
-      ))}
-    </div>
-  );
+export function livingExpenseDetailRows(expense: Expense): HintRow[] {
+  const rows: HintRow[] = [];
+  if (expense.growthRate != null && expense.growthRate > 0) {
+    rows.push({ term: "Growth", value: formatPct(expense.growthRate) });
+  }
+  if (expense.startYear != null && expense.endYear != null) {
+    rows.push({ term: "Applies", value: `${expense.startYear}–${expense.endYear}` });
+  }
+  return rows;
 }
 
 function Editable({
@@ -183,11 +169,15 @@ function Editable({
   // Bumps on reset to remount the currency input so its local `display` state
   // re-seeds from the reverted base amount (it's seeded once from defaultValue).
   const [resetTick, setResetTick] = useState(0);
+  const rows = livingExpenseDetailRows(expense);
   return (
     <div>
-      <label className="block text-[11px] text-ink-3 truncate" htmlFor={inputId}>
-        {label}
-      </label>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={inputId}>
+          {label}
+        </label>
+        {rows.length ? <FieldHintPopover label={`${label} details`} rows={rows} /> : null}
+      </div>
       <CurrencyAmountInput
         key={`${inputId}-${resetTick}`}
         id={inputId}
@@ -195,7 +185,6 @@ function Editable({
         defaultValue={expense.annualAmount}
         onCommit={onCommit}
       />
-      <DetailLine expense={expense} />
       <SolverBaseHint
         base={baseExpense.annualAmount}
         working={expense.annualAmount}
