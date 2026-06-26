@@ -832,21 +832,23 @@ export function LiveSolverWorkspace({
             {activeTab === "retirement" && (
               <>
                 <SolverSection title="Goals">
-              <SolverRowRetirementAges
-                baseClient={baseClientData.client}
-                workingClient={workingTree.client}
-                onChange={pushMutation}
-                onResetField={clearMutations}
-                activeSolve={activeSolve}
-                onSolveStart={handleSolveStart}
-                onSolveCancel={handleSolveCancel}
-              />
-              <SolverRowLifeExpectancy
-                baseClient={baseClientData.client}
-                workingClient={workingTree.client}
-                onChange={pushMutation}
-                onResetField={clearMutations}
-              />
+              <div className="grid grid-cols-2 gap-x-5">
+                <SolverRowRetirementAges
+                  baseClient={baseClientData.client}
+                  workingClient={workingTree.client}
+                  onChange={pushMutation}
+                  onResetField={clearMutations}
+                  activeSolve={activeSolve}
+                  onSolveStart={handleSolveStart}
+                  onSolveCancel={handleSolveCancel}
+                />
+                <SolverRowLifeExpectancy
+                  baseClient={baseClientData.client}
+                  workingClient={workingTree.client}
+                  onChange={pushMutation}
+                  onResetField={clearMutations}
+                />
+              </div>
               <SolverRowLivingExpenseScale
                 baseExpenses={baseClientData.expenses}
                 workingExpenses={workingTree.expenses}
