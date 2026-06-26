@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ClientData } from "@/engine";
-import { SolverRowSavingsContributions } from "../solver-row-savings-contributions";
+import type { ClientData, SavingsRule } from "@/engine";
+import { SolverRowSavingsContributions, savingsDetailRows } from "../solver-row-savings-contributions";
 
 function clientData(overrides: Partial<ClientData> = {}): ClientData {
   return {
@@ -74,5 +74,48 @@ describe("SolverRowSavingsContributions working-added rows", () => {
     renderWorking(base, working);
     expect(screen.getByText("Savings Contributions")).toBeTruthy();
     expect(screen.getByLabelText("Joint Brokerage")).toBeTruthy();
+  });
+});
+
+function rule(p: Partial<SavingsRule>): SavingsRule {
+  return {
+    id: "r1",
+    accountId: "a1",
+    annualAmount: 20000,
+    growthSource: "custom",
+    growthRate: 0.03,
+    startYear: 2026,
+    endYear: null,
+    rothPercent: 0,
+    isDeductible: true,
+    applyContributionLimit: true,
+    ...p,
+  } as SavingsRule;
+}
+
+describe("savingsDetailRows", () => {
+  it("returns a Growth row for a custom growth rate", () => {
+    expect(savingsDetailRows(rule({}), 2026)).toEqual([{ term: "Growth", value: "3%" }]);
+  });
+
+  it("includes match, window, Roth, after-tax and uncapped tags", () => {
+    const rows = savingsDetailRows(
+      rule({
+        employerMatchAmount: 5000,
+        endYear: 2030,
+        rothPercent: 1,
+        isDeductible: false,
+        applyContributionLimit: false,
+      }),
+      2026,
+    );
+    expect(rows).toEqual([
+      { value: "+ $5,000 match" },
+      { term: "Growth", value: "3%" },
+      { term: "Window", value: "thru 2030" },
+      { value: "Roth" },
+      { value: "after-tax" },
+      { value: "uncapped" },
+    ]);
   });
 });

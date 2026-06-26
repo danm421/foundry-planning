@@ -10,6 +10,7 @@ import {
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
 import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
+import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { RothSplitControl } from "./solver-roth-split-control";
 import { SolverSavingsEditDialog } from "./solver-savings-edit-dialog";
@@ -166,14 +167,6 @@ function employerMatchLabel(rule: SavingsRule): string | null {
   return null;
 }
 
-function growthLabel(rule: SavingsRule): string | null {
-  if (rule.growthSource === "inflation") return "infl-linked growth";
-  if (rule.growthRate != null && rule.growthRate > 0) {
-    return `${formatPct(rule.growthRate)} growth`;
-  }
-  return null;
-}
-
 function windowLabel(rule: SavingsRule, currentYear: number): string | null {
   if (rule.endYear == null) return null;
   if (rule.startYear > currentYear) return `${rule.startYear}–${rule.endYear}`;
@@ -187,30 +180,22 @@ function rothTag(rule: SavingsRule): string | null {
   return "Roth + Pre-tax";
 }
 
-function ruleDetailParts(rule: SavingsRule, currentYear: number): string[] {
-  return [
-    employerMatchLabel(rule),
-    growthLabel(rule),
-    windowLabel(rule, currentYear),
-    rothTag(rule),
-    !rule.isDeductible ? "after-tax" : null,
-    rule.applyContributionLimit === false ? "uncapped" : null,
-  ].filter((s): s is string => s != null);
-}
-
-function DetailLine({ rule, currentYear }: { rule: SavingsRule; currentYear: number }) {
-  const parts = ruleDetailParts(rule, currentYear);
-  if (parts.length === 0) return null;
-  return (
-    <div className="mt-1 text-[11px] text-ink-3 leading-snug">
-      {parts.map((p, i) => (
-        <span key={i}>
-          {i > 0 ? <span className="text-ink-4"> · </span> : null}
-          <span>{p}</span>
-        </span>
-      ))}
-    </div>
-  );
+export function savingsDetailRows(rule: SavingsRule, currentYear: number): HintRow[] {
+  const rows: HintRow[] = [];
+  const match = employerMatchLabel(rule);
+  if (match) rows.push({ value: match });
+  if (rule.growthSource === "inflation") {
+    rows.push({ term: "Growth", value: "infl-linked" });
+  } else if (rule.growthRate != null && rule.growthRate > 0) {
+    rows.push({ term: "Growth", value: formatPct(rule.growthRate) });
+  }
+  const window = windowLabel(rule, currentYear);
+  if (window) rows.push({ term: "Window", value: window });
+  const roth = rothTag(rule);
+  if (roth) rows.push({ value: roth });
+  if (!rule.isDeductible) rows.push({ value: "after-tax" });
+  if (rule.applyContributionLimit === false) rows.push({ value: "uncapped" });
+  return rows;
 }
 
 /** Contribution amount used for the base-vs-working hint comparison. Reads the
@@ -250,6 +235,7 @@ function Editable({
   // Bumps on reset to remount the contribution inputs so their local state
   // re-seeds from the reverted base value (they seed from defaultValue once).
   const [resetTick, setResetTick] = useState(0);
+  const detailRows = savingsDetailRows(workingRule, new Date().getFullYear());
   const inputId = `s-${workingRule.id}`;
   const isMaxMode = !!workingRule.contributeMax;
   const isPercentMode =
@@ -284,9 +270,12 @@ function Editable({
 
   return (
     <div>
-      <label className="block text-[11px] text-ink-3 truncate" htmlFor={inputId}>
-        {label}
-      </label>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={inputId}>
+          {label}
+        </label>
+        {detailRows.length ? <FieldHintPopover label={`${label} details`} rows={detailRows} /> : null}
+      </div>
       <div className="mt-1 flex items-center gap-1.5">
         {isDollarMode ? (
           <CurrencyAmountInput
@@ -365,7 +354,6 @@ function Editable({
           </div>
         ) : null}
       </div>
-      <DetailLine rule={workingRule} currentYear={new Date().getFullYear()} />
       {baseRule ? (
         <SolverBaseHint
           base={baseRule}
