@@ -1,9 +1,28 @@
 import { and, eq } from "drizzle-orm";
 
 import { clients, crmHouseholdContacts } from "@/db/schema";
+import type { FilingStatus } from "@/lib/extraction/types";
 
 import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
+
+/**
+ * The extractor / import payload speaks IRS-style filing statuses
+ * ("married_filing_jointly") but the DB `filing_status` enum uses the planning
+ * vocabulary ("married_joint"). Translate before writing — otherwise Postgres
+ * rejects the value with `invalid input value for enum filing_status` and the
+ * entire commit transaction (names included) rolls back, surfacing only as a
+ * generic "Commit failed."
+ */
+const FILING_STATUS_TO_DB: Record<
+  FilingStatus,
+  "single" | "married_joint" | "married_separate" | "head_of_household"
+> = {
+  single: "single",
+  married_filing_jointly: "married_joint",
+  married_filing_separately: "married_separate",
+  head_of_household: "head_of_household",
+};
 
 /**
  * Commits the primary + spouse identity slots into the CRM household
@@ -62,7 +81,8 @@ export async function commitClientsIdentity(
   if (primary?.firstName) legacyUpdates.firstName = primary.firstName;
   if (primary?.lastName) legacyUpdates.lastName = primary.lastName;
   if (primary?.dateOfBirth) legacyUpdates.dateOfBirth = primary.dateOfBirth;
-  if (primary?.filingStatus) legacyUpdates.filingStatus = primary.filingStatus;
+  if (primary?.filingStatus)
+    legacyUpdates.filingStatus = FILING_STATUS_TO_DB[primary.filingStatus];
 
   if (spouse?.firstName) legacyUpdates.spouseName = spouse.firstName;
   if (spouse?.lastName) legacyUpdates.spouseLastName = spouse.lastName;

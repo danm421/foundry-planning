@@ -92,7 +92,10 @@ describe("commitClientsIdentity", () => {
     expect(setValues.firstName).toBe("Jordan");
     expect(setValues.lastName).toBe("Doe");
     expect(setValues.dateOfBirth).toBe("1980-01-01");
-    expect(setValues.filingStatus).toBe("married_filing_jointly");
+    // The extractor emits IRS-style filing statuses; the DB `filing_status`
+    // enum uses the planning vocabulary. Commit must translate before writing,
+    // or Postgres rejects the value and rolls back the whole commit.
+    expect(setValues.filingStatus).toBe("married_joint");
     expect(setValues.spouseName).toBe("Riley");
     expect(setValues.spouseLastName).toBe("Doe");
     expect(setValues.spouseDob).toBe("1982-02-02");
