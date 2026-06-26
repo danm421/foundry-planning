@@ -37,13 +37,17 @@ function item(
   return { id, value, owners };
 }
 
-describe("attributeToColumns — placeholder", () => {
-  it("returns zeros from the stub", () => {
+describe("ownerless items are household-owned by convention", () => {
+  // A row with no account_owners (e.g. a Plaid "Add as new" account/debt, which
+  // the commit route inserts without an owner row) is household-owned. Mirror
+  // normalizeOwners + attributeEntityFlatValue: attribute the whole value to the
+  // client column rather than dropping it.
+  it("empty owners → whole value to the client (Cooper) column", () => {
     const result = attributeToColumns(
       item("a1", 100, []),
       baseCtx(),
     );
-    expect(result).toEqual({ cooper: 0, sarah: 0, joint: 0, ooe: 0, representedPct: 1 });
+    expect(result).toEqual({ cooper: 100, sarah: 0, joint: 0, ooe: 0, representedPct: 1 });
   });
 });
 

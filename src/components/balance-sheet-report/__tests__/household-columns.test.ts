@@ -112,6 +112,30 @@ describe("buildHouseholdColumns", () => {
     expect(biz.rows.find((r) => r.name === "Smith LLC")).toMatchObject({ client: 1_000_000, total: 1_000_000 });
   });
 
+  it("includes an ownerless (household-owned) account in the client column", () => {
+    // Plaid "Add as new" accounts are inserted without an account_owners row.
+    // They must still surface on the balance sheet, attributed to the client.
+    const withOwnerless = buildHouseholdColumns({
+      ...base,
+      accounts: [
+        ...base.accounts,
+        { id: "a-plaid", name: "Plaid Money Market", category: "cash", owners: [] },
+      ],
+      projectionYears: [
+        {
+          ...base.projectionYears[0],
+          accountLedgers: {
+            ...base.projectionYears[0].accountLedgers,
+            "a-plaid": { beginningValue: 0, endingValue: 43_200 },
+          },
+        },
+      ],
+    });
+    const cash = withOwnerless.assetCategories.find((c) => c.key === "cash")!;
+    const row = cash.rows.find((r) => r.key === "a-plaid")!;
+    expect(row).toMatchObject({ client: 43_200, spouse: 0, joint: 0, total: 43_200 });
+  });
+
   it("excludes a business owned entirely by an entity from the household table", () => {
     const trustOwnedBiz = buildHouseholdColumns({
       ...base,

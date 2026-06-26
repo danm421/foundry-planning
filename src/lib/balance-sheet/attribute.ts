@@ -43,6 +43,17 @@ export function attributeToColumns(
   item: AttributableItem,
   ctx: AttributionCtx,
 ): ColumnSplit {
+  // No owner rows = household-owned by convention. The Plaid "Add as new"
+  // commit path inserts accounts/liabilities without an account_owners row
+  // (see the commit route), and normalizeOwners likewise backfills empty
+  // owners to client 100%. Mirror attributeEntityFlatValue's empty-owners
+  // fallback and attribute the whole value to the client column — otherwise
+  // the loop below leaves an all-zero split and the row is silently dropped
+  // from the balance sheet.
+  if (item.owners.length === 0) {
+    return { cooper: item.value, sarah: 0, joint: 0, ooe: 0, representedPct: 1 };
+  }
+
   if (isJointTitledClientSpouseHalfHalf(item, ctx)) {
     return { cooper: 0, sarah: 0, joint: item.value, ooe: 0, representedPct: 1 };
   }
