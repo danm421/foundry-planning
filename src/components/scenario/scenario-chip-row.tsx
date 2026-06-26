@@ -13,6 +13,31 @@ export interface ScenarioChip {
   isBaseCase: boolean;
 }
 
+// Name prefixes used by integration tests that insert into the `scenarios`
+// table (see `.insert(scenarios)` in src/**/__tests__/*.test.ts). Each test
+// names rows `<prefix><uuid-slice>` and deletes them in afterEach; leaked rows
+// from crashed runs are filtered out of the chip row below.
+const TEST_ORPHAN_PREFIXES = [
+  "writer-test-",
+  "nr-loader-test-",
+  "nr-fast-path-host-",
+  "nr-filter-",
+  "preview-fidelity-",
+  "change-cid-test-",
+  "change-cid-other-",
+  "delta-preview-cache-",
+  "delta-preview-test-",
+  "load-changes-test-",
+  "route-list-test-",
+  "route-test-",
+  "tg-gid-test-",
+  "tg-test-",
+  "tg-other-",
+  "clone-src-",
+  "flow-inherit-scn-",
+  "flow-mixed-scn-",
+] as const;
+
 /**
  * Collapsed scenario selector that sits above the Details tabs. The corner
  * shows a single pill — the active scenario, styled like the old active chip
@@ -53,11 +78,13 @@ export function ScenarioChipRow({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Orphan integration-test scenarios (changes-writer.test.ts mints
-  // `writer-test-<uuid>` rows and deletes them in afterEach; crashes leak them)
-  // pile up in the chip row. Hide them in the UI; leave DB rows alone.
+  // Integration tests mint scenarios on a real client (COOPER_CLIENT_ID) on the
+  // shared Neon dev branch and delete them in afterEach; a crashed/interrupted
+  // run leaks them, and they pile up in the chip row. Hide every known
+  // test-orphan family in the UI; leave DB rows alone. Keep this list in sync
+  // with the `name:` prefixes used by `.insert(scenarios)` across *.test.ts.
   const visibleScenarios = scenarios.filter(
-    (s) => !s.name.startsWith("writer-test-"),
+    (s) => !TEST_ORPHAN_PREFIXES.some((p) => s.name.startsWith(p)),
   );
   const baseId = visibleScenarios.find((s) => s.isBaseCase)?.id ?? null;
   const effectiveActive = active ?? baseId;
