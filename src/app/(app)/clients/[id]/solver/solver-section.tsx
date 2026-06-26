@@ -1,20 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-
-type SolverSide = "base" | "working";
-export const SolverSideContext = createContext<SolverSide>("base");
-
-export function useSolverSide(): SolverSide {
-  return useContext(SolverSideContext);
-}
-
-/** Renders children only in the working (right) column. `SolverSection` paints
- *  its children once per side, so editing-only controls (add account, solve)
- *  must opt out of the read-only base column. */
-export function SolverWorkingOnly({ children }: { children: ReactNode }) {
-  return useSolverSide() === "working" ? <>{children}</> : null;
-}
+import { useState, type ReactNode } from "react";
 
 interface Props {
   title: string;
@@ -58,9 +44,7 @@ export function SolverSection({ title, defaultOpen = true, action, children }: P
       </div>
       {open ? (
         <div className="px-5 py-4">
-          <SolverSideContext.Provider value="working">
-            <div className="grid grid-cols-1 gap-y-5 auto-rows-max content-start">{children}</div>
-          </SolverSideContext.Provider>
+          <div className="grid grid-cols-1 gap-y-5 auto-rows-max content-start">{children}</div>
         </div>
       ) : null}
     </div>

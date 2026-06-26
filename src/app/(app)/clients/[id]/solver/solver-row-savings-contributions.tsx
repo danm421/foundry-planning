@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import type { Account, ClientData, SavingsRule } from "@/engine";
-import type { SolverMutation } from "@/lib/solver/types";
+import {
+  mutationKey,
+  type SolverMutation,
+  type SolverMutationKey,
+} from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
 import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
-import { useSolverSide } from "./solver-section";
+import { SolverBaseHint } from "./solver-base-hint";
 import { RothSplitControl } from "./solver-roth-split-control";
 import { SolverSavingsEditDialog } from "./solver-savings-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
@@ -29,6 +33,7 @@ interface Props {
   workingClientData: ClientData;
   currentYear: number;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -36,17 +41,36 @@ interface Props {
   visibleSelfFundingAccts?: Set<string>;
 }
 
+/** Every per-account savings mutation key the inline inputs + edit dialog can
+ *  write. A reset clears the whole group so a partial edit doesn't half-revert. */
+function savingsResetKeys(accountId: string): SolverMutationKey[] {
+  return [
+    mutationKey({ kind: "savings-contribution", accountId, annualAmount: 0 }),
+    mutationKey({ kind: "savings-annual-percent", accountId, percent: null }),
+    mutationKey({ kind: "savings-roth-percent", accountId, rothPercent: 0 }),
+    mutationKey({ kind: "savings-contribute-max", accountId, value: false }),
+    mutationKey({ kind: "savings-growth-rate", accountId, rate: 0 }),
+    mutationKey({ kind: "savings-growth-source", accountId, source: "custom" }),
+    mutationKey({ kind: "savings-deductible", accountId, value: true }),
+    mutationKey({ kind: "savings-apply-cap", accountId, value: true }),
+    mutationKey({ kind: "savings-employer-match-pct", accountId, pct: 0, cap: null }),
+    mutationKey({ kind: "savings-employer-match-amount", accountId, amount: 0 }),
+    mutationKey({ kind: "savings-start-year", accountId, year: 0 }),
+    mutationKey({ kind: "savings-end-year", accountId, year: 0 }),
+  ];
+}
+
 export function SolverRowSavingsContributions({
   baseClientData,
   workingClientData,
   currentYear,
   onChange,
+  onResetField,
   activeSolve,
   onSolveStart,
   onSolveCancel,
   visibleSelfFundingAccts,
 }: Props) {
-  const side = useSolverSide();
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
   const visible = visibleSelfFundingAccts ?? new Set<string>();
 
@@ -54,7 +78,7 @@ export function SolverRowSavingsContributions({
   const workingAdded = activeSavingsRules(workingClientData.savingsRules, currentYear)
     .filter((r) => !baseRuleIds.has(r.id) && (!r.fundFromExpenseReduction || visible.has(r.accountId)));
 
-  if (baseActive.length === 0 && (side === "base" || workingAdded.length === 0)) return null;
+  if (baseActive.length === 0 && workingAdded.length === 0) return null;
 
   const resolvedInflationRate =
     workingClientData.planSettings?.inflationRate ??
@@ -68,9 +92,6 @@ export function SolverRowSavingsContributions({
         {baseActive.map((baseRule) => {
           const account = baseClientData.accounts.find((a) => a.id === baseRule.accountId);
           const label = account?.name ?? baseRule.accountId.slice(0, 6);
-          if (side === "base") {
-            return <ReadOnly key={baseRule.id} label={label} rule={baseRule} />;
-          }
           const workingRule =
             workingClientData.savingsRules.find((r) => r.id === baseRule.id) ?? baseRule;
           const workingAccount =
@@ -79,6 +100,7 @@ export function SolverRowSavingsContributions({
             <Editable
               key={baseRule.id}
               label={label}
+              baseRule={baseRule}
               workingRule={workingRule}
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
@@ -86,27 +108,29 @@ export function SolverRowSavingsContributions({
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
               onChange={onChange}
+              onResetField={onResetField}
             />
           );
         })}
-        {side !== "base" &&
-          workingAdded.map((rule) => {
-            const account = workingClientData.accounts.find((a) => a.id === rule.accountId);
-            const label = account?.name ?? rule.accountId.slice(0, 6);
-            return (
-              <Editable
-                key={rule.id}
-                label={label}
-                workingRule={rule}
-                workingAccount={account}
-                resolvedInflationRate={resolvedInflationRate}
-                activeSolve={activeSolve}
-                onSolveStart={onSolveStart}
-                onSolveCancel={onSolveCancel}
-                onChange={onChange}
-              />
-            );
-          })}
+        {workingAdded.map((rule) => {
+          const account = workingClientData.accounts.find((a) => a.id === rule.accountId);
+          const label = account?.name ?? rule.accountId.slice(0, 6);
+          return (
+            <Editable
+              key={rule.id}
+              label={label}
+              baseRule={null}
+              workingRule={rule}
+              workingAccount={account}
+              resolvedInflationRate={resolvedInflationRate}
+              activeSolve={activeSolve}
+              onSolveStart={onSolveStart}
+              onSolveCancel={onSolveCancel}
+              onChange={onChange}
+              onResetField={onResetField}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -189,20 +213,17 @@ function DetailLine({ rule, currentYear }: { rule: SavingsRule; currentYear: num
   );
 }
 
-function ReadOnly({ label, rule }: { label: string; rule: SavingsRule }) {
-  return (
-    <div>
-      <div className="text-[11px] text-ink-3 truncate">{label}</div>
-      <div className="mt-0.5 text-[15px] text-ink-2 tabular">
-        {contributionLabel(rule)}
-      </div>
-      <DetailLine rule={rule} currentYear={new Date().getFullYear()} />
-    </div>
-  );
+/** Contribution amount used for the base-vs-working hint comparison. Reads the
+ *  dollar amount, falling back to percent when the rule contributes by percent. */
+function contributionMagnitude(rule: SavingsRule): number {
+  if (rule.contributeMax) return Number.POSITIVE_INFINITY;
+  if (rule.annualPercent != null && rule.annualPercent > 0) return rule.annualPercent;
+  return rule.annualAmount;
 }
 
 function Editable({
   label,
+  baseRule,
   workingRule,
   workingAccount,
   resolvedInflationRate,
@@ -210,8 +231,11 @@ function Editable({
   onSolveStart,
   onSolveCancel,
   onChange,
+  onResetField,
 }: {
   label: string;
+  /** The base counterpart, or null for a rule added in the scenario. */
+  baseRule: SavingsRule | null;
   workingRule: SavingsRule;
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
@@ -219,9 +243,13 @@ function Editable({
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  // Bumps on reset to remount the contribution inputs so their local state
+  // re-seeds from the reverted base value (they seed from defaultValue once).
+  const [resetTick, setResetTick] = useState(0);
   const inputId = `s-${workingRule.id}`;
   const isMaxMode = !!workingRule.contributeMax;
   const isPercentMode =
@@ -262,6 +290,7 @@ function Editable({
       <div className="mt-1 flex items-center gap-1.5">
         {isDollarMode ? (
           <CurrencyAmountInput
+            key={`${workingRule.id}-${resetTick}`}
             id={inputId}
             label={label}
             defaultValue={workingRule.annualAmount}
@@ -276,6 +305,7 @@ function Editable({
         ) : isPercentMode ? (
           <>
             <PercentAmountInput
+              key={`${workingRule.id}-${resetTick}`}
               id={inputId}
               label={`${label} (% of salary)`}
               defaultValue={workingRule.annualPercent ?? 0}
@@ -336,6 +366,24 @@ function Editable({
         ) : null}
       </div>
       <DetailLine rule={workingRule} currentYear={new Date().getFullYear()} />
+      {baseRule ? (
+        <SolverBaseHint
+          base={baseRule}
+          working={workingRule}
+          changed={contributionMagnitude(baseRule) !== contributionMagnitude(workingRule)}
+          format={(r) => contributionLabel(r)}
+          onReset={
+            onResetField
+              ? () => {
+                  onResetField(savingsResetKeys(workingRule.accountId));
+                  setResetTick((t) => t + 1);
+                }
+              : undefined
+          }
+        />
+      ) : (
+        <div className="mt-0.5 text-[11px] text-accent">added in scenario</div>
+      )}
       {workingAccount && supportsRothSplit(workingAccount.category, workingAccount.subType) ? (
         <RothSplitControl
           rothPercent={workingRule.rothPercent ?? null}

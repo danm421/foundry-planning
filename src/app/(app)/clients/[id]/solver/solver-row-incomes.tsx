@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import type { ClientData, Income } from "@/engine";
-import type { IncomeTaxType, SolverMutation } from "@/lib/solver/types";
+import {
+  mutationKey,
+  type IncomeTaxType,
+  type SolverMutation,
+  type SolverMutationKey,
+} from "@/lib/solver/types";
 import { activeIncomes } from "@/lib/solver/active-incomes";
-import { useSolverSide } from "./solver-section";
+import { SolverBaseHint } from "./solver-base-hint";
 import { SolverIncomeEditDialog } from "./solver-income-edit-dialog";
 
 const TAX_TYPE_SHORT: Record<IncomeTaxType, string> = {
@@ -22,6 +27,21 @@ interface Props {
   workingClientData: ClientData;
   currentYear: number;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
+}
+
+/** Every per-income mutation key the inline input + edit dialog can write.
+ *  A reset must clear the whole group so a partial edit doesn't half-revert. */
+function incomeResetKeys(incomeId: string): SolverMutationKey[] {
+  return [
+    mutationKey({ kind: "income-annual-amount", incomeId, annualAmount: 0 }),
+    mutationKey({ kind: "income-tax-type", incomeId, taxType: "ordinary_income" }),
+    mutationKey({ kind: "income-growth-source", incomeId, source: "custom" }),
+    mutationKey({ kind: "income-growth-rate", incomeId, rate: 0 }),
+    mutationKey({ kind: "income-self-employment", incomeId, value: false }),
+    mutationKey({ kind: "income-start-year", incomeId, year: 0 }),
+    mutationKey({ kind: "income-end-year", incomeId, year: 0 }),
+  ];
 }
 
 export function SolverRowIncomes({
@@ -29,8 +49,8 @@ export function SolverRowIncomes({
   workingClientData,
   currentYear,
   onChange,
+  onResetField,
 }: Props) {
-  const side = useSolverSide();
   const baseActive = activeIncomes(baseClientData.incomes, currentYear);
   if (baseActive.length === 0) return null;
 
@@ -45,18 +65,17 @@ export function SolverRowIncomes({
       <div className="grid grid-cols-2 gap-x-5 gap-y-3">
         {baseActive.map((baseInc) => {
           const label = labelFor(baseInc, baseClientData.client);
-          if (side === "base") {
-            return <ReadOnly key={baseInc.id} label={label} income={baseInc} />;
-          }
           const workingInc =
             workingClientData.incomes.find((i) => i.id === baseInc.id) ?? baseInc;
           return (
             <Editable
               key={baseInc.id}
               label={label}
+              baseIncome={baseInc}
               workingIncome={workingInc}
               resolvedInflationRate={resolvedInflationRate}
               onChange={onChange}
+              onResetField={onResetField}
             />
           );
         })}
@@ -134,30 +153,25 @@ function DetailLine({ income }: { income: Income }) {
   );
 }
 
-function ReadOnly({ label, income }: { label: string; income: Income }) {
-  return (
-    <div>
-      <div className="text-[11px] text-ink-3 truncate">{label}</div>
-      <div className="mt-0.5 text-[15px] text-ink-2 tabular">
-        {formatCurrency(income.annualAmount)}/yr
-      </div>
-      <DetailLine income={income} />
-    </div>
-  );
-}
-
 function Editable({
   label,
+  baseIncome,
   workingIncome,
   resolvedInflationRate,
   onChange,
+  onResetField,
 }: {
   label: string;
+  baseIncome: Income;
   workingIncome: Income;
   resolvedInflationRate: number;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Bumps on reset to remount CurrencyAmountInput so its local `display` state
+  // re-seeds from the reverted base value (it seeds from defaultValue once).
+  const [resetTick, setResetTick] = useState(0);
   const inputId = `inc-${workingIncome.id}`;
   return (
     <div>
@@ -166,6 +180,7 @@ function Editable({
       </label>
       <div className="mt-1 flex items-center gap-1.5">
         <CurrencyAmountInput
+          key={`${workingIncome.id}-${resetTick}`}
           id={inputId}
           label={label}
           defaultValue={workingIncome.annualAmount}
@@ -190,6 +205,19 @@ function Editable({
         </button>
       </div>
       <DetailLine income={workingIncome} />
+      <SolverBaseHint
+        base={baseIncome.annualAmount}
+        working={workingIncome.annualAmount}
+        format={(v) => `${formatCurrency(v)}/yr`}
+        onReset={
+          onResetField
+            ? () => {
+                onResetField(incomeResetKeys(workingIncome.id));
+                setResetTick((t) => t + 1);
+              }
+            : undefined
+        }
+      />
       {open ? (
         <SolverIncomeEditDialog
           open={open}

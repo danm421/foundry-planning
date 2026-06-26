@@ -13,14 +13,13 @@ import {
 } from "@/lib/solver/estate-levers";
 import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
 import { SolverTrustForm, type SolverTrustDraft } from "./solver-trust-form";
-import { SolverSection, useSolverSide } from "./solver-section";
+import { SolverSection } from "./solver-section";
 import {
-  currentRevocableTrusts,
   currentTrustEntities,
   currentCharities,
   summarizeCurrentGift,
 } from "@/lib/solver/estate-current";
-import type { CurrentRevocableTrust, CurrentCharity } from "@/lib/solver/estate-current";
+import type { CurrentCharity } from "@/lib/solver/estate-current";
 
 interface Props {
   /** Read-only base facts — drives the left "Current" column. */
@@ -42,10 +41,9 @@ function giftSummary(g: EstateFlowGift): string {
   return `Cash gift ${g.year}: $${g.amount.toLocaleString()}`;
 }
 
-/** Revocable Living Trust section. Base side: read-only current trusts (account
- *  tags). Working side: the create-RLT toggle + name + probate-account checkboxes. */
+/** Revocable Living Trust section: the create-RLT toggle + name +
+ *  probate-account checkboxes for the scenario surface. */
 export function EstateRevocableTrustList({
-  current,
   enabled,
   trustName,
   eligible,
@@ -55,7 +53,6 @@ export function EstateRevocableTrustList({
   onToggleAccount,
   onSelectAll,
 }: {
-  current: CurrentRevocableTrust[];
   enabled: boolean;
   trustName: string;
   eligible: Account[];
@@ -65,24 +62,6 @@ export function EstateRevocableTrustList({
   onToggleAccount: (id: string) => void;
   onSelectAll: () => void;
 }) {
-  const side = useSolverSide();
-
-  if (side === "base") {
-    if (current.length === 0) {
-      return <div className="col-span-2 text-[12px] text-ink-4">No revocable living trust</div>;
-    }
-    return (
-      <div className="col-span-2 space-y-2">
-        {current.map((t) => (
-          <div key={t.name} className="text-[13px] text-ink-2">
-            <div className="font-medium text-ink">{t.name}</div>
-            <div className="text-[11px] text-ink-3">{t.accountNames.join(", ")}</div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
     <div className="col-span-2 space-y-3">
       <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-ink">
@@ -141,8 +120,8 @@ export function EstateRevocableTrustList({
   );
 }
 
-/** Planned Gifts section. Base side: read-only current gift summaries. Working
- *  side: current gifts (read-only) + scenario draft gifts with Edit / Remove. */
+/** Planned Gifts section: current gifts (read-only) plus scenario draft gifts
+ *  with Edit / Remove. */
 export function EstateGiftsList({
   currentGifts,
   draftGifts,
@@ -154,10 +133,7 @@ export function EstateGiftsList({
   onEdit: (g: EstateFlowGift) => void;
   onRemove: (id: string) => void;
 }) {
-  const side = useSolverSide();
-  const showDrafts = side === "working";
-
-  if (currentGifts.length === 0 && (!showDrafts || draftGifts.length === 0)) {
+  if (currentGifts.length === 0 && draftGifts.length === 0) {
     return <div className="col-span-2 text-[12px] text-ink-4">No planned gifts</div>;
   }
 
@@ -168,28 +144,27 @@ export function EstateGiftsList({
           {g.label}
         </div>
       ))}
-      {showDrafts &&
-        draftGifts.map((g) => (
-          <div key={g.id} className="flex items-center justify-between text-[13px] text-ink">
-            <button type="button" className="text-left hover:underline" onClick={() => onEdit(g)}>
-              {giftSummary(g)}
-            </button>
-            <button
-              type="button"
-              className="text-[12px] text-crit hover:underline"
-              onClick={() => onRemove(g.id)}
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+      {draftGifts.map((g) => (
+        <div key={g.id} className="flex items-center justify-between text-[13px] text-ink">
+          <button type="button" className="text-left hover:underline" onClick={() => onEdit(g)}>
+            {giftSummary(g)}
+          </button>
+          <button
+            type="button"
+            className="text-[12px] text-crit hover:underline"
+            onClick={() => onRemove(g.id)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
 
-/** Trusts section. Base side: read-only existing trust entities. Working side:
- *  existing (read-only) + scenario-added trusts (Remove). The Add-trust form
- *  renders once at the bottom of the tab, gated by `addingTrust`. */
+/** Trusts section: existing trust entities (read-only) plus scenario-added
+ *  trusts (Remove). The Add-trust form renders once at the bottom of the tab,
+ *  gated by `addingTrust`. */
 export function EstateTrustsList({
   currentTrusts,
   addedTrusts,
@@ -199,10 +174,7 @@ export function EstateTrustsList({
   addedTrusts: SolverTrustDraft[];
   onRemove: (draft: SolverTrustDraft) => void;
 }) {
-  const side = useSolverSide();
-  const showAdded = side === "working";
-
-  if (currentTrusts.length === 0 && (!showAdded || addedTrusts.length === 0)) {
+  if (currentTrusts.length === 0 && addedTrusts.length === 0) {
     return <div className="col-span-2 text-[12px] text-ink-4">No trusts</div>;
   }
 
@@ -214,27 +186,26 @@ export function EstateTrustsList({
           {t.trustSubType ? <span> · {t.trustSubType.toUpperCase()}</span> : null}
         </div>
       ))}
-      {showAdded &&
-        addedTrusts.map((t) => (
-          <div key={t.entity.id} className="flex items-center justify-between text-[13px] text-ink">
-            <span>
-              {t.entity.name} · {t.entity.trustSubType?.toUpperCase()}
-            </span>
-            <button
-              type="button"
-              className="text-[12px] text-crit hover:underline"
-              onClick={() => onRemove(t)}
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+      {addedTrusts.map((t) => (
+        <div key={t.entity.id} className="flex items-center justify-between text-[13px] text-ink">
+          <span>
+            {t.entity.name} · {t.entity.trustSubType?.toUpperCase()}
+          </span>
+          <button
+            type="button"
+            className="text-[12px] text-crit hover:underline"
+            onClick={() => onRemove(t)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
 
-/** Charities section. Base side: read-only existing charities. Working side:
- *  existing + scenario-added charities, plus the inline "add charity" form. */
+/** Charities section: existing + scenario-added charities, plus the inline
+ *  "add charity" form. */
 export function EstateCharitiesList({
   currentCharities: current,
   addedCharities,
@@ -252,9 +223,7 @@ export function EstateCharitiesList({
   onChangeType: (v: "public" | "private") => void;
   onAdd: () => void;
 }) {
-  const side = useSolverSide();
-  const working = side === "working";
-  const rows = working ? [...current, ...addedCharities] : current;
+  const rows = [...current, ...addedCharities];
 
   return (
     <div className="col-span-2 space-y-2">
@@ -271,36 +240,34 @@ export function EstateCharitiesList({
         </ul>
       )}
 
-      {working ? (
-        <div className="flex items-end gap-2 pt-1">
-          <label className="flex-1 text-[12px] text-ink-2">
-            New charity
-            <input
-              type="text"
-              value={charityName}
-              onChange={(e) => onChangeName(e.target.value)}
-              placeholder="Charity name"
-              className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-            />
-          </label>
-          <select
-            aria-label="Charity type"
-            value={charityType}
-            onChange={(e) => onChangeType(e.target.value as "public" | "private")}
-            className="h-9 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-          >
-            <option value="public">Public</option>
-            <option value="private">Private</option>
-          </select>
-          <button
-            type="button"
-            onClick={onAdd}
-            className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
-          >
-            Add
-          </button>
-        </div>
-      ) : null}
+      <div className="flex items-end gap-2 pt-1">
+        <label className="flex-1 text-[12px] text-ink-2">
+          New charity
+          <input
+            type="text"
+            value={charityName}
+            onChange={(e) => onChangeName(e.target.value)}
+            placeholder="Charity name"
+            className="mt-1 h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          />
+        </label>
+        <select
+          aria-label="Charity type"
+          value={charityType}
+          onChange={(e) => onChangeType(e.target.value as "public" | "private")}
+          className="h-9 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        >
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="h-9 rounded-md bg-accent px-3 text-[13px] text-white hover:bg-accent/90"
+        >
+          Add
+        </button>
+      </div>
     </div>
   );
 }
@@ -359,11 +326,7 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
     [clientData.taxYearRows, ps.planStartYear, ps.planEndYear, taxInflationRate],
   );
 
-  // ── Current (base) estate lists for the left column ─────────────────────────
-  const currentRev = useMemo(
-    () => currentRevocableTrusts(baseClientData.accounts),
-    [baseClientData.accounts],
-  );
+  // ── Current (base) estate facts surfaced read-only alongside scenario edits ──
   const currentTrusts = useMemo(
     () => currentTrustEntities(baseClientData.entities),
     [baseClientData.entities],
@@ -467,7 +430,6 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
     <div>
       <SolverSection title="Revocable Living Trust">
         <EstateRevocableTrustList
-          current={currentRev}
           enabled={enabled}
           trustName={trustName}
           eligible={eligible}

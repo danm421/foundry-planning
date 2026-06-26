@@ -19,7 +19,7 @@ import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { defaultReportForTab, type ReportKey } from "./report-tab-link";
-import { SolverSection, SolverWorkingOnly } from "./solver-section";
+import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
@@ -896,50 +896,50 @@ export function LiveSolverWorkspace({
                 workingClientData={workingTree}
                 currentYear={currentYear}
                 onChange={pushMutation}
+                onResetField={clearMutations}
               />
               <SolverRowSavingsContributions
                 baseClientData={baseClientData}
                 workingClientData={workingTree}
                 currentYear={currentYear}
                 onChange={pushMutation}
+                onResetField={clearMutations}
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
                 visibleSelfFundingAccts={visibleSelfFundingAccts}
               />
-              <SolverWorkingOnly>
-                <SolverQuickAddAccount
-                  owners={ownerOptions}
-                  existingAccounts={existingAddable}
-                  currentYear={currentYear}
-                  retirementYearForOwner={retirementYearForOwner}
-                  growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
-                  onChange={pushMutation}
-                />
-                <SolverMinSavingsPanel
-                  portfolios={modelPortfolios}
-                  disabled={activeSolve !== null || ownerOptions.length === 0}
-                  phase={
-                    activeSolve?.target.kind === "savings-contribution" &&
-                    minSavings?.accountId ===
-                      (activeSolve.target as { kind: "savings-contribution"; accountId: string }).accountId
-                      ? "solving"
-                      : minSavingsResult
-                        ? "result"
-                        : "idle"
-                  }
-                  progress={
-                    activeSolve && minSavings
-                      ? { iteration: activeSolve.iteration, candidateValue: activeSolve.candidateValue, achievedPoS: activeSolve.achievedPoS, targetPoS: minSavings.targetPoS }
-                      : null
-                  }
-                  result={minSavingsResult}
-                  onSolve={handleSolveMinSavings}
-                  onIncludeSelfFunding={handleIncludeSelfFunding}
-                  onIncludeLockInCut={handleIncludeLockInCut}
-                  onDismissResult={handleDismissResult}
-                />
-              </SolverWorkingOnly>
+              <SolverQuickAddAccount
+                owners={ownerOptions}
+                existingAccounts={existingAddable}
+                currentYear={currentYear}
+                retirementYearForOwner={retirementYearForOwner}
+                growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
+                onChange={pushMutation}
+              />
+              <SolverMinSavingsPanel
+                portfolios={modelPortfolios}
+                disabled={activeSolve !== null || ownerOptions.length === 0}
+                phase={
+                  activeSolve?.target.kind === "savings-contribution" &&
+                  minSavings?.accountId ===
+                    (activeSolve.target as { kind: "savings-contribution"; accountId: string }).accountId
+                    ? "solving"
+                    : minSavingsResult
+                      ? "result"
+                      : "idle"
+                }
+                progress={
+                  activeSolve && minSavings
+                    ? { iteration: activeSolve.iteration, candidateValue: activeSolve.candidateValue, achievedPoS: activeSolve.achievedPoS, targetPoS: minSavings.targetPoS }
+                    : null
+                }
+                result={minSavingsResult}
+                onSolve={handleSolveMinSavings}
+                onIncludeSelfFunding={handleIncludeSelfFunding}
+                onIncludeLockInCut={handleIncludeLockInCut}
+                onDismissResult={handleDismissResult}
+              />
             </SolverSection>
           </>
         )}

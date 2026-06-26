@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { ClientData } from "@/engine";
 import { SolverRowSavingsContributions } from "../solver-row-savings-contributions";
-import { SolverSideContext } from "../solver-section";
 
 function clientData(overrides: Partial<ClientData> = {}): ClientData {
   return {
@@ -24,17 +23,15 @@ const minSavingsRule = { id: "rule-min", accountId: "acct-min", annualAmount: 30
 
 function renderWorking(base: ClientData, working: ClientData) {
   render(
-    <SolverSideContext.Provider value="working">
-      <SolverRowSavingsContributions
-        baseClientData={base}
-        workingClientData={working}
-        currentYear={2026}
-        onChange={vi.fn()}
-        activeSolve={null}
-        onSolveStart={vi.fn()}
-        onSolveCancel={vi.fn()}
-      />
-    </SolverSideContext.Provider>,
+    <SolverRowSavingsContributions
+      baseClientData={base}
+      workingClientData={working}
+      currentYear={2026}
+      onChange={vi.fn()}
+      activeSolve={null}
+      onSolveStart={vi.fn()}
+      onSolveCancel={vi.fn()}
+    />,
   );
 }
 
@@ -57,18 +54,16 @@ describe("SolverRowSavingsContributions working-added rows", () => {
     const base = clientData({ savingsRules: [baseRule] });
     const working = clientData({ savingsRules: [baseRule, minSavingsRule] });
     render(
-      <SolverSideContext.Provider value="working">
-        <SolverRowSavingsContributions
-          baseClientData={base}
-          workingClientData={working}
-          currentYear={2026}
-          onChange={vi.fn()}
-          activeSolve={null}
-          onSolveStart={vi.fn()}
-          onSolveCancel={vi.fn()}
-          visibleSelfFundingAccts={new Set(["acct-min"])}
-        />
-      </SolverSideContext.Provider>,
+      <SolverRowSavingsContributions
+        baseClientData={base}
+        workingClientData={working}
+        currentYear={2026}
+        onChange={vi.fn()}
+        activeSolve={null}
+        onSolveStart={vi.fn()}
+        onSolveCancel={vi.fn()}
+        visibleSelfFundingAccts={new Set(["acct-min"])}
+      />,
     );
     expect(screen.getByLabelText("Additional Savings")).toBeInTheDocument();
   });
