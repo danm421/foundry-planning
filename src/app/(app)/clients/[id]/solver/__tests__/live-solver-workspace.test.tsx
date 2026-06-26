@@ -176,6 +176,54 @@ describe("<LiveSolverWorkspace />", () => {
   });
 });
 
+describe("LiveSolverWorkspace — Life Insurance solve gating", () => {
+  // Count only straight-line LI solves. `/life-insurance/solve-mc` also contains
+  // "/life-insurance/solve", so match the exact route suffix to exclude it.
+  const countLiSolves = () =>
+    fetchMock.mock.calls.filter(
+      (c) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).endsWith("/life-insurance/solve"),
+    ).length;
+
+  const liResult = {
+    isMarried: false,
+    client: {
+      status: "solved",
+      faceValue: 500_000,
+      achievedEndingPortfolio: 0,
+      projection: [],
+      existingPolicies: [],
+      existingCoverageTotal: 0,
+      estateTaxAddend: 0,
+    },
+    spouse: null,
+  };
+
+  it("stays silent while LI is inactive, solves once on enable, and debounces an edit", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => liResult });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Default view is Retirement — the LI hook is disabled, so no LI solve has
+    // fired even though the workspace mounted and auto-ran MC.
+    expect(countLiSolves()).toBe(0);
+
+    // Switching to the Life Insurance INPUT tab enables the hook → exactly one
+    // solve fires on the false→true edge. Anchor the name to the input tab
+    // ("Life Insurance") so it doesn't also match the report tab ("Life
+    // Insurance Need").
+    fireEvent.click(screen.getByRole("tab", { name: /^Life Insurance$/ }));
+    await waitFor(() => expect(countLiSolves()).toBe(1));
+
+    // Editing an assumption debounces a single additional solve (not one per
+    // keystroke; here a single commit, asserted after the 600ms debounce).
+    const deathYear = screen.getByLabelText("Death year");
+    fireEvent.change(deathYear, { target: { value: "2031" } });
+    await waitFor(() => expect(countLiSolves()).toBe(2), { timeout: 1500 });
+  });
+});
+
 describe("LiveSolverWorkspace — solve lifecycle", () => {
   it("starts a solve and applies the solved value as a mutation on result", async () => {
     fetchMock.mockImplementationOnce(() =>

@@ -30,7 +30,11 @@ import { SolverActionBar } from "./solver-action-bar";
 import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
-import { SolverTabLifeInsurance } from "./solver-tab-life-insurance";
+import {
+  SolverLifeInsuranceInputs,
+  SolverLifeInsuranceResults,
+  useLiNeedSolve,
+} from "./solver-tab-life-insurance";
 import { SolverTabEstatePlanning } from "./solver-tab-estate-planning";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
@@ -122,10 +126,18 @@ export function LiveSolverWorkspace({
   }, []);
   const handleReportChange = useCallback((r: ReportKey) => setActiveReport(r), []);
 
-  // LI assumptions live here so a sibling chart panel can read them while the
-  // Life Insurance tab is mounted; SolverTabLifeInsurance is a controlled view.
+  // LI assumptions live here so both the left-pane inputs view and the right-
+  // pane results/chart can read them; the LI views are controlled.
   const [liAssumptions, setLiAssumptions] =
     useState<LiAssumptions>(lifeInsuranceSettings);
+
+  // The straight-line LI solve runs only while the LI surface is in view —
+  // either its input tab (left) or its report (right). `enabled` gates the
+  // hook so it never fires a /solve or /settings request on unrelated tabs
+  // (notably the default retirement view).
+  const liEnabled =
+    activeTab === "life_insurance" || activeReport === "lifeInsurance";
+  const liSolve = useLiNeedSolve(clientId, liAssumptions, liEnabled);
 
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
@@ -970,12 +982,9 @@ export function LiveSolverWorkspace({
         )}
 
         {activeTab === "life_insurance" && (
-          <SolverTabLifeInsurance
-            clientId={clientId}
+          <SolverLifeInsuranceInputs
             assumptions={liAssumptions}
             onAssumptionsChange={setLiAssumptions}
-            clientName={clientName}
-            spouseName={spouseName}
             liabilities={(baseClientData.liabilities ?? []).map((l) => ({
               id: l.id,
               name: l.name,
@@ -1012,6 +1021,20 @@ export function LiveSolverWorkspace({
               onReportChange={handleReportChange}
               baseTree={baseClientData}
             />
+            {activeReport === "lifeInsurance" ? (
+              <SolverLifeInsuranceResults
+                clientId={clientId}
+                assumptions={liAssumptions}
+                solveResult={liSolve.solveResult}
+                isSolving={liSolve.isSolving}
+                errorMessage={liSolve.errorMessage}
+                clientName={clientName}
+                spouseName={spouseName}
+                onScoreChange={(s) =>
+                  setLiAssumptions((a) => ({ ...a, mcTargetScore: s }))
+                }
+              />
+            ) : null}
             <SolverKpiStrip
               posState={scenarioGauge.state}
               workingSuccess={scenarioGauge.successPct}
