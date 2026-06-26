@@ -57,19 +57,12 @@ export function SolverSection({ title, defaultOpen = true, action, children }: P
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
       {open ? (
-        <div className="grid grid-cols-2 divide-x divide-hair">
-          <SideGrid side="base">{children}</SideGrid>
-          <SideGrid side="working">{children}</SideGrid>
+        <div className="px-5 py-4">
+          <SolverSideContext.Provider value="working">
+            <div className="grid grid-cols-1 gap-y-5 auto-rows-max content-start">{children}</div>
+          </SolverSideContext.Provider>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function SideGrid({ side, children }: { side: SolverSide; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-5 gap-y-5 px-5 py-4 auto-rows-max content-start">
-      <SolverSideContext.Provider value={side}>{children}</SolverSideContext.Provider>
     </div>
   );
 }

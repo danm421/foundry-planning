@@ -17,7 +17,8 @@ import { useSolverMc } from "./use-solver-mc";
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
-import { SolverCompareGrid } from "./solver-compare-grid";
+import { SolverKpiStrip } from "./solver-kpi-strip";
+import { defaultReportForTab, type ReportKey } from "./report-tab-link";
 import { SolverSection, SolverWorkingOnly } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
@@ -26,10 +27,6 @@ import { SolverRowSavingsContributions } from "./solver-row-savings-contribution
 import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
-import { SolverPosGauge } from "./solver-pos-gauge";
-import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
-import { SolverYearsFundedKpi } from "./solver-years-funded-kpi";
-import { SolverLifetimeTaxKpi } from "./solver-lifetime-tax-kpi";
 import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
@@ -70,7 +67,6 @@ export function LiveSolverWorkspace({
   initialSource,
   initialSourceClientData,
   initialSourceProjection,
-  availableScenarios,
   modelPortfolios,
   milestones,
   lifeInsuranceSettings,
@@ -113,6 +109,18 @@ export function LiveSolverWorkspace({
   const [activeTab, setActiveTab] = useState<
     "retirement" | "techniques" | "life_insurance" | "estate_planning"
   >("retirement");
+
+  // The right-pane report is linked to the left input tab: selecting an input
+  // tab applies that tab's default report; clicking a report tab overrides it
+  // until the next input-tab change.
+  const [activeReport, setActiveReport] = useState<ReportKey>(() =>
+    defaultReportForTab("retirement"),
+  );
+  const handleTabChange = useCallback((tab: typeof activeTab) => {
+    setActiveTab(tab);
+    setActiveReport(defaultReportForTab(tab));
+  }, []);
+  const handleReportChange = useCallback((r: ReportKey) => setActiveReport(r), []);
 
   // LI assumptions live here so a sibling chart panel can read them while the
   // Life Insurance tab is mounted; SolverTabLifeInsurance is a controlled view.
@@ -353,14 +361,6 @@ export function LiveSolverWorkspace({
     if (mc.baseSuccessRate !== null) setCachedBaseSuccess(mc.baseSuccessRate);
   }, [mc.status, mc.baseSuccessRate]);
 
-  const baseState: "idle" | "computing" | "ready" | "error" =
-    cachedBaseSuccess !== null
-      ? "ready"
-      : mc.status === "loading"
-        ? "computing"
-        : mc.status === "error"
-          ? "error"
-          : "idle";
   const baseSuccess = cachedBaseSuccess;
 
   const mcWorkingSuccess =
@@ -394,16 +394,6 @@ export function LiveSolverWorkspace({
   const workingYearsFunded = yearsFullyFunded(currentProjection);
   const baseLifetimeTax = lifetimeTaxes(baseProjection);
   const workingLifetimeTax = lifetimeTaxes(currentProjection);
-
-  // Name of the plan shown in the right ("Scenario") column. Selection now lives
-  // in the top-right ScenarioChipRow (client header), so the column only labels
-  // what it's showing rather than carrying its own picker. Base facts (no
-  // `?scenario=`) is itself a valid right-column source, hence the fallback.
-  const scenarioName =
-    initialSource === "base"
-      ? "Base Facts"
-      : (availableScenarios.find((s) => s.id === initialSource)?.name ??
-        "Base Facts");
 
   // Launch an MC run. `withBase` true on the first/auto run (computes and
   // caches Base + Scenario); false on Recalculate (Scenario only). Clearing
@@ -777,186 +767,75 @@ export function LiveSolverWorkspace({
     };
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
-  // Pin the editing-surface tab bar directly beneath the sticky chart panel so
-  // Retirement / Techniques / Life Insurance stay reachable while the rows
-  // scroll. The chart panel sits at top-[100px] (app chrome height) and its own
-  // height changes (the expandable table), so we measure it rather than
-  // hard-coding the tab bar's sticky offset.
-  const chartStickyRef = useRef<HTMLDivElement>(null);
-  const [tabBarTop, setTabBarTop] = useState(100);
-  useEffect(() => {
-    const el = chartStickyRef.current;
-    if (!el) return;
-    // Tuck the bar up over the chart card's bottom padding (the panel's `pb-2` =
-    // 8px) so, once pinned, it sits tight beneath the chart's view controls
-    // rather than a padding-gap below them.
-    const measure = () => setTabBarTop(100 + el.offsetHeight - 8);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   return (
-    <div className="space-y-5">
-      {/* Pin the chart just below the collapsed header (Topbar 56px +
-          collapsed ClientHeader 44px = 100px) so it stays in view while the
-          data-entry grid below scrolls. z-20 keeps it above the scrolling
-          grid (a later sibling) but below the sticky headers (z-30/z-40). */}
-      <div ref={chartStickyRef} className="sticky top-[100px] z-20">
-        <SolverChartPanel
-          currentProjection={currentProjection}
-          baseProjection={baseProjection}
-          workingTree={workingTree}
-          computeStatus={computeStatus}
-          clientId={clientId}
-          liAssumptions={liAssumptions}
-          clientName={clientName}
-          spouseName={spouseName}
-          showLifeInsuranceTab={activeTab === "life_insurance"}
-          showEstateTab={activeTab === "estate_planning"}
-          baseTree={baseClientData}
-        />
-      </div>
-
-      {errorMessage ? (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 16 16"
-            className="mt-0.5 h-4 w-4 shrink-0"
-            fill="currentColor"
+    <div className="flex h-[calc(100vh-100px)] flex-col">
+      {/* 100px = Topbar 56 + collapsed ClientHeader 44 (existing app chrome) */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(360px,40%)_1fr]">
+        {/* LEFT — inputs, independent scroll */}
+        <div className="min-h-0 overflow-y-auto border-b border-hair lg:border-b-0 lg:border-r">
+          <div
+            role="tablist"
+            aria-label="Solver editing surface"
+            className="sticky top-0 z-10 flex gap-1 border-b border-hair-2 bg-card px-3 pt-0.5"
           >
-            <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm.75 9.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm-.75-7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4a.75.75 0 0 1 .75-.75Z" />
-          </svg>
-          <span>
-            <span className="font-medium">Recompute failed.</span>{" "}
-            <span className="text-crit/80">{errorMessage}</span>
-          </span>
-        </div>
-      ) : null}
-
-      {solveError ? (
-        <div role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-          Solve failed: {solveError}
-        </div>
-      ) : null}
-
-      <SolverCompareGrid
-        leftHeader={
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
-                Base Facts
-              </div>
-              <div className="mt-3 flex items-start gap-x-4">
-                <SolverPosGauge state={baseState} successPct={baseSuccess} />
-                <SolverEndingAssetsKpi value={baseEndingAssets} />
-                <SolverYearsFundedKpi value={baseYearsFunded} />
-                <SolverLifetimeTaxKpi value={baseLifetimeTax} />
-              </div>
-            </div>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "retirement"}
+              onClick={() => handleTabChange("retirement")}
+              className={
+                activeTab === "retirement"
+                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+              }
+            >
+              Retirement
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "techniques"}
+              onClick={() => handleTabChange("techniques")}
+              className={
+                activeTab === "techniques"
+                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+              }
+            >
+              Techniques
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "life_insurance"}
+              onClick={() => handleTabChange("life_insurance")}
+              className={
+                activeTab === "life_insurance"
+                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+              }
+            >
+              Life Insurance
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "estate_planning"}
+              onClick={() => handleTabChange("estate_planning")}
+              className={
+                activeTab === "estate_planning"
+                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+              }
+            >
+              Estate Planning
+            </button>
           </div>
-        }
-        rightHeader={
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
-                Scenario — {scenarioName}
-              </div>
-              <div className="mt-3 flex items-start gap-x-4">
-                <SolverPosGauge
-                  state={scenarioGauge.state}
-                  successPct={scenarioGauge.successPct}
-                  onRegenerate={handleRecalculate}
-                  solveActive={activeSolve !== null}
-                />
-                <SolverEndingAssetsKpi
-                  value={workingEndingAssets}
-                  delta={endingAssetsDelta}
-                  dimmed={computeStatus === "computing"}
-                />
-                <SolverYearsFundedKpi
-                  value={workingYearsFunded}
-                  delta={workingYearsFunded - baseYearsFunded}
-                  dimmed={computeStatus === "computing"}
-                />
-                <SolverLifetimeTaxKpi
-                  value={workingLifetimeTax}
-                  delta={workingLifetimeTax - baseLifetimeTax}
-                  dimmed={computeStatus === "computing"}
-                />
-              </div>
-            </div>
-          </div>
-        }
-      >
-        <div
-          role="tablist"
-          aria-label="Solver editing surface"
-          className="sticky z-10 flex gap-1 border-b border-hair-2 bg-card px-3 pt-0.5"
-          style={{ top: tabBarTop }}
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "retirement"}
-            onClick={() => setActiveTab("retirement")}
-            className={
-              activeTab === "retirement"
-                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-            }
-          >
-            Retirement
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "techniques"}
-            onClick={() => setActiveTab("techniques")}
-            className={
-              activeTab === "techniques"
-                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-            }
-          >
-            Techniques
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "life_insurance"}
-            onClick={() => setActiveTab("life_insurance")}
-            className={
-              activeTab === "life_insurance"
-                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-            }
-          >
-            Life Insurance
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "estate_planning"}
-            onClick={() => setActiveTab("estate_planning")}
-            className={
-              activeTab === "estate_planning"
-                ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-            }
-          >
-            Estate Planning
-          </button>
-        </div>
 
-        {activeTab === "retirement" && (
-          <>
-            <SolverSection title="Goals">
+          <div className="px-1 pb-4">
+            {activeTab === "retirement" && (
+              <>
+                <SolverSection title="Goals">
               <SolverRowRetirementAges
                 baseClient={baseClientData.client}
                 workingClient={workingTree.client}
@@ -1087,14 +966,74 @@ export function LiveSolverWorkspace({
           />
         )}
 
-        {activeTab === "estate_planning" && (
-          <SolverTabEstatePlanning
-            baseClientData={baseClientData}
-            clientData={workingTree}
-            onChange={pushMutation}
-          />
-        )}
-      </SolverCompareGrid>
+            {activeTab === "estate_planning" && (
+              <SolverTabEstatePlanning
+                baseClientData={baseClientData}
+                clientData={workingTree}
+                onChange={pushMutation}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT — reports, scroll as one document */}
+        <div className="min-h-0 overflow-y-auto">
+          <div className="space-y-4 p-4">
+            <SolverChartPanel
+              currentProjection={currentProjection}
+              baseProjection={baseProjection}
+              workingTree={workingTree}
+              computeStatus={computeStatus}
+              clientId={clientId}
+              liAssumptions={liAssumptions}
+              clientName={clientName}
+              spouseName={spouseName}
+              activeReport={activeReport}
+              onReportChange={handleReportChange}
+              baseTree={baseClientData}
+            />
+            <SolverKpiStrip
+              posState={scenarioGauge.state}
+              workingSuccess={scenarioGauge.successPct}
+              baselineSuccess={baseSuccess}
+              endingAssets={workingEndingAssets}
+              endingAssetsDelta={endingAssetsDelta}
+              yearsFunded={workingYearsFunded}
+              yearsFundedDelta={workingYearsFunded - baseYearsFunded}
+              lifetimeTax={workingLifetimeTax}
+              lifetimeTaxDelta={workingLifetimeTax - baseLifetimeTax}
+              dimmed={computeStatus === "computing"}
+              onRegenerate={handleRecalculate}
+              solveActive={activeSolve !== null}
+            />
+            {errorMessage ? (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  fill="currentColor"
+                >
+                  <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm.75 9.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm-.75-7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4a.75.75 0 0 1 .75-.75Z" />
+                </svg>
+                <span>
+                  <span className="font-medium">Recompute failed.</span>{" "}
+                  <span className="text-crit/80">{errorMessage}</span>
+                </span>
+              </div>
+            ) : null}
+
+            {solveError ? (
+              <div role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+                Solve failed: {solveError}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       <SolverActionBar
         hasMutations={mutations.length > 0}
