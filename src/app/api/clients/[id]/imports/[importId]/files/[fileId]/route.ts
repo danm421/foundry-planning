@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
+import { get } from "@vercel/blob";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImportFiles } from "@/db/schema";
@@ -85,14 +86,11 @@ export async function GET(_request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    // Server-mediated fetch: never hand the client a direct blob URL —
-    // keeps access policy enforced through this route and audit-logged.
-    const upstream = await fetch(row.blobUrl);
-    if (!upstream.ok || !upstream.body) {
-      return NextResponse.json(
-        { error: "Blob fetch failed" },
-        { status: 502 },
-      );
+    // Server-mediated read through the SDK: a plain fetch() of the private
+    // blob URL 401s — get() authenticates via BLOB_READ_WRITE_TOKEN.
+    const result = await get(row.blobPathname, { access: "private" });
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      return NextResponse.json({ error: "Blob fetch failed" }, { status: 502 });
     }
 
     await recordAudit({
@@ -104,12 +102,12 @@ export async function GET(_request: NextRequest, { params }: Params) {
       metadata: { importId },
     });
 
-    return new NextResponse(upstream.body, {
+    return new NextResponse(result.stream, {
       status: 200,
       headers: {
-        "Content-Type":
-          upstream.headers.get("Content-Type") ?? "application/octet-stream",
-        "Content-Disposition": `inline; filename="${escapeQuotes(row.originalFilename)}"`,
+        "Content-Type": result.blob.contentType ?? "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${escapeQuotes(row.originalFilename)}"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       },
     });
