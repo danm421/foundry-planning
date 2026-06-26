@@ -1550,7 +1550,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("income_salaries", () => <DrillBtn segment="salaries" label="Salaries" />, (r) => r.income.salaries),
-        numCol("income_ss", () => hasSocialSecurityDetail ? <DrillBtn segment="socialSecurity" label="Social Security" /> : <>Social Security</>, (r) => r.income.socialSecurity),
+        numCol("income_ss", () => <DrillBtn segment="socialSecurity" label="Social Security" />, (r) => r.income.socialSecurity),
         numCol("income_business", () => <DrillBtn segment="business_income" label="Business" />, (r) => r.income.business),
         numCol("income_trust", () => <DrillBtn segment="trust_income" label="Trust" />, (r) => r.income.trust),
         numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
