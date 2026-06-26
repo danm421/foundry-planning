@@ -9,6 +9,7 @@ import {
   type SolverMutationKey,
 } from "@/lib/solver/types";
 import { activeIncomes } from "@/lib/solver/active-incomes";
+import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverIncomeEditDialog } from "./solver-income-edit-dialog";
 
@@ -121,36 +122,21 @@ function formatPct(decimal: number): string {
   return pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(2)}%`;
 }
 
-function detailParts(income: Income): string[] {
+export function incomeDetailRows(income: Income): HintRow[] {
+  const rows: HintRow[] = [];
   const tt =
     income.taxType != null && income.taxType in TAX_TYPE_SHORT
       ? TAX_TYPE_SHORT[income.taxType as IncomeTaxType]
       : null;
-  return [
-    tt,
-    income.isSelfEmployment ? "SE" : null,
-    income.growthSource === "inflation"
-      ? "infl-linked growth"
-      : income.growthRate != null && income.growthRate > 0
-        ? `${formatPct(income.growthRate)} growth`
-        : null,
-    income.endYear != null ? `thru ${income.endYear}` : null,
-  ].filter((s): s is string => s != null);
-}
-
-function DetailLine({ income }: { income: Income }) {
-  const parts = detailParts(income);
-  if (parts.length === 0) return null;
-  return (
-    <div className="mt-1 text-[11px] text-ink-3 leading-snug">
-      {parts.map((p, i) => (
-        <span key={i}>
-          {i > 0 ? <span className="text-ink-4"> · </span> : null}
-          <span>{p}</span>
-        </span>
-      ))}
-    </div>
-  );
+  if (tt) rows.push({ term: "Taxed as", value: tt });
+  if (income.isSelfEmployment) rows.push({ value: "SE" });
+  if (income.growthSource === "inflation") {
+    rows.push({ term: "Growth", value: "infl-linked" });
+  } else if (income.growthRate != null && income.growthRate > 0) {
+    rows.push({ term: "Growth", value: formatPct(income.growthRate) });
+  }
+  if (income.endYear != null) rows.push({ term: "Through", value: String(income.endYear) });
+  return rows;
 }
 
 function Editable({
@@ -172,12 +158,16 @@ function Editable({
   // Bumps on reset to remount CurrencyAmountInput so its local `display` state
   // re-seeds from the reverted base value (it seeds from defaultValue once).
   const [resetTick, setResetTick] = useState(0);
+  const rows = incomeDetailRows(workingIncome);
   const inputId = `inc-${workingIncome.id}`;
   return (
     <div>
-      <label className="block text-[11px] text-ink-3 truncate" htmlFor={inputId}>
-        {label}
-      </label>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={inputId}>
+          {label}
+        </label>
+        {rows.length ? <FieldHintPopover label={`${label} details`} rows={rows} /> : null}
+      </div>
       <div className="mt-1 flex items-center gap-1.5">
         <CurrencyAmountInput
           key={`${workingIncome.id}-${resetTick}`}
@@ -204,7 +194,6 @@ function Editable({
           </svg>
         </button>
       </div>
-      <DetailLine income={workingIncome} />
       <SolverBaseHint
         base={baseIncome.annualAmount}
         working={workingIncome.annualAmount}

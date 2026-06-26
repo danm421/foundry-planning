@@ -10,6 +10,7 @@ import {
   type SolverPerson,
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
+import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverSsEditDialog } from "./solver-ss-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
@@ -157,6 +158,8 @@ function EditableSummary({
     activeSolve?.target.kind === "ss-claim-age" &&
     (activeSolve.target as { kind: "ss-claim-age"; person: SolverPerson }).person === person;
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
+  const amountLabel = ssAmountLabel(row);
+  const detailRows = ssDetailRows(row, client, person);
 
   // Once a person is already collecting, their claim age is locked in the past
   // and can't be solved — mirror the engine's "has claimed this year" test.
@@ -199,7 +202,10 @@ function EditableSummary({
 
   return (
     <div>
-      <div className="text-[11px] text-ink-3">{label}</div>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] text-ink-3">{label}</span>
+        {detailRows.length ? <FieldHintPopover label={`${label} details`} rows={detailRows} /> : null}
+      </div>
       <div className="mt-0.5 flex items-start gap-1.5">
         <button
           type="button"
@@ -207,9 +213,7 @@ function EditableSummary({
           className="group flex flex-1 items-start justify-between gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-left text-[14px] text-ink hover:border-accent/60 hover:bg-card-hover focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 border-l-2 border-l-accent/70"
           aria-label={`Edit ${label}`}
         >
-          <span className="flex-1 leading-snug text-ink-2">
-            {renderSummary(row, client, person)}
-          </span>
+          <span className="flex-1 leading-snug tabular text-ink-2">{amountLabel}</span>
           <svg
             aria-hidden="true"
             viewBox="0 0 16 16"
@@ -256,54 +260,70 @@ function EditableSummary({
   );
 }
 
+function claimLabelFor(
+  row: Income,
+  client: ClientData["client"],
+  person: SolverPerson,
+): string {
+  const claimMode = row.claimingAgeMode ?? "years";
+  if (claimMode === "fra") return "FRA";
+  if (claimMode === "at_retirement") {
+    const ret = person === "spouse" ? client.spouseRetirementAge : client.retirementAge;
+    return `Retirement${ret != null ? ` (${ret})` : ""}`;
+  }
+  const years = row.claimingAge ?? 67;
+  const months = row.claimingAgeMonths ?? 0;
+  return months > 0 ? `${years}y ${months}mo` : `${years}`;
+}
+
+function colaPct(row: Income): string | null {
+  if (row.growthRate == null) return null;
+  return `${(row.growthRate * 100).toFixed((row.growthRate * 100) % 1 === 0 ? 0 : 1)}%`;
+}
+
+export function ssAmountLabel(row: Income): string {
+  const benefitMode = row.ssBenefitMode ?? "manual_amount";
+  if (benefitMode === "no_benefit") return "No benefit";
+  if (benefitMode === "pia_at_fra") {
+    return row.piaMonthly != null
+      ? `$${Math.round(row.piaMonthly).toLocaleString()}/mo PIA`
+      : "PIA";
+  }
+  return row.annualAmount > 0
+    ? `$${Math.round(row.annualAmount).toLocaleString()}/yr`
+    : "Manual amount";
+}
+
+export function ssDetailRows(
+  row: Income,
+  client: ClientData["client"],
+  person: SolverPerson,
+): HintRow[] {
+  if ((row.ssBenefitMode ?? "manual_amount") === "no_benefit") return [];
+  const rows: HintRow[] = [{ term: "Claim at", value: claimLabelFor(row, client, person) }];
+  const cola = colaPct(row);
+  if (cola) rows.push({ term: "COLA", value: cola });
+  return rows;
+}
+
 function renderSummary(
   row: Income,
   client: ClientData["client"],
   person: SolverPerson,
 ): React.ReactNode {
-  const benefitMode = row.ssBenefitMode ?? "manual_amount";
-  if (benefitMode === "no_benefit") {
+  if ((row.ssBenefitMode ?? "manual_amount") === "no_benefit") {
     return <span className="text-ink-3">No benefit</span>;
   }
-
-  const claimMode = row.claimingAgeMode ?? "years";
-  let claimLabel: string;
-  if (claimMode === "fra") {
-    claimLabel = "FRA";
-  } else if (claimMode === "at_retirement") {
-    const ret =
-      person === "spouse" ? client.spouseRetirementAge : client.retirementAge;
-    claimLabel = `Retirement${ret != null ? ` (${ret})` : ""}`;
-  } else {
-    const years = row.claimingAge ?? 67;
-    const months = row.claimingAgeMonths ?? 0;
-    claimLabel = months > 0 ? `${years}y ${months}mo` : `${years}`;
-  }
-
-  const cola = row.growthRate != null
-    ? `${(row.growthRate * 100).toFixed(row.growthRate * 100 % 1 === 0 ? 0 : 1)}% COLA`
-    : null;
-
-  let amountLabel: string;
-  if (benefitMode === "pia_at_fra") {
-    amountLabel = row.piaMonthly != null
-      ? `$${Math.round(row.piaMonthly).toLocaleString()}/mo PIA`
-      : "PIA";
-  } else {
-    amountLabel = row.annualAmount > 0
-      ? `$${Math.round(row.annualAmount).toLocaleString()}/yr`
-      : "Manual amount";
-  }
-
+  const cola = colaPct(row);
   return (
     <span className="tabular">
-      <span>{amountLabel}</span>
+      <span>{ssAmountLabel(row)}</span>
       <span className="text-ink-3"> · </span>
-      <span>Claim at {claimLabel}</span>
+      <span>Claim at {claimLabelFor(row, client, person)}</span>
       {cola ? (
         <>
           <span className="text-ink-3"> · </span>
-          <span>{cola}</span>
+          <span>{cola} COLA</span>
         </>
       ) : null}
     </span>
