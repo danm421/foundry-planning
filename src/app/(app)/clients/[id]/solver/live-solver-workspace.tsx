@@ -959,7 +959,6 @@ export function LiveSolverWorkspace({
         {activeTab === "techniques" && (
           <SolverTechniquesTab
             clientId={clientId}
-            baseClientData={baseClientData}
             workingTree={workingTree}
             accounts={(baseClientData.accounts ?? []).map((a) => ({
               id: a.id,

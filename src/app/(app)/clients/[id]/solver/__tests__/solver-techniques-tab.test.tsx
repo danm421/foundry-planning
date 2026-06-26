@@ -32,9 +32,7 @@ describe("SolverTechniquesTab", () => {
   it("renders an existing working technique with an Add control", () => {
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([rc])}
-        workingTree={tree([rc])}
+        {...baseProps}        workingTree={tree([rc])}
         onChange={vi.fn()}
       />,
     );
@@ -49,9 +47,7 @@ describe("SolverTechniquesTab", () => {
   it("shows Add controls as the empty state when no techniques are present", () => {
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([])}
-        workingTree={tree([])}
+        {...baseProps}        workingTree={tree([])}
         onChange={vi.fn()}
       />,
     );
@@ -71,9 +67,7 @@ describe("SolverTechniquesTab", () => {
     const onChange = vi.fn();
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([rc])}
-        workingTree={tree([rc])}
+        {...baseProps}        workingTree={tree([rc])}
         onChange={onChange}
       />,
     );
@@ -91,9 +85,7 @@ describe("SolverTechniquesTab", () => {
     const fullRc = { ...rc, id: "rc-full", conversionType: "full_account" as const };
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([])}
-        workingTree={tree([fixedRc, fullRc] as (typeof rc)[])}
+        {...baseProps}        workingTree={tree([fixedRc, fullRc] as (typeof rc)[])}
         onChange={vi.fn()}
         onSolveStart={onSolveStart}
       />,

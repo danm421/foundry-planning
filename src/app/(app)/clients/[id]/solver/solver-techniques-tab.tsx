@@ -39,7 +39,6 @@ interface EditorState {
 
 interface Props {
   clientId: string;
-  baseClientData: ClientData;
   workingTree: ClientData;
   accounts: {
     id: string;

@@ -206,7 +206,7 @@ function Editable({
                 onResetField([
                   mutationKey({
                     kind: "expense-annual-amount",
-                    expenseId: expense.id,
+                    expenseId: baseExpense.id,
                     annualAmount: 0,
                   }),
                 ]);

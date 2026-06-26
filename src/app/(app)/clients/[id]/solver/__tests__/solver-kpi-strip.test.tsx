@@ -28,4 +28,11 @@ describe("SolverKpiStrip", () => {
     render(<SolverKpiStrip {...base} />);
     expect(screen.getByText(/from 84%/)).toBeTruthy();
   });
+
+  it("still renders the base sub-hint when the gauge is stale", () => {
+    // The sub-hint gate is `ready || stale` — an edited (stale) scenario keeps
+    // showing the delta from base until the recompute lands.
+    render(<SolverKpiStrip {...base} posState="stale" />);
+    expect(screen.getByText(/from 84%/)).toBeTruthy();
+  });
 });
