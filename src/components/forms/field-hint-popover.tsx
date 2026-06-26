@@ -1,7 +1,7 @@
 // src/components/forms/field-hint-popover.tsx
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 /** One row in the hint box. Omit `term` for a value-only (bare-tag) row. */
@@ -24,12 +24,14 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
   const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
 
+  const close = useCallback(() => {
+    setOpen(false);
+    setCoords(null);
+  }, []);
+
   // Measure badge + box once open, place to the right (flip left / clamp at edges).
   useEffect(() => {
-    if (!open) {
-      setCoords(null);
-      return;
-    }
+    if (!open) return;
     const badge = badgeRef.current;
     const panel = panelRef.current;
     if (!badge || !panel) return;
@@ -46,9 +48,8 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
   // Close on Escape / scroll / resize while open.
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
@@ -58,7 +59,7 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
       window.removeEventListener("resize", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, close]);
 
   if (rows.length === 0) return null;
 
@@ -66,7 +67,7 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
     <span
       className="inline-flex shrink-0"
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={close}
     >
       <button
         ref={badgeRef}
@@ -74,7 +75,7 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
         aria-label={label}
         aria-describedby={open ? panelId : undefined}
         onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onBlur={close}
         className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-ink-3 text-[10px] font-semibold leading-none text-ink-2 hover:border-ink-2 hover:text-ink focus:border-ink-2 focus:text-ink focus:outline-none"
       >
         ?
