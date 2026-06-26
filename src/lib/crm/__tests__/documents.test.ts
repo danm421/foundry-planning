@@ -111,7 +111,9 @@ async function makeHousehold(firmId: string, name = "Doc Household") {
 }
 
 function makeFile(name: string, size: number, type = "application/pdf"): File {
-  const body = new Uint8Array(size);
+  const body = new Uint8Array(Math.max(size, 8));
+  // "%PDF-1.4" magic so the content validator accepts the fixture.
+  body.set([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34], 0);
   return new File([body], name, { type });
 }
 
@@ -166,6 +168,21 @@ describe("uploadCrmDocument", () => {
     await expect(uploadCrmDocument(h.id, file)).rejects.toThrow(/too large/i);
 
     // No DB writes happened.
+    const docs = await db.query.crmHouseholdDocuments.findMany({
+      where: eq(crmHouseholdDocuments.householdId, h.id),
+    });
+    expect(docs).toHaveLength(0);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file whose bytes are not an allowed type", async () => {
+    const h = await makeHousehold(ORG);
+    const html = new File(
+      [new TextEncoder().encode("<html><script>alert(1)</script></html>")],
+      "evil.pdf",
+      { type: "application/pdf" },
+    );
+    await expect(uploadCrmDocument(h.id, html)).rejects.toThrow(/unsupported or unsafe/i);
     const docs = await db.query.crmHouseholdDocuments.findMany({
       where: eq(crmHouseholdDocuments.householdId, h.id),
     });
@@ -233,7 +250,7 @@ describe("upload into a folder", () => {
       householdId, firmId: "test_org_documents", name: "F", isSystem: false, sortOrder: 0,
     }).returning();
     vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
-    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"), {
+    const doc = await uploadCrmDocument(householdId, makeFile("a.pdf", 16), {
       folderId: folder.id, description: "Q1 statement",
     });
     expect(doc.folderId).toBe(folder.id);
@@ -245,7 +262,7 @@ describe("upload into a folder", () => {
 describe("updateCrmDocument", () => {
   it("moves a document to a folder and renames it", async () => {
     vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
-    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const doc = await uploadCrmDocument(householdId, makeFile("a.pdf", 16));
     const [folder] = await db.insert(crmDocumentFolders).values({
       householdId, firmId: "test_org_documents", name: "Dest", isSystem: false, sortOrder: 0,
     }).returning();
@@ -259,7 +276,7 @@ describe("updateCrmDocument", () => {
 
   it("rejects moving into a folder from another household", async () => {
     vi.mocked(put).mockResolvedValue({ pathname: "crm/p" } as never);
-    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const doc = await uploadCrmDocument(householdId, makeFile("a.pdf", 16));
     const [otherHH] = await db.insert(crmHouseholds).values({
       firmId: "test_org_documents", advisorId: "x", name: "Other",
     }).returning();
@@ -275,7 +292,7 @@ describe("updateCrmDocument", () => {
 describe("resolveDocumentBlobPathname", () => {
   it("returns own storageKey for an upload", async () => {
     vi.mocked(put).mockResolvedValue({ pathname: "crm/own" } as never);
-    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const doc = await uploadCrmDocument(householdId, makeFile("a.pdf", 16));
     expect(await resolveDocumentBlobPathname(doc)).toBe("crm/own");
   });
 
@@ -348,7 +365,7 @@ describe("listDocumentVersions", () => {
 
   it("returns a single-element list for a non-grouped document", async () => {
     vi.mocked(put).mockResolvedValue({ pathname: "crm/own" } as never);
-    const doc = await uploadCrmDocument(householdId, new File(["x"], "a.pdf"));
+    const doc = await uploadCrmDocument(householdId, makeFile("a.pdf", 16));
     const versions = await listDocumentVersions(doc.id);
     expect(versions).toHaveLength(1);
     expect(versions[0].id).toBe(doc.id);

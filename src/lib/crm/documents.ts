@@ -8,6 +8,7 @@ import { requireVaultAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
+import { validateDocumentUpload } from "@/lib/files/content-type";
 
 /**
  * CRM household document storage. Mirrors `src/lib/imports/blob.ts` but
@@ -50,6 +51,9 @@ export async function uploadCrmDocument(
   const { orgId } = await requireVaultAccess(householdId);
   const { userId } = await auth();
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const { mimeType } = validateDocumentUpload(file, buffer);
+
   const safe = sanitizeFilename(file.name || "document");
   // Include a random UUID segment so two uploads of the same filename
   // landing in the same millisecond can't collide with `addRandomSuffix: false`.
@@ -69,7 +73,7 @@ export async function uploadCrmDocument(
       // Persist the pathname (not the public-looking URL) so all reads
       // go back through the SDK — never embed the blob URL.
       storageKey: result.pathname,
-      mimeType: file.type || null,
+      mimeType,
       sizeBytes: file.size,
       uploadedBy: userId ?? null,
       folderId: opts.folderId ?? null,
