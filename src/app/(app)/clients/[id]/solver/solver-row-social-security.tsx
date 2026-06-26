@@ -3,9 +3,14 @@
 import { useState } from "react";
 import type { ClientData, Income } from "@/engine";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
-import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
+import {
+  mutationKey,
+  type SolverMutation,
+  type SolverMutationKey,
+  type SolverPerson,
+} from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
-import { useSolverSide } from "./solver-section";
+import { SolverBaseHint } from "./solver-base-hint";
 import { SolverSsEditDialog } from "./solver-ss-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
 
@@ -26,6 +31,7 @@ interface Props {
   baseClient: ClientData["client"];
   workingClient: ClientData["client"];
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS?: number) => void;
   onSolveCancel: () => void;
@@ -37,12 +43,11 @@ export function SolverRowSocialSecurity({
   baseClient,
   workingClient,
   onChange,
+  onResetField,
   activeSolve,
   onSolveStart,
   onSolveCancel,
 }: Props) {
-  const side = useSolverSide();
-
   const baseClientSs = ssFor(baseIncomes, "client");
   const workingClientSs = ssFor(workingIncomes, "client");
   const baseSpouseSs = ssFor(baseIncomes, "spouse");
@@ -55,46 +60,34 @@ export function SolverRowSocialSecurity({
       <div className="text-[13px] font-medium text-ink">Social Security</div>
       <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
         {baseClientSs ? (
-          side === "base" ? (
-            <ReadOnlySummary
-              label={`${baseClient.firstName}'s SS`}
-              row={baseClientSs}
-              client={baseClient}
-              person="client"
-            />
-          ) : (
-            <EditableSummary
-              label={`${workingClient.firstName}'s SS`}
-              row={workingClientSs ?? baseClientSs}
-              client={workingClient}
-              person="client"
-              activeSolve={activeSolve}
-              onSolveStart={onSolveStart}
-              onSolveCancel={onSolveCancel}
-              onChange={onChange}
-            />
-          )
+          <EditableSummary
+            label={`${workingClient.firstName}'s SS`}
+            row={workingClientSs ?? baseClientSs}
+            client={workingClient}
+            baseRow={baseClientSs}
+            baseClient={baseClient}
+            person="client"
+            activeSolve={activeSolve}
+            onSolveStart={onSolveStart}
+            onSolveCancel={onSolveCancel}
+            onChange={onChange}
+            onResetField={onResetField}
+          />
         ) : null}
         {baseSpouseSs ? (
-          side === "base" ? (
-            <ReadOnlySummary
-              label={`${baseClient.spouseName ?? "Spouse"}'s SS`}
-              row={baseSpouseSs}
-              client={baseClient}
-              person="spouse"
-            />
-          ) : (
-            <EditableSummary
-              label={`${workingClient.spouseName ?? "Spouse"}'s SS`}
-              row={workingSpouseSs ?? baseSpouseSs}
-              client={workingClient}
-              person="spouse"
-              activeSolve={activeSolve}
-              onSolveStart={onSolveStart}
-              onSolveCancel={onSolveCancel}
-              onChange={onChange}
-            />
-          )
+          <EditableSummary
+            label={`${workingClient.spouseName ?? "Spouse"}'s SS`}
+            row={workingSpouseSs ?? baseSpouseSs}
+            client={workingClient}
+            baseRow={baseSpouseSs}
+            baseClient={baseClient}
+            person="spouse"
+            activeSolve={activeSolve}
+            onSolveStart={onSolveStart}
+            onSolveCancel={onSolveCancel}
+            onChange={onChange}
+            onResetField={onResetField}
+          />
         ) : null}
       </div>
     </div>
@@ -105,24 +98,31 @@ function ssFor(incomes: ClientData["incomes"], owner: SolverPerson): Income | un
   return incomes.find((i) => i.type === "social_security" && i.owner === owner);
 }
 
-function ReadOnlySummary({
-  label,
-  row,
-  client,
-  person,
-}: {
-  label: string;
-  row: Income;
-  client: ClientData["client"];
-  person: SolverPerson;
-}) {
+/** The six mutation keys a single person's SS edit can write — reset clears all
+ *  so a partial reset can't leave half the change behind. */
+function ssResetKeys(person: SolverPerson): SolverMutationKey[] {
+  return [
+    mutationKey({ kind: "ss-benefit-mode", person, mode: "manual_amount" }),
+    mutationKey({ kind: "ss-pia-monthly", person, amount: 0 }),
+    mutationKey({ kind: "ss-annual-amount", person, amount: 0 }),
+    mutationKey({ kind: "ss-claim-age-mode", person, mode: "years" }),
+    mutationKey({ kind: "ss-claim-age", person, age: 0 }),
+    mutationKey({ kind: "ss-cola", person, rate: 0 }),
+  ];
+}
+
+/** True when any SS field surfaced by renderSummary differs base↔working. The
+ *  rows are distinct Income object refs, so Object.is would always say changed —
+ *  compare the meaningful fields instead. */
+function ssChanged(base: Income, working: Income): boolean {
   return (
-    <div>
-      <div className="text-[11px] text-ink-3">{label}</div>
-      <div className="mt-0.5 text-[14px] text-ink-2 leading-snug">
-        {renderSummary(row, client, person)}
-      </div>
-    </div>
+    (base.ssBenefitMode ?? "manual_amount") !== (working.ssBenefitMode ?? "manual_amount") ||
+    (base.claimingAgeMode ?? "years") !== (working.claimingAgeMode ?? "years") ||
+    (base.claimingAge ?? 67) !== (working.claimingAge ?? 67) ||
+    (base.claimingAgeMonths ?? 0) !== (working.claimingAgeMonths ?? 0) ||
+    (base.piaMonthly ?? null) !== (working.piaMonthly ?? null) ||
+    base.annualAmount !== working.annualAmount ||
+    (base.growthRate ?? null) !== (working.growthRate ?? null)
   );
 }
 
@@ -130,20 +130,26 @@ function EditableSummary({
   label,
   row,
   client,
+  baseRow,
+  baseClient,
   person,
   activeSolve,
   onSolveStart,
   onSolveCancel,
   onChange,
+  onResetField,
 }: {
   label: string;
   row: Income;
   client: ClientData["client"];
+  baseRow: Income;
+  baseClient: ClientData["client"];
   person: SolverPerson;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS?: number) => void;
   onSolveCancel: () => void;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const target: SolveLeverKey = { kind: "ss-claim-age", person };
@@ -227,6 +233,15 @@ function EditableSummary({
           />
         </div>
       </div>
+      <SolverBaseHint
+        base={baseRow}
+        working={row}
+        changed={ssChanged(baseRow, row)}
+        format={() => renderSummary(baseRow, baseClient, person)}
+        onReset={
+          onResetField ? () => onResetField(ssResetKeys(person)) : undefined
+        }
+      />
       {open ? (
         <SolverSsEditDialog
           open={open}

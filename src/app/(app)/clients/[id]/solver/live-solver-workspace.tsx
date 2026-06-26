@@ -529,6 +529,22 @@ export function LiveSolverWorkspace({
     setEditNonce((n) => n + 1); // marks the Scenario PoS outdated
   }
 
+  // Per-field reset: drop the given mutation keys from the map, mirroring
+  // pushMutation's staleness side-effects (a reset is an edit). Clearing one or
+  // more keys reverts those levers to their base/working values.
+  const clearMutations = useCallback((keys: SolverMutationKey[]) => {
+    setMutationMap((prev) => {
+      if (!keys.some((k) => prev.has(k))) return prev;
+      const next = new Map(prev);
+      for (const k of keys) next.delete(k);
+      return next;
+    });
+    setComputeStatus("stale");
+    setSolvedPoS(null);
+    setSolvedSeed(null);
+    setEditNonce((n) => n + 1); // a per-field reset is an edit → Scenario stale
+  }, []);
+
   const handleSolveStart = useCallback(
     (
       target: SolveLeverKey,
@@ -840,6 +856,7 @@ export function LiveSolverWorkspace({
                 baseClient={baseClientData.client}
                 workingClient={workingTree.client}
                 onChange={pushMutation}
+                onResetField={clearMutations}
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
@@ -848,12 +865,14 @@ export function LiveSolverWorkspace({
                 baseClient={baseClientData.client}
                 workingClient={workingTree.client}
                 onChange={pushMutation}
+                onResetField={clearMutations}
               />
               <SolverRowLivingExpenseScale
                 baseExpenses={baseClientData.expenses}
                 workingExpenses={workingTree.expenses}
                 currentYear={currentYear}
                 onChange={pushMutation}
+                onResetField={clearMutations}
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
@@ -864,6 +883,7 @@ export function LiveSolverWorkspace({
                 baseClient={baseClientData.client}
                 workingClient={workingTree.client}
                 onChange={pushMutation}
+                onResetField={clearMutations}
                 activeSolve={activeSolve}
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
