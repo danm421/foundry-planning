@@ -265,6 +265,7 @@ export type AuditAction =
   | "crm.task.comment"
   | "crm.task.file_uploaded"
   | "crm.task.file_deleted"
+  | "crm.task.file_downloaded"
   | "crm.tag.create"
   // CRM Notes (view over crm_activity)
   | "crm.note.create"
