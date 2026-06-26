@@ -1,0 +1,23 @@
+/** The five right-pane report views. Mirrors SolverChartPanel's tab ids. */
+export type ReportKey = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance" | "estate";
+
+/** The four left-pane input tabs. */
+export type InputTab = "retirement" | "techniques" | "life_insurance" | "estate_planning";
+
+/**
+ * Default report shown on the right when a left input tab is selected.
+ * The advisor can override by clicking a report tab; the override holds until
+ * the next input-tab change (handled in the workspace, not here).
+ */
+export function defaultReportForTab(tab: InputTab): ReportKey {
+  switch (tab) {
+    case "life_insurance":
+      return "lifeInsurance";
+    case "estate_planning":
+      return "estate";
+    case "retirement":
+    case "techniques":
+    default:
+      return "portfolio";
+  }
+}

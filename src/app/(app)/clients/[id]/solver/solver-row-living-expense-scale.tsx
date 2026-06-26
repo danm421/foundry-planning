@@ -2,9 +2,13 @@
 
 import { useState } from "react";
 import type { ClientData, Expense } from "@/engine";
-import type { SolverMutation } from "@/lib/solver/types";
+import {
+  mutationKey,
+  type SolverMutation,
+  type SolverMutationKey,
+} from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
-import { useSolverSide } from "./solver-section";
+import { SolverBaseHint } from "./solver-base-hint";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
@@ -25,6 +29,7 @@ interface Props {
   workingExpenses: ClientData["expenses"];
   currentYear: number;
   onChange(m: SolverMutation): void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -35,11 +40,11 @@ export function SolverRowLivingExpenseScale({
   workingExpenses,
   currentYear,
   onChange,
+  onResetField,
   activeSolve,
   onSolveStart,
   onSolveCancel,
 }: Props) {
-  const side = useSolverSide();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const baseLiving = baseExpenses.filter((e) => e.type === "living");
   const hasLivingRows = baseLiving.length > 0;
@@ -52,31 +57,29 @@ export function SolverRowLivingExpenseScale({
     <div className="space-y-2.5 col-span-2">
       <div className="flex items-center gap-2">
         <div className="text-[13px] font-medium text-ink">Living Expenses</div>
-        {side === "working" ? (
-          <div className="relative">
-            <SolverSolveIcon
-              label="Solve Maximum Retirement Spend"
-              tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
-              disabled={otherSolveActive}
-              onClick={() => setPopoverOpen(true)}
+        <div className="relative">
+          <SolverSolveIcon
+            label="Solve Maximum Retirement Spend"
+            tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
+            disabled={otherSolveActive}
+            onClick={() => setPopoverOpen(true)}
+          />
+          {popoverOpen ? (
+            <SolverSolvePopover
+              title="Solve Maximum Retirement Spend"
+              rangeLabel="$0 – resource cap"
+              defaultTargetPct={85}
+              open={popoverOpen}
+              onClose={() => setPopoverOpen(false)}
+              onSubmit={(targetPoS) => {
+                setPopoverOpen(false);
+                onSolveStart(target, targetPoS);
+              }}
             />
-            {popoverOpen ? (
-              <SolverSolvePopover
-                title="Solve Maximum Retirement Spend"
-                rangeLabel="$0 – resource cap"
-                defaultTargetPct={85}
-                open={popoverOpen}
-                onClose={() => setPopoverOpen(false)}
-                onSubmit={(targetPoS) => {
-                  setPopoverOpen(false);
-                  onSolveStart(target, targetPoS);
-                }}
-              />
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
-      {side === "working" && isSolvingHere ? (
+      {isSolvingHere ? (
         <SolverSolveProgressStrip
           title={`Solving Maximum Retirement Spend for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
@@ -91,11 +94,6 @@ export function SolverRowLivingExpenseScale({
           {hasLivingRows ? (
             baseLiving.map((baseExpense) => {
               const label = labelFor(baseExpense, currentYear);
-              if (side === "base") {
-                return (
-                  <ReadOnly key={baseExpense.id} label={label} expense={baseExpense} />
-                );
-              }
               const workingExpense =
                 workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
               return (
@@ -103,6 +101,7 @@ export function SolverRowLivingExpenseScale({
                   key={baseExpense.id}
                   label={label}
                   expense={workingExpense}
+                  baseExpense={baseExpense}
                   onCommit={(n) =>
                     onChange({
                       kind: "expense-annual-amount",
@@ -110,6 +109,7 @@ export function SolverRowLivingExpenseScale({
                       annualAmount: n,
                     })
                   }
+                  onResetField={onResetField}
                 />
               );
             })
@@ -166,40 +166,55 @@ function DetailLine({ expense }: { expense: Expense }) {
   );
 }
 
-function ReadOnly({ label, expense }: { label: string; expense: Expense }) {
-  return (
-    <div>
-      <div className="text-[11px] text-ink-3 truncate">{label}</div>
-      <div className="mt-0.5 text-[15px] text-ink-2 tabular">
-        {formatCurrency(expense.annualAmount)}/yr
-      </div>
-      <DetailLine expense={expense} />
-    </div>
-  );
-}
-
 function Editable({
   label,
   expense,
+  baseExpense,
   onCommit,
+  onResetField,
 }: {
   label: string;
   expense: Expense;
+  baseExpense: Expense;
   onCommit: (n: number) => void;
+  onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const inputId = `e-${expense.id}`;
+  // Bumps on reset to remount the currency input so its local `display` state
+  // re-seeds from the reverted base amount (it's seeded once from defaultValue).
+  const [resetTick, setResetTick] = useState(0);
   return (
     <div>
       <label className="block text-[11px] text-ink-3 truncate" htmlFor={inputId}>
         {label}
       </label>
       <CurrencyAmountInput
+        key={`${inputId}-${resetTick}`}
         id={inputId}
         label={label}
         defaultValue={expense.annualAmount}
         onCommit={onCommit}
       />
       <DetailLine expense={expense} />
+      <SolverBaseHint
+        base={baseExpense.annualAmount}
+        working={expense.annualAmount}
+        format={(n) => `${formatCurrency(n)}/yr`}
+        onReset={
+          onResetField
+            ? () => {
+                onResetField([
+                  mutationKey({
+                    kind: "expense-annual-amount",
+                    expenseId: baseExpense.id,
+                    annualAmount: 0,
+                  }),
+                ]);
+                setResetTick((t) => t + 1);
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

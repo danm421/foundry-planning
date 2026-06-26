@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import type { ReportKey } from "../report-tab-link";
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
   PortfolioBarsChart: () => <div data-testid="chart-portfolio" />,
@@ -39,42 +41,63 @@ const workingTree = {
 
 const liAssumptions = {} as LiAssumptions;
 
-function renderPanel(
-  overrides: { showLifeInsuranceTab?: boolean; showEstateTab?: boolean } = {},
-) {
-  return render(
+// Controlled host: the panel now reads its active tab from `activeReport` and
+// reports clicks via `onReportChange`. This wrapper holds that state locally so
+// the tests can drive the panel exactly as the workspace does.
+function ControlledPanel({
+  initialReport = "portfolio",
+  computeStatus = "fresh",
+}: {
+  initialReport?: ReportKey;
+  computeStatus?: "fresh" | "stale" | "computing" | "error";
+}) {
+  const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
+  return (
     <SolverChartPanel
       currentProjection={[] as ProjectionYear[]}
       baseProjection={[] as ProjectionYear[]}
       workingTree={workingTree}
       baseTree={workingTree}
-      computeStatus="fresh"
+      computeStatus={computeStatus}
       clientId="client-1"
       liAssumptions={liAssumptions}
       clientName="Pat"
       spouseName="Spouse"
-      showLifeInsuranceTab={overrides.showLifeInsuranceTab ?? false}
-      showEstateTab={overrides.showEstateTab ?? false}
-    />,
+      activeReport={activeReport}
+      onReportChange={setActiveReport}
+    />
   );
 }
 
 describe("SolverChartPanel", () => {
   it("shows the Portfolio chart by default", () => {
-    renderPanel();
+    render(<ControlledPanel />);
     expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
     expect(screen.queryByTestId("chart-cashflow")).not.toBeInTheDocument();
   });
 
+  it("renders all five report tabs unconditionally", () => {
+    render(<ControlledPanel />);
+    for (const name of [
+      "Portfolio",
+      "Cash Flow",
+      "Liquidity",
+      "Life Insurance Need",
+      "Estate",
+    ]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+  });
+
   it("switches to the Cash Flow chart", async () => {
-    renderPanel();
+    render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
     expect(screen.getByTestId("chart-cashflow")).toBeInTheDocument();
     expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
   });
 
   it("switches to Liquidity and toggles portfolio assets", async () => {
-    renderPanel();
+    render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Liquidity" }));
     expect(screen.getByTestId("chart-liquidity")).toHaveTextContent(
       "portfolio:false",
@@ -88,7 +111,7 @@ describe("SolverChartPanel", () => {
   });
 
   it("keeps the resize handle on every tab, including liquidity", async () => {
-    renderPanel();
+    render(<ControlledPanel />);
     const handle = () =>
       screen.getByRole("separator", { name: /resize chart height/i });
     // Default (portfolio) tab.
@@ -99,95 +122,49 @@ describe("SolverChartPanel", () => {
   });
 
   it("shows the resize handle on the Life Insurance Need tab", () => {
-    renderPanel({ showLifeInsuranceTab: true });
+    render(<ControlledPanel initialReport="lifeInsurance" />);
     expect(
       screen.getByRole("separator", { name: /resize chart height/i }),
     ).toBeInTheDocument();
   });
 
   it("shows the recalculating hint while computing", () => {
+    render(<ControlledPanel computeStatus="computing" />);
+    expect(screen.getByText(/recalculating/i)).toBeInTheDocument();
+  });
+
+  it("renders the Life Insurance Need view when that report is active", () => {
+    render(<ControlledPanel initialReport="lifeInsurance" />);
+    const tab = screen.getByRole("tab", { name: "Life Insurance Need" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
+  });
+
+  it("renders the Estate view when that report is active", () => {
+    render(<ControlledPanel initialReport="estate" />);
+    const tab = screen.getByRole("tab", { name: "Estate" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
+  });
+
+  it("reports tab clicks through onReportChange", async () => {
+    const onReportChange = vi.fn();
     render(
       <SolverChartPanel
         currentProjection={[] as ProjectionYear[]}
         baseProjection={[] as ProjectionYear[]}
         workingTree={workingTree}
         baseTree={workingTree}
-        computeStatus="computing"
+        computeStatus="fresh"
         clientId="client-1"
         liAssumptions={liAssumptions}
         clientName="Pat"
         spouseName="Spouse"
-        showLifeInsuranceTab={false}
-        showEstateTab={false}
+        activeReport="portfolio"
+        onReportChange={onReportChange}
       />,
     );
-    expect(screen.getByText(/recalculating/i)).toBeInTheDocument();
-  });
-
-  it("hides the Life Insurance Need tab when not on the LI solver tab", () => {
-    renderPanel({ showLifeInsuranceTab: false });
-    expect(
-      screen.queryByRole("tab", { name: "Life Insurance Need" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows and auto-selects the Life Insurance Need tab when active", () => {
-    renderPanel({ showLifeInsuranceTab: true });
-    const tab = screen.getByRole("tab", { name: "Life Insurance Need" });
-    expect(tab).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
-  });
-
-  it("shows and auto-selects the Estate tab when active", () => {
-    renderPanel({ showEstateTab: true });
-    const tab = screen.getByRole("tab", { name: "Estate" });
-    expect(tab).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
-  });
-
-  it("auto-selects LI tab on enter, keeps it switchable, hides it on leave", async () => {
-    const baseProps = {
-      currentProjection: [] as ProjectionYear[],
-      baseProjection: [] as ProjectionYear[],
-      workingTree,
-      baseTree: workingTree,
-      computeStatus: "fresh" as const,
-      clientId: "client-1",
-      liAssumptions,
-      clientName: "Pat",
-      spouseName: "Spouse",
-      showEstateTab: false,
-    };
-
-    // 1. Start with LI tab hidden — Portfolio chart is shown, no LI tab present.
-    const { rerender } = render(
-      <SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />,
-    );
-    expect(
-      screen.queryByRole("tab", { name: "Life Insurance Need" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
-
-    // 2. Show LI tab — it should be auto-selected and its chart rendered.
-    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={true} />);
-    const liTab = screen.getByRole("tab", { name: "Life Insurance Need" });
-    expect(liTab).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
-
-    // 3. While LI tab is visible, user manually switches to Portfolio — proves the
-    //    LI tab is auto-selected on enter but not locked.
-    await userEvent.click(screen.getByRole("tab", { name: "Portfolio" }));
-    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: "Life Insurance Need" }),
-    ).toHaveAttribute("aria-selected", "false");
-
-    // 4. Hide LI tab — user was on Portfolio, so no revert needed; Portfolio
-    //    chart remains and the LI tab disappears entirely.
-    rerender(<SolverChartPanel {...baseProps} showLifeInsuranceTab={false} />);
-    expect(
-      screen.queryByRole("tab", { name: "Life Insurance Need" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Estate" }));
+    expect(onReportChange).toHaveBeenCalledWith("estate");
   });
 });

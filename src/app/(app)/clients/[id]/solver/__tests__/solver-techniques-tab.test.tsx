@@ -29,39 +29,37 @@ const baseProps = {
 };
 
 describe("SolverTechniquesTab", () => {
-  it("lists base techniques read-only and working techniques editable", () => {
+  it("renders an existing working technique with an Add control", () => {
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([rc])}
-        workingTree={tree([rc])}
+        {...baseProps}        workingTree={tree([rc])}
         onChange={vi.fn()}
       />,
     );
-    // The existing conversion appears in both columns.
-    expect(screen.getAllByText("Existing Conv").length).toBe(2);
-    // Working column exposes an Add control per group.
+    // The existing conversion appears once on the always-editable surface.
+    expect(screen.getAllByText("Existing Conv").length).toBe(1);
+    // The Add control is always present for each technique group.
     expect(
       screen.getAllByRole("button", { name: /add roth conversion/i }).length,
     ).toBe(1);
   });
 
-  it("shows a quiet placeholder (no Add control) for an empty Base column", () => {
+  it("shows Add controls as the empty state when no techniques are present", () => {
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([])}
-        workingTree={tree([])}
+        {...baseProps}        workingTree={tree([])}
         onChange={vi.fn()}
       />,
     );
-    // Base column renders a non-interactive placeholder per technique group.
-    expect(screen.getByText("No Roth conversions")).toBeTruthy();
-    expect(screen.getByText("No asset transactions")).toBeTruthy();
-    expect(screen.getByText("No reinvestments")).toBeTruthy();
-    // The only "Add" affordance lives in the Scenario (working) column.
+    // The always-editable surface uses add-tiles as empty state (no read-only placeholders).
     expect(
       screen.getAllByRole("button", { name: /add roth conversion/i }).length,
+    ).toBe(1);
+    expect(
+      screen.getAllByRole("button", { name: /add asset transaction/i }).length,
+    ).toBe(1);
+    expect(
+      screen.getAllByRole("button", { name: /add reinvestment/i }).length,
     ).toBe(1);
   });
 
@@ -69,9 +67,7 @@ describe("SolverTechniquesTab", () => {
     const onChange = vi.fn();
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([rc])}
-        workingTree={tree([rc])}
+        {...baseProps}        workingTree={tree([rc])}
         onChange={onChange}
       />,
     );
@@ -89,9 +85,7 @@ describe("SolverTechniquesTab", () => {
     const fullRc = { ...rc, id: "rc-full", conversionType: "full_account" as const };
     render(
       <SolverTechniquesTab
-        {...baseProps}
-        baseClientData={tree([])}
-        workingTree={tree([fixedRc, fullRc] as (typeof rc)[])}
+        {...baseProps}        workingTree={tree([fixedRc, fullRc] as (typeof rc)[])}
         onChange={vi.fn()}
         onSolveStart={onSolveStart}
       />,

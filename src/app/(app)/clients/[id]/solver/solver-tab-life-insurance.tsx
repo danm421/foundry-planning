@@ -1,17 +1,19 @@
 "use client";
 
-// Life Insurance solver tab.
+// Life Insurance solver — inputs (left pane) + results (right pane).
 //
-// Wires the debounced solve + autosave loop: editing an input updates
-// `assumptions`; after a ~600ms debounce a solve request fires (POST
-// .../life-insurance/solve) and the assumptions are persisted (PUT
-// .../life-insurance/settings). Stale in-flight solves are discarded via a
-// request-sequence guard so a slow earlier solve never overwrites a newer
-// result.
+// The debounced solve + autosave loop lives in `useLiNeedSolve`: while the LI
+// surface is active, editing an input updates `assumptions`; after a ~600ms
+// debounce a solve request fires (POST .../life-insurance/solve) and the
+// assumptions are persisted (PUT .../life-insurance/settings). Stale in-flight
+// solves are discarded via a request-sequence guard so a slow earlier solve
+// never overwrites a newer result.
 //
-// Renders the solved need range (straight-line lower bound → Monte Carlo
-// upper bound) above the assumptions panel. The tab is a single centered
-// column; assumptions are owned by LiveSolverWorkspace (controlled component).
+// `SolverLifeInsuranceInputs` (left) renders the assumptions panel that drives
+// the loop; `SolverLifeInsuranceResults` (right) renders the solved need range
+// (straight-line lower bound → Monte Carlo upper bound). The workspace owns the
+// lifted `assumptions` state and calls `useLiNeedSolve` once so both halves read
+// the same result.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
@@ -41,36 +43,28 @@ export interface LiSolveResult {
   spouse: LiSolveCase | null;
 }
 
-interface Props {
-  clientId: string;
-  /** Current LI assumptions — owned by LiveSolverWorkspace. */
-  assumptions: LiAssumptions;
-  /** Update the lifted assumptions (drives the debounced solve + autosave). */
-  onAssumptionsChange: (next: LiAssumptions) => void;
-  /** Display name for the client; falls back to "Client" upstream when unknown. */
-  clientName: string;
-  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
-  spouseName: string;
-  /** Household liabilities for the per-liability payoff picker. */
-  liabilities: { id: string; name: string; balance: number }[];
-  /** Estate settlement cost from Details > Assumptions (read-only display). */
-  estateAdminExpenses: number;
-  /** Firm model portfolios for the LI-proceeds growth picker. */
-  modelPortfolios: { id: string; name: string }[];
-}
-
 const DEBOUNCE_MS = 600;
 
-export function SolverTabLifeInsurance({
-  clientId,
-  assumptions,
-  onAssumptionsChange,
-  clientName,
-  spouseName,
-  liabilities,
-  estateAdminExpenses,
-  modelPortfolios,
-}: Props) {
+/**
+ * Owns the straight-line solve + settings autosave for the Life Insurance
+ * surface. The workspace calls this ONCE and feeds the result to the right-pane
+ * results view; the left-pane inputs view drives `assumptions`.
+ *
+ * `enabled` gates ALL work: while false, no `/solve` or `/settings` fetch ever
+ * fires. On each false→true transition (e.g. re-opening the LI surface) the hook
+ * runs one initial solve with the current assumptions; while enabled, it
+ * debounces a solve + autosave on every `assumptions` change. The enable-edge
+ * solve and the debounce never double-fire on the same edge.
+ */
+export function useLiNeedSolve(
+  clientId: string,
+  assumptions: LiAssumptions,
+  enabled: boolean,
+): {
+  solveResult: LiSolveResult | null;
+  isSolving: boolean;
+  errorMessage: string | null;
+} {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
 
@@ -125,36 +119,41 @@ export function SolverTabLifeInsurance({
     [clientId, canEdit],
   );
 
-  // Initial solve on mount — show results immediately on first open.
-  useEffect(() => {
-    void runSolveAndSave(assumptions);
-    // Intentionally only on mount; later solves are debounced via `assumptions`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mirrors the latest `assumptions` prop so callbacks can spread the current
-  // value without re-creating on every change (restores the pre-lift
-  // state-updater safety).
+  // Mirrors the latest `assumptions` prop so the enable-edge solve reads the
+  // current value without re-running when only the assumptions change.
   const assumptionsRef = useRef(assumptions);
   assumptionsRef.current = assumptions;
 
-  // Lift an updated MC target score from the MC block. Changing the score must
-  // NOT trigger an MC solve (it's expensive — that runs only on the explicit
-  // button click), but it does ride the cheap debounced straight-line solve +
-  // settings autosave below, which is how the score gets persisted.
-  const handleScoreChange = useCallback(
-    (mcTargetScore: number) => {
-      onAssumptionsChange({ ...assumptionsRef.current, mcTargetScore });
-    },
-    [onAssumptionsChange],
-  );
-
-  // Debounced solve + autosave on any assumptions edit.
-  const isFirstRun = useRef(true);
+  // Initial solve on each false→true edge — show results immediately whenever
+  // the LI surface becomes active (replaces the old mount-solve; re-opening LI
+  // re-solves). `wasEnabled` tracks the prior value so we only act on the edge.
+  const wasEnabledRef = useRef(false);
   useEffect(() => {
-    if (isFirstRun.current) {
-      isFirstRun.current = false;
-      return; // mount-effect already solved with the seed assumptions
+    if (enabled && !wasEnabledRef.current) {
+      wasEnabledRef.current = true;
+      void runSolveAndSave(assumptionsRef.current);
+    } else if (!enabled) {
+      wasEnabledRef.current = false;
+    }
+    // `assumptions` is intentionally not a dep — the edge solve reads the latest
+    // value via `assumptionsRef`; assumptions edits ride the debounce effect.
+  }, [enabled, runSolveAndSave]);
+
+  // Debounced solve + autosave on any assumptions edit while enabled. Skips the
+  // run that coincides with the enable edge (the effect above already solved
+  // that one) so the edge never double-fires.
+  const skipNextDebounceRef = useRef(true);
+  useEffect(() => {
+    if (!enabled) {
+      // Inactive: no solving, and re-arm the skip so the next enable edge's
+      // assumptions change doesn't fire a redundant debounce on top of the
+      // edge solve.
+      skipNextDebounceRef.current = true;
+      return;
+    }
+    if (skipNextDebounceRef.current) {
+      skipNextDebounceRef.current = false;
+      return; // the enable-edge effect already solved with these assumptions
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -163,10 +162,79 @@ export function SolverTabLifeInsurance({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [assumptions, runSolveAndSave]);
+  }, [assumptions, enabled, runSolveAndSave]);
 
+  return { solveResult, isSolving, errorMessage };
+}
+
+/**
+ * Left-pane LI inputs: the "Life Insurance Need" heading + the assumptions
+ * panel. No solve loop, no MC control, no result cards — those live in the
+ * right pane (see `SolverLifeInsuranceResults`).
+ */
+export function SolverLifeInsuranceInputs({
+  assumptions,
+  onAssumptionsChange,
+  liabilities,
+  estateAdminExpenses,
+  modelPortfolios,
+}: {
+  /** Current LI assumptions — owned by LiveSolverWorkspace. */
+  assumptions: LiAssumptions;
+  /** Update the lifted assumptions (drives the debounced solve + autosave). */
+  onAssumptionsChange: (next: LiAssumptions) => void;
+  /** Household liabilities for the per-liability payoff picker. */
+  liabilities: { id: string; name: string; balance: number }[];
+  /** Estate settlement cost from Details > Assumptions (read-only display). */
+  estateAdminExpenses: number;
+  /** Firm model portfolios for the LI-proceeds growth picker. */
+  modelPortfolios: { id: string; name: string }[];
+}) {
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-5 py-5">
+      <h2 className="text-[15px] font-medium text-ink">Life Insurance Need</h2>
+      <LiAssumptionsPanel
+        assumptions={assumptions}
+        onChange={onAssumptionsChange}
+        liabilities={liabilities}
+        estateAdminExpenses={estateAdminExpenses}
+        modelPortfolios={modelPortfolios}
+      />
+    </div>
+  );
+}
+
+/**
+ * Right-pane LI results: the "Solving…" indicator, the straight-line error (if
+ * any), and the need-range cards — which bundle the Monte Carlo control strip.
+ * `solveResult` comes from `useLiNeedSolve` in the workspace.
+ */
+export function SolverLifeInsuranceResults({
+  clientId,
+  assumptions,
+  solveResult,
+  isSolving,
+  errorMessage,
+  clientName,
+  spouseName,
+  onScoreChange,
+}: {
+  clientId: string;
+  /** Full current assumptions — POSTed verbatim as the solve-mc body. */
+  assumptions: LiAssumptions;
+  /** Straight-line solve from `useLiNeedSolve`; null until the first solve lands. */
+  solveResult: LiSolveResult | null;
+  isSolving: boolean;
+  errorMessage: string | null;
+  /** Display name for the client; falls back to "Client" upstream when unknown. */
+  clientName: string;
+  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
+  spouseName: string;
+  /** Lift the updated `mcTargetScore` (decimal 0–1) to the workspace. */
+  onScoreChange: (score: number) => void;
+}) {
+  return (
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
         <h2 className="text-[15px] font-medium text-ink">Life Insurance Need</h2>
         {isSolving ? (
@@ -176,8 +244,6 @@ export function SolverTabLifeInsurance({
         ) : null}
       </div>
 
-      {/* Layout: solved need range (straight-line ↔ Monte Carlo) sits above
-          the assumptions that drive it. */}
       {solveResult ? (
         <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
           <LiNeedRange
@@ -186,7 +252,7 @@ export function SolverTabLifeInsurance({
             assumptions={assumptions}
             clientName={clientName}
             spouseName={spouseName}
-            onScoreChange={handleScoreChange}
+            onScoreChange={onScoreChange}
           />
         </div>
       ) : (
@@ -203,14 +269,6 @@ export function SolverTabLifeInsurance({
           {errorMessage}
         </div>
       ) : null}
-
-      <LiAssumptionsPanel
-        assumptions={assumptions}
-        onChange={onAssumptionsChange}
-        liabilities={liabilities}
-        estateAdminExpenses={estateAdminExpenses}
-        modelPortfolios={modelPortfolios}
-      />
     </div>
   );
 }

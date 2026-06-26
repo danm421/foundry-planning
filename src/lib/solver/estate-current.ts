@@ -1,25 +1,4 @@
-import type { Account, ClientData, EntitySummary, Gift } from "@/engine/types";
-
-/** A revocable living trust already present in base facts, with the accounts
- *  currently titled into it. Derived from the `account.revocableTrustName` tag. */
-export interface CurrentRevocableTrust {
-  name: string;
-  accountNames: string[];
-}
-
-/** Group base accounts that are already tagged into a revocable living trust by
- *  trust name. Untagged accounts (revocableTrustName == null) are ignored. */
-export function currentRevocableTrusts(accounts: Account[]): CurrentRevocableTrust[] {
-  const byName = new Map<string, string[]>();
-  for (const a of accounts) {
-    const name = a.revocableTrustName;
-    if (name == null) continue;
-    const list = byName.get(name) ?? [];
-    list.push(a.name);
-    byName.set(name, list);
-  }
-  return [...byName.entries()].map(([name, accountNames]) => ({ name, accountNames }));
-}
+import type { ClientData, EntitySummary, Gift } from "@/engine/types";
 
 /** True for trust-kind entities (vs. business entities like LLC / S-corp). */
 export function isTrustEntity(e: EntitySummary): boolean {

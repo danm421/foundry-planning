@@ -103,7 +103,6 @@ const baseProps = {
     planSettings: {},
   } as never,
   initialSourceProjection: [{ year: 2026, portfolioAssets: { total: 1_000_000 } }] as never,
-  availableScenarios: [],
   modelPortfolios: [],
   milestones: {
     planStart: 2026,
@@ -173,6 +172,54 @@ describe("<LiveSolverWorkspace />", () => {
     expect(body.mutations).toEqual([
       { kind: "retirement-age", person: "client", age: 68 },
     ]);
+  });
+});
+
+describe("LiveSolverWorkspace — Life Insurance solve gating", () => {
+  // Count only straight-line LI solves. `/life-insurance/solve-mc` also contains
+  // "/life-insurance/solve", so match the exact route suffix to exclude it.
+  const countLiSolves = () =>
+    fetchMock.mock.calls.filter(
+      (c) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).endsWith("/life-insurance/solve"),
+    ).length;
+
+  const liResult = {
+    isMarried: false,
+    client: {
+      status: "solved",
+      faceValue: 500_000,
+      achievedEndingPortfolio: 0,
+      projection: [],
+      existingPolicies: [],
+      existingCoverageTotal: 0,
+      estateTaxAddend: 0,
+    },
+    spouse: null,
+  };
+
+  it("stays silent while LI is inactive, solves once on enable, and debounces an edit", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => liResult });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Default view is Retirement — the LI hook is disabled, so no LI solve has
+    // fired even though the workspace mounted and auto-ran MC.
+    expect(countLiSolves()).toBe(0);
+
+    // Switching to the Life Insurance INPUT tab enables the hook → exactly one
+    // solve fires on the false→true edge. Anchor the name to the input tab
+    // ("Life Insurance") so it doesn't also match the report tab ("Life
+    // Insurance Need").
+    fireEvent.click(screen.getByRole("tab", { name: /^Life Insurance$/ }));
+    await waitFor(() => expect(countLiSolves()).toBe(1));
+
+    // Editing an assumption debounces a single additional solve (not one per
+    // keystroke; here a single commit, asserted after the 600ms debounce).
+    const deathYear = screen.getByLabelText("Death year");
+    fireEvent.change(deathYear, { target: { value: "2031" } });
+    await waitFor(() => expect(countLiSolves()).toBe(2), { timeout: 1500 });
   });
 });
 
@@ -256,7 +303,7 @@ describe("LiveSolverWorkspace — save scenario", () => {
 
     await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
     expect(routerPush).toHaveBeenCalledWith(
-      "/clients/client-id/comparison?scenario=new-scenario-id",
+      "/clients/client-id/cashflow?scenario=new-scenario-id",
     );
   });
 });
@@ -386,7 +433,8 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
   it("cached Base % survives a working-only Recalculate", async () => {
     // Seed a ready result so the component's cached-base effect fires on mount
-    // and sets cachedBaseSuccess=0.8. The Base gauge should show "80%".
+    // and sets cachedBaseSuccess=0.8. The two-pane design shows the base value
+    // as a sub-hint beneath the scenario gauge: "↑ from 80%".
     mcStateRef.current = {
       status: "ready",
       baseSuccessRate: 0.8,
@@ -401,9 +449,9 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // The Base gauge renders "80%" (Math.round(0.8*100)). The Scenario gauge
-    // renders "85%". Both values are distinct so getByText is unambiguous.
-    expect(screen.getByText("80%")).toBeTruthy();
+    // The scenario gauge shows "85%" as the main value. The base value (80%)
+    // is rendered as a sub-hint "↑ from 80%" below it (since 85 > 80).
+    expect(screen.getByText(/from 80%/)).toBeTruthy();
 
     // Edit an input → Scenario goes stale → Recalculate overlay appears.
     const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
@@ -412,11 +460,11 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     const recalc = await screen.findByRole("button", { name: /recalculate/i });
     fireEvent.click(recalc);
 
-    // After a working-only Recalculate the Base "80%" must still be present —
-    // cachedBaseSuccess was set on the first ready run and must not be cleared.
-    // The Base column heading ("Base Facts") plus "80%" both remain visible.
-    expect(screen.getByText("Base Facts")).toBeTruthy();
-    expect(screen.getByText("80%")).toBeTruthy();
+    // After a working-only Recalculate the cached base sub-hint must still be
+    // present — cachedBaseSuccess was set on the first ready run and must not
+    // be cleared. The sub-hint "↑ from 80%" remains visible (state is stale,
+    // which is one of the conditions for rendering the sub-hint).
+    expect(screen.getByText(/from 80%/)).toBeTruthy();
   });
 
   it("auto-run failure is recoverable: Recalculate re-includes Base while uncached", async () => {
