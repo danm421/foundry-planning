@@ -53,6 +53,9 @@ const STATUS_PILL: Record<RunStatus, { label: string; className: string }> = {
 
 const POLL_MS = 3000;
 
+/** Show only the five most recent runs (sorted newest-first by the API). */
+const MAX_RUNS = 5;
+
 export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
@@ -133,7 +136,7 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => {
+              {runs.slice(0, MAX_RUNS).map((r) => {
                 const pill = STATUS_PILL[r.status];
                 return (
                   <tr

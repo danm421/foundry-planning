@@ -158,6 +158,37 @@ describe("PresentationsLauncher", () => {
     await waitFor(() => expect(global.URL.createObjectURL).toHaveBeenCalled());
   });
 
+  it("blocks Generate and warns when a Retirement Comparison page has no comparison selected", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    // Add a Retirement Comparison page (defaults to no comparison scenario).
+    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search reports/i), {
+      target: { value: "retirement comparison" },
+    });
+    fireEvent.click(screen.getByText("Retirement Comparison"));
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+
+    // A warning names the page and the export is blocked (no runs POST).
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/no comparison selected/i);
+    const runsCall = vi
+      .mocked(global.fetch)
+      .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+    expect(runsCall).toBeUndefined();
+  });
+
   it("Generate posts to the background /presentations/runs route and shows a notice", async () => {
     render(
       <PresentationsLauncher

@@ -27,6 +27,7 @@ import {
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
 import { ensureFreshSummaries, type PageDescriptor } from "@/components/presentations/launcher/ensure-fresh-summaries";
+import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
 import { AddPageButton } from "@/components/presentations/launcher/report-command-palette";
@@ -346,9 +347,35 @@ export function PresentationsLauncher(props: Props) {
     }
   }
 
+  // Deck positions (1-based) of any Retirement Comparison page that has no
+  // comparison scenario chosen. Such a page renders only a "Select a comparison
+  // scenario" placeholder, so the export is blocked until each one is set.
+  function retirementComparisonPagesMissingScenario(): number[] {
+    return state.pages
+      .map((p, i) => ({ p, position: i + 1 }))
+      .filter(
+        ({ p }) =>
+          p.pageId === "retirementComparison" &&
+          !(p.options as RetirementComparisonOptions).scenarioId,
+      )
+      .map(({ position }) => position);
+  }
+
   async function handleGenerate() {
     setError(null);
     setNotice(null);
+    // Require a comparison on every Retirement Comparison page before exporting,
+    // otherwise the PDF would ship empty placeholder slides. Name the offending
+    // page(s) so the advisor knows which row to fix.
+    const missingComparison = retirementComparisonPagesMissingScenario();
+    if (missingComparison.length > 0) {
+      setError(
+        missingComparison.length === 1
+          ? `No comparison selected for the Retirement Comparison page (page ${missingComparison[0]}). Choose a comparison scenario before generating the PDF.`
+          : `No comparison selected for Retirement Comparison pages ${missingComparison.join(", ")}. Choose a comparison scenario for each before generating the PDF.`,
+      );
+      return;
+    }
     setGenerating(true);
     try {
       const fresh = await withFreshSummaries(allPageDescriptors());
@@ -586,6 +613,11 @@ export function PresentationsLauncher(props: Props) {
         </div>
 
         <div className="space-y-4">
+          <RecentRunsPanel
+            clientId={props.clientId}
+            householdId={props.householdId}
+            refreshKey={runsRefreshKey}
+          />
           <TemplatesPanel
             shared={templates.shared}
             mine={templates.mine}
@@ -600,11 +632,6 @@ export function PresentationsLauncher(props: Props) {
             onDismissBuiltin={handleDismissBuiltin}
             onRestoreBuiltin={handleRestoreBuiltin}
             onSaveAsNew={() => setShowSaveModal(true)}
-          />
-          <RecentRunsPanel
-            clientId={props.clientId}
-            householdId={props.householdId}
-            refreshKey={runsRefreshKey}
           />
         </div>
       </div>
