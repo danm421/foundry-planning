@@ -51,21 +51,6 @@ function relativeTime(iso: string): string {
   return `${yr}y ago`;
 }
 
-/**
- * Decide whether a storageKey can be used as a clickable `href` directly.
- * Vercel Blob "public" pathnames are absolute URLs; older or private
- * keys may need a server-side download endpoint. We accept any absolute
- * URL and surface non-URL keys as "Open ↗" anyway — the caller's storage
- * provider can swap to a signed-URL endpoint here later without touching
- * the component.
- */
-function storageHref(storageKey: string): string {
-  if (/^https?:\/\//.test(storageKey)) return storageKey;
-  // Vercel Blob pathnames are served from the firm's blob origin in
-  // prod; for v1 we render them as-is and let the user's clipboard /
-  // browser handle the fallback.
-  return storageKey;
-}
 
 export function CrmTaskSidePanelFiles({
   taskId,
@@ -226,7 +211,7 @@ export function CrmTaskSidePanelFiles({
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <a
-                  href={storageHref(row.storageKey)}
+                  href={`/api/crm/tasks/${taskId}/files/${row.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium text-ink-2 hover:bg-card-2 hover:text-ink"
