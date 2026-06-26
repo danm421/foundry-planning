@@ -8,9 +8,12 @@ interface Props {
   onRegenerate?: () => void;
   /** Disables the overlay button while a deterministic solve owns the run. */
   solveActive?: boolean;
+  /** When provided, renders a small "↑ from X%" sub-hint below the percentage
+   *  whenever the gauge is showing a value and it differs from the baseline. */
+  baselineSuccessPct?: number | null;
 }
 
-export function SolverPosGauge({ state, successPct, onRegenerate, solveActive }: Props) {
+export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, baselineSuccessPct }: Props) {
   let display: string;
   if (state === "computing") display = "…";
   else if (state === "ready" || state === "stale") {
@@ -47,6 +50,11 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive }:
         >
           {display}
         </div>
+        {(state === "ready" || state === "stale") && successPct != null && baselineSuccessPct != null && baselineSuccessPct !== successPct ? (
+          <div className="text-[10px] text-ink-4">
+            {successPct > baselineSuccessPct ? "↑" : "↓"} from {Math.round(baselineSuccessPct * 100)}%
+          </div>
+        ) : null}
       </div>
       {showOverlay ? (
         <div className="absolute inset-0 flex items-center justify-center">
