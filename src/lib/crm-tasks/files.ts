@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmTaskActivity, crmTaskFiles } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { publicBlobToken } from "@/lib/blob-store";
+import { validateDocumentUpload } from "@/lib/files/content-type";
 
 /**
  * Blob upload + record module for CRM task attachments. Mirrors the
@@ -19,10 +19,16 @@ import { publicBlobToken } from "@/lib/blob-store";
  *
  * Filenames are sanitized to a shell-safe subset and namespaced under
  * `crm-tasks/<firmId>/<taskId>/` so listing a single task's blobs is
- * cheap. We persist the public blob `url` returned by `put` so the
- * side-panel "Open" link can resolve directly — uploads use
- * `access: "public"` so the URL is self-serving and `del()` accepts
- * either a URL or a pathname.
+ * cheap. Uploads go to the PRIVATE blob store (`access: "private"`, the
+ * default `BLOB_READ_WRITE_TOKEN`) and we persist the private
+ * `pathname` returned by `put` — not a public URL. The file is never
+ * directly reachable; it's served through an authenticated proxy GET
+ * that re-checks task scoping before streaming the blob. `del()`
+ * accepts the stored pathname.
+ *
+ * Content is validated by magic bytes (`validateDocumentUpload`) before
+ * anything is written, so the persisted `mimeType` is server-trusted
+ * rather than the caller-supplied `file.type`.
  *
  * Callers pass `firmId`, `taskId`, and `uploadedByUserId` explicitly;
  * this module performs no auth (it stays out of Clerk territory so it
@@ -53,16 +59,18 @@ export async function uploadCrmTaskFile(args: {
     );
   }
 
+  const buffer = Buffer.from(await args.file.arrayBuffer());
+  const { mimeType } = validateDocumentUpload(args.file, buffer);
+
   const safe = sanitizeFilename(args.file.name || "attachment");
   // Include a random UUID segment so two uploads of the same filename
   // landing in the same millisecond can't collide with
   // `addRandomSuffix: false`.
   const storageKey = `crm-tasks/${args.firmId}/${args.taskId}/${Date.now()}-${randomUUID()}-${safe}`;
 
-  const blob = await put(storageKey, args.file, {
-    access: "public",
+  const result = await put(storageKey, args.file, {
+    access: "private",
     addRandomSuffix: false,
-    token: publicBlobToken(),
   });
 
   const created = await db.transaction(async (tx) => {
@@ -73,12 +81,11 @@ export async function uploadCrmTaskFile(args: {
         uploadedByUserId: args.uploadedByUserId,
         filename: args.file.name,
         storageProvider: STORAGE_PROVIDER,
-        // Persist the full public blob URL so the side-panel "Open" link
-        // can resolve directly. `access: "public"` above means the URL
-        // is self-serving; `del()` accepts either a URL or a pathname,
-        // so swapping providers later still works without rewrites.
-        storageKey: blob.url,
-        mimeType: args.file.type || null,
+        // Persist the PRIVATE blob pathname (not a public URL). The file
+        // is fetched through an authenticated proxy GET that re-checks
+        // task scoping; `del()` accepts the stored pathname directly.
+        storageKey: result.pathname,
+        mimeType,
         sizeBytes: args.file.size,
       })
       .returning();
@@ -148,7 +155,7 @@ export async function deleteCrmTaskFile(args: {
 
   // Best-effort blob delete — if it 404s we still want the DB row gone.
   try {
-    await del(row.storageKey, { token: publicBlobToken() });
+    await del(row.storageKey);
   } catch (err) {
     const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
     console.error("[crm-tasks.files] failed to delete blob:", {
@@ -170,4 +177,20 @@ export async function listCrmTaskFiles(
   taskId: string,
 ): Promise<CrmTaskFileRow[]> {
   return db.select().from(crmTaskFiles).where(eq(crmTaskFiles.taskId, taskId));
+}
+
+/**
+ * Fetch a single attachment row, scoped to its task. Returns the row
+ * only when BOTH the file id AND the task id match — so the proxy GET
+ * can't be tricked into streaming another task's blob by id alone.
+ */
+export async function getCrmTaskFileRow(
+  fileId: string,
+  taskId: string,
+): Promise<CrmTaskFileRow | null> {
+  const [row] = await db
+    .select()
+    .from(crmTaskFiles)
+    .where(and(eq(crmTaskFiles.id, fileId), eq(crmTaskFiles.taskId, taskId)));
+  return row ?? null;
 }
