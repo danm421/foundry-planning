@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   vercelDel: vi.fn(),
   deleteImportFile: vi.fn(),
   deleteBrandingAsset: vi.fn(),
-  publicBlobToken: vi.fn(() => "public_token"),
 }));
 
 vi.mock("@/db", async () => {
@@ -78,7 +77,6 @@ vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
-vi.mock("@/lib/blob-store", () => ({ publicBlobToken: mocks.publicBlobToken }));
 
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
 
@@ -104,13 +102,12 @@ beforeEach(() => {
     { blobPathname: "imports/imp1/f1/file.csv" },
   ]);
   mocks.selectTaskFiles.mockResolvedValue([
-    { storageKey: "https://pub.blob/task-file.pdf" },
+    { storageKey: "crm-tasks/firm1/task1/abc-task-file.pdf" },
   ]);
   mocks.purgeHousehold.mockResolvedValue(undefined);
   mocks.selectCustomer.mockResolvedValue([{ stripeCustomerId: "cus_1" }]);
   mocks.stripeCustomersDel.mockResolvedValue({ id: "cus_1", deleted: true });
   mocks.clerkDeleteOrg.mockResolvedValue(undefined);
-  mocks.publicBlobToken.mockReturnValue("public_token");
 });
 
 describe("purgeFirmById", () => {
@@ -164,7 +161,7 @@ describe("purgeFirmById", () => {
     // SQL WHERE (isNotNull + ne import_ref) excludes null + import_ref rows.
     mocks.selectHouseholdDocs.mockResolvedValue([]);
     await purgeFirmById("org_1");
-    // only the task-file public del remains; no private (no-token) del fires
+    // the household-doc key is never deleted; only the task-file (no-token) del fires
     expect(mocks.vercelDel).not.toHaveBeenCalledWith("households/h1/doc1.pdf");
   });
 
@@ -173,11 +170,9 @@ describe("purgeFirmById", () => {
     expect(mocks.deleteImportFile).toHaveBeenCalledWith("imports/imp1/f1/file.csv");
   });
 
-  it("deletes task-file blobs via the public-token del", async () => {
+  it("deletes task-file blobs via the private (no-token) del", async () => {
     await purgeFirmById("org_1");
-    expect(mocks.vercelDel).toHaveBeenCalledWith("https://pub.blob/task-file.pdf", {
-      token: "public_token",
-    });
+    expect(mocks.vercelDel).toHaveBeenCalledWith("crm-tasks/firm1/task1/abc-task-file.pdf");
   });
 
   it("deletes branding logo + favicon via deleteBrandingAsset when set", async () => {

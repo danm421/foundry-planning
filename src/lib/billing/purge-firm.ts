@@ -24,7 +24,6 @@ import {
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
-import { publicBlobToken } from "@/lib/blob-store";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { recordAudit } from "@/lib/audit";
 
@@ -45,7 +44,7 @@ export class FirmNotPurgeableError extends Error {
  *
  *   0. Collect every Blob reference the purge touches BEFORE any DB delete —
  *      household-document keys (private), import-file pathnames (private),
- *      task-file URLs (public), and the firm's branding URLs (public). The
+ *      task-file keys (private), and the firm's branding URLs (public). The
  *      rows that hold these vanish during the cascades below, so we read
  *      them up front.
  *   1. Cascade-delete every household for the firm (drives planning clients +
@@ -161,7 +160,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     );
   const importFilePathnames = importFileRows.map((r) => r.blobPathname).filter((p): p is string => !!p);
 
-  // Task-file blobs (PUBLIC store). storageKey is a full public URL.
+  // Task-file blobs (PRIVATE store). storageKey is a private pathname.
   const taskFileRows = await db
     .select({ storageKey: crmTaskFiles.storageKey })
     .from(crmTaskFiles)
@@ -171,7 +170,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
         db.select({ id: crmTasks.id }).from(crmTasks).where(eq(crmTasks.firmId, firmId)),
       ),
     );
-  const taskFileUrls = taskFileRows.map((r) => r.storageKey).filter((u): u is string => !!u);
+  const taskFileKeys = taskFileRows.map((r) => r.storageKey).filter((k): k is string => !!k);
 
   // Branding blobs (PUBLIC store) live on the firms row itself.
   const brandingUrls = [firmRows[0]?.logoUrl, firmRows[0]?.faviconUrl].filter(
@@ -246,10 +245,10 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       console.error(`[purge-firm] import-file blob del failed (${firmId}):`, err);
     }
   }
-  for (const url of taskFileUrls) {
+  for (const key of taskFileKeys) {
     try {
-      // PUBLIC store: pass the public token.
-      await del(url, { token: publicBlobToken() });
+      // PRIVATE store: no token.
+      await del(key);
     } catch (err) {
       console.error(`[purge-firm] task-file blob del failed (${firmId}):`, err);
     }
