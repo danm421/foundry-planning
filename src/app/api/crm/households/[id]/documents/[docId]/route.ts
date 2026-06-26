@@ -8,6 +8,8 @@ import {
   resolveDocumentBlobPathname,
 } from "@/lib/crm/documents";
 import { ForbiddenError } from "@/lib/authz";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -48,10 +50,20 @@ export async function GET(
     // we sanitize storage keys so the download name stays predictable.
     const safeFilename = doc.filename.replace(/[\r\n"]/g, "_");
 
+    const firmId = await requireOrgId();
+    await recordAudit({
+      action: "vault.document.download",
+      resourceType: "crm_document",
+      resourceId: doc.id,
+      firmId,
+      metadata: { householdId: doc.householdId, filename: doc.filename, kind: "single" },
+    });
+
     return new Response(result.stream, {
       headers: {
         "Content-Type": doc.mimeType ?? "application/octet-stream",
         "Content-Disposition": `attachment; filename="${safeFilename}"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       },
     });

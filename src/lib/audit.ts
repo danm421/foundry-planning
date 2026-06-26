@@ -290,6 +290,7 @@ export type AuditAction =
   | "vault.document.update"
   | "vault.document.move"
   | "vault.document.version_added"
+  | "vault.document.download"
   // Support & feedback
   | "support.message_sent"
   // Cross-org sharing (share grants and revocations)

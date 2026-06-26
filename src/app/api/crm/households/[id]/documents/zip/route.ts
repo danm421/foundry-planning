@@ -9,6 +9,7 @@ import { requireVaultAccess } from "@/lib/crm/authz";
 import { resolveDocumentBlobPathname } from "@/lib/crm/documents";
 import { collectFolderSubtreeIds } from "@/lib/crm/folder-tree";
 import { authErrorResponse } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
 
 // Node-runtime only: this route uses `node:stream` + `archiver`. Do not set
 // `runtime = "edge"`. `force-dynamic` keeps it out of any static cache.
@@ -24,7 +25,7 @@ export async function GET(
 ) {
   try {
     const { id: householdId } = await params;
-    await requireVaultAccess(householdId);
+    const { orgId } = await requireVaultAccess(householdId);
 
     const folderParam = req.nextUrl.searchParams.get("folderId");
     const wholeVault = !folderParam || folderParam === "root";
@@ -75,6 +76,14 @@ export async function GET(
       );
     }
 
+    await recordAudit({
+      action: "vault.document.download",
+      resourceType: "crm_document",
+      resourceId: householdId,
+      firmId: orgId,
+      metadata: { householdId, kind: "zip", scope: wholeVault ? "vault" : folderParam, fileCount: docs.length },
+    });
+
     const archive = archiver("zip", { zlib: { level: 6 } });
     const usedNames = new Set<string>();
     let skipped = 0;
@@ -109,6 +118,7 @@ export async function GET(
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="vault-${householdId.slice(0, 8)}.zip"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       },
     });
