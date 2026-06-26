@@ -4,8 +4,17 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PresentationsLauncher } from "../launcher";
 
 const originalFetch = global.fetch;
+const originalCreateObjectURL = global.URL.createObjectURL;
+const originalRevokeObjectURL = global.URL.revokeObjectURL;
 beforeEach(() => {
+  // jsdom implements neither — the per-page Download path calls both.
+  global.URL.createObjectURL = vi.fn(() => "blob:mock");
+  global.URL.revokeObjectURL = vi.fn();
   global.fetch = vi.fn(async (url: string) => {
+    // download=1 streams a real PDF blob back for a direct browser download.
+    if (String(url).includes("/presentations/runs") && String(url).includes("download=1")) {
+      return new Response(new Blob(["%PDF-1.4"], { type: "application/pdf" }), { status: 200 });
+    }
     if (String(url).includes("/presentations/runs")) {
       return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
     }
@@ -28,6 +37,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   global.fetch = originalFetch;
+  global.URL.createObjectURL = originalCreateObjectURL;
+  global.URL.revokeObjectURL = originalRevokeObjectURL;
 });
 
 describe("PresentationsLauncher", () => {
@@ -120,6 +131,31 @@ describe("PresentationsLauncher", () => {
     const body = JSON.parse((exportCall![1] as RequestInit).body as string);
     expect(body.preview).toBe(true);
     expect(body.pages.length).toBeGreaterThan(1);
+  });
+
+  it("per-page Download streams the PDF for a direct download (download=1)", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Download Cash Flow/i }));
+    await waitFor(() => {
+      const dlCall = vi
+        .mocked(global.fetch)
+        .mock.calls.find((c) => String(c[0]).includes("download=1"));
+      expect(dlCall).toBeTruthy();
+      expect((dlCall![1] as RequestInit).method).toBe("POST");
+    });
+    // A blob URL was created → a direct browser download was triggered.
+    await waitFor(() => expect(global.URL.createObjectURL).toHaveBeenCalled());
   });
 
   it("Generate posts to the background /presentations/runs route and shows a notice", async () => {

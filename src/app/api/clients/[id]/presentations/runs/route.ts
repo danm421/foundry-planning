@@ -14,9 +14,14 @@ import {
   markRunning,
   markDone,
   markFailed,
+  recordCompletedRun,
 } from "@/lib/crm/generation-runs";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
+import {
+  ClientNotFoundError,
+  ProjectionInputError,
+} from "@/lib/projection/load-client-data";
 
 export const dynamic = "force-dynamic";
 // after() needs budget to finish the render after the 202 response. Fluid
@@ -68,6 +73,57 @@ export async function POST(
       // non-fatal — leave email null
     }
 
+    // Synchronous download mode (per-page "Download" button): render now and
+    // stream the PDF straight back as an attachment, AND persist a copy to the
+    // vault + Recent runs — one render shared by both. The deck-level
+    // "Generate PDF" omits this flag and takes the async after()/202 path below
+    // (heavy multi-page decks can exceed the response budget).
+    if (new URL(request.url).searchParams.get("download") === "1") {
+      const { buffer, filename } = await renderPresentationPdf(id, firmId, parsed.data);
+      // Both helpers are best-effort (swallow their own failures) so a vault or
+      // run-bookkeeping hiccup never blocks the advisor's download.
+      const doc = await savePlanToVault({
+        clientId: id,
+        firmId,
+        reportType: "presentation",
+        scenarioId: parsed.data.scenarioId,
+        filename,
+        buffer,
+        uploadedBy: userId ?? null,
+      });
+      await recordCompletedRun({
+        clientId: id,
+        householdId,
+        firmId,
+        kind: "presentation",
+        scenarioId: parsed.data.scenarioId,
+        triggeredBy: userId ?? null,
+        triggeredByEmail: email,
+        resultDocumentId: doc?.id ?? null,
+      });
+      await recordAudit({
+        action: "presentations.export_pdf",
+        resourceType: "client",
+        resourceId: id,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, {
+          pages: parsed.data.pages.map((p) => p.pageId),
+          via: "sync-download",
+        }),
+      });
+      const safeFilename = filename.replace(/["\\\r\n;]/g, "");
+      return new NextResponse(buffer as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${safeFilename}"`,
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
+
     const runId = await createQueuedRun({
       clientId: id,
       householdId,
@@ -110,6 +166,20 @@ export async function POST(
 
     return NextResponse.json({ runId }, { status: 202 });
   } catch (err) {
+    // Render-path errors only reach here via the synchronous download branch —
+    // the async after() job catches its own and marks the run failed instead.
+    if (err instanceof ClientNotFoundError) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (err instanceof ProjectionInputError) {
+      return NextResponse.json(
+        { error: "Client data is incomplete or invalid for this projection." },
+        { status: 422 },
+      );
+    }
+    if (err instanceof Error && /Too many .* scenarios/.test(err.message)) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /clients/[id]/presentations/runs failed", err);

@@ -538,15 +538,18 @@ export function PresentationsLauncher(props: Props) {
                           pages: fresh,
                         });
                       }}
-                      onDownload={async () => {
+                      onDownload={canEdit ? async () => {
                         const pageTitle = PRESENTATION_PAGES[p.pageId].title;
                         setError(null);
                         setNotice(null);
                         const fresh = await withFreshSummaries([
                           { descriptor: descriptorsFor([p])[0], index: i },
                         ]);
+                        // download=1 → render synchronously, stream the PDF back
+                        // for a direct browser download, and persist a copy that
+                        // also lands in Recent runs.
                         const res = await fetch(
-                          `/api/clients/${props.clientId}/presentations/runs`,
+                          `/api/clients/${props.clientId}/presentations/runs?download=1`,
                           {
                             method: "POST",
                             headers: { "content-type": "application/json" },
@@ -559,12 +562,19 @@ export function PresentationsLauncher(props: Props) {
                         );
                         if (!res.ok) {
                           const j = await res.json().catch(() => ({}));
-                          setError(j.error ?? `Generation failed: HTTP ${res.status}`);
+                          setError(j.error ?? `Download failed: HTTP ${res.status}`);
                           return;
                         }
-                        setNotice(`Generating "${pageTitle}" — it'll appear in Recent runs.`);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${slug(pageTitle)}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        // The saved copy shows up under Recent runs.
                         setRunsRefreshKey((k) => k + 1);
-                      }}
+                      } : undefined}
                       scenarios={props.scenarios}
                       snapshots={props.snapshots}
                     />

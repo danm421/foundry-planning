@@ -89,11 +89,12 @@ beforeEach(async () => {
     storageProvider: "vercel-blob",
   }).returning();
   documentId = d.id;
+  vi.mocked(savePlanToVault).mockClear();
   vi.mocked(savePlanToVault).mockResolvedValue({ id: documentId } as never);
 });
 
-function req(body: unknown) {
-  return new Request("http://t/runs", {
+function req(body: unknown, query = "") {
+  return new Request(`http://t/runs${query}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -120,6 +121,28 @@ describe("POST presentations/runs", () => {
     expect(row.kind).toBe("presentation");
     expect(row.triggeredByEmail).toBe("advisor@firm.com");
     expect(row.resultDocumentId).toBe(documentId);
+  });
+
+  it("download=1 streams the PDF as an attachment and records a done run", async () => {
+    const res = await POST(req(validBody, "?download=1"), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+    const bytes = Buffer.from(await res.arrayBuffer());
+    expect(bytes.toString("utf8")).toContain("%PDF");
+
+    // Saved to the vault as a copy...
+    expect(savePlanToVault).toHaveBeenCalledTimes(1);
+    // ...and surfaced under Recent runs as an already-done run.
+    const rows = await db
+      .select()
+      .from(generationRuns)
+      .where(eq(generationRuns.clientId, clientId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("done");
+    expect(rows[0].resultDocumentId).toBe(documentId);
   });
 
   it("403s for a client outside the firm", async () => {

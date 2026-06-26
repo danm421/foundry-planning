@@ -27,7 +27,8 @@ interface Props {
   onScenarioOverrideChange: (next: string | null | undefined) => void;
   onRemove: () => void;
   onPreview: () => void;
-  onDownload: () => void;
+  /** Omitted for view-only access — hides the Download button entirely. */
+  onDownload?: () => void;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
 }
@@ -68,14 +69,16 @@ export function SelectedPageRow(props: Props) {
         >
           Preview
         </button>
-        <button
-          type="button"
-          aria-label={`Download ${page.title}`}
-          className="rounded px-2 py-1 text-xs text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
-          onClick={props.onDownload}
-        >
-          Download
-        </button>
+        {props.onDownload && (
+          <button
+            type="button"
+            aria-label={`Download ${page.title}`}
+            className="rounded px-2 py-1 text-xs text-ink-3 transition-colors hover:bg-card-hover hover:text-ink"
+            onClick={props.onDownload}
+          >
+            Download
+          </button>
+        )}
         <button
           type="button"
           disabled={!Options}
