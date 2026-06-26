@@ -18,7 +18,7 @@ import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
-import { defaultReportForTab, type ReportKey } from "./report-tab-link";
+import { defaultReportForTab, type InputTab, type ReportKey } from "./report-tab-link";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
@@ -55,7 +55,6 @@ interface Props {
   initialSource: "base" | string;
   initialSourceClientData: ClientData;
   initialSourceProjection: ProjectionYear[];
-  availableScenarios: { id: string; name: string }[];
   modelPortfolios: SolverModelPortfolio[];
   milestones: import("@/lib/milestones").ClientMilestones;
   lifeInsuranceSettings: LiAssumptions;
@@ -63,6 +62,14 @@ interface Props {
   spouseName: string;
   categoryGrowthDefaults: { taxable: number; retirement: number; cash: number };
 }
+
+/** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS. */
+const LEFT_TABS: { id: InputTab; label: string }[] = [
+  { id: "retirement", label: "Retirement" },
+  { id: "techniques", label: "Techniques" },
+  { id: "life_insurance", label: "Life Insurance" },
+  { id: "estate_planning", label: "Estate Planning" },
+];
 
 export function LiveSolverWorkspace({
   clientId,
@@ -110,21 +117,18 @@ export function LiveSolverWorkspace({
   );
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
 
-  const [activeTab, setActiveTab] = useState<
-    "retirement" | "techniques" | "life_insurance" | "estate_planning"
-  >("retirement");
+  const [activeTab, setActiveTab] = useState<InputTab>("retirement");
 
   // The right-pane report is linked to the left input tab: selecting an input
   // tab applies that tab's default report; clicking a report tab overrides it
   // until the next input-tab change.
-  const [activeReport, setActiveReport] = useState<ReportKey>(() =>
+  const [activeReport, setActiveReport] = useState<ReportKey>(
     defaultReportForTab("retirement"),
   );
-  const handleTabChange = useCallback((tab: typeof activeTab) => {
+  const handleTabChange = useCallback((tab: InputTab) => {
     setActiveTab(tab);
     setActiveReport(defaultReportForTab(tab));
   }, []);
-  const handleReportChange = useCallback((r: ReportKey) => setActiveReport(r), []);
 
   // LI assumptions live here so both the left-pane inputs view and the right-
   // pane results/chart can read them; the LI views are controlled.
@@ -806,58 +810,22 @@ export function LiveSolverWorkspace({
             aria-label="Solver editing surface"
             className="sticky top-0 z-10 flex gap-1 border-b border-hair-2 bg-card px-3 pt-0.5"
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "retirement"}
-              onClick={() => handleTabChange("retirement")}
-              className={
-                activeTab === "retirement"
-                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-              }
-            >
-              Retirement
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "techniques"}
-              onClick={() => handleTabChange("techniques")}
-              className={
-                activeTab === "techniques"
-                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-              }
-            >
-              Techniques
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "life_insurance"}
-              onClick={() => handleTabChange("life_insurance")}
-              className={
-                activeTab === "life_insurance"
-                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-              }
-            >
-              Life Insurance
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "estate_planning"}
-              onClick={() => handleTabChange("estate_planning")}
-              className={
-                activeTab === "estate_planning"
-                  ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                  : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-              }
-            >
-              Estate Planning
-            </button>
+            {LEFT_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === t.id}
+                onClick={() => handleTabChange(t.id)}
+                className={
+                  activeTab === t.id
+                    ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
+                    : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
+                }
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
           <div className="px-1 pb-4">
@@ -1017,7 +985,7 @@ export function LiveSolverWorkspace({
               clientName={clientName}
               spouseName={spouseName}
               activeReport={activeReport}
-              onReportChange={handleReportChange}
+              onReportChange={setActiveReport}
               baseTree={baseClientData}
             />
             {activeReport === "lifeInsurance" ? (

@@ -103,7 +103,6 @@ const baseProps = {
     planSettings: {},
   } as never,
   initialSourceProjection: [{ year: 2026, portfolioAssets: { total: 1_000_000 } }] as never,
-  availableScenarios: [],
   modelPortfolios: [],
   milestones: {
     planStart: 2026,

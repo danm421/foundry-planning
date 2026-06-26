@@ -1,8 +1,8 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { db } from "@/db";
-import { scenarios, modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
@@ -34,11 +34,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
     ? runProjection(sourceLoaded.effectiveTree)
     : baseProjection;
 
-  const [scenarioRows, modelPortfolioRows, allocationRows] = await Promise.all([
-    db
-      .select({ id: scenarios.id, name: scenarios.name })
-      .from(scenarios)
-      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, false))),
+  const [modelPortfolioRows, allocationRows] = await Promise.all([
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
@@ -95,7 +91,6 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       initialSource={source}
       initialSourceClientData={sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree}
       initialSourceProjection={sourceProjection}
-      availableScenarios={scenarioRows}
       modelPortfolios={solverPortfolios}
       milestones={milestones}
       lifeInsuranceSettings={lifeInsuranceSettings}

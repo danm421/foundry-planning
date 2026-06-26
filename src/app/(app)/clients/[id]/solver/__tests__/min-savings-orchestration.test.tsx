@@ -90,7 +90,6 @@ const baseProps = {
   initialSource: "base" as const,
   initialSourceClientData: baseClientData,
   initialSourceProjection: [baseProjectionYear],
-  availableScenarios: [],
   modelPortfolios: [portfolio],
   milestones: {
     planStart: 2026,
