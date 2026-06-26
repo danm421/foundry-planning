@@ -28,6 +28,12 @@ vi.mock("../li-need-over-time-view", () => ({
 vi.mock("@/components/charts/estate-comparison-chart", () => ({
   EstateComparisonChart: () => <div data-testid="chart-estate" />,
 }));
+vi.mock("@/components/cashflow/charts/tax-bracket-chart", () => ({
+  TaxBracketChart: () => <div data-testid="chart-tax-bracket" />,
+}));
+vi.mock("@/components/cashflow/tax-bracket-tab", () => ({
+  TaxBracketTab: () => <div data-testid="table-tax-bracket" />,
+}));
 
 import { SolverChartPanel } from "../solver-chart-panel";
 
@@ -76,11 +82,12 @@ describe("SolverChartPanel", () => {
     expect(screen.queryByTestId("chart-cashflow")).not.toBeInTheDocument();
   });
 
-  it("renders all five report tabs unconditionally", () => {
+  it("renders all six report tabs unconditionally", () => {
     render(<ControlledPanel />);
     for (const name of [
       "Portfolio",
       "Cash Flow",
+      "Tax Bracket",
       "Liquidity",
       "Life Insurance Need",
       "Estate",
@@ -94,6 +101,16 @@ describe("SolverChartPanel", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
     expect(screen.getByTestId("chart-cashflow")).toBeInTheDocument();
     expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
+  });
+
+  it("switches to the Tax Bracket chart and shows its table when expanded", async () => {
+    render(<ControlledPanel />);
+    await userEvent.click(screen.getByRole("tab", { name: "Tax Bracket" }));
+    expect(screen.getByTestId("chart-tax-bracket")).toBeInTheDocument();
+    expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
+    // The bracket tables ARE the details view — not the generic year table.
+    await userEvent.click(screen.getByRole("button", { name: /expand table/i }));
+    expect(screen.getByTestId("table-tax-bracket")).toBeInTheDocument();
   });
 
   it("switches to Liquidity and toggles portfolio assets", async () => {

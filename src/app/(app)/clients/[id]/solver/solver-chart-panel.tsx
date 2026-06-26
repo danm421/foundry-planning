@@ -12,11 +12,14 @@ import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
+import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
+import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
 import { type ReportKey } from "./report-tab-link";
 
 const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "cashflow", label: "Cash Flow" },
+  { id: "taxBracket", label: "Tax Bracket" },
   { id: "liquidity", label: "Liquidity" },
   { id: "lifeInsurance", label: "Life Insurance Need" },
   { id: "estate", label: "Estate" },
@@ -198,6 +201,9 @@ export function SolverChartPanel({
         {tab === "cashflow" ? (
           <SolverCashFlowChart years={currentProjection} />
         ) : null}
+        {tab === "taxBracket" ? (
+          <TaxBracketChart years={currentProjection} fillHeight />
+        ) : null}
         {tab === "liquidity" ? (
           <YearlyLiquidityChart
             rows={liquidityRows}
@@ -305,10 +311,11 @@ export function SolverChartPanel({
       </div>
 
       {showTable ? (
-        <SolverYearTablePanel
-          years={currentProjection}
-          hasSpouse={isMarried}
-        />
+        tab === "taxBracket" ? (
+          <TaxBracketTab years={currentProjection} />
+        ) : (
+          <SolverYearTablePanel years={currentProjection} hasSpouse={isMarried} />
+        )
       ) : null}
 
       {computeStatus === "computing" ? (
