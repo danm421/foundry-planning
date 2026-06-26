@@ -54,7 +54,7 @@ export function SolverRowLivingExpenseScale({
   const target: SolveLeverKey = { kind: "living-expense-scale" };
 
   return (
-    <div className="space-y-2.5 col-span-2">
+    <div className="space-y-2.5">
       <div className="flex items-center gap-2">
         <div className="text-[13px] font-medium text-ink">Living Expenses</div>
         <div className="relative">

@@ -44,7 +44,7 @@ export function SolverSection({ title, defaultOpen = true, action, children }: P
       </div>
       {open ? (
         <div className="px-5 py-4">
-          <div className="grid grid-cols-1 gap-y-5 auto-rows-max content-start">{children}</div>
+          <div className="flex flex-col gap-y-5">{children}</div>
         </div>
       ) : null}
     </div>

@@ -56,7 +56,7 @@ export function SolverRowSocialSecurity({
   if (!baseClientSs && !baseSpouseSs) return null;
 
   return (
-    <div className="space-y-2.5 col-span-2">
+    <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Social Security</div>
       <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
         {baseClientSs ? (

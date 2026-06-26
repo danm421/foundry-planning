@@ -60,7 +60,7 @@ export function SolverRowIncomes({
     0.03;
 
   return (
-    <div className="space-y-2.5 col-span-2">
+    <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Other Income</div>
       <div className="grid grid-cols-2 gap-x-5 gap-y-3">
         {baseActive.map((baseInc) => {

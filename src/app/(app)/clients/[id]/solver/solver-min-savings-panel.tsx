@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
 
@@ -81,27 +81,37 @@ export function SolverMinSavingsPanel({
             : `fully funded by existing cash flow`}
         </p>
         <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onIncludeSelfFunding}
-            className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-accent-on hover:bg-accent/90"
+          <ActionTip text="Keep funding the plan from the modeled spending cut. The amount is added as an editable contribution above so you can fine-tune it; the client's stated living expenses are left unchanged.">
+            <button
+              type="button"
+              onClick={onIncludeSelfFunding}
+              className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-accent-on hover:bg-accent/90"
+            >
+              Keep self-funding
+            </button>
+          </ActionTip>
+          <ActionTip text="Bake the cut in permanently: lower the client's working-years living expenses by this amount and turn the freed-up cash into a regular savings contribution.">
+            <button
+              type="button"
+              onClick={onIncludeLockInCut}
+              className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair"
+            >
+              Lock in cut
+            </button>
+          </ActionTip>
+          <ActionTip
+            text="Discard this result and return the projection to its pre-solve state. Nothing is saved."
+            align="right"
+            className="ml-auto"
           >
-            Keep self-funding
-          </button>
-          <button
-            type="button"
-            onClick={onIncludeLockInCut}
-            className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair"
-          >
-            Lock in cut
-          </button>
-          <button
-            type="button"
-            onClick={onDismissResult}
-            className="ml-auto text-[12px] text-ink-3 hover:text-ink-2"
-          >
-            Dismiss
-          </button>
+            <button
+              type="button"
+              onClick={onDismissResult}
+              className="text-[12px] text-ink-3 hover:text-ink-2"
+            >
+              Dismiss
+            </button>
+          </ActionTip>
         </div>
       </div>
     );
@@ -182,5 +192,34 @@ export function SolverMinSavingsPanel({
         Solve minimum additional savings
       </button>
     </div>
+  );
+}
+
+/** Wraps an action button with a "what does this do" tooltip revealed on hover
+ *  and keyboard focus. `align` keeps the floating copy inside the card edge:
+ *  left-anchored by default, right-anchored for the trailing Dismiss button. */
+function ActionTip({
+  text,
+  align = "left",
+  className,
+  children,
+}: {
+  text: string;
+  align?: "left" | "right";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`group relative inline-flex ${className ?? ""}`}>
+      {children}
+      <span
+        role="tooltip"
+        className={`pointer-events-none invisible absolute bottom-full ${
+          align === "right" ? "right-0" : "left-0"
+        } z-50 mb-2 w-60 max-w-[calc(100vw-2rem)] rounded-md border border-hair bg-card px-3 py-2 text-[11px] leading-snug text-ink-2 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100`}
+      >
+        {text}
+      </span>
+    </span>
   );
 }
