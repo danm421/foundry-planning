@@ -256,7 +256,7 @@ describe("LiveSolverWorkspace — save scenario", () => {
 
     await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
     expect(routerPush).toHaveBeenCalledWith(
-      "/clients/client-id/comparison?scenario=new-scenario-id",
+      "/clients/client-id/cashflow?scenario=new-scenario-id",
     );
   });
 });
@@ -386,7 +386,8 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
   it("cached Base % survives a working-only Recalculate", async () => {
     // Seed a ready result so the component's cached-base effect fires on mount
-    // and sets cachedBaseSuccess=0.8. The Base gauge should show "80%".
+    // and sets cachedBaseSuccess=0.8. The two-pane design shows the base value
+    // as a sub-hint beneath the scenario gauge: "↑ from 80%".
     mcStateRef.current = {
       status: "ready",
       baseSuccessRate: 0.8,
@@ -401,9 +402,9 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // The Base gauge renders "80%" (Math.round(0.8*100)). The Scenario gauge
-    // renders "85%". Both values are distinct so getByText is unambiguous.
-    expect(screen.getByText("80%")).toBeTruthy();
+    // The scenario gauge shows "85%" as the main value. The base value (80%)
+    // is rendered as a sub-hint "↑ from 80%" below it (since 85 > 80).
+    expect(screen.getByText(/from 80%/)).toBeTruthy();
 
     // Edit an input → Scenario goes stale → Recalculate overlay appears.
     const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
@@ -412,11 +413,11 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     const recalc = await screen.findByRole("button", { name: /recalculate/i });
     fireEvent.click(recalc);
 
-    // After a working-only Recalculate the Base "80%" must still be present —
-    // cachedBaseSuccess was set on the first ready run and must not be cleared.
-    // The Base column heading ("Base Facts") plus "80%" both remain visible.
-    expect(screen.getByText("Base Facts")).toBeTruthy();
-    expect(screen.getByText("80%")).toBeTruthy();
+    // After a working-only Recalculate the cached base sub-hint must still be
+    // present — cachedBaseSuccess was set on the first ready run and must not
+    // be cleared. The sub-hint "↑ from 80%" remains visible (state is stale,
+    // which is one of the conditions for rendering the sub-hint).
+    expect(screen.getByText(/from 80%/)).toBeTruthy();
   });
 
   it("auto-run failure is recoverable: Recalculate re-includes Base while uncached", async () => {
