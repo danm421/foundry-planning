@@ -50,6 +50,24 @@ export async function createQueuedRun(
   }
 }
 
+/**
+ * First phase of a presentation run: generating the Retirement Comparison AI
+ * commentary before the PDF render. Stamps `startedAt` (the real start of work)
+ * and surfaces as "Analyzing…" in Recent runs. Runs that never reach the next
+ * phase are swept to `failed` by listRecentRuns just like queued/running.
+ */
+export async function markAnalyzing(runId: string | null): Promise<void> {
+  if (!runId) return;
+  try {
+    await db
+      .update(generationRuns)
+      .set({ status: "analyzing", startedAt: new Date() })
+      .where(eq(generationRuns.id, runId));
+  } catch (err) {
+    logFail("markAnalyzing", err);
+  }
+}
+
 export async function markRunning(runId: string | null): Promise<void> {
   if (!runId) return;
   try {
@@ -141,7 +159,11 @@ export async function listRecentRuns(
         and(
           eq(generationRuns.householdId, householdId),
           eq(generationRuns.firmId, firmId),
-          or(eq(generationRuns.status, "queued"), eq(generationRuns.status, "running")),
+          or(
+            eq(generationRuns.status, "queued"),
+            eq(generationRuns.status, "analyzing"),
+            eq(generationRuns.status, "running"),
+          ),
           lt(generationRuns.createdAt, cutoff),
         ),
       );

@@ -26,7 +26,6 @@ import {
 } from "@/components/presentations/registry";
 import { SelectedPageRow } from "@/components/presentations/launcher/selected-page-row";
 import { PdfPreviewDialog, slug, type PreviewRequest } from "@/components/presentations/launcher/pdf-preview-dialog";
-import { ensureFreshSummaries, type PageDescriptor } from "@/components/presentations/launcher/ensure-fresh-summaries";
 import type { RetirementComparisonOptions } from "@/lib/presentations/pages/retirement-comparison/types";
 import { TemplatesPanel } from "@/components/presentations/launcher/templates-panel";
 import { SaveTemplateModal } from "@/components/presentations/launcher/save-template-modal";
@@ -145,7 +144,6 @@ export function PresentationsLauncher(props: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [runsRefreshKey, setRunsRefreshKey] = useState(0);
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
-  const [preparing, setPreparing] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -312,41 +310,6 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
-  // Map every page in the current deck to the { descriptor, index } shape
-  // expected by withFreshSummaries. Used by the two full-deck export/preview
-  // sites; per-page sites build a one-element array inline.
-  function allPageDescriptors() {
-    return state.pages.map((p, i) => ({ descriptor: descriptorsFor([p])[0], index: i }));
-  }
-
-  // Before any export/preview, ensure each Retirement Comparison page carries a
-  // fresh AI summary. Writes refreshed text back into options state and returns
-  // the descriptors to send to the export route (with fresh text already
-  // inlined, since dispatched state updates won't be readable synchronously).
-  async function withFreshSummaries(
-    selected: { descriptor: PageDescriptor; index: number }[],
-  ): Promise<PageDescriptor[]> {
-    setError(null);
-    setPreparing(true);
-    try {
-      const { pages, updates, error } = await ensureFreshSummaries(
-        selected.map((s) => s.descriptor),
-        { clientId: props.clientId },
-      );
-      for (const u of updates) {
-        dispatch({
-          type: "updatePageOptions",
-          index: selected[u.index].index,
-          options: u.options,
-        });
-      }
-      if (error) setError(error);
-      return pages;
-    } finally {
-      setPreparing(false);
-    }
-  }
-
   // Deck positions (1-based) of any Retirement Comparison page that has no
   // comparison scenario chosen. Such a page renders only a "Select a comparison
   // scenario" placeholder, so the export is blocked until each one is set.
@@ -378,7 +341,9 @@ export function PresentationsLauncher(props: Props) {
     }
     setGenerating(true);
     try {
-      const fresh = await withFreshSummaries(allPageDescriptors());
+      // The run is created immediately and the Retirement Comparison AI
+      // commentary is generated server-side as the run's "Analyzing…" phase, so
+      // the deck shows up in Recent runs right away instead of blocking here.
       const res = await fetch(
         `/api/clients/${props.clientId}/presentations/runs`,
         {
@@ -393,7 +358,7 @@ export function PresentationsLauncher(props: Props) {
                 state.loadedTemplate?.name,
                 new Date(),
               ),
-            pages: fresh,
+            pages: descriptorsFor(state.pages),
           }),
         },
       );
@@ -488,13 +453,12 @@ export function PresentationsLauncher(props: Props) {
           </button>
           <button
             type="button"
-            disabled={state.pages.length === 0 || preparing}
-            onClick={async () => {
-              const fresh = await withFreshSummaries(allPageDescriptors());
+            disabled={state.pages.length === 0}
+            onClick={() => {
               setPreviewRequest({
                 title: "Full presentation",
                 scenarioId: resolvedScenarioId,
-                pages: fresh,
+                pages: descriptorsFor(state.pages),
               });
             }}
             className="rounded border border-hair bg-card-2 px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-card-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -504,11 +468,11 @@ export function PresentationsLauncher(props: Props) {
           {canEdit && (
             <button
               type="button"
-              disabled={generateDisabled || preparing}
+              disabled={generateDisabled}
               onClick={handleGenerate}
               className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {preparing ? "Preparing…" : generating ? "Generating…" : "Generate PDF"}
+              {generating ? "Generating…" : "Generate PDF"}
             </button>
           )}
         </div>
@@ -555,26 +519,21 @@ export function PresentationsLauncher(props: Props) {
                       onRemove={() =>
                         dispatch({ type: "removePage", index: i })
                       }
-                      onPreview={async () => {
-                        const fresh = await withFreshSummaries([
-                          { descriptor: descriptorsFor([p])[0], index: i },
-                        ]);
+                      onPreview={() => {
                         setPreviewRequest({
                           title: PRESENTATION_PAGES[p.pageId].title,
                           scenarioId: resolvedScenarioId,
-                          pages: fresh,
+                          pages: descriptorsFor([p]),
                         });
                       }}
                       onDownload={canEdit ? async () => {
                         const pageTitle = PRESENTATION_PAGES[p.pageId].title;
                         setError(null);
                         setNotice(null);
-                        const fresh = await withFreshSummaries([
-                          { descriptor: descriptorsFor([p])[0], index: i },
-                        ]);
-                        // download=1 → render synchronously, stream the PDF back
-                        // for a direct browser download, and persist a copy that
-                        // also lands in Recent runs.
+                        // download=1 → render synchronously (generating any
+                        // Retirement Comparison AI commentary server-side first),
+                        // stream the PDF back for a direct browser download, and
+                        // persist a copy that also lands in Recent runs.
                         const res = await fetch(
                           `/api/clients/${props.clientId}/presentations/runs?download=1`,
                           {
@@ -583,7 +542,7 @@ export function PresentationsLauncher(props: Props) {
                             body: JSON.stringify({
                               scenarioId: resolvedScenarioId,
                               filename: `${slug(pageTitle)}.pdf`,
-                              pages: fresh,
+                              pages: descriptorsFor([p]),
                             }),
                           },
                         );
@@ -636,12 +595,6 @@ export function PresentationsLauncher(props: Props) {
         </div>
       </div>
 
-      {preparing && (
-        <p className="mt-3 flex items-center gap-2 text-sm text-ink-3" role="status">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-hair border-t-accent" />
-          Preparing AI summary…
-        </p>
-      )}
       {error && (
         <p className="mt-3 text-sm text-crit" role="alert">
           {error}

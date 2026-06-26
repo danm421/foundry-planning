@@ -34,6 +34,19 @@ describe("RecentRunsPanel", () => {
     expect(screen.getByText("Done")).toBeInTheDocument();
   });
 
+  it("renders an analyzing run with an Analyzing… pill and a pending result", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        householdId: "hh1",
+        runs: [{ ...sampleRun, status: "analyzing", resultDocumentId: null }],
+      }),
+    });
+    render(<RecentRunsPanel clientId="c1" householdId="hh1" refreshKey={0} />);
+    expect(await screen.findByText("Analyzing…")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open/i })).not.toBeInTheDocument();
+  });
+
   it("shows the empty state when there are no runs", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,

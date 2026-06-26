@@ -15,6 +15,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 
 import {
   createQueuedRun,
+  markAnalyzing,
   markRunning,
   markDone,
   markFailed,
@@ -67,6 +68,17 @@ describe("generation-runs lifecycle", () => {
       .where(eq(generationRuns.id, runId!));
     expect(row.status).toBe("queued");
     expect(row.triggeredByEmail).toBe("advisor@firm.com");
+  });
+
+  it("markAnalyzing sets status analyzing and stamps startedAt", async () => {
+    const runId = await createQueuedRun({
+      clientId, householdId, firmId: ORG, kind: "presentation",
+      scenarioId: null, triggeredBy: "u", triggeredByEmail: null, requestPayload: null,
+    });
+    await markAnalyzing(runId!);
+    const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, runId!));
+    expect(row.status).toBe("analyzing");
+    expect(row.startedAt).not.toBeNull();
   });
 
   it("markRunning → markDone sets status + resultDocumentId + timestamps", async () => {
@@ -124,6 +136,18 @@ describe("listRecentRuns stale sweep", () => {
     const byId = new Map(rows.map((r) => [r.id, r]));
     expect(byId.get(s.id)!.status).toBe("failed");
     expect(byId.get(f.id)!.status).toBe("queued");
+  });
+
+  it("flips stale analyzing rows to failed too", async () => {
+    const stale = new Date(Date.now() - STALE_RUN_MS - 60_000);
+    const [a] = await db.insert(generationRuns).values({
+      householdId, clientId, firmId: ORG, kind: "presentation",
+      status: "analyzing", createdAt: stale, startedAt: stale,
+    }).returning();
+
+    const rows = await listRecentRuns(householdId, ORG, 25);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get(a.id)!.status).toBe("failed");
   });
 
   it("is firm-scoped and newest-first", async () => {

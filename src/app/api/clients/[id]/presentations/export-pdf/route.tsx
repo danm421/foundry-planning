@@ -12,6 +12,7 @@ import {
 } from "@/lib/projection/load-client-data";
 import { recordAudit } from "@/lib/audit";
 import { renderPresentationPdf, BodySchema } from "@/components/presentations/render-presentation-pdf";
+import { ensureRetirementComparisonAiSummaries } from "@/lib/presentations/ensure-ai-summaries";
 
 export const dynamic = "force-dynamic";
 // Defense-in-depth on top of the 25 s render-timeout race below: cap the
@@ -62,8 +63,16 @@ export async function POST(
       );
     }
 
+    // Generate any Retirement Comparison AI commentary server-side so the
+    // preview matches the saved deck (the export route does the same in its
+    // "Analyzing…" phase). Synchronous — the preview already blocks on render.
+    const pages = await ensureRetirementComparisonAiSummaries(
+      id,
+      access.firmId,
+      parsed.data.pages,
+    );
     const { buffer, filename, distinctScenarioCount } =
-      await renderPresentationPdf(id, access.firmId, parsed.data);
+      await renderPresentationPdf(id, access.firmId, { ...parsed.data, pages });
 
     await recordAudit({
       action: "presentations.preview_pdf",

@@ -687,6 +687,9 @@ export const crmDocumentFolders = pgTable("crm_document_folders", {
 
 export const generationRunStatusEnum = pgEnum("generation_run_status", [
   "queued",
+  // Presentation runs generate the Retirement Comparison AI commentary as their
+  // final data step before rendering; this phase surfaces as "Analyzing…".
+  "analyzing",
   "running",
   "done",
   "failed",

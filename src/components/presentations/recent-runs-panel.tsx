@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useClientAccess } from "@/components/client-access-provider";
 
-type RunStatus = "queued" | "running" | "done" | "failed";
+type RunStatus = "queued" | "analyzing" | "running" | "done" | "failed";
 
 interface Run {
   id: string;
@@ -27,15 +27,20 @@ interface Props {
  * Status pill classes follow the codebase pattern established in crm-task-side-panel:
  * border-<token>/<opacity> text-<token> bg-<token>/<opacity>
  *
- * done    → accent verdigris (action-adjacent; a completed generation is a deliverable)
- * running → accent with pulse (in-flight action)
- * queued  → neutral ink-2 / card-2 (pending, no urgency)
- * failed  → crit semantic red
+ * done      → accent verdigris (action-adjacent; a completed generation is a deliverable)
+ * analyzing → accent with pulse (AI commentary step, in-flight)
+ * running   → accent with pulse (in-flight action)
+ * queued    → neutral ink-2 / card-2 (pending, no urgency)
+ * failed    → crit semantic red
  */
 const STATUS_PILL: Record<RunStatus, { label: string; className: string }> = {
   done: {
     label: "Done",
     className: "border-accent/40 text-accent-ink bg-accent/10",
+  },
+  analyzing: {
+    label: "Analyzing…",
+    className: "border-accent/40 text-accent-ink bg-accent/10 animate-pulse",
   },
   running: {
     label: "Running",
@@ -103,7 +108,10 @@ export function RecentRunsPanel({ clientId, householdId, refreshKey }: Props) {
       const latest = await fetchRuns();
       if (cancelled) return;
       const inFlight = latest?.some(
-        (r) => r.status === "queued" || r.status === "running",
+        (r) =>
+          r.status === "queued" ||
+          r.status === "analyzing" ||
+          r.status === "running",
       );
       if (inFlight) timer.current = setTimeout(tick, POLL_MS);
     };
