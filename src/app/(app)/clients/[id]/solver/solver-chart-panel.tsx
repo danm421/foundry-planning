@@ -12,24 +12,15 @@ import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
+import { type ReportKey } from "./report-tab-link";
 
-type ChartTab = "portfolio" | "cashflow" | "liquidity" | "lifeInsurance" | "estate";
-
-const BASE_TABS: { id: ChartTab; label: string }[] = [
+const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "cashflow", label: "Cash Flow" },
   { id: "liquidity", label: "Liquidity" },
+  { id: "lifeInsurance", label: "Life Insurance Need" },
+  { id: "estate", label: "Estate" },
 ];
-
-const LI_TAB: { id: ChartTab; label: string } = {
-  id: "lifeInsurance",
-  label: "Life Insurance Need",
-};
-
-const ESTATE_TAB: { id: ChartTab; label: string } = {
-  id: "estate",
-  label: "Estate",
-};
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
 // the data-entry grid shows on first paint; the advisor can drag it taller and
@@ -100,10 +91,10 @@ interface Props {
   liAssumptions: LiAssumptions;
   clientName: string;
   spouseName: string;
-  /** True while the Life Insurance solver tab is active below the grid. */
-  showLifeInsuranceTab: boolean;
-  /** True while the Estate Planning solver tab is active below the grid. */
-  showEstateTab: boolean;
+  /** Controlled active report tab; linked to the left input tab in the workspace. */
+  activeReport: ReportKey;
+  /** Called when a report tab is clicked, so the workspace can override the default. */
+  onReportChange: (r: ReportKey) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
 }
@@ -117,13 +108,11 @@ export function SolverChartPanel({
   liAssumptions,
   clientName,
   spouseName,
-  showLifeInsuranceTab,
-  showEstateTab,
+  activeReport,
+  onReportChange,
   baseTree,
 }: Props) {
-  const [tab, setTab] = useState<ChartTab>(
-    showLifeInsuranceTab ? "lifeInsurance" : showEstateTab ? "estate" : "portfolio",
-  );
+  const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const chartHeight = useSyncExternalStore(
@@ -163,43 +152,14 @@ export function SolverChartPanel({
   const overTime = useNeedOverTime(clientId);
   const { cancel: cancelOverTime } = overTime;
 
-  // Auto-select the LI Need tab when the LI solver tab opens, and revert to
-  // Portfolio when it closes — adjusted during render via a previous-prop
-  // tracker (React's "store info from previous renders" pattern). Doing this
-  // in render rather than an effect avoids the cascading-render lint rule,
-  // while still leaving `tab` as real user-controllable state between the
-  // open/close transitions.
-  const [prevShowLiTab, setPrevShowLiTab] = useState(showLifeInsuranceTab);
-  if (showLifeInsuranceTab !== prevShowLiTab) {
-    setPrevShowLiTab(showLifeInsuranceTab);
-    setTab((t) =>
-      showLifeInsuranceTab
-        ? "lifeInsurance"
-        : t === "lifeInsurance"
-          ? "portfolio"
-          : t,
-    );
-  }
-
-  const [prevShowEstateTab, setPrevShowEstateTab] = useState(showEstateTab);
-  if (showEstateTab !== prevShowEstateTab) {
-    setPrevShowEstateTab(showEstateTab);
-    setTab((t) =>
-      showEstateTab ? "estate" : t === "estate" ? "portfolio" : t,
-    );
-  }
-
   // Aborting an in-flight over-time fetch is a genuine external-system
-  // teardown, so it stays in an effect — it does not call setState.
+  // teardown, so it stays in an effect — it does not call setState. Cancel
+  // whenever the Life Insurance Need report is no longer the active tab.
   useEffect(() => {
-    if (!showLifeInsuranceTab) cancelOverTime();
-  }, [showLifeInsuranceTab, cancelOverTime]);
+    if (tab !== "lifeInsurance") cancelOverTime();
+  }, [tab, cancelOverTime]);
 
-  const tabs = [
-    ...BASE_TABS,
-    ...(showLifeInsuranceTab ? [LI_TAB] : []),
-    ...(showEstateTab ? [ESTATE_TAB] : []),
-  ];
+  const tabs = REPORT_TABS;
   // Toggle visibility must match the over-time engine's own spouse check
   // (need-over-time.ts `hasSpouse`) so the client/spouse toggle never offers
   // a series the engine returned as null, nor hides one it computed.
@@ -310,7 +270,7 @@ export function SolverChartPanel({
               type="button"
               role="tab"
               aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => onReportChange(t.id)}
               className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
                 tab === t.id
                   ? "bg-accent/20 text-ink"
