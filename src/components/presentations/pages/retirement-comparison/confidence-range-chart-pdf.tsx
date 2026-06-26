@@ -10,8 +10,8 @@ const CURRENT = dataLight.grey;
 
 /** p20–p80 bands + p50 lines per plan, with year ticks and end-of-plan value
  *  labels (both medians + the proposed downside floor). Proposed over current. */
-export function ConfidenceRangeChartPdf({ points }: { points: ConfidencePoint[] }) {
-  const width = 500, height = 124, padL = 6, padR = 50, padT = 12, padB = 16;
+export function ConfidenceRangeChartPdf({ points, width = 500 }: { points: ConfidencePoint[]; width?: number }) {
+  const height = 124, padL = 6, padR = 50, padT = 12, padB = 16;
   const plotH = height - padT - padB;
   if (points.length === 0) return null;
   const maxY = Math.max(1, ...points.map((p) => Math.max(p.baseP80, p.scnP80)));

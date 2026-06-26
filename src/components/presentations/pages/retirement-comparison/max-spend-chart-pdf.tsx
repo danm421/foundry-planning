@@ -10,8 +10,8 @@ const PROPOSED = dataLight.green; // proposed plan
 
 /** Two max-spend lines (current vs proposed) in future dollars, with the
  *  spendable amount labeled at both ends of each line. */
-export function MaxSpendChartPdf({ series }: { series: MaxSpendPoint[] }) {
-  const width = 500, height = 124, padL = 6, padR = 48, padT = 14, padB = 16;
+export function MaxSpendChartPdf({ series, width = 500 }: { series: MaxSpendPoint[]; width?: number }) {
+  const height = 124, padL = 6, padR = 48, padT = 14, padB = 16;
   const plotH = height - padT - padB;
   if (series.length === 0) return null;
   const maxY = Math.max(1, ...series.map((p) => Math.max(p.base, p.scenario)));

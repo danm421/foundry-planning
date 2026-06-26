@@ -19,6 +19,10 @@ const s = StyleSheet.create({
   verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
   verdictText: { fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.3 },
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8, marginBottom: 8 },
+  // Side-by-side variant of `panel`: equal-width columns inside `chartRow`
+  // (the row owns the bottom margin so the columns drop it).
+  panelCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8 },
+  chartRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 },
 
   kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
@@ -95,19 +99,38 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex + 1} totalPages={totalPages}>
         <SectionHead title="Retirement Comparison — detail" eyebrow="RETIREMENT COMPARISON" accent={accent} />
 
-        {data.maxSpend.show ? (
-          <View style={s.panel}>
-            <Text style={s.h4}>{`Maximum sustainable spending — ${fmtUsd(data.maxSpend.scenarioToday)}/yr proposed vs. ${fmtUsd(data.maxSpend.baseToday)}/yr current (today's $)`}</Text>
-            <MaxSpendChartPdf series={data.maxSpend.series} />
-          </View>
-        ) : null}
+        {(() => {
+          const bothCharts = data.maxSpend.show && data.confidence.show;
+          // Side-by-side halves the available width; full-width when solo.
+          const chartWidth = bothCharts ? 240 : 500;
+          const panelStyle = bothCharts ? s.panelCol : s.panel;
 
-        {data.confidence.show ? (
-          <View style={s.panel}>
-            <Text style={s.h4}>Range of outcomes — downside protection</Text>
-            <ConfidenceRangeChartPdf points={data.confidence.points} />
-          </View>
-        ) : null}
+          const maxSpendPanel = data.maxSpend.show ? (
+            <View style={panelStyle}>
+              <Text style={s.h4}>{`Maximum sustainable spending — ${fmtUsd(data.maxSpend.scenarioToday)}/yr proposed vs. ${fmtUsd(data.maxSpend.baseToday)}/yr current (today's $)`}</Text>
+              <MaxSpendChartPdf series={data.maxSpend.series} width={chartWidth} />
+            </View>
+          ) : null;
+
+          const confidencePanel = data.confidence.show ? (
+            <View style={panelStyle}>
+              <Text style={s.h4}>Range of outcomes — downside protection</Text>
+              <ConfidenceRangeChartPdf points={data.confidence.points} width={chartWidth} />
+            </View>
+          ) : null;
+
+          return bothCharts ? (
+            <View style={s.chartRow}>
+              {maxSpendPanel}
+              {confidencePanel}
+            </View>
+          ) : (
+            <Fragment>
+              {maxSpendPanel}
+              {confidencePanel}
+            </Fragment>
+          );
+        })()}
 
         {data.showPortfolioMatrix ? (
           <View style={s.panel}>
