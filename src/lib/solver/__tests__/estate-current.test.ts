@@ -1,33 +1,10 @@
 import { describe, it, expect } from "vitest";
-import type { Account, ClientData, EntitySummary, Gift } from "@/engine/types";
+import type { ClientData, EntitySummary, Gift } from "@/engine/types";
 import {
-  currentRevocableTrusts,
   currentTrustEntities,
   currentCharities,
   summarizeCurrentGift,
 } from "../estate-current";
-
-const acct = (over: Partial<Account>): Account =>
-  ({
-    id: "a", name: "Acct", category: "taxable", subType: "brokerage",
-    value: 0, basis: 0, growthRate: 0, rmdEnabled: false, titlingType: "individual", owners: [],
-    ...over,
-  } as unknown as Account);
-
-describe("currentRevocableTrusts", () => {
-  it("groups tagged accounts by trust name and ignores untagged", () => {
-    const trusts = currentRevocableTrusts([
-      acct({ id: "1", name: "Brokerage", revocableTrustName: "Smith RLT" }),
-      acct({ id: "2", name: "Cash", revocableTrustName: "Smith RLT" }),
-      acct({ id: "3", name: "401k", revocableTrustName: undefined }),
-    ]);
-    expect(trusts).toEqual([{ name: "Smith RLT", accountNames: ["Brokerage", "Cash"] }]);
-  });
-
-  it("returns [] when nothing is tagged", () => {
-    expect(currentRevocableTrusts([acct({ revocableTrustName: undefined })])).toEqual([]);
-  });
-});
 
 describe("currentTrustEntities", () => {
   it("keeps trust entities and drops business entities", () => {
