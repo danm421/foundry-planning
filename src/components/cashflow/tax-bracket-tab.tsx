@@ -8,7 +8,7 @@ import { USPS_STATE_NAMES } from "@/lib/usps-states";
 
 interface TaxBracketTabProps {
   years: ProjectionYear[];
-  onCellClick: (year: number, columnKey: BracketColumnKey) => void;
+  onCellClick?: (year: number, columnKey: BracketColumnKey) => void;
 }
 
 type Mode = "federal" | "state";
@@ -52,6 +52,25 @@ function ClickableCell({
   );
 }
 
+// Renders a clickable drill cell when an onClick is supplied (cash-flow view),
+// or plain right-aligned text when it isn't (Solver, which has no cell-drill).
+function MaybeCell({
+  onClick,
+  ariaLabel,
+  children,
+}: {
+  onClick?: () => void;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  if (!onClick) return <span className="block text-right">{children}</span>;
+  return (
+    <ClickableCell onClick={onClick} ariaLabel={ariaLabel}>
+      {children}
+    </ClickableCell>
+  );
+}
+
 // ---------------- Federal table (extracted) ----------------
 
 function FederalTable({
@@ -59,7 +78,7 @@ function FederalTable({
   onCellClick,
 }: {
   years: ProjectionYear[];
-  onCellClick: (year: number, columnKey: BracketColumnKey) => void;
+  onCellClick?: (year: number, columnKey: BracketColumnKey) => void;
 }) {
   const rows = useMemo(() => buildTaxBracketRows(years), [years]);
 
@@ -103,30 +122,30 @@ function FederalTable({
               <td className="px-3 py-3">{r.year}</td>
               <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
               <td className="border-l border-hair px-3 py-3 text-right">
-                <ClickableCell
-                  onClick={() => onCellClick(r.year, "conversionGross")}
+                <MaybeCell
+                  onClick={onCellClick ? () => onCellClick(r.year, "conversionGross") : undefined}
                   ariaLabel={`Roth conversion ${r.year} value ${fmtUsd(r.conversionGross)}`}
                 >
                   {fmtUsd(r.conversionGross)}
-                </ClickableCell>
+                </MaybeCell>
               </td>
               <td className="px-3 py-3 text-right">
-                <ClickableCell
-                  onClick={() => onCellClick(r.year, "conversionTaxable")}
+                <MaybeCell
+                  onClick={onCellClick ? () => onCellClick(r.year, "conversionTaxable") : undefined}
                   ariaLabel={`Taxable portion ${r.year} value ${fmtUsd(r.conversionTaxable)}`}
                 >
                   {fmtUsd(r.conversionTaxable)}
-                </ClickableCell>
+                </MaybeCell>
               </td>
               <td className="px-3 py-3 text-right">{fmtUsd(r.incomeTaxBase)}</td>
               <td className="px-3 py-3 text-right">{Math.round(r.marginalRate * 100)}%</td>
               <td className="px-3 py-3 text-right">
-                <ClickableCell
-                  onClick={() => onCellClick(r.year, "intoBracket")}
+                <MaybeCell
+                  onClick={onCellClick ? () => onCellClick(r.year, "intoBracket") : undefined}
                   ariaLabel={`Amount into bracket ${r.year} value ${fmtUsd(r.intoBracket)}`}
                 >
                   {fmtUsd(r.intoBracket)}
-                </ClickableCell>
+                </MaybeCell>
               </td>
               <td className="px-3 py-3 text-right">
                 {r.remainingInBracket == null ? "—" : fmtUsd(r.remainingInBracket)}

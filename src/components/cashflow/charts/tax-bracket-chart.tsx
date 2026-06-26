@@ -42,9 +42,15 @@ export function buildTaxBracketSeries(years: ProjectionYear[]): {
 
 interface TaxBracketChartProps {
   years: ProjectionYear[];
+  /**
+   * When true, the chart fills its parent container instead of a fixed 300px
+   * box. The Solver renders it inside a resizable height panel; the cash-flow
+   * tax view omits this and keeps the fixed height.
+   */
+  fillHeight?: boolean;
 }
 
-export function TaxBracketChart({ years }: TaxBracketChartProps) {
+export function TaxBracketChart({ years, fillHeight = false }: TaxBracketChartProps) {
   const theme = useThemeName();
   const { effective, marginal } = buildTaxBracketSeries(years);
 
@@ -125,7 +131,10 @@ export function TaxBracketChart({ years }: TaxBracketChartProps) {
 
   if (years.length === 0) return null;
   return (
-    <div style={{ height: 300 }}>
+    <div
+      className={fillHeight ? "h-full w-full" : undefined}
+      style={fillHeight ? undefined : { height: 300 }}
+    >
       <Line data={data} options={options} />
     </div>
   );
