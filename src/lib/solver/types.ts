@@ -14,6 +14,7 @@ import type {
   ExternalBeneficiary,
   EntitySummary,
 } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 export type SolverPerson = "client" | "spouse";
@@ -209,10 +210,14 @@ export type SolverSource = "base" | string;
 export interface SolverProjectRequest {
   source: SolverSource;
   mutations: SolverMutation[];
+  /** Set by the Estate summary to receive the full `projectionResult`. */
+  includeEvents?: boolean;
 }
 
 export interface SolverProjectResponse {
   projection: ProjectionYear[];
+  /** Present only when the request set `includeEvents: true` (Estate summary). */
+  projectionResult?: ProjectionResult;
 }
 
 /** Body shape of POST /api/clients/[id]/solver/save-scenario.
