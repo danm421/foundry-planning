@@ -39,7 +39,12 @@ export function applyUnifiedRateSchedule(amount: number): number {
  */
 export const BEA_2026 = 15_000_000;
 
-export function beaForYear(year: number, taxInflationRate: number): number {
-  if (year <= 2026) return BEA_2026;
-  return BEA_2026 * Math.pow(1 + taxInflationRate, year - 2026);
+export function beaForYear(
+  year: number,
+  taxInflationRate: number,
+  cap?: number | null,
+): number {
+  const grown =
+    year <= 2026 ? BEA_2026 : BEA_2026 * Math.pow(1 + taxInflationRate, year - 2026);
+  return cap != null ? Math.min(grown, cap) : grown;
 }
