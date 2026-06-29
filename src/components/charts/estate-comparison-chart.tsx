@@ -134,10 +134,39 @@ export function EstateComparisonChart({
 
   const chrome = chartChrome(theme);
 
+  // Draws the formatted dollar amount above each bar. Mirrors the inline
+  // afterDatasetsDraw plugins used by the other charts (e.g. portfolio-bars).
+  const valueLabelsPlugin = useMemo(
+    () => ({
+      id: "estateBarValueLabels",
+      afterDatasetsDraw(chart: ChartJS<"bar">) {
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = chrome.tick;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        chart.data.datasets.forEach((_dataset, i) => {
+          const meta = chart.getDatasetMeta(i);
+          if (meta.hidden) return;
+          meta.data.forEach((bar, j) => {
+            const value = Number(chart.data.datasets[i].data[j] ?? 0);
+            if (!value) return;
+            ctx.fillText(fmtUsd(value), bar.x, bar.y - 4);
+          });
+        });
+        ctx.restore();
+      },
+    }),
+    [chrome.tick],
+  );
+
   const chartOptions: ChartOptions<"bar"> = useMemo(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      // Headroom so the value labels drawn above the tallest bar aren't clipped.
+      layout: { padding: { top: 18 } },
       plugins: {
         legend: { position: "top" as const, align: "end" as const, labels: { color: chrome.legend } },
         tooltip: {
@@ -209,7 +238,7 @@ export function EstateComparisonChart({
           header/slider/toggle and the deltas grid below stay inside the panel
           instead of overflowing onto the page when the chart is shrunk. */}
       <div className="min-h-0 flex-1">
-        <Bar data={chartData} options={chartOptions} />
+        <Bar data={chartData} options={chartOptions} plugins={[valueLabelsPlugin]} />
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center">
