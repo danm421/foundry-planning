@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Account, ClientData, SavingsRule } from "@/engine";
 import {
   mutationKey,
@@ -232,6 +232,7 @@ function Editable({
 }) {
   const [open, setOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   // Bumps on reset to remount the contribution inputs so their local state
   // re-seeds from the reverted base value (they seed from defaultValue once).
   const [resetTick, setResetTick] = useState(0);
@@ -331,7 +332,7 @@ function Editable({
           </svg>
         </button>
         {isDollarMode ? (
-          <div className="relative">
+          <div ref={anchorRef} className="relative">
             <SolverSolveIcon
               label={`Solve ${label}`}
               tooltip={SAVINGS_CONTRIBUTION_SOLVE_DESCRIPTION}
@@ -344,6 +345,7 @@ function Editable({
                 rangeLabel="$0–$100k"
                 defaultTargetPct={85}
                 open={popoverOpen}
+                anchorRef={anchorRef}
                 onClose={() => setPopoverOpen(false)}
                 onSubmit={(targetPoS) => {
                   setPopoverOpen(false);

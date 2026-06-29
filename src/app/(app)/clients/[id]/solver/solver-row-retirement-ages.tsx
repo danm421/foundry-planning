@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ClientData } from "@/engine";
 import {
   mutationKey,
@@ -118,6 +118,7 @@ function EditableWithSolve({
   onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const target: SolveLeverKey = { kind: "retirement-age", person };
   const isSolvingHere =
     activeSolve?.target.kind === "retirement-age" &&
@@ -154,7 +155,7 @@ function EditableWithSolve({
         max={max}
         onCommit={onCommit}
         trailing={
-          <div className="relative">
+          <div ref={anchorRef} className="relative">
             <SolverSolveIcon
               label={`Solve ${label}`}
               tooltip={RETIREMENT_AGE_SOLVE_DESCRIPTION}
@@ -167,6 +168,7 @@ function EditableWithSolve({
                 rangeLabel="50–80"
                 defaultTargetPct={85}
                 open={popoverOpen}
+                anchorRef={anchorRef}
                 onClose={() => setPopoverOpen(false)}
                 onSubmit={(targetPoS) => {
                   setPopoverOpen(false);

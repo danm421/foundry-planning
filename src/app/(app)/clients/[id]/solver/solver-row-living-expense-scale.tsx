@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ClientData, Expense } from "@/engine";
 import {
   mutationKey,
@@ -184,8 +184,9 @@ type LivingExpenseSolve = {
  *  Retirement Ages row hangs its Solve button off the field value). */
 function LivingExpenseSolveButton({ target, disabled, onSolveStart }: LivingExpenseSolve) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   return (
-    <div className="relative shrink-0">
+    <div ref={anchorRef} className="relative shrink-0">
       <SolverSolveIcon
         label="Solve Maximum Retirement Spend"
         tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
@@ -198,6 +199,7 @@ function LivingExpenseSolveButton({ target, disabled, onSolveStart }: LivingExpe
           rangeLabel="$0 – resource cap"
           defaultTargetPct={85}
           open={popoverOpen}
+          anchorRef={anchorRef}
           onClose={() => setPopoverOpen(false)}
           onSubmit={(targetPoS) => {
             setPopoverOpen(false);
