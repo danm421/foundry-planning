@@ -26,14 +26,14 @@ const s = StyleSheet.create({
   chartRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 },
 
-  // Max-spend figures, moved out of the chart title into a compact table that
-  // doubles as the chart's legend (swatch · label · value).
-  spendTable: { marginTop: 4 },
-  spendRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2.5, borderTopWidth: 0.5, borderTopColor: T.hair },
-  spendKey: { flexDirection: "row", alignItems: "center" },
-  spendSwatch: { width: 7, height: 7, borderRadius: 1.5, marginRight: 5 },
-  spendLabel: { fontSize: 8, color: T.ink2 },
-  spendVal: { fontSize: 9, fontWeight: 600, color: T.ink, fontFamily: MONO },
+  // Compact per-chart figure table that doubles as the chart's legend
+  // (swatch · label · value). Shared by the max-spend and confidence charts.
+  metricTable: { marginTop: 4 },
+  metricRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2.5, borderTopWidth: 0.5, borderTopColor: T.hair },
+  metricKey: { flexDirection: "row", alignItems: "center" },
+  metricSwatch: { width: 7, height: 7, borderRadius: 1.5, marginRight: 5 },
+  metricLabel: { fontSize: 8, color: T.ink2 },
+  metricVal: { fontSize: 9, fontWeight: 600, color: T.ink, fontFamily: MONO },
 
   kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
   kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
@@ -119,29 +119,47 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
             <View style={panelStyle}>
               <Text style={s.h4}>{`Maximum sustainable spending (today's $)`}</Text>
               <MaxSpendChartPdf series={data.maxSpend.series} width={chartWidth} />
-              <View style={s.spendTable}>
-                <View style={s.spendRow}>
-                  <View style={s.spendKey}>
-                    <View style={[s.spendSwatch, { backgroundColor: dataLight.green }]} />
-                    <Text style={s.spendLabel}>Proposed</Text>
+              <View style={s.metricTable}>
+                <View style={s.metricRow}>
+                  <View style={s.metricKey}>
+                    <View style={[s.metricSwatch, { backgroundColor: dataLight.green }]} />
+                    <Text style={s.metricLabel}>Proposed</Text>
                   </View>
-                  <Text style={s.spendVal}>{`${fmtUsd(data.maxSpend.scenarioToday)}/yr`}</Text>
+                  <Text style={s.metricVal}>{`${fmtUsd(data.maxSpend.scenarioToday)}/yr`}</Text>
                 </View>
-                <View style={s.spendRow}>
-                  <View style={s.spendKey}>
-                    <View style={[s.spendSwatch, { backgroundColor: dataLight.grey }]} />
-                    <Text style={s.spendLabel}>Current</Text>
+                <View style={s.metricRow}>
+                  <View style={s.metricKey}>
+                    <View style={[s.metricSwatch, { backgroundColor: dataLight.grey }]} />
+                    <Text style={s.metricLabel}>Current</Text>
                   </View>
-                  <Text style={s.spendVal}>{`${fmtUsd(data.maxSpend.baseToday)}/yr`}</Text>
+                  <Text style={s.metricVal}>{`${fmtUsd(data.maxSpend.baseToday)}/yr`}</Text>
                 </View>
               </View>
             </View>
           ) : null;
 
+          // Safe: data.confidence.show is only true when points.length > 0.
+          const lastConf = data.confidence.points[data.confidence.points.length - 1];
           const confidencePanel = data.confidence.show ? (
             <View style={panelStyle}>
               <Text style={s.h4}>Range of outcomes — downside protection</Text>
               <ConfidenceRangeChartPdf points={data.confidence.points} width={chartWidth} />
+              <View style={s.metricTable}>
+                <View style={s.metricRow}>
+                  <View style={s.metricKey}>
+                    <View style={[s.metricSwatch, { backgroundColor: dataLight.green }]} />
+                    <Text style={s.metricLabel}>Proposed</Text>
+                  </View>
+                  <Text style={s.metricVal}>{`${fmtUsd(lastConf.scnP20)}`}</Text>
+                </View>
+                <View style={s.metricRow}>
+                  <View style={s.metricKey}>
+                    <View style={[s.metricSwatch, { backgroundColor: dataLight.grey }]} />
+                    <Text style={s.metricLabel}>Current</Text>
+                  </View>
+                  <Text style={s.metricVal}>{`${fmtUsd(lastConf.baseP20)}`}</Text>
+                </View>
+              </View>
             </View>
           ) : null;
 

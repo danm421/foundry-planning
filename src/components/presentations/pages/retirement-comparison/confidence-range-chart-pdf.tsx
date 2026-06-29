@@ -1,8 +1,7 @@
-import { View, Svg, Path, Line, Text as SvgText } from "@react-pdf/renderer";
+import { Svg, Path, Line, Text as SvgText } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import { fmtAxisUsd, MONO } from "./chart-axis";
-import { ChartLegend } from "./chart-legend-pdf";
 import type { ConfidencePoint } from "@/lib/presentations/pages/retirement-comparison/types";
 
 const PROPOSED = dataLight.green;
@@ -34,9 +33,8 @@ export function ConfidenceRangeChartPdf({ points, width = 500 }: { points: Confi
   const last = points[n - 1];
 
   return (
-    <View>
-      <Svg width={width} height={height}>
-        <Path d={band((p) => p.baseP20, (p) => p.baseP80)} fill={CURRENT} fillOpacity={0.25} />
+    <Svg width={width} height={height}>
+      <Path d={band((p) => p.baseP20, (p) => p.baseP80)} fill={CURRENT} fillOpacity={0.25} />
         <Path d={band((p) => p.scnP20, (p) => p.scnP80)} fill={PROPOSED} fillOpacity={0.30} />
         <Path d={median((p) => p.baseP50)} stroke={CURRENT} strokeWidth={1.25} strokeDasharray="4 3" fill="none" />
         <Path d={median((p) => p.scnP50)} stroke={PROPOSED} strokeWidth={1.75} fill="none" />
@@ -53,8 +51,6 @@ export function ConfidenceRangeChartPdf({ points, width = 500 }: { points: Confi
             {`'${String(points[i].year).slice(2)}`}
           </SvgText>
         ))}
-      </Svg>
-      <ChartLegend items={[{ label: "Proposed range (p20–p80)", color: PROPOSED }, { label: "Current range", color: CURRENT }]} />
-    </View>
+    </Svg>
   );
 }
