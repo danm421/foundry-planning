@@ -391,7 +391,11 @@ export type GiftEvent =
       accountId: string;
       percent: number; // 0.0001..1
       grantor: "client" | "spouse";
-      recipientEntityId: string;
+      /** Set only for a modeled trust-entity recipient. For gifts to a person /
+       *  charity exactly one of the two sibling ids below is set instead. */
+      recipientEntityId?: string;
+      recipientFamilyMemberId?: string;
+      recipientExternalBeneficiaryId?: string;
       amountOverride?: number; // if advisor provided a manual amount
       eventKind?: GiftEventKind;
     }
@@ -401,7 +405,9 @@ export type GiftEvent =
       liabilityId: string;
       percent: number;
       grantor: "client" | "spouse";
-      recipientEntityId: string;
+      recipientEntityId?: string;
+      recipientFamilyMemberId?: string;
+      recipientExternalBeneficiaryId?: string;
       parentGiftId: string;
       eventKind?: GiftEventKind;
     }
