@@ -45,9 +45,8 @@ export default function GiftDialog(props: GiftDialogProps) {
       if (!draft) throw new Error("Please complete the gift before saving.");
 
       if (draft.kind === "series") {
-        const body = {
+        const body: Record<string, unknown> = {
           grantor: draft.grantor,
-          recipientEntityId: draft.recipient.id,
           amountMode: draft.amountMode,
           startYear: draft.startYear,
           endYear: draft.endYear,
@@ -55,6 +54,9 @@ export default function GiftDialog(props: GiftDialogProps) {
           inflationAdjust: draft.inflationAdjust,
           useCrummeyPowers: draft.crummey,
         };
+        if (draft.recipient.kind === "entity") body.recipientEntityId = draft.recipient.id;
+        if (draft.recipient.kind === "family_member") body.recipientFamilyMemberId = draft.recipient.id;
+        if (draft.recipient.kind === "external_beneficiary") body.recipientExternalBeneficiaryId = draft.recipient.id;
         const url = props.editingSeries
           ? `/api/clients/${props.clientId}/gifts/series/${props.editingSeries.id}?scenario=${props.scenarioId}`
           : `/api/clients/${props.clientId}/gifts/series?scenario=${props.scenarioId}`;

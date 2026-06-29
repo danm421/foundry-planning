@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { scenarios, entities, giftSeries } from "@/db/schema";
+import { scenarios, entities, familyMembers, externalBeneficiaries, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -123,22 +123,59 @@ export async function POST(
     if (!parsed.ok) return parsed.response;
     const data = parsed.data;
 
-    // Validate the recipient entity belongs to this client and is an irrevocable trust
-    const [trust] = await db
-      .select()
-      .from(entities)
-      .where(and(eq(entities.id, data.recipientEntityId), eq(entities.clientId, id)));
-    if (!trust) {
-      return NextResponse.json(
-        { error: "Recipient entity not found for this client" },
-        { status: 400 },
-      );
+    // Per-kind recipient validation (security boundary: belongs-to-client checks
+    // prevent IDOR; entity path additionally enforces irrevocable-trust requirement).
+    if (data.recipientEntityId) {
+      const [trust] = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.id, data.recipientEntityId), eq(entities.clientId, id)));
+      if (!trust) {
+        return NextResponse.json(
+          { error: "Recipient entity not found for this client" },
+          { status: 400 },
+        );
+      }
+      if (trust.entityType !== "trust" || !trust.isIrrevocable) {
+        return NextResponse.json(
+          { error: "Recurring gifts target irrevocable trusts only" },
+          { status: 400 },
+        );
+      }
     }
-    if (trust.entityType !== "trust" || !trust.isIrrevocable) {
-      return NextResponse.json(
-        { error: "Recurring gifts target irrevocable trusts only" },
-        { status: 400 },
-      );
+    if (data.recipientFamilyMemberId) {
+      const [fm] = await db
+        .select({ id: familyMembers.id })
+        .from(familyMembers)
+        .where(
+          and(
+            eq(familyMembers.id, data.recipientFamilyMemberId),
+            eq(familyMembers.clientId, id),
+          ),
+        );
+      if (!fm) {
+        return NextResponse.json(
+          { error: "Recipient family member not found for this client" },
+          { status: 400 },
+        );
+      }
+    }
+    if (data.recipientExternalBeneficiaryId) {
+      const [ext] = await db
+        .select({ id: externalBeneficiaries.id })
+        .from(externalBeneficiaries)
+        .where(
+          and(
+            eq(externalBeneficiaries.id, data.recipientExternalBeneficiaryId),
+            eq(externalBeneficiaries.clientId, id),
+          ),
+        );
+      if (!ext) {
+        return NextResponse.json(
+          { error: "Recipient external beneficiary not found for this client" },
+          { status: 400 },
+        );
+      }
     }
 
     const [row] = await db
@@ -147,7 +184,9 @@ export async function POST(
         clientId: id,
         scenarioId,
         grantor: data.grantor,
-        recipientEntityId: data.recipientEntityId,
+        recipientEntityId: data.recipientEntityId ?? null,
+        recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
+        recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId ?? null,
         startYear: data.startYear,
         startYearRef: (data.startYearRef ??
           null) as typeof giftSeries.$inferInsert["startYearRef"],

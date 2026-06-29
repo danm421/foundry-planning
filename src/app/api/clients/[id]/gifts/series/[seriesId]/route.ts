@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { entities, giftSeries } from "@/db/schema";
+import { entities, familyMembers, externalBeneficiaries, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -35,10 +35,15 @@ export async function PATCH(
       );
     }
 
-    // Re-validate recipient trust on PATCH: prevents cross-client tampering
-    // (re-targeting a series at another client's trust) and re-targeting a
-    // series at a revocable trust mid-stream. Mirrors POST validation.
-    if (d.recipientEntityId !== undefined) {
+    // Re-validate recipient on PATCH per-kind: prevents cross-client tampering and
+    // re-targeting at an invalid recipient mid-stream. Mirrors POST validation.
+    // When any recipient field is touched, null out the other two (full replacement).
+    const touchedRecipient =
+      "recipientEntityId" in d ||
+      "recipientFamilyMemberId" in d ||
+      "recipientExternalBeneficiaryId" in d;
+
+    if (d.recipientEntityId != null) {
       const [trust] = await db
         .select()
         .from(entities)
@@ -56,13 +61,51 @@ export async function PATCH(
         );
       }
     }
+    if (d.recipientFamilyMemberId != null) {
+      const [fm] = await db
+        .select({ id: familyMembers.id })
+        .from(familyMembers)
+        .where(
+          and(
+            eq(familyMembers.id, d.recipientFamilyMemberId),
+            eq(familyMembers.clientId, id),
+          ),
+        );
+      if (!fm) {
+        return NextResponse.json(
+          { error: "Recipient family member not found for this client" },
+          { status: 400 },
+        );
+      }
+    }
+    if (d.recipientExternalBeneficiaryId != null) {
+      const [ext] = await db
+        .select({ id: externalBeneficiaries.id })
+        .from(externalBeneficiaries)
+        .where(
+          and(
+            eq(externalBeneficiaries.id, d.recipientExternalBeneficiaryId),
+            eq(externalBeneficiaries.clientId, id),
+          ),
+        );
+      if (!ext) {
+        return NextResponse.json(
+          { error: "Recipient external beneficiary not found for this client" },
+          { status: 400 },
+        );
+      }
+    }
 
     const [updated] = await db
       .update(giftSeries)
       .set({
         ...(d.grantor !== undefined && { grantor: d.grantor }),
-        ...(d.recipientEntityId !== undefined && {
-          recipientEntityId: d.recipientEntityId,
+        // When a recipient field is touched, fully replace all three columns so
+        // the row is never left pointing at two recipients simultaneously.
+        ...(touchedRecipient && {
+          recipientEntityId: d.recipientEntityId ?? null,
+          recipientFamilyMemberId: d.recipientFamilyMemberId ?? null,
+          recipientExternalBeneficiaryId: d.recipientExternalBeneficiaryId ?? null,
         }),
         ...(d.startYear !== undefined && { startYear: d.startYear }),
         ...(d.startYearRef !== undefined && {
