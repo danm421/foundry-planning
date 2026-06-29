@@ -136,7 +136,7 @@ export async function POST(
     const kind = detectUploadKind(buffer);
     if (!kind) {
       return NextResponse.json(
-        { error: "Unsupported file type. Upload a PDF, Excel, or CSV file." },
+        { error: "Unsupported file type. Upload a PDF, Word, Excel, or CSV file." },
         { status: 400 },
       );
     }

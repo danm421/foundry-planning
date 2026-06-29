@@ -10,6 +10,7 @@ import { callAIExtraction } from "./azure-client";
 import { parseAIResponse } from "./parse-response";
 import { extractPdfText, extractPdfPages } from "./pdf-parser";
 import { extractExcelText } from "./excel-parser";
+import { extractDocxText } from "./docx-parser";
 import { classifyDocument } from "./classify";
 import type { UploadKind } from "./validate-upload";
 import { extractedPayloadSchema } from "./extraction-schema";
@@ -160,7 +161,13 @@ export async function extractDocument(
      // haven't been updated (e.g. unit tests).
     const kind: UploadKind =
         uploadKind ??
-        (ext === "csv" ? "csv" : ["xlsx", "xls"].includes(ext) ? "xlsx" : "pdf");
+        (ext === "csv"
+            ? "csv"
+            : ["xlsx", "xls"].includes(ext)
+              ? "xlsx"
+              : ext === "docx"
+                ? "docx"
+                : "pdf");
 
     // 1. Parse file to text. Fact-finder PDFs go through page-level
     // extraction so the multi-pass orchestrator can target page ranges.
@@ -172,6 +179,13 @@ export async function extractDocument(
     } else if (kind === "xlsx") {
         text = await extractExcelText(fileBuffer);
         if (documentType === "auto") documentType = "excel_import";
+    } else if (kind === "docx") {
+        // Word prose carries no page or spreadsheet structure — pull raw
+        // text and let the "auto" path classify it like a PDF (fact-finders,
+        // statement summaries, advisor letters). Guarded ahead of the
+        // fact_finder/comprehensive branch so an explicit fact_finder docx
+        // never gets fed to the PDF page extractor.
+        text = await extractDocxText(fileBuffer);
     } else if (documentType === "fact_finder" || (comprehensive && kind === "pdf")) {
         pdfPages = await extractPdfPages(fileBuffer);
         text = pdfPages.join("\n");

@@ -47,7 +47,7 @@ interface UploadZoneProps {
   disabled?: boolean;
 }
 
-const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv"];
+const ACCEPTED_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".xls", ".csv"];
 
 function detectTypeFromExtension(name: string): DocumentType | "auto" {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -303,7 +303,7 @@ export default function UploadZone({
           Drag & drop files here, or <span className="text-accent underline">browse</span>
         </p>
         <p className="mt-1 text-xs text-gray-400">
-          PDF, Excel, CSV, PNG, JPG — up to 20MB each
+          PDF, Word, Excel, CSV, PNG, JPG — up to 20MB each
         </p>
         <input
           ref={inputRef}
