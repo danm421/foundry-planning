@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import type { SolverMutation } from "@/lib/solver/types";
-import { getOrComputeSolverMc } from "@/lib/compute-cache/solver-mc";
+import { getOrComputeSolverMc, getOrComputeSolverMcReport } from "@/lib/compute-cache/solver-mc";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -33,6 +33,7 @@ const BODY = z.object({
       }),
     )
     .optional(),
+  full: z.boolean().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -64,7 +65,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, forceRefresh, extraAccountMixes } = parsed.data;
+    const { source, mutations, forceRefresh, extraAccountMixes, full } = parsed.data;
+
+    if (full) {
+      const report = await getOrComputeSolverMcReport({
+        clientId, firmId: access.firmId, source, mutations: mutations as SolverMutation[],
+        ...(extraAccountMixes ? { extraAccountMixes } : {}),
+        ...(forceRefresh ? { forceRefresh } : {}),
+      });
+      return NextResponse.json(report);
+    }
 
     const result = await getOrComputeSolverMc({
       clientId,
