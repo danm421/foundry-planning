@@ -34,7 +34,11 @@ export function computeIncome(
   incomes: Income[],
   year: number,
   client: ClientInfo,
-  filter?: (inc: Income) => boolean
+  filter?: (inc: Income) => boolean,
+  stress?: {
+    ssBenefitHaircut?: { pct: number; startYear: number };
+    disabilityEvent?: { person: "client" | "spouse"; startYear: number };
+  },
 ): IncomeBreakdown {
   const result: IncomeBreakdown = {
     salaries: 0,
@@ -48,10 +52,25 @@ export function computeIncome(
     bySource: {},
   };
 
+  const ssFactor =
+    stress?.ssBenefitHaircut && year >= stress.ssBenefitHaircut.startYear
+      ? Math.max(0, 1 - stress.ssBenefitHaircut.pct)
+      : 1;
+
   for (const inc of incomes) {
     const gate = itemProrationGate(inc, year, client);
     if (!gate.include) continue;
     if (filter && !filter(inc)) continue;
+
+    // Stress test — disability: stop the disabled person's earned income.
+    if (
+      stress?.disabilityEvent &&
+      (inc.type === "salary" || inc.type === "business") &&
+      inc.owner === stress.disabilityEvent.person &&
+      year >= stress.disabilityEvent.startYear
+    ) {
+      continue;
+    }
 
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {
@@ -93,7 +112,7 @@ export function computeIncome(
         ) ?? null;
 
         const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
-        const proratedTotal = resolved.total * gate.factor;
+        const proratedTotal = resolved.total * gate.factor * ssFactor;
         result.socialSecurity += proratedTotal;
         result.bySource[inc.id] = proratedTotal;
 
@@ -102,9 +121,9 @@ export function computeIncome(
         const bucket = inc.owner === "spouse"
           ? (result.socialSecurityDetail.spouse ??= { retirement: 0, spousal: 0, survivor: 0 })
           : result.socialSecurityDetail.client;
-        bucket.retirement += resolved.retirement * gate.factor;
-        bucket.spousal    += resolved.spousal    * gate.factor;
-        bucket.survivor   += resolved.survivor   * gate.factor;
+        bucket.retirement += resolved.retirement * gate.factor * ssFactor;
+        bucket.spousal    += resolved.spousal    * gate.factor * ssFactor;
+        bucket.survivor   += resolved.survivor   * gate.factor * ssFactor;
 
         continue;
       }
@@ -121,6 +140,7 @@ export function computeIncome(
       amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
     }
     amount *= gate.factor;
+    if (inc.type === "social_security") amount *= ssFactor;
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;
     result.bySource[inc.id] = amount;

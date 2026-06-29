@@ -65,6 +65,7 @@ import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import { applyRothConversions } from "./roth-conversions";
+import { applyMarketShock } from "./market-shock";
 import {
   applyAssetSales,
   applyAssetPurchases,
@@ -843,7 +844,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // routed to household cash via the Phase 3 distribution sweep — so it
       // must not also contribute to income.total / income.bySource here, or
       // we double-count it in the household tax base and cashflow surplus.
-      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null
+      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null,
+      {
+        ssBenefitHaircut: planSettings.ssBenefitHaircut,
+        disabilityEvent: planSettings.disabilityEvent,
+      },
     );
     const grantorIncome = computeIncome(
       currentIncomes,
@@ -1568,6 +1573,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const plan of equityPlans) {
       accountBalances[plan.accountId] = remainingGrantValue(plan, year, planSettings.planStartYear);
     }
+
+    // ── Stress test — one-time market crash ─────────────────────────────────
+    // Write down market-exposed balances AFTER growth so the reduced balance
+    // feeds RMDs/withdrawals/taxes this year and compounds forward off the
+    // lower base (in deterministic and every MC trial alike).
+    applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers);
 
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult = {

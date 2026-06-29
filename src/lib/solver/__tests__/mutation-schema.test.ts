@@ -126,6 +126,10 @@ const SAMPLES: SolverMutation[] = [
     accountId: "00000000-0000-4000-8000-000000000003",
     year: 2035,
   },
+  { kind: "stress-inflation", rate: 0.05 },
+  { kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 },
+  { kind: "stress-disability", person: "client", startYear: 2030 },
+  { kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 },
 ];
 
 describe("SOLVER_MUTATION_SCHEMA", () => {
@@ -165,9 +169,8 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     // mutationKey() will surface "never" on the new kind via the exhaustive
     // switch in types.ts, and TypeScript compile will fail.
     const kinds = new Set(SAMPLES.map((m) => m.kind));
-    // 1 (retirement-age) + 1 (life-expectancy) + 6 SS + 2 expenses + 7 incomes +
-    // 12 savings = 29 unique kinds.
-    expect(kinds.size).toBeGreaterThanOrEqual(29);
+    // 29 prior kinds + 4 stress kinds = 33 unique kinds.
+    expect(kinds.size).toBeGreaterThanOrEqual(33);
   });
 });
 

@@ -76,7 +76,11 @@ export type SolverMutation =
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
   | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }
-  | { kind: "entity-upsert";               id: string; value: EntitySummary | null };
+  | { kind: "entity-upsert";               id: string; value: EntitySummary | null }
+  | { kind: "stress-inflation"; rate: number }
+  | { kind: "stress-ss-haircut"; pct: number; startYear: number }
+  | { kind: "stress-disability"; person: SolverPerson; startYear: number }
+  | { kind: "stress-market-crash"; year: number; drawdownPct: number };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -117,7 +121,11 @@ export type SolverMutationKey =
   | `savings-rule-upsert:${string}`
   | `gift-upsert:${string}`
   | `external-beneficiary-upsert:${string}`
-  | `entity-upsert:${string}`;
+  | `entity-upsert:${string}`
+  | "stress-inflation"
+  | "stress-ss-haircut"
+  | "stress-disability"
+  | "stress-market-crash";
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -197,6 +205,14 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `external-beneficiary-upsert:${m.id}`;
     case "entity-upsert":
       return `entity-upsert:${m.id}`;
+    case "stress-inflation":
+      return "stress-inflation";
+    case "stress-ss-haircut":
+      return "stress-ss-haircut";
+    case "stress-disability":
+      return "stress-disability";
+    case "stress-market-crash":
+      return "stress-market-crash";
   }
 }
 
