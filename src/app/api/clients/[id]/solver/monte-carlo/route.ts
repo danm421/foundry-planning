@@ -2,7 +2,9 @@
 //
 // POST /api/clients/[id]/solver/monte-carlo
 //
-// Probability-of-success for the Live Solver's gauges. Returns { successRate }.
+// Probability-of-success for the Live Solver's gauges. Returns { successRate }
+// by default, or the full CachedMonteCarloResult when the request body sets
+// `full: true` (used by the Monte Carlo report tab).
 // Served from cache (persistent per-scenario for unedited trees, transient
 // solver_mc_cache for edited ones) and computed server-side on a miss, so the
 // browser never blocks. Read-only — no audit row.

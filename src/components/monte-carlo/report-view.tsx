@@ -120,7 +120,7 @@ export function MonteCarloReportView({
 
         {reseedError && (
           <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
-            {"Couldn't generate a new seed: "}{reseedError}
+            {"Couldn’t generate a new seed: "}{reseedError}
           </div>
         )}
 
