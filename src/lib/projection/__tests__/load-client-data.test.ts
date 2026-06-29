@@ -386,4 +386,28 @@ describe("loadClientData", () => {
     // default) so this asserts the look-through path, not a coincidental fallback.
     expect(fundAcct!.growthRate).toBeCloseTo(0.09, 4);
   });
+
+  it("feeds the engine the RESOLVED inflation rate when source = asset_class", async () => {
+    // Source = asset_class with an Inflation asset class whose geometric return
+    // (2.50%) differs from the stale custom inflation_rate column (3.00%). The
+    // engine's planSettings.inflationRate is the fallback for tax-bracket
+    // indexing, SS wage-base growth, gift annual-exclusion, and estate-exemption
+    // inflation — it must track the chosen default (asset class), not the raw
+    // column. See the resolver note in load-client-data.ts.
+    seedValidFixture();
+    // Fixture pins inflationRateSource to "custom" via `as const`; cast the
+    // overridden row so the runtime value is "asset_class" for this case.
+    dbState.planSettings = [
+      { ...planSettingsRow, inflationRateSource: "asset_class" } as unknown as typeof planSettingsRow,
+    ];
+    dbState.assetClasses = [
+      assetClassRow,
+      { ...inflationAssetClassRow, geometricReturn: "0.0250" },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    // 0.025 (resolved asset class), NOT 0.03 (raw inflation_rate column).
+    expect(data.planSettings.inflationRate).toBeCloseTo(0.025, 10);
+  });
 });

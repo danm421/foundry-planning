@@ -435,7 +435,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
               id="taxInflationRate"
               name="taxInflationRate"
               defaultValue={taxInflationRate ? pct(taxInflationRate) : ""}
-              placeholder={`Defaults to ${pct(rates.inflationRate)} (general)`}
+              placeholder={`Defaults to ${(resolvedInflationRate * 100).toFixed(2)} (general)`}
               className={`${INPUT_CLS} max-w-[14rem]`}
             />
           </div>
@@ -448,7 +448,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
               id="ssWageGrowthRate"
               name="ssWageGrowthRate"
               defaultValue={ssWageGrowthRate ? pct(ssWageGrowthRate) : ""}
-              placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5%`}
+              placeholder={`Defaults to ${(resolvedInflationRate * 100).toFixed(2)} + 0.5%`}
               className={`${INPUT_CLS} max-w-[14rem]`}
             />
           </div>

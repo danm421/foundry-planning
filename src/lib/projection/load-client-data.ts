@@ -452,13 +452,13 @@ export const loadClientDataWithContext = cache(
       if (override) clientInflationOverride = override;
     }
 
-    // Resolve the household's effective inflation rate for per-row "grow at inflation"
-    // consumers (accounts, income, expenses, savings rules). NOTE: the projection
-    // engine's tax-bracket indexing and SS-wage-growth fallback paths still read the
-    // raw planSettings.inflationRate decimal directly, which can diverge from this
-    // resolved value when source = "asset_class". Aligning those is tracked in
-    // docs/FUTURE_WORK.md ("Align plan_settings.inflation_rate consumers with the
-    // resolver").
+    // Resolve the household's effective inflation rate. This is THE inflation
+    // rate the engine sees: it feeds both the per-row "grow at inflation"
+    // consumers (accounts, income, expenses, savings rules) AND the engine's
+    // `planSettings.inflationRate` fallback for tax-bracket indexing,
+    // SS-wage-growth, gift annual-exclusion, and estate-exemption inflation.
+    // When source = "asset_class" this is the asset-class geometric return; when
+    // "custom" it is the raw inflation_rate column.
     const resolvedInflationRate = resolveInflationRate(
       {
         inflationRateSource: settings.inflationRateSource,
@@ -923,7 +923,13 @@ export const loadClientDataWithContext = cache(
       residenceState: (settings.residenceState ?? null) as import("@/lib/usps-states").USPSStateCode | null,
       irdTaxRate: settings.irdTaxRate != null ? parseFloat(settings.irdTaxRate) : 0,
       probateCostRate: settings.probateCostRate != null ? parseFloat(settings.probateCostRate) : 0,
-      inflationRate: parseFloat(settings.inflationRate),
+      // Engine reads `inflationRate` as the plan's effective general inflation —
+      // the fallback for tax-bracket indexing, SS wage-base growth, gift
+      // annual-exclusion, and estate-exemption inflation. Feed the RESOLVED rate
+      // (asset-class geometric return when source = "asset_class") so those
+      // defaults track the advisor's chosen default, not the raw inflation_rate
+      // column. When source = "custom" this equals the column value.
+      inflationRate: resolvedInflationRate,
       planStartYear: settings.planStartYear,
       planEndYear: settings.planEndYear,
       taxEngineMode: settings.taxEngineMode,
@@ -1365,14 +1371,16 @@ export const loadClientDataWithContext = cache(
       }));
 
     // Same inputs the gift-ledger uses, so annual_exclusion series net to
-    // exactly $0 taxable.
+    // exactly $0 taxable. The blank-taxInflation fallback must match the engine's
+    // planSettings.inflationRate (the resolved rate), not the raw column, or the
+    // net-$0 invariant breaks when source = "asset_class".
     const giftExclusionByYear = buildAnnualExclusionMap(
       parsedTaxRows,
       settings.planStartYear,
       settings.planEndYear,
       settings.taxInflationRate != null
         ? parseFloat(settings.taxInflationRate)
-        : parseFloat(settings.inflationRate),
+        : resolvedInflationRate,
     );
 
     const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>
