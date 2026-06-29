@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
+import {
+  checkProjectionRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 
@@ -11,7 +15,16 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
-    await requireOrgId();
+    const callerOrg = await requireOrgId();
+
+    const rl = await checkProjectionRateLimit(callerOrg);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "Too many requests. Please wait a moment and try again.",
+      );
+    }
+
     const { id: clientId } = await ctx.params;
     const access = await verifyClientAccess(clientId);
     if (!access.ok) {
