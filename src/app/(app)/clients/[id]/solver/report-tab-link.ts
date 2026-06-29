@@ -1,8 +1,8 @@
 /** The right-pane report views (five charts + the summaries deck). */
 export type ReportKey = "portfolio" | "cashflow" | "taxBracket" | "lifeInsurance" | "estate" | "summaries";
 
-/** The four left-pane input tabs. */
-export type InputTab = "retirement" | "techniques" | "life_insurance" | "estate_planning";
+/** The five left-pane input tabs. */
+export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "estate_planning";
 
 /**
  * Default report shown on the right when a left input tab is selected.
@@ -17,6 +17,7 @@ export function defaultReportForTab(tab: InputTab): ReportKey {
       return "estate";
     case "retirement":
     case "techniques":
+    case "stress_test": // stress tests read against the Cash Flow / MC PoS report
     default:
       return "portfolio";
   }

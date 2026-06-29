@@ -32,6 +32,7 @@ import { SolverActionBar } from "./solver-action-bar";
 import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
+import { SolverStressTestTab } from "./solver-stress-test-tab";
 import {
   SolverLifeInsuranceInputs,
   SolverLifeInsuranceResults,
@@ -73,6 +74,7 @@ interface Props {
 const LEFT_TABS: { id: InputTab; label: string }[] = [
   { id: "retirement", label: "Retirement" },
   { id: "techniques", label: "Techniques" },
+  { id: "stress_test", label: "Stress Test" },
   { id: "life_insurance", label: "Life Insurance" },
   { id: "estate_planning", label: "Estate Planning" },
 ];
@@ -1050,6 +1052,18 @@ export function LiveSolverWorkspace({
             milestones={milestones}
             onChange={pushMutation}
             onSolveStart={handleSolveStart}
+          />
+        )}
+
+        {activeTab === "stress_test" && (
+          <SolverStressTestTab
+            baseClientData={baseClientData}
+            workingTree={workingTree}
+            currentYear={currentYear}
+            clientName={clientName}
+            spouseName={spouseName}
+            onChange={pushMutation}
+            onResetField={clearMutations}
           />
         )}
 
