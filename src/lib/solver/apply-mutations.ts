@@ -285,6 +285,31 @@ export function applyMutations(
         result.entities = list;
         break;
       }
+      case "stress-inflation": {
+        result.planSettings = { ...result.planSettings, inflationRate: m.rate };
+        break;
+      }
+      case "stress-ss-haircut": {
+        result.planSettings = {
+          ...result.planSettings,
+          ssBenefitHaircut: { pct: m.pct, startYear: m.startYear },
+        };
+        break;
+      }
+      case "stress-disability": {
+        result.planSettings = {
+          ...result.planSettings,
+          disabilityEvent: { person: m.person, startYear: m.startYear },
+        };
+        break;
+      }
+      case "stress-market-crash": {
+        result.planSettings = {
+          ...result.planSettings,
+          marketShock: { year: m.year, drawdownPct: m.drawdownPct },
+        };
+        break;
+      }
       case "gift-upsert": {
         // Deferred: applied once after the loop so giftEvents is rebuilt from the
         // full scenario draft set (last-write-wins; null marks a delete).

@@ -20,3 +20,12 @@ describe("mutationKey — technique upserts", () => {
     ).toBe("reinvestment-upsert:ri-1");
   });
 });
+
+describe("mutationKey — stress test", () => {
+  it("keys each stressor as a single global lever", () => {
+    expect(mutationKey({ kind: "stress-inflation", rate: 0.05 })).toBe("stress-inflation");
+    expect(mutationKey({ kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 })).toBe("stress-ss-haircut");
+    expect(mutationKey({ kind: "stress-disability", person: "client", startYear: 2030 })).toBe("stress-disability");
+    expect(mutationKey({ kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 })).toBe("stress-market-crash");
+  });
+});

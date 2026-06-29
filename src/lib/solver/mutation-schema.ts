@@ -406,6 +406,25 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     id: z.string().min(1),
     value: ENTITY_VALUE.nullable(),
   }),
+  z.object({
+    kind: z.literal("stress-inflation"),
+    rate: RATE,
+  }),
+  z.object({
+    kind: z.literal("stress-ss-haircut"),
+    pct: z.number().min(0).max(1),
+    startYear: YEAR,
+  }),
+  z.object({
+    kind: z.literal("stress-disability"),
+    person: PERSON,
+    startYear: YEAR,
+  }),
+  z.object({
+    kind: z.literal("stress-market-crash"),
+    year: YEAR,
+    drawdownPct: z.number().min(0).max(1),
+  }),
 ]);
 
 export type SolverMutationFromSchema = z.infer<typeof SOLVER_MUTATION_SCHEMA>;

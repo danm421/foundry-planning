@@ -37,6 +37,10 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "roth-conversion-upsert",
   "asset-transaction-upsert",
   "reinvestment-upsert",
+  "stress-inflation",
+  "stress-ss-haircut",
+  "stress-disability",
+  "stress-market-crash",
 ]);
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {

@@ -689,6 +689,33 @@ describe("living-expense-amount", () => {
   });
 });
 
+describe("applyMutations — stress test", () => {
+  it("stress-inflation overrides planSettings.inflationRate", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [{ kind: "stress-inflation", rate: 0.06 }]);
+    expect(out.planSettings.inflationRate).toBe(0.06);
+    expect(data.planSettings.inflationRate).not.toBe(0.06); // original untouched
+  });
+
+  it("stress-ss-haircut sets planSettings.ssBenefitHaircut", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [{ kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 }]);
+    expect(out.planSettings.ssBenefitHaircut).toEqual({ pct: 0.23, startYear: 2034 });
+  });
+
+  it("stress-disability sets planSettings.disabilityEvent", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [{ kind: "stress-disability", person: "spouse", startYear: 2030 }]);
+    expect(out.planSettings.disabilityEvent).toEqual({ person: "spouse", startYear: 2030 });
+  });
+
+  it("stress-market-crash sets planSettings.marketShock", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [{ kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 }]);
+    expect(out.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
+  });
+});
+
 describe("applyMutations — technique upserts", () => {
   const rc = {
     id: "rc-1",
