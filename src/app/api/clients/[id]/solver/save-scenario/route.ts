@@ -15,7 +15,10 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
-import { revocableTrustFundingGroups } from "@/lib/solver/revocable-trust-funding-group";
+import {
+  revocableTrustFundingGroups,
+  resolveFundingGroupRows,
+} from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
@@ -98,15 +101,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
       // Auto-create one toggle-group ("technique") per revocable-trust funding
       // set so the N retitled-account changes collapse into a single card in the
-      // changes panel. defaultOn: true keeps the projection identical.
-      const groupIdByTarget = new Map<string, string>();
-      const groupRows = fundingGroups.map((g, i) => {
-        const id = crypto.randomUUID();
-        for (const t of g.targetIds) groupIdByTarget.set(t, id);
-        return { id, scenarioId: row.id, name: g.name, defaultOn: true, orderIndex: i };
-      });
-      if (groupRows.length > 0) {
-        await tx.insert(scenarioToggleGroups).values(groupRows).returning();
+      // changes panel. defaultOn: true keeps the projection identical. A fresh
+      // scenario has no existing groups, so this always creates.
+      const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
+        fundingGroups,
+        [],
+        row.id,
+        0,
+      );
+      if (newGroupRows.length > 0) {
+        await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
       }
 
       if (drafts.length > 0) {
@@ -253,24 +257,12 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     // reuse a same-name group rather than duplicating it).
     const fundingGroups = revocableTrustFundingGroups(drafts);
     const existingGroups = await loadScenarioToggleGroups(scenarioId);
-    const groupIdByTarget = new Map<string, string>();
-    const newGroupRows: Array<{
-      id: string; scenarioId: string; name: string; defaultOn: boolean; orderIndex: number;
-    }> = [];
-    for (const g of fundingGroups) {
-      const existingGroup = existingGroups.find((eg) => eg.name === g.name);
-      const id = existingGroup?.id ?? crypto.randomUUID();
-      if (!existingGroup) {
-        newGroupRows.push({
-          id,
-          scenarioId,
-          name: g.name,
-          defaultOn: true,
-          orderIndex: existingGroups.length + newGroupRows.length,
-        });
-      }
-      for (const t of g.targetIds) groupIdByTarget.set(t, id);
-    }
+    const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
+      fundingGroups,
+      existingGroups,
+      scenarioId,
+      existingGroups.length,
+    );
 
     await db.transaction(async (tx) => {
       if (newGroupRows.length > 0) {

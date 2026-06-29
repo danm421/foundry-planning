@@ -57,3 +57,44 @@ export function revocableTrustFundingGroups(
   }
   return groups;
 }
+
+/** A `scenario_toggle_groups` row to insert. The id is generated client-side so
+ *  the caller can tag change rows with it before the insert resolves. */
+export interface FundingGroupRow {
+  id: string;
+  scenarioId: string;
+  name: string;
+  defaultOn: boolean;
+  orderIndex: number;
+}
+
+/** Resolve funding groups into (a) the toggle-group rows that must be inserted
+ *  and (b) a target-id → group-id map for tagging the funding change rows.
+ *  Find-or-create by NAME: an existing same-name group is reused (idempotent
+ *  re-save) and produces no new row; new rows are numbered from
+ *  `startOrderIndex`. POST passes `existingGroups: []` (fresh scenario — always
+ *  create); PUT passes the scenario's current groups. */
+export function resolveFundingGroupRows(
+  fundingGroups: RevocableTrustFundingGroup[],
+  existingGroups: readonly { id: string; name: string }[],
+  scenarioId: string,
+  startOrderIndex: number,
+): { groupIdByTarget: Map<string, string>; newGroupRows: FundingGroupRow[] } {
+  const groupIdByTarget = new Map<string, string>();
+  const newGroupRows: FundingGroupRow[] = [];
+  for (const g of fundingGroups) {
+    const existing = existingGroups.find((eg) => eg.name === g.name);
+    const id = existing?.id ?? crypto.randomUUID();
+    if (!existing) {
+      newGroupRows.push({
+        id,
+        scenarioId,
+        name: g.name,
+        defaultOn: true,
+        orderIndex: startOrderIndex + newGroupRows.length,
+      });
+    }
+    for (const t of g.targetIds) groupIdByTarget.set(t, id);
+  }
+  return { groupIdByTarget, newGroupRows };
+}
