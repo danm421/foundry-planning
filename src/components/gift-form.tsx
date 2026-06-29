@@ -127,7 +127,7 @@ export default function GiftForm(props: GiftFormProps) {
       const base: EstateFlowGift = {
         kind: "series", id, startYear, endYear, annualAmount: annual,
         amountMode, inflationAdjust: amountMode === "annual_exclusion" ? false : inflationAdjust,
-        grantor, recipient, crummey,
+        grantor, recipient, crummey: recipientIsTrust ? crummey : false,
       };
       return editing?.kind === "series" ? { ...editing, ...base } : base;
     }

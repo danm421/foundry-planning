@@ -100,6 +100,24 @@ describe("GiftForm", () => {
     expect(d).toMatchObject({ kind: "asset-once", accountId: "a1", percent: 1, recipient: { kind: "entity", id: "t1" } });
   });
 
+  it("series draft has crummey:false when recipient is switched from trust to family member", () => {
+    // Regression: series branch emitted bare `crummey` state without the recipientIsTrust guard.
+    // Start editing an existing trust series with crummey:true, then switch recipient to family member.
+    const editing: EstateFlowGift = {
+      kind: "series", id: "se2", startYear: 2026, endYear: 2026, annualAmount: 5_000,
+      amountMode: "fixed", inflationAdjust: false, grantor: "client",
+      recipient: { kind: "entity", id: "t1" }, crummey: true,
+    };
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ editing, onChange })} />);
+    // Switch recipient to family member (non-trust) — Crummey checkbox disappears but state stays true.
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    const d = lastDraft(onChange);
+    expect(d?.kind).toBe("series");
+    // Without the recipientIsTrust guard this would be `true`, proving falsifiability.
+    expect((d as Extract<EstateFlowGift, { kind: "series" }>).crummey).toBe(false);
+  });
+
   it("round-trips an existing asset-once gift with no sourceAccount", () => {
     const editing: EstateFlowGift = {
       kind: "asset-once", id: "as1", year: 2026, accountId: "a1", percent: 0.5,
