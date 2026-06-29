@@ -18,7 +18,6 @@ interface MonteCarloReportViewProps {
   raw: MonteCarloResult | null;
   deterministic: number[];
   meta: CachedMonteCarloResult["meta"] | null;
-  loading?: boolean;
   showHeader?: boolean;
   onReseed?: () => void;
   reseedBusy?: boolean;
@@ -63,8 +62,9 @@ export function MonteCarloReportView({
         {showHeader && (
           <ReportHeader clientDisplayName={meta.clientDisplayName} />
         )}
-        {/* F16 disclosure: MC volatility/mixes are always base-case. */}
-        <p className="text-[12px] text-ink-3 -mt-3">
+        {/* F16 disclosure: MC volatility/mixes are always base-case. The
+            -mt-3 only snugs it under ReportHeader; drop it when headerless. */}
+        <p className={`text-[12px] text-ink-3${showHeader ? " -mt-3" : ""}`}>
           Monte Carlo uses base-case asset mixes and volatility.
         </p>
 

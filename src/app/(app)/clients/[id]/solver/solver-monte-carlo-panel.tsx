@@ -39,7 +39,6 @@ export function SolverMonteCarloPanel({
       raw={mc.result.raw}
       deterministic={mc.result.payload.deterministic}
       meta={mc.result.meta}
-      loading={mc.status === "loading"}
       showHeader={false}
     />
   );

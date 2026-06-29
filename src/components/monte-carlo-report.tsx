@@ -120,7 +120,6 @@ export default function MonteCarloReport({ clientId }: Props) {
         raw={lastResult}
         deterministic={deterministic}
         meta={meta}
-        loading={loading}
         showHeader
         onReseed={canEdit ? handleRestart : undefined}
         reseedBusy={loading}

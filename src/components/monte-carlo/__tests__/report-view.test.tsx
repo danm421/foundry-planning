@@ -34,7 +34,7 @@ const meta = {
 
 function renderView(extra = {}) {
   return render(
-    <MonteCarloReportView summary={summary} raw={raw} deterministic={[1, 2]} meta={meta} loading={false} {...extra} />,
+    <MonteCarloReportView summary={summary} raw={raw} deterministic={[1, 2]} meta={meta} {...extra} />,
   );
 }
 
