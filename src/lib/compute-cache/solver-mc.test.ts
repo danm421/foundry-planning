@@ -20,6 +20,16 @@ vi.mock("@/engine", () => ({
   createReturnEngine: vi.fn(() => ({})),
   runMonteCarlo: vi.fn(async () => ({ successRate: 0.42 })),
 }));
+vi.mock("@/engine/projection", () => ({
+  runProjectionWithEvents: vi.fn(() => ({ years: [{ year: 2026 }] })),
+}));
+vi.mock("@/lib/compute-cache/assemble-monte-carlo-result", () => ({
+  assembleMonteCarloResult: vi.fn(() => ({
+    payload: { summary: {}, deterministic: [] },
+    raw: { successRate: 0.42 },
+    meta: { planStartYear: 2026 },
+  })),
+}));
 
 // Chainable db mock: select→from→where resolves via `selectWhere` (reconfigurable);
 // insert/delete are no-ops we can assert were called.
@@ -36,7 +46,7 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/db/schema", () => ({ solverMcCache: {} }));
 
-import { getOrComputeSolverMc } from "./solver-mc";
+import { getOrComputeSolverMc, getOrComputeSolverMcReport } from "./solver-mc";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
@@ -123,6 +133,61 @@ describe("getOrComputeSolverMc", () => {
     });
 
     expect(out).toEqual({ successRate: 0.42 });
+    expect(runMonteCarlo).toHaveBeenCalledOnce();
+  });
+});
+
+describe("getOrComputeSolverMcReport", () => {
+  it("no mutations → returns the full persistent-cache result", async () => {
+    vi.mocked(getOrComputeMonteCarlo).mockResolvedValue({
+      payload: { summary: {} }, raw: { successRate: 0.91 }, meta: {},
+    } as never);
+
+    const out = await getOrComputeSolverMcReport({
+      clientId: "c1", firmId: "f1", source: "base", mutations: [],
+    });
+
+    expect(out.raw.successRate).toBe(0.91);
+    expect(runMonteCarlo).not.toHaveBeenCalled();
+  });
+
+  it("edited tree, cache miss → runs MC, assembles, and stores result + successRate", async () => {
+    const out = await getOrComputeSolverMcReport({
+      clientId: "c1", firmId: "f1", source: "base",
+      mutations: [{ kind: "retirement-age", person: "client", age: 67 } as never],
+    });
+
+    expect(out.raw.successRate).toBe(0.42);
+    expect(runMonteCarlo).toHaveBeenCalledOnce();
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "c1", firmId: "f1", inputHash: "HASH",
+        successRate: 0.42, result: expect.objectContaining({ raw: expect.anything() }),
+      }),
+    );
+  });
+
+  it("edited tree, row has stored result → returns it without running MC", async () => {
+    selectRows.push({ inputHash: "HASH", successRate: 0.77, result: { payload: {}, raw: { successRate: 0.77 }, meta: {} } });
+
+    const out = await getOrComputeSolverMcReport({
+      clientId: "c1", firmId: "f1", source: "base",
+      mutations: [{ kind: "retirement-age", person: "client", age: 67 } as never],
+    });
+
+    expect(out.raw.successRate).toBe(0.77);
+    expect(runMonteCarlo).not.toHaveBeenCalled();
+  });
+
+  it("edited tree, legacy row (result null) → recomputes to backfill", async () => {
+    selectRows.push({ inputHash: "HASH", successRate: 0.77, result: null });
+
+    const out = await getOrComputeSolverMcReport({
+      clientId: "c1", firmId: "f1", source: "base",
+      mutations: [{ kind: "retirement-age", person: "client", age: 67 } as never],
+    });
+
+    expect(out.raw.successRate).toBe(0.42);
     expect(runMonteCarlo).toHaveBeenCalledOnce();
   });
 });
