@@ -26,7 +26,6 @@ import {
   SummaryKpiRow,
   SummaryKpiCard,
   SummaryTable,
-  SummaryNarrative,
   SummaryEmpty,
 } from "./primitives";
 
@@ -53,10 +52,6 @@ function fmtUsd(n: number): string {
 
 function fmtUsdMonthly(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
-}
-
-function fmtPct(fraction: number): string {
-  return `${Math.round(fraction * 100)}%`;
 }
 
 // ── Portfolio Trajectory Chart ────────────────────────────────────────────────
@@ -272,7 +267,7 @@ function SsColumn({ c }: { c: SsClient }) {
             <div
               key={r.age}
               className={`flex items-center justify-between px-2 py-1 text-[12px] ${
-                r.selected ? "bg-accent text-[#03140f] font-semibold" : "text-ink"
+                r.selected ? "bg-accent text-accent-on font-semibold" : "text-ink"
               }`}
             >
               <span className="tabular-nums">{r.age}</span>
@@ -406,7 +401,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                     value: <span className="font-semibold text-ink tabular-nums">{fmtUsd(funding.totalSpending)}</span>,
                   },
                   ...(funding.shortfall > 0
-                    ? [{ label: <span className="text-[#fb8d8d]">Shortfall (unfunded)</span>, value: <span className="tabular-nums text-[#fb8d8d]">{fmtUsd(funding.shortfall)}</span> }]
+                    ? [{ label: <span className="text-crit">Shortfall (unfunded)</span>, value: <span className="tabular-nums text-crit">{fmtUsd(funding.shortfall)}</span> }]
                     : []),
                 ]}
               />

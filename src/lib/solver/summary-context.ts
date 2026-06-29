@@ -51,7 +51,10 @@ export function buildSolverSummaryContext(
     firmTagline: null,
     reportDate: "",
     firmLogoDataUrl: null,
-    accentColor: "#000000",
+    // Branding stub — never read by any summary builder (the solver flow
+    // renders summary views directly, not the PDF document chrome). Uses the
+    // app accent token to satisfy brand/no-raw-hex.
+    accentColor: "var(--color-accent)",
     monteCarlo,
     lifeInsurance,
   };
