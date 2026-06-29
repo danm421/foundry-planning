@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -284,25 +286,37 @@ function DollarField({
   value: number;
   onCommit: (dollars: number) => void;
 }) {
+  const [text, setText] = useState(() => formatDollars(value));
+
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] text-ink-3">{label}</span>
       <div className="flex items-center gap-1">
         <span className="text-[12px] text-ink-3">$</span>
         <input
-          type="number"
-          step="100000"
-          min="0"
-          defaultValue={Math.round(value)}
-          onBlur={(e) => {
-            const next = Number(e.target.value);
-            if (Number.isFinite(next)) onCommit(Math.max(0, next));
+          type="text"
+          inputMode="numeric"
+          value={text}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "");
+            setText(digits === "" ? "" : formatDollars(Number(digits)));
+          }}
+          onBlur={() => {
+            const next = Number(text.replace(/\D/g, ""));
+            const dollars = Number.isFinite(next) ? Math.max(0, next) : 0;
+            setText(formatDollars(dollars));
+            onCommit(dollars);
           }}
           className="w-32 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums"
         />
       </div>
     </label>
   );
+}
+
+/** Whole-dollar value with thousand separators (no cents, no symbol). */
+function formatDollars(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
 }
 
 function YearField({
