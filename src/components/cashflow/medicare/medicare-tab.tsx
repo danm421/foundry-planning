@@ -15,6 +15,9 @@ interface Props {
   clientId?: string;
   onInflationChange?: (next: { rate?: number; enabled?: boolean }) => void;
   saveError?: string | null;
+  estimateMagi?: boolean;
+  onEstimateMagiChange?: (value: boolean) => void;
+  onEnableMedicare?: () => void;
 }
 
 export function MedicareTab({
@@ -24,6 +27,9 @@ export function MedicareTab({
   clientId,
   onInflationChange,
   saveError = null,
+  estimateMagi,
+  onEstimateMagiChange,
+  onEnableMedicare,
 }: Props) {
   const [clickedYear, setClickedYear] = useState<ProjectionYear | null>(null);
 
@@ -31,6 +37,43 @@ export function MedicareTab({
   const currentRate =
     clientData?.medicarePremiumInflationRate ?? DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE;
   const currentEnabled = clientData?.medicarePremiumInflationEnabled ?? true;
+
+  // Empty-state: no coverage rows yet AND household is Medicare-age → show CTA
+  const coverage = clientData?.medicareCoverage ?? [];
+  const someMedicareAge = years.some(
+    (y) => y.ages.client >= 65 || (y.ages.spouse != null && y.ages.spouse >= 65),
+  );
+  const showEmptyState = someMedicareAge && coverage.length === 0;
+  const hasAnySpouseYear = years.some((y) => y.ages.spouse != null);
+  if (showEmptyState) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+        <p className="text-[14px] text-ink-2 max-w-sm">
+          Medicare modeling is not yet configured for this client. Enable it to project Part B premiums,
+          IRMAA surcharges, and Medigap costs year-by-year.
+        </p>
+        {onEnableMedicare && (
+          <button
+            type="button"
+            onClick={onEnableMedicare}
+            className="px-4 h-9 rounded-[var(--radius-sm)] bg-accent text-accent-on text-[13px] font-medium"
+          >
+            Enable Medicare modeling
+          </button>
+        )}
+        {!onEnableMedicare && (
+          <p className="text-[13px] text-ink-3">
+            Open the Medicare &amp; IRMAA dialog to configure coverage.
+          </p>
+        )}
+        {hasAnySpouseYear && (
+          <p className="text-[11px] text-ink-3">
+            You can set up Medicare for the client, spouse, or both.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -43,6 +86,20 @@ export function MedicareTab({
           onChange={onInflationChange!}
           saveError={saveError}
         />
+      )}
+      {showControls && onEstimateMagiChange && coverage.length > 0 && (
+        <div className="flex items-center gap-2 text-[13px] text-ink-2">
+          <input
+            type="checkbox"
+            id="medicare-estimate-magi"
+            checked={estimateMagi ?? false}
+            onChange={(e) => onEstimateMagiChange(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-hair text-accent focus:ring-1 focus:ring-accent"
+          />
+          <label htmlFor="medicare-estimate-magi" className="cursor-pointer">
+            Estimate prior-year MAGI from projection
+          </label>
+        </div>
       )}
       <MedicareYearTable years={years} yearRange={yearRange} onRowClick={setClickedYear} />
       <p className="text-[11px] text-ink-3">

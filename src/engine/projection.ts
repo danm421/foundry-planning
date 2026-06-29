@@ -3434,7 +3434,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (fromHistory != null) {
           return { magi: fromHistory, sourceYear: lookbackYear, isColdStart: false };
         }
-        const override = medicareCoverageByOwner[owner]?.priorYearMagi;
+        const cov = medicareCoverageByOwner[owner];
+        const override = cov?.estimatePriorYearMagiFromProjection ? null : cov?.priorYearMagi;
         if (override != null) {
           return { magi: override, sourceYear: year, isColdStart: true };
         }

@@ -6,6 +6,8 @@ import { useViewParam } from "@/hooks/use-view-param";
 import IncomeTaxSkeleton from "@/app/(app)/clients/[id]/cashflow/income-tax/loading-skeleton";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine";
+import type { MedicareCoverage } from "@/engine/types";
+import { MedicareSetupDialog } from "@/components/medicare/medicare-setup-dialog";
 import DialogTabs from "@/components/dialog-tabs";
 import {
   TAX_DETAIL_TABS,
@@ -168,6 +170,59 @@ export default function IncomeTaxReport({ clientId }: Props) {
   // Surface a non-fatal error if persistence fails so the user knows their change
   // isn't saved — local state still reflects the new value either way.
   const [assumptionSaveError, setAssumptionSaveError] = useState<string | null>(null);
+  const [medicareSetupOpen, setMedicareSetupOpen] = useState(false);
+
+  const coverage = clientData?.medicareCoverage ?? [];
+  const estimateMagi =
+    coverage.length > 0 && coverage.every((c) => c.estimatePriorYearMagiFromProjection);
+
+  function upsertCoverageLocally(next: MedicareCoverage) {
+    if (!clientData) return;
+    const existing = clientData.medicareCoverage ?? [];
+    const idx = existing.findIndex((c) => c.owner === next.owner);
+    const nextCoverage =
+      idx >= 0
+        ? existing.map((c, i) => (i === idx ? next : c))
+        : [...existing, next];
+    const updated: ClientData = { ...clientData, medicareCoverage: nextCoverage };
+    setClientData(updated);
+    setYears(runProjection(updated));
+  }
+
+  const handleEstimateMagiChange = (value: boolean) => {
+    if (!clientData) return;
+    const existing = clientData.medicareCoverage ?? [];
+    const nextCoverage = existing.map((c) => ({
+      ...c,
+      estimatePriorYearMagiFromProjection: value,
+    }));
+    const updated: ClientData = { ...clientData, medicareCoverage: nextCoverage };
+    setClientData(updated);
+    setYears(runProjection(updated));
+    setAssumptionSaveError(null);
+    Promise.all(
+      nextCoverage.map((c) =>
+        fetch(`/api/clients/${clientId}/medicare-coverage`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(c),
+        }),
+      ),
+    )
+      .then(async (responses) => {
+        for (const res of responses) {
+          if (!res.ok) {
+            const err = (await res.json().catch(() => ({}))) as { error?: string };
+            setAssumptionSaveError(err.error ?? `Save failed (HTTP ${res.status})`);
+            return;
+          }
+        }
+      })
+      .catch((e) => {
+        setAssumptionSaveError(e instanceof Error ? e.message : "Save failed");
+      });
+  };
+
   const handleMedicareInflationChange = (next: { rate?: number; enabled?: boolean }) => {
     if (!clientData) return;
     const updated: ClientData = {
@@ -305,6 +360,9 @@ export default function IncomeTaxReport({ clientId }: Props) {
             clientId={clientId}
             onMedicareInflationChange={handleMedicareInflationChange}
             medicareAssumptionSaveError={assumptionSaveError}
+            estimateMagi={estimateMagi}
+            onEstimateMagiChange={handleEstimateMagiChange}
+            onEnableMedicare={() => setMedicareSetupOpen(true)}
           />
         </div>
       </div>
@@ -338,6 +396,22 @@ export default function IncomeTaxReport({ clientId }: Props) {
           year={stateDrill.year}
           state={stateDrill.state}
           onClose={() => setStateDrill(null)}
+        />
+      )}
+
+      {medicareSetupOpen && clientData && (
+        <MedicareSetupDialog
+          clientId={clientId}
+          ownerDobs={{
+            client: clientData?.client?.dateOfBirth ?? null,
+            spouse: clientData?.client?.spouseDob ?? null,
+          }}
+          hasSpouse={years.some((y) => y.ages.spouse != null)}
+          onClose={() => setMedicareSetupOpen(false)}
+          onSaved={(saved) => {
+            upsertCoverageLocally(saved);
+            setMedicareSetupOpen(false);
+          }}
         />
       )}
     </div>

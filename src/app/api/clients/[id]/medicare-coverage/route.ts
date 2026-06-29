@@ -64,6 +64,7 @@ export async function PUT(
           medigapMonthlyAt65: insert.medigapMonthlyAt65,
           partDPlanMonthlyAt65: insert.partDPlanMonthlyAt65,
           priorYearMagi: insert.priorYearMagi,
+          estimatePriorYearMagiFromProjection: insert.estimatePriorYearMagiFromProjection,
           updatedAt: new Date(),
         },
       });

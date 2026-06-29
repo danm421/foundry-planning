@@ -1,10 +1,28 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MedicareDialogTab } from "../medicare-dialog-tab";
 
-describe("MedicareDialogTab", () => {
+describe("MedicareDialogTab estimate toggle", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({}) })) as unknown as typeof fetch);
+  });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("hides the prior-year MAGI field when the estimate checkbox is checked", () => {
+    render(<MedicareDialogTab clientId="c1" owner="client" existing={null} ownerDob="1958-01-01" onSaved={() => {}} />);
+    expect(screen.getByLabelText(/prior year magi/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/estimate prior-year magi/i));
+    expect(screen.queryByLabelText(/prior year magi/i)).not.toBeInTheDocument();
+  });
+
+  it("includes estimatePriorYearMagiFromProjection in the save payload", async () => {
+    render(<MedicareDialogTab clientId="c1" owner="client" existing={null} ownerDob="1958-01-01" onSaved={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/estimate prior-year magi/i));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.estimatePriorYearMagiFromProjection).toBe(true);
+  });
 
   it("renders default values when no existing coverage", () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} onSaved={() => {}} />);

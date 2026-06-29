@@ -1,0 +1,1 @@
+ALTER TABLE "medicare_coverage" ADD COLUMN "estimate_prior_year_magi_from_projection" boolean DEFAULT false NOT NULL;

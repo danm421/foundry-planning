@@ -362,4 +362,34 @@ describe("runProjection — Medicare integration", () => {
     expect(y2025.medicare!.client?.sourceMagi).toBe(200_000);
     expect(y2025.medicare!.client!.irmaaTier).toBeGreaterThanOrEqual(2);
   });
+
+  it("cold-start IGNORES priorYearMagi when estimatePriorYearMagiFromProjection is true", () => {
+    const data = makeMinimalClient({
+      clientDob: "1960-01-01",
+      planStartYear: 2025,
+      planEndYear: 2030,
+      filingStatus: "single",
+      medicareCoverage: [
+        {
+          owner: "client",
+          enrollmentYear: null,
+          coverageType: "original",
+          medigapMonthlyAt65: null,
+          partDPlanMonthlyAt65: null,
+          // Flag on → this stored value must be ignored in favor of the
+          // projection-derived cold-start estimate.
+          priorYearMagi: 200_000,
+          estimatePriorYearMagiFromProjection: true,
+        },
+      ],
+    });
+
+    const years = runProjection(data);
+    const y2025 = years.find((y) => y.year === 2025)!;
+    expect(y2025.medicare!.client?.isColdStart).toBe(true);
+    // 200_000 would force a high IRMAA tier; the estimate from the projection
+    // is far lower.
+    expect(y2025.medicare!.client?.sourceMagi).not.toBe(200_000);
+    expect(y2025.medicare!.client?.sourceMagi).toBeLessThan(200_000);
+  });
 });

@@ -19,6 +19,7 @@ export function rowToMedicareCoverage(row: Row): MedicareCoverage {
     medigapMonthlyAt65: parseDecimal(row.medigapMonthlyAt65),
     partDPlanMonthlyAt65: parseDecimal(row.partDPlanMonthlyAt65),
     priorYearMagi: parseDecimal(row.priorYearMagi),
+    estimatePriorYearMagiFromProjection: row.estimatePriorYearMagiFromProjection ?? false,
   };
 }
 
@@ -34,5 +35,6 @@ export function medicareCoverageToInsert(
     medigapMonthlyAt65: c.medigapMonthlyAt65 === null ? null : String(c.medigapMonthlyAt65),
     partDPlanMonthlyAt65: c.partDPlanMonthlyAt65 === null ? null : String(c.partDPlanMonthlyAt65),
     priorYearMagi: c.priorYearMagi === null ? null : String(c.priorYearMagi),
+    estimatePriorYearMagiFromProjection: c.estimatePriorYearMagiFromProjection ?? false,
   };
 }
