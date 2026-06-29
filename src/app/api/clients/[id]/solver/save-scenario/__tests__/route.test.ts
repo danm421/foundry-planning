@@ -10,6 +10,7 @@ vi.mock("@/lib/scenario/loader", () => ({
 }));
 vi.mock("@/lib/scenario/changes", () => ({
   loadScenarioChanges: vi.fn().mockResolvedValue([]),
+  loadScenarioToggleGroups: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("@/lib/scenario/changes-writer", () => ({
   applyEntityEdit: vi.fn().mockResolvedValue(undefined),
@@ -87,7 +88,7 @@ import { POST, PUT } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { loadScenarioChanges } from "@/lib/scenario/changes";
+import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import {
   applyEntityEdit,
   applyEntityAdd,
@@ -132,6 +133,7 @@ beforeEach(() => {
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
   vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
   vi.mocked(loadScenarioChanges).mockResolvedValue([]);
+  vi.mocked(loadScenarioToggleGroups).mockResolvedValue([]);
   vi.mocked(applyEntityEdit).mockClear();
   vi.mocked(applyEntityAdd).mockClear();
   vi.mocked(applyEntityRemove).mockClear();
@@ -408,5 +410,101 @@ describe("PUT /api/clients/[id]/solver/save-scenario", () => {
       ctx as never,
     );
     expect(res.status).toBe(403);
+  });
+
+  it("PUT creates a toggle group and tags funding edits with it", async () => {
+    const baseAccounts = [
+      { id: "acct-1", category: "cash" as const, revocableTrustName: null, owners: [], name: "Checking", subType: "checking", value: 50000, basis: 0, growthRate: 0.02, rmdEnabled: false, titlingType: "jtwros" as const },
+      { id: "acct-2", category: "real_estate" as const, revocableTrustName: null, owners: [], name: "Residence", subType: "primary", value: 500000, basis: 200000, growthRate: 0.03, rmdEnabled: false, titlingType: "jtwros" as const },
+    ];
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: {
+          firstName: "Cooper",
+          lastName: "Smith",
+          dateOfBirth: "1965-03-15",
+          retirementAge: 65,
+          retirementMonth: 1,
+          planEndAge: 95,
+          lifeExpectancy: 95,
+          filingStatus: "single",
+        },
+        accounts: baseAccounts,
+        incomes: [], expenses: [], savingsRules: [], rothConversions: [],
+        assetTransactions: [], reinvestments: [], gifts: [], externalBeneficiaries: [],
+        entities: [],
+        liabilities: [],
+        withdrawalStrategy: [],
+        planSettings: {} as never,
+      },
+    } as never);
+
+    const res = await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "account-upsert", id: "acct-1", value: { ...baseAccounts[0], revocableTrustName: "Family Trust" } },
+          { kind: "account-upsert", id: "acct-2", value: { ...baseAccounts[1], revocableTrustName: "Family Trust" } },
+        ],
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(insertedGroups).toHaveLength(1);
+    const groupId = (insertedGroups[0] as { id: string }).id;
+    const editCalls = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+    expect(editCalls).toHaveLength(2);
+    for (const call of editCalls) {
+      expect(call.toggleGroupId).toBe(groupId);
+    }
+  });
+
+  it("PUT reuses an existing same-name group (idempotent re-save)", async () => {
+    const baseAccounts = [
+      { id: "acct-1", category: "cash" as const, revocableTrustName: null, owners: [], name: "Checking", subType: "checking", value: 50000, basis: 0, growthRate: 0.02, rmdEnabled: false, titlingType: "jtwros" as const },
+      { id: "acct-2", category: "real_estate" as const, revocableTrustName: null, owners: [], name: "Residence", subType: "primary", value: 500000, basis: 200000, growthRate: 0.03, rmdEnabled: false, titlingType: "jtwros" as const },
+    ];
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: {
+          firstName: "Cooper",
+          lastName: "Smith",
+          dateOfBirth: "1965-03-15",
+          retirementAge: 65,
+          retirementMonth: 1,
+          planEndAge: 95,
+          lifeExpectancy: 95,
+          filingStatus: "single",
+        },
+        accounts: baseAccounts,
+        incomes: [], expenses: [], savingsRules: [], rothConversions: [],
+        assetTransactions: [], reinvestments: [], gifts: [], externalBeneficiaries: [],
+        entities: [],
+        liabilities: [],
+        withdrawalStrategy: [],
+        planSettings: {} as never,
+      },
+    } as never);
+    vi.mocked(loadScenarioToggleGroups).mockResolvedValue([
+      { id: "existing-gid", scenarioId: SCENARIO_ID, name: "Move into Family Trust", defaultOn: true, requiresGroupId: null, orderIndex: 0 },
+    ] as never);
+
+    await PUT(
+      makeUpdateRequest({
+        scenarioId: SCENARIO_ID,
+        mutations: [
+          { kind: "account-upsert", id: "acct-1", value: { ...baseAccounts[0], revocableTrustName: "Family Trust" } },
+          { kind: "account-upsert", id: "acct-2", value: { ...baseAccounts[1], revocableTrustName: "Family Trust" } },
+        ],
+      }),
+      ctx,
+    );
+
+    expect(insertedGroups).toHaveLength(0); // no duplicate created
+    const editCalls = vi.mocked(applyEntityEdit).mock.calls.map((c) => c[0]);
+    for (const call of editCalls) {
+      expect(call.toggleGroupId).toBe("existing-gid");
+    }
   });
 });

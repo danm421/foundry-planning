@@ -24,7 +24,7 @@ import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { loadScenarioChanges } from "@/lib/scenario/changes";
+import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import {
   applyEntityAdd,
   applyEntityEdit,
@@ -248,9 +248,37 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       );
     }
 
+    // Find-or-create a toggle group per revocable-trust funding set so a re-save
+    // collapses the retitled-account edits into one technique card (idempotent:
+    // reuse a same-name group rather than duplicating it).
+    const fundingGroups = revocableTrustFundingGroups(drafts);
+    const existingGroups = await loadScenarioToggleGroups(scenarioId);
+    const groupIdByTarget = new Map<string, string>();
+    const newGroupRows: Array<{
+      id: string; scenarioId: string; name: string; defaultOn: boolean; orderIndex: number;
+    }> = [];
+    for (const g of fundingGroups) {
+      const existingGroup = existingGroups.find((eg) => eg.name === g.name);
+      const id = existingGroup?.id ?? crypto.randomUUID();
+      if (!existingGroup) {
+        newGroupRows.push({
+          id,
+          scenarioId,
+          name: g.name,
+          defaultOn: true,
+          orderIndex: existingGroups.length + newGroupRows.length,
+        });
+      }
+      for (const t of g.targetIds) groupIdByTarget.set(t, id);
+    }
+
     await db.transaction(async (tx) => {
+      if (newGroupRows.length > 0) {
+        await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
+      }
       for (const d of drafts) {
         const targetKind = d.targetKind as TargetKind;
+        const gid = groupIdByTarget.get(d.targetId);
         if (d.opType === "edit") {
           const fields = new Set<string>([
             ...(existingEditFields.get(`${d.targetKind}:${d.targetId}`) ?? []),
@@ -266,6 +294,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             targetKind,
             targetId: d.targetId,
             desiredFields,
+            ...(gid ? { toggleGroupId: gid } : {}),
             tx,
           });
         } else if (d.opType === "add") {
@@ -274,6 +303,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             firmId,
             targetKind,
             entity: d.payload as { id: string } & Record<string, unknown>,
+            ...(gid ? { toggleGroupId: gid } : {}),
             tx,
           });
         } else {
