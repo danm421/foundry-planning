@@ -213,6 +213,74 @@ describe("SOLVER_MUTATION_SCHEMA — technique upserts", () => {
   });
 });
 
+describe("SOLVER_MUTATION_SCHEMA — account-upsert categories", () => {
+  // The revocable-trust lever emits an account-upsert for every probate-eligible
+  // account, which includes `stock_options`. The ACCOUNT_VALUE category enum must
+  // therefore accept every member of Account["category"] or the recompute 400s.
+  const ACCOUNT_CATEGORIES = [
+    "taxable",
+    "cash",
+    "retirement",
+    "annuity",
+    "real_estate",
+    "business",
+    "life_insurance",
+    "notes_receivable",
+    "stock_options",
+  ] as const;
+
+  it.each(ACCOUNT_CATEGORIES)("accepts an account-upsert with category %s", (category) => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "account-upsert",
+      id: "acc-1",
+      value: {
+        id: "acc-1",
+        name: "Acct",
+        category,
+        subType: "generic",
+        value: 100000,
+        basis: 50000,
+        growthRate: 0.05,
+        rmdEnabled: false,
+        titlingType: "jtwros",
+        owners: [{ kind: "client", percent: 1 }],
+        revocableTrustName: null,
+      },
+    });
+    if (!r.success) {
+      throw new Error(`schema rejected category ${category}: ${r.error.message}`);
+    }
+    expect(r.success).toBe(true);
+  });
+
+  // Ownerless accounts are a real state (e.g. "Household Cash", unowned Plaid
+  // accounts). The revocable-trust lever upserts every probate-eligible account,
+  // so the schema must accept an empty owners array or the recompute 400s.
+  it("accepts an account-upsert with an empty owners array", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "account-upsert",
+      id: "acc-1",
+      value: {
+        id: "acc-1",
+        name: "Household Cash",
+        category: "cash",
+        subType: "checking",
+        value: 0,
+        basis: 0,
+        growthRate: 0.02,
+        rmdEnabled: false,
+        titlingType: "jtwros",
+        owners: [],
+        revocableTrustName: null,
+      },
+    });
+    if (!r.success) {
+      throw new Error(`schema rejected empty owners: ${r.error.message}`);
+    }
+    expect(r.success).toBe(true);
+  });
+});
+
 describe("SOLVER_MUTATION_SCHEMA — asset-transaction-upsert sell source refine", () => {
   it("rejects a sell with both accountId and businessAccountId set", () => {
     const r = SOLVER_MUTATION_SCHEMA.safeParse({
