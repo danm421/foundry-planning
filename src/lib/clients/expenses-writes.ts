@@ -78,7 +78,11 @@ export async function createExpenseForClient(args: {
       inflationStartYear: p.inflationStartYear ?? null,
       startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
       endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
-      deductionType: (p.deductionType ?? null) as ExpenseRow["deductionType"],
+      // Living expenses are never a deduction — drop any deductionType so the
+      // UI (which hides the field for living) and the write-core stay in sync.
+      deductionType: (p.type === "living"
+        ? null
+        : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
       endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
     })
     .returning();
@@ -116,6 +120,19 @@ export async function updateExpenseForClient(args: {
     return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
   }
   const p = parsed.data;
+
+  // Protect the seeded current/retirement living-expense rows — their type is
+  // fixed at "living" so the plan always carries pre- and post-retirement
+  // spending. Other field edits (amount, growth, years) stay allowed.
+  if (p.type !== undefined) {
+    const [target] = await db
+      .select({ isDefault: expenses.isDefault, type: expenses.type })
+      .from(expenses)
+      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
+    if (target?.isDefault && p.type !== target.type) {
+      return writeError(400, "Default living-expense rows cannot change type.");
+    }
+  }
 
   if (p.ownerEntityId !== undefined) {
     const c = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
@@ -155,8 +172,13 @@ export async function updateExpenseForClient(args: {
       ...(p.endYearRef !== undefined && {
         endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
       }),
-      ...(p.deductionType !== undefined && {
-        deductionType: (p.deductionType ?? null) as ExpenseRow["deductionType"],
+      // Living expenses are never a deduction. When the row is (re)typed to
+      // living, force deductionType null even if the caller omitted it; otherwise
+      // pass through the supplied value.
+      ...((p.deductionType !== undefined || p.type === "living") && {
+        deductionType: (p.type === "living"
+          ? null
+          : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
       }),
       ...(p.endsAtMedicareEligibilityOwner !== undefined && {
         endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,

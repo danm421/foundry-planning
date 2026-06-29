@@ -242,7 +242,11 @@ async function runCreate(
       startYearRef: seed.startYearRef,
       endYear: seed.endYear,
       endYearRef: seed.endYearRef,
+      // Default living expenses grow with inflation, not a fixed custom rate.
+      // growthSource="inflation" makes the engine resolve growthRate to the
+      // plan's inflation rate at load; the stored 0.03 is just a custom fallback.
       growthRate: "0.03",
+      growthSource: "inflation" as const,
       inflationStartYear: seed.inflationStartYear,
       isDefault: true,
     })),

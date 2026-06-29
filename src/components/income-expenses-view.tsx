@@ -964,6 +964,7 @@ function ExpenseDialog({
   const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [type, setType] = useState<ExpenseType>(editing?.type ?? defaultType);
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
   const [endsAtMedicareEligibilityOwner, setEndsAtMedicareEligibilityOwner] = useState<"client" | "spouse" | null>(
@@ -974,12 +975,13 @@ function ExpenseDialog({
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
   );
-  // New living expenses default to inflation growth (advisor convention — living
-  // costs track inflation). Other/insurance expenses default to custom.
+  // New expenses default to inflation growth (advisor convention — planned
+  // spending tracks inflation unless the advisor sets a custom rate). Editing an
+  // existing row preserves whatever source it was saved with.
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing
       ? editing.growthSource === "inflation" ? "inflation" : "custom"
-      : defaultType === "living" ? "inflation" : "custom"
+      : "inflation"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate, 3))
@@ -1010,7 +1012,10 @@ function ExpenseDialog({
 
     const data = new FormData(e.currentTarget);
     const body = {
-      type: data.get("type") as string,
+      // Read `type` from controlled state, not FormData: a locked (disabled)
+      // default-row select submits no value, and living expenses force the
+      // deduction off below regardless of any stale selection.
+      type,
       name: data.get("name") as string,
       annualAmount: data.get("annualAmount") as string,
       startYear: String(startYear),
@@ -1022,7 +1027,9 @@ function ExpenseDialog({
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef,
       endYearRef,
-      deductionType: deductionType || null,
+      // Living expenses are never a deduction — the Tax Treatment field is hidden
+      // for them, so force it null rather than carrying a stale selection.
+      deductionType: type === "living" ? null : deductionType || null,
       endsAtMedicareEligibilityOwner,
     };
 
@@ -1107,13 +1114,20 @@ function ExpenseDialog({
               id="exp-type"
               name="type"
               required
-              defaultValue={editing?.type ?? defaultType}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              value={type}
+              onChange={(e) => setType(e.target.value as ExpenseType)}
+              disabled={Boolean(editing?.isDefault)}
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="living">Living Expense</option>
               <option value="insurance">Insurance</option>
               <option value="other">Other</option>
             </select>
+            {editing?.isDefault && (
+              <p className="mt-1 text-xs text-gray-400">
+                This is a default living expense — it’s always part of the plan and its type can’t be changed.
+              </p>
+            )}
           </div>
 
           <div>
@@ -1250,21 +1264,25 @@ function ExpenseDialog({
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
-            <select
-              id="exp-deductionType"
-              value={deductionType}
-              onChange={(e) => setDeductionType(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="">None (not a deduction)</option>
-              <option value="charitable">Charitable Gift</option>
-              <option value="above_line">Above Line Deduction</option>
-              <option value="below_line">Below Line Deduction</option>
-              <option value="property_tax">Property Tax</option>
-            </select>
-          </div>
+          {/* Living expenses are pure cash outflows — never a tax deduction —
+              so the Tax Treatment selector only applies to insurance/other. */}
+          {type !== "living" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
+              <select
+                id="exp-deductionType"
+                value={deductionType}
+                onChange={(e) => setDeductionType(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="">None (not a deduction)</option>
+                <option value="charitable">Charitable Gift</option>
+                <option value="above_line">Above Line Deduction</option>
+                <option value="below_line">Below Line Deduction</option>
+                <option value="property_tax">Property Tax</option>
+              </select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2 border-t border-gray-700 pt-3">
             <label className="flex items-center gap-2 text-sm text-gray-200">

@@ -138,6 +138,106 @@ d("expenses-writes core", () => {
     expect(still?.id).toBe(COOPER_DEFAULT_EXPENSE_ID);
   });
 
+  it("change the type of an isDefault row → {ok:false, status:400, /type/i}", async () => {
+    const res = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      expenseId: COOPER_DEFAULT_EXPENSE_ID,
+      input: { type: "other" },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+    expect(res.error).toMatch(/type/i);
+    // The default row keeps its living type.
+    const [still] = await db
+      .select({ type: expenses.type })
+      .from(expenses)
+      .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+    expect(still?.type).toBe("living");
+  });
+
+  it("editing an isDefault row's amount (not type) still succeeds", async () => {
+    // Cooper's seeded default row lives on the shared dev branch — capture and
+    // restore its amount so this test leaves no residue.
+    const [before] = await db
+      .select({ annualAmount: expenses.annualAmount })
+      .from(expenses)
+      .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+    try {
+      const res = await updateExpenseForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        expenseId: COOPER_DEFAULT_EXPENSE_ID,
+        // Re-sending the unchanged type alongside an edit must NOT trip the guard.
+        input: { type: "living", annualAmount: 4321 },
+      });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.data.annualAmount).toBe("4321.00");
+      expect(res.data.type).toBe("living");
+    } finally {
+      await db
+        .update(expenses)
+        .set({ annualAmount: before?.annualAmount ?? "0" })
+        .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+    }
+  });
+
+  it("creating a living expense drops any deductionType", async () => {
+    const res = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "living",
+        name: "Living with stray deduction",
+        annualAmount: 100,
+        startYear: 2030,
+        endYear: 2040,
+        deductionType: "charitable",
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.deductionType).toBeNull();
+  });
+
+  it("retyping an expense to living clears its deductionType", async () => {
+    const created = await createExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "other",
+        name: "Other → living",
+        annualAmount: 100,
+        startYear: 2030,
+        endYear: 2040,
+        deductionType: "charitable",
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.deductionType).toBe("charitable");
+
+    const res = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      expenseId: created.data.id,
+      input: { type: "living" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.type).toBe("living");
+    expect(res.data.deductionType).toBeNull();
+  });
+
   it("update happy path → {ok, data} with the new field", async () => {
     const created = await createExpenseForClient({
       clientId: COOPER_CLIENT_ID,

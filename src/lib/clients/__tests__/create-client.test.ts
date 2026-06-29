@@ -109,6 +109,8 @@ describe("createClientForHousehold", () => {
     );
     expect(retirement).toBeTruthy();
     expect(retirement?.isDefault).toBe(true);
+    // Default living expenses grow with inflation, not a fixed custom rate.
+    expect(livingDefaults.every((e) => e.growthSource === "inflation")).toBe(true);
 
     // Default "Household Cash" checking account.
     const [cash] = await db

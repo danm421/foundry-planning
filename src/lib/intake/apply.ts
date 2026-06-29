@@ -320,7 +320,9 @@ async function applySectionsToClient(
         startYearRef: "client_retirement",
         endYear: planEndYear,
         endYearRef: "plan_end",
+        // Default living expenses grow with inflation (matches create-client seed).
         growthRate: "0.03",
+        growthSource: "inflation",
         isDefault: true,
       });
     }
