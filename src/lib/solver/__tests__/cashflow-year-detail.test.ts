@@ -128,6 +128,25 @@ describe("buildCashFlowYearDetail", () => {
     expect(d.totals.endingPortfolio).toBe(800_000); // liquidTotal
   });
 
+  it("produces a negative residual 'Other' outflow when enumerated categories exceed totalExpenses", () => {
+    // Enumerated outflow categories in the default makeYear fixture sum to 103k:
+    //   living(60k) + liabilities(byLiability=12k) + other(5k) + insurance(3k)
+    //   + realEstate(4k) + taxes(9k) + savings(byAccount=10k) = 103k
+    // Setting totalExpenses to 90k forces outflowResidual = 90k - 103k = -13k (negative branch).
+    const d = buildCashFlowYearDetail(makeYear({ totalExpenses: 90_000 }), makeClientData());
+
+    const outflowSum = d.outflows.reduce((s, c) => s + c.total, 0);
+    // Column must still tie out exactly to the canonical totalExpenses.
+    expect(Math.round(outflowSum)).toBe(d.totals.outflows);
+    expect(d.totals.outflows).toBe(90_000);
+
+    // A "residual" (Other) outflow category must exist and be negative.
+    const residual = d.outflows.find((c) => c.key === "residual");
+    expect(residual).toBeDefined();
+    expect(residual!.total).toBeLessThan(0);
+    expect(residual!.total).toBe(-13_000);
+  });
+
   it("does not throw on an empty year", () => {
     const empty = makeYear({
       income: { salaries: 0, socialSecurity: 0, business: 0, trust: 0, deferred: 0, capitalGains: 0, other: 0, total: 0, bySource: {} },
