@@ -1,0 +1,1 @@
+ALTER TABLE "solver_mc_cache" ADD COLUMN "result" jsonb;

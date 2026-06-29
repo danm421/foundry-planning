@@ -4340,6 +4340,10 @@ export const solverMcCache = pgTable(
       .references(() => clients.id, { onDelete: "cascade" }),
     inputHash: text("input_hash").notNull(),
     successRate: doublePrecision("success_rate").notNull(),
+    // Full report payload for the solver Monte Carlo tab. Nullable: legacy rows
+    // (written before 0191) carry only success_rate; a full-result read treats a
+    // null here as a miss and recomputes. Pruned with the row after ~7 days.
+    result: jsonb("result").$type<import("@/lib/compute-cache/monte-carlo").CachedMonteCarloResult>(),
     computedAt: timestamp("computed_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
