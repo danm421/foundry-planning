@@ -5314,10 +5314,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // of year-N state, so the report always displays consistent "both die in
     // year N" numbers regardless of where real deaths land. Attached to the
     // ProjectionYear at push time so the required field is always populated.
-    const clientFilingStatus = (client.filingStatus ?? "single") as FilingStatus;
-    const hypotheticalIsMarried =
-      clientFilingStatus === "married_joint" ||
-      clientFilingStatus === "married_separate";
+    // "Married" for the hypothetical means "a spouse exists to die second" —
+    // the same signal the real projection uses to schedule the second death
+    // (see computeFinalDeathYear, which keys off `client.spouseDob`). Deriving
+    // this from filingStatus would model only one death for a spouse'd
+    // household that files single/separately, routing everything to the
+    // surviving spouse under the marital deduction and showing $0 to heirs.
+    const hypotheticalIsMarried = client.spouseDob != null;
     const hypotheticalEstateTax = computeHypotheticalEstateTax({
       year,
       isMarried: hypotheticalIsMarried,
@@ -5946,9 +5949,13 @@ function computeTodayHypotheticalEstateTax(
     return { ...l, balance: boyBalance };
   });
 
-  const filingStatus = (data.client.filingStatus ?? "single") as FilingStatus;
-  const isMarried =
-    filingStatus === "married_joint" || filingStatus === "married_separate";
+  // "Married" for the hypothetical means "a spouse exists to die second" — the
+  // same signal the real projection uses to schedule the second death (see
+  // computeFinalDeathYear, which keys off `client.spouseDob`). Deriving this
+  // from filingStatus would model only one death for a spouse'd household that
+  // files single/separately, routing everything to the surviving spouse under
+  // the marital deduction and showing $0 to heirs in the "Today" estate view.
+  const isMarried = data.client.spouseDob != null;
 
   return computeHypotheticalEstateTax({
     year: planStartYear,

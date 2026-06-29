@@ -134,6 +134,56 @@ describe("runProjectionWithEvents", () => {
     expect(result.secondDeathEvent).toBe(secondYr!.estateTax);
   });
 
+  it("models both deaths in the today-hypothetical when a spouse exists but filing status is single", () => {
+    // Regression: the Doyle household had a real spouse (spouseDob set, modeled
+    // as a second death by the projection) but a non-married `filingStatus`.
+    // `computeTodayHypotheticalEstateTax` derived `isMarried` from filing status
+    // alone, so the "today" estate snapshot modeled only the client's death,
+    // routed everything to the surviving spouse under the marital deduction, and
+    // showed $0 to heirs — collapsing the Estate Summary's "Today" chart bar.
+    // The today-hypothetical must key "is there a spouse" off spouse presence,
+    // matching how the real projection schedules the second death.
+    const client: ClientInfo = {
+      firstName: "Frank", lastName: "Doyle",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65, planEndAge: 95,
+      filingStatus: "single", // ← spouse exists, but filing single
+      lifeExpectancy: 75,
+      spouseDob: "1972-01-01",
+      spouseLifeExpectancy: 80,
+    };
+
+    const data: ClientData = {
+      client,
+      accounts,
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: basePlanSettings,
+      familyMembers: [defaultClientFm, defaultSpouseFm, kidA],
+      wills,
+      giftEvents: [],
+    };
+
+    const result = runProjectionWithEvents(data);
+
+    // The today-hypothetical must model BOTH deaths (client → spouse → kid),
+    // not just the client's death.
+    const today = result.todayHypotheticalEstateTax.primaryFirst;
+    expect(today.finalDeath).toBeDefined();
+    expect(today.finalDeathTransfers).toBeDefined();
+
+    // The second death must route the estate to the non-spouse heir (kid-a),
+    // so the "Today" net-to-heirs is non-zero.
+    const toKid = (today.finalDeathTransfers ?? []).filter(
+      (t) => t.recipientKind === "family_member" && t.recipientId === "kid-a" && t.amount > 0,
+    );
+    expect(toKid.length).toBeGreaterThan(0);
+    expect(toKid.reduce((s, t) => s + t.amount, 0)).toBeGreaterThan(0);
+  });
+
   it("returns undefined event refs when no death year falls inside the projection window", () => {
     // Both grantors have no lifeExpectancy set → computeFirstDeathYear returns
     // null → projection emits no death-event years.
