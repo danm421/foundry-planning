@@ -18,6 +18,7 @@ import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
+import { SolverPaneDivider } from "./solver-pane-divider";
 import { defaultReportForTab, type InputTab, type ReportKey } from "./report-tab-link";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSection } from "./solver-section";
@@ -76,6 +77,10 @@ const LEFT_TABS: { id: InputTab; label: string }[] = [
   { id: "estate_planning", label: "Estate Planning" },
 ];
 
+// Persisted, draggable split between the inputs (left) and reports (right) panes.
+const SOLVER_LEFT_PCT_KEY = "foundry.solver.leftPct";
+const SOLVER_LEFT_PCT_DEFAULT = 35;
+
 export function LiveSolverWorkspace({
   clientId,
   baseClientData,
@@ -124,6 +129,19 @@ export function LiveSolverWorkspace({
   const mutations = useMemo(() => Array.from(mutationMap.values()), [mutationMap]);
 
   const [activeTab, setActiveTab] = useState<InputTab>("retirement");
+
+  // Left-pane (inputs) width as a percent of the workspace. Default 35; the user
+  // can drag the divider and we remember their choice across sessions. Read from
+  // localStorage after mount (not in the initializer) so SSR markup stays stable.
+  const [leftPct, setLeftPct] = useState(SOLVER_LEFT_PCT_DEFAULT);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(SOLVER_LEFT_PCT_KEY));
+    if (Number.isFinite(stored) && stored > 0) setLeftPct(stored);
+  }, []);
+  const persistLeftPct = useCallback((pct: number) => {
+    window.localStorage.setItem(SOLVER_LEFT_PCT_KEY, String(pct));
+  }, []);
 
   // The right-pane report is linked to the left input tab: selecting an input
   // tab applies that tab's default report; clicking a report tab overrides it
@@ -881,9 +899,14 @@ export function LiveSolverWorkspace({
           two panes always reach the footer no matter the chrome height — no
           magic viewport-minus-Npx that leaves a tall void below the workspace.
           Each pane scrolls its own overflow. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(360px,40%)_1fr]">
-        {/* LEFT — inputs, independent scroll */}
-        <div className="min-h-0 overflow-y-auto border-b border-hair lg:border-b-0 lg:border-r">
+      <div
+        ref={workspaceRef}
+        style={{ "--solver-left": `${leftPct}%` } as React.CSSProperties}
+        className="relative grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[var(--solver-left,35%)_minmax(0,1fr)]"
+      >
+        {/* LEFT — inputs, independent scroll. The right hairline is drawn by the
+            draggable divider (rendered below), so no lg:border-r here. */}
+        <div className="min-h-0 overflow-y-auto border-b border-hair lg:border-b-0">
           <div
             role="tablist"
             aria-label="Solver editing surface"
@@ -1142,6 +1165,13 @@ export function LiveSolverWorkspace({
             ) : null}
           </div>
         </div>
+
+        <SolverPaneDivider
+          containerRef={workspaceRef}
+          value={leftPct}
+          onChange={setLeftPct}
+          onCommit={persistLeftPct}
+        />
       </div>
 
       <SolverActionBar
