@@ -13,6 +13,7 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
+import { color as chartColor } from "chart.js/helpers";
 import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
@@ -146,11 +147,22 @@ export function buildSolverCashFlowChartData(
   };
 }
 
-interface Props {
-  years: ProjectionYear[];
+/** Lower a resolved chart color's alpha for de-emphasised (non-selected) bars. */
+function withAlpha(base: string, alpha: number): string {
+  try {
+    return chartColor(base).alpha(alpha).rgbString();
+  } catch {
+    return base;
+  }
 }
 
-export function SolverCashFlowChart({ years }: Props) {
+interface Props {
+  years: ProjectionYear[];
+  onYearClick?: (year: number) => void;
+  selectedYear?: number | null;
+}
+
+export function SolverCashFlowChart({ years, onYearClick, selectedYear }: Props) {
   const theme = useThemeName();
 
   const data = useMemo(
@@ -158,16 +170,46 @@ export function SolverCashFlowChart({ years }: Props) {
     [years, theme],
   );
 
+  // De-emphasise non-selected years by lowering bar alpha. The line dataset
+  // (Total Expenses) keeps full opacity. Implemented as a scriptable color so
+  // we don't rebuild the dataset array on every selection change.
+  const selectedIndex = useMemo(
+    () => (selectedYear == null ? -1 : years.findIndex((y) => y.year === selectedYear)),
+    [years, selectedYear],
+  );
+  const styledData = useMemo(() => {
+    if (selectedIndex < 0) return data;
+    return {
+      ...data,
+      datasets: data.datasets.map((ds) =>
+        ds.type !== "bar"
+          ? ds
+          : {
+              ...ds,
+              backgroundColor: (ctx: { dataIndex: number }) => {
+                const base = ds.backgroundColor as string;
+                return ctx.dataIndex === selectedIndex ? base : withAlpha(base, 0.4);
+              },
+            },
+      ),
+    };
+  }, [data, selectedIndex]);
+
   const chrome = chartChrome(theme);
 
   return (
     <Chart
       type="bar"
-      data={data}
+      data={styledData}
       options={{
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
+        onClick: (_event, elements: Array<{ index: number }>) => {
+          if (!onYearClick || elements.length === 0) return;
+          const year = years[elements[0].index]?.year;
+          if (year != null) onYearClick(year);
+        },
         scales: {
           x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
           y: {

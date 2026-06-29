@@ -79,6 +79,8 @@ function ControlledPanel({
       mcSuccessRate={null}
       activeSummary="retirement"
       onSummaryChange={() => undefined}
+      selectedYear={null}
+      onYearClick={() => undefined}
     />
   );
 }
@@ -194,6 +196,8 @@ describe("SolverChartPanel", () => {
         mcSuccessRate={null}
         activeSummary="retirement"
         onSummaryChange={() => undefined}
+        selectedYear={null}
+        onYearClick={() => undefined}
       />,
     );
     await userEvent.click(screen.getByRole("tab", { name: "Estate" }));

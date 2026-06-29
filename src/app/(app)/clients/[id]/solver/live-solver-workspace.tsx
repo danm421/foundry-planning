@@ -42,6 +42,7 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { SolverMinSavingsPanel, type MinSavingsResult } from "./solver-min-savings-panel";
 import { buildLockInCutMutations } from "@/lib/solver/lock-in-cut";
+import { SolverYearDetailPanel } from "./solver-year-detail-panel";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
   if (type === "cash") return d.cash;
@@ -148,6 +149,7 @@ export function LiveSolverWorkspace({
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
   );
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [computeStatus, setComputeStatus] = useState<
     "fresh" | "stale" | "computing" | "error"
   >("fresh");
@@ -407,6 +409,16 @@ export function LiveSolverWorkspace({
     baseEndingAssets != null && workingEndingAssets != null
       ? workingEndingAssets - baseEndingAssets
       : null;
+
+  // Default the cash-flow detail to the earliest projection year, and recover
+  // if a recompute drops the previously selected year.
+  useEffect(() => {
+    const years = currentProjection;
+    if (years.length === 0) return;
+    setSelectedYear((prev) =>
+      prev != null && years.some((y) => y.year === prev) ? prev : years[0].year,
+    );
+  }, [currentProjection]);
 
   const baseYearsFunded = yearsFullyFunded(baseProjection);
   const workingYearsFunded = yearsFullyFunded(currentProjection);
@@ -996,6 +1008,8 @@ export function LiveSolverWorkspace({
               mcSuccessRate={mcWorkingSuccess}
               activeSummary={activeSummary}
               onSummaryChange={setActiveSummary}
+              selectedYear={selectedYear}
+              onYearClick={setSelectedYear}
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults
@@ -1027,6 +1041,14 @@ export function LiveSolverWorkspace({
                 solveActive={activeSolve !== null}
               />
             ) : null}
+            {activeReport === "cashflow" && selectedYear != null
+              ? (() => {
+                  const y = currentProjection.find((r) => r.year === selectedYear);
+                  return y ? (
+                    <SolverYearDetailPanel year={y} clientData={workingTree} />
+                  ) : null;
+                })()
+              : null}
             {errorMessage ? (
               <div
                 role="alert"
