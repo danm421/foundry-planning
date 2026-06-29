@@ -800,6 +800,152 @@ describe("commitIncomes", () => {
   });
 });
 
+// Social Security is special: the whole SS UI is per-person (the card renders a
+// client slot and a spouse slot, each matched by owner). A generic insert with
+// owner='joint' shows up in the cash-flow SS line (the engine sums every
+// social_security row) but is orphaned in the editor. So the commit must
+// reconcile extracted SS into the seeded per-person slots rather than insert
+// raw rows. See create-client.ts for the seeded `social_security` slots.
+describe("commitIncomes — Social Security reconciliation", () => {
+  function ssSlot(owner: "client" | "spouse", extra: Record<string, unknown> = {}) {
+    return {
+      id: `ss-${owner}`,
+      type: "social_security",
+      owner,
+      annualAmount: "0",
+      // Distinct claim ages per slot so tests can prove each update hit the
+      // right person's row (the fake tx doesn't capture the WHERE target).
+      claimingAge: owner === "client" ? 66 : 68,
+      claimingAgeMode: null,
+      growthRate: "0.02",
+      ...extra,
+    };
+  }
+
+  function values(call: FakeTxCall): Record<string, unknown> {
+    return (call as { values: Record<string, unknown> }).values;
+  }
+
+  it("splits a joint Social Security row 50/50 across the seeded client and spouse slots", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client"), ssSlot("spouse")]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "joint", annualAmount: 78000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    const incomeCalls = callsForTable(calls, "incomes");
+    // No raw joint row is inserted — the orphaning bug.
+    expect(incomeCalls.filter((c) => c.op === "insert")).toHaveLength(0);
+    const updates = incomeCalls.filter((c) => c.op === "update");
+    expect(updates).toHaveLength(2);
+    const vs = updates.map(values);
+    expect(vs.every((v) => v.annualAmount === "39000")).toBe(true);
+    expect(vs.every((v) => v.ssBenefitMode === "manual_amount")).toBe(true);
+    // Each slot keeps its own claim age → proves the two updates targeted the
+    // two distinct per-person rows.
+    expect(vs.map((v) => v.claimingAge).sort()).toEqual([66, 68]);
+    expect(result.updated).toBe(2);
+    expect(result.created).toBe(0);
+  });
+
+  it("merges a client-owned Social Security row into the client slot, carrying benefit mode + claiming age", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client"), ssSlot("spouse")]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Harold's Social Security", type: "social_security", owner: "client", annualAmount: 35472, claimingAge: 70, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    const v = values(updates[0]);
+    expect(v.annualAmount).toBe("35472");
+    expect(v.ssBenefitMode).toBe("manual_amount");
+    expect(v.claimingAge).toBe(70);
+    expect(v.claimingAgeMode).toBe("years");
+    expect(callsForTable(calls, "incomes").filter((c) => c.op === "insert")).toHaveLength(0);
+    expect(result.updated).toBe(1);
+  });
+
+  it("assigns a joint Social Security row entirely to the client when there is no spouse slot", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client")]); // unmarried household — no spouse slot
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "joint", annualAmount: 50000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    expect(values(updates[0]).annualAmount).toBe("50000");
+    expect(result.updated).toBe(1);
+    expect(result.created).toBe(0);
+  });
+
+  it("sums multiple Social Security rows into the per-person slots (preserving the projection total)", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client"), ssSlot("spouse")]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "joint", annualAmount: 78000, match: { kind: "new" } },
+        { name: "Future Social Security", type: "social_security", owner: "joint", annualAmount: 85289, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(2);
+    // (78000 + 85289) / 2 = 81644.5 per person; total preserved at 163289.
+    expect(updates.map((u) => values(u).annualAmount)).toEqual(["81644.5", "81644.5"]);
+  });
+
+  it("skips a fuzzy-matched Social Security row", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client"), ssSlot("spouse")]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "SS", type: "social_security", owner: "client", annualAmount: 1000, match: { kind: "fuzzy", candidates: [{ id: "x", score: 0.5 }] } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    expect(result.skipped).toBe(1);
+    expect(callsForTable(calls, "incomes").filter((c) => c.op === "update")).toHaveLength(0);
+    expect(callsForTable(calls, "incomes").filter((c) => c.op === "insert")).toHaveLength(0);
+  });
+
+  it("processes a generic income normally while reconciling Social Security separately", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client"), ssSlot("spouse")]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Salary", type: "salary", owner: "client", annualAmount: 100000, match: { kind: "new" } },
+        { name: "Social Security", type: "social_security", owner: "joint", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    const inserts = callsForTable(calls, "incomes").filter((c) => c.op === "insert");
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(inserts).toHaveLength(1); // the salary is still a normal insert
+    expect(values(inserts[0]).type).toBe("salary");
+    expect(updates).toHaveLength(2); // SS split into both seeded slots
+  });
+});
+
 describe("commitExpenses", () => {
   it("inserts new with defaults", async () => {
     const { tx, calls } = makeFakeTx();
