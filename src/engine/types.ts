@@ -28,6 +28,8 @@ export interface MedicareCoverage {
   medigapMonthlyAt65: number | null;        // null → engine uses DEFAULT_MEDIGAP_MONTHLY_AT_BASE_YEAR
   partDPlanMonthlyAt65: number | null;      // null → engine uses DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR
   priorYearMagi: number | null;             // null → engine uses projected year-0 MAGI for cold-start
+  /** true → ignore priorYearMagi and estimate cold-start MAGI from the projection. */
+  estimatePriorYearMagiFromProjection?: boolean;
 }
 
 /** Resolved per-person Medicare detail for a single projection year. */

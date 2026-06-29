@@ -2202,6 +2202,9 @@ export const medicareCoverage = pgTable("medicare_coverage", {
   medigapMonthlyAt65: decimal("medigap_monthly_at65", { precision: 10, scale: 2 }),
   partDPlanMonthlyAt65: decimal("part_d_plan_monthly_at65", { precision: 10, scale: 2 }),
   priorYearMagi: decimal("prior_year_magi", { precision: 15, scale: 2 }),
+  estimatePriorYearMagiFromProjection: boolean("estimate_prior_year_magi_from_projection")
+    .notNull()
+    .default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
