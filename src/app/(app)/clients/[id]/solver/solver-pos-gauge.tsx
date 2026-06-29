@@ -15,8 +15,7 @@ interface Props {
 
 export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, baselineSuccessPct }: Props) {
   let display: string;
-  if (state === "computing") display = "…";
-  else if (state === "ready" || state === "stale") {
+  if (state === "ready" || state === "stale") {
     display = successPct == null ? "—" : `${Math.round(successPct * 100)}%`;
   } else if (state === "error") display = "Error";
   else display = "—";
@@ -46,9 +45,17 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
           Probability of Success
         </div>
         <div
-          className={`mt-0.5 text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
+          className={`mt-0.5 flex h-5 items-center text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
         >
-          {display}
+          {state === "computing" ? (
+            <span
+              role="status"
+              aria-label="Calculating probability of success"
+              className="inline-block h-4 w-4 rounded-full border-2 border-hair border-t-accent motion-safe:animate-spin"
+            />
+          ) : (
+            display
+          )}
         </div>
         {(state === "ready" || state === "stale") && successPct != null && baselineSuccessPct != null && baselineSuccessPct !== successPct ? (
           <div className="text-[10px] text-ink-4">
