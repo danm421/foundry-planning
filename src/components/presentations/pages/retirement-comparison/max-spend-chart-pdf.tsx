@@ -1,8 +1,7 @@
-import { View, Svg, Path, Line, Text as SvgText } from "@react-pdf/renderer";
+import { Svg, Path, Line, Text as SvgText } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import { fmtAxisUsd, MONO } from "./chart-axis";
-import { ChartLegend } from "./chart-legend-pdf";
 import type { MaxSpendPoint } from "@/lib/presentations/pages/retirement-comparison/types";
 
 const CURRENT = dataLight.grey;   // current plan
@@ -29,9 +28,8 @@ export function MaxSpendChartPdf({ series, width = 500 }: { series: MaxSpendPoin
   );
 
   return (
-    <View>
-      <Svg width={width} height={height}>
-        <SvgText x={padL} y={padT - 5} textAnchor="start" style={{ fontSize: 6, fill: T.ink3 }}>$/yr · future dollars</SvgText>
+    <Svg width={width} height={height}>
+      <SvgText x={padL} y={padT - 5} textAnchor="start" style={{ fontSize: 6, fill: T.ink3 }}>$/yr · future dollars</SvgText>
 
         <Path d={toPath((p) => p.base)} stroke={CURRENT} strokeWidth={1.5} strokeDasharray="4 3" fill="none" />
         <Path d={toPath((p) => p.scenario)} stroke={PROPOSED} strokeWidth={2} fill="none" />
@@ -51,8 +49,6 @@ export function MaxSpendChartPdf({ series, width = 500 }: { series: MaxSpendPoin
             {`'${String(series[i].year).slice(2)}`}
           </SvgText>
         ))}
-      </Svg>
-      <ChartLegend items={[{ label: "Proposed", color: PROPOSED }, { label: "Current", color: CURRENT }]} />
-    </View>
+    </Svg>
   );
 }

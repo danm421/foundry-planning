@@ -9,6 +9,7 @@ import type {
   KpiCard,
 } from "@/lib/presentations/pages/retirement-comparison/types";
 import { fmtUsdCompact as fmtUsd } from "@/lib/presentations/pages/retirement-comparison/format";
+import { dataLight } from "@/brand";
 import { OverlayBarsPdf } from "./chart-pdf";
 import { MaxSpendChartPdf } from "./max-spend-chart-pdf";
 import { ConfidenceRangeChartPdf } from "./confidence-range-chart-pdf";
@@ -24,6 +25,15 @@ const s = StyleSheet.create({
   panelCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   chartRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 },
+
+  // Max-spend figures, moved out of the chart title into a compact table that
+  // doubles as the chart's legend (swatch · label · value).
+  spendTable: { marginTop: 4 },
+  spendRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2.5, borderTopWidth: 0.5, borderTopColor: T.hair },
+  spendKey: { flexDirection: "row", alignItems: "center" },
+  spendSwatch: { width: 7, height: 7, borderRadius: 1.5, marginRight: 5 },
+  spendLabel: { fontSize: 8, color: T.ink2 },
+  spendVal: { fontSize: 9, fontWeight: 600, color: T.ink, fontFamily: MONO },
 
   kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
   kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
@@ -107,8 +117,24 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
           const maxSpendPanel = data.maxSpend.show ? (
             <View style={panelStyle}>
-              <Text style={s.h4}>{`Maximum sustainable spending — ${fmtUsd(data.maxSpend.scenarioToday)}/yr proposed vs. ${fmtUsd(data.maxSpend.baseToday)}/yr current (today's $)`}</Text>
+              <Text style={s.h4}>{`Maximum sustainable spending (today's $)`}</Text>
               <MaxSpendChartPdf series={data.maxSpend.series} width={chartWidth} />
+              <View style={s.spendTable}>
+                <View style={s.spendRow}>
+                  <View style={s.spendKey}>
+                    <View style={[s.spendSwatch, { backgroundColor: dataLight.green }]} />
+                    <Text style={s.spendLabel}>Proposed</Text>
+                  </View>
+                  <Text style={s.spendVal}>{`${fmtUsd(data.maxSpend.scenarioToday)}/yr`}</Text>
+                </View>
+                <View style={s.spendRow}>
+                  <View style={s.spendKey}>
+                    <View style={[s.spendSwatch, { backgroundColor: dataLight.grey }]} />
+                    <Text style={s.spendLabel}>Current</Text>
+                  </View>
+                  <Text style={s.spendVal}>{`${fmtUsd(data.maxSpend.baseToday)}/yr`}</Text>
+                </View>
+              </View>
             </View>
           ) : null;
 

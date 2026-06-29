@@ -79,6 +79,10 @@ export function buildRetirementComparisonData(
   const scenarioYears = scnBundle.projection.years;
   const retirementYear = retirementYearOf(scnBundle.clientData) ?? scenarioYears[0]?.year ?? 0;
   const endOfLifeYear = scenarioYears[scenarioYears.length - 1]?.year ?? retirementYear;
+  // Charts never reach back before the plan's current year — i.e. the
+  // projection's first year. An already-retired client has a retirementYear in
+  // the past, so anything keyed off it must be floored to this.
+  const currentYear = scenarioYears[0]?.year ?? retirementYear;
 
   const baseSuccess = baseBundle.monteCarlo?.summary.successRate ?? null;
   const scnSuccess = scnBundle.monteCarlo?.summary.successRate ?? null;
@@ -96,7 +100,9 @@ export function buildRetirementComparisonData(
     options.maxSpend.show && baseBundle.maxSpend != null && scnBundle.maxSpend != null;
   const series: MaxSpendPoint[] = [];
   if (maxSpendShow) {
-    for (let y = retirementYear; y <= endOfLifeYear; y++) {
+    // Start at retirement, but never before the current year (already-retired
+    // clients would otherwise plot deflated pre-plan years).
+    for (let y = Math.max(retirementYear, currentYear); y <= endOfLifeYear; y++) {
       const f = Math.pow(1 + inflation, y - planStartYear);
       series.push({ year: y, base: Math.round(baseToday * f), scenario: Math.round(scnToday * f) });
     }
