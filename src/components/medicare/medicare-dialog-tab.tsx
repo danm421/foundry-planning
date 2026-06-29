@@ -37,6 +37,9 @@ export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved
     existing?.partDPlanMonthlyAt65 ?? DEFAULT_PART_D_PLAN_MONTHLY_AT_BASE_YEAR,
   );
   const [priorMagi, setPriorMagi] = useState<number | null>(existing?.priorYearMagi ?? null);
+  const [estimateFromProjection, setEstimateFromProjection] = useState<boolean>(
+    existing?.estimatePriorYearMagiFromProjection ?? false,
+  );
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -48,6 +51,7 @@ export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved
       medigapMonthlyAt65: medigap,
       partDPlanMonthlyAt65: partD,
       priorYearMagi: priorMagi,
+      estimatePriorYearMagiFromProjection: estimateFromProjection,
     };
     const res = await fetch(`/api/clients/${clientId}/medicare-coverage`, {
       method: "PUT",
@@ -120,16 +124,31 @@ export function MedicareDialogTab({ clientId, owner, existing, ownerDob, onSaved
       </div>
 
       <div>
-        <label htmlFor="medicare-magi" className={fieldLabelClassName}>Prior-year MAGI ($, optional)</label>
-        <input
-          id="medicare-magi"
-          type="number"
-          aria-label="prior year magi"
-          value={priorMagi ?? ""}
-          placeholder="Used for IRMAA in years 1–2"
-          onChange={e => setPriorMagi(e.target.value ? Number(e.target.value) : null)}
-          className={inputClassName}
-        />
+        <label className="flex items-center gap-2 text-[13px] text-ink-2 cursor-pointer">
+          <input
+            type="checkbox"
+            aria-label="estimate prior-year magi from projection"
+            checked={estimateFromProjection}
+            onChange={(e) => setEstimateFromProjection(e.target.checked)}
+            className="h-4 w-4 rounded border-hair text-accent focus:ring-1 focus:ring-accent"
+          />
+          <span>Estimate prior-year MAGI from projection</span>
+        </label>
+        {!estimateFromProjection && (
+          <div className="mt-3">
+            <label htmlFor="medicare-magi" className={fieldLabelClassName}>Prior-year MAGI ($, optional)</label>
+            <input
+              id="medicare-magi"
+              type="number"
+              aria-label="prior year magi"
+              value={priorMagi ?? ""}
+              placeholder="Used for IRMAA in years 1–2"
+              onChange={e => setPriorMagi(e.target.value ? Number(e.target.value) : null)}
+              className={inputClassName}
+            />
+            <p className="text-[11px] text-ink-3 mt-1">Leave blank to estimate from the current-year projection.</p>
+          </div>
+        )}
       </div>
 
       <button
