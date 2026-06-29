@@ -24,7 +24,6 @@ describe("MedicareDialogTab estimate toggle", () => {
     expect(body.estimatePriorYearMagiFromProjection).toBe(true);
   });
 
-
   it("renders default values when no existing coverage", () => {
     render(<MedicareDialogTab clientId="c1" owner="client" existing={null} onSaved={() => {}} />);
     expect(screen.getByLabelText(/enrollment year/i)).toHaveValue(null);
