@@ -39,6 +39,7 @@ vi.mock("@/lib/clients/authz", () => ({
 
 const insertedScenarios: unknown[] = [];
 const insertedChanges: unknown[] = [];
+const insertedGroups: unknown[] = [];
 // PUT-path fixtures: the scenario lookup result and any seed updates.
 let scenarioLookup: unknown[] = [];
 const seedUpdates: unknown[] = [];
@@ -56,7 +57,12 @@ vi.mock("@/db", () => ({
           values: (rows: unknown) => ({
             returning: async () => {
               if (Array.isArray(rows)) {
-                insertedChanges.push(...rows);
+                const first = rows[0] as Record<string, unknown> | undefined;
+                if (first && "opType" in first) {
+                  insertedChanges.push(...rows);
+                } else {
+                  insertedGroups.push(...rows);
+                }
                 return rows;
               }
               insertedScenarios.push(rows);
@@ -120,6 +126,7 @@ function makeUpdateRequest(body: unknown) {
 beforeEach(() => {
   insertedScenarios.length = 0;
   insertedChanges.length = 0;
+  insertedGroups.length = 0;
   seedUpdates.length = 0;
   scenarioLookup = [{ id: SCENARIO_ID, isBaseCase: false }];
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
@@ -212,6 +219,61 @@ describe("POST /api/clients/[id]/solver/save-scenario", () => {
       ctx as never,
     );
     expect(res.status).toBe(403);
+  });
+
+  it("POST groups >=2 revocable-trust funding changes under one toggle group", async () => {
+    const baseAccounts = [
+      { id: "acct-1", category: "cash" as const, revocableTrustName: null, owners: [], name: "Checking", subType: "checking", value: 50000, basis: 0, growthRate: 0.02, rmdEnabled: false, titlingType: "jtwros" as const },
+      { id: "acct-2", category: "real_estate" as const, revocableTrustName: null, owners: [], name: "Residence", subType: "primary", value: 500000, basis: 200000, growthRate: 0.03, rmdEnabled: false, titlingType: "jtwros" as const },
+    ];
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: {
+        client: {
+          firstName: "Cooper",
+          lastName: "Smith",
+          dateOfBirth: "1965-03-15",
+          retirementAge: 65,
+          retirementMonth: 1,
+          planEndAge: 95,
+          lifeExpectancy: 95,
+          filingStatus: "single",
+        },
+        accounts: baseAccounts,
+        incomes: [], expenses: [], savingsRules: [], rothConversions: [],
+        assetTransactions: [], reinvestments: [], gifts: [], externalBeneficiaries: [],
+        entities: [],
+        liabilities: [],
+        withdrawalStrategy: [],
+        planSettings: {} as never,
+      },
+    } as never);
+
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        name: "Proposed Plan",
+        mutations: [
+          { kind: "account-upsert", id: "acct-1", value: { ...baseAccounts[0], revocableTrustName: "Family Trust" } },
+          { kind: "account-upsert", id: "acct-2", value: { ...baseAccounts[1], revocableTrustName: "Family Trust" } },
+        ],
+      }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    // One toggle group created with the brainstormed label.
+    expect(insertedGroups).toHaveLength(1);
+    expect((insertedGroups[0] as { name: string }).name).toBe("Move into Family Trust");
+    const groupId = (insertedGroups[0] as { id: string }).id;
+    expect((insertedGroups[0] as { defaultOn: boolean }).defaultOn).toBe(true);
+    // Both account changes tagged with it.
+    const tagged = insertedChanges.filter(
+      (c) => (c as { targetKind: string }).targetKind === "account",
+    );
+    expect(tagged).toHaveLength(2);
+    for (const c of tagged) {
+      expect((c as { toggleGroupId: string }).toggleGroupId).toBe(groupId);
+    }
   });
 });
 

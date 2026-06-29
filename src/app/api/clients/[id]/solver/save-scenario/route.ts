@@ -14,7 +14,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, scenarioChanges } from "@/db/schema";
+import { scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
+import { revocableTrustFundingGroups } from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
@@ -82,6 +83,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Sanity check — throws on invalid mutation state
     applyMutations(effectiveTree, mutations as SolverMutation[]);
 
+    const fundingGroups = revocableTrustFundingGroups(drafts);
+
     const newScenarioId = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(scenarios)
@@ -93,6 +96,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         })
         .returning();
 
+      // Auto-create one toggle-group ("technique") per revocable-trust funding
+      // set so the N retitled-account changes collapse into a single card in the
+      // changes panel. defaultOn: true keeps the projection identical.
+      const groupIdByTarget = new Map<string, string>();
+      const groupRows = fundingGroups.map((g, i) => {
+        const id = crypto.randomUUID();
+        for (const t of g.targetIds) groupIdByTarget.set(t, id);
+        return { id, scenarioId: row.id, name: g.name, defaultOn: true, orderIndex: i };
+      });
+      if (groupRows.length > 0) {
+        await tx.insert(scenarioToggleGroups).values(groupRows).returning();
+      }
+
       if (drafts.length > 0) {
         await tx
           .insert(scenarioChanges)
@@ -103,7 +119,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               targetKind: d.targetKind,
               targetId: d.targetId,
               payload: d.payload,
-              toggleGroupId: null,
+              toggleGroupId: groupIdByTarget.get(d.targetId) ?? null,
               orderIndex: d.orderIndex,
               enabled: true,
             })),
