@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
@@ -45,6 +46,13 @@ import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { SolverMinSavingsPanel, type MinSavingsResult } from "./solver-min-savings-panel";
 import { buildLockInCutMutations } from "@/lib/solver/lock-in-cut";
 import { SolverYearDetailPanel } from "./solver-year-detail-panel";
+import {
+  RetirementIcon,
+  TechniquesIcon,
+  StressTestIcon,
+  LifeInsuranceIcon,
+  EstatePlanningIcon,
+} from "./solver-tab-icons";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
   if (type === "cash") return d.cash;
@@ -70,13 +78,20 @@ interface Props {
   scenarioName?: string | null;
 }
 
-/** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS. */
-const LEFT_TABS: { id: InputTab; label: string }[] = [
-  { id: "retirement", label: "Retirement" },
-  { id: "techniques", label: "Techniques" },
-  { id: "stress_test", label: "Stress Test" },
-  { id: "life_insurance", label: "Life Insurance" },
-  { id: "estate_planning", label: "Estate Planning" },
+/** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
+ *  `label` is the full name (aria-label + hover title); `short` is what renders
+ *  under the icon so all five tabs fit the pane without a horizontal scroll. */
+const LEFT_TABS: {
+  id: InputTab;
+  label: string;
+  short: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+}[] = [
+  { id: "retirement", label: "Retirement", short: "Retirement", icon: RetirementIcon },
+  { id: "techniques", label: "Techniques", short: "Techniques", icon: TechniquesIcon },
+  { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
+  { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
+  { id: "estate_planning", label: "Estate Planning", short: "Estate", icon: EstatePlanningIcon },
 ];
 
 // Persisted, draggable split between the inputs (left) and reports (right) panes.
@@ -908,28 +923,35 @@ export function LiveSolverWorkspace({
       >
         {/* LEFT — inputs, independent scroll. The right hairline is drawn by the
             draggable divider (rendered below), so no lg:border-r here. */}
-        <div className="min-h-0 overflow-y-auto border-b border-hair lg:border-b-0">
+        <div className="min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0">
           <div
             role="tablist"
             aria-label="Solver editing surface"
-            className="sticky top-0 z-10 flex gap-1 border-b border-hair-2 bg-card px-3 pt-0.5"
+            className="sticky top-0 z-10 flex border-b border-hair-2 bg-card px-1 pt-0.5"
           >
-            {LEFT_TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === t.id}
-                onClick={() => handleTabChange(t.id)}
-                className={
-                  activeTab === t.id
-                    ? "border-b-2 border-accent px-3 py-1 text-[13px] font-medium text-ink"
-                    : "border-b-2 border-transparent px-3 py-1 text-[13px] text-ink-3 hover:text-ink"
-                }
-              >
-                {t.label}
-              </button>
-            ))}
+            {LEFT_TABS.map((t) => {
+              const Icon = t.icon;
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={t.label}
+                  title={t.label}
+                  onClick={() => handleTabChange(t.id)}
+                  className={
+                    active
+                      ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
+                      : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="max-w-full truncate">{t.short}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="px-1 pb-4">
