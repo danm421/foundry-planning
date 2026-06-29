@@ -140,4 +140,16 @@ describe("checkExemptionImpact", () => {
     });
     expect(result.perGrantor.client?.cumulativeAfter).toBe(6_500_000);
   });
+
+  it("uses lifetimeExemptionCap as the BEA ceiling when flagging a breach", () => {
+    const result = checkExemptionImpact({
+      ledger: [],
+      proposed: { grantor: "client", year: 2030, taxableContribution: 8_000_000 },
+      taxInflationRate: 0.03,
+      lifetimeExemptionCap: 5_000_000,
+    });
+    expect(result.exceeds).toBe(true);
+    expect(result.perGrantor.client?.beaAtYear).toBe(5_000_000);
+    expect(result.perGrantor.client?.overage).toBe(3_000_000);
+  });
 });

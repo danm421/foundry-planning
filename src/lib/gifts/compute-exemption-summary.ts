@@ -18,13 +18,14 @@ export interface ExemptionSummaryInput {
   entities: EntitySummary[];
   annualExclusionsByYear: Record<number, number>;
   taxInflationRate: number;
+  lifetimeExemptionCap?: number | null;
   hasSpouse?: boolean;
 }
 
 export function computeExemptionSummary(input: ExemptionSummaryInput): ExemptionSummary {
   const last = input.giftLedger[input.giftLedger.length - 1];
   const year = last?.year ?? 0;
-  const total = beaForYear(year, input.taxInflationRate);
+  const total = beaForYear(year, input.taxInflationRate, input.lifetimeExemptionCap);
 
   const perGrantor: ExemptionSummary["perGrantor"] = {
     client: { used: last?.perGrantor.client.cumulativeTaxableGifts ?? 0, total },
