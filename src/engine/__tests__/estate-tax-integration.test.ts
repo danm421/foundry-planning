@@ -1461,3 +1461,40 @@ describe("4e — liability bequests at final death", () => {
     expect(anyFirstDeathLiabBequest).toHaveLength(0);
   });
 });
+
+describe("lifetime exemption cap", () => {
+  const oneAccount: Account[] = [
+    {
+      id: "c1", name: "Client Brokerage",
+      category: "taxable", subType: "brokerage",
+      titlingType: "jtwros",
+      value: 1_000_000, basis: 500_000,
+      growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    },
+  ];
+
+  it("final death: beaAtDeathYear caps at the configured ceiling", () => {
+    const uncapped = applyFinalDeath(mkFinalDeathInput({ accounts: oneAccount }));
+    // 2052, 2.5% inflation → grown BEA is well above $5M.
+    expect(uncapped.estateTax.beaAtDeathYear).toBeGreaterThan(15_000_000);
+
+    const capped = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: oneAccount,
+        planSettings: { ...basePlanSettings, lifetimeExemptionCap: 5_000_000 },
+      }),
+    );
+    expect(capped.estateTax.beaAtDeathYear).toBe(5_000_000);
+  });
+
+  it("first death: beaAtDeathYear caps at the configured ceiling", () => {
+    const capped = applyFirstDeath(
+      mkFirstDeathInput({
+        accounts: oneAccount,
+        planSettings: { ...basePlanSettings, lifetimeExemptionCap: 6_000_000 },
+      }),
+    );
+    expect(capped.estateTax.beaAtDeathYear).toBe(6_000_000);
+  });
+});

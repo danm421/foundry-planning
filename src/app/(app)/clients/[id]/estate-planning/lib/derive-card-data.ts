@@ -196,7 +196,7 @@ export function deriveTrustCardData(
 ): TrustCardData[] {
   const trusts = (tree.entities ?? []).filter((e) => e.entityType === "trust");
   const inflation = tree.planSettings?.taxInflationRate ?? 0.03;
-  const bea = beaForYear(asOfYear, inflation);
+  const bea = beaForYear(asOfYear, inflation, tree.planSettings?.lifetimeExemptionCap);
   return trusts.map((e) => {
     const rows = rowsForEntity(tree, e.id);
     const total = rows.reduce((a, r) => a + r.sliceValue, 0);
