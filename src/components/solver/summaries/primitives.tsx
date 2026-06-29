@@ -42,7 +42,7 @@ export function SummaryTable({ columns, rows }: { columns: SummaryTableColumn[];
       <thead>
         <tr className="border-b border-hair text-ink-3">
           {columns.map((c) => (
-            <th key={c.key} className={`py-1.5 font-medium ${c.align === "right" ? "text-right" : "text-left"}`}>{c.header}</th>
+            <th key={c.key} className={`whitespace-nowrap px-2 py-1.5 font-medium first:pl-0 last:pr-0 ${c.align === "right" ? "text-right" : "text-left"}`}>{c.header}</th>
           ))}
         </tr>
       </thead>
@@ -50,7 +50,7 @@ export function SummaryTable({ columns, rows }: { columns: SummaryTableColumn[];
         {rows.map((r, i) => (
           <tr key={i}>
             {columns.map((c) => (
-              <td key={c.key} className={`py-1.5 text-ink ${c.align === "right" ? "text-right tabular-nums" : "text-left"}`}>{r[c.key]}</td>
+              <td key={c.key} className={`whitespace-nowrap px-2 py-1.5 text-ink first:pl-0 last:pr-0 ${c.align === "right" ? "text-right tabular-nums" : "text-left"}`}>{r[c.key]}</td>
             ))}
           </tr>
         ))}
