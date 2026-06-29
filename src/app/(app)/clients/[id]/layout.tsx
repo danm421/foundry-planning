@@ -143,7 +143,9 @@ export default async function ClientLayout({ children, params }: Props): Promise
         />
         <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
         <ScenarioDrawerProvider>
-          <section className="px-[var(--pad-card)] pb-6">{children}</section>
+          <section className="flex min-h-0 flex-1 flex-col px-[var(--pad-card)] pb-6">
+            {children}
+          </section>
           <ForgeMount
             clientId={id}
             clientName={householdTitle}

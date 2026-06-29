@@ -814,8 +814,11 @@ export function LiveSolverWorkspace({
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
   return (
-    <div className="flex h-[calc(100vh-100px)] flex-col">
-      {/* 100px = Topbar 56 + collapsed ClientHeader 44 (existing app chrome) */}
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Fills the flex-filled <section> (see ClientLayout / AppLayout), so the
+          two panes always reach the footer no matter the chrome height — no
+          magic viewport-minus-Npx that leaves a tall void below the workspace.
+          Each pane scrolls its own overflow. */}
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(360px,40%)_1fr]">
         {/* LEFT — inputs, independent scroll */}
         <div className="min-h-0 overflow-y-auto border-b border-hair lg:border-b-0 lg:border-r">
