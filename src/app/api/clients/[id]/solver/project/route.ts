@@ -10,6 +10,7 @@ import { runProjection, runProjectionWithEvents } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { SolverMutation, SolverProjectResponse } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
+import { serializeProjectionResponse } from "@/lib/solver/projection-wire";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -83,7 +84,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     const body: SolverProjectResponse = { projection, projectionResult };
-    return NextResponse.json(body);
+    // Custom serializer: ProjectionYear carries Map fields (…AccountSharesEoY,
+    // entityCashFlow, …) that NextResponse.json would flatten to `{}`, crashing
+    // estate consumers that call `field?.get(...)`. See projection-wire.ts.
+    return new NextResponse(serializeProjectionResponse(body), {
+      headers: { "content-type": "application/json" },
+    });
   } catch (err) {
     const authResp = authErrorResponse(err);
     if (authResp) {

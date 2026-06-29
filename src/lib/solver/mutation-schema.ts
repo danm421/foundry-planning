@@ -88,9 +88,12 @@ const ACCOUNT_VALUE = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
+    // Must match Account["category"] in src/engine/types.ts exactly — the
+    // revocable-trust lever upserts every probate-eligible account (incl.
+    // stock_options), so any missing member 400s the recompute.
     category: z.enum([
-      "taxable", "cash", "retirement", "real_estate",
-      "business", "life_insurance", "notes_receivable",
+      "taxable", "cash", "retirement", "annuity", "real_estate",
+      "business", "life_insurance", "notes_receivable", "stock_options",
     ]),
     subType: z.string().min(1),
     value: MONEY,
@@ -98,7 +101,11 @@ const ACCOUNT_VALUE = z
     growthRate: RATE,
     rmdEnabled: z.boolean(),
     titlingType: z.enum(["jtwros", "community_property"]),
-    owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()).min(1),
+    // No `.min(1)` — ownerless accounts are a real state (e.g. "Household Cash",
+    // unowned Plaid accounts). resolve-entity loads them with `owners: []`, so an
+    // account-upsert that spreads such an account must validate, or the
+    // revocable-trust lever 400s the recompute.
+    owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()),
   })
   .passthrough();
 
