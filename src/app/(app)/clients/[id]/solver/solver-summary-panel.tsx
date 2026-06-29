@@ -1,6 +1,7 @@
 "use client";
+import { useMemo } from "react";
 import type { ProjectionYear, ClientData } from "@/engine";
-import type { SolverMutation } from "@/lib/solver/types";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SUMMARY_TABS, SUMMARY_REGISTRY } from "@/components/solver/summaries/registry";
 import { SummarySkeleton, SummaryEmpty } from "@/components/solver/summaries/primitives";
@@ -8,7 +9,7 @@ import { useSolverSummaryData } from "./use-solver-summary-data";
 
 interface Props {
   clientId: string;
-  source: "base" | string;
+  source: SolverSource;
   mutations: SolverMutation[];
   years: ProjectionYear[];
   workingTree: ClientData;
@@ -28,15 +29,15 @@ export function SolverSummaryPanel(props: Props) {
     (activeSummary === "estate" && estateLoading && !context.projection?.firstDeathEvent) ||
     (activeSummary === "lifeInsurance" && liLoading && !context.lifeInsurance);
 
-  let data: unknown = null;
-  if (!loading) {
+  const data = useMemo<unknown>(() => {
+    if (loading) return null;
     try {
-      data = def.build(context);
+      return def.build(context);
     } catch (err) {
       console.error("[SolverSummaryPanel] summary builder threw for", activeSummary, err);
-      data = null;
+      return null;
     }
-  }
+  }, [def, context, loading, activeSummary]);
   const View = def.Component;
   const buildFailed = !loading && data === null;
 

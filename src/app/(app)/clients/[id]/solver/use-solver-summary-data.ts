@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
-import type { SolverMutation } from "@/lib/solver/types";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { buildSolverSummaryContext } from "@/lib/solver/summary-context";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 
 interface Args {
   clientId: string;
-  source: "base" | string;
+  source: SolverSource;
   mutations: SolverMutation[];
   years: ProjectionYear[];
   workingTree: ClientData;

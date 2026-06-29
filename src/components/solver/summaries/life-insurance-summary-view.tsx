@@ -15,7 +15,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ChartDataset } from "chart.js";
 import type { LifeInsuranceSummaryPageData, DecedentGap, LiChart } from "@/lib/presentations/pages/life-insurance-summary/view-model";
-import { POLICY_TYPE_LABEL, termExpiryLabel } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
+import { fmtUsd, POLICY_TYPE_LABEL, termExpiryLabel } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 import {
   SummaryLayout,
@@ -28,15 +28,6 @@ import {
 } from "./primitives";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
-
-// ── Formatting ────────────────────────────────────────────────────────────────
-// Local helpers — do not import across the renderer boundary from page-pdf.
-function fmtUsd(n: number): string {
-  const a = Math.abs(n);
-  if (a >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (a >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${Math.round(n)}`;
-}
 
 // ── Gap helpers ───────────────────────────────────────────────────────────────
 function gapLabel(g: DecedentGap): string {

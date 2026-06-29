@@ -62,10 +62,5 @@ export const SUMMARY_REGISTRY: Record<SummaryKey, SummaryDef> = {
   },
 };
 
-export const SUMMARY_TABS: { key: SummaryKey; label: string }[] = [
-  { key: "retirement", label: SUMMARY_REGISTRY.retirement.label },
-  { key: "tax", label: SUMMARY_REGISTRY.tax.label },
-  { key: "medicare", label: SUMMARY_REGISTRY.medicare.label },
-  { key: "estate", label: SUMMARY_REGISTRY.estate.label },
-  { key: "lifeInsurance", label: SUMMARY_REGISTRY.lifeInsurance.label },
-];
+const SUMMARY_TAB_ORDER: SummaryKey[] = ["retirement", "tax", "medicare", "estate", "lifeInsurance"];
+export const SUMMARY_TABS = SUMMARY_TAB_ORDER.map((key) => ({ key, label: SUMMARY_REGISTRY[key].label }));

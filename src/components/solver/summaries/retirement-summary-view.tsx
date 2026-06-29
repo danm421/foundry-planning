@@ -16,6 +16,7 @@ import {
 } from "chart.js";
 import { Bar, Chart } from "react-chartjs-2";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
+import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
@@ -40,19 +41,6 @@ ChartJS.register(
   Tooltip,
   Legend,
 );
-
-// ── Formatting ────────────────────────────────────────────────────────────────
-// Local helpers — no imports across the renderer boundary.
-function fmtUsd(n: number): string {
-  const a = Math.abs(n);
-  if (a >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (a >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${Math.round(n)}`;
-}
-
-function fmtUsdMonthly(n: number): string {
-  return `$${Math.round(n).toLocaleString("en-US")}`;
-}
 
 // ── Portfolio Trajectory Chart ────────────────────────────────────────────────
 // Stacked bar: cash / taxable / retirement assets by year.
@@ -174,7 +162,6 @@ function SplitBar({ segments, total }: { segments: SplitSegment[]; total: number
 // minimal Chart.js renderer here that consumes the spec directly.
 function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
   const theme = useThemeName();
-  const chrome = chartChrome(theme);
 
   const chartData = useMemo(() => {
     const datasets = [
@@ -206,39 +193,42 @@ function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
   }, [spec]);
 
   const options = useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index" as const, intersect: false },
-      plugins: {
-        legend: { display: true, labels: { color: chrome.legend, boxWidth: 12, padding: 12 } },
-        tooltip: {
-          backgroundColor: chrome.tooltipBg,
-          titleColor: chrome.tooltipTitle,
-          bodyColor: chrome.tooltipBody,
-          callbacks: {
-            label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
-              `${ctx.dataset.label}: ${fmtUsd(ctx.parsed.y ?? 0)}`,
+    () => {
+      const chrome = chartChrome(theme);
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index" as const, intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: chrome.legend, boxWidth: 12, padding: 12 } },
+          tooltip: {
+            backgroundColor: chrome.tooltipBg,
+            titleColor: chrome.tooltipTitle,
+            bodyColor: chrome.tooltipBody,
+            callbacks: {
+              label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+                `${ctx.dataset.label}: ${fmtUsd(ctx.parsed.y ?? 0)}`,
+            },
           },
         },
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: { color: chrome.tick },
-          grid: { color: chrome.grid },
-        },
-        y: {
-          stacked: true,
-          ticks: {
-            color: chrome.tick,
-            callback: (v: unknown) => spec.yAxis.labelFormat(Number(v)),
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: chrome.tick },
+            grid: { color: chrome.grid },
           },
-          grid: { color: spec.yAxis.gridlineColor },
+          y: {
+            stacked: true,
+            ticks: {
+              color: chrome.tick,
+              callback: (v: unknown) => spec.yAxis.labelFormat(Number(v)),
+            },
+            grid: { color: spec.yAxis.gridlineColor },
+          },
         },
-      },
-    }),
-    [chrome, spec],
+      };
+    },
+    [theme, spec],
   );
 
   return (

@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
+import { fmtUsd, fmtPct } from "@/lib/presentations/pages/medicare-summary/aggregate";
 import type { MedicareYearBar, MedicareComposition } from "@/lib/presentations/pages/medicare-summary/aggregate";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 import {
@@ -25,20 +26,6 @@ import {
 } from "./primitives";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
-
-// ── Formatting ────────────────────────────────────────────────────────────────
-// Local helpers mirror the PDF page's aggregate formatters without importing
-// across the renderer boundary.
-function fmtUsd(n: number): string {
-  const a = Math.abs(n);
-  if (a >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (a >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${Math.round(n)}`;
-}
-
-function fmtPct(fraction: number): string {
-  return `${Math.round(fraction * 100)}%`;
-}
 
 // ── Stacked "Annual Medicare cost" chart ──────────────────────────────────────
 // Two stacked series: base premiums (Part B + Part D + Medigap) and IRMAA.

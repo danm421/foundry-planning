@@ -15,7 +15,7 @@ import { EstateComparisonChart } from "@/components/charts/estate-comparison-cha
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
 import { type ReportKey } from "./report-tab-link";
-import type { SolverMutation } from "@/lib/solver/types";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
 
@@ -104,7 +104,7 @@ interface Props {
   onReportChange: (r: ReportKey) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
-  source: "base" | string;
+  source: SolverSource;
   mutations: SolverMutation[];
   mcSuccessRate: number | null;
   activeSummary: SummaryKey;

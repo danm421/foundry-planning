@@ -15,6 +15,7 @@ import type {
   EstateSummaryPageData,
   EstateSummaryChartBar,
 } from "@/lib/presentations/pages/estate-summary/view-model";
+import { fmtUsd, fmtPct } from "@/lib/presentations/pages/estate-summary/aggregate";
 import type { EstateSummaryDeathRow } from "@/lib/presentations/pages/estate-summary/aggregate";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 import {
@@ -28,20 +29,6 @@ import {
 } from "./primitives";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
-
-// ── Formatting ────────────────────────────────────────────────────────────────
-// Local mirrors of the estate-summary aggregate formatters; we don't import
-// across the PDF/renderer boundary.
-function fmtUsd(n: number): string {
-  const a = Math.abs(n);
-  if (a >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (a >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${Math.round(n)}`;
-}
-
-function fmtPct(fraction: number): string {
-  return `${Math.round(fraction * 100)}%`;
-}
 
 // ── Stacked "where the estate goes" chart ──────────────────────────────────────
 // One stack per scenario bar (Today vs. End of Life); segments mirror the PDF
