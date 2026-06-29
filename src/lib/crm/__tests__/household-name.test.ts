@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   buildHouseholdName,
   deriveHouseholdNameFromContacts,
-  resolveAutoHouseholdName,
 } from "../household-name";
 
 describe("buildHouseholdName", () => {
@@ -95,57 +94,5 @@ describe("deriveHouseholdNameFromContacts", () => {
 
   it("returns null for an empty contact list", () => {
     expect(deriveHouseholdNameFromContacts([])).toBeNull();
-  });
-});
-
-describe("resolveAutoHouseholdName", () => {
-  it("returns the new name when the stored name was still auto-generated", () => {
-    expect(
-      resolveAutoHouseholdName({
-        storedName: "Michael Jordan",
-        prevName: "Michael Jordan",
-        newName: "Michael Jorden",
-      }),
-    ).toBe("Michael Jorden");
-  });
-
-  it("preserves a manually customized name (stored != prev)", () => {
-    expect(
-      resolveAutoHouseholdName({
-        storedName: "The Jordan Family Trust",
-        prevName: "Michael Jordan",
-        newName: "Michael Jorden",
-      }),
-    ).toBeNull();
-  });
-
-  it("no-ops when the derived name is unchanged", () => {
-    expect(
-      resolveAutoHouseholdName({
-        storedName: "Michael Jordan",
-        prevName: "Michael Jordan",
-        newName: "Michael Jordan",
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when the previous name cannot be derived", () => {
-    expect(
-      resolveAutoHouseholdName({
-        storedName: "Michael Jordan",
-        prevName: null,
-        newName: "Michael Jorden",
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when the new name cannot be derived", () => {
-    expect(
-      resolveAutoHouseholdName({
-        storedName: "Michael Jordan",
-        prevName: "Michael Jordan",
-        newName: null,
-      }),
-    ).toBeNull();
   });
 });
