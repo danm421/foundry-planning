@@ -9,7 +9,7 @@
  * runs.
  */
 
-export type UploadKind = "pdf" | "xlsx" | "csv";
+export type UploadKind = "pdf" | "xlsx" | "docx" | "csv";
 
 const TEXTUAL_CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
@@ -26,16 +26,21 @@ export function detectUploadKind(buffer: Buffer): UploadKind | null {
     return "pdf";
   }
 
-  // XLSX is a ZIP archive — "PK\x03\x04" (0x50 0x4b 0x03 0x04)
-  // We don't distinguish xlsx from other zip payloads here; the extract
-  // route follows up with exceljs which will reject non-xlsx zips.
+  // Both .xlsx and .docx are OOXML packages — ZIP archives sharing the
+  // "PK\x03\x04" signature (0x50 0x4b 0x03 0x04), so the magic bytes alone
+  // can't tell them apart. A ZIP stores its entry names uncompressed, so a
+  // byte search for the part each format always contains is reliable
+  // without unzipping: a docx always has word/document.xml. Anything else
+  // (xlsx or an unknown zip) falls through to xlsx, preserving the prior
+  // behavior — the extract route follows up with exceljs, which rejects
+  // non-xlsx zips.
   if (
     buffer[0] === 0x50 &&
     buffer[1] === 0x4b &&
     buffer[2] === 0x03 &&
     buffer[3] === 0x04
   ) {
-    return "xlsx";
+    return buffer.includes("word/document.xml") ? "docx" : "xlsx";
   }
 
   // CSV has no magic bytes. Treat the upload as CSV only if it's

@@ -730,7 +730,7 @@ export function ForgePanel({
             data-testid="forge-file-input"
             type="file"
             multiple
-            accept=".pdf,.xlsx,.xls,.csv"
+            accept=".pdf,.docx,.xlsx,.xls,.csv"
             className="hidden"
             onChange={(e) => {
               onPickFiles(e.target.files);
