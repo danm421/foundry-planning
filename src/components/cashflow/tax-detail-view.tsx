@@ -45,6 +45,12 @@ interface TaxDetailViewProps {
   onMedicareInflationChange?: (next: { rate?: number; enabled?: boolean }) => void;
   /** Non-fatal save error from the most recent assumption persist (null = ok). */
   medicareAssumptionSaveError?: string | null;
+  /** Whether all coverage rows have estimatePriorYearMagiFromProjection=true. */
+  estimateMagi?: boolean;
+  /** Called when the user toggles "Estimate prior-year MAGI from projection". */
+  onEstimateMagiChange?: (value: boolean) => void;
+  /** Opens the MedicareSetupDialog (passed to the empty-state CTA). */
+  onEnableMedicare?: () => void;
 }
 
 export function TaxDetailView({
@@ -64,6 +70,9 @@ export function TaxDetailView({
   clientId,
   onMedicareInflationChange,
   medicareAssumptionSaveError,
+  estimateMagi,
+  onEstimateMagiChange,
+  onEnableMedicare,
 }: TaxDetailViewProps) {
   return (
     <>
@@ -117,6 +126,9 @@ export function TaxDetailView({
           clientId={clientId}
           onInflationChange={onMedicareInflationChange}
           saveError={medicareAssumptionSaveError ?? null}
+          estimateMagi={estimateMagi}
+          onEstimateMagiChange={onEstimateMagiChange}
+          onEnableMedicare={onEnableMedicare}
         />
       )}
     </>
