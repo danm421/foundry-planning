@@ -185,6 +185,12 @@ export function SolverCashFlowChart({ years }: Props) {
             backgroundColor: chrome.tooltipBg,
             titleColor: chrome.tooltipTitle,
             bodyColor: chrome.tooltipBody,
+            // Drop income rows that are exactly $0 for the hovered year, so the
+            // tooltip only lists what's actually flowing (e.g. no "Salaries: $0"
+            // once retired). `filter` removes the whole row including its color
+            // swatch — cleaner than blanking the label. Total Expenses isn't
+            // zero in practice, so it always stays.
+            filter: (item) => Number(item.parsed.y) !== 0,
             callbacks: {
               label: (ctx) =>
                 `${ctx.dataset.label}: ${fmtFull.format(Number(ctx.parsed.y))}`,
