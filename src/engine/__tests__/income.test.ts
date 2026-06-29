@@ -282,4 +282,73 @@ describe("computeIncome — stress test", () => {
     });
     expect(notYet.salaries).toBeCloseTo(before.salaries, 2);
   });
+
+  it("haircuts SS total AND per-spouse detail buckets on the pia_at_fra path", () => {
+    // ── Why this row routes through the pia_at_fra branch ──────────────────────
+    // income.ts line 107: the branch fires when
+    //   inc.type === "social_security"  (true)
+    //   inc.claimingAge != null         (true, 67)
+    //   inc.ssBenefitMode === "pia_at_fra" (true)
+    //   inc.piaMonthly != null          (true, 2000)
+    //   year >= birthYear + claimAgeMonths/12 (2027 >= 1960 + 67 = 2027, true)
+    // The generic manual-amount path (line 143: if inc.type === "social_security")
+    // is NOT reached because the pia_at_fra block ends with `continue`.
+    //
+    // The detail bucket populated: client.retirement (Case 3 / own-only — no spouse row
+    // is provided, so resolveAnnualBenefit falls through to Case 3 and returns
+    // retirement = annualize(own), spousal = 0, survivor = 0).
+    // ───────────────────────────────────────────────────────────────────────────
+    const ssRow: Income = {
+      id: "ss-pia-stress",
+      type: "social_security",
+      name: "Client SS (pia_at_fra)",
+      annualAmount: 0,           // unused by pia_at_fra branch
+      startYear: 2020,
+      endYear: 2099,
+      growthRate: 0,             // no COLA — keeps expected values exact
+      owner: "client",
+      claimingAge: 67,           // FRA for DOB 1960 → first active year = 2027
+      claimingAgeMonths: 0,
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: 2000,
+      inflationStartYear: 2020,
+    };
+
+    // `client` is defined in this file (DOB 1960-06-01, single, lifeExpectancy absent).
+    // Year 2027: client is exactly 67 → benefit is active.
+    const testYear = 2027;
+    const haircut = { pct: 0.23, startYear: testYear - 3 }; // startYear well before testYear
+
+    const base = computeIncome([ssRow], testYear, client);
+    const cut  = computeIncome([ssRow], testYear, client, undefined, {
+      ssBenefitHaircut: haircut,
+    });
+
+    // Sanity: benefit must be non-zero (proves we're in the pia_at_fra branch,
+    // not the generic path which only fires if there's no `continue` above it).
+    // At FRA with no COLA: 2000 × 12 = 24000.
+    expect(base.socialSecurity).toBeGreaterThan(0);
+    // The detail bucket is ONLY populated by the pia_at_fra branch (the generic
+    // path never sets socialSecurityDetail), so its presence proves the branch was taken.
+    expect(base.socialSecurityDetail).toBeDefined();
+    expect(base.socialSecurityDetail!.client.retirement).toBeGreaterThan(0);
+
+    // Primary assertion: haircut scales the pia_at_fra total.
+    expect(cut.socialSecurity).toBeCloseTo(base.socialSecurity * 0.77, 4);
+
+    // Secondary assertion: the per-spouse retirement bucket also scales.
+    // A regression that drops `* ssFactor` from bucket.retirement (income.ts line 124)
+    // would leave this equal to base while cut.socialSecurity is reduced — caught here.
+    expect(cut.socialSecurityDetail).toBeDefined();
+    expect(cut.socialSecurityDetail!.client.retirement).toBeCloseTo(
+      base.socialSecurityDetail!.client.retirement * 0.77,
+      4,
+    );
+
+    // No-op before startYear: haircut configured AFTER testYear should leave benefit intact.
+    const noOp = computeIncome([ssRow], testYear, client, undefined, {
+      ssBenefitHaircut: { pct: 0.23, startYear: testYear + 1 },
+    });
+    expect(noOp.socialSecurity).toBeCloseTo(base.socialSecurity, 4);
+  });
 });
