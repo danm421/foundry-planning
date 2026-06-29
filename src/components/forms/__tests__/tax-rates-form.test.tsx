@@ -51,7 +51,6 @@ describe("TaxRatesForm — Lifetime exemption cap field", () => {
     // which verifies both that the field is present AND that the prefilled value
     // is formatted correctly.
     const input = screen.getByDisplayValue("20,000,000") as HTMLInputElement;
-    expect(input).toBeInTheDocument();
     expect(input.value).toBe("20,000,000");
   });
 

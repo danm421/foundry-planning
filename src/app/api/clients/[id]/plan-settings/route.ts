@@ -201,9 +201,12 @@ export async function PUT(
       );
     }
 
-    if (lifetimeExemptionCap != null && Number(lifetimeExemptionCap) < 0) {
+    if (
+      lifetimeExemptionCap != null &&
+      !(Number.isFinite(Number(lifetimeExemptionCap)) && Number(lifetimeExemptionCap) >= 0)
+    ) {
       return NextResponse.json(
-        { error: "lifetimeExemptionCap must be non-negative" },
+        { error: "lifetimeExemptionCap must be a non-negative number" },
         { status: 400 },
       );
     }
