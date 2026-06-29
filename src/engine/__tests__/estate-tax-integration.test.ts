@@ -1462,6 +1462,79 @@ describe("4e — liability bequests at final death", () => {
   });
 });
 
+// ── Describe block N: gifted_away — asset gift to a person leaves the gross estate
+//
+// These cases prove that a 100% asset gift to a family member removes the account
+// from the gross estate at death. The contrast between the "without gift" and
+// "with gift applied" cases is what makes the test falsifiable: the same account,
+// the same $1M balance, the same death year — the ONLY difference is whether the
+// owner kind is `family_member` (in estate) or `gifted_away` (out of estate).
+//
+// `ownersForYear` produces a `gifted_away` owner when it processes an `asset`
+// GiftEvent that names a family member as recipient. The death event receives
+// these updated owners through `workingAccounts` (which carries the gift-aware
+// ownership snapshot), so this test exercises the full applyFinalDeath →
+// computeGrossEstate pipeline end-to-end.
+
+describe("gifted_away — asset gift to a person leaves the gross estate", () => {
+  it("without the gift the account IS in the gross estate at death", () => {
+    // Baseline: client owns $1M brokerage outright (family_member 100%).
+    // At final death, computeGrossEstate should include the full $1M.
+    const accounts: Account[] = [
+      {
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
+        value: 1_000_000, basis: 500_000,
+        growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    const input = mkFinalDeathInput({ accounts, familyMembers: [kidA] });
+    const result = applyFinalDeath(input);
+
+    // The account must appear in the gross estate — this confirms the
+    // without-gift baseline is non-trivially positive, making the with-gift
+    // assertion below meaningful.
+    expect(result.estateTax.grossEstate).toBeCloseTo(1_000_000, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line).toBeDefined();
+    expect(line!.amount).toBeCloseTo(1_000_000, 0);
+  });
+
+  it("with a 100% asset gift to a family member the account is EXCLUDED from the gross estate", () => {
+    // Gift applied: ownersForYear converts the family_member owner to gifted_away
+    // when a 100% asset gift fires. We pass the already-computed gifted_away
+    // ownership to applyFinalDeath — the same shape that ownersForYear produces.
+    // This tests that computeGrossEstate correctly weights gifted_away slices at 0.
+    const accounts: Account[] = [
+      {
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
+        value: 1_000_000, basis: 500_000,
+        growthRate: 0, rmdEnabled: false,
+        // gifted_away: the ownership shape ownersForYear produces after a
+        // 100% asset gift (kind:"asset", percent:1, recipientFamilyMemberId:"kid-a")
+        // consumes the entire family_member slice.
+        owners: [{ kind: "gifted_away" as const, recipient: { kind: "family_member" as const, id: "kid-a" }, percent: 1 }],
+      },
+    ];
+    const input = mkFinalDeathInput({ accounts, familyMembers: [kidA] });
+    const result = applyFinalDeath(input);
+
+    // The gifted account must contribute 0 to the gross estate.
+    // computeGrossEstate filters family_member owners — gifted_away has no
+    // family_member owner, so familyPool=0 and the account is skipped.
+    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    // Either the line is absent, or (if present) its amount is 0.
+    if (line !== undefined) {
+      expect(line.amount).toBeCloseTo(0, 0);
+    }
+  });
+});
+
 describe("lifetime exemption cap", () => {
   const oneAccount: Account[] = [
     {
