@@ -13,7 +13,6 @@ import {
   PointElement,
   Tooltip,
 } from "chart.js";
-import { color as chartColor } from "chart.js/helpers";
 import { Chart } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
@@ -147,15 +146,6 @@ export function buildSolverCashFlowChartData(
   };
 }
 
-/** Lower a resolved chart color's alpha for de-emphasised (non-selected) bars. */
-function withAlpha(base: string, alpha: number): string {
-  try {
-    return chartColor(base).alpha(alpha).rgbString();
-  } catch {
-    return base;
-  }
-}
-
 interface Props {
   years: ProjectionYear[];
   onYearClick?: (year: number) => void;
@@ -170,9 +160,13 @@ export function SolverCashFlowChart({ years, onYearClick, selectedYear }: Props)
     [years, theme],
   );
 
-  // De-emphasise non-selected years by lowering bar alpha. The line dataset
-  // (Total Expenses) keeps full opacity. Implemented as a scriptable color so
-  // we don't rebuild the dataset array on every selection change.
+  const chrome = chartChrome(theme);
+
+  // Emphasise the selected year with an outline rather than dimming the others,
+  // so the full projection stays visible — only the detail panel below reacts
+  // to the click. The line dataset (Total Expenses) is left untouched.
+  // Implemented as a scriptable borderWidth so we don't rebuild the dataset
+  // array on every selection change.
   const selectedIndex = useMemo(
     () => (selectedYear == null ? -1 : years.findIndex((y) => y.year === selectedYear)),
     [years, selectedYear],
@@ -186,16 +180,14 @@ export function SolverCashFlowChart({ years, onYearClick, selectedYear }: Props)
           ? ds
           : {
               ...ds,
-              backgroundColor: (ctx: { dataIndex: number }) => {
-                const base = ds.backgroundColor as string;
-                return ctx.dataIndex === selectedIndex ? base : withAlpha(base, 0.4);
-              },
+              borderColor: chrome.title,
+              borderWidth: (ctx: { dataIndex: number }) =>
+                ctx.dataIndex === selectedIndex ? 2 : 0,
+              borderSkipped: false,
             },
       ),
     };
-  }, [data, selectedIndex]);
-
-  const chrome = chartChrome(theme);
+  }, [data, selectedIndex, chrome.title]);
 
   return (
     <Chart
