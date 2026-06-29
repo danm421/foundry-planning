@@ -164,7 +164,7 @@ const BusinessDetailsForm = forwardRef<BusinessFormAutoSaveHandle, BusinessDetai
         businessTaxTreatment: taxTreatment,
         parentAccountId: editing?.parentAccountId ?? null,
         owners: owners
-          .filter((o) => o.kind !== "external_beneficiary")
+          .filter((o) => o.kind !== "external_beneficiary" && o.kind !== "gifted_away")
           .map((o) =>
             o.kind === "family_member"
               ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }

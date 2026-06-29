@@ -116,7 +116,9 @@ function collapseOwners(owners: AccountOwner[]): AccountOwner[] {
         ? `fm:${owner.familyMemberId}`
         : owner.kind === "entity"
           ? `e:${owner.entityId}`
-          : `xb:${owner.externalBeneficiaryId}`;
+          : owner.kind === "gifted_away"
+            ? `ga:${owner.recipient.kind}:${owner.recipient.id}`
+            : `xb:${owner.externalBeneficiaryId}`;
     const existing = map.get(key);
     if (existing) {
       map.set(key, { ...existing, percent: existing.percent + owner.percent });

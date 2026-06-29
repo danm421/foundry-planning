@@ -88,6 +88,11 @@ function describeOwners(
       const pct = o.percent < 1 ? ` (${Math.round(o.percent * 100)}%)` : "";
       return `${name}${pct}`;
     }
+    if (o.kind === "gifted_away") {
+      // Gifted-away slices: label from recipient (mirrors external_beneficiary style)
+      const pct = o.percent < 1 ? ` (${Math.round(o.percent * 100)}%)` : "";
+      return `Gifted (${o.recipient.kind})${pct}`;
+    }
     // family_member
     let name: string;
     if (o.familyMemberId === LEGACY_FM_CLIENT || o.familyMemberId === clientData.client.firstName) {
@@ -283,6 +288,7 @@ export default function EstateFlowChangeOwnerDialog({
       // Pre-populate from current owners for a cleaner UX on re-open
       const map: Record<string, number> = {};
       for (const o of account.owners) {
+        if (o.kind === "gifted_away") continue; // gifted_away has no stable stored id to key on
         const key =
           o.kind === "family_member"
             ? o.familyMemberId
