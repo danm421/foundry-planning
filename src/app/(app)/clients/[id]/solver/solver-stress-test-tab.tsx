@@ -2,6 +2,7 @@
 
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 
 interface Props {
@@ -39,13 +40,12 @@ export function SolverStressTestTab({
   const crashOn = ps.marketShock != null;
 
   return (
-    <SolverSection title="Stress Test">
-      <p className="text-[12px] text-ink-3">
-        Toggle adverse assumptions to test plan resilience. Watch the Cash Flow chart and the
-        Monte&nbsp;Carlo probability-of-success react on the right. Stressors stack — turn on several
-        at once to model a compound bad case.
-      </p>
-
+    <SolverSection
+      title="Stress Test"
+      action={
+        <FieldTooltip text="Toggle adverse assumptions to test plan resilience. Watch the Cash Flow chart and the Monte Carlo probability-of-success react on the right. Stressors stack — turn on several at once to model a compound bad case." />
+      }
+    >
       {/* Inflation */}
       <StressRow
         label="Higher inflation"
@@ -206,16 +206,18 @@ function StressRow({
 }) {
   return (
     <div className="border-t border-hair pt-4 first:border-t-0 first:pt-0">
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={on}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="h-4 w-4 accent-accent"
-        />
-        <span className="text-[13px] font-medium text-ink">{label}</span>
-      </label>
-      <p className="mt-1 text-[11px] text-ink-3">{hint}</p>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={on}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-4 w-4 accent-accent"
+          />
+          <span className="text-[13px] font-medium text-ink">{label}</span>
+        </label>
+        <FieldTooltip text={hint} />
+      </div>
       {on ? <div className="mt-3">{children}</div> : null}
     </div>
   );
