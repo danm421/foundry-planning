@@ -1,5 +1,5 @@
-/** The six right-pane report views. Mirrors SolverChartPanel's tab ids. */
-export type ReportKey = "portfolio" | "cashflow" | "taxBracket" | "liquidity" | "lifeInsurance" | "estate";
+/** The right-pane report views (six charts + the summaries deck). */
+export type ReportKey = "portfolio" | "cashflow" | "taxBracket" | "liquidity" | "lifeInsurance" | "estate" | "summaries";
 
 /** The four left-pane input tabs. */
 export type InputTab = "retirement" | "techniques" | "life_insurance" | "estate_planning";

@@ -28,6 +28,9 @@ vi.mock("../li-need-over-time-view", () => ({
 vi.mock("@/components/charts/estate-comparison-chart", () => ({
   EstateComparisonChart: () => <div data-testid="chart-estate" />,
 }));
+vi.mock("../solver-summary-panel", () => ({
+  SolverSummaryPanel: () => <div data-testid="solver-summary-panel" />,
+}));
 vi.mock("@/components/cashflow/charts/tax-bracket-chart", () => ({
   TaxBracketChart: () => <div data-testid="chart-tax-bracket" />,
 }));
@@ -71,6 +74,11 @@ function ControlledPanel({
       spouseName="Spouse"
       activeReport={activeReport}
       onReportChange={setActiveReport}
+      source="base"
+      mutations={[]}
+      mcSuccessRate={null}
+      activeSummary="retirement"
+      onSummaryChange={() => undefined}
     />
   );
 }
@@ -179,6 +187,11 @@ describe("SolverChartPanel", () => {
         spouseName="Spouse"
         activeReport="portfolio"
         onReportChange={onReportChange}
+        source="base"
+        mutations={[]}
+        mcSuccessRate={null}
+        activeSummary="retirement"
+        onSummaryChange={() => undefined}
       />,
     );
     await userEvent.click(screen.getByRole("tab", { name: "Estate" }));

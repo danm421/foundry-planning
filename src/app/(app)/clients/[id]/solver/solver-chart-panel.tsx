@@ -15,6 +15,9 @@ import { EstateComparisonChart } from "@/components/charts/estate-comparison-cha
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
 import { type ReportKey } from "./report-tab-link";
+import type { SolverMutation } from "@/lib/solver/types";
+import type { SummaryKey } from "@/components/solver/summaries/types";
+import { SolverSummaryPanel } from "./solver-summary-panel";
 
 const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
@@ -23,6 +26,7 @@ const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "liquidity", label: "Liquidity" },
   { id: "lifeInsurance", label: "Life Insurance Need" },
   { id: "estate", label: "Estate" },
+  { id: "summaries", label: "Summaries" },
 ];
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
@@ -100,6 +104,11 @@ interface Props {
   onReportChange: (r: ReportKey) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
+  source: "base" | string;
+  mutations: SolverMutation[];
+  mcSuccessRate: number | null;
+  activeSummary: SummaryKey;
+  onSummaryChange: (s: SummaryKey) => void;
 }
 
 export function SolverChartPanel({
@@ -114,6 +123,11 @@ export function SolverChartPanel({
   activeReport,
   onReportChange,
   baseTree,
+  source,
+  mutations,
+  mcSuccessRate,
+  activeSummary,
+  onSummaryChange,
 }: Props) {
   const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
@@ -234,6 +248,21 @@ export function SolverChartPanel({
           />
         ) : null}
       </div>
+
+      {tab === "summaries" ? (
+        <SolverSummaryPanel
+          clientId={clientId}
+          source={source}
+          mutations={mutations}
+          years={currentProjection}
+          workingTree={workingTree}
+          clientName={clientName}
+          spouseName={spouseName || null}
+          mcSuccessRate={mcSuccessRate}
+          activeSummary={activeSummary}
+          onSummaryChange={onSummaryChange}
+        />
+      ) : null}
 
       {/* Always present — the chevrons + grip read as a vertical resize handle
           at rest, so the affordance is discoverable on every tab. */}
