@@ -104,7 +104,9 @@ export type Gift = {
 export type GiftSeriesLite = {
   id: string;
   grantor: "client" | "spouse" | "joint";
-  recipientEntityId: string;
+  recipientEntityId: string | null;
+  recipientFamilyMemberId: string | null;
+  recipientExternalBeneficiaryId: string | null;
   startYear: number;
   endYear: number;
   annualAmount: number;

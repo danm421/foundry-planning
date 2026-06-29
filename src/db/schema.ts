@@ -2829,9 +2829,16 @@ export const giftSeries = pgTable(
       .notNull()
       .references(() => scenarios.id, { onDelete: "cascade" }),
     grantor: ownerEnum("grantor").notNull(),
-    recipientEntityId: uuid("recipient_entity_id")
-      .notNull()
-      .references(() => entities.id, { onDelete: "cascade" }),
+    recipientEntityId: uuid("recipient_entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    recipientFamilyMemberId: uuid("recipient_family_member_id").references(
+      () => familyMembers.id,
+      { onDelete: "cascade" },
+    ),
+    recipientExternalBeneficiaryId: uuid(
+      "recipient_external_beneficiary_id",
+    ).references(() => externalBeneficiaries.id, { onDelete: "cascade" }),
     startYear: integer("start_year").notNull(),
     startYearRef: yearRefEnum("start_year_ref"),
     endYear: integer("end_year").notNull(),
@@ -2848,6 +2855,14 @@ export const giftSeries = pgTable(
     index("gift_series_recipient_idx").on(t.recipientEntityId),
     index("gift_series_client_idx").on(t.clientId),
     check("gift_series_year_order", sql`${t.endYear} >= ${t.startYear}`),
+    check(
+      "gift_series_one_recipient",
+      sql`(
+        (${t.recipientEntityId} IS NOT NULL)::int +
+        (${t.recipientFamilyMemberId} IS NOT NULL)::int +
+        (${t.recipientExternalBeneficiaryId} IS NOT NULL)::int
+      ) = 1`,
+    ),
   ],
 );
 
@@ -2857,6 +2872,14 @@ export const giftSeriesRelations = relations(giftSeries, ({ one }) => ({
   recipientEntity: one(entities, {
     fields: [giftSeries.recipientEntityId],
     references: [entities.id],
+  }),
+  recipientFamilyMember: one(familyMembers, {
+    fields: [giftSeries.recipientFamilyMemberId],
+    references: [familyMembers.id],
+  }),
+  recipientExternalBeneficiary: one(externalBeneficiaries, {
+    fields: [giftSeries.recipientExternalBeneficiaryId],
+    references: [externalBeneficiaries.id],
   }),
 }));
 

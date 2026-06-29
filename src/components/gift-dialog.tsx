@@ -68,7 +68,9 @@ export default function GiftDialog(props: GiftDialogProps) {
         props.onSavedSeries({
           id: row.id,
           grantor: row.grantor,
-          recipientEntityId: row.recipientEntityId,
+          recipientEntityId: row.recipientEntityId ?? null,
+          recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
+          recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
           startYear: row.startYear,
           endYear: row.endYear,
           annualAmount: typeof row.annualAmount === "string" ? parseFloat(row.annualAmount) : row.annualAmount,
@@ -160,11 +162,17 @@ export default function GiftDialog(props: GiftDialogProps) {
 
 /** Seed an EstateFlowGift from an existing DB gift/series for editing. */
 function toEditingDraft(g: Gift | null, s: GiftSeriesLite | null): EstateFlowGift | null {
-  if (s) return {
-    kind: "series", id: s.id, startYear: s.startYear, endYear: s.endYear,
-    annualAmount: s.annualAmount, amountMode: s.amountMode, inflationAdjust: s.inflationAdjust,
-    grantor: s.grantor, recipient: { kind: "entity", id: s.recipientEntityId }, crummey: s.useCrummeyPowers,
-  };
+  if (s) {
+    const seriesRecipient: GiftRecipientRef =
+      s.recipientEntityId ? { kind: "entity", id: s.recipientEntityId }
+      : s.recipientFamilyMemberId ? { kind: "family_member", id: s.recipientFamilyMemberId }
+      : { kind: "external_beneficiary", id: s.recipientExternalBeneficiaryId ?? "" };
+    return {
+      kind: "series", id: s.id, startYear: s.startYear, endYear: s.endYear,
+      annualAmount: s.annualAmount, amountMode: s.amountMode, inflationAdjust: s.inflationAdjust,
+      grantor: s.grantor, recipient: seriesRecipient, crummey: s.useCrummeyPowers,
+    };
+  }
   if (!g) return null;
   const recipient: GiftRecipientRef =
     g.recipientEntityId ? { kind: "entity", id: g.recipientEntityId }
