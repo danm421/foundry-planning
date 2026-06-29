@@ -913,10 +913,10 @@ export const planSettings = pgTable("plan_settings", {
   residenceState: text("residence_state"),
   irdTaxRate: decimal("ird_tax_rate", { precision: 5, scale: 4 })
     .notNull()
-    .default("0.0000"),
+    .default("0.3500"),
   probateCostRate: decimal("probate_cost_rate", { precision: 5, scale: 4 })
     .notNull()
-    .default("0.0000"),
+    .default("0.0200"),
   priorTaxableGiftsClient: decimal("prior_taxable_gifts_client", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),

@@ -1324,6 +1324,13 @@
       "when": 1782503767424,
       "tag": "0188_presentation_run_analyzing_status",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1782745288638,
+      "tag": "0189_estate_assumption_defaults",
+      "breakpoints": true
     }
   ]
 }
