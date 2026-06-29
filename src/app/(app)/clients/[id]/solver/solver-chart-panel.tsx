@@ -201,10 +201,73 @@ export function SolverChartPanel({
     }).rows;
   }, [tab, currentProjection, workingTree]);
 
+  const reportTabs = (
+    <div
+      role="tablist"
+      aria-label="Chart view"
+      className="inline-flex rounded-md border border-hair-2 bg-card-2 p-0.5"
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={tab === t.id}
+          onClick={() => onReportChange(t.id)}
+          className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
+            tab === t.id ? "bg-accent/20 text-ink" : "text-ink-3 hover:text-ink"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const recalculating =
+    computeStatus === "computing" ? (
+      <div
+        aria-live="polite"
+        className="mt-2 inline-flex items-center gap-2 text-[11px] text-ink-3"
+      >
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 rounded-full bg-accent/70 animate-pulse"
+        />
+        Recalculating…
+      </div>
+    ) : null;
+
+  // The Summaries report is text + KPI cards, not a resizable plot — render the
+  // report tabs at the top and let the summary flow beneath them, skipping the
+  // fixed-height chart box and drag handle that would otherwise leave a tall
+  // blank gap above the content.
+  if (tab === "summaries") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <SolverSummaryPanel
+          clientId={clientId}
+          source={source}
+          mutations={mutations}
+          years={currentProjection}
+          workingTree={workingTree}
+          clientName={clientName}
+          spouseName={spouseName || null}
+          mcSuccessRate={mcSuccessRate}
+          activeSummary={activeSummary}
+          onSummaryChange={onSummaryChange}
+        />
+        {recalculating}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
-      {/* One shared, resizable height for every tab — so the drag handle below
-          always applies and no tab's content can overflow onto the page. */}
+      <div className="mb-3">{reportTabs}</div>
+      {/* One shared, resizable height for every chart tab — so the drag handle
+          below always applies and no tab's content can overflow onto the page. */}
       <div style={{ height: chartHeight }} className="overflow-hidden">
         {tab === "portfolio" ? (
           <PortfolioBarsChart
@@ -249,21 +312,6 @@ export function SolverChartPanel({
         ) : null}
       </div>
 
-      {tab === "summaries" ? (
-        <SolverSummaryPanel
-          clientId={clientId}
-          source={source}
-          mutations={mutations}
-          years={currentProjection}
-          workingTree={workingTree}
-          clientName={clientName}
-          spouseName={spouseName || null}
-          mcSuccessRate={mcSuccessRate}
-          activeSummary={activeSummary}
-          onSummaryChange={onSummaryChange}
-        />
-      ) : null}
-
       {/* Always present — the chevrons + grip read as a vertical resize handle
           at rest, so the affordance is discoverable on every tab. */}
       <div
@@ -293,50 +341,26 @@ export function SolverChartPanel({
         <ResizeChevron direction="down" />
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div
-          role="tablist"
-          aria-label="Chart view"
-          className="inline-flex rounded-md border border-hair-2 bg-card-2 p-0.5"
+      <div className="mt-3 flex items-center justify-end gap-3">
+        {tab === "liquidity" ? (
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
+            <input
+              type="checkbox"
+              checked={showPortfolioAssets}
+              onChange={(e) => setShowPortfolioAssets(e.target.checked)}
+              className="accent-accent"
+            />
+            Show portfolio assets
+          </label>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setShowTable((v) => !v)}
+          aria-expanded={showTable}
+          className="text-[12px] font-medium text-ink-3 hover:text-ink"
         >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => onReportChange(t.id)}
-              className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
-                tab === t.id
-                  ? "bg-accent/20 text-ink"
-                  : "text-ink-3 hover:text-ink"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3">
-          {tab === "liquidity" ? (
-            <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
-              <input
-                type="checkbox"
-                checked={showPortfolioAssets}
-                onChange={(e) => setShowPortfolioAssets(e.target.checked)}
-                className="accent-accent"
-              />
-              Show portfolio assets
-            </label>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setShowTable((v) => !v)}
-            aria-expanded={showTable}
-            className="text-[12px] font-medium text-ink-3 hover:text-ink"
-          >
-            {showTable ? "Hide table" : "Expand table"}
-          </button>
-        </div>
+          {showTable ? "Hide table" : "Expand table"}
+        </button>
       </div>
 
       {showTable ? (
@@ -347,18 +371,7 @@ export function SolverChartPanel({
         )
       ) : null}
 
-      {computeStatus === "computing" ? (
-        <div
-          aria-live="polite"
-          className="mt-2 inline-flex items-center gap-2 text-[11px] text-ink-3"
-        >
-          <span
-            aria-hidden="true"
-            className="h-2 w-2 rounded-full bg-accent/70 animate-pulse"
-          />
-          Recalculating…
-        </div>
-      ) : null}
+      {recalculating}
     </div>
   );
 }
