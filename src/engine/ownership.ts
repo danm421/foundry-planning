@@ -3,7 +3,15 @@ import type { GiftEvent } from "./types";
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
   | { kind: "entity"; entityId: string; percent: number }
-  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number };
+  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+  | {
+      kind: "gifted_away";
+      recipient: {
+        kind: "entity" | "family_member" | "external_beneficiary";
+        id: string;
+      };
+      percent: number;
+    };
 
 /** Ownership row for a business entity (sourced from the `entity_owners`
  *  table). Polymorphic: an owner is either a household family member or
