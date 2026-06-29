@@ -19,6 +19,7 @@ import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { defaultReportForTab, type InputTab, type ReportKey } from "./report-tab-link";
+import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
@@ -125,6 +126,7 @@ export function LiveSolverWorkspace({
   const [activeReport, setActiveReport] = useState<ReportKey>(
     defaultReportForTab("retirement"),
   );
+  const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
   const handleTabChange = useCallback((tab: InputTab) => {
     setActiveTab(tab);
     setActiveReport(defaultReportForTab(tab));
@@ -989,6 +991,11 @@ export function LiveSolverWorkspace({
               activeReport={activeReport}
               onReportChange={setActiveReport}
               baseTree={baseClientData}
+              source={initialSource}
+              mutations={mutations}
+              mcSuccessRate={mcWorkingSuccess}
+              activeSummary={activeSummary}
+              onSummaryChange={setActiveSummary}
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults
@@ -1004,20 +1011,22 @@ export function LiveSolverWorkspace({
                 }
               />
             ) : null}
-            <SolverKpiStrip
-              posState={scenarioGauge.state}
-              workingSuccess={scenarioGauge.successPct}
-              baselineSuccess={baseSuccess}
-              endingAssets={workingEndingAssets}
-              endingAssetsDelta={endingAssetsDelta}
-              yearsFunded={workingYearsFunded}
-              yearsFundedDelta={workingYearsFunded - baseYearsFunded}
-              lifetimeTax={workingLifetimeTax}
-              lifetimeTaxDelta={workingLifetimeTax - baseLifetimeTax}
-              dimmed={computeStatus === "computing"}
-              onRegenerate={handleRecalculate}
-              solveActive={activeSolve !== null}
-            />
+            {activeReport !== "summaries" ? (
+              <SolverKpiStrip
+                posState={scenarioGauge.state}
+                workingSuccess={scenarioGauge.successPct}
+                baselineSuccess={baseSuccess}
+                endingAssets={workingEndingAssets}
+                endingAssetsDelta={endingAssetsDelta}
+                yearsFunded={workingYearsFunded}
+                yearsFundedDelta={workingYearsFunded - baseYearsFunded}
+                lifetimeTax={workingLifetimeTax}
+                lifetimeTaxDelta={workingLifetimeTax - baseLifetimeTax}
+                dimmed={computeStatus === "computing"}
+                onRegenerate={handleRecalculate}
+                solveActive={activeSolve !== null}
+              />
+            ) : null}
             {errorMessage ? (
               <div
                 role="alert"
