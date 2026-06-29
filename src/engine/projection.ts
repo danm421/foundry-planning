@@ -751,8 +751,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // F16: hoist per-year asset-transaction partitions out of the loop — the
   // sell/buy split never changes year to year; applyAssetSales/Purchases still
   // filter by year internally, so behavior is identical.
-  const allSales = (data.assetTransactions ?? []).filter((t) => t.type === "sell");
-  const allPurchases = (data.assetTransactions ?? []).filter((t) => t.type === "buy");
+  const allSales = (data.assetTransactions ?? []).filter(
+    (t) => t.type === "sell" && t.enabled !== false,
+  );
+  const allPurchases = (data.assetTransactions ?? []).filter(
+    (t) => t.type === "buy" && t.enabled !== false,
+  );
+  // Same hoist for reinvestments: the active set never changes year to year
+  // (applyReinvestments still filters by year internally).
+  const activeReinvestments = (data.reinvestments ?? []).filter(
+    (r) => r.enabled !== false,
+  );
 
   // F16: (entityId, year) → entity-flow override row; avoids a .find() per
   // entity per year in the projection loop.
@@ -924,7 +933,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const businessSales = data.assetTransactions.filter(
-        (t) => t.type === "sell" && t.year === year && t.businessAccountId,
+        (t) =>
+          t.type === "sell" &&
+          t.enabled !== false &&
+          t.year === year &&
+          t.businessAccountId,
       );
       if (businessSales.length > 0) {
         businessSaleResult = applyBusinessSales({
@@ -1351,9 +1364,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       capitalGains: 0,
       byReinvestment: {} as Record<string, { capitalGains: number; label: string }>,
     };
-    if (data.reinvestments && data.reinvestments.length > 0) {
+    if (activeReinvestments.length > 0) {
       reinvestmentResult = applyReinvestments({
-        reinvestments: data.reinvestments,
+        reinvestments: activeReinvestments,
         accounts: workingAccounts,
         accountBalances,
         basisMap,
@@ -3215,6 +3228,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const bracketFillers: RothConversion[] = [];
       const otherStrategies: RothConversion[] = [];
       for (const conv of data.rothConversions) {
+        if (conv.enabled === false) continue;
         if (conv.conversionType === "fill_up_bracket") bracketFillers.push(conv);
         else otherStrategies.push(conv);
       }
@@ -4458,6 +4472,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     ) {
       const fillerConversions = data.rothConversions.filter(
         (c) =>
+          c.enabled !== false &&
           c.conversionType === "fill_up_bracket" &&
           pendingFillBracketTargets[c.id] != null,
       );

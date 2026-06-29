@@ -1030,6 +1030,9 @@ export interface TransferSchedule {
 
 export interface Reinvestment {
   id: string;
+  /** When false, the technique is retained but excluded from the projection
+   *  (non-destructive "off" toggle). undefined/true = active. */
+  enabled?: boolean;
   name: string;
   /** Accounts this reinvestment retargets. */
   accountIds: string[];
@@ -1080,6 +1083,9 @@ export type RothConversionType =
 
 export interface RothConversion {
   id: string;
+  /** When false, the technique is retained but excluded from the projection
+   *  (non-destructive "off" toggle). undefined/true = active. */
+  enabled?: boolean;
   name: string;
   destinationAccountId: string;
   sourceAccountIds: string[];
@@ -1102,6 +1108,9 @@ export interface RothConversion {
 
 export interface AssetTransaction {
   id: string;
+  /** When false, the technique is retained but excluded from the projection
+   *  (non-destructive "off" toggle). undefined/true = active. */
+  enabled?: boolean;
   name: string;
   type: "buy" | "sell";
   year: number;

@@ -4,7 +4,18 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverTechniquesTab } from "../solver-techniques-tab";
 import type { ClientData } from "@/engine/types";
 
-const rc = {
+const rc: {
+  id: string;
+  name: string;
+  destinationAccountId: string;
+  sourceAccountIds: string[];
+  conversionType: "fixed_amount";
+  fixedAmount: number;
+  startYear: number;
+  endYear: number;
+  indexingRate: number;
+  enabled?: boolean;
+} = {
   id: "rc-1",
   name: "Existing Conv",
   destinationAccountId: "a",
@@ -97,5 +108,60 @@ describe("SolverTechniquesTab", () => {
       { kind: "roth-conversion-amount", techniqueId: "rc-fixed" },
       expect.any(Number),
     );
+  });
+
+  it("toggles a technique off via an upsert carrying enabled:false", () => {
+    const onChange = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([rc])}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("switch", { name: /include existing conv in projection/i }),
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "roth-conversion-upsert",
+        id: "rc-1",
+        value: expect.objectContaining({ id: "rc-1", enabled: false }),
+      }),
+    );
+  });
+
+  it("toggles a disabled technique back on (enabled:undefined)", () => {
+    const onChange = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([{ ...rc, enabled: false }])}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("switch", { name: /include existing conv in projection/i }),
+    );
+    const arg = onChange.mock.calls[0][0];
+    expect(arg.kind).toBe("roth-conversion-upsert");
+    expect(arg.value.enabled).toBeUndefined();
+  });
+
+  it("tags a base-plan technique vs an added one", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([rc, { ...rc, id: "rc-2", name: "Added Conv" }])}
+        baseTechniqueIds={{
+          roth: new Set(["rc-1"]),
+          asset: new Set<string>(),
+          reinvestment: new Set<string>(),
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Base plan")).toBeInTheDocument();
+    expect(screen.getByText("Added")).toBeInTheDocument();
   });
 });
