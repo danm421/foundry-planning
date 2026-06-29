@@ -6,6 +6,7 @@ import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
+import { syncHouseholdNameFromContacts } from "./sync-household-name";
 import type { CreateCrmContactInput } from "./schemas";
 
 export async function createCrmContact(householdId: string, input: CreateCrmContactInput) {
@@ -66,11 +67,29 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
   const { userId } = await auth();
 
+  // If a name field is changing, snapshot the household's contacts as they are
+  // *before* the update so we can keep the household name in sync afterward.
+  const nameChanging = "firstName" in patch || "lastName" in patch;
+  const prevContacts = nameChanging
+    ? await db
+        .select({
+          role: crmHouseholdContacts.role,
+          firstName: crmHouseholdContacts.firstName,
+          lastName: crmHouseholdContacts.lastName,
+        })
+        .from(crmHouseholdContacts)
+        .where(eq(crmHouseholdContacts.householdId, existing.householdId))
+    : [];
+
   const [updated] = await db
     .update(crmHouseholdContacts)
     .set({ ...patch, updatedAt: new Date() })
     .where(eq(crmHouseholdContacts.id, contactId))
     .returning();
+
+  if (nameChanging) {
+    await syncHouseholdNameFromContacts(db, existing.householdId, prevContacts);
+  }
 
   await recordAudit({
     action: "crm.contact.update",
