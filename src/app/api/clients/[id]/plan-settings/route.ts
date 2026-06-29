@@ -201,14 +201,14 @@ export async function PUT(
       );
     }
 
-    if (
-      lifetimeExemptionCap != null &&
-      !(Number.isFinite(Number(lifetimeExemptionCap)) && Number(lifetimeExemptionCap) >= 0)
-    ) {
-      return NextResponse.json(
-        { error: "lifetimeExemptionCap must be a non-negative number" },
-        { status: 400 },
-      );
+    if (lifetimeExemptionCap != null) {
+      const cap = Number(lifetimeExemptionCap);
+      if (!Number.isFinite(cap) || cap < 0) {
+        return NextResponse.json(
+          { error: "lifetimeExemptionCap must be a non-negative number" },
+          { status: 400 },
+        );
+      }
     }
 
     if (typeof surplusSpendPct === "number" &&
