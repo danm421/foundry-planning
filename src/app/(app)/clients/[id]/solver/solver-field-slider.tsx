@@ -56,6 +56,14 @@ export function SolverFieldSlider({
   const bound = formatBound ?? format;
   const thumb = clamp(value, min, max);
 
+  // Hug the edit box to its own widest value — a 2-digit age stays tight while a
+  // 7-figure dollar amount gets room — instead of a fixed one-size-fits-all box.
+  // `+ 1` char leaves slack for the caret; tabular digits make `ch` predictable.
+  // Prefix-padding (pl-6) already reserves the "$" gutter, so it's not counted.
+  const editWidth = `calc(${format(max).length + 1}ch + ${
+    prefix ? "2.125rem" : "1.25rem"
+  })`;
+
   useEffect(() => {
     if (!editing) return;
     const el = inputRef.current;
@@ -102,7 +110,8 @@ export function SolverFieldSlider({
                 else if (e.key === "Escape") setEditing(false);
               }}
               onBlur={commitDraft}
-              className={`h-8 w-[7.5rem] rounded-md border border-accent bg-card-2 ${
+              style={{ width: editWidth }}
+              className={`h-8 rounded-md border border-accent bg-card-2 ${
                 prefix ? "pl-6 pr-2.5" : "px-2.5"
               } text-[18px] font-medium text-ink tabular focus:outline-none focus:ring-2 focus:ring-accent/30`}
             />

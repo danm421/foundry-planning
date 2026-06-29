@@ -8,6 +8,7 @@ import {
   type SolverMutationKey,
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
+import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverFieldSlider } from "./solver-field-slider";
@@ -47,7 +48,6 @@ export function SolverRowLivingExpenseScale({
   onSolveStart,
   onSolveCancel,
 }: Props) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
   const baseLiving = baseExpenses.filter((e) => e.type === "living");
   const hasLivingRows = baseLiving.length > 0;
 
@@ -55,31 +55,25 @@ export function SolverRowLivingExpenseScale({
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
   const target: SolveLeverKey = { kind: "living-expense-scale" };
 
+  // The scale lever moves RETIREMENT living expenses only, so its Solve control
+  // rides next to the retirement row's value rather than the section header.
+  // With no retirement row to host it (current-only or empty plans) it falls
+  // back to the header so the synthesize-a-row solve stays reachable.
+  const retirementId = baseLiving.find((e) =>
+    isRetirementLivingExpense(e, currentYear),
+  )?.id;
+
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2">
         <div className="text-[13px] font-medium text-ink">Living Expenses</div>
-        <div className="relative">
-          <SolverSolveIcon
-            label="Solve Maximum Retirement Spend"
-            tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
+        {retirementId == null && !isSolvingHere ? (
+          <LivingExpenseSolveButton
+            target={target}
             disabled={otherSolveActive}
-            onClick={() => setPopoverOpen(true)}
+            onSolveStart={onSolveStart}
           />
-          {popoverOpen ? (
-            <SolverSolvePopover
-              title="Solve Maximum Retirement Spend"
-              rangeLabel="$0 – resource cap"
-              defaultTargetPct={85}
-              open={popoverOpen}
-              onClose={() => setPopoverOpen(false)}
-              onSubmit={(targetPoS) => {
-                setPopoverOpen(false);
-                onSolveStart(target, targetPoS);
-              }}
-            />
-          ) : null}
-        </div>
+        ) : null}
       </div>
       {isSolvingHere ? (
         <SolverSolveProgressStrip
@@ -112,6 +106,11 @@ export function SolverRowLivingExpenseScale({
                     })
                   }
                   onResetField={onResetField}
+                  solve={
+                    baseExpense.id === retirementId
+                      ? { target, disabled: otherSolveActive, onSolveStart }
+                      : undefined
+                  }
                 />
               );
             })
@@ -174,18 +173,56 @@ export function livingExpenseDetailRows(expense: Expense): HintRow[] {
   return rows;
 }
 
+type LivingExpenseSolve = {
+  target: SolveLeverKey;
+  disabled: boolean;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+};
+
+/** Solve icon + popover for the "Maximum Retirement Spend" lever, rendered
+ *  inline next to the retirement living-expense value (matching how the
+ *  Retirement Ages row hangs its Solve button off the field value). */
+function LivingExpenseSolveButton({ target, disabled, onSolveStart }: LivingExpenseSolve) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <SolverSolveIcon
+        label="Solve Maximum Retirement Spend"
+        tooltip={LIVING_EXPENSE_SOLVE_DESCRIPTION}
+        disabled={disabled}
+        onClick={() => setPopoverOpen(true)}
+      />
+      {popoverOpen ? (
+        <SolverSolvePopover
+          title="Solve Maximum Retirement Spend"
+          rangeLabel="$0 – resource cap"
+          defaultTargetPct={85}
+          open={popoverOpen}
+          onClose={() => setPopoverOpen(false)}
+          onSubmit={(targetPoS) => {
+            setPopoverOpen(false);
+            onSolveStart(target, targetPoS);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function Editable({
   label,
   expense,
   baseExpense,
   onCommit,
   onResetField,
+  solve,
 }: {
   label: string;
   expense: Expense;
   baseExpense: Expense;
   onCommit: (n: number) => void;
   onResetField?: (keys: SolverMutationKey[]) => void;
+  solve?: LivingExpenseSolve;
 }) {
   const inputId = `e-${expense.id}`;
   const rows = livingExpenseDetailRows(expense);
@@ -208,6 +245,7 @@ function Editable({
         formatBound={compactUsd}
         valueMax={10_000_000}
         onCommit={onCommit}
+        trailing={solve ? <LivingExpenseSolveButton {...solve} /> : undefined}
       />
       <SolverBaseHint
         base={baseExpense.annualAmount}
