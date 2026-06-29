@@ -110,6 +110,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         0,
       );
       if (newGroupRows.length > 0) {
+        // .returning() result is intentionally unused (ids are client-generated);
+        // kept for parity with the scenarioChanges insert below.
         await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
       }
 
@@ -266,6 +268,8 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
 
     await db.transaction(async (tx) => {
       if (newGroupRows.length > 0) {
+        // .returning() result is intentionally unused (ids are client-generated);
+        // kept for parity with the scenarioChanges insert below.
         await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
       }
       for (const d of drafts) {
