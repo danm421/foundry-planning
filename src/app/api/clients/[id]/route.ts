@@ -17,6 +17,7 @@ import { computePlanEndAge } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
+import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { requireClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -163,6 +164,10 @@ export async function PUT(
     // failure can't leave CRM contacts ahead of the planning row (or vice
     // versa). Audit/plan-settings/family-member sync below stay outside — they
     // are idempotent and not load-bearing for contact-info correctness.
+    // Did this edit touch any name field? If so, the denormalized CRM
+    // household name may need to follow (handled inside the txn below).
+    const nameChanged = HOUSEHOLD_NAME_FIELDS.some((k) => k in identityPatch);
+
     const updated = await db.transaction(async (tx) => {
       await mirrorContactToCrm(tx, existing.crmHouseholdId, identityPatch);
       const [u] = await tx
@@ -173,6 +178,12 @@ export async function PUT(
         })
         .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
         .returning();
+      // Keep the CRM household name in sync with the (now-mirrored) contacts,
+      // unless the advisor manually renamed the household. crmContactRows is the
+      // pre-edit snapshot loaded above.
+      if (nameChanged) {
+        await syncHouseholdNameFromContacts(tx, existing.crmHouseholdId, crmContactRows);
+      }
       return u;
     });
 
@@ -222,6 +233,15 @@ export async function PUT(
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+// Subset of identity fields that feed the auto-generated household name. A
+// change to any of these may need to propagate to crmHouseholds.name.
+const HOUSEHOLD_NAME_FIELDS = [
+  "firstName",
+  "lastName",
+  "spouseName",
+  "spouseLastName",
+] as const;
 
 // Identity fields the PUT body may carry. These live on CRM contacts post-port;
 // the corresponding clients columns have been dropped. Keep both flat name
