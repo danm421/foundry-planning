@@ -62,6 +62,8 @@ export function EstateRevocableTrustList({
   onToggleAccount: (id: string) => void;
   onSelectAll: () => void;
 }) {
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const selectedCount = eligible.reduce((n, a) => (taggedIds.has(a.id) ? n + 1 : n), 0);
   return (
     <div className="col-span-2 space-y-3">
       <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-ink">
@@ -87,31 +89,44 @@ export function EstateRevocableTrustList({
             />
           </label>
 
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] text-ink-3">Move probate assets into the trust</span>
-            <button type="button" onClick={onSelectAll} className="text-[12px] text-accent hover:underline">
-              Select all
-            </button>
-          </div>
-
           {eligible.length === 0 ? (
             <p className="text-[11px] text-ink-3">No probate-eligible accounts to move.</p>
           ) : (
-            <div className="divide-y divide-hair rounded-md border border-hair bg-card-2">
-              {eligible.map((a) => (
-                <label
-                  key={a.id}
-                  className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:bg-card-hover"
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setAccountsOpen((v) => !v)}
+                  aria-expanded={accountsOpen}
+                  className="flex items-center gap-1.5 text-[12px] text-ink-3 transition-colors hover:text-ink-2"
                 >
-                  <input
-                    type="checkbox"
-                    checked={taggedIds.has(a.id)}
-                    onChange={() => onToggleAccount(a.id)}
-                    className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-hair-2 bg-card-2 transition-colors hover:border-accent/60 checked:border-accent checked:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                  />
-                  {a.name}
-                </label>
-              ))}
+                  <span aria-hidden="true" className="text-ink-4">{accountsOpen ? "▾" : "▸"}</span>
+                  Move probate assets into the trust
+                  <span className="text-ink-4">· {selectedCount} of {eligible.length} selected</span>
+                </button>
+                <button type="button" onClick={onSelectAll} className="text-[12px] text-accent hover:underline">
+                  Select all
+                </button>
+              </div>
+
+              {accountsOpen ? (
+                <div className="divide-y divide-hair rounded-md border border-hair bg-card-2">
+                  {eligible.map((a) => (
+                    <label
+                      key={a.id}
+                      className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:bg-card-hover"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={taggedIds.has(a.id)}
+                        onChange={() => onToggleAccount(a.id)}
+                        className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-hair-2 bg-card-2 transition-colors hover:border-accent/60 checked:border-accent checked:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                      />
+                      {a.name}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
         </div>
