@@ -1191,6 +1191,15 @@ export interface PlanSettings {
   /** Account that receives the saved (non-spent) portion of surplus each year.
    *  Null/undefined = leave it in household checking (today's behavior). */
   surplusSaveAccountId?: string | null;
+  /** Stress test: cut ALL Social Security benefits by `pct` (decimal) for every
+   *  projection year ≥ `startYear`. Applied in computeIncome before taxation. */
+  ssBenefitHaircut?: { pct: number; startYear: number };
+  /** Stress test: stop one person's earned income (salary + business they own)
+   *  from `startYear` forward, modeling a disability. */
+  disabilityEvent?: { person: "client" | "spouse"; startYear: number };
+  /** Stress test: one-time drawdown of market-exposed account balances in `year`
+   *  (e.g. drawdownPct 0.30 = −30%). Applied after the growth pass. */
+  marketShock?: { year: number; drawdownPct: number };
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
