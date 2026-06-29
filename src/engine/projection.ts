@@ -843,7 +843,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // routed to household cash via the Phase 3 distribution sweep — so it
       // must not also contribute to income.total / income.bySource here, or
       // we double-count it in the household tax base and cashflow surplus.
-      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null
+      (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null,
+      {
+        ssBenefitHaircut: planSettings.ssBenefitHaircut,
+        disabilityEvent: planSettings.disabilityEvent,
+      },
     );
     const grantorIncome = computeIncome(
       currentIncomes,

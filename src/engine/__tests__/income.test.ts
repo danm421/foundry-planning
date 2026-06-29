@@ -240,3 +240,46 @@ describe("computeIncome — SS pia_at_fra with claimingAgeMode='fra'", () => {
     expect(computeIncome([ss], 2025, client).socialSecurity).toBe(0);
   });
 });
+
+describe("computeIncome — stress test", () => {
+  it("haircuts social security for years at/after startYear", () => {
+    // sampleIncomes has John SS (manual, 36000 @ COLA 2%, claimingAge 67 → 2037).
+    const base = computeIncome(sampleIncomes, 2037, baseClient);
+    const cut = computeIncome(sampleIncomes, 2037, baseClient, undefined, {
+      ssBenefitHaircut: { pct: 0.23, startYear: 2034 },
+    });
+    expect(cut.socialSecurity).toBeCloseTo(base.socialSecurity * 0.77, 2);
+  });
+
+  it("does not haircut social security before startYear", () => {
+    const base = computeIncome(sampleIncomes, 2037, baseClient);
+    const cut = computeIncome(sampleIncomes, 2037, baseClient, undefined, {
+      ssBenefitHaircut: { pct: 0.23, startYear: 2040 },
+    });
+    expect(cut.socialSecurity).toBeCloseTo(base.socialSecurity, 2);
+  });
+
+  it("stops the disabled person's salary from startYear forward", () => {
+    // 2030: John salary active (owner client), Jane salary active (owner spouse).
+    const before = computeIncome(sampleIncomes, 2030, baseClient);
+    const disabled = computeIncome(sampleIncomes, 2030, baseClient, undefined, {
+      disabilityEvent: { person: "client", startYear: 2030 },
+    });
+    // John's salary drops out; Jane's remains.
+    const janeOnly = computeIncome(
+      sampleIncomes.filter((i) => i.id === "inc-salary-jane"),
+      2030,
+      baseClient,
+    );
+    expect(disabled.salaries).toBeCloseTo(janeOnly.salaries, 2);
+    expect(disabled.salaries).toBeLessThan(before.salaries);
+  });
+
+  it("leaves salary intact before the disability startYear", () => {
+    const before = computeIncome(sampleIncomes, 2030, baseClient);
+    const notYet = computeIncome(sampleIncomes, 2030, baseClient, undefined, {
+      disabilityEvent: { person: "client", startYear: 2031 },
+    });
+    expect(notYet.salaries).toBeCloseTo(before.salaries, 2);
+  });
+});
