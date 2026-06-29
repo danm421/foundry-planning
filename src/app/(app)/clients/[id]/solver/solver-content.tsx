@@ -1,8 +1,8 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { db } from "@/db";
-import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
@@ -15,12 +15,20 @@ interface Props {
 }
 
 export async function SolverContent({ clientId, firmId, source }: Props) {
-  const [baseLoaded, sourceLoaded] = await Promise.all([
+  const [baseLoaded, sourceLoaded, scenarioRow] = await Promise.all([
     loadEffectiveTree(clientId, firmId, "base", {}),
     source === "base"
       ? null
       : loadEffectiveTree(clientId, firmId, source, {}),
+    source === "base"
+      ? null
+      : db
+          .select({ name: scenarios.name })
+          .from(scenarios)
+          .where(and(eq(scenarios.id, source), eq(scenarios.clientId, clientId)))
+          .then((rows) => rows[0] ?? null),
   ]);
+  const scenarioName = scenarioRow?.name ?? null;
 
   const growthResolver = baseLoaded.resolutionContext?.resolver;
   const categoryGrowthDefaults = {
@@ -97,6 +105,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       clientName={clientName}
       spouseName={spouseName}
       categoryGrowthDefaults={categoryGrowthDefaults}
+      scenarioName={scenarioName}
     />
   );
 }

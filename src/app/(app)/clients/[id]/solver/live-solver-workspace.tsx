@@ -63,6 +63,9 @@ interface Props {
   clientName: string;
   spouseName: string;
   categoryGrowthDefaults: { taxable: number; retirement: number; cash: number };
+  /** Display name of the scenario loaded as the source, when one is selected
+   *  (null on the base case). Labels the "Update scenario" save action. */
+  scenarioName?: string | null;
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS. */
@@ -86,6 +89,7 @@ export function LiveSolverWorkspace({
   clientName,
   spouseName,
   categoryGrowthDefaults,
+  scenarioName,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -482,6 +486,55 @@ export function LiveSolverWorkspace({
 
   const [savingToBase, setSavingToBase] = useState(false);
   const [saveToBaseError, setSaveToBaseError] = useState<string | null>(null);
+
+  // Whether the solver source is an existing scenario (vs. the base case).
+  // Drives the "Update scenario" save action.
+  const isScenarioSource = initialSource !== "base";
+  const [updatingScenario, setUpdatingScenario] = useState(false);
+  const [updateScenarioError, setUpdateScenarioError] = useState<string | null>(null);
+
+  async function handleUpdateScenario() {
+    if (!canEdit || !isScenarioSource) return;
+    const label = scenarioName ? `"${scenarioName}"` : "this scenario";
+    if (
+      !confirm(
+        `Save these ${mutations.length} change${mutations.length === 1 ? "" : "s"} into ${label}? This overwrites the scenario's saved version.`,
+      )
+    )
+      return;
+    setUpdatingScenario(true);
+    setUpdateScenarioError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/solver/save-scenario`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scenarioId: initialSource,
+          mutations,
+          // Persist the canonical solve's seed so the scenario's report
+          // reproduces the same PoS, mirroring the save-as-new path.
+          ...(solvedSeed !== null ? { seed: solvedSeed } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      // The scenario now carries these changes. Drop the working mutations and
+      // refresh server components so the workspace reloads the scenario's new
+      // effective tree as its baseline (no lingering "unsaved" state).
+      setMutationMap(new Map());
+      setSolvedPoS(null);
+      setSolvedSeed(null);
+      setComputeStatus("fresh");
+      setEditNonce((n) => n + 1);
+      router.refresh();
+    } catch (err) {
+      setUpdateScenarioError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdatingScenario(false);
+    }
+  }
 
   async function handleSaveToBase() {
     if (!canEdit) return;
@@ -1094,12 +1147,16 @@ export function LiveSolverWorkspace({
       <SolverActionBar
         hasMutations={mutations.length > 0}
         canSaveToBase={mutations.some(isBaseSavableMutation)}
+        canUpdateScenario={isScenarioSource}
+        scenarioName={scenarioName}
         solveActive={activeSolve !== null}
         savingToBase={savingToBase}
+        updating={updatingScenario}
         canEdit={canEdit}
         onReset={handleReset}
         onSave={() => setSaveOpen(true)}
         onSaveToBase={handleSaveToBase}
+        onUpdateScenario={handleUpdateScenario}
       />
 
       <SaveAsScenarioDialog
@@ -1116,6 +1173,11 @@ export function LiveSolverWorkspace({
       {saveToBaseError ? (
         <div role="alert" className="text-[13px] text-crit">
           Save to base facts failed: {saveToBaseError}
+        </div>
+      ) : null}
+      {updateScenarioError ? (
+        <div role="alert" className="text-[13px] text-crit">
+          Update scenario failed: {updateScenarioError}
         </div>
       ) : null}
     </div>
