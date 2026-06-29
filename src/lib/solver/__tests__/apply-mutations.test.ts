@@ -701,18 +701,21 @@ describe("applyMutations — stress test", () => {
     const data = makeBase();
     const out = applyMutations(data, [{ kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 }]);
     expect(out.planSettings.ssBenefitHaircut).toEqual({ pct: 0.23, startYear: 2034 });
+    expect(data.planSettings.ssBenefitHaircut).toBeUndefined(); // original untouched
   });
 
   it("stress-disability sets planSettings.disabilityEvent", () => {
     const data = makeBase();
     const out = applyMutations(data, [{ kind: "stress-disability", person: "spouse", startYear: 2030 }]);
     expect(out.planSettings.disabilityEvent).toEqual({ person: "spouse", startYear: 2030 });
+    expect(data.planSettings.disabilityEvent).toBeUndefined(); // original untouched
   });
 
   it("stress-market-crash sets planSettings.marketShock", () => {
     const data = makeBase();
     const out = applyMutations(data, [{ kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 }]);
     expect(out.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
+    expect(data.planSettings.marketShock).toBeUndefined(); // original untouched
   });
 });
 
