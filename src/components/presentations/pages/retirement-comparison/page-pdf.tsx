@@ -16,17 +16,17 @@ import { TaxTreatmentChartPdf } from "./tax-treatment-chart-pdf";
 import { MONO } from "./chart-axis";
 
 const s = StyleSheet.create({
-  verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
+  verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
   verdictText: { fontSize: 13, fontWeight: 700, color: T.ink, lineHeight: 1.3 },
-  panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8, marginBottom: 8 },
+  panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8, marginBottom: 8 },
   // Side-by-side variant of `panel`: equal-width columns inside `chartRow`
   // (the row owns the bottom margin so the columns drop it).
-  panelCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8 },
+  panelCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   chartRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 },
 
   kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
-  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderRadius: 3, padding: 8 },
+  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, lineHeight: 1.2 },
   kpiVals: { flexDirection: "row", alignItems: "baseline", marginTop: 5 },
   kpiBase: { fontSize: 8, color: T.ink3, fontFamily: MONO },
@@ -34,7 +34,7 @@ const s = StyleSheet.create({
   kpiScn: { fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: MONO },
   kpiDelta: { fontSize: 7.5, fontWeight: 600, color: T.good, marginTop: 3, fontFamily: MONO },
 
-  ai: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 8 },
+  ai: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 8 },
   aiText: { fontSize: 8, color: T.ink, lineHeight: 1.35 },
   placeholder: { fontSize: 8, color: T.ink3, fontStyle: "italic" },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },

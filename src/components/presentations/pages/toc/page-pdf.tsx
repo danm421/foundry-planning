@@ -16,9 +16,14 @@ const styles = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 32 },
   row: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   title: { fontSize: 12, color: PRESENTATION_THEME.ink },
-  leader: { flex: 1, borderBottom: `1pt dotted ${PRESENTATION_THEME.hair}`, marginHorizontal: 6, marginBottom: 2 },
+  leader: { flex: 1, borderBottom: `1pt dotted ${PRESENTATION_THEME.hair2}`, marginHorizontal: 6, marginBottom: 2 },
   pageNum: { fontSize: 12, color: PRESENTATION_THEME.ink2 },
-  disclosures: { marginTop: 40 },
+  disclosures: {
+    marginTop: 36,
+    borderTopWidth: 1,
+    borderTopColor: PRESENTATION_THEME.hair2,
+    paddingTop: 18,
+  },
   disclosuresHeading: {
     fontSize: 9,
     fontWeight: 700,
@@ -26,8 +31,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   disclosureParagraph: {
-    fontSize: 7.5,
-    lineHeight: 1.4,
+    fontSize: 8,
+    lineHeight: 1.45,
     color: PRESENTATION_THEME.ink3,
     marginBottom: 5,
   },

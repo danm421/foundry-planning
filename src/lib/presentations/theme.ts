@@ -7,10 +7,19 @@ import { colorsLight, dataLight } from "@/brand";
 export const PRESENTATION_THEME = {
   paper: colorsLight.paper,   // #fefdf8
   card: "#ffffff",            // raised white panel on cream paper (print affordance)
-  ink: colorsLight.ink,       // #1a1d27
-  ink2: colorsLight.ink2,     // #474c59
-  ink3: colorsLight.ink3,     // #767a86
-  hair: colorsLight.hair,     // #e8e4d6
+  ink: colorsLight.ink,       // #1a1d27 (primary — already dark)
+  // Muted inks intentionally run darker than the canonical light palette
+  // (brand ink2 #474c59 / ink3 #767a86). Dense 6–7pt table cells, footnotes,
+  // footers, and disclosures read washed-out at the brand values on a white
+  // page; this is a white-label client print surface and the extra contrast
+  // is advisor-requested. Hierarchy preserved: ink → ink2 → ink3.
+  ink2: "#3a3f4d",            // darker secondary slate (brand ink2 was #474c59)
+  ink3: "#565c69",            // darker tertiary gray (brand ink3 was #767a86)
+  // Faint divider / zebra edge, nudged darker than the brand light hair
+  // (#e8e4d6) so the bespoke KPI-card and row-divider borders across pages read
+  // on a white page; still clearly lighter than hair2.
+  hair: "#e1dcc9",
+  hair2: colorsLight.hair2,   // #d9d2bd (stronger hairline — table frames + dividers)
   accent: colorsLight.accent, // #0f7d6c (verdigris, v2.2)
   good: colorsLight.good,     // #047857
   crit: colorsLight.crit,     // #b91c1c

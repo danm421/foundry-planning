@@ -82,7 +82,7 @@ export function SplitBarPdf({ segments }: { segments: SplitSegment[] }) {
       {segments.map((seg) => {
         const pct = total > 0 ? Math.round((seg.value / total) * 100) : 0;
         return (
-          <View key={seg.label} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair }}>
+          <View key={seg.label} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
               <View style={{ width: 6, height: 6, marginRight: 4, backgroundColor: seg.color }} />
               <Text style={{ fontSize: 8, color: T.ink }}>{seg.label}</Text>

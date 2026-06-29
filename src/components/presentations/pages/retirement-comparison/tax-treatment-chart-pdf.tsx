@@ -23,14 +23,14 @@ const signed = (d: number): string => `${d >= 0 ? "+" : "−"}${fmtUsd(Math.abs(
 const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 18 },
   th: { fontSize: 6, color: T.ink3, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 },
-  headRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: T.hair, paddingBottom: 3 },
+  headRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: T.hair2, paddingBottom: 3 },
   cellRow: { flexDirection: "row", alignItems: "center", paddingVertical: 2.5, paddingHorizontal: 2 },
   swatch: { width: 6, height: 6, borderRadius: 1, marginRight: 5 },
   lblWrap: { flex: 1.5, flexDirection: "row", alignItems: "center" },
   lbl: { fontSize: 7.5, color: T.ink },
   num: { flex: 1, fontSize: 7.5, color: T.ink, textAlign: "right", fontFamily: MONO },
   delta: { flex: 1, fontSize: 7, textAlign: "right", fontFamily: MONO },
-  totalRow: { flexDirection: "row", alignItems: "center", paddingTop: 3, paddingHorizontal: 2, marginTop: 1, borderTopWidth: 1, borderTopColor: T.hair },
+  totalRow: { flexDirection: "row", alignItems: "center", paddingTop: 3, paddingHorizontal: 2, marginTop: 1, borderTopWidth: 1, borderTopColor: T.hair2 },
   totalLbl: { flex: 1.5, fontSize: 7.5, color: T.ink, fontWeight: 600 },
   totalNum: { flex: 1, fontSize: 8, color: T.ink, fontWeight: 600, textAlign: "right", fontFamily: MONO },
 });

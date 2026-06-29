@@ -27,18 +27,18 @@ const styles = StyleSheet.create({
   },
   body: { flex: 1, marginTop: 14 },
   footerHair: {
-    height: 0.5,
-    backgroundColor: PRESENTATION_THEME.hair,
+    height: 0.75,
+    backgroundColor: PRESENTATION_THEME.hair2,
     marginBottom: 6,
   },
   footerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    fontSize: 7,
+    fontSize: 7.5,
     color: PRESENTATION_THEME.ink3,
   },
   footerDisclaimer: {
-    fontSize: 7,
+    fontSize: 7.5,
     color: PRESENTATION_THEME.ink3,
     textAlign: "center",
     marginBottom: 4,

@@ -38,7 +38,7 @@ export function PortfolioAnalysisPagePdf({
         <ScatterPdf spec={data.scatter} />
       </View>
       <View>
-        <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
+        <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair2, paddingBottom: 3 }}>
           <Text style={[S.headCell, { flex: 2 }]}>Name</Text>
           <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Return</Text>
           <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Mean</Text>
@@ -47,7 +47,7 @@ export function PortfolioAnalysisPagePdf({
           <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Value</Text>
         </View>
         {data.tableRows.map((r) => (
-          <View key={r.key} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
+          <View key={r.key} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair2 }}>
             <Text style={S.bodyName}>{r.name}</Text>
             <Text style={S.bodyNum}>{pct(r.geometricReturn)}</Text>
             <Text style={S.bodyNum}>{pct(r.arithmeticMean)}</Text>

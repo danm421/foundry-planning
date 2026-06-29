@@ -3,9 +3,12 @@ import { PRESENTATION_THEME, type SectionAccent } from "@/lib/presentations/them
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: 6,
+    borderRadius: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: PRESENTATION_THEME.accent, // overridden per-section inline
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingRight: 12,
+    paddingLeft: 10,
     marginBottom: 12,
   },
   text: {
@@ -17,7 +20,7 @@ const styles = StyleSheet.create({
 
 export function Callout({ children, accent }: { children: string; accent: SectionAccent }) {
   return (
-    <View style={[styles.wrap, { backgroundColor: accent.tint }]}>
+    <View style={[styles.wrap, { backgroundColor: accent.tint, borderLeftColor: accent.accent }]}>
       <Text style={styles.text}>{children}</Text>
     </View>
   );

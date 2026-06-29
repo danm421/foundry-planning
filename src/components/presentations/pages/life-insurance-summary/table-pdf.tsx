@@ -5,8 +5,8 @@ import type { LiPolicyRow } from "@/lib/insurance-policies/load-li-inventory";
 import { fmtUsd, termExpiryLabel, POLICY_TYPE_LABEL } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 
 const s = StyleSheet.create({
-  table: { borderWidth: 1, borderColor: T.hair, borderRadius: 3, overflow: "hidden" },
-  row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingVertical: 3, paddingHorizontal: 5 },
+  table: { borderWidth: 1, borderColor: T.hair2, borderRadius: 3, overflow: "hidden" },
+  row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair2, paddingVertical: 3, paddingHorizontal: 5 },
   head: { backgroundColor: T.paper, borderBottomWidth: 1 },
   hCell: { fontSize: 6, fontWeight: 700, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.3 },
   cell: { fontSize: 8, color: T.ink },

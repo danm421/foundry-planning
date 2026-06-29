@@ -9,14 +9,24 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-end",                 // align single-line headers to the bottom of 2-line ones
-    borderBottomWidth: 1,
+    borderTopWidth: 1,
+    borderTopColor: PRESENTATION_THEME.hair2,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderLeftColor: PRESENTATION_THEME.hair2,
+    borderRightColor: PRESENTATION_THEME.hair2,
+    borderBottomWidth: 1,                    // bottom color set inline to the section accent
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
   dataRow: {
     flexDirection: "row",
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderLeftColor: PRESENTATION_THEME.hair2,
+    borderRightColor: PRESENTATION_THEME.hair2,
     borderBottomWidth: 0.5,
-    borderBottomColor: PRESENTATION_THEME.hair,
+    borderBottomColor: PRESENTATION_THEME.hair2,
     paddingVertical: 3,
     paddingHorizontal: 2,
   },

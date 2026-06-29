@@ -11,12 +11,12 @@ import { MONTE_CARLO_CHART_KINDS, type MonteCarloChartKind } from "@/lib/present
 
 const styles = StyleSheet.create({
   kpiRow: { flexDirection: "row", gap: 8, marginTop: 10, marginBottom: 12 },
-  kpiBox: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair, backgroundColor: T.card, padding: 8 },
+  kpiBox: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair2, backgroundColor: T.card, padding: 8 },
   kpiLabel: { fontSize: 7, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5 },
   kpiValue: { fontSize: 13, color: T.ink, fontFamily: "Inter", marginTop: 3 },
   hero: { marginBottom: 10 },
   thumbRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  thumb: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair, padding: 6 },
+  thumb: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair2, padding: 6 },
   thumbLabel: { fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 },
   footnote: { fontSize: 6, color: T.ink3, marginTop: 6 },
   empty: { fontSize: 11, color: T.ink3, textAlign: "center", marginTop: 60 },

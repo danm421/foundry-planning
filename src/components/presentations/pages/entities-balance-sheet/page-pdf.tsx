@@ -21,7 +21,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
 const S = StyleSheet.create({
   card: {
     borderWidth: 0.5,
-    borderColor: T.hair,
+    borderColor: T.hair2,
     borderRadius: 4,
     padding: 12,
     marginBottom: 12,
@@ -53,8 +53,8 @@ const S = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 1.5,
-    borderBottomWidth: 0.25,
-    borderBottomColor: T.hair,
+    borderBottomWidth: 0.5,
+    borderBottomColor: T.hair2,
   },
   rowName: { fontSize: 8, color: T.ink2, flex: 2 },
   rowVal: { fontSize: 8, fontFamily: "JetBrains Mono", color: T.ink2, flex: 1, textAlign: "right" },

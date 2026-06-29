@@ -42,13 +42,13 @@ export function AssetAllocationPagePdf({
         <View style={{ flexDirection: "row", marginBottom: 12 }}>
           {showTable && (
             <View style={{ flex: 1, marginRight: hasDiff ? 18 : 0 }}>
-              <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingBottom: 3 }}>
+              <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: T.hair2, paddingBottom: 3 }}>
                 <Text style={[S.headCell, { flex: 2 }]}>Asset class</Text>
                 <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.leftName}</Text>
                 {hasRight && <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>{data.rightName}</Text>}
               </View>
               {data.tableRows.map((r) => (
-                <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
+                <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair2 }}>
                   <Text style={S.bodyName}>{r.name}</Text>
                   <Text style={S.bodyNum}>{pct(r.leftPct)}</Text>
                   {hasRight && <Text style={S.bodyNum}>{pct(r.rightPct)}</Text>}
@@ -89,12 +89,12 @@ export function AssetAllocationPagePdf({
             Accounts without an asset mix
           </Text>
           {data.excludedRows.map((r) => (
-            <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.25, borderBottomColor: T.hair }}>
+            <View key={r.id} style={{ flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair2 }}>
               <Text style={S.bodyName}>{r.name}</Text>
               <Text style={S.bodyNum}>{money(r.value)}</Text>
             </View>
           ))}
-          <View style={{ flexDirection: "row", paddingTop: 3, borderTopWidth: 0.5, borderTopColor: T.hair }}>
+          <View style={{ flexDirection: "row", paddingTop: 3, borderTopWidth: 0.5, borderTopColor: T.hair2 }}>
             <Text style={[S.bodyName, { fontFamily: "Fraunces" }]}>Total</Text>
             <Text style={[S.bodyNum, { color: T.ink }]}>{money(data.excludedTotal)}</Text>
           </View>

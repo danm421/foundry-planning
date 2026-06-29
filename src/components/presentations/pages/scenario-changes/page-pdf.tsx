@@ -20,7 +20,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     borderBottomWidth: 0.5,
-    borderBottomColor: PRESENTATION_THEME.hair,
+    borderBottomColor: PRESENTATION_THEME.hair2,
     paddingVertical: 5,
     paddingHorizontal: 2,
   },
