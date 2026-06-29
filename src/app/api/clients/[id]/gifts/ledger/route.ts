@@ -59,6 +59,7 @@ export async function GET(
       entities: data.entities ?? [],
       annualExclusionsByYear,
       taxInflationRate,
+      lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
       hasSpouse: data.client.spouseDob != null,
     });
 

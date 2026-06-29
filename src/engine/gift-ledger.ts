@@ -41,6 +41,7 @@ export interface GiftLedgerInput {
   externalBeneficiaries?: Array<{ id: string; kind: "charity" | "individual" }>;
   annualExclusionsByYear: Record<number, number>;
   taxInflationRate: number;
+  lifetimeExemptionCap?: number | null;
   accountValueAtYear: (accountId: string, year: number) => number;
   /** Resolver for business-entity value at a given year. Required for
    *  `business_interest` GiftEvents; optional so callers that don't yet
@@ -192,7 +193,7 @@ function stepGrantor(
   const tentativeTaxOnBefore = applyUnifiedRateSchedule(cumulativeBefore);
   const currentYearTentTax = tentativeTaxOnAfter - tentativeTaxOnBefore;
 
-  const beaCredit = applyUnifiedRateSchedule(beaForYear(year, input.taxInflationRate));
+  const beaCredit = applyUnifiedRateSchedule(beaForYear(year, input.taxInflationRate, input.lifetimeExemptionCap));
   const remainingCredit = Math.max(0, beaCredit - tentativeTaxOnBefore);
   const giftTaxThisYear = Math.max(0, currentYearTentTax - remainingCredit);
 

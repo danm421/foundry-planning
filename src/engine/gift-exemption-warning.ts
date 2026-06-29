@@ -29,6 +29,7 @@ export function checkExemptionImpact(input: {
   ledger: GiftLedgerYear[];
   proposed: ProposedGift;
   taxInflationRate: number;
+  lifetimeExemptionCap?: number | null;
 }): ExemptionWarningResult {
   const perGrantor: Partial<Record<"client" | "spouse", PerGrantorBreach>> = {};
 
@@ -47,7 +48,7 @@ export function checkExemptionImpact(input: {
     const cumulativeBeforeProposed = grantorState?.cumulativeTaxableGifts ?? 0;
 
     const cumulativeAfter = cumulativeBeforeProposed + share;
-    const beaAtYear = beaForYear(input.proposed.year, input.taxInflationRate);
+    const beaAtYear = beaForYear(input.proposed.year, input.taxInflationRate, input.lifetimeExemptionCap);
     const overage = Math.max(0, cumulativeAfter - beaAtYear);
 
     const tentBefore = applyUnifiedRateSchedule(cumulativeBeforeProposed);

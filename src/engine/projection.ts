@@ -6004,6 +6004,7 @@ export function runProjectionWithEvents(
       .map((e) => ({ id: e.id, kind: e.kind! })),
     annualExclusionsByYear,
     taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
+    lifetimeExemptionCap: data.planSettings.lifetimeExemptionCap ?? null,
     accountValueAtYear: () => 0,
   });
   return {

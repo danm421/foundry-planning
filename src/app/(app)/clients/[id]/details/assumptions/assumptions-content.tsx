@@ -298,6 +298,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
           taxEngineMode: settings.taxEngineMode,
           taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
+          lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? String(settings.lifetimeExemptionCap) : "",
           ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
           medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null ? String(settings.medicarePremiumInflationRate) : "0.03",
           medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,

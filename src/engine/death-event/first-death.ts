@@ -486,7 +486,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   const adjustedGifts = inPlanCumulative + input.priorTaxableGifts[input.deceased];
   const taxInflation =
     input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
-  const beaAtDeathYear = beaForYear(input.year, taxInflation);
+  const beaAtDeathYear = beaForYear(input.year, taxInflation, input.planSettings.lifetimeExemptionCap);
 
   const preview = buildEstateTaxResult({
     year: input.year,

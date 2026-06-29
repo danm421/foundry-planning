@@ -18,6 +18,7 @@ interface TaxRatesFormProps {
   residenceState: USPSStateCode | null;
   irdTaxRate: string;
   probateCostRate: string;
+  lifetimeExemptionCap: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
@@ -103,6 +104,7 @@ export default function TaxRatesForm({
   residenceState,
   irdTaxRate,
   probateCostRate,
+  lifetimeExemptionCap,
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
   priorTaxableGiftsSpouse,
@@ -144,6 +146,12 @@ export default function TaxRatesForm({
       residenceState: residence,
       irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
       probateCostRate: String(Number(data.get("probateCostRate") ?? "0") / 100),
+      lifetimeExemptionCap: (() => {
+        const raw = ((data.get("lifetimeExemptionCap") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n > 0 ? String(n) : null;
+      })(),
       outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
       priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
       priorTaxableGiftsSpouse: hasSpouse
@@ -312,6 +320,20 @@ export default function TaxRatesForm({
               defaultValue={pct(probateCostRate)}
               className={`${INPUT_CLS} max-w-[10rem]`}
             />
+          </FieldRow>
+          <FieldRow
+            label="Lifetime exemption cap"
+            help="Caps how high the federal estate/gift exemption grows. Leave blank to grow with inflation indefinitely. Enter a dollar amount to grow toward that ceiling and then freeze — or, if below today's exemption (~$15M), to freeze the exemption at that value for the whole plan."
+          >
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="lifetimeExemptionCap"
+                name="lifetimeExemptionCap"
+                defaultValue={lifetimeExemptionCap}
+                placeholder="No cap"
+                className={INPUT_CLS}
+              />
+            </div>
           </FieldRow>
         </FieldTable>
       </section>

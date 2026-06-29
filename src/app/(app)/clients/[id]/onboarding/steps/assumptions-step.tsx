@@ -254,6 +254,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
         taxEngineMode: settings.taxEngineMode,
         taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
+        lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? String(settings.lifetimeExemptionCap) : "",
         ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
         outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
         priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),

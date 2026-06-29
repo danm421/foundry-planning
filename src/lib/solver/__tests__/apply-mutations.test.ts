@@ -717,6 +717,16 @@ describe("applyMutations — stress test", () => {
     expect(out.planSettings.marketShock).toEqual({ year: 2030, drawdownPct: 0.3 });
     expect(data.planSettings.marketShock).toBeUndefined(); // original untouched
   });
+
+  it("stress-exemption-cap sets planSettings.lifetimeExemptionCap", () => {
+    const data = makeBase();
+    const capBefore = data.planSettings.lifetimeExemptionCap ?? null;
+    const out = applyMutations(data, [{ kind: "stress-exemption-cap", cap: 7_000_000 }]);
+    expect(out.planSettings.lifetimeExemptionCap).toBe(7_000_000);
+    // applyMutations must not mutate its input (deep clone) — the source data's
+    // cap stays whatever it was before the call.
+    expect(data.planSettings.lifetimeExemptionCap ?? null).toBe(capBefore);
+  });
 });
 
 describe("applyMutations — technique upserts", () => {

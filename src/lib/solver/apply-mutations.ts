@@ -310,6 +310,13 @@ export function applyMutations(
         };
         break;
       }
+      case "stress-exemption-cap": {
+        result.planSettings = {
+          ...result.planSettings,
+          lifetimeExemptionCap: m.cap,
+        };
+        break;
+      }
       case "gift-upsert": {
         // Deferred: applied once after the loop so giftEvents is rebuilt from the
         // full scenario draft set (last-write-wins; null marks a delete).

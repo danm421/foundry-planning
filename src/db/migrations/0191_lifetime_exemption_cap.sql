@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "lifetime_exemption_cap" numeric(15, 2);

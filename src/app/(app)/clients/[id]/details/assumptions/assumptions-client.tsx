@@ -67,6 +67,7 @@ export interface AssumptionsSettings {
   modelPortfolioIdRetirement?: string | null;
   taxEngineMode: "flat" | "bracket";
   taxInflationRate: string;
+  lifetimeExemptionCap: string;
   ssWageGrowthRate: string;
   medicarePremiumInflationRate: string;
   medicarePremiumInflationEnabled: boolean;
@@ -143,6 +144,7 @@ export default function AssumptionsClient({
             residenceState={settings.residenceState}
             irdTaxRate={settings.irdTaxRate}
             probateCostRate={settings.probateCostRate}
+            lifetimeExemptionCap={settings.lifetimeExemptionCap}
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
