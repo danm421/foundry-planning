@@ -8,8 +8,10 @@ import {
   controllingFamilyMember,
   controllingEntity,
   rebalanceOwnersAfterEntityDisposition,
+  ownersForYear,
   type AccountOwner,
 } from "../ownership";
+import type { GiftEvent } from "../types";
 
 const fmClient = (pct: number): AccountOwner => ({
   kind: "family_member", familyMemberId: "fm-client", percent: pct,
@@ -147,5 +149,41 @@ describe("rebalanceOwnersAfterEntityDisposition", () => {
       { kind: "family_member", familyMemberId: "B", percent: 1 },
     ];
     expect(() => rebalanceOwnersAfterEntityDisposition(owners, "E1", 0.5)).toThrow();
+  });
+});
+
+const giftAccount = {
+  id: "acct-1",
+  owners: [{ kind: "family_member" as const, familyMemberId: "client", percent: 1 }],
+};
+
+describe("ownersForYear — asset gift to a non-entity recipient", () => {
+  it("routes a family-member asset gift to a gifted_away owner", () => {
+    const events: GiftEvent[] = [
+      { kind: "asset", year: 2027, accountId: "acct-1", percent: 0.25, grantor: "client", recipientFamilyMemberId: "fm-kid" },
+    ];
+    const owners = ownersForYear(giftAccount, events, 2027, 2026);
+    const gifted = owners.find((o) => o.kind === "gifted_away");
+    expect(gifted).toMatchObject({ kind: "gifted_away", recipient: { kind: "family_member", id: "fm-kid" }, percent: 0.25 });
+    expect(owners.reduce((s, o) => s + o.percent, 0)).toBeCloseTo(1, 9);
+  });
+
+  it("routes an external-beneficiary asset gift to a gifted_away owner", () => {
+    const events: GiftEvent[] = [
+      { kind: "asset", year: 2027, accountId: "acct-1", percent: 0.5, grantor: "client", recipientExternalBeneficiaryId: "charity-1" },
+    ];
+    const owners = ownersForYear(giftAccount, events, 2027, 2026);
+    expect(owners.find((o) => o.kind === "gifted_away")).toMatchObject({
+      recipient: { kind: "external_beneficiary", id: "charity-1" },
+      percent: 0.5,
+    });
+  });
+
+  it("still routes an entity asset gift to an entity owner", () => {
+    const events: GiftEvent[] = [
+      { kind: "asset", year: 2027, accountId: "acct-1", percent: 0.5, grantor: "client", recipientEntityId: "trust-1" },
+    ];
+    const owners = ownersForYear(giftAccount, events, 2027, 2026);
+    expect(owners.find((o) => o.kind === "entity")).toMatchObject({ entityId: "trust-1", percent: 0.5 });
   });
 });
