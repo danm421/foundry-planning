@@ -757,6 +757,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const allPurchases = (data.assetTransactions ?? []).filter(
     (t) => t.type === "buy" && t.enabled !== false,
   );
+  // Same hoist for reinvestments: the active set never changes year to year
+  // (applyReinvestments still filters by year internally).
+  const activeReinvestments = (data.reinvestments ?? []).filter(
+    (r) => r.enabled !== false,
+  );
 
   // F16: (entityId, year) → entity-flow override row; avoids a .find() per
   // entity per year in the projection loop.
@@ -1359,9 +1364,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       capitalGains: 0,
       byReinvestment: {} as Record<string, { capitalGains: number; label: string }>,
     };
-    const activeReinvestments = (data.reinvestments ?? []).filter(
-      (r) => r.enabled !== false,
-    );
     if (activeReinvestments.length > 0) {
       reinvestmentResult = applyReinvestments({
         reinvestments: activeReinvestments,
