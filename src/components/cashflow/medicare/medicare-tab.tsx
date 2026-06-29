@@ -38,10 +38,14 @@ export function MedicareTab({
     clientData?.medicarePremiumInflationRate ?? DEFAULT_MEDICARE_PREMIUM_INFLATION_RATE;
   const currentEnabled = clientData?.medicarePremiumInflationEnabled ?? true;
 
-  // Empty-state: no coverage rows yet → show CTA
+  // Empty-state: no coverage rows yet AND household is Medicare-age → show CTA
   const coverage = clientData?.medicareCoverage ?? [];
+  const someMedicareAge = years.some(
+    (y) => y.ages.client >= 65 || (y.ages.spouse != null && y.ages.spouse >= 65),
+  );
+  const showEmptyState = someMedicareAge && coverage.length === 0;
   const hasAnySpouseYear = years.some((y) => y.ages.spouse != null);
-  if (coverage.length === 0) {
+  if (showEmptyState) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
         <p className="text-[14px] text-ink-2 max-w-sm">
@@ -83,7 +87,7 @@ export function MedicareTab({
           saveError={saveError}
         />
       )}
-      {showControls && onEstimateMagiChange && (
+      {showControls && onEstimateMagiChange && coverage.length > 0 && (
         <div className="flex items-center gap-2 text-[13px] text-ink-2">
           <input
             type="checkbox"
