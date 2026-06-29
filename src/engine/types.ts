@@ -377,6 +377,10 @@ export type GiftEvent =
        *  cash gifts to family members / external beneficiaries — those have no
        *  in-projection account to credit; the cash simply leaves the household. */
       recipientEntityId?: string;
+      /** Set when the recipient is a family member (not a modeled trust entity). */
+      recipientFamilyMemberId?: string;
+      /** Set when the recipient is an external beneficiary (charity etc.). */
+      recipientExternalBeneficiaryId?: string;
       sourceAccountId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences
