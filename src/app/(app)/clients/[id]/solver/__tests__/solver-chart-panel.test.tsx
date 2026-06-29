@@ -90,18 +90,19 @@ describe("SolverChartPanel", () => {
     expect(screen.queryByTestId("chart-cashflow")).not.toBeInTheDocument();
   });
 
-  it("renders all six report tabs unconditionally", () => {
+  it("renders all five report tabs unconditionally", () => {
     render(<ControlledPanel />);
     for (const name of [
       "Portfolio",
       "Cash Flow",
       "Tax Bracket",
-      "Liquidity",
       "Life Insurance Need",
       "Estate",
     ]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+    // Liquidity is no longer its own tab — it lives inside the Estate report.
+    expect(screen.queryByRole("tab", { name: "Liquidity" })).not.toBeInTheDocument();
   });
 
   it("switches to the Cash Flow chart", async () => {
@@ -121,9 +122,10 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("table-tax-bracket")).toBeInTheDocument();
   });
 
-  it("switches to Liquidity and toggles portfolio assets", async () => {
-    render(<ControlledPanel />);
-    await userEvent.click(screen.getByRole("tab", { name: "Liquidity" }));
+  it("shows the liquidity chart inside Estate and toggles portfolio assets", async () => {
+    render(<ControlledPanel initialReport="estate" />);
+    // Estate now renders both charts side by side.
+    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
     expect(screen.getByTestId("chart-liquidity")).toHaveTextContent(
       "portfolio:false",
     );
@@ -135,14 +137,13 @@ describe("SolverChartPanel", () => {
     );
   });
 
-  it("keeps the resize handle on every tab, including liquidity", async () => {
+  it("keeps the resize handle on every tab, including Estate", async () => {
     render(<ControlledPanel />);
     const handle = () =>
       screen.getByRole("separator", { name: /resize chart height/i });
     // Default (portfolio) tab.
     expect(handle()).toBeInTheDocument();
-    // Liquidity used to render with its own fixed height and no handle.
-    await userEvent.click(screen.getByRole("tab", { name: "Liquidity" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Estate" }));
     expect(handle()).toBeInTheDocument();
   });
 
@@ -165,11 +166,12 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("chart-li-need")).toBeInTheDocument();
   });
 
-  it("renders the Estate view when that report is active", () => {
+  it("renders both the Estate and liquidity charts when Estate is active", () => {
     render(<ControlledPanel initialReport="estate" />);
     const tab = screen.getByRole("tab", { name: "Estate" });
     expect(tab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
+    expect(screen.getByTestId("chart-liquidity")).toBeInTheDocument();
   });
 
   it("reports tab clicks through onReportChange", async () => {

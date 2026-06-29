@@ -23,7 +23,6 @@ const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "cashflow", label: "Cash Flow" },
   { id: "taxBracket", label: "Tax Bracket" },
-  { id: "liquidity", label: "Liquidity" },
   { id: "lifeInsurance", label: "Life Insurance Need" },
   { id: "estate", label: "Estate" },
   { id: "summaries", label: "Summaries" },
@@ -182,10 +181,11 @@ export function SolverChartPanel({
   // a series the engine returned as null, nor hides one it computed.
   const isMarried = hasSpouse(workingTree);
 
-  // Built only when the Liquidity tab is active — avoids running the estate
+  // Built only when the Estate tab is active — the liquidity chart now lives
+  // alongside the estate comparison there. Gating avoids running the estate
   // report on every recompute (and against fixtures that lack estate data).
   const liquidityRows = useMemo(() => {
-    if (tab !== "liquidity") return [];
+    if (tab !== "estate") return [];
     const c = workingTree.client;
     return buildYearlyLiquidityReport({
       projection: { years: currentProjection },
@@ -267,8 +267,13 @@ export function SolverChartPanel({
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
       <div className="mb-3">{reportTabs}</div>
       {/* One shared, resizable height for every chart tab — so the drag handle
-          below always applies and no tab's content can overflow onto the page. */}
-      <div style={{ height: chartHeight }} className="overflow-hidden">
+          below always applies and no tab's content can overflow onto the page.
+          The Estate tab stacks two charts, so it gets twice the height (plus the
+          gap between them); resizing still scales both together. */}
+      <div
+        style={{ height: tab === "estate" ? chartHeight * 2 + 16 : chartHeight }}
+        className="overflow-hidden"
+      >
         {tab === "portfolio" ? (
           <PortfolioBarsChart
             current={currentProjection}
@@ -280,13 +285,6 @@ export function SolverChartPanel({
         ) : null}
         {tab === "taxBracket" ? (
           <TaxBracketChart years={currentProjection} fillHeight />
-        ) : null}
-        {tab === "liquidity" ? (
-          <YearlyLiquidityChart
-            rows={liquidityRows}
-            showPortfolio={showPortfolioAssets}
-            className="h-full w-full"
-          />
         ) : null}
         {tab === "lifeInsurance" ? (
           <LiNeedOverTimeView
@@ -302,13 +300,33 @@ export function SolverChartPanel({
           />
         ) : null}
         {tab === "estate" ? (
-          <EstateComparisonChart
-            baseProjection={baseProjection}
-            proposedProjection={currentProjection}
-            baseTree={baseTree}
-            proposedTree={workingTree}
-            isMarried={isMarried}
-          />
+          // Estate comparison stacked above liquidity-vs-transfer-cost: the
+          // advisor reads "where the estate goes" then "is there cash to pay for
+          // it" below. Full width each so neither chart's labels get pinched;
+          // both flex to an equal share of the doubled box height.
+          <div className="flex h-full flex-col gap-4">
+            <div className="min-h-0 flex-1">
+              <EstateComparisonChart
+                baseProjection={baseProjection}
+                proposedProjection={currentProjection}
+                baseTree={baseTree}
+                proposedTree={workingTree}
+                isMarried={isMarried}
+              />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="text-[13px] font-medium text-ink">
+                Liquidity &amp; transfer cost
+              </div>
+              <div className="min-h-0 flex-1">
+                <YearlyLiquidityChart
+                  rows={liquidityRows}
+                  showPortfolio={showPortfolioAssets}
+                  className="h-full w-full"
+                />
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
 
@@ -342,7 +360,7 @@ export function SolverChartPanel({
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-3">
-        {tab === "liquidity" ? (
+        {tab === "estate" ? (
           <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
             <input
               type="checkbox"
