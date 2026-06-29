@@ -141,6 +141,20 @@ function makeSseStream(events: Array<{ event: string; data: unknown }>): Respons
   });
 }
 
+/**
+ * Cooper's Retirement Age is now a slider (Radix). Each arrow press commits one
+ * step — mirroring the old per-keystroke input mutation. Default base is 65.
+ */
+function setCooperRetirementAge(target: number, from = 65) {
+  const slider = screen.getByRole("slider", { name: /Cooper's Retirement Age/i });
+  slider.focus();
+  const key = target >= from ? "ArrowRight" : "ArrowLeft";
+  for (let i = 0; i < Math.abs(target - from); i++) {
+    fireEvent.keyDown(slider, { key });
+  }
+  return slider;
+}
+
 describe("<LiveSolverWorkspace />", () => {
   it("renders the Solver page with Base Facts column label", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
@@ -155,10 +169,9 @@ describe("<LiveSolverWorkspace />", () => {
     });
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
-    fireEvent.change(cooper, { target: { value: "66" } });
-    fireEvent.change(cooper, { target: { value: "67" } });
-    fireEvent.change(cooper, { target: { value: "68" } });
+    // Three slider steps (65→68) each commit a mutation; the debounce coalesces
+    // them into a single POST carrying the final value.
+    setCooperRetirementAge(68);
 
     // debounce is 600 ms — allow 1.5 s to avoid flakiness
     await waitFor(
@@ -261,11 +274,10 @@ describe("LiveSolverWorkspace — solve lifecycle", () => {
     });
 
     // After the solve completes the retirement-age mutation (67) is applied to
-    // workingTree, which re-renders the input with defaultValue=67. In JSDOM
-    // uncontrolled inputs expose the solved value via the element's value
-    // property — use spinbutton role to distinguish the input from the solve icon.
-    const inputAfter = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i }) as HTMLInputElement;
-    expect(inputAfter.value).toBe("67");
+    // workingTree, which re-renders the (controlled) slider at 67 — exposed via
+    // the thumb's aria-valuenow.
+    const sliderAfter = screen.getByRole("slider", { name: /Cooper's Retirement Age/i });
+    expect(sliderAfter).toHaveAttribute("aria-valuenow", "67");
   });
 });
 
@@ -290,8 +302,7 @@ describe("LiveSolverWorkspace — save scenario", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
 
     // A mutation is required before the "Save as scenario…" button enables.
-    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
-    fireEvent.change(cooper, { target: { value: "67" } });
+    setCooperRetirementAge(67);
 
     const openSave = screen.getByRole("button", { name: /Save as scenario/i });
     await waitFor(() => expect(openSave).not.toBeDisabled());
@@ -415,9 +426,8 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     // No overlay while fresh.
     expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
 
-    // Edit an input below → Scenario goes stale → overlay appears.
-    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
-    fireEvent.change(cooper, { target: { value: "67" } });
+    // Edit a value below → Scenario goes stale → overlay appears.
+    setCooperRetirementAge(67);
 
     const recalc = await screen.findByRole("button", { name: /recalculate/i });
     const callsBefore = mcCalls.length;
@@ -453,9 +463,8 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     // is rendered as a sub-hint "↑ from 80%" below it (since 85 > 80).
     expect(screen.getByText(/from 80%/)).toBeTruthy();
 
-    // Edit an input → Scenario goes stale → Recalculate overlay appears.
-    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
-    fireEvent.change(cooper, { target: { value: "67" } });
+    // Edit a value → Scenario goes stale → Recalculate overlay appears.
+    setCooperRetirementAge(67);
 
     const recalc = await screen.findByRole("button", { name: /recalculate/i });
     fireEvent.click(recalc);

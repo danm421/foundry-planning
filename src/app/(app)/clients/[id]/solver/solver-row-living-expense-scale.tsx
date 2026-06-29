@@ -10,6 +10,7 @@ import {
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
+import { SolverFieldSlider } from "./solver-field-slider";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
@@ -91,7 +92,7 @@ export function SolverRowLivingExpenseScale({
           onCancel={onSolveCancel}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+        <div className="grid grid-cols-2 gap-x-5 gap-y-4">
           {hasLivingRows ? (
             baseLiving.map((baseExpense) => {
               const label = labelFor(baseExpense, currentYear);
@@ -136,6 +137,27 @@ function formatCurrency(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
+/** Compact dollar label for slider end-caps, e.g. $0 · $50k · $1.5M. */
+function compactUsd(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`;
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
+  return `$${n}`;
+}
+
+/** Rounds up to a tidy 1/2/2.5/5 ×10ⁿ value so slider scales read cleanly. */
+function niceCeil(n: number): number {
+  if (n <= 0) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(n)));
+  const f = n / mag;
+  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nice * mag;
+}
+
+/** Stable slider ceiling from the saved base, generous enough for what-ifs. */
+function spendSliderMax(base: number): number {
+  return niceCeil(Math.max(base * 2, 50_000));
+}
+
 function formatPct(decimal: number): string {
   const pct = Math.round(decimal * 10000) / 100;
   return pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(2)}%`;
@@ -166,23 +188,25 @@ function Editable({
   onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const inputId = `e-${expense.id}`;
-  // Bumps on reset to remount the currency input so its local `display` state
-  // re-seeds from the reverted base amount (it's seeded once from defaultValue).
-  const [resetTick, setResetTick] = useState(0);
   const rows = livingExpenseDetailRows(expense);
   return (
     <div>
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="mb-1.5 flex min-w-0 items-center gap-1.5">
         <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={inputId}>
           {label}
         </label>
         {rows.length ? <FieldHintPopover label={`${label} details`} rows={rows} /> : null}
       </div>
-      <CurrencyAmountInput
-        key={`${inputId}-${resetTick}`}
+      <SolverFieldSlider
         id={inputId}
         label={label}
-        defaultValue={expense.annualAmount}
+        value={expense.annualAmount}
+        min={0}
+        max={spendSliderMax(baseExpense.annualAmount)}
+        step={1_000}
+        prefix="$"
+        formatBound={compactUsd}
+        valueMax={10_000_000}
         onCommit={onCommit}
       />
       <SolverBaseHint
@@ -191,58 +215,16 @@ function Editable({
         format={(n) => `${formatCurrency(n)}/yr`}
         onReset={
           onResetField
-            ? () => {
+            ? () =>
                 onResetField([
                   mutationKey({
                     kind: "expense-annual-amount",
                     expenseId: baseExpense.id,
                     annualAmount: 0,
                   }),
-                ]);
-                setResetTick((t) => t + 1);
-              }
+                ])
             : undefined
         }
-      />
-    </div>
-  );
-}
-
-/** Compact $-prefixed currency input with live thousands formatting. */
-function CurrencyAmountInput({
-  id,
-  label,
-  defaultValue,
-  onCommit,
-}: {
-  id: string;
-  label: string;
-  defaultValue: number;
-  onCommit: (n: number) => void;
-}) {
-  const [display, setDisplay] = useState<string>(
-    Math.round(defaultValue).toLocaleString(),
-  );
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value.replace(/[^\d]/g, "");
-    const n = raw === "" ? 0 : parseInt(raw, 10);
-    if (Number.isNaN(n) || n < 0) return;
-    setDisplay(n.toLocaleString());
-    onCommit(n);
-  }
-  return (
-    <div className="relative mt-1">
-      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
-        $
-      </span>
-      <input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        value={display}
-        onChange={handleChange}
-        className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-        aria-label={label}
       />
     </div>
   );
