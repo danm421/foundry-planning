@@ -67,19 +67,7 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
   const { userId } = await auth();
 
-  // If a name field is changing, snapshot the household's contacts as they are
-  // *before* the update so we can keep the household name in sync afterward.
   const nameChanging = "firstName" in patch || "lastName" in patch;
-  const prevContacts = nameChanging
-    ? await db
-        .select({
-          role: crmHouseholdContacts.role,
-          firstName: crmHouseholdContacts.firstName,
-          lastName: crmHouseholdContacts.lastName,
-        })
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, existing.householdId))
-    : [];
 
   const [updated] = await db
     .update(crmHouseholdContacts)
@@ -87,8 +75,9 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
     .where(eq(crmHouseholdContacts.id, contactId))
     .returning();
 
+  // Keep the denormalized household name tracking the contacts.
   if (nameChanging) {
-    await syncHouseholdNameFromContacts(db, existing.householdId, prevContacts);
+    await syncHouseholdNameFromContacts(db, existing.householdId);
   }
 
   await recordAudit({

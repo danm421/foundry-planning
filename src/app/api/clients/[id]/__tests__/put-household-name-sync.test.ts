@@ -123,7 +123,7 @@ describe("PUT /api/clients/[id] — household name sync", () => {
     expect(await readName(householdId)).toBe("Michael & Jane Jorden");
   });
 
-  it("preserves a manually customized household name", async () => {
+  it("overwrites a manually customized household name (always-overwrite policy)", async () => {
     const { householdId, clientId } = await track(
       seedHousehold({
         storedName: "The Jordan Family Trust",
@@ -135,7 +135,7 @@ describe("PUT /api/clients/[id] — household name sync", () => {
       params: Promise.resolve({ id: clientId }),
     });
     expect(res.status).toBe(200);
-    expect(await readName(householdId)).toBe("The Jordan Family Trust");
+    expect(await readName(householdId)).toBe("Michael Jorden");
   });
 
   it("leaves the name alone when only non-name fields change", async () => {

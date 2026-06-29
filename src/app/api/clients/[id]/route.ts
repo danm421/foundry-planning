@@ -178,11 +178,9 @@ export async function PUT(
         })
         .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
         .returning();
-      // Keep the CRM household name in sync with the (now-mirrored) contacts,
-      // unless the advisor manually renamed the household. crmContactRows is the
-      // pre-edit snapshot loaded above.
+      // Keep the CRM household name in sync with the (now-mirrored) contacts.
       if (nameChanged) {
-        await syncHouseholdNameFromContacts(tx, existing.crmHouseholdId, crmContactRows);
+        await syncHouseholdNameFromContacts(tx, existing.crmHouseholdId);
       }
       return u;
     });
