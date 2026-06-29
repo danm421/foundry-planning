@@ -99,9 +99,9 @@ export default function GiftForm(props: GiftFormProps) {
 
   const selected = recipientOptions.find((o) => o.value === recipientValue);
   const recipientIsTrust = selected?.isTrust ?? false;
-  const recurringAllowed = recipientIsTrust;
-  const effectiveRecurring = recurringAllowed && isRecurring;
-  const inKindAllowed = recipientIsTrust && (sourceAccount != null || props.accounts.length > 0);
+  const recurringAllowed = true;
+  const effectiveRecurring = isRecurring;
+  const inKindAllowed = sourceAccount != null || props.accounts.length > 0;
   const effectiveInKind = !effectiveRecurring && inKindAllowed && isInKind;
   const effectiveAccountId = sourceAccount?.id ?? selectedAccountId;
   const kindLocked = editing != null;
@@ -110,9 +110,6 @@ export default function GiftForm(props: GiftFormProps) {
   // Max-exclusion preview value for the relevant year.
   const exclYear = effectiveRecurring ? startYear : year;
   const exclusionAmount = (annualExclusionByYear[exclYear] ?? 0) * grantorCount;
-
-  // Recipient filtering — recurring + in-kind both require an irrevocable trust.
-  const requireTrust = effectiveRecurring || effectiveInKind;
 
   const draft = useMemo<EstateFlowGift | null>(() => {
     if (!selected) return null;
@@ -340,11 +337,9 @@ export default function GiftForm(props: GiftFormProps) {
           className={selectCls}
         >
           <option value="">— select —</option>
-          {recipientOptions
-            .filter((o) => (requireTrust ? o.isTrust : true))
-            .map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
+          {recipientOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
       </Field>
 

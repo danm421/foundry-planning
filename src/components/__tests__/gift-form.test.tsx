@@ -49,13 +49,33 @@ describe("GiftForm", () => {
     ]);
   });
 
-  it("restricts recipients to trusts when recurring", () => {
+  it("all recipients remain selectable when recurring (trust gate lifted)", () => {
     render(<GiftForm {...base()} />);
+    // Switch to recurring mode (trust pre-selected so the toggle is enabled initially)
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Recurring"));
     const values = [...(screen.getByTestId("recipient") as HTMLSelectElement).options].map((o) => o.value);
     expect(values).toContain("entity:t1");
-    expect(values).not.toContain("family_member:m1");
+    // Family members and externals must also remain in the list
+    expect(values).toContain("family_member:m1");
+    expect(values).toContain("external_beneficiary:x1");
+  });
+
+  it("recurring + specific-asset controls are available for a family member; Crummey is absent", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange })} />);
+    // Select a family member (non-trust)
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+
+    // (a) Recurring segment should NOT be disabled
+    const recurringOption = screen.getByText("Recurring");
+    expect(recurringOption.closest("button")).not.toBeDisabled();
+
+    // (b) "Specific asset" funding segment should be present (accounts list is non-empty)
+    expect(screen.getByText("Specific asset")).toBeInTheDocument();
+
+    // (c) Crummey checkbox is absent for a non-trust recipient
+    expect(screen.queryByText(/crummey/i)).not.toBeInTheDocument();
   });
 
   it("round-trips an existing series draft without spurious change (diff stability)", () => {
