@@ -28,3 +28,35 @@ describe("SolverTechniqueRow", () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("SolverTechniqueRow toggle", () => {
+  it("renders an on switch by default and calls onToggle when clicked", () => {
+    const onToggle = vi.fn();
+    render(
+      <SolverTechniqueRow name="Roth 2030" summary="$25k · 2030" onToggle={onToggle} />,
+    );
+    const sw = screen.getByRole("switch", { name: /include roth 2030 in projection/i });
+    expect(sw).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(sw);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("reflects the off state on the switch", () => {
+    render(
+      <SolverTechniqueRow
+        name="Roth 2030"
+        summary="$25k · 2030"
+        enabled={false}
+        onToggle={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("switch", { name: /include roth 2030 in projection/i }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("renders a Base plan badge", () => {
+    render(<SolverTechniqueRow name="Roth 2030" summary="x" badge="Base plan" />);
+    expect(screen.getByText("Base plan")).toBeInTheDocument();
+  });
+});
