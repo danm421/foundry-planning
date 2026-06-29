@@ -1131,6 +1131,9 @@ export function LiveSolverWorkspace({
               source={initialSource}
               mutations={mutations}
               mcSuccessRate={mcWorkingSuccess}
+              extraAccountMixes={extraAccountMixes}
+              mcNonce={mcVersion}
+              mcRequested={mcRequested}
               activeSummary={activeSummary}
               onSummaryChange={setActiveSummary}
               selectedYear={selectedYear}
@@ -1150,7 +1153,7 @@ export function LiveSolverWorkspace({
                 }
               />
             ) : null}
-            {activeReport !== "summaries" ? (
+            {activeReport !== "summaries" && activeReport !== "monteCarlo" ? (
               <SolverKpiStrip
                 posState={scenarioGauge.state}
                 workingSuccess={scenarioGauge.successPct}

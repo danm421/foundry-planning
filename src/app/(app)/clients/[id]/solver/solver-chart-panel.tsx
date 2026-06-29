@@ -18,6 +18,7 @@ import { type ReportKey } from "./report-tab-link";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
+import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
 
 const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
@@ -25,6 +26,7 @@ const REPORT_TABS: { id: ReportKey; label: string }[] = [
   { id: "taxBracket", label: "Tax Bracket" },
   { id: "lifeInsurance", label: "Life Insurance Need" },
   { id: "estate", label: "Estate" },
+  { id: "monteCarlo", label: "Monte Carlo" },
   { id: "summaries", label: "Summaries" },
 ];
 
@@ -106,6 +108,9 @@ interface Props {
   source: SolverSource;
   mutations: SolverMutation[];
   mcSuccessRate: number | null;
+  extraAccountMixes: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
+  mcNonce: number;
+  mcRequested: boolean;
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
   /** Selected year for the cash-flow detail panel; highlights that bar. */
@@ -129,6 +134,9 @@ export function SolverChartPanel({
   source,
   mutations,
   mcSuccessRate,
+  extraAccountMixes,
+  mcNonce,
+  mcRequested,
   activeSummary,
   onSummaryChange,
   selectedYear,
@@ -263,6 +271,23 @@ export function SolverChartPanel({
           mcSuccessRate={mcSuccessRate}
           activeSummary={activeSummary}
           onSummaryChange={onSummaryChange}
+        />
+        {recalculating}
+      </div>
+    );
+  }
+
+  if (tab === "monteCarlo") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <SolverMonteCarloPanel
+          clientId={clientId}
+          source={source}
+          mutations={mutations}
+          extraAccountMixes={extraAccountMixes}
+          enabled={mcRequested}
+          nonce={mcNonce}
         />
         {recalculating}
       </div>
