@@ -242,7 +242,7 @@ function Editable({
         value={expense.annualAmount}
         min={0}
         max={spendSliderMax(baseExpense.annualAmount)}
-        step={1_000}
+        step={5_000}
         prefix="$"
         formatBound={compactUsd}
         valueMax={10_000_000}
