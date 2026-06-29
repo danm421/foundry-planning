@@ -18,7 +18,7 @@ interface MonteCarloReportViewProps {
   raw: MonteCarloResult | null;
   deterministic: number[];
   meta: CachedMonteCarloResult["meta"] | null;
-  loading: boolean;
+  loading?: boolean;
   showHeader?: boolean;
   onReseed?: () => void;
   reseedBusy?: boolean;
@@ -120,7 +120,7 @@ export function MonteCarloReportView({
 
         {reseedError && (
           <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
-            Couldn&apos;t generate a new seed: {reseedError}
+            {"Couldn't generate a new seed: "}{reseedError}
           </div>
         )}
 
