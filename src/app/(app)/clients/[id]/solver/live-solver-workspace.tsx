@@ -335,6 +335,15 @@ export function LiveSolverWorkspace({
     [initialSourceClientData, mutations],
   );
 
+  const baseTechniqueIds = useMemo(
+    () => ({
+      roth: new Set((baseClientData.rothConversions ?? []).map((r) => r.id)),
+      asset: new Set((baseClientData.assetTransactions ?? []).map((t) => t.id)),
+      reinvestment: new Set((baseClientData.reinvestments ?? []).map((r) => r.id)),
+    }),
+    [baseClientData],
+  );
+
   // Asset mixes for synthetic savings accounts, threaded into MC so the
   // additional-savings dollars grow on the chosen portfolio's allocation rather
   // than the deterministic growthRate fallback. Drop entries whose account no
@@ -947,6 +956,7 @@ export function LiveSolverWorkspace({
           <SolverTechniquesTab
             clientId={clientId}
             workingTree={workingTree}
+            baseTechniqueIds={baseTechniqueIds}
             accounts={(baseClientData.accounts ?? []).map((a) => ({
               id: a.id,
               name: a.name,

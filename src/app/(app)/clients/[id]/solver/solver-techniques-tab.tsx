@@ -55,6 +55,13 @@ interface Props {
   }[];
   modelPortfolios: { id: string; name: string; growthRate?: number }[];
   milestones?: ClientMilestones;
+  /** Ids of techniques present in the base plan, by kind — used to tag rows
+   *  "Base plan" vs "Added". Optional so the component renders in isolation. */
+  baseTechniqueIds?: {
+    roth: Set<string>;
+    asset: Set<string>;
+    reinvestment: Set<string>;
+  };
   onChange: (m: SolverMutation) => void;
   /** Wired by the workspace. Starts a goal-seek solve on a roth conversion's
    *  fixed amount. Optional so the component renders in isolation in tests. */
@@ -92,19 +99,25 @@ function TechniqueAddTile({ label, onClick }: { label: string; onClick: () => vo
  * Edit / Remove and the group ends with a trailing add-tile (the add-tile is
  * also the whole empty state when there are no techniques yet).
  */
-function TechniqueGroup<T extends { id: string; name: string }>({
+function TechniqueGroup<T extends { id: string; name: string; enabled?: boolean }>({
   working,
+  baseIds,
   summarize,
   onEdit,
   onRemove,
+  onToggle,
   onAdd,
   addLabel,
   renderExtraAction,
 }: {
   working: T[];
+  /** Base-plan technique ids for this kind; drives the origin badge. */
+  baseIds?: Set<string>;
   summarize: (t: T) => string;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Flips the technique's enabled state. */
+  onToggle: (t: T) => void;
   /** Opens the add form for this technique kind. */
   onAdd: () => void;
   /** Noun for the add tile, e.g. "Roth conversion" → "Add Roth conversion". */
@@ -119,6 +132,9 @@ function TechniqueGroup<T extends { id: string; name: string }>({
           key={t.id}
           name={t.name}
           summary={summarize(t)}
+          enabled={t.enabled !== false}
+          onToggle={() => onToggle(t)}
+          badge={baseIds ? (baseIds.has(t.id) ? "Base plan" : "Added") : undefined}
           onEdit={() => onEdit(t.id)}
           onRemove={() => onRemove(t.id)}
           extraAction={renderExtraAction?.(t)}
@@ -136,6 +152,7 @@ export function SolverTechniquesTab({
   liabilities,
   modelPortfolios,
   milestones,
+  baseTechniqueIds,
   onChange,
   onSolveStart,
 }: Props) {
@@ -164,7 +181,11 @@ export function SolverTechniquesTab({
         onClose={close}
         onSaved={close}
         onSubmitDraft={(t) =>
-          onChange({ kind: "roth-conversion-upsert", id: t.id, value: t })
+          onChange({
+            kind: "roth-conversion-upsert",
+            id: t.id,
+            value: { ...t, enabled: existing?.enabled },
+          })
         }
       />
     );
@@ -184,7 +205,11 @@ export function SolverTechniquesTab({
         onClose={close}
         onSaved={close}
         onSubmitDraft={(t) =>
-          onChange({ kind: "reinvestment-upsert", id: t.id, value: t })
+          onChange({
+            kind: "reinvestment-upsert",
+            id: t.id,
+            value: { ...t, enabled: existing?.enabled },
+          })
         }
       />
     );
@@ -204,7 +229,11 @@ export function SolverTechniquesTab({
         onClose={close}
         onSaved={close}
         onSubmitDraft={(t) =>
-          onChange({ kind: "asset-transaction-upsert", id: t.id, value: t })
+          onChange({
+            kind: "asset-transaction-upsert",
+            id: t.id,
+            value: { ...t, enabled: existing?.enabled },
+          })
         }
       />
     );
@@ -215,10 +244,18 @@ export function SolverTechniquesTab({
       <SolverSection title="Roth Conversions">
         <TechniqueGroup
           working={workingRoth}
+          baseIds={baseTechniqueIds?.roth}
           summarize={summarizeRothConversion}
           onEdit={(id) => setEditor({ kind: "roth", editId: id })}
           onRemove={(id) =>
             onChange({ kind: "roth-conversion-upsert", id, value: null })
+          }
+          onToggle={(t) =>
+            onChange({
+              kind: "roth-conversion-upsert",
+              id: t.id,
+              value: { ...t, enabled: t.enabled === false ? undefined : false },
+            })
           }
           onAdd={() => setEditor({ kind: "roth" })}
           addLabel="Roth conversion"
@@ -244,10 +281,18 @@ export function SolverTechniquesTab({
       <SolverSection title="Asset Transactions">
         <TechniqueGroup
           working={workingAsset}
+          baseIds={baseTechniqueIds?.asset}
           summarize={summarizeAssetTransaction}
           onEdit={(id) => setEditor({ kind: "asset", editId: id })}
           onRemove={(id) =>
             onChange({ kind: "asset-transaction-upsert", id, value: null })
+          }
+          onToggle={(t) =>
+            onChange({
+              kind: "asset-transaction-upsert",
+              id: t.id,
+              value: { ...t, enabled: t.enabled === false ? undefined : false },
+            })
           }
           onAdd={() => setEditor({ kind: "asset" })}
           addLabel="asset transaction"
@@ -257,10 +302,18 @@ export function SolverTechniquesTab({
       <SolverSection title="Reinvestments">
         <TechniqueGroup
           working={workingReinv}
+          baseIds={baseTechniqueIds?.reinvestment}
           summarize={summarizeReinvestment}
           onEdit={(id) => setEditor({ kind: "reinvestment", editId: id })}
           onRemove={(id) =>
             onChange({ kind: "reinvestment-upsert", id, value: null })
+          }
+          onToggle={(t) =>
+            onChange({
+              kind: "reinvestment-upsert",
+              id: t.id,
+              value: { ...t, enabled: t.enabled === false ? undefined : false },
+            })
           }
           onAdd={() => setEditor({ kind: "reinvestment" })}
           addLabel="reinvestment"
