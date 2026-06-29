@@ -9,6 +9,7 @@ import { controllingFamilyMember } from "@/engine/ownership";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
+import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
 import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
@@ -629,12 +630,10 @@ export function LiveSolverWorkspace({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as { scenarioId: string };
       setSaveOpen(false);
-      router.push(`/clients/${clientId}/cashflow?scenario=${data.scenarioId}`);
-      // Re-fetch server components so the new scenario appears in the
-      // ScenarioChipRow (rendered by the shared [id] layout, which a plain
-      // push does not re-run). Mirrors create-scenario-dialog.tsx.
+      // Stay on the solver page after saving. Re-fetch server components so the
+      // new scenario appears in the ScenarioChipRow (rendered by the shared
+      // [id] layout). Mirrors create-scenario-dialog.tsx.
       router.refresh();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -896,7 +895,12 @@ export function LiveSolverWorkspace({
           body: JSON.stringify({ source: initialSource, mutations }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: { projection: ProjectionYear[] } = await res.json();
+        // parseProjectionResponse (not res.json()) revives the projection's Map
+        // fields, which JSON drops — without it estate consumers crash on
+        // `field?.get(...)`. See projection-wire.ts.
+        const data = parseProjectionResponse<{ projection: ProjectionYear[] }>(
+          await res.text(),
+        );
         setCurrentProjection(data.projection);
         setComputeStatus("fresh");
         setErrorMessage(null);

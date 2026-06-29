@@ -313,9 +313,8 @@ describe("LiveSolverWorkspace — save scenario", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Save scenario$/ }));
 
     await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
-    expect(routerPush).toHaveBeenCalledWith(
-      "/clients/client-id/cashflow?scenario=new-scenario-id",
-    );
+    // Stay on the solver page after saving — no navigation to the cash-flow report.
+    expect(routerPush).not.toHaveBeenCalled();
   });
 });
 

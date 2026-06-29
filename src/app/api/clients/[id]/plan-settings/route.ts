@@ -87,6 +87,7 @@ export async function PUT(
       inflationRate,
       taxEngineMode,
       taxInflationRate,
+      lifetimeExemptionCap,
       ssWageGrowthRate,
       medicarePremiumInflationRate,
       medicarePremiumInflationEnabled,
@@ -200,6 +201,16 @@ export async function PUT(
       );
     }
 
+    if (lifetimeExemptionCap != null) {
+      const cap = Number(lifetimeExemptionCap);
+      if (!Number.isFinite(cap) || cap < 0) {
+        return NextResponse.json(
+          { error: "lifetimeExemptionCap must be a non-negative number" },
+          { status: 400 },
+        );
+      }
+    }
+
     if (typeof surplusSpendPct === "number" &&
         (surplusSpendPct < 0 || surplusSpendPct > 1)) {
       return NextResponse.json(
@@ -233,6 +244,9 @@ export async function PUT(
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body
           ? (taxInflationRate === null ? null : String(taxInflationRate))
+          : undefined,
+        lifetimeExemptionCap: "lifetimeExemptionCap" in body
+          ? (lifetimeExemptionCap === null ? null : String(lifetimeExemptionCap))
           : undefined,
         ssWageGrowthRate: "ssWageGrowthRate" in body
           ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))

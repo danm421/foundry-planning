@@ -61,4 +61,24 @@ describe("beaForYear", () => {
   it("BEA_2026 is $15,000,000", () => {
     expect(BEA_2026).toBe(15_000_000);
   });
+
+  it("ignores a null/undefined cap (uncapped — matches today)", () => {
+    expect(beaForYear(2030, 0.03, null)).toBe(beaForYear(2030, 0.03));
+    expect(beaForYear(2050, 0.03, undefined)).toBe(beaForYear(2050, 0.03));
+  });
+
+  it("grows toward a cap above $15M then freezes there", () => {
+    // 2026 base year clamps to the $15M floor regardless of a higher cap.
+    expect(beaForYear(2026, 0.03, 20_000_000)).toBe(15_000_000);
+    // Below the cap it still grows by inflation.
+    expect(beaForYear(2030, 0.03, 20_000_000)).toBeCloseTo(15_000_000 * Math.pow(1.03, 4), 2);
+    // Far out, the grown value exceeds $20M, so the cap freezes it.
+    expect(beaForYear(2050, 0.03, 20_000_000)).toBe(20_000_000);
+  });
+
+  it("freezes the exemption for the whole plan when the cap is below $15M", () => {
+    expect(beaForYear(2025, 0.03, 7_000_000)).toBe(7_000_000);
+    expect(beaForYear(2026, 0.03, 7_000_000)).toBe(7_000_000);
+    expect(beaForYear(2040, 0.03, 7_000_000)).toBe(7_000_000);
+  });
 });

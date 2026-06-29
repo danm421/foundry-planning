@@ -925,6 +925,7 @@ export const planSettings = pgTable("plan_settings", {
     .default("0"),
   taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("bracket"),
   taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
+  lifetimeExemptionCap: decimal("lifetime_exemption_cap", { precision: 15, scale: 2 }),
   ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),
   inflationRate: decimal("inflation_rate", { precision: 5, scale: 4 })
     .notNull()

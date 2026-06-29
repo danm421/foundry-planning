@@ -1162,6 +1162,11 @@ export interface PlanSettings {
   taxEngineMode?: "flat" | "bracket";
   /** Annual rate for inflating tax brackets/thresholds beyond the last seeded year. */
   taxInflationRate?: number | null;
+  /** Optional ceiling on the federal applicable exclusion (BEA). When set, the
+   *  inflation-grown BEA is capped at this dollar amount: a value above today's
+   *  $15M grows toward it then freezes; a value below $15M freezes the
+   *  exemption at that amount for the whole plan. Null/undefined = uncapped. */
+  lifetimeExemptionCap?: number | null;
   /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
   ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */

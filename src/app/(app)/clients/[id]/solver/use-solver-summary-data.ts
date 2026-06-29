@@ -3,6 +3,7 @@ import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { buildSolverSummaryContext } from "@/lib/solver/summary-context";
+import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 
 interface Args {
@@ -40,7 +41,11 @@ export function useSolverSummaryData(args: Args) {
           body: JSON.stringify({ source, mutations, includeEvents: true }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: { projectionResult?: ProjectionResult } = await res.json();
+        // parseProjectionResponse (not res.json()) revives the projection's Map
+        // fields, which JSON drops. See projection-wire.ts.
+        const data = parseProjectionResponse<{ projectionResult?: ProjectionResult }>(
+          await res.text(),
+        );
         setFullProjection(data.projectionResult);
       } catch {
         setFullProjection(undefined);

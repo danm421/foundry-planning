@@ -256,6 +256,28 @@ export function ownedByFamilyMemberAtYear(
     .reduce((s, o) => s + o.percent, 0);
 }
 
+/** Stable key for an owner's identity: (kind, owner-id). Percent is excluded so
+ *  re-saves that don't change ownership produce a byte-identical owners array. */
+function ownerSortKey(o: AccountOwner): string {
+  switch (o.kind) {
+    case "family_member":
+      return `family_member:${o.familyMemberId}`;
+    case "entity":
+      return `entity:${o.entityId}`;
+    case "external_beneficiary":
+      return `external_beneficiary:${o.externalBeneficiaryId}`;
+  }
+}
+
+/** Deterministic ordering for an owner list so the same owners always serialize
+ *  identically across separate DB loads (the `account_owners` query has no
+ *  ORDER BY, so physical row order can differ between two executions — for
+ *  joint accounts that flips the array and shows up as a phantom `owners` diff
+ *  in scenario changes). Pure; returns a new array. */
+export function sortOwners<T extends AccountOwner>(owners: readonly T[]): T[] {
+  return [...owners].sort((a, b) => ownerSortKey(a).localeCompare(ownerSortKey(b)));
+}
+
 export type LiabilityOwner = AccountOwner; // structurally identical
 export type LiabilityWithOwners = { id: string; owners: LiabilityOwner[] };
 

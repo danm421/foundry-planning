@@ -8,8 +8,35 @@ import {
   controllingFamilyMember,
   controllingEntity,
   rebalanceOwnersAfterEntityDisposition,
+  sortOwners,
   type AccountOwner,
 } from "../ownership";
+
+describe("sortOwners", () => {
+  it("orders owners by (kind, id) regardless of input order", () => {
+    const fmB: AccountOwner = { kind: "family_member", familyMemberId: "bbb", percent: 50 };
+    const fmA: AccountOwner = { kind: "family_member", familyMemberId: "aaa", percent: 50 };
+    expect(sortOwners([fmB, fmA])).toEqual([fmA, fmB]);
+    // Deterministic: any input permutation serializes identically.
+    expect(JSON.stringify(sortOwners([fmB, fmA]))).toBe(
+      JSON.stringify(sortOwners([fmA, fmB])),
+    );
+  });
+
+  it("does not mutate the input array", () => {
+    const fmB: AccountOwner = { kind: "family_member", familyMemberId: "bbb", percent: 50 };
+    const fmA: AccountOwner = { kind: "family_member", familyMemberId: "aaa", percent: 50 };
+    const input = [fmB, fmA];
+    sortOwners(input);
+    expect(input).toEqual([fmB, fmA]);
+  });
+
+  it("orders across kinds deterministically", () => {
+    const ent: AccountOwner = { kind: "entity", entityId: "x", percent: 50 };
+    const fm: AccountOwner = { kind: "family_member", familyMemberId: "x", percent: 50 };
+    expect(sortOwners([fm, ent])).toEqual(sortOwners([ent, fm]));
+  });
+});
 
 const fmClient = (pct: number): AccountOwner => ({
   kind: "family_member", familyMemberId: "fm-client", percent: pct,

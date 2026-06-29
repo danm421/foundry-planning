@@ -69,6 +69,7 @@ import type {
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
+import { sortOwners } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
@@ -432,6 +433,13 @@ export const loadClientDataWithContext = cache(
       arr.push(owner);
       ownersByLiabilityId.set(r.liabilityId, arr);
     }
+
+    // Owner arrays are built from a junction query with no ORDER BY, so their
+    // order is undefined and can differ between two loads. Sort each into a
+    // stable order so scenario-change diffs don't report a phantom `owners`
+    // change when the solver page-load and the save-time reload disagree.
+    for (const [id, arr] of ownersByAccountId) ownersByAccountId.set(id, sortOwners(arr));
+    for (const [id, arr] of ownersByLiabilityId) ownersByLiabilityId.set(id, sortOwners(arr));
 
     // ── CMA resolution ─────────────────────────────────────────────────────────
 
@@ -934,6 +942,7 @@ export const loadClientDataWithContext = cache(
       planEndYear: settings.planEndYear,
       taxEngineMode: settings.taxEngineMode,
       taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
+      lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? parseFloat(settings.lifetimeExemptionCap) : null,
       ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
       outOfHouseholdRate: settings.outOfHouseholdDniRate != null ? parseFloat(settings.outOfHouseholdDniRate) : undefined,
       priorTaxableGifts: {

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -18,6 +20,7 @@ interface Props {
 const DEFAULT_SS_HAIRCUT_PCT = 0.23;
 const DEFAULT_SS_HAIRCUT_YEAR = 2034;
 const DEFAULT_CRASH_PCT = 0.3;
+const DEFAULT_EXEMPTION_CAP = 7_000_000;
 
 export function SolverStressTestTab({
   baseClientData,
@@ -38,6 +41,9 @@ export function SolverStressTestTab({
   const ssOn = ps.ssBenefitHaircut != null;
   const disabilityOn = ps.disabilityEvent != null;
   const crashOn = ps.marketShock != null;
+  const capOn =
+    (ps.lifetimeExemptionCap ?? null) !==
+    (baseClientData.planSettings.lifetimeExemptionCap ?? null);
 
   return (
     <SolverSection
@@ -186,6 +192,24 @@ export function SolverStressTestTab({
           />
         </div>
       </StressRow>
+
+      {/* Lifetime exemption cap */}
+      <StressRow
+        label="Cap exemption growth"
+        hint="Caps how high the federal estate/gift exemption grows. Above today's ~$15M it grows toward the cap then freezes; below $15M it freezes the exemption there for the whole plan. A lower cap raises estate tax."
+        on={capOn}
+        onToggle={(checked) =>
+          checked
+            ? onChange({ kind: "stress-exemption-cap", cap: DEFAULT_EXEMPTION_CAP })
+            : onResetField(["stress-exemption-cap"])
+        }
+      >
+        <DollarField
+          label="Exemption cap"
+          value={ps.lifetimeExemptionCap ?? DEFAULT_EXEMPTION_CAP}
+          onCommit={(cap) => onChange({ kind: "stress-exemption-cap", cap })}
+        />
+      </StressRow>
     </SolverSection>
   );
 }
@@ -251,6 +275,48 @@ function PercentField({
       </div>
     </label>
   );
+}
+
+function DollarField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (dollars: number) => void;
+}) {
+  const [text, setText] = useState(() => formatDollars(value));
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] text-ink-3">{label}</span>
+      <div className="flex items-center gap-1">
+        <span className="text-[12px] text-ink-3">$</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={text}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "");
+            setText(digits === "" ? "" : formatDollars(Number(digits)));
+          }}
+          onBlur={() => {
+            const next = Number(text.replace(/\D/g, ""));
+            const dollars = Number.isFinite(next) ? Math.max(0, next) : 0;
+            setText(formatDollars(dollars));
+            onCommit(dollars);
+          }}
+          className="w-32 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums"
+        />
+      </div>
+    </label>
+  );
+}
+
+/** Whole-dollar value with thousand separators (no cents, no symbol). */
+function formatDollars(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
 }
 
 function YearField({
