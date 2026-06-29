@@ -108,6 +108,10 @@ interface Props {
   mcSuccessRate: number | null;
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
+  /** Selected year for the cash-flow detail panel; highlights that bar. */
+  selectedYear: number | null;
+  /** Fired when a cash-flow chart bar is clicked. */
+  onYearClick: (year: number) => void;
 }
 
 export function SolverChartPanel({
@@ -127,6 +131,8 @@ export function SolverChartPanel({
   mcSuccessRate,
   activeSummary,
   onSummaryChange,
+  selectedYear,
+  onYearClick,
 }: Props) {
   const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
@@ -281,7 +287,11 @@ export function SolverChartPanel({
           />
         ) : null}
         {tab === "cashflow" ? (
-          <SolverCashFlowChart years={currentProjection} />
+          <SolverCashFlowChart
+            years={currentProjection}
+            selectedYear={selectedYear}
+            onYearClick={onYearClick}
+          />
         ) : null}
         {tab === "taxBracket" ? (
           <TaxBracketChart years={currentProjection} fillHeight />
