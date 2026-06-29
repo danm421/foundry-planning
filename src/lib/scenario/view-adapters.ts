@@ -335,6 +335,7 @@ export interface PlanSettingsViewEngineFields {
   planEndYear: number;
   taxEngineMode: EnginePlanSettings["taxEngineMode"];
   taxInflationRate: string | null;
+  lifetimeExemptionCap: string | null;
   ssWageGrowthRate: string | null;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
@@ -353,6 +354,7 @@ export function planSettingsEngineToView(s: EnginePlanSettings): PlanSettingsVie
     planEndYear: s.planEndYear,
     taxEngineMode: s.taxEngineMode,
     taxInflationRate: s.taxInflationRate != null ? String(s.taxInflationRate) : null,
+    lifetimeExemptionCap: s.lifetimeExemptionCap != null ? String(s.lifetimeExemptionCap) : null,
     ssWageGrowthRate: s.ssWageGrowthRate != null ? String(s.ssWageGrowthRate) : null,
     estateAdminExpenses: String(s.estateAdminExpenses ?? 0),
     flatStateEstateRate: String(s.flatStateEstateRate ?? 0),

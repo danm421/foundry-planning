@@ -1338,6 +1338,13 @@
       "when": 1782757747337,
       "tag": "0190_medicare_estimate_magi_toggle",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1782761158939,
+      "tag": "0191_lifetime_exemption_cap",
+      "breakpoints": true
     }
   ]
 }
