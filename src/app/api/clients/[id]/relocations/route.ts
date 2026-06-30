@@ -157,6 +157,11 @@ export async function PUT(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
+    const scenarioId = await getBaseCaseScenarioId(id);
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
     const body = await request.json();
     const { relocationId, ...fields } = body;
 
@@ -173,7 +178,7 @@ export async function PUT(
     const [before] = await db
       .select()
       .from(relocations)
-      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id)));
+      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id), eq(relocations.scenarioId, scenarioId)));
 
     if (!before) {
       return NextResponse.json({ error: "Relocation not found" }, { status: 404 });
@@ -182,7 +187,7 @@ export async function PUT(
     const [updated] = await db
       .update(relocations)
       .set({ name, year, destinationState, updatedAt: new Date() })
-      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id)))
+      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id), eq(relocations.scenarioId, scenarioId)))
       .returning();
 
     if (!updated) {
@@ -223,6 +228,11 @@ export async function DELETE(
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
+    const scenarioId = await getBaseCaseScenarioId(id);
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
     const { searchParams } = new URL(request.url);
     const relocationId = searchParams.get("relocationId");
 
@@ -233,7 +243,7 @@ export async function DELETE(
     const [existing] = await db
       .select()
       .from(relocations)
-      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id)));
+      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id), eq(relocations.scenarioId, scenarioId)));
 
     if (!existing) {
       return NextResponse.json({ error: "Relocation not found" }, { status: 404 });
@@ -243,7 +253,7 @@ export async function DELETE(
 
     await db
       .delete(relocations)
-      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id)));
+      .where(and(eq(relocations.id, relocationId), eq(relocations.clientId, id), eq(relocations.scenarioId, scenarioId)));
 
     await recordDelete({
       action: "relocation.delete",

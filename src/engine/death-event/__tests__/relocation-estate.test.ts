@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyFinalDeath } from "../final-death";
+import { applyFirstDeath } from "../first-death";
 import type { DeathEventInput } from "../shared";
 import type {
   Account,
@@ -174,5 +175,39 @@ describe("relocation → death-year residence state drives estate tax", () => {
 
     expect(result.estateTax.residenceState).toBe("CA");
     expect(result.estateTax.stateEstateTax).toBeCloseTo(0, 0);
+  });
+});
+
+describe("relocation → first-death residence state drives estate tax", () => {
+  // At first death the marital deduction would normally zero out estate tax.
+  // To isolate state estate tax we use a single-filer-like setup: the sole
+  // family member is the client (deceased) with kidA as child (no spouse FM),
+  // survivor is declared "spouse" but has no FM row → survivorFmId null →
+  // fallback Tier 2 routes the brokerage to the child (no marital deduction).
+  // Same $5M estate / WA $3M exclusion logic as the final-death tests.
+  const firstDeathYear = 2040;
+
+  it("taxes the estate under WA when a pre-death relocation (CA→WA) precedes first death", () => {
+    const move: Relocation = {
+      id: "reloc-first",
+      name: "Move to Washington",
+      year: 2030, // 2030 ≤ 2040 → WA applies at first death
+      destinationState: "WA",
+    };
+    const input = mkInput({
+      year: firstDeathYear,
+      deceased: "client",
+      survivor: "spouse",
+      accounts: [brokerage()],
+      familyMembers: [kidA], // no spouse FM → fallback goes to child, no marital deduction
+      planSettings: planSettings({ residenceState: "CA" }),
+      relocations: [move],
+    });
+
+    const result = applyFirstDeath(input);
+
+    // Estate re-stated under WA: graduated tax on the $2M over the $3M exclusion.
+    expect(result.estateTax.residenceState).toBe("WA");
+    expect(result.estateTax.stateEstateTax).toBeGreaterThan(0);
   });
 });
