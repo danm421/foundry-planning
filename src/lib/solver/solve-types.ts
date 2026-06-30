@@ -41,16 +41,19 @@ export interface PoSSolveResult {
   objective: "pos";
   status: "converged" | "unreachable" | "max-iterations";
   solvedValue: number;
-  /** PoS at the solved value, from the 250-trial search. */
+  /** PoS at the solved value. The living-expense (max-spend) lever reports this at
+   *  the 500-trial refine; every other lever reports it at the 250-trial search. */
   achievedPoS: number;
-  /** Kept for API continuity. The solve now runs entirely at 250 trials, so this
-   *  equals achievedPoS (no separate 1,000-trial confirmation pass). */
+  /** Kept for API continuity; always equals achievedPoS. There is no separate
+   *  1,000-trial confirmation pass — the max-spend lever finalizes at 500 trials,
+   *  every other lever at 250. */
   canonicalPoS: number;
+  /** Total candidate evaluations across the solve (search + any refine walk) — a
+   *  diagnostic count, not the bisection's internal iteration count. */
   iterations: number;
   finalProjection: ProjectionYear[];
-  /** MC seed used for the 250-trial search. Returned so the client can persist it
-   *  when saving the scenario, which lets the saved scenario's report reproduce
-   *  the same PoS. */
+  /** MC seed used for the solve. Returned so the client can persist it when saving
+   *  the scenario, which lets the saved scenario's report reproduce the same PoS. */
   seed: number;
 }
 
