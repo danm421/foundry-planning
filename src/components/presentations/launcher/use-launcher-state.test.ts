@@ -96,6 +96,26 @@ describe("launcherReducer", () => {
     expect(next.pages).toHaveLength(1);
   });
 
+  it("hydrate replaces the whole state with the restored draft", () => {
+    const draft: LauncherState = {
+      topScenarioPickerValue: "snap:abc",
+      filename: "Draft_Deck.pdf",
+      pages: [
+        {
+          pageId: "cashFlow",
+          options: { range: "full", showCallout: true },
+          scenarioOverride: "scenario-X",
+        },
+      ],
+      loadedTemplate: null,
+      isModified: true,
+    };
+    const next = launcherReducer(base, { type: "hydrate", state: draft });
+    expect(next).toEqual(draft);
+    expect(next.pages[0].scenarioOverride).toBe("scenario-X");
+    expect(next.isModified).toBe(true);
+  });
+
   it("isModified is false right after loadTemplate and true after editing", () => {
     const customRange = { startYear: 2031, endYear: 2036 };
     const tpl = {

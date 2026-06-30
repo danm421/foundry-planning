@@ -7,6 +7,10 @@ const originalFetch = global.fetch;
 const originalCreateObjectURL = global.URL.createObjectURL;
 const originalRevokeObjectURL = global.URL.revokeObjectURL;
 beforeEach(() => {
+  // The launcher now auto-persists the in-progress deck to localStorage
+  // (useLauncherDraft). Clear it between tests so a deck mutated by one test
+  // (e.g. "remove all pages") isn't restored into the next one.
+  localStorage.clear();
   // jsdom implements neither — the per-page Download path calls both.
   global.URL.createObjectURL = vi.fn(() => "blob:mock");
   global.URL.revokeObjectURL = vi.fn();

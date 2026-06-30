@@ -35,6 +35,7 @@ import {
   type LauncherState,
   type LoadedTemplate,
 } from "@/components/presentations/launcher/use-launcher-state";
+import { useLauncherDraft } from "@/components/presentations/launcher/use-launcher-draft";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { RecentRunsPanel } from "@/components/presentations/recent-runs-panel";
 import { useClientAccess } from "@/components/client-access-provider";
@@ -136,6 +137,9 @@ export function PresentationsLauncher(props: Props) {
   const [state, dispatch] = useLauncherState(
     makeInitialState(props.initialTemplates),
   );
+  // Restore/persist the in-progress deck per client+advisor so leaving and
+  // returning to this tab brings it back exactly as they left it.
+  useLauncherDraft(props.clientId, props.currentUserId, state, dispatch);
 
   const [templates, setTemplates] = useState(props.initialTemplates);
   const [showSaveModal, setShowSaveModal] = useState(false);

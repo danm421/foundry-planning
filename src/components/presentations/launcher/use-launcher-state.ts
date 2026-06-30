@@ -41,6 +41,7 @@ export type LauncherAction =
     }
   | { type: "loadTemplate"; template: LoadedTemplate }
   | { type: "savedAs"; template: LoadedTemplate }
+  | { type: "hydrate"; state: LauncherState }
   | { type: "clear" };
 
 export function initialLauncherState(): LauncherState {
@@ -133,6 +134,10 @@ export function launcherReducer(
     case "savedAs": {
       return { ...state, loadedTemplate: action.template, isModified: false };
     }
+    case "hydrate":
+      // Wholesale replace with a restored draft (see useLauncherDraft). The
+      // draft already carries the correct isModified flag, so don't recompute.
+      return action.state;
     case "clear":
       return initialLauncherState();
   }
