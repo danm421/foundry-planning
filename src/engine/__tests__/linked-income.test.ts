@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandLinkedIncome, survivingSaleFraction, type LinkedIncomeContext } from "../linked-income";
+import { expandLinkedIncome, expandLinkedIncomes, survivingSaleFraction, type LinkedIncomeContext } from "../linked-income";
 import type { Account, AssetTransaction, GiftEvent, Income } from "../types";
 
 const CLIENT = "fm-client";
@@ -123,5 +123,54 @@ describe("expandLinkedIncome", () => {
   it("dangling link (property missing) → passes through unchanged", () => {
     const out = expandLinkedIncome(baseIncome, { ...ctx({ property: prop([]) }), accountById: new Map() });
     expect(out).toEqual([baseIncome]);
+  });
+
+  it("scheduleOverrides are scaled per era and clipped to the era window", () => {
+    // 100% CLIENT-owned, partial 50% sale at 2030 → era1 factor 1.0, era2 factor 0.5.
+    const property = prop([{ kind: "family_member", familyMemberId: CLIENT, percent: 1 }]);
+    const assetTransactions: AssetTransaction[] = [{ id: "s", name: "sell", type: "sell", year: 2030, accountId: "re-1", fractionSold: 0.5 }];
+    // One override in era1 (2028) and one in era2 (2031); both inside the 2026-2035 window.
+    const income: Income = { ...baseIncome, scheduleOverrides: { 2028: 60000, 2031: 60000 } };
+    const out = expandLinkedIncome(income, ctx({ property, assetTransactions }));
+
+    const e1 = out.find((s) => s.startYear === 2026)!;
+    expect(e1.endYear).toBe(2029);
+    // era1 factor = surviving(1.0) × householdShare(1.0) = 1.0; 2028 unscaled, 2031 clipped out.
+    expect(e1.scheduleOverrides).toEqual({ 2028: 60000 });
+
+    const e2 = out.find((s) => s.startYear === 2030)!;
+    expect(e2.endYear).toBe(2035);
+    // era2 factor = surviving(0.5) × householdShare(1.0) = 0.5; 2031 scaled to 30000, 2028 clipped out.
+    expect(e2.scheduleOverrides).toEqual({ 2031: 30000 });
+  });
+});
+
+describe("expandLinkedIncomes", () => {
+  it("expands linked 'other' income and passes other incomes through unchanged", () => {
+    const property = prop([{ kind: "family_member", familyMemberId: CLIENT, percent: 1 }]);
+    const salary: Income = {
+      id: "inc-salary",
+      type: "salary",
+      name: "Salary",
+      annualAmount: 120000,
+      startYear: 2026,
+      endYear: 2040,
+      growthRate: 0,
+      owner: "client",
+    };
+    // A non-"other" income with a stray linkedPropertyId must NOT be expanded.
+    const strayLinked: Income = { ...salary, id: "inc-stray", linkedPropertyId: "re-1" };
+    const out = expandLinkedIncomes([baseIncome, salary, strayLinked], ctx({ property }));
+
+    // baseIncome (linked other) → one client slice; salary + strayLinked pass through unchanged.
+    const expanded = out.filter((i) => i.id.startsWith("inc-1::"));
+    expect(expanded).toHaveLength(1);
+    expect(expanded[0].owner).toBe("client");
+    expect(expanded[0].annualAmount).toBe(60000);
+
+    const passthroughSalary = out.find((i) => i.id === "inc-salary")!;
+    expect(passthroughSalary).toBe(salary); // same object reference, untouched
+    const passthroughStray = out.find((i) => i.id === "inc-stray")!;
+    expect(passthroughStray).toBe(strayLinked); // same object reference, untouched
   });
 });
