@@ -516,6 +516,30 @@ describe("sourceGiftId stamping + footprint helper", () => {
   });
 });
 
+describe("enabled flag (non-destructive off)", () => {
+  const base = {
+    planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025, taxInflationRate: 0.025 },
+    taxYearRows: [], liabilities: [], accounts: [{ id: "acct-1", name: "B", category: "taxable", value: 100000 }],
+    gifts: [], giftEvents: [],
+  } as unknown as ClientData;
+
+  it("enabled:false ≡ gift absent (cash)", () => {
+    const off = applyGiftsToClientData(base, [
+      { kind: "cash-once", id: "g1", year: 2030, amount: 1000, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false, enabled: false },
+    ], 0.025);
+    expect(off.giftEvents).toHaveLength(0);
+    expect(off.gifts).toHaveLength(0);
+  });
+
+  it("enabled:false drops a bundled liability of an asset gift", () => {
+    const withLien = { ...base, liabilities: [{ id: "lien-1", linkedPropertyId: "acct-1", balance: 50000 }] } as unknown as ClientData;
+    const off = applyGiftsToClientData(withLien, [
+      { kind: "asset-once", id: "g2", year: 2031, accountId: "acct-1", percent: 1, grantor: "client", recipient: { kind: "entity", id: "t1" }, eventKind: "outright", enabled: false },
+    ], 0.025);
+    expect(off.giftEvents.some((e) => e.kind === "liability")).toBe(false);
+  });
+});
+
 describe("addGift / updateGift / removeGift", () => {
   it("addGift appends and returns a new array", () => {
     const next = addGift([], cashGift);

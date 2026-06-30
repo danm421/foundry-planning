@@ -31,6 +31,9 @@ export type EstateFlowGift =
       crummey: boolean;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** When false, the gift is retained but excluded from the projection
+       *  (non-destructive 'off' toggle). undefined/true = active. */
+      enabled?: boolean;
     }
   | {
       kind: "asset-once";
@@ -44,6 +47,9 @@ export type EstateFlowGift =
       amountOverride?: number;
       /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
       eventKind?: GiftEventKind;
+      /** When false, the gift is retained but excluded from the projection
+       *  (non-destructive 'off' toggle). undefined/true = active. */
+      enabled?: boolean;
     }
   | {
       kind: "series";
@@ -56,6 +62,9 @@ export type EstateFlowGift =
       grantor: "client" | "spouse" | "joint";
       recipient: GiftRecipientRef; // recipient.kind may be entity, family_member, or external_beneficiary
       crummey: boolean;
+      /** When false, the gift is retained but excluded from the projection
+       *  (non-destructive 'off' toggle). undefined/true = active. */
+      enabled?: boolean;
     };
 
 // ── DB-row mappers ───────────────────────────────────────────────────────────
@@ -215,6 +224,7 @@ export function applyGiftsToClientData(
     : {};
 
   for (const g of gifts) {
+    if (g.enabled === false) continue;
     if (g.kind === "cash-once") {
       // The loader's mappedGifts omits eventKind from Gift[] entries
       // (the field is optional on Gift and the loader never sets it there).
