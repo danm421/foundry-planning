@@ -81,6 +81,7 @@ export default function AddRelocationForm({
     // ── Draft mode ────────────────────────────────────────────────────────
     if (onSubmitDraft) {
       onSubmitDraft(technique);
+      onSaved();
       return;
     }
 
