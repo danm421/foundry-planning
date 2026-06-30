@@ -67,9 +67,9 @@ function toolStatusLabel(status: string): string {
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
 interface ForgePanelProps {
-  clientId: string;
-  /** Household display name (e.g. "Jane & John Smith") for the context line. */
-  clientName: string;
+  clientId: string | null;
+  /** Household display name (e.g. "Jane & John Smith") for the context line. Optional in global mode. */
+  clientName?: string;
   /** Scenario id → display name, for the scenario context line. */
   scenarioNames: Record<string, string>;
   /** Test-only: render the panel open without the provider toggle. */
@@ -160,7 +160,7 @@ export function ForgePanel({
 
   // Shared helper so all three refresh sites stay DRY.
   function refetchThreads() {
-    listMyConversations(clientId)
+    listMyConversations(clientId ?? undefined)
       .then((t) => setThreads(t as Thread[]))
       .catch(() => {});
   }
@@ -169,7 +169,7 @@ export function ForgePanel({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listMyConversations(clientId)
+    listMyConversations(clientId ?? undefined)
       .then((t) => !cancelled && setThreads(t as Thread[]))
       .catch(() => {});
     return () => {
@@ -278,7 +278,8 @@ export function ForgePanel({
     // A new turn supersedes the prior approval receipt.
     setResolvedApproval(null);
     // Send-with-files: run the import pipeline, then immediately engage the agent.
-    if (attached.length > 0) {
+    // Import is a client-only affordance; the attach button is hidden in global mode.
+    if (attached.length > 0 && clientId != null) {
       const files = attached;
       const prompt = input.trim(); // may be empty — the attachment is the turn
       setAttached([]);
@@ -379,12 +380,21 @@ export function ForgePanel({
         </div>
 
         {/* Context line — who/what/where Forge is scoped to. Humanized: client
-            name, scenario, and a friendly page label (no raw IDs or route keys). */}
+            name, scenario, and a friendly page label (no raw IDs or route keys).
+            In global mode (clientId == null) the client/scenario chips are hidden. */}
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 border-b border-hair px-4 py-2 text-[11px] text-ink-3">
-          <span data-testid="chip-client" className="text-ink-2">{clientName}</span>
-          <span aria-hidden className="text-ink-4">·</span>
-          <span data-testid="chip-scenario" className="text-ink-2">{scenarioLabel}</span>
-          <span aria-hidden className="text-ink-4">·</span>
+          {clientId != null && clientName && (
+            <>
+              <span data-testid="chip-client" className="text-ink-2">{clientName}</span>
+              <span aria-hidden className="text-ink-4">·</span>
+            </>
+          )}
+          {clientId != null && (
+            <>
+              <span data-testid="chip-scenario" className="text-ink-2">{scenarioLabel}</span>
+              <span aria-hidden className="text-ink-4">·</span>
+            </>
+          )}
           <span data-testid="chip-page" className="text-ink-2">{pageLabel}</span>
         </div>
 
@@ -532,7 +542,7 @@ export function ForgePanel({
             </div>
           )}
 
-          {importResult && (
+          {importResult && clientId != null && (
             <ImportReviewLink
               clientId={clientId}
               importId={importResult.importId}
@@ -742,57 +752,62 @@ export function ForgePanel({
             }}
           />
           <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={locked}
-              aria-label="Attach a document"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
-            >
-              {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
-                  (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
-              <svg
-                aria-hidden
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {/* Attach button — client-only (imports require a client context). */}
+            {clientId != null && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={locked}
+                aria-label="Attach a document"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
               >
-                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            </button>
-            {/* Explicit transcript affordance — opens an inline paste box. */}
-            <button
-              type="button"
-              onClick={() => setShowTranscriptPaste((v) => !v)}
-              disabled={locked}
-              aria-label="Paste a meeting transcript"
-              aria-pressed={showTranscriptPaste}
-              className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
-            >
-              {/* Inline doc-text icon */}
-              <svg
-                aria-hidden
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
+                    (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
+                <svg
+                  aria-hidden
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+            )}
+            {/* Explicit transcript affordance — client-only (transcript tools need a client context). */}
+            {clientId != null && (
+              <button
+                type="button"
+                onClick={() => setShowTranscriptPaste((v) => !v)}
+                disabled={locked}
+                aria-label="Paste a meeting transcript"
+                aria-pressed={showTranscriptPaste}
+                className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
               >
-                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-                <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
-              </svg>
-              Transcript
-            </button>
+                {/* Inline doc-text icon */}
+                <svg
+                  aria-hidden
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                  <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
+                </svg>
+                Transcript
+              </button>
+            )}
             <textarea
               ref={composerRef}
               aria-label="Ask Forge"

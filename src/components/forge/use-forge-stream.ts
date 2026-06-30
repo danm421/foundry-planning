@@ -163,7 +163,13 @@ export interface UseForgeStreamResult {
   resumeMeetingReview: (payload: MeetingReviewResume) => Promise<void>;
 }
 
-export function useForgeStream(clientId: string): UseForgeStreamResult {
+/** Resolve the Forge API base for the current scope. Global (no client) posts
+ *  to /api/forge/*; a client posts to /api/clients/<id>/forge/*. */
+export function forgeApiBase(clientId: string | null): string {
+  return clientId ? `/api/clients/${clientId}/forge` : "/api/forge";
+}
+
+export function useForgeStream(clientId: string | null): UseForgeStreamResult {
   const [messages, setMessages] = useState<ForgeMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState<string | null>(null);
@@ -358,16 +364,15 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
 
       let res: Response;
       try {
-        res = await fetch(`/api/clients/${clientId}/forge/stream`, {
+        res = await fetch(`${forgeApiBase(clientId)}/stream`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             message: args.message,
-            scenarioId: args.scenarioId,
+            ...(clientId ? { scenarioId: args.scenarioId } : {}),
             conversationId: args.conversationId ?? conversationId,
             currentPage: args.currentPage,
-            pendingImportId: args.pendingImportId,
-            pendingTranscriptId: args.pendingTranscriptId,
+            ...(clientId ? { pendingImportId: args.pendingImportId, pendingTranscriptId: args.pendingTranscriptId } : {}),
           }),
           signal: ac.signal,
         });
@@ -431,7 +436,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const res = await fetch(`/api/clients/${clientId}/forge/resume`, {
+        const res = await fetch(`${forgeApiBase(clientId)}/resume`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ conversationId, decisions }),
@@ -467,7 +472,7 @@ export function useForgeStream(clientId: string): UseForgeStreamResult {
       const ac = new AbortController();
       abortRef.current = ac;
       try {
-        const res = await fetch(`/api/clients/${clientId}/forge/resume`, {
+        const res = await fetch(`${forgeApiBase(clientId)}/resume`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ conversationId, meetingReview: payload }),
