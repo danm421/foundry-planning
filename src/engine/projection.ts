@@ -21,6 +21,7 @@ import type {
   RothConversion,
 } from "./types";
 import { computeMedicareYear } from "./medicare";
+import { resolveResidenceState } from "./relocation";
 import {
   computeBusinessAccountCashFlow,
   computeEntityCashFlow,
@@ -793,6 +794,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     year <= planSettings.planEndYear;
     year++
   ) {
+    // Residence state can change mid-plan via relocation techniques. Override
+    // only residenceState; a no-op (same reference) when there are no moves, so
+    // existing plans are byte-for-byte unchanged.
+    const planSettingsForYear: PlanSettings = data.relocations?.length
+      ? {
+          ...planSettings,
+          residenceState: resolveResidenceState(
+            planSettings.residenceState ?? null,
+            data.relocations,
+            year,
+          ),
+        }
+      : planSettings;
+
     // Fresh-basis pool resets every year: prior-year reinvested income
     // ages into the legacy pool. Spec 2026-05-11.
     for (const key of Object.keys(freshBasisMap)) delete freshBasisMap[key];
@@ -3169,7 +3184,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxableIncome: taxableIncome + r + suppOrdinary + suppCapGains,
           filingStatus,
           year,
-          planSettings,
+          planSettings: planSettingsForYear,
           resolved,
           useBracket,
           aboveLineDeductions,
@@ -3335,7 +3350,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxableIncome,
       filingStatus,
       year,
-      planSettings,
+      planSettings: planSettingsForYear,
       resolved: resolved ?? null,
       useBracket,
       aboveLineDeductions,
@@ -4271,7 +4286,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxableIncome: taxableIncome + seededTotal,
           filingStatus,
           year,
-          planSettings,
+          planSettings: planSettingsForYear,
           resolved: resolved ?? null,
           useBracket,
           aboveLineDeductions,
@@ -4415,7 +4430,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             + supplementalPlan.recognizedIncome.capitalGains,
           filingStatus,
           year,
-          planSettings,
+          planSettings: planSettingsForYear,
           resolved: resolved ?? null,
           useBracket,
           aboveLineDeductions,
