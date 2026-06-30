@@ -118,7 +118,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
               <SplitBarPdf segments={[
                 { label: "Cash", value: data.byType.cash, color: T.steel },
                 { label: "Taxable", value: data.byType.taxable, color: T.accent },
-                { label: "Retirement", value: data.byType.retirement, color: T.good },
+                { label: "Retirement", value: data.byType.retirement, color: dataLight.orange },
               ]} />
             </View>
             <View style={{ flex: 1 }}>

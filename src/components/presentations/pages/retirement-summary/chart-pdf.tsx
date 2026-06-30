@@ -1,12 +1,13 @@
 import { View, Svg, G, Rect, Text as SvgText, Text } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
+import { dataLight } from "@/brand";
 import { fmtUsd } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
 
 const PORTFOLIO_SEGMENTS: Array<{ key: keyof PortfolioBar; label: string; color: string }> = [
   { key: "cash", label: "Cash", color: T.steel },
   { key: "taxable", label: "Taxable", color: T.accent },
-  { key: "retirement", label: "Retirement", color: T.good },
+  { key: "retirement", label: "Retirement", color: dataLight.orange },
 ];
 
 /** Stacked portfolio bars over time. Width matches the panel's available

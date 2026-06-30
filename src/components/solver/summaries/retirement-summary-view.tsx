@@ -47,11 +47,11 @@ ChartJS.register(
 const PORTFOLIO_SERIES: {
   label: string;
   key: keyof Pick<PortfolioBar, "cash" | "taxable" | "retirement">;
-  colorKey: "grey" | "blue" | "green";
+  colorKey: "grey" | "blue" | "orange";
 }[] = [
   { label: "Cash", key: "cash", colorKey: "grey" },
   { label: "Taxable", key: "taxable", colorKey: "blue" },
-  { label: "Retirement", key: "retirement", colorKey: "green" },
+  { label: "Retirement", key: "retirement", colorKey: "orange" },
 ];
 
 function PortfolioTrajectoryChart({ bars }: { bars: PortfolioBar[] }) {
@@ -164,12 +164,26 @@ function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
   const theme = useThemeName();
 
   const chartData = useMemo(() => {
+    // The spec carries PDF (light-theme) colors for the print renderer. On the
+    // dark app surface we re-theme to the in-app cash-flow palette so this panel
+    // matches the standalone Cash Flow chart (cashflow-report.tsx): grey Other
+    // Inflows, gold Withdrawals, and an ink Total-Expenses line that reads on
+    // dark — the spec's light-ink line would be near-invisible here.
+    const palette = dataPalette(theme);
+    const chrome = chartChrome(theme);
+    const stackColorByLabel: Record<string, string> = {
+      "Social Security": palette.blue,
+      Salaries: palette.green,
+      "Other Inflows": palette.grey,
+      RMDs: palette.orange,
+      Withdrawals: palette.yellow,
+    };
     const datasets = [
       ...spec.stacks.map((s) => ({
         type: "bar" as const,
         label: s.label,
         data: s.values,
-        backgroundColor: s.color,
+        backgroundColor: stackColorByLabel[s.label] ?? s.color,
         stack: "cf",
         order: 1,
       })),
@@ -177,7 +191,7 @@ function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
         type: "line" as const,
         label: l.label,
         data: l.values,
-        borderColor: l.color,
+        borderColor: chrome.title,
         backgroundColor: "transparent",
         borderWidth: l.strokeWidth,
         pointRadius: 0,
@@ -190,7 +204,7 @@ function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
       labels: spec.xAxis.domain.map((v) => spec.xAxis.labelFormat(v)),
       datasets,
     };
-  }, [spec]);
+  }, [spec, theme]);
 
   const options = useMemo(
     () => {
@@ -223,7 +237,7 @@ function ChartSpecRenderer({ spec }: { spec: ChartSpec }) {
               color: chrome.tick,
               callback: (v: unknown) => spec.yAxis.labelFormat(Number(v)),
             },
-            grid: { color: spec.yAxis.gridlineColor },
+            grid: { color: chrome.grid },
           },
         },
       };
@@ -286,7 +300,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
   const byTypeSegments: SplitSegment[] = [
     { label: "Cash", value: byType.cash, color: palette.grey },
     { label: "Taxable", value: byType.taxable, color: palette.blue },
-    { label: "Retirement", value: byType.retirement, color: palette.green },
+    { label: "Retirement", value: byType.retirement, color: palette.orange },
   ];
 
   const byTaxTypeSegments: SplitSegment[] = [
