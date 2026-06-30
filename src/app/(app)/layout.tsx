@@ -13,6 +13,8 @@ import Topbar from "@/components/topbar";
 import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
 import { getOpsAdmin } from "@/lib/ops/ops-auth";
+import { GlobalForgeMount } from "@/components/forge/global-forge-mount";
+import { isForgeEnabled } from "@/domain/forge/flag";
 
 export default async function AppLayout({
   children,
@@ -57,6 +59,7 @@ export default async function AppLayout({
             </div>
             <main className="flex min-h-0 flex-1 flex-col bg-paper">{children}</main>
             <Footer />
+            <GlobalForgeMount enabled={isForgeEnabled()} />
           </div>
         </BackNavProvider>
       </AppShell>
