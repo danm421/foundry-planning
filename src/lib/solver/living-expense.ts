@@ -39,9 +39,9 @@ export function isRetirementLivingExpense(
   return startsAtRetirement && e.endYear >= planStartYear;
 }
 
-/** Round a dollar amount to the nearest $2,000. */
-export function roundToNearest2k(amount: number): number {
-  return Math.round(amount / 2000) * 2000;
+/** Round a dollar amount to the nearest $5,000. */
+export function roundToNearest5k(amount: number): number {
+  return Math.round(amount / 5000) * 5000;
 }
 
 /**

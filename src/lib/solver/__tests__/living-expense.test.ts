@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { ClientData, Expense } from "@/engine/types";
 import {
   isRetirementLivingExpense,
-  roundToNearest2k,
+  roundToNearest5k,
   retirementLivingExpenseTotal,
   synthesizeRetirementLivingExpense,
 } from "../living-expense";
@@ -67,12 +67,12 @@ describe("isRetirementLivingExpense", () => {
   });
 });
 
-describe("roundToNearest2k", () => {
-  it("rounds to the nearest $2,000", () => {
-    expect(roundToNearest2k(118_900)).toBe(118_000);
-    expect(roundToNearest2k(119_001)).toBe(120_000);
-    expect(roundToNearest2k(113_700)).toBe(114_000);
-    expect(roundToNearest2k(0)).toBe(0);
+describe("roundToNearest5k", () => {
+  it("rounds to the nearest $5,000", () => {
+    expect(roundToNearest5k(117_400)).toBe(115_000);
+    expect(roundToNearest5k(117_600)).toBe(120_000);
+    expect(roundToNearest5k(113_700)).toBe(115_000);
+    expect(roundToNearest5k(0)).toBe(0);
   });
 });
 

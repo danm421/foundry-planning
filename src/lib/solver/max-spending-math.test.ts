@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { roundToNearest2k, retirementLivingExpenseTotal } from "./max-spending-math";
+import { roundToNearest5k, retirementLivingExpenseTotal } from "./max-spending-math";
 import type { ClientData, Expense } from "@/engine/types";
 
 function expense(over: Partial<Expense>): Expense {
@@ -9,11 +9,11 @@ function expense(over: Partial<Expense>): Expense {
   } as Expense;
 }
 
-describe("roundToNearest2k", () => {
-  it("rounds to the nearest $2,000", () => {
-    expect(roundToNearest2k(118_900)).toBe(118_000);
-    expect(roundToNearest2k(119_001)).toBe(120_000);
-    expect(roundToNearest2k(0)).toBe(0);
+describe("roundToNearest5k", () => {
+  it("rounds to the nearest $5,000", () => {
+    expect(roundToNearest5k(117_400)).toBe(115_000);
+    expect(roundToNearest5k(117_600)).toBe(120_000);
+    expect(roundToNearest5k(0)).toBe(0);
   });
 });
 

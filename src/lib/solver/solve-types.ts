@@ -41,15 +41,16 @@ export interface PoSSolveResult {
   objective: "pos";
   status: "converged" | "unreachable" | "max-iterations";
   solvedValue: number;
-  /** From the 250-trial search (kept for continuity / debug). */
+  /** PoS at the solved value, from the 250-trial search. */
   achievedPoS: number;
-  /** 1,000-trial run on the converged tree — matches the MC report/PDF. */
+  /** Kept for API continuity. The solve now runs entirely at 250 trials, so this
+   *  equals achievedPoS (no separate 1,000-trial confirmation pass). */
   canonicalPoS: number;
   iterations: number;
   finalProjection: ProjectionYear[];
-  /** MC seed used for both the 250-trial search and the canonical 1,000-trial
-   *  run. Returned so the client can persist it when saving the scenario, which
-   *  lets the saved scenario's report reproduce the exact same PoS. */
+  /** MC seed used for the 250-trial search. Returned so the client can persist it
+   *  when saving the scenario, which lets the saved scenario's report reproduce
+   *  the same PoS. */
   seed: number;
 }
 

@@ -521,14 +521,14 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         targetPoS,
         status: result.status,
         solvedValue: result.solvedValue,
-        achievedPoS: result.achievedPoS, // 250-trial search value (debug)
-        canonicalPoS: result.canonicalPoS, // 1000-trial canonical
-        reportedPoS: result.canonicalPoS, // headline the canonical value
+        achievedPoS: result.achievedPoS, // 250-trial PoS at the solved value
+        canonicalPoS: result.canonicalPoS, // == achievedPoS (solve runs at 250 trials)
+        reportedPoS: result.canonicalPoS, // headline PoS
         seed: result.seed,
         endingPortfolio,
         disclaimer:
-          "reportedPoS is the canonical 1000-trial probability of success; achievedPoS is the " +
-          "faster 250-trial search value. Observations only, not advice.",
+          "reportedPoS is the 250-trial probability of success at the solved lever value. " +
+          "Observations only, not advice.",
       });
     },
     {
@@ -536,7 +536,7 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
       description:
         "Goal-seek a single lever to hit a Monte-Carlo probability-of-success target. Levers: " +
         "retirement-age, living-expense-scale, savings-contribution, ss-claim-age, " +
-        "roth-conversion-amount. Returns the solved lever value and the canonical 1000-trial PoS " +
+        "roth-conversion-amount. Returns the solved lever value and the 250-trial PoS " +
         "(reportedPoS). Reuses the scenario's persisted seed so the result is reproducible.",
       schema: z.object({
         clientId: z.string().describe("the client uuid (must match your scope)"),
@@ -570,20 +570,20 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         scenarioId,
         targetPoS,
         status: result.status,
-        realAnnualSpend: result.realAnnualSpend, // today's dollars, rounded to $2k
+        realAnnualSpend: result.realAnnualSpend, // today's dollars, rounded to $5k
         scaleFactor: result.scaleFactor,
-        achievedPoS: result.achievedPoS, // canonical 1000-trial value
+        achievedPoS: result.achievedPoS, // 250-trial PoS at the solved spend
         disclaimer:
           "realAnnualSpend is the maximum sustainable retirement spend (today's dollars, rounded " +
-          "to $2k) at the target probability of success. Observations only, not advice.",
+          "to $5k) whose probability of success lands closest to the target. Observations only, not advice.",
       });
     },
     {
       name: "solve_max_spending",
       description:
-        "Find the maximum sustainable annual retirement spending (today's dollars) that keeps " +
-        "Monte-Carlo probability of success at or above a target. Reuses the scenario's persisted " +
-        "seed and reports the canonical 1000-trial achieved PoS.",
+        "Find the maximum sustainable annual retirement spending (today's dollars, rounded to $5k) " +
+        "whose Monte-Carlo probability of success lands closest to a target. Reuses the scenario's " +
+        "persisted seed and reports the 250-trial achieved PoS.",
       schema: z.object({
         clientId: z.string().describe("the client uuid (must match your scope)"),
         scenarioId: z.string().describe("scenario uuid, or 'base'"),

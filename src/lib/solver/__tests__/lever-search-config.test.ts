@@ -32,12 +32,13 @@ describe("leverSearchConfig", () => {
     ).toEqual({ lo: 50, hi: 80, step: 1, direction: 1 });
   });
 
-  it("living-expense-scale searches dollars: lo 0, descending, $2k step", () => {
+  it("living-expense-scale searches dollars: lo 0, descending, $5k step, closest", () => {
     const cfg = leverSearchConfig({ kind: "living-expense-scale" }, emptyTree);
     expect(cfg.lo).toBe(0);
     expect(cfg.direction).toBe(-1);
-    expect(cfg.step).toBe(2000);
+    expect(cfg.step).toBe(5000);
     expect(cfg.tolerance).toBe(0);
+    expect(cfg.selection).toBe("closest");
     expect(cfg.hi).toBeGreaterThanOrEqual(300_000);
     expect(cfg.hi).toBeLessThanOrEqual(3_000_000);
   });

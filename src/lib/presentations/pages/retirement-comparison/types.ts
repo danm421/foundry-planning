@@ -64,8 +64,8 @@ export interface MaxSpendPoint { year: number; base: number; scenario: number } 
 
 export interface MaxSpendBlock {
   show: boolean;
-  baseToday: number;       // today's $, rounded $2k
-  scenarioToday: number;   // today's $, rounded $2k
+  baseToday: number;       // today's $, rounded $5k
+  scenarioToday: number;   // today's $, rounded $5k
   series: MaxSpendPoint[];  // inflated forward, retirement → end of life
 }
 

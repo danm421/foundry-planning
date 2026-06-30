@@ -81,13 +81,15 @@ describe("solve_goal", () => {
     );
   });
 
-  it("reports the canonical 1000-trial PoS (not the 250-trial search) + seed", async () => {
+  it("headlines reportedPoS off canonicalPoS and exposes achievedPoS + seed", async () => {
+    // Distinct mock values prove the tool maps the right field into reportedPoS;
+    // in production the solve runs at 250 trials so the two are equal.
     solveTarget.mockResolvedValue({
       objective: "pos",
       status: "converged",
       solvedValue: 1_500_000,
-      achievedPoS: 0.91, // 250-trial search value
-      canonicalPoS: 0.88, // canonical 1000-trial value
+      achievedPoS: 0.91,
+      canonicalPoS: 0.88,
       iterations: 9,
       finalProjection: [{ year: 2060, portfolioAssets: { liquidTotal: 3_100_000 } } as unknown as ProjectionYear],
       seed: 99,
@@ -106,7 +108,7 @@ describe("solve_goal", () => {
     expect(out.solvedValue).toBe(1_500_000);
     expect(out.achievedPoS).toBe(0.91);
     expect(out.canonicalPoS).toBe(0.88);
-    expect(out.reportedPoS).toBe(0.88); // canonical is what we headline
+    expect(out.reportedPoS).toBe(0.88); // reportedPoS headlines canonicalPoS
     expect(out.seed).toBe(99);
     expect(out.endingPortfolio).toBe(3_100_000);
     expect(out.status).toBe("converged");

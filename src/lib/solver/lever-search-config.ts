@@ -24,6 +24,11 @@ export interface LeverSearchConfig {
    *  HIGHEST value that still beats the target instead of exiting early at the
    *  first midpoint within ±2% (which under-reports sustainable spending). */
   tolerance?: number;
+  /** Optional bisect selection override. Omitted ⟹ bisect default "beat-target".
+   *  Set to "closest" for the living-expense solve so the result snaps to the
+   *  step whose PoS is nearest the target — even when that step is slightly below
+   *  it — rather than always rounding down to the last step that beats target. */
+  selection?: "beat-target" | "closest";
 }
 
 export function leverSearchConfig(
@@ -34,15 +39,19 @@ export function leverSearchConfig(
     case "retirement-age":
       return { lo: 50, hi: 80, step: 1, direction: 1 };
     case "living-expense-scale":
-      // Absolute-dollar search over annual retirement living spend. tolerance:0
-      // so the solve returns the MAXIMUM sustainable spend; direction -1 because
-      // more spending lowers PoS. Interpolation makes the wide range cheap.
+      // Absolute-dollar search over annual retirement living spend, on a $5,000
+      // grid. tolerance:0 + selection:"closest" so the solve collapses the
+      // bracket fully and then returns the $5k step whose PoS is NEAREST the
+      // target — even if it lands slightly below it — instead of always rounding
+      // down to the last step that still beats target. direction -1 because more
+      // spending lowers PoS. Interpolation makes the wide range cheap.
       return {
         lo: 0,
         hi: livingExpenseSearchCeiling(tree),
-        step: 2000,
+        step: 5000,
         direction: -1,
         tolerance: 0,
+        selection: "closest",
       };
     case "ss-claim-age":
       return { lo: 62, hi: 70, step: 1, direction: 1 };

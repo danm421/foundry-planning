@@ -24,7 +24,7 @@ import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import { memoizeByValue } from "./eval-cache";
 import { buildLeverMutation, leverSearchConfig } from "./lever-search-config";
-import { roundToNearest2k } from "./living-expense";
+import { roundToNearest5k } from "./living-expense";
 import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
 import type { SolverMutation } from "./types";
@@ -57,12 +57,10 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   let iteration = 0;
   let lastEvaluatedValue: number | null = null;
   let lastProjection: ProjectionYear[] | null = null;
-  let lastTree: ClientData | null = null;
 
   interface EvalEntry {
     pos: number;
     projection: ProjectionYear[];
-    tree: ClientData;
   }
 
   const compute = memoizeByValue<EvalEntry>(async (value: number) => {
@@ -91,7 +89,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
       signal: args.signal,
       yieldEvery: 50,
     });
-    return { pos: mc.successRate, projection, tree };
+    return { pos: mc.successRate, projection };
   });
 
   const evaluate = async (value: number): Promise<number> => {
@@ -100,7 +98,6 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     const entry = await compute(value);
     lastEvaluatedValue = value;
     lastProjection = entry.projection;
-    lastTree = entry.tree;
     args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
     return entry.pos;
   };
@@ -115,6 +112,10 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     // returns the maximum sustainable spend instead of the first value within
     // ±2% of target. Other levers leave it undefined → bisect default 0.02.
     tolerance: config.tolerance,
+    // Per-lever override: the living-expense lever sets selection:"closest" so the
+    // result snaps to the $5k step whose PoS is nearest the target (even slightly
+    // below it). Other levers leave it undefined → bisect default "beat-target".
+    selection: config.selection,
     // Wide savings/roth levers need ~log2(range/step) bisections; the default 8
     // exits max-iterations short of the true minimum. (F11/F13/F29)
     maxIterations: WIDE_LEVER_MAX_ITERATIONS,
@@ -122,14 +123,14 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   });
 
   // For the living-expense solve, the solved value is annual retirement dollars.
-  // Snap to the nearest $2,000 so the reported sustainable spend is round.
+  // Snap to the nearest $5,000 so the reported sustainable spend is round.
   let solvedValue = bisectResult.solvedValue;
   if (args.target.kind === "living-expense-scale") {
-    solvedValue = roundToNearest2k(solvedValue);
+    solvedValue = roundToNearest5k(solvedValue);
   }
 
   // The bisection may have ended on an endpoint or earlier iteration whose
-  // projection isn't the final one we want to return — and $2k-snapping may have
+  // projection isn't the final one we want to return — and $5k-snapping may have
   // nudged the value. Re-evaluate at the final solved value so finalProjection
   // and achievedPoS reflect exactly what we return.
   let achievedPoS = bisectResult.achievedPoS;
@@ -137,30 +138,15 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     achievedPoS = await evaluate(solvedValue);
   }
 
-  // Canonical 1,000-trial run on the converged tree so the displayed PoS matches
-  // the report/PDF (which use 1,000 trials). The 250-trial search above is for
-  // speed only; this final pass uses the same seed for repeatability.
-  const canonicalEngine = createReturnEngine({
-    indices: args.mcPayload.indices,
-    correlation: args.mcPayload.correlation,
-    seed: args.mcPayload.seed,
-  });
-  const canonical = await runMonteCarlo({
-    data: lastTree!,
-    returnEngine: canonicalEngine,
-    accountMixes,
-    trials: 1000,
-    requiredMinimumAssetLevel: args.mcPayload.requiredMinimumAssetLevel,
-    signal: args.signal,
-    yieldEvery: 50,
-  });
-
+  // The whole solve runs at `trials` (250 by default), including the final
+  // evaluate(solvedValue) above. canonicalPoS therefore equals achievedPoS — we
+  // no longer run a separate 1,000-trial confirmation pass.
   return {
     objective: "pos",
     status: bisectResult.status,
     solvedValue,
     achievedPoS,
-    canonicalPoS: canonical.successRate,
+    canonicalPoS: achievedPoS,
     iterations: bisectResult.iterations,
     finalProjection: lastProjection!,
     seed: args.mcPayload.seed,

@@ -212,10 +212,10 @@ export function LiveSolverWorkspace({
   // The editNonce captured when the current/last working-MC run launched.
   const [mcEditNonce, setMcEditNonce] = useState<number | null>(null);
 
-  // Canonical 1,000-trial PoS from the most recent converged solve, on the
-  // converged tree. Shown on the working gauge until the useSolverMc run produces
-  // a fresh result for the current edits (which then supersedes it). Cleared on
-  // any further edit so it can't go stale.
+  // 250-trial PoS at the most recent converged solve value, on the converged
+  // tree. Shown on the working gauge until the useSolverMc run produces a fresh
+  // result for the current edits (which then supersedes it). Cleared on any
+  // further edit so it can't go stale.
   const [solvedPoS, setSolvedPoS] = useState<number | null>(null);
   // MC seed used for the canonical solve run — persisted when saving the
   // scenario so its report reproduces the same PoS.
@@ -358,9 +358,9 @@ export function LiveSolverWorkspace({
         setMinSavings(null);
       }
       setCurrentProjection(e.finalProjection);
-      // Surface the canonical 1,000-trial PoS (computed on the converged tree)
-      // as the advisor-facing solved result so it matches the MC report/PDF,
-      // which also use 1,000 trials — not the noisier 250-trial search value.
+      // Surface the solved PoS (250-trial, at the converged value) as the
+      // advisor-facing result. The solve now runs entirely at 250 trials, so this
+      // may differ slightly from the full 1,000-trial MC report/PDF.
       setSolvedPoS(e.canonicalPoS);
       // Capture the seed so save-as-scenario can persist it, letting the saved
       // scenario's report reproduce the same PoS byte-for-byte.

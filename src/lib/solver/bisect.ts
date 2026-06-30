@@ -25,6 +25,16 @@ export interface BisectInput {
   tolerance?: number;
   /** Default 8 (counts endpoint probes). */
   maxIterations?: number;
+  /** How to pick the answer once the bracket has narrowed to one step.
+   *  - "beat-target" (default): the tight endpoint, i.e. the value with PoS ≥
+   *    target (maximizes/secures the lever while staying at or above target).
+   *  - "closest": whichever of the two adjacent endpoints has PoS nearest the
+   *    target, even when that endpoint sits slightly BELOW target. Used by the
+   *    maximize-spend levers so the reported spend snaps to the step whose PoS is
+   *    closest to the requested probability. Only changes the bracket-collapse /
+   *    max-iterations result — the both-beat and unreachable shortcuts are
+   *    unchanged (so an unreachable plan never jumps to max spend). */
+  selection?: "beat-target" | "closest";
   evaluate: (value: number) => Promise<number>;
 }
 
@@ -56,6 +66,7 @@ export async function bisect(input: BisectInput): Promise<BisectResult> {
   const { lo, hi, step, direction, target, evaluate } = input;
   const tolerance = input.tolerance ?? 0.02;
   const maxIterations = input.maxIterations ?? 8;
+  const selection = input.selection ?? "beat-target";
 
   const posLo = await evaluate(lo);
   const posHi = await evaluate(hi);
@@ -102,13 +113,26 @@ export async function bisect(input: BisectInput): Promise<BisectResult> {
   // interpolation isn't dragged toward a stalled side. null = no stale side yet.
   let stale: "tight" | "loose" | null = null;
 
+  // Resolve the collapsed bracket to its reported value. "beat-target" keeps the
+  // tight (≥ target) endpoint; "closest" returns whichever adjacent endpoint has
+  // PoS nearest the target — which may be the loose one, sitting just below it.
+  const resolveBracket = (): { solvedValue: number; achievedPoS: number } => {
+    if (
+      selection === "closest" &&
+      Math.abs(posLoose - target) < Math.abs(posTight - target)
+    ) {
+      return { solvedValue: loose, achievedPoS: posLoose };
+    }
+    return { solvedValue: tight, achievedPoS: posTight };
+  };
+
   while (iterations < maxIterations) {
     const mid = nextCandidate(
       tight, posTight, loose, posLoose, lo, hi, step, target, stale,
     );
     if (mid === tight || mid === loose) {
-      // Bracket collapsed to one step — return tight (closest beating endpoint).
-      return { status: "converged", solvedValue: tight, achievedPoS: posTight, iterations };
+      // Bracket collapsed to one step — return the selection-resolved endpoint.
+      return { status: "converged", ...resolveBracket(), iterations };
     }
     const posMid = await evaluate(mid);
     iterations += 1;
@@ -128,8 +152,7 @@ export async function bisect(input: BisectInput): Promise<BisectResult> {
 
   return {
     status: "max-iterations",
-    solvedValue: tight,
-    achievedPoS: posTight,
+    ...resolveBracket(),
     iterations,
   };
 }

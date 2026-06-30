@@ -1,9 +1,11 @@
 //
-// Maximum-sustainable-spending solver. Finds the largest uniform scale on the
-// plan's retirement living expenses that keeps Monte-Carlo probability-of-success
-// at/above a target. Mirrors solve-target.ts: 250-trial bisection search then a
-// 1000-trial canonical confirmation, same seed each iteration so MC variance
-// never perturbs monotonicity. The MC evaluator is injectable for testing.
+// Maximum-sustainable-spending solver. Finds the uniform scale on the plan's
+// retirement living expenses whose Monte-Carlo probability-of-success lands
+// closest to a target (even slightly below it), then reports it as today's
+// dollars rounded to the nearest $5,000. Mirrors solve-target.ts: a 250-trial
+// bisection search then a 250-trial confirmation at the solved scale, same seed
+// each iteration so MC variance never perturbs monotonicity. The MC evaluator is
+// injectable for testing.
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -13,18 +15,18 @@ import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { applyMutations } from "./apply-mutations";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
-import { roundToNearest2k, retirementLivingExpenseTotal } from "./max-spending-math";
+import { roundToNearest5k, retirementLivingExpenseTotal } from "./max-spending-math";
 
 /** Wide bracket for the spend scale: 0 (no retirement living spend) → 3× plan. */
 export const MAX_SPEND_SCALE_HI = 3.0;
 const SCALE_STEP = 0.01;
 
 export interface MaxSpendResult {
-  /** Max sustainable annual retirement spend, today's dollars, rounded to $2k. */
+  /** Max sustainable annual retirement spend, today's dollars, rounded to $5k. */
   realAnnualSpend: number;
   /** Solved scale factor on the plan's retirement living expenses. */
   scaleFactor: number;
-  /** Probability of success at the solved scale (canonical 1000-trial run). */
+  /** Probability of success at the solved scale (250-trial confirmation run). */
   achievedPoS: number;
   status: "converged" | "unreachable" | "max-iterations";
 }
@@ -72,7 +74,7 @@ export function makeMcScaleEvaluator(
 export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxSpendResult> {
   const targetPoS = args.targetPoS ?? 0.85;
   const searchTrials = args.searchTrials ?? 250;
-  const canonicalTrials = args.canonicalTrials ?? 1000;
+  const canonicalTrials = args.canonicalTrials ?? 250;
   const evaluateScale =
     args.evaluateScale ?? makeMcScaleEvaluator(args.tree, args.mcPayload, args.signal);
 
@@ -84,10 +86,12 @@ export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxS
     step: SCALE_STEP,
     direction: -1, // higher spend → lower PoS
     target: targetPoS,
-    // tolerance=0: don't exit early on noisy PoS match — collapse the bracket
-    // all the way to one step so we always return the HIGHEST scale that beats
-    // the target, not whatever midpoint happened to land within ±2% first.
+    // tolerance=0 + selection:"closest": collapse the bracket all the way to one
+    // step, then return the scale whose PoS is NEAREST the target — even when it
+    // sits slightly below it — instead of rounding down to the last scale that
+    // still beats target.
     tolerance: 0,
+    selection: "closest",
     maxIterations: WIDE_LEVER_MAX_ITERATIONS,
     evaluate: (scale) => evaluateScale(scale, searchTrials),
   });
@@ -96,7 +100,7 @@ export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxS
 
   return {
     scaleFactor: bisectResult.solvedValue,
-    realAnnualSpend: roundToNearest2k(bisectResult.solvedValue * baseSpend),
+    realAnnualSpend: roundToNearest5k(bisectResult.solvedValue * baseSpend),
     achievedPoS: canonicalPoS,
     status: bisectResult.status,
   };

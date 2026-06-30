@@ -237,6 +237,55 @@ describe("bisect", () => {
     expect(full.solvedValue).toBeGreaterThan(early.solvedValue);
   });
 
+  it("selection:closest returns the bracket endpoint nearest target, even if below it", async () => {
+    // Descending grid, crossing target 0.851 between two adjacent $5k steps:
+    //   pos(165_000) = 0.855 (beats), pos(170_000) = 0.850 (misses).
+    // Default "beat-target" keeps 165_000; "closest" should pick 170_000 because
+    // |0.850 - 0.851| = 0.001 < |0.855 - 0.851| = 0.004 — closer to target, more spend.
+    const evaluate = async (v: number) =>
+      v <= 165_000 ? 0.855 : v <= 170_000 ? 0.85 : 0.4;
+
+    const beat = await bisect({
+      lo: 0, hi: 300_000, step: 5000, direction: -1, target: 0.851,
+      tolerance: 0, maxIterations: 24, evaluate,
+    });
+    expect(beat.solvedValue).toBe(165_000);
+    expect(beat.achievedPoS).toBeGreaterThanOrEqual(0.851);
+
+    const closest = await bisect({
+      lo: 0, hi: 300_000, step: 5000, direction: -1, target: 0.851,
+      tolerance: 0, maxIterations: 24, selection: "closest", evaluate,
+    });
+    expect(closest.status).toBe("converged");
+    expect(closest.solvedValue).toBe(170_000); // slightly below target, but closest
+    expect(closest.achievedPoS).toBe(0.85);
+  });
+
+  it("selection:closest still prefers the beating endpoint when it is the nearer one", async () => {
+    // Crossing at 0.84: pos(165_000)=0.86 (beats, |0.02|), pos(170_000)=0.80 (misses, |0.04|).
+    // The beating endpoint is closer, so "closest" returns it too.
+    const evaluate = async (v: number) =>
+      v <= 165_000 ? 0.86 : v <= 170_000 ? 0.8 : 0.4;
+    const result = await bisect({
+      lo: 0, hi: 300_000, step: 5000, direction: -1, target: 0.84,
+      tolerance: 0, maxIterations: 24, selection: "closest", evaluate,
+    });
+    expect(result.solvedValue).toBe(165_000);
+    expect(result.achievedPoS).toBe(0.86);
+  });
+
+  it("selection:closest leaves the both-miss (unreachable) shortcut conservative", async () => {
+    // Even $0 spend misses target → still report the lowest-spend endpoint, never
+    // jump to max spend just because its PoS is equally far from target.
+    const evaluate = async () => 0.5;
+    const result = await bisect({
+      lo: 0, hi: 300_000, step: 5000, direction: -1, target: 0.85,
+      tolerance: 0, maxIterations: 24, selection: "closest", evaluate,
+    });
+    expect(result.status).toBe("unreachable");
+    expect(result.solvedValue).toBe(0);
+  });
+
   it("interpolation reaches a linear root on a descending (d=-1) bracket", async () => {
     // pos(v) = 2 - v: descending, crosses target 1.30 at v=0.70. tight=lo here
     // (low v beats), loose=hi. Confirms the interpolation + floor-guard sign

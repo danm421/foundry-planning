@@ -26,9 +26,9 @@ function args(over: Partial<SolveMaxSpendingArgs> = {}): SolveMaxSpendingArgs {
 }
 
 describe("solveMaxSpending", () => {
-  it("solves the largest scale holding the target, in $2k-rounded today's dollars", async () => {
+  it("solves the scale closest to target, in $5k-rounded today's dollars", async () => {
     const r = await solveMaxSpending(args());
-    // scale ~0.30 → 0.30 * 100_000 = 30_000 (already a multiple of 2k).
+    // scale 0.30 → 0.30 * 100_000 = 30_000 (already a multiple of 5k).
     expect(r.status).toBe("converged");
     expect(r.realAnnualSpend).toBe(30_000);
     expect(r.achievedPoS).toBeGreaterThanOrEqual(0.85 - 0.02);

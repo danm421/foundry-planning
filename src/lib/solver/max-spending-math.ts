@@ -3,9 +3,9 @@
 import type { ClientData } from "@/engine/types";
 import { isRetirementLivingExpense } from "./living-expense";
 
-/** Round a dollar amount to the nearest $2,000 (per spec). */
-export function roundToNearest2k(amount: number): number {
-  return Math.round(amount / 2000) * 2000;
+/** Round a dollar amount to the nearest $5,000. */
+export function roundToNearest5k(amount: number): number {
+  return Math.round(amount / 5000) * 5000;
 }
 
 /**
