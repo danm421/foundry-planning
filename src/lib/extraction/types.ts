@@ -1,5 +1,6 @@
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
+import type { YearRef } from "@/lib/milestones";
 
 export const DOCUMENT_TYPES = [
   "account_statement",
@@ -128,6 +129,10 @@ export interface ExtractedIncome {
   annualAmount?: number;
   startYear?: number;
   endYear?: number;
+  /** Dynamic timing anchor for the start year (e.g. client_retirement). */
+  startYearRef?: YearRef;
+  /** Dynamic timing anchor for the end year (e.g. client_end). */
+  endYearRef?: YearRef;
   growthRate?: number;
   owner?: "client" | "spouse" | "joint";
   claimingAge?: number;
@@ -139,6 +144,10 @@ export interface ExtractedExpense {
   annualAmount?: number;
   startYear?: number;
   endYear?: number;
+  /** Dynamic timing anchor for the start year. */
+  startYearRef?: YearRef;
+  /** Dynamic timing anchor for the end year. */
+  endYearRef?: YearRef;
   growthRate?: number;
 }
 
