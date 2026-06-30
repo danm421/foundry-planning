@@ -118,7 +118,7 @@ function FederalTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
+            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
               <td className="px-3 py-3">{r.year}</td>
               <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
               <td className="border-l border-hair px-3 py-3 text-right">
@@ -261,7 +261,7 @@ function StateTable({ years }: { years: ProjectionYear[] }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
+            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
               <td className="px-3 py-3">{r.year}</td>
               <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
               <td className="border-l border-hair px-3 py-3 text-right">

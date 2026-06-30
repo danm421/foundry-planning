@@ -168,13 +168,13 @@ export function TaxDetailIncomeTable({
             return (
               <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer border-b border-hair bg-card px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-hair bg-card px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View per-source breakdown for ${y.year}`}
                 >
                   {y.year}
                 </td>
-                <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]">
+                <td className="sticky left-20 z-10 border-b border-r border-hair bg-card px-3 py-2 text-left text-ink-2 group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
                 {INCOME_COLUMNS.map((col, idx) => {
@@ -183,7 +183,7 @@ export function TaxDetailIncomeTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-hair bg-card px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-hair bg-card px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       <button
                         type="button"

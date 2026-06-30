@@ -62,7 +62,10 @@ export function AnalysisYearTable<Row>({
         </thead>
         <tbody>
           {rows.map((row, rowIdx) => (
-            <tr key={rowIdx} className="hover:bg-card-hover">
+            <tr
+              key={rowIdx}
+              className="hover:[&>td]:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]"
+            >
               {columns.map((col, colIdx) => {
                 const isCrit = col.tone?.(row) === "crit";
                 const isRight = col.align === "right";

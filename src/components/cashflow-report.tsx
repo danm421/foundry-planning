@@ -2293,12 +2293,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               // Per-cell bg is required because position:sticky cells create
               // their own stacking context and won't inherit the row bg.
               const baseBg = isNegative ? "bg-crit/10" : "bg-card";
-              // Inset top + bottom white lines render per-cell but butt up to
-              // form a continuous horizontal stroke across the row. Layout-
+              // Inset top + bottom ink-colored lines render per-cell but butt up
+              // to form a continuous horizontal stroke across the row. Layout-
               // stable (no border-width shift) and visible over any base bg,
-              // including sticky cells.
+              // including sticky cells. Uses --color-ink (not --color-paper) so
+              // the highlight contrasts in both light and dark themes — matches
+              // the Monte Carlo table.
               const hoverHighlight =
-                "group-hover:shadow-[inset_0_1px_0_var(--color-paper),inset_0_-1px_0_var(--color-paper)]";
+                "group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)]";
               return (
                 <tr
                   key={row.id}
