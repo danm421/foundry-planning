@@ -252,6 +252,7 @@ export function applyGiftsToClientData(
           g.recipient.kind === "entity" ? g.recipient.id : "",
         useCrummeyPowers: g.crummey,
         eventKind: g.eventKind ?? "outright",
+        sourceGiftId: g.id,
       });
     } else if (g.kind === "asset-once") {
       // Use g.eventKind ?? "outright" and pass amountOverride to mirror the
@@ -268,6 +269,7 @@ export function applyGiftsToClientData(
         ...recipientFields(g.recipient),
         amountOverride: g.amountOverride,
         eventKind: g.eventKind ?? "outright",
+        sourceGiftId: g.id,
       });
       // If the gifted account has a linked liability (a mortgage), the gift
       // route auto-creates a bundled liability child gift row so the debt
@@ -315,4 +317,18 @@ export function applyGiftsToClientData(
   giftEvents.sort((a, b) => a.year - b.year);
 
   return { ...data, gifts: cashGifts, giftEvents };
+}
+
+/** True when a giftEvent was produced by one of the gift ids in `ids`. Covers
+ *  one-off cash/asset/business (sourceGiftId), fanned series (seriesId), and
+ *  bundled liabilities (parentGiftId). */
+export function giftEventBelongsTo(
+  event: { sourceGiftId?: string; seriesId?: string; parentGiftId?: string },
+  ids: Set<string>,
+): boolean {
+  return (
+    (event.sourceGiftId != null && ids.has(event.sourceGiftId)) ||
+    (event.seriesId != null && ids.has(event.seriesId)) ||
+    (event.parentGiftId != null && ids.has(event.parentGiftId))
+  );
 }

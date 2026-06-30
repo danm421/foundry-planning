@@ -9,6 +9,7 @@ import {
   applyGiftsToClientData,
   giftRowToDraft,
   giftSeriesRowToDraft,
+  giftEventBelongsTo,
 } from "../estate-flow-gifts";
 import type { ClientData, Liability } from "@/engine/types";
 
@@ -490,6 +491,28 @@ describe("estate-flow-gifts — non-entity recipients", () => {
     );
     const ev = out.giftEvents.find((e) => e.kind === "asset");
     expect(ev).toMatchObject({ recipientExternalBeneficiaryId: "charity-1", recipientEntityId: undefined });
+  });
+});
+
+describe("sourceGiftId stamping + footprint helper", () => {
+  const base = {
+    planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025, taxInflationRate: 0.025 },
+    taxYearRows: [], liabilities: [], accounts: [{ id: "acct-1", name: "B", category: "taxable", value: 100000 }],
+    gifts: [], giftEvents: [],
+  } as unknown as ClientData;
+
+  it("stamps sourceGiftId on cash + asset events and matches via giftEventBelongsTo", () => {
+    const out = applyGiftsToClientData(base, [
+      { kind: "cash-once", id: "g-cash", year: 2030, amount: 1000, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false },
+      { kind: "asset-once", id: "g-asset", year: 2031, accountId: "acct-1", percent: 0.5, grantor: "client", recipient: { kind: "entity", id: "t1" }, eventKind: "outright" },
+    ], 0.025);
+    const cash = out.giftEvents.find((e) => e.kind === "cash");
+    const asset = out.giftEvents.find((e) => e.kind === "asset");
+    expect((cash as { sourceGiftId?: string }).sourceGiftId).toBe("g-cash");
+    expect((asset as { sourceGiftId?: string }).sourceGiftId).toBe("g-asset");
+    const T = new Set(["g-asset"]);
+    expect(giftEventBelongsTo(asset!, T)).toBe(true);
+    expect(giftEventBelongsTo(cash!, T)).toBe(false);
   });
 });
 
