@@ -138,7 +138,7 @@ export function EstateRevocableTrustList({
   );
 }
 
-/** Short title for a gift row (recipient-kind noun + year). */
+/** Short title for a gift row (recipient-kind noun). */
 function giftTitle(g: EstateFlowGift): string {
   const noun =
     g.recipient.kind === "entity" ? "Trust gift" : g.recipient.kind === "family_member" ? "Family gift" : "Charitable gift";

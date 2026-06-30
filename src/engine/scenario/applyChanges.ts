@@ -100,8 +100,10 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "customPctQualifiedDividends",
     "customPctTaxExempt",
   ],
-  // Solver gift overlays carry an EstateFlowGift draft. These flat numeric fields
-  // are coerced before normalizeScenarioGifts re-derives giftEvents.
+  // Solver gift overlays carry an EstateFlowGift draft with these flat numeric
+  // fields. The reload path now applies gift changes via apply-gift-overlays.ts
+  // (they're partitioned out before this generic replay runs), so this entry is
+  // dead for gifts — kept harmless for parity with TARGET_KIND_TO_FIELD.gift.
   gift: ["year", "amount", "percent", "amountOverride", "startYear", "endYear", "annualAmount"],
   entity: ["value", "basis", "valueGrowthRate", "distributionAmount", "distributionPercent", "exemptionConsumed", "grantorStatusEndYear"],
   // The withdrawal-strategy form posts startYear/endYear as strings
