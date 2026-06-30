@@ -15,19 +15,36 @@ import { EstateComparisonChart } from "@/components/charts/estate-comparison-cha
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
 import { type ReportKey } from "./report-tab-link";
+import {
+  PortfolioIcon,
+  CashFlowIcon,
+  TaxBracketIcon,
+  LifeInsuranceIcon,
+  EstatePlanningIcon,
+  MonteCarloIcon,
+  SummariesIcon,
+} from "./report-tab-icons";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
 
-const REPORT_TABS: { id: ReportKey; label: string }[] = [
-  { id: "portfolio", label: "Portfolio" },
-  { id: "cashflow", label: "Cash Flow" },
-  { id: "taxBracket", label: "Tax Bracket" },
-  { id: "lifeInsurance", label: "Life Insurance Need" },
-  { id: "estate", label: "Estate" },
-  { id: "monteCarlo", label: "Monte Carlo" },
-  { id: "summaries", label: "Summaries" },
+// `label` is the full name (accessible name + hover title); `short` is what
+// renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
+// read the same. Keep `label` exact: tests query tabs by accessible name.
+const REPORT_TABS: {
+  id: ReportKey;
+  label: string;
+  short: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+}[] = [
+  { id: "portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
+  { id: "cashflow", label: "Cash Flow", short: "Cash Flow", icon: CashFlowIcon },
+  { id: "taxBracket", label: "Tax Bracket", short: "Taxes", icon: TaxBracketIcon },
+  { id: "lifeInsurance", label: "Life Insurance Need", short: "Insurance", icon: LifeInsuranceIcon },
+  { id: "estate", label: "Estate", short: "Estate", icon: EstatePlanningIcon },
+  { id: "monteCarlo", label: "Monte Carlo", short: "Monte Carlo", icon: MonteCarloIcon },
+  { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
@@ -219,22 +236,31 @@ export function SolverChartPanel({
     <div
       role="tablist"
       aria-label="Chart view"
-      className="inline-flex rounded-md border border-hair-2 bg-card-2 p-0.5"
+      className="flex border-b border-hair-2"
     >
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="tab"
-          aria-selected={tab === t.id}
-          onClick={() => onReportChange(t.id)}
-          className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
-            tab === t.id ? "bg-accent/20 text-ink" : "text-ink-3 hover:text-ink"
-          }`}
-        >
-          {t.label}
-        </button>
-      ))}
+      {tabs.map((t) => {
+        const Icon = t.icon;
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={t.label}
+            title={t.label}
+            onClick={() => onReportChange(t.id)}
+            className={
+              active
+                ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
+                : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
+            }
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="max-w-full truncate">{t.short}</span>
+          </button>
+        );
+      })}
     </div>
   );
 
