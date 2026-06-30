@@ -117,30 +117,32 @@ export function buildTaxComparisonData(
   // ── Bracket exposure comparison ──
   const bracketMode = baseBundle.clientData.planSettings.taxEngineMode === "bracket";
   let bracket: BracketComparisonRow[] | null = null;
+  let baseExp: ReturnType<typeof computeBracketExposure> | null = null;
+  let scnExp: ReturnType<typeof computeBracketExposure> | null = null;
   if (bracketMode) {
-    const be = computeBracketExposure(buildTaxBracketRows(baseYears), options.lowThreshold, options.highThreshold);
-    const se = computeBracketExposure(buildTaxBracketRows(scnYears), options.lowThreshold, options.highThreshold);
-    const rangeStr = (e: typeof be) =>
-      e.minRate != null && e.maxRate != null ? `${fmtPct(e.minRate)} – ${fmtPct(e.maxRate)}` : "—";
+    baseExp = computeBracketExposure(buildTaxBracketRows(baseYears), options.lowThreshold, options.highThreshold);
+    scnExp = computeBracketExposure(buildTaxBracketRows(scnYears), options.lowThreshold, options.highThreshold);
+    const rangeStr = (e: typeof baseExp) =>
+      e != null && e.minRate != null && e.maxRate != null ? `${fmtPct(e.minRate)} – ${fmtPct(e.maxRate)}` : "—";
     bracket = [
       {
         label: `Years below the ${fmtPct(options.lowThreshold)} bracket`,
-        base: String(be.yearsBelowLow),
-        scenario: String(se.yearsBelowLow),
-        delta: signedInt(se.yearsBelowLow - be.yearsBelowLow),
+        base: String(baseExp.yearsBelowLow),
+        scenario: String(scnExp.yearsBelowLow),
+        delta: signedInt(scnExp.yearsBelowLow - baseExp.yearsBelowLow),
         direction: 0, // more low-bracket years is favorable — keep neutral, narrative interprets
       },
       {
         label: `Years above the ${fmtPct(options.highThreshold)} bracket`,
-        base: String(be.yearsAboveHigh),
-        scenario: String(se.yearsAboveHigh),
-        delta: signedInt(se.yearsAboveHigh - be.yearsAboveHigh),
-        direction: costDirection(se.yearsAboveHigh - be.yearsAboveHigh),
+        base: String(baseExp.yearsAboveHigh),
+        scenario: String(scnExp.yearsAboveHigh),
+        delta: signedInt(scnExp.yearsAboveHigh - baseExp.yearsAboveHigh),
+        direction: costDirection(scnExp.yearsAboveHigh - baseExp.yearsAboveHigh),
       },
       {
         label: "Marginal rate range",
-        base: rangeStr(be),
-        scenario: rangeStr(se),
+        base: rangeStr(baseExp),
+        scenario: rangeStr(scnExp),
         delta: "",
         direction: 0,
       },
@@ -160,8 +162,6 @@ export function buildTaxComparisonData(
       : null;
 
   // ── Narrative ──
-  const baseExp = bracketMode ? computeBracketExposure(buildTaxBracketRows(baseYears), options.lowThreshold, options.highThreshold) : null;
-  const scnExp = bracketMode ? computeBracketExposure(buildTaxBracketRows(scnYears), options.lowThreshold, options.highThreshold) : null;
   const narrative = buildTaxComparisonNarrative({
     baseLifetimeTotal: baseTotals.lifetimeTotal,
     scnLifetimeTotal: scnTotals.lifetimeTotal,
