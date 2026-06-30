@@ -14,6 +14,7 @@ import { applyMutations } from "@/lib/solver/apply-mutations";
 import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 import { getOrComputeMonteCarlo } from "./monte-carlo";
 import { hashMonteCarloInputs } from "./hash";
+import { singleFlight } from "./single-flight";
 import { createReturnEngine, runMonteCarlo } from "@/engine";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { assembleMonteCarloResult } from "./assemble-monte-carlo-result";
@@ -66,43 +67,48 @@ async function readSolverMcRow(clientId: string, inputHash: string) {
   }
 }
 
-async function computeAndCacheEdited(
+function computeAndCacheEdited(
   firmId: string,
   clientId: string,
   inputs: EditedInputs,
 ): Promise<CachedMonteCarloResult> {
   const { mutated, mcPayload, inputHash } = inputs;
-  const engine = createReturnEngine({
-    indices: mcPayload.indices,
-    correlation: mcPayload.correlation,
-    seed: mcPayload.seed,
+  // Coalesce the gauge + report fetches for the same edited tree: they fire in
+  // the same tick and both miss the cache, so without this they'd each run a
+  // full ~75s 1000-trial Monte Carlo and time-slice the CPU. One run, shared.
+  return singleFlight(`solver:${clientId}:${inputHash}`, async () => {
+    const engine = createReturnEngine({
+      indices: mcPayload.indices,
+      correlation: mcPayload.correlation,
+      seed: mcPayload.seed,
+    });
+    const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+    const raw = await runMonteCarlo({
+      data: mutated,
+      returnEngine: engine,
+      accountMixes,
+      trials: CANONICAL_TRIALS,
+      requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
+    });
+    const projection = runProjectionWithEvents(mutated);
+    const result = assembleMonteCarloResult({ tree: mutated, mcPayload, raw, projection });
+    try {
+      await db
+        .insert(solverMcCache)
+        .values({ firmId, clientId, inputHash, successRate: raw.successRate, result })
+        .onConflictDoUpdate({
+          target: [solverMcCache.clientId, solverMcCache.inputHash],
+          set: { successRate: raw.successRate, result, computedAt: new Date() },
+        });
+      // Opportunistic age prune (bounded by the computed_at index).
+      await db
+        .delete(solverMcCache)
+        .where(lt(solverMcCache.computedAt, new Date(Date.now() - PRUNE_AGE_MS)));
+    } catch (err) {
+      console.error("solver_mc cache write failed; returning fresh result", err);
+    }
+    return result;
   });
-  const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
-  const raw = await runMonteCarlo({
-    data: mutated,
-    returnEngine: engine,
-    accountMixes,
-    trials: CANONICAL_TRIALS,
-    requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
-  });
-  const projection = runProjectionWithEvents(mutated);
-  const result = assembleMonteCarloResult({ tree: mutated, mcPayload, raw, projection });
-  try {
-    await db
-      .insert(solverMcCache)
-      .values({ firmId, clientId, inputHash, successRate: raw.successRate, result })
-      .onConflictDoUpdate({
-        target: [solverMcCache.clientId, solverMcCache.inputHash],
-        set: { successRate: raw.successRate, result, computedAt: new Date() },
-      });
-    // Opportunistic age prune (bounded by the computed_at index).
-    await db
-      .delete(solverMcCache)
-      .where(lt(solverMcCache.computedAt, new Date(Date.now() - PRUNE_AGE_MS)));
-  } catch (err) {
-    console.error("solver_mc cache write failed; returning fresh result", err);
-  }
-  return result;
 }
 
 export async function getOrComputeSolverMc(args: {

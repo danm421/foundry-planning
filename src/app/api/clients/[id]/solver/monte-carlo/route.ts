@@ -22,6 +22,10 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 
 export const dynamic = "force-dynamic";
+// A cold 1000-trial run is ~75s of single-threaded CPU on the heaviest plans;
+// pin the platform ceiling so a heavy working tree can't get killed at a lower
+// default before the compute (and cache write) finishes.
+export const maxDuration = 300;
 
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
