@@ -14,9 +14,9 @@
 //
 // Income-specific notes:
 //   • No isDefault guard on delete (incomes have no such column).
-//   • taxType is create-only: the live PUT route does NOT include taxType in
-//     its .set() — the update core honours this by omitting taxType from the
-//     conditional-set, even though incomeUpdateSchema technically accepts it.
+//   • taxType round-trips on both create AND update — the edit dialog's Tax
+//     Treatment dropdown must persist (a changed type, e.g. → tax_exempt, is
+//     what the engine reads to bucket the income as taxable vs non-taxable).
 //   • SS fields (owner, claimingAge, claimingAgeMonths, claimingAgeMode,
 //     ssBenefitMode, piaMonthly) are included in both create and update where
 //     the route includes them.
@@ -144,13 +144,15 @@ export async function updateIncomeForClient(args: {
     if (!b.ok) return writeError(400, b.reason);
   }
 
-  // UPDATE .set() column list lifted verbatim from PUT route ([incomeId]/route.ts L81–103).
-  // NOTE: taxType is intentionally absent — the live PUT route does not include it,
-  // so we honour that here even though incomeUpdateSchema accepts taxType.
+  // UPDATE .set() column list lifted from PUT route ([incomeId]/route.ts L81–103),
+  // plus taxType — the edit dialog exposes a Tax Treatment dropdown, so a changed
+  // tax type (e.g. → tax_exempt) must round-trip; omitting it left income the
+  // advisor marked tax-exempt still taxed by the engine.
   const [updated] = await db
     .update(incomes)
     .set({
       ...(p.type !== undefined && { type: p.type as IncomeRow["type"] }),
+      ...(p.taxType !== undefined && { taxType: (p.taxType ?? null) as IncomeRow["taxType"] }),
       ...(p.name !== undefined && { name: p.name }),
       ...(p.annualAmount !== undefined && { annualAmount: p.annualAmount }),
       ...(p.startYear !== undefined && { startYear: p.startYear }),
