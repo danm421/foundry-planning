@@ -1,7 +1,7 @@
 // src/components/forms/field-hint-popover.tsx
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 /** One row in the hint box. Omit `term` for a value-only (bare-tag) row. */
@@ -92,18 +92,21 @@ export function FieldHintPopover({ label, rows }: { label: string; rows: HintRow
                 left: coords?.left ?? -9999,
                 opacity: coords ? 1 : 0,
               }}
-              className="pointer-events-none z-50 w-56 max-w-[calc(100vw-1rem)] rounded-md border border-hair bg-card px-3 py-2 text-xs leading-snug text-ink-2 shadow-lg transition-opacity motion-reduce:transition-none"
+              className="pointer-events-none z-50 w-max max-w-[calc(100vw-1rem)] rounded-md border border-hair-2 bg-card px-3 py-2 text-xs leading-snug text-ink-2 shadow-lg transition-opacity motion-reduce:transition-none"
             >
-              <dl className="space-y-1">
-                {rows.map((r, i) => (
-                  <div
-                    key={i}
-                    className={r.term ? "flex items-baseline justify-between gap-3" : ""}
-                  >
-                    {r.term ? <dt className="text-ink-3">{r.term}</dt> : null}
-                    <dd className={r.term ? "tabular text-ink-2" : "text-ink-2"}>{r.value}</dd>
-                  </div>
-                ))}
+              <dl className="grid grid-cols-[auto_auto] items-baseline gap-x-5 gap-y-1">
+                {rows.map((r, i) =>
+                  r.term ? (
+                    <Fragment key={i}>
+                      <dt className="text-ink-3">{r.term}</dt>
+                      <dd className="tabular text-ink-2">{r.value}</dd>
+                    </Fragment>
+                  ) : (
+                    <dd key={i} className="col-span-2 text-ink-2">
+                      {r.value}
+                    </dd>
+                  ),
+                )}
               </dl>
             </div>,
             document.body,
