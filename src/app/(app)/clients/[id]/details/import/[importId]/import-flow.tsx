@@ -9,6 +9,7 @@ import ExtractionProgress from "@/components/import/extraction-progress";
 import ReviewWizard from "@/components/import/review-wizard";
 import type { ImportPayload } from "@/lib/imports/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { ClientMilestones } from "@/lib/milestones";
 import { draftErrorMessage } from "@/lib/imports/draft-error-message";
 
 export interface ImportFlowFile {
@@ -30,6 +31,9 @@ interface ImportFlowProps {
   payload: ImportPayload | null;
   perTabCommittedAt: Record<string, string> | null;
   growthContext: GrowthContext;
+  milestones?: ClientMilestones | null;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -265,6 +269,9 @@ function ReviewStage(props: ImportFlowProps) {
           defaultEndYear={currentYear + 30}
           growthContext={props.growthContext}
           fileNames={fileNames}
+          milestones={props.milestones ?? undefined}
+          clientFirstName={props.clientFirstName}
+          spouseFirstName={props.spouseFirstName}
         />
       </CardBody>
     </Card>

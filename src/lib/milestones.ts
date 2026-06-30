@@ -15,6 +15,20 @@ export const YEAR_REFS = [
 
 export type YearRef = (typeof YEAR_REFS)[number];
 
+const YEAR_REF_SET: ReadonlySet<string> = new Set(YEAR_REFS);
+
+/**
+ * Narrow an arbitrary value (e.g. an LLM-emitted token or a round-tripped
+ * payload field) to a valid YearRef, or undefined if it isn't one of the
+ * twelve anchors. Used to drop hallucinated / tampered ref tokens at the
+ * extraction-merge and commit boundaries.
+ */
+export function coerceYearRef(value: unknown): YearRef | undefined {
+  return typeof value === "string" && YEAR_REF_SET.has(value)
+    ? (value as YearRef)
+    : undefined;
+}
+
 export const YEAR_REF_LABELS: Record<YearRef, string> = {
   plan_start: "Plan Start",
   plan_end: "Plan End",

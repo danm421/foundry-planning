@@ -1,4 +1,5 @@
 import type { ExtractionResult } from "@/lib/extraction/types";
+import { coerceYearRef } from "@/lib/milestones";
 import {
   emptyImportPayload,
   type Annotated,
@@ -46,15 +47,22 @@ export function mergeExtractionResults(
         : fallbackProvenance(section);
       return { ...(stripped as T), __provenance: provenance, match: { kind: "new" } };
     };
+    const sanitizeTimingRefs = <T extends { startYearRef?: unknown; endYearRef?: unknown }>(
+      row: T,
+    ): T => ({
+      ...row,
+      startYearRef: coerceYearRef(row.startYearRef),
+      endYearRef: coerceYearRef(row.endYearRef),
+    });
 
     for (const row of result.extracted.accounts) {
       payload.accounts.push(annotateRow(row, "accounts"));
     }
     for (const row of result.extracted.incomes) {
-      payload.incomes.push(annotateRow(row, "incomes"));
+      payload.incomes.push(sanitizeTimingRefs(annotateRow(row, "incomes")));
     }
     for (const row of result.extracted.expenses) {
-      payload.expenses.push(annotateRow(row, "expenses"));
+      payload.expenses.push(sanitizeTimingRefs(annotateRow(row, "expenses")));
     }
     for (const row of result.extracted.liabilities) {
       payload.liabilities.push(annotateRow(row, "liabilities"));

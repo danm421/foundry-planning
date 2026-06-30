@@ -1,4 +1,5 @@
 import type { db } from "@/db";
+import type { ClientMilestones } from "@/lib/milestones";
 
 /** Inferred from `db.transaction` callback to avoid coupling to internal Drizzle generics. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -41,6 +42,8 @@ export interface CommitContext {
   scenarioId: string;
   orgId: string;
   userId: string;
+  /** Resolved client milestones, for translating year-ref timing on incomes/expenses. */
+  milestones?: ClientMilestones;
   /** Pre-resolved ticker classifications/prices (Phase A). */
   resolvedHoldings?: ResolvedHoldingsMap;
   /** Sink: account ids that received holdings, for post-commit asset-mix sync. */

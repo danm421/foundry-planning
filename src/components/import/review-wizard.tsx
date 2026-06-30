@@ -17,6 +17,7 @@ import type {
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
 import type { CommitTab } from "@/lib/imports/commit/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { ClientMilestones } from "@/lib/milestones";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
 import { seedWizardBequest } from "./will-bequest-mapper";
 import ReviewStepAccounts from "./review-step-accounts";
@@ -56,6 +57,9 @@ interface ReviewWizardProps {
   growthContext: GrowthContext;
   /** fileId → original filename, for the per-row source-document badge. */
   fileNames: Record<string, string>;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 interface CanonicalRows {
@@ -109,6 +113,9 @@ export default function ReviewWizard({
   defaultEndYear,
   growthContext,
   fileNames,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: ReviewWizardProps) {
   const router = useRouter();
 
@@ -438,6 +445,9 @@ export default function ReviewWizard({
             onChange={(i) => setIncomes(i as Annotated<ExtractedIncome>[])}
             defaultStartYear={defaultStartYear}
             defaultEndYear={defaultEndYear}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
           />
         )}
         {currentTab === "expenses" && (
@@ -446,6 +456,9 @@ export default function ReviewWizard({
             onChange={(e) => setExpenses(e as Annotated<ExtractedExpense>[])}
             defaultStartYear={defaultStartYear}
             defaultEndYear={defaultEndYear}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
           />
         )}
         {currentTab === "liabilities" && (
