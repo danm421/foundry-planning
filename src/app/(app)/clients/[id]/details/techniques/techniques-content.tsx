@@ -103,6 +103,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
   const transactionRows = [...(effectiveTree.assetTransactions ?? [])].sort(
     (a, b) => a.year - b.year,
   );
+  const relocationRows = [...(effectiveTree.relocations ?? [])].sort((a, b) => a.year - b.year);
   const liabilityRows = [...effectiveTree.liabilities].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
@@ -167,6 +168,13 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
     mortgageAmount: tx.mortgageAmount == null ? null : String(tx.mortgageAmount),
     mortgageRate: tx.mortgageRate == null ? null : String(tx.mortgageRate),
     mortgageTermMonths: tx.mortgageTermMonths ?? null,
+  }));
+
+  const relocationProps = relocationRows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    year: r.year,
+    destinationState: r.destinationState,
   }));
 
   const rothConversionProps = rothConversionRows.map((c) => ({
@@ -262,6 +270,7 @@ export async function TechniquesContent({ clientId: id, scenarioParam }: Techniq
       clientId={id}
       transfers={transferProps}
       reinvestments={reinvestmentProps}
+      relocations={relocationProps}
       assetTransactions={transactionProps}
       rothConversions={rothConversionProps}
       accounts={accountOptions}

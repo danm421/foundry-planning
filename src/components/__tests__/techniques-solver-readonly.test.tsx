@@ -38,6 +38,7 @@ vi.mock("@/hooks/use-scenario-state", () => ({
 // Mock heavy dialog components
 vi.mock("@/components/forms/add-transfer-form", () => ({ default: () => null }));
 vi.mock("@/components/forms/add-reinvestment-form", () => ({ default: () => null }));
+vi.mock("@/components/forms/add-relocation-form", () => ({ default: () => null }));
 vi.mock("@/components/forms/add-asset-transaction-form", () => ({ default: () => null }));
 vi.mock("@/components/forms/add-roth-conversion-form", () => ({ default: () => null }));
 vi.mock("@/components/help-tip", () => ({ HelpTip: () => null }));
@@ -72,6 +73,7 @@ const MINIMAL_PROPS = {
   clientId: "c-1",
   transfers: [],
   reinvestments: [],
+  relocations: [],
   assetTransactions: [],
   rothConversions: [
     {
