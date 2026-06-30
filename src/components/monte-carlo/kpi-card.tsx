@@ -10,10 +10,10 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, visual, footnote, className = "" }: KpiCardProps) {
   return (
-    <div className={`rounded-lg bg-card ring-1 ring-hair p-4 flex items-stretch justify-between gap-3 min-h-[96px] ${className}`}>
+    <div className={`@container rounded-lg bg-card ring-1 ring-hair p-4 flex items-stretch justify-between gap-3 min-h-[96px] ${className}`}>
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="text-xs uppercase tracking-wider text-ink-2">{label}</div>
-        <div className="mt-auto text-3xl font-semibold text-ink tabular-nums leading-tight">
+        <div className="mt-auto text-lg @min-[150px]:text-xl @min-[200px]:text-2xl @min-[260px]:text-3xl font-semibold text-ink tabular-nums leading-tight">
           {value}
         </div>
         {footnote ? (
