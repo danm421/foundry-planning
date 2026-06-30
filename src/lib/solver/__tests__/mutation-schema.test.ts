@@ -211,6 +211,47 @@ describe("SOLVER_MUTATION_SCHEMA — technique upserts", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("accepts a relocation-upsert with a full value", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "relocation-upsert",
+      id: "rl-1",
+      value: {
+        id: "rl-1",
+        name: "Move to Florida",
+        year: 2030,
+        destinationState: "FL",
+        enabled: true,
+      },
+    });
+    if (!r.success) {
+      throw new Error(`schema rejected relocation-upsert: ${r.error.message}`);
+    }
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a relocation-upsert removal (value null)", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "relocation-upsert",
+      id: "rl-1",
+      value: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects a relocation-upsert with an invalid destinationState", () => {
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "relocation-upsert",
+      id: "rl-1",
+      value: {
+        id: "rl-1",
+        name: "Move to Nowhere",
+        year: 2030,
+        destinationState: "ZZ",
+      },
+    });
+    expect(r.success).toBe(false);
+  });
 });
 
 describe("SOLVER_MUTATION_SCHEMA — account-upsert categories", () => {

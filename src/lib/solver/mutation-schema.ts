@@ -8,6 +8,7 @@
 // the bar chart stops updating.
 
 import { z } from "zod";
+import { isUSPSStateCode } from "@/lib/usps-states";
 
 const PERSON = z.enum(["client", "spouse"]);
 
@@ -81,6 +82,18 @@ const REINVESTMENT_VALUE = z
     accountIds: z.array(z.string().min(1)),
     year: YEAR,
     realizeTaxesOnSwitch: z.boolean(),
+  })
+  .passthrough();
+
+const RELOCATION_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    year: YEAR,
+    // Matches Relocation["destinationState"] (USPSStateCode) in engine/types.ts.
+    destinationState: z
+      .string()
+      .refine(isUSPSStateCode, { message: "destinationState must be a valid USPS code" }),
   })
   .passthrough();
 
@@ -390,6 +403,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("reinvestment-upsert"),
     id: z.string().min(1),
     value: REINVESTMENT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("relocation-upsert"),
+    id: z.string().min(1),
+    value: RELOCATION_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("account-upsert"),
