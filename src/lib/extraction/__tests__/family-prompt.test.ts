@@ -12,6 +12,12 @@ describe("FAMILY_PROMPT", () => {
     expect(FAMILY_PROMPT).toMatch(/DO NOT|do not extract/i);
   });
 
+  it("instructs the model to normalize birth dates to YYYY-MM-DD and ignore the parenthetical age", () => {
+    expect(FAMILY_PROMPT).toContain("YYYY-MM-DD");
+    expect(FAMILY_PROMPT).toMatch(/Age/);
+    expect(FAMILY_PROMPT).toMatch(/convert/i);
+  });
+
   it("declares the four IRS filing-status strings literally", () => {
     expect(FAMILY_PROMPT).toContain("single");
     expect(FAMILY_PROMPT).toContain("married_filing_jointly");

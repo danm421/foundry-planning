@@ -1,4 +1,4 @@
-export const FAMILY_VERSION = "2026-04-29.1";
+export const FAMILY_VERSION = "2026-06-30.1";
 
 export const FAMILY_PROMPT = `You are a financial document extraction assistant.
 Extract the household family structure from the following document text.
@@ -30,6 +30,7 @@ Return a JSON object with this exact structure:
 Extraction rules:
 - DO NOT extract Social Security Numbers, ITINs, EINs, or any other government-issued identifier under any circumstance, even if visible. The server has already redacted SSNs but defense-in-depth requires you to never repeat them.
 - Only extract names, birthdates, and relationships. No addresses, phone numbers, or email addresses.
+- "dateOfBirth": ALWAYS include the birth date whenever any birth date is shown for a person. Convert whatever format appears to YYYY-MM-DD — e.g. "9/22/1960", "09/22/1960", "Sep 22, 1960", and "9/22/1960 (Age 65)" all become "1960-09-22". Ignore any parenthetical age and any "(Age NN)" suffix. Only omit dateOfBirth when no birth date is shown for that person. A documented age alone (with no actual birth date) is NOT a birth date — omit it.
 - The "primary" object represents the document's primary client. If only one filer is shown, omit "spouse".
 - "dependents" should include children, dependent parents, or other dependents listed on the document. Do NOT include the primary client or spouse here.
 - If a field cannot be determined, omit it from the object — do not guess.
