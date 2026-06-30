@@ -33,6 +33,7 @@ import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
+import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
 import { isHeldFlatLiability } from "./liability-kind";
@@ -706,7 +707,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // (no first-death event fires, so no DSUE is ever generated).
   let stashedDSUE = 0;
 
-  let currentIncomes: Income[] = [...data.incomes];
+  let currentIncomes: Income[] = expandLinkedIncomes(data.incomes, {
+    accountById,
+    giftEvents: data.giftEvents ?? [],
+    assetTransactions: data.assetTransactions ?? [],
+    planStartYear: planSettings.planStartYear,
+    clientFmId,
+    spouseFmId,
+  });
   // Snapshot of the year's resolved `allExpenses` (data.expenses + synthetic
   // property-tax rows). Captured each iteration so the post-loop entity
   // cash-flow pass can read entity-tagged synthetic expenses.
