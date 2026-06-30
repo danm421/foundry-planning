@@ -28,7 +28,7 @@ import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expens
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { resolveRefYears } from "@/lib/year-refs";
-import { normalizeScenarioGifts } from "./normalize-scenario-gifts";
+import { applyGiftOverlays } from "./apply-gift-overlays";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
 /**
@@ -114,9 +114,11 @@ export function applyScenarioChangesWithRefs(
   groups: ToggleGroup[],
   resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
+  const giftChanges = changes.filter((c) => c.targetKind === "gift");
+  const nonGiftChanges = changes.filter((c) => c.targetKind !== "gift");
   const { effectiveTree, warnings } = applyScenarioChanges(
     treeForChanges,
-    changes,
+    nonGiftChanges,
     toggleState,
     groups,
   );
@@ -137,7 +139,7 @@ export function applyScenarioChangesWithRefs(
     refResolved.planSettings.taxInflationRate ??
     refResolved.planSettings.inflationRate ??
     0;
-  const giftNormalized = normalizeScenarioGifts(refResolved, giftCpi);
+  const giftNormalized = applyGiftOverlays(refResolved, giftChanges, giftCpi);
 
   if (resolutionContext && giftNormalized.reinvestments) {
     giftNormalized.reinvestments = resolveReinvestments(giftNormalized.reinvestments, {
