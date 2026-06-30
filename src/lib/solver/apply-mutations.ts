@@ -9,7 +9,7 @@
 
 import type { ClientData } from "@/engine/types";
 import { resolveRefYears } from "@/lib/year-refs";
-import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { applyGiftsToClientData, giftEventBelongsTo, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
@@ -326,20 +326,28 @@ export function applyMutations(
     }
   }
   if (giftDrafts.size > 0) {
-    const scenarioDrafts = [...giftDrafts.values()].filter(
+    const targeted = new Set(giftDrafts.keys());
+    const drafts = [...giftDrafts.values()].filter(
       (v): v is EstateFlowGift => v !== null,
     );
     const cpi =
       result.planSettings.taxInflationRate ??
       result.planSettings.inflationRate ??
       0;
+    // Strip each targeted gift's existing footprint (base or prior), then
+    // re-materialise the new value. Makes "edit a base gift" an in-place
+    // override; "remove"/"toggle-off" leave nothing.
+    result.gifts = (result.gifts ?? []).filter((g) => !targeted.has(g.id));
+    result.giftEvents = (result.giftEvents ?? []).filter(
+      (e) => !giftEventBelongsTo(e, targeted),
+    );
     const derived = applyGiftsToClientData(
       { ...result, gifts: [], giftEvents: [] },
-      scenarioDrafts,
+      drafts,
       cpi,
     );
-    result.gifts = [...(result.gifts ?? []), ...(derived.gifts ?? [])];
-    result.giftEvents = [...(result.giftEvents ?? []), ...derived.giftEvents].sort(
+    result.gifts = [...result.gifts, ...(derived.gifts ?? [])];
+    result.giftEvents = [...result.giftEvents, ...derived.giftEvents].sort(
       (a, b) => a.year - b.year,
     );
   }
