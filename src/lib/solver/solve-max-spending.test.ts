@@ -45,4 +45,17 @@ describe("solveMaxSpending", () => {
     expect(r.realAnnualSpend).toBe(roundCap()); // 3.0 * 100_000 = 300_000
     function roundCap() { return 300_000; }
   });
+
+  it("re-selects at higher trials, correcting a pessimistic 250-trial prefix", async () => {
+    // baseSpend = 100_000. 500-trial PoS is the truth (0.85 at scale 0.30 → $30k);
+    // the 250-trial prefix reads 0.03 low, so phase 1 alone would undershoot.
+    const evaluateScale = async (scale: number, trials: number) => {
+      const truth = Math.max(0, Math.min(1, 1 - scale / 2));
+      return trials >= 500 ? truth : Math.max(0, truth - 0.03);
+    };
+    const r = await solveMaxSpending(args({ evaluateScale }));
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBe(30_000); // corrected up from the ~25k a 250-only solve gives
+    expect(Math.abs(r.achievedPoS - 0.85)).toBeLessThanOrEqual(0.01);
+  });
 });
