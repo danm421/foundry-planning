@@ -37,6 +37,9 @@ vi.mock("@/components/cashflow/charts/tax-bracket-chart", () => ({
 vi.mock("@/components/cashflow/tax-bracket-tab", () => ({
   TaxBracketTab: () => <div data-testid="table-tax-bracket" />,
 }));
+vi.mock("../solver-monte-carlo-panel", () => ({
+  SolverMonteCarloPanel: () => <div data-testid="solver-mc-panel" />,
+}));
 
 import { SolverChartPanel } from "../solver-chart-panel";
 
@@ -77,6 +80,9 @@ function ControlledPanel({
       source="base"
       mutations={[]}
       mcSuccessRate={null}
+      extraAccountMixes={[]}
+      mcNonce={0}
+      mcRequested={false}
       activeSummary="retirement"
       onSummaryChange={() => undefined}
       selectedYear={null}
@@ -176,6 +182,12 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("chart-liquidity")).toBeInTheDocument();
   });
 
+  it("renders the Monte Carlo report panel when that tab is active", () => {
+    render(<ControlledPanel initialReport="monteCarlo" />);
+    expect(screen.getByRole("tab", { name: "Monte Carlo" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("solver-mc-panel")).toBeInTheDocument();
+  });
+
   it("reports tab clicks through onReportChange", async () => {
     const onReportChange = vi.fn();
     render(
@@ -194,6 +206,9 @@ describe("SolverChartPanel", () => {
         source="base"
         mutations={[]}
         mcSuccessRate={null}
+        extraAccountMixes={[]}
+        mcNonce={0}
+        mcRequested={false}
         activeSummary="retirement"
         onSummaryChange={() => undefined}
         selectedYear={null}
