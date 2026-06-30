@@ -278,6 +278,7 @@ type RawIncome = {
    *  with `ownerEntityId`. When set, the income flows through the business
    *  account's distribution policy / tax treatment. */
   ownerAccountId?: string | null;
+  linkedPropertyId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   taxType?: string | null;
@@ -308,6 +309,7 @@ export function resolveIncomeFromRaw(
     claimingAge: raw.claimingAge ?? undefined,
     ownerEntityId: raw.ownerEntityId ?? undefined,
     ownerAccountId: raw.ownerAccountId ?? undefined,
+    linkedPropertyId: raw.linkedPropertyId ?? undefined,
     cashAccountId: raw.cashAccountId ?? undefined,
     inflationStartYear: raw.inflationStartYear ?? undefined,
     taxType: (raw.taxType as Income["taxType"]) ?? undefined,

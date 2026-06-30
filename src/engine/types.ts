@@ -889,6 +889,10 @@ export interface Income {
    *  income shows in totals. Applies typically to schedule C / K-1 SE
    *  streams on `business` type. Absent = treated as W-2-style for tax. */
   isSelfEmployment?: boolean;
+  /** When set (only on type === "other"), the income follows this real estate
+   *  account's per-year ownership. Consumed by expandLinkedIncomes at the top
+   *  of runProjection; the rest of the engine never reads it. */
+  linkedPropertyId?: string;
   // ── View-only metadata ─────────────────────────────────────────────
   // Carried through from the DB row so page-level adapters can render
   // milestone-relative editing UI. Engine math ignores these fields.

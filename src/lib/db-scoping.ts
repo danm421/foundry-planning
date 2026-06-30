@@ -161,6 +161,28 @@ export async function assertAssetClassesInFirm(
     : { ok: true };
 }
 
+/**
+ * Verify every account id belongs to `clientId` AND has category = 'real_estate'.
+ * Used by the income write path so `linkedPropertyId` can only reference a real
+ * estate account the org owns.
+ */
+export async function assertRealEstateAccountsInClient(
+  clientId: string,
+  accountIds: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const ids = accountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: accounts.id, category: accounts.category })
+    .from(accounts)
+    .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, ids)));
+  const realEstate = new Set(rows.filter((r) => r.category === "real_estate").map((r) => r.id));
+  const missing = ids.find((v) => !realEstate.has(v));
+  return missing
+    ? { ok: false, reason: `Account ${missing} is not a real estate account` }
+    : { ok: true };
+}
+
 /** Look up a client by id + firm id; returns null if not found. */
 export async function findClientInFirm(clientId: string, firmId: string) {
   const [row] = await db

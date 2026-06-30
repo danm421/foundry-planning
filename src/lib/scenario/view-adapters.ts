@@ -46,6 +46,7 @@ export interface IncomeView {
   /** Business-account owner (business-as-asset model). Forms read this back
    *  on edit — without it, saving silently nulls the previous value. */
   ownerAccountId?: string | null;
+  linkedPropertyId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
   startYearRef?: string | null;
@@ -70,6 +71,7 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     growthSource: income.growthSource ?? null,
     ownerEntityId: income.ownerEntityId ?? null,
     ownerAccountId: income.ownerAccountId ?? null,
+    linkedPropertyId: income.linkedPropertyId ?? null,
     cashAccountId: income.cashAccountId ?? null,
     inflationStartYear: income.inflationStartYear ?? null,
     startYearRef: income.startYearRef ?? null,
