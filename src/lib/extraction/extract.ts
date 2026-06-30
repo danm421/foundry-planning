@@ -31,6 +31,7 @@ import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier
 import { redactSsns } from "./redact-ssn";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
+import { buildPageOutline } from "./page-outline";
 import { visionOcrPdf } from "./vision-ocr";
 
 const PROMPTS: Record<DocumentType, string> = {
@@ -268,9 +269,14 @@ export async function extractDocument(
             redactedPages.slice(0, 3).join("\n") +
             "\n...\n" +
             redactedPages.slice(-1).join("\n");
+        // A per-page heading outline so the classifier sees the WHOLE document,
+        // not just the first-three-plus-last anchor pages. Without it, sections
+        // living on the middle pages (e.g. income/expenses on pages 7–8 of a
+        // 9-page report) were invisible to the classifier and never extracted.
+        const outline = buildPageOutline(redactedPages);
         const multi = await extractWithMultiPass({
             pages: redactedPages,
-            outline: "",
+            outline,
             anchors,
             model,
             withHoldings: extractHoldings,
