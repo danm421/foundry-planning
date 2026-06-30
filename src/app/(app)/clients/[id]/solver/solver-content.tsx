@@ -1,5 +1,6 @@
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
+import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -42,7 +43,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
     ? runProjection(sourceLoaded.effectiveTree)
     : baseProjection;
 
-  const [modelPortfolioRows, allocationRows] = await Promise.all([
+  const [modelPortfolioRows, allocationRows, baseGifts] = await Promise.all([
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
@@ -56,6 +57,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       .from(modelPortfolioAllocations)
       .innerJoin(modelPortfolios, eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolios.id))
       .where(eq(modelPortfolios.firmId, firmId)),
+    loadGiftDrafts(clientId, firmId, source),
   ]);
 
   const allocsByPortfolio = new Map<string, { assetClassId: string; weight: string }[]>();
@@ -106,6 +108,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       spouseName={spouseName}
       categoryGrowthDefaults={categoryGrowthDefaults}
       scenarioName={scenarioName}
+      baseGifts={baseGifts}
     />
   );
 }
