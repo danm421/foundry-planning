@@ -1,6 +1,6 @@
 {
-  "id": "bb8e9a97-bf65-4c50-a19d-2411b1656a59",
-  "prevId": "4b0595dc-df30-4c79-af10-a0a13878da37",
+  "id": "9e5d82b4-35bf-4fc3-a38b-eaf0e54272e0",
+  "prevId": "bb8e9a97-bf65-4c50-a19d-2411b1656a59",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7434,7 +7434,19 @@
           "name": "recipient_entity_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "recipient_family_member_id": {
+          "name": "recipient_family_member_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_external_beneficiary_id": {
+          "name": "recipient_external_beneficiary_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "start_year": {
           "name": "start_year",
@@ -7582,6 +7594,32 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "gift_series_recipient_family_member_id_family_members_id_fk": {
+          "name": "gift_series_recipient_family_member_id_family_members_id_fk",
+          "tableFrom": "gift_series",
+          "tableTo": "family_members",
+          "columnsFrom": [
+            "recipient_family_member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gift_series_recipient_external_beneficiary_id_external_beneficiaries_id_fk": {
+          "name": "gift_series_recipient_external_beneficiary_id_external_beneficiaries_id_fk",
+          "tableFrom": "gift_series",
+          "tableTo": "external_beneficiaries",
+          "columnsFrom": [
+            "recipient_external_beneficiary_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7591,6 +7629,10 @@
         "gift_series_year_order": {
           "name": "gift_series_year_order",
           "value": "\"gift_series\".\"end_year\" >= \"gift_series\".\"start_year\""
+        },
+        "gift_series_one_recipient": {
+          "name": "gift_series_one_recipient",
+          "value": "(\n        (\"gift_series\".\"recipient_entity_id\" IS NOT NULL)::int +\n        (\"gift_series\".\"recipient_family_member_id\" IS NOT NULL)::int +\n        (\"gift_series\".\"recipient_external_beneficiary_id\" IS NOT NULL)::int\n      ) = 1"
         }
       },
       "isRLSEnabled": false

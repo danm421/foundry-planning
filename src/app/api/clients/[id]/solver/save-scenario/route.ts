@@ -14,7 +14,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, scenarioChanges } from "@/db/schema";
+import { scenarios, scenarioChanges, scenarioToggleGroups } from "@/db/schema";
+import {
+  revocableTrustFundingGroups,
+  resolveFundingGroupRows,
+} from "@/lib/solver/revocable-trust-funding-group";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
@@ -23,7 +27,7 @@ import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { loadScenarioChanges } from "@/lib/scenario/changes";
+import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import {
   applyEntityAdd,
   applyEntityEdit,
@@ -82,6 +86,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Sanity check — throws on invalid mutation state
     applyMutations(effectiveTree, mutations as SolverMutation[]);
 
+    const fundingGroups = revocableTrustFundingGroups(drafts);
+
     const newScenarioId = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(scenarios)
@@ -93,6 +99,22 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         })
         .returning();
 
+      // Auto-create one toggle-group ("technique") per revocable-trust funding
+      // set so the N retitled-account changes collapse into a single card in the
+      // changes panel. defaultOn: true keeps the projection identical. A fresh
+      // scenario has no existing groups, so this always creates.
+      const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
+        fundingGroups,
+        [],
+        row.id,
+        0,
+      );
+      if (newGroupRows.length > 0) {
+        // .returning() result is intentionally unused (ids are client-generated);
+        // kept for parity with the scenarioChanges insert below.
+        await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
+      }
+
       if (drafts.length > 0) {
         await tx
           .insert(scenarioChanges)
@@ -103,7 +125,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               targetKind: d.targetKind,
               targetId: d.targetId,
               payload: d.payload,
-              toggleGroupId: null,
+              toggleGroupId: groupIdByTarget.get(d.targetId) ?? null,
               orderIndex: d.orderIndex,
               enabled: true,
             })),
@@ -232,9 +254,27 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       );
     }
 
+    // Find-or-create a toggle group per revocable-trust funding set so a re-save
+    // collapses the retitled-account edits into one technique card (idempotent:
+    // reuse a same-name group rather than duplicating it).
+    const fundingGroups = revocableTrustFundingGroups(drafts);
+    const existingGroups = await loadScenarioToggleGroups(scenarioId);
+    const { groupIdByTarget, newGroupRows } = resolveFundingGroupRows(
+      fundingGroups,
+      existingGroups,
+      scenarioId,
+      existingGroups.length,
+    );
+
     await db.transaction(async (tx) => {
+      if (newGroupRows.length > 0) {
+        // .returning() result is intentionally unused (ids are client-generated);
+        // kept for parity with the scenarioChanges insert below.
+        await tx.insert(scenarioToggleGroups).values(newGroupRows).returning();
+      }
       for (const d of drafts) {
         const targetKind = d.targetKind as TargetKind;
+        const gid = groupIdByTarget.get(d.targetId);
         if (d.opType === "edit") {
           const fields = new Set<string>([
             ...(existingEditFields.get(`${d.targetKind}:${d.targetId}`) ?? []),
@@ -250,6 +290,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             targetKind,
             targetId: d.targetId,
             desiredFields,
+            ...(gid ? { toggleGroupId: gid } : {}),
             tx,
           });
         } else if (d.opType === "add") {
@@ -258,6 +299,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
             firmId,
             targetKind,
             entity: d.payload as { id: string } & Record<string, unknown>,
+            ...(gid ? { toggleGroupId: gid } : {}),
             tx,
           });
         } else {

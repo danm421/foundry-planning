@@ -1349,8 +1349,15 @@
     {
       "idx": 192,
       "version": "7",
-      "when": 1782774013633,
-      "tag": "0192_gift_series_non_entity_recipients",
+      "when": 1782776880096,
+      "tag": "0192_solver_mc_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1782782936755,
+      "tag": "0193_gift_series_non_entity_recipients",
       "breakpoints": true
     }
   ]

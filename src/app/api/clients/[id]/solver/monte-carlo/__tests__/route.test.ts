@@ -16,6 +16,7 @@ vi.mock("@/lib/db-scoping", () => ({
 }));
 vi.mock("@/lib/compute-cache/solver-mc", () => ({
   getOrComputeSolverMc: vi.fn(),
+  getOrComputeSolverMcReport: vi.fn(),
 }));
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
@@ -43,7 +44,7 @@ vi.mock("@/lib/clients/authz", () => ({
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { checkProjectionRateLimit } from "@/lib/rate-limit";
-import { getOrComputeSolverMc } from "@/lib/compute-cache/solver-mc";
+import { getOrComputeSolverMc, getOrComputeSolverMcReport } from "@/lib/compute-cache/solver-mc";
 import { POST } from "../route";
 
 function makeRequest(body: unknown) {
@@ -61,6 +62,9 @@ beforeEach(() => {
   vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true, remaining: 29, reset: 0 });
   vi.mocked(findClientInFirm).mockResolvedValue({ id: "c1" } as never);
   vi.mocked(getOrComputeSolverMc).mockResolvedValue({ successRate: 0.88 });
+  vi.mocked(getOrComputeSolverMcReport).mockResolvedValue({
+    payload: { summary: {} }, raw: { successRate: 0.73 }, meta: {},
+  } as never);
 });
 
 describe("POST /api/clients/[id]/solver/monte-carlo", () => {
@@ -100,5 +104,15 @@ describe("POST /api/clients/[id]/solver/monte-carlo", () => {
     expect(vi.mocked(getOrComputeSolverMc)).toHaveBeenCalledWith(
       expect.objectContaining({ extraAccountMixes: mixes }),
     );
+  });
+
+  it("full:true returns the full CachedMonteCarloResult", async () => {
+    const res = await POST(makeRequest({ source: "base", mutations: [], full: true }), ctx);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.raw.successRate).toBe(0.73);
+    expect(body.payload).toBeDefined();
+    expect(getOrComputeSolverMcReport).toHaveBeenCalledOnce();
+    expect(getOrComputeSolverMc).not.toHaveBeenCalled();
   });
 });

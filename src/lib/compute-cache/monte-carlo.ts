@@ -8,10 +8,9 @@ import {
   createReturnEngine,
   type MonteCarloResult,
 } from "@/engine";
-import { buildMonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/build-payload";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { hashMonteCarloInputs } from "./hash";
-import { annualIncomeAtStart } from "@/lib/monte-carlo/annual-income";
+import { assembleMonteCarloResult } from "./assemble-monte-carlo-result";
 
 export interface CachedMonteCarloResult {
   payload: MonteCarloReportPayload;
@@ -84,35 +83,13 @@ export async function getOrComputeMonteCarlo(args: {
         trials,
         requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
       });
-      const payload = buildMonteCarloReportPayload({
-        result: raw,
-        projection,
+      const payload = assembleMonteCarloResult({
+        tree: effectiveTree,
         mcPayload,
-        clientData: effectiveTree,
-      });
-      const clientBirthYear = effectiveTree.client.dateOfBirth
-        ? parseInt(effectiveTree.client.dateOfBirth.slice(0, 4), 10) || undefined
-        : undefined;
-      const planStartYear = projection.years[0]?.year ?? new Date().getFullYear();
-      // Mirror ReportHeader's display-name formatting (monte-carlo-report.tsx).
-      const client = effectiveTree.client;
-      const clientDisplayName = client.spouseName
-        ? `${client.firstName} & ${client.spouseName} ${client.lastName}`
-        : `${client.firstName} ${client.lastName}`;
-      return {
-        payload,
         raw,
-        meta: {
-          requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
-          startingLiquidBalance: mcPayload.startingLiquidBalance,
-          planStartYear,
-          clientBirthYear,
-          clientDisplayName,
-          annualIncomeAtStart: annualIncomeAtStart(effectiveTree, planStartYear),
-          retirementAge: effectiveTree.client.retirementAge,
-          spouseRetirementAge: effectiveTree.client.spouseRetirementAge,
-        },
-      };
+        projection,
+      });
+      return payload;
     },
   });
 }
