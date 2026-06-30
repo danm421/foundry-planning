@@ -6,6 +6,10 @@ import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-lim
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 
 export const dynamic = "force-dynamic";
+// A cold 1000-trial run is ~75s of single-threaded CPU on the heaviest plans;
+// pin the platform ceiling so a heavy household can't get killed at a lower
+// default before the compute (and cache write) finishes.
+export const maxDuration = 300;
 
 export async function GET(
   req: Request,

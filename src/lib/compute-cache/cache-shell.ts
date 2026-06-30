@@ -13,6 +13,7 @@ import { db } from "@/db";
 import { scenarioComputeCache } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ENGINE_VERSION } from "./hash";
+import { singleFlight } from "./single-flight";
 
 type CacheKind = "monte_carlo" | "life_insurance_solve" | "max_spending";
 
@@ -47,38 +48,47 @@ export async function withComputeCache<T>(args: {
     }
   }
 
-  const start = Date.now();
-  const payload = await args.compute();
-  const computeMs = Date.now() - start;
+  // Coalesce concurrent misses for the same (kind, scenario, inputHash): one
+  // compute serves all callers on this instance instead of N competing for CPU.
+  // (Each Monte Carlo run is ~75s single-threaded; two racing the gauge + report
+  // fetches would otherwise time-slice and ~double the wall-clock.)
+  return singleFlight(
+    `${args.kind}:${args.realScenarioId}:${args.inputHash}`,
+    async () => {
+      const start = Date.now();
+      const payload = await args.compute();
+      const computeMs = Date.now() - start;
 
-  try {
-    await db
-      .insert(scenarioComputeCache)
-      .values({
-        firmId: args.firmId,
-        clientId: args.clientId,
-        scenarioId: args.realScenarioId,
-        kind: args.kind,
-        inputHash: args.inputHash,
-        trials: args.trials,
-        engineVersion: ENGINE_VERSION,
-        payload,
-        computeMs,
-      })
-      .onConflictDoUpdate({
-        target: [scenarioComputeCache.scenarioId, scenarioComputeCache.kind],
-        set: {
-          inputHash: args.inputHash,
-          trials: args.trials,
-          engineVersion: ENGINE_VERSION,
-          payload,
-          computeMs,
-          computedAt: new Date(),
-        },
-      });
-  } catch (err) {
-    console.error(`${args.label} cache write failed; returning fresh result`, err);
-  }
+      try {
+        await db
+          .insert(scenarioComputeCache)
+          .values({
+            firmId: args.firmId,
+            clientId: args.clientId,
+            scenarioId: args.realScenarioId,
+            kind: args.kind,
+            inputHash: args.inputHash,
+            trials: args.trials,
+            engineVersion: ENGINE_VERSION,
+            payload,
+            computeMs,
+          })
+          .onConflictDoUpdate({
+            target: [scenarioComputeCache.scenarioId, scenarioComputeCache.kind],
+            set: {
+              inputHash: args.inputHash,
+              trials: args.trials,
+              engineVersion: ENGINE_VERSION,
+              payload,
+              computeMs,
+              computedAt: new Date(),
+            },
+          });
+      } catch (err) {
+        console.error(`${args.label} cache write failed; returning fresh result`, err);
+      }
 
-  return payload;
+      return payload;
+    },
+  );
 }
