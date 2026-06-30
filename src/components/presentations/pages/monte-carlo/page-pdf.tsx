@@ -13,7 +13,7 @@ const styles = StyleSheet.create({
   kpiRow: { flexDirection: "row", gap: 8, marginTop: 10, marginBottom: 12 },
   kpiBox: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair2, backgroundColor: T.card, padding: 8 },
   kpiLabel: { fontSize: 7, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5 },
-  kpiValue: { fontSize: 13, color: T.ink, fontFamily: "Inter", marginTop: 3 },
+  kpiValue: { fontSize: 13, color: T.ink, fontFamily: "Inter", marginTop: "auto" },
   hero: { marginBottom: 10 },
   thumbRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
   thumb: { flex: 1, borderRadius: 4, borderWidth: 1, borderColor: T.hair2, padding: 6 },

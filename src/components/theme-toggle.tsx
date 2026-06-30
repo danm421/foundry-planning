@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { THEME_COOKIE, type Theme } from "@/lib/theme";
 
 // Inline Lucide-style outline icons — lucide-react is not a dependency in this
-// repo (see recommendations-card.tsx). strokeWidth 1.5, currentColor, per the
-// foundry-design icon spec.
+// repo. strokeWidth 1.5, currentColor, per the foundry-design icon spec.
 function SunIcon() {
   return (
     <svg

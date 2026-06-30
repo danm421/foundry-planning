@@ -18,7 +18,6 @@ vi.mock("../longevity-chart", () => ({
 }));
 vi.mock("../kpi-band", () => ({ KpiBand: () => <div data-testid="kpi" /> }));
 vi.mock("../findings-card", () => ({ FindingsCard: () => <div data-testid="findings" /> }));
-vi.mock("../recommendations-card", () => ({ RecommendationsCard: () => <div data-testid="recs" /> }));
 vi.mock("../report-header", () => ({ ReportHeader: () => <div data-testid="header" /> }));
 vi.mock("../yearly-breakdown", () => ({ YearlyBreakdown: () => <div data-testid="yearly" /> }));
 

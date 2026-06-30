@@ -50,9 +50,6 @@ vi.mock("@/components/monte-carlo/kpi-band", () => ({
 vi.mock("@/components/monte-carlo/findings-card", () => ({
   FindingsCard: () => <div data-testid="findings-card" />,
 }));
-vi.mock("@/components/monte-carlo/recommendations-card", () => ({
-  RecommendationsCard: () => <div data-testid="recommendations-card" />,
-}));
 vi.mock("@/components/monte-carlo/yearly-breakdown", () => ({
   YearlyBreakdown: () => <div data-testid="yearly-breakdown" />,
 }));

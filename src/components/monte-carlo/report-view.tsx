@@ -6,7 +6,6 @@ import { ReportHeader } from "./report-header";
 import { KpiBand } from "./kpi-band";
 import { FanChart } from "./fan-chart";
 import { FindingsCard } from "./findings-card";
-import { RecommendationsCard } from "./recommendations-card";
 import { TerminalHistogram } from "./terminal-histogram";
 import { LongevityChart } from "./longevity-chart";
 import { YearlyBreakdown } from "./yearly-breakdown";
@@ -117,30 +116,6 @@ export function MonteCarloReportView({
         ) : (
           <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />
         )}
-
-        {reseedError && (
-          <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
-            {"Couldn’t generate a new seed: "}{reseedError}
-          </div>
-        )}
-
-        {summary ? (
-          <YearlyBreakdown summary={summary} />
-        ) : (
-          <div className="rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
-        )}
-
-        {summary && onReseed ? (
-          <div className="flex justify-center pt-2">
-            <button
-              onClick={onReseed}
-              disabled={reseedBusy}
-              className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
-            >
-              {reseedBusy ? "Generating…" : "Generate New Seed"}
-            </button>
-          </div>
-        ) : null}
       </div>
       <aside className="flex flex-col gap-4">
         {summary && raw ? (
@@ -175,17 +150,41 @@ export function MonteCarloReportView({
                 onPromote={() => setMainChart("longevity")}
               />
             )}
-            <RecommendationsCard />
           </>
         ) : (
           <>
             <div className="rounded-lg bg-card ring-1 ring-hair h-[120px] animate-pulse" />
             <div className="rounded-lg bg-card ring-1 ring-hair h-[260px] animate-pulse" />
             <div className="rounded-lg bg-card ring-1 ring-hair h-[280px] animate-pulse" />
-            <div className="rounded-lg bg-card ring-1 ring-hair h-[140px] animate-pulse" />
           </>
         )}
       </aside>
+
+      {reseedError && (
+        <div className="lg:col-span-2 rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
+          {"Couldn’t generate a new seed: "}{reseedError}
+        </div>
+      )}
+
+      {summary ? (
+        <div className="lg:col-span-2">
+          <YearlyBreakdown summary={summary} />
+        </div>
+      ) : (
+        <div className="lg:col-span-2 rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
+      )}
+
+      {summary && onReseed ? (
+        <div className="lg:col-span-2 flex justify-center pt-2">
+          <button
+            onClick={onReseed}
+            disabled={reseedBusy}
+            className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
+          >
+            {reseedBusy ? "Generating…" : "Generate New Seed"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
