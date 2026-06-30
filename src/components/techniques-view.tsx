@@ -7,6 +7,7 @@ import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useClientAccess } from "@/components/client-access-provider";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddReinvestmentForm, { type ReinvestmentInitialData } from "./forms/add-reinvestment-form";
+import AddRelocationForm from "./forms/add-relocation-form";
 import AddAssetTransactionForm, { type BusinessSaleOption } from "./forms/add-asset-transaction-form";
 import AddRothConversionForm, { type RothConversionInitialData } from "./forms/add-roth-conversion-form";
 import { HelpTip } from "@/components/help-tip";
@@ -15,6 +16,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
 import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
+import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -137,10 +139,18 @@ export interface RothConversionRow {
   inflationStartYear: number | null;
 }
 
+export interface RelocationRow {
+  id: string;
+  name: string;
+  year: number;
+  destinationState: USPSStateCode;
+}
+
 interface TechniquesViewProps {
   clientId: string;
   transfers: TransferRow[];
   reinvestments: ReinvestmentRow[];
+  relocations: RelocationRow[];
   assetTransactions: AssetTransactionRow[];
   rothConversions: RothConversionRow[];
   accounts: AccountOption[];
@@ -586,6 +596,47 @@ function ReinvestmentsTable({
   );
 }
 
+// ── Relocations ───────────────────────────────────────────────────────────────
+
+const RELOCATION_GRID =
+  "grid grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2";
+
+function RelocationsTable({
+  rows,
+  onEdit,
+  onDelete,
+}: {
+  rows: RelocationRow[];
+  onEdit?: (r: RelocationRow) => void;
+  onDelete?: (id: string) => void;
+}) {
+  if (rows.length === 0) {
+    return <EmptyRow message="No relocations yet." />;
+  }
+  return (
+    <>
+      <div
+        className={`${RELOCATION_GRID} border-b border-hair bg-card-2/40 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3`}
+      >
+        <span>Name</span>
+        <span>Destination State</span>
+        <span>Year</span>
+        <span className="text-right">Actions</span>
+      </div>
+      <ol className="divide-y divide-hair">
+        {rows.map((r) => (
+          <li key={r.id} className={`${RELOCATION_GRID} hover:bg-card-2/40`}>
+            <span className="truncate text-sm font-medium text-ink">{r.name}</span>
+            <span className="truncate text-xs text-ink-2">{USPS_STATE_NAMES[r.destinationState]}</span>
+            <span className="truncate text-xs tabular-nums text-ink-3">{r.year}</span>
+            <RowActions itemName={r.name} onEdit={onEdit ? () => onEdit(r) : undefined} onDelete={onDelete ? () => onDelete(r.id) : undefined} />
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 // ── Asset Transactions ────────────────────────────────────────────────────────
 
 type PastBuy = {
@@ -905,6 +956,7 @@ export default function TechniquesView({
   clientId,
   transfers,
   reinvestments,
+  relocations,
   assetTransactions,
   rothConversions,
   accounts,
@@ -925,6 +977,8 @@ export default function TechniquesView({
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
   const [showAddReinvestment, setShowAddReinvestment] = useState(false);
   const [editingReinvestment, setEditingReinvestment] = useState<ReinvestmentInitialData | null>(null);
+  const [showAddRelocation, setShowAddRelocation] = useState(false);
+  const [editingRelocation, setEditingRelocation] = useState<RelocationRow | null>(null);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(null);
   const [showAddRothConversion, setShowAddRothConversion] = useState(false);
@@ -1013,6 +1067,15 @@ export default function TechniquesView({
     router.refresh();
   }
 
+  async function handleDeleteRelocation(relocationId: string) {
+    if (!canEdit) return;
+    await writer.submit(
+      { op: "remove", targetKind: "relocation", targetId: relocationId },
+      { url: `/api/clients/${clientId}/relocations?relocationId=${relocationId}`, method: "DELETE" },
+    );
+    router.refresh();
+  }
+
   async function handleDeleteTransaction(transactionId: string) {
     if (!canEdit) return;
     await writer.submit(
@@ -1084,6 +1147,20 @@ export default function TechniquesView({
       </SectionShell>
 
       <SectionShell
+        title="Relocation"
+        help="Model the household moving to a different state in a chosen year. From that year on, state income tax and state estate/inheritance tax reflect the new state — until a later relocation overrides it."
+        count={relocations.length}
+        addLabel="+ Add Relocation"
+        onAdd={canEdit ? () => setShowAddRelocation(true) : undefined}
+      >
+        <RelocationsTable
+          rows={relocations}
+          onEdit={canEdit ? (r) => setEditingRelocation(r) : undefined}
+          onDelete={canEdit ? (id) => handleDeleteRelocation(id) : undefined}
+        />
+      </SectionShell>
+
+      <SectionShell
         title="Asset Transactions"
         help="Buy or sell a specific asset (real estate, business interest, vehicle). Sells use the projected end-of-year value unless overridden; Sell+Buy lets you roll proceeds into a replacement purchase."
         count={assetTransactions.length}
@@ -1127,6 +1204,15 @@ export default function TechniquesView({
           initialData={editingReinvestment ?? undefined}
           onClose={() => { setShowAddReinvestment(false); setEditingReinvestment(null); }}
           onSaved={() => { setShowAddReinvestment(false); setEditingReinvestment(null); router.refresh(); }}
+        />
+      )}
+
+      {canEdit && (showAddRelocation || editingRelocation) && (
+        <AddRelocationForm
+          clientId={clientId}
+          initialData={editingRelocation ?? undefined}
+          onClose={() => { setShowAddRelocation(false); setEditingRelocation(null); }}
+          onSaved={() => { setShowAddRelocation(false); setEditingRelocation(null); router.refresh(); }}
         />
       )}
 

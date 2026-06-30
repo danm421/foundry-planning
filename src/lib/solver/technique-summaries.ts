@@ -4,7 +4,9 @@ import type {
   RothConversion,
   AssetTransaction,
   Reinvestment,
+  Relocation,
 } from "@/engine/types";
+import { USPS_STATE_NAMES } from "@/lib/usps-states";
 
 const usd = (n: number): string =>
   n.toLocaleString("en-US", {
@@ -43,4 +45,8 @@ export function summarizeReinvestment(ri: Reinvestment): string {
   const target = formatReinvestmentScope(ri.groupKeys?.length ?? 0, ri.accountIds.length);
   const rate = `${Math.round(ri.newGrowthRate * 100)}%`;
   return `${target} · ${rate} from ${ri.year}`;
+}
+
+export function summarizeRelocation(r: Relocation): string {
+  return `${USPS_STATE_NAMES[r.destinationState]} · ${r.year}`;
 }

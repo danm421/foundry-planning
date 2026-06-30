@@ -54,6 +54,7 @@ import {
   medicareCoverage,
   securityAssetClassWeights,
   revocableTrusts,
+  relocations,
 } from "@/db/schema";
 import type {
   AccountFlowOverride,
@@ -196,6 +197,7 @@ export const loadClientDataWithContext = cache(
       externalBeneficiaryRows,
       giftSeriesRows,
       medicareCoverageRows,
+      relocationRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -238,6 +240,7 @@ export const loadClientDataWithContext = cache(
         .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenario.id))),
       // medicare_coverage is client-scoped (shared across scenarios), not scenario-scoped.
       db.select().from(medicareCoverage).where(eq(medicareCoverage.clientId, id)),
+      db.select().from(relocations).where(and(eq(relocations.clientId, id), eq(relocations.scenarioId, scenario.id))),
     ]);
 
     // revocable_trusts is client-scoped (not scenario-scoped) — one fetch, reused below
@@ -1291,6 +1294,13 @@ export const loadClientDataWithContext = cache(
       mortgageTermMonths: t.mortgageTermMonths ?? undefined,
     }));
 
+    const mappedRelocations = relocationRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      year: r.year,
+      destinationState: r.destinationState as import("@/lib/usps-states").USPSStateCode,
+    }));
+
     // Legacy `gifts: Gift[]` array consumed by computeAdjustedTaxableGifts.
     // Restricted to cash-only rows (amount NOT NULL, no asset/liability link)
     // — asset/liability gifts flow through `giftEvents` instead and are
@@ -1550,6 +1560,7 @@ export const loadClientDataWithContext = cache(
       reinvestments: mappedReinvestments,
       rothConversions: mappedRothConversions,
       assetTransactions: mappedAssetTransactions,
+      relocations: mappedRelocations,
       stockOptionPlans,
       gifts: mappedGifts,
       giftEvents,

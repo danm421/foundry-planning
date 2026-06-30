@@ -261,6 +261,12 @@ export function applyMutations(
         result.reinvestments = list;
         break;
       }
+      case "relocation-upsert": {
+        const list = (result.relocations ?? []).filter((r) => r.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.relocations = list;
+        break;
+      }
       case "account-upsert": {
         const list = result.accounts.filter((a) => a.id !== m.id);
         if (m.value !== null) list.push(m.value);

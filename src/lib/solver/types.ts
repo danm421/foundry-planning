@@ -13,6 +13,7 @@ import type {
   SavingsRule,
   ExternalBeneficiary,
   EntitySummary,
+  Relocation,
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -72,6 +73,7 @@ export type SolverMutation =
   | { kind: "roth-conversion-upsert"; id: string; value: RothConversion | null }
   | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }
   | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null }
+  | { kind: "relocation-upsert"; id: string; value: Relocation | null }
   | { kind: "account-upsert"; id: string; value: Account | null }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
@@ -118,6 +120,7 @@ export type SolverMutationKey =
   | `roth-conversion-upsert:${string}`
   | `asset-transaction-upsert:${string}`
   | `reinvestment-upsert:${string}`
+  | `relocation-upsert:${string}`
   | `account-upsert:${string}`
   | `savings-rule-upsert:${string}`
   | `gift-upsert:${string}`
@@ -197,6 +200,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `asset-transaction-upsert:${m.id}`;
     case "reinvestment-upsert":
       return `reinvestment-upsert:${m.id}`;
+    case "relocation-upsert":
+      return `relocation-upsert:${m.id}`;
     case "account-upsert":
       return `account-upsert:${m.id}`;
     case "savings-rule-upsert":
@@ -257,7 +262,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity";
+  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;

@@ -1442,6 +1442,8 @@ export interface DeathEventInput {
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[];
   entities: EntitySummary[];
+  /** Relocation techniques — resolve the death-year residence state. */
+  relocations?: import("../types").Relocation[];
   /** 4d-1 additions — estate-tax pipeline inputs. */
   planSettings: PlanSettings;
   gifts: Gift[];

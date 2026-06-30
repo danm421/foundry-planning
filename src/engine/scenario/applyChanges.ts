@@ -100,6 +100,8 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "customPctQualifiedDividends",
     "customPctTaxExempt",
   ],
+  // Relocation overlays carry a `year` (integer) the form may post as a string.
+  relocation: ["year"],
   // Solver gift overlays carry an EstateFlowGift draft with these flat numeric
   // fields. The reload path now applies gift changes via apply-gift-overlays.ts
   // (they're partitioned out before this generic replay runs), so this entry is
@@ -151,6 +153,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   savings_rule: "savingsRules",
   transfer: "transfers",
   reinvestment: "reinvestments",
+  relocation: "relocations",
   asset_transaction: "assetTransactions",
   roth_conversion: "rothConversions",
   client_deduction: "deductions",

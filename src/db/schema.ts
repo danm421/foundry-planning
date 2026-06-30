@@ -3749,6 +3749,17 @@ export const assetTransactions = pgTable("asset_transactions", {
     .where(sql`${t.purchaseTransactionId} IS NOT NULL`),
 ]);
 
+export const relocations = pgTable("relocations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  year: integer("year").notNull(),
+  destinationState: text("destination_state").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const reportComments = pgTable(
   "report_comments",
   {
