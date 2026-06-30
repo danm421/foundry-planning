@@ -327,6 +327,18 @@ export interface PresentationPage<TData, TOptions> {
    *  tokens: "base" | "<scenarioId>" | "snap:<id>"). The planner loads each and
    *  the document exposes them via `BuildDataContext.bundlesByRef`. */
   requiredScenarioRefs?: (options: TOptions) => string[];
+  /** Optional: surface an inline scenario picker in the launcher row that edits
+   *  a scenario id stored *inside* this page's options — e.g. Retirement
+   *  Comparison's "compare to" scenario. The baseline is always Base Case, so
+   *  the picker lists only live scenarios (no override / "Base case" choice).
+   *  Mutually exclusive with `supportsScenarioOverride`, which owns the row's
+   *  trailing control when true. */
+  inlineScenarioOption?: {
+    get: (options: TOptions) => string;
+    set: (options: TOptions, scenarioId: string) => TOptions;
+    /** Leading/empty option label shown when no scenario is picked. */
+    placeholder: string;
+  };
   buildData: (ctx: BuildDataContext, options: TOptions) => TData;
   renderPdf: (input: RenderPdfInput<TData>) => ReactElement;
 }
@@ -863,6 +875,11 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  inlineScenarioOption: {
+    get: (o) => o.scenarioId,
+    set: (o, scenarioId) => ({ ...o, scenarioId }),
+    placeholder: "Compare to…",
+  },
   buildData: (ctx, options) => buildRetirementComparisonData(ctx, options),
   renderPdf: (input) => <RetirementComparisonPagePdf {...input} />,
 };

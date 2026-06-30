@@ -48,6 +48,18 @@ export function SelectedPageRow(props: Props) {
       ? DEFAULT_OVERRIDE
       : (props.scenarioOverride ?? "base");
 
+  // Pages like Retirement Comparison store the "compare to" scenario *inside*
+  // their options (the baseline is always Base Case). Surface it as an inline
+  // picker in place of the static "Base plan" chip so it can be set without
+  // opening Options. Live scenarios only — mirrors the Options-dialog list.
+  const inlineScenario = page.inlineScenarioOption;
+  const inlineScenarioValue = inlineScenario
+    ? inlineScenario.get(props.options as never)
+    : "";
+  const comparisonScenarios = props.scenarios.filter(
+    (s) => !s.isBaseCase && !s.name.startsWith("writer-test-"),
+  );
+
   return (
     <div className="rounded border border-hair bg-card-2 p-3 space-y-2 transition-colors hover:border-hair-2">
       <div className="flex items-center gap-3">
@@ -116,6 +128,28 @@ export function SelectedPageRow(props: Props) {
                 : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
             }`}
           />
+        ) : inlineScenario ? (
+          <select
+            aria-label={`Comparison scenario for ${page.title}`}
+            value={inlineScenarioValue}
+            onChange={(e) =>
+              props.onOptionsChange(
+                inlineScenario.set(props.options as never, e.target.value),
+              )
+            }
+            className={`w-[13rem] rounded border bg-paper px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              inlineScenarioValue
+                ? "border-accent text-accent"
+                : "border-hair text-ink-3 hover:border-hair-2 hover:text-ink"
+            }`}
+          >
+            <option value="">{inlineScenario.placeholder}</option>
+            {comparisonScenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
         ) : (
           <div
             title="This page always uses the base plan"

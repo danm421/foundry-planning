@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SelectedPageRow } from "../selected-page-row";
+import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-comparison/options-schema";
 
 const baseProps = {
   index: 0,
@@ -89,5 +90,52 @@ describe("SelectedPageRow", () => {
       target: { value: defaultOption.value },
     });
     expect(onScenarioOverrideChange).toHaveBeenCalledWith(undefined);
+  });
+
+  // Retirement Comparison stores its "compare to" scenario inside options
+  // (baseline is always Base Case), so the trailing control is an inline
+  // comparison picker rather than the static "Base plan" chip.
+  const comparisonProps = {
+    ...baseProps,
+    pageId: "retirementComparison" as const,
+    options: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
+    scenarios: [
+      { id: "sc-1", name: "Aggressive", isBaseCase: false },
+      { id: "base", name: "Base case", isBaseCase: true },
+    ],
+  };
+
+  it("renders an inline comparison picker (not the 'Base plan' chip)", () => {
+    render(<SelectedPageRow {...comparisonProps} />);
+    const select = screen.getByLabelText(
+      "Comparison scenario for Retirement Comparison",
+    ) as HTMLSelectElement;
+    // Unset → rests on the "Compare to…" placeholder; base case is excluded.
+    expect(select.value).toBe("");
+    expect(
+      screen.getByRole("option", { name: "Compare to…" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Aggressive" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Base case" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Base plan")).not.toBeInTheDocument();
+  });
+
+  it("writes the picked scenario into the page's options.scenarioId", () => {
+    const onOptionsChange = vi.fn();
+    render(
+      <SelectedPageRow
+        {...comparisonProps}
+        onOptionsChange={onOptionsChange}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Comparison scenario for Retirement Comparison"),
+      { target: { value: "sc-1" } },
+    );
+    expect(onOptionsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ scenarioId: "sc-1" }),
+    );
   });
 });
