@@ -77,7 +77,7 @@ describe("mutationsToScenarioChanges — gift + external_beneficiary", () => {
 
   it("edit/add of a gift emits a single add with the full draft payload", () => {
     const src = { gifts: [], giftEvents: [] } as unknown as ClientData;
-    const value = { kind: "cash-once", id: "g1", year: 2030, amount: 5000, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false, enabled: false };
+    const value = { kind: "cash-once", id: "g1", year: 2030, amount: 5000, grantor: "client", recipient: { kind: "entity", id: "t1" }, crummey: false, enabled: false } as const;
     const drafts = mutationsToScenarioChanges(src, "client-1", [{ kind: "gift-upsert", id: "g1", value }]);
     const gift = drafts.filter((d) => d.targetKind === "gift");
     expect(gift).toHaveLength(1);
