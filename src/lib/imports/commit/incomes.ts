@@ -4,6 +4,7 @@ import { incomes } from "@/db/schema";
 
 import { getExistingId, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
+import { resolveImportTiming } from "./timing";
 
 type SsPerson = "client" | "spouse";
 
@@ -52,14 +53,17 @@ export async function commitIncomes(
     }
 
     if (kind === "new") {
+      const timing = resolveImportTiming(row, ctx.milestones);
       await tx.insert(incomes).values({
         clientId: ctx.clientId,
         scenarioId: ctx.scenarioId,
         type: row.type ?? "other",
         name: row.name,
         annualAmount: row.annualAmount != null ? String(row.annualAmount) : "0",
-        startYear: row.startYear ?? currentYear,
-        endYear: row.endYear ?? currentYear + 30,
+        startYear: timing.start.year ?? currentYear,
+        endYear: timing.end.year ?? currentYear + 30,
+        startYearRef: timing.start.ref ?? null,
+        endYearRef: timing.end.ref ?? null,
         growthRate: row.growthRate != null ? String(row.growthRate) : "0.03",
         owner: row.owner ?? "client",
         source: "extracted",
@@ -78,8 +82,15 @@ export async function commitIncomes(
     if (row.annualAmount !== undefined) {
       updates.annualAmount = String(row.annualAmount);
     }
-    if (row.startYear != null) updates.startYear = row.startYear;
-    if (row.endYear != null) updates.endYear = row.endYear;
+    const timing = resolveImportTiming(row, ctx.milestones);
+    if (timing.start.year !== undefined) {
+      updates.startYear = timing.start.year;
+      updates.startYearRef = timing.start.ref ?? null;
+    }
+    if (timing.end.year !== undefined) {
+      updates.endYear = timing.end.year;
+      updates.endYearRef = timing.end.ref ?? null;
+    }
     if (row.owner != null) updates.owner = row.owner;
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
     await tx

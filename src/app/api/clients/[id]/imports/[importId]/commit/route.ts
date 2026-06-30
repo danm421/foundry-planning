@@ -23,6 +23,7 @@ import type { ImportPayloadJson } from "@/lib/imports/types";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { linkImportFilesToVault } from "@/lib/crm/vault-plans";
+import { loadImportMilestones } from "@/lib/imports/import-milestones";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -155,6 +156,11 @@ export async function POST(request: NextRequest, { params }: Params) {
             : new Map();
         const holdingsAccountIds: string[] = [];
 
+        const importMilestones =
+            tabs.includes("incomes") || tabs.includes("expenses")
+                ? await loadImportMilestones(clientId, firmId, scenarioId)
+                : null;
+
         const { results, allTabsCommitted } = await commitTabs({
             importId,
             payload,
@@ -166,6 +172,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                 userId,
                 resolvedHoldings,
                 holdingsAccountIds,
+                milestones: importMilestones?.milestones,
             },
         });
 
