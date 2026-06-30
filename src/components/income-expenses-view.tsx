@@ -767,7 +767,7 @@ function IncomeDialog({
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
-                <div className="col-span-2">
+                <div>
                   <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
                   <div className="mt-1">
                     <GrowthSourceRadio
@@ -777,16 +777,16 @@ function IncomeDialog({
                       onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
                     />
                   </div>
-                  <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={todaysDollars}
-                      onChange={(e) => setTodaysDollars(e.target.checked)}
-                      className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                    />
-                    Amount in today&apos;s dollars (inflate from {planStartYear})
-                  </label>
                 </div>
+                <label className="col-span-2 flex items-center gap-1.5 text-xs text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={todaysDollars}
+                    onChange={(e) => setTodaysDollars(e.target.checked)}
+                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                  />
+                  Amount in today&apos;s dollars (inflate from {planStartYear})
+                </label>
               </>
             )}
 
