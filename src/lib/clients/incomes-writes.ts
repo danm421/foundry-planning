@@ -28,6 +28,7 @@ import {
   assertAccountsInClient,
   assertBusinessAccountsInClient,
   assertEntitiesInClient,
+  assertRealEstateAccountsInClient,
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
@@ -64,6 +65,10 @@ export async function createIncomeForClient(args: {
     const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
+  if (p.linkedPropertyId != null) {
+    const reCheck = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId]);
+    if (!reCheck.ok) return writeError(400, reCheck.reason);
+  }
 
   // INSERT column list lifted verbatim from POST route (route.ts L122–148).
   const [income] = await db
@@ -83,6 +88,7 @@ export async function createIncomeForClient(args: {
       ownerEntityId: p.ownerEntityId ?? null,
       ownerAccountId: p.ownerAccountId ?? null,
       cashAccountId: p.cashAccountId ?? null,
+      linkedPropertyId: p.linkedPropertyId ?? null,
       inflationStartYear: p.inflationStartYear != null ? p.inflationStartYear : null,
       startYearRef: (p.startYearRef ?? null) as IncomeRow["startYearRef"],
       endYearRef: (p.endYearRef ?? null) as IncomeRow["endYearRef"],
@@ -143,6 +149,10 @@ export async function updateIncomeForClient(args: {
     const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!b.ok) return writeError(400, b.reason);
   }
+  if (p.linkedPropertyId !== undefined && p.linkedPropertyId != null) {
+    const r = await assertRealEstateAccountsInClient(clientId, [p.linkedPropertyId]);
+    if (!r.ok) return writeError(400, r.reason);
+  }
 
   // UPDATE .set() column list lifted from PUT route ([incomeId]/route.ts L81–103),
   // plus taxType — the edit dialog exposes a Tax Treatment dropdown, so a changed
@@ -166,6 +176,7 @@ export async function updateIncomeForClient(args: {
       ...(p.ownerEntityId !== undefined && { ownerEntityId: p.ownerEntityId ?? null }),
       ...(p.ownerAccountId !== undefined && { ownerAccountId: p.ownerAccountId ?? null }),
       ...(p.cashAccountId !== undefined && { cashAccountId: p.cashAccountId ?? null }),
+      ...(p.linkedPropertyId !== undefined && { linkedPropertyId: p.linkedPropertyId ?? null }),
       ...(p.inflationStartYear !== undefined && {
         inflationStartYear: p.inflationStartYear == null ? null : p.inflationStartYear,
       }),

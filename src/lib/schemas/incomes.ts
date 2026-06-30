@@ -84,6 +84,7 @@ const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
   ownerAccountId: uuidSchema.nullable().optional(),
   cashAccountId: uuidSchema.nullable().optional(),
+  linkedPropertyId: uuidSchema.nullable().optional(),
   inflationStartYear: inflationStartYearOptional,
   startYearRef: z.unknown().nullable().optional(),
   endYearRef: z.unknown().nullable().optional(),
@@ -104,14 +105,15 @@ const nullableStringUpdate = {
 };
 
 function refineBothOwner(
-  d: { ownerEntityId?: unknown; ownerAccountId?: unknown },
+  d: { ownerEntityId?: unknown; ownerAccountId?: unknown; linkedPropertyId?: unknown },
   ctx: z.RefinementCtx,
 ): void {
-  if (d.ownerEntityId != null && d.ownerAccountId != null) {
+  const set = [d.ownerEntityId, d.ownerAccountId, d.linkedPropertyId].filter((v) => v != null);
+  if (set.length > 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Cannot set both ownerEntityId and ownerAccountId",
-      path: ["ownerAccountId"],
+      message: "Set at most one of ownerEntityId, ownerAccountId, linkedPropertyId",
+      path: ["linkedPropertyId"],
     });
   }
 }
@@ -133,7 +135,16 @@ export const incomeCreateSchema = z
     ...shared,
     ...nullableStringCreate,
   })
-  .superRefine(refineBothOwner);
+  .superRefine(refineBothOwner)
+  .superRefine((d, ctx) => {
+    if (d.linkedPropertyId != null && d.type !== "other") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linkedPropertyId is only allowed on 'other' income",
+        path: ["linkedPropertyId"],
+      });
+    }
+  });
 
 // UPDATE: truly partial — every field optional, NO defaults injected. An omitted
 // field stays absent; a present field is coerced identically to create.

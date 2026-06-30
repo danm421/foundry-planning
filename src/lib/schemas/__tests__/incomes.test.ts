@@ -208,3 +208,28 @@ describe("incomeUpdateSchema", () => {
     expect(d.piaMonthly).toBeNull();
   });
 });
+
+describe("incomeCreateSchema linkedPropertyId", () => {
+  const base = { type: "other", name: "Rental", startYear: 2026, endYear: 2055 };
+  const uuid = "11111111-1111-4111-8111-111111111111";
+
+  it("accepts linkedPropertyId on an 'other' income", () => {
+    const r = incomeCreateSchema.safeParse({ ...base, linkedPropertyId: uuid });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects linkedPropertyId together with ownerEntityId", () => {
+    const r = incomeCreateSchema.safeParse({ ...base, linkedPropertyId: uuid, ownerEntityId: uuid });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects linkedPropertyId together with ownerAccountId", () => {
+    const r = incomeCreateSchema.safeParse({ ...base, linkedPropertyId: uuid, ownerAccountId: uuid });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects linkedPropertyId when type is not 'other'", () => {
+    const r = incomeCreateSchema.safeParse({ ...base, type: "salary", linkedPropertyId: uuid });
+    expect(r.success).toBe(false);
+  });
+});
