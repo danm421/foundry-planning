@@ -130,6 +130,7 @@ export function buildTargetNames(
   put("gift", tree.gifts);
   put("will", tree.wills);
   put("family_member", tree.familyMembers);
+  put("relocation", tree.relocations);
   put("external_beneficiary", tree.externalBeneficiaries);
   put("entity", tree.entities);
   put("client_deduction", tree.deductions as unknown as ReadonlyArray<{ id: string }>);

@@ -17,3 +17,39 @@ describe("plan describers", () => {
     expect(row.detail.join(" ")).toMatch(/retires? at 67/i);
   });
 });
+
+describe("relocation describer", () => {
+  const reloc = (p: Partial<ScenarioChange>): ScenarioChange =>
+    ch({ targetKind: "relocation", targetId: "r1", ...p });
+
+  it("add spells out the destination state and year", () => {
+    const row = describeChange(
+      reloc({ opType: "add", payload: { id: "r1", name: "Move to Florida", destinationState: "FL", year: 2030 } }),
+      ctx,
+    );
+    expect(row.area).toBe("Plan & Assumptions");
+    expect(row.op).toBe("add");
+    expect(row.detail.join(" ")).toBe("Moves to Florida in 2030");
+  });
+
+  it("add degrades to a year-only line when the state is missing", () => {
+    const row = describeChange(reloc({ opType: "add", payload: { year: 2032 } }), ctx);
+    expect(row.detail.join(" ")).toMatch(/2032/);
+  });
+
+  it("edit shows full state names, not raw USPS codes", () => {
+    const row = describeChange(
+      reloc({ opType: "edit", payload: { destinationState: { from: "FL", to: "TX" } } }),
+      ctx,
+    );
+    expect(row.op).toBe("edit");
+    expect(row.before).toBe("Florida");
+    expect(row.after).toBe("Texas");
+  });
+
+  it("remove reads as removed", () => {
+    const row = describeChange(reloc({ opType: "remove", payload: null }), ctx);
+    expect(row.op).toBe("remove");
+    expect(row.after).toBe("Removed");
+  });
+});
