@@ -157,6 +157,7 @@ describe("SolverTechniquesTab", () => {
           roth: new Set(["rc-1"]),
           asset: new Set<string>(),
           reinvestment: new Set<string>(),
+          relocation: new Set<string>(),
         }}
         onChange={vi.fn()}
       />,

@@ -380,6 +380,7 @@ export function LiveSolverWorkspace({
       roth: new Set((baseClientData.rothConversions ?? []).map((r) => r.id)),
       asset: new Set((baseClientData.assetTransactions ?? []).map((t) => t.id)),
       reinvestment: new Set((baseClientData.reinvestments ?? []).map((r) => r.id)),
+      relocation: new Set((baseClientData.relocations ?? []).map((r) => r.id)),
     }),
     [baseClientData],
   );

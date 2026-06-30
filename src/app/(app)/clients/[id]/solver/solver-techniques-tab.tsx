@@ -7,6 +7,7 @@ import type {
   RothConversion,
   AssetTransaction,
   Reinvestment,
+  Relocation,
 } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -14,19 +15,22 @@ import {
   summarizeRothConversion,
   summarizeAssetTransaction,
   summarizeReinvestment,
+  summarizeRelocation,
 } from "@/lib/solver/technique-summaries";
 import {
   toRothConversionInitialData,
   toReinvestmentInitialData,
   toAssetTransactionInitialData,
+  toRelocationInitialData,
 } from "@/lib/solver/technique-form-data";
 import AddRothConversionForm from "@/components/forms/add-roth-conversion-form";
 import AddReinvestmentForm from "@/components/forms/add-reinvestment-form";
 import AddAssetTransactionForm from "@/components/forms/add-asset-transaction-form";
+import AddRelocationForm from "@/components/forms/add-relocation-form";
 import { SolverSection } from "./solver-section";
 import { SolverTechniqueRow } from "./solver-technique-row";
 
-type TechniqueKind = "roth" | "asset" | "reinvestment";
+type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation";
 
 /** Target probability-of-success a Roth-amount solve aims for by default. */
 const DEFAULT_SOLVE_POS = 0.9;
@@ -61,6 +65,7 @@ interface Props {
     roth: Set<string>;
     asset: Set<string>;
     reinvestment: Set<string>;
+    relocation: Set<string>;
   };
   onChange: (m: SolverMutation) => void;
   /** Wired by the workspace. Starts a goal-seek solve on a roth conversion's
@@ -163,6 +168,7 @@ export function SolverTechniquesTab({
   const workingRoth = workingTree.rothConversions ?? [];
   const workingAsset = workingTree.assetTransactions ?? [];
   const workingReinv = workingTree.reinvestments ?? [];
+  const workingRelocations = workingTree.relocations ?? [];
 
   // Active editor form.
   let form: ReactNode = null;
@@ -231,6 +237,25 @@ export function SolverTechniquesTab({
         onSubmitDraft={(t) =>
           onChange({
             kind: "asset-transaction-upsert",
+            id: t.id,
+            value: { ...t, enabled: existing?.enabled },
+          })
+        }
+      />
+    );
+  } else if (editor?.kind === "relocation") {
+    const existing: Relocation | undefined = editor.editId
+      ? workingRelocations.find((t) => t.id === editor.editId)
+      : undefined;
+    form = (
+      <AddRelocationForm
+        clientId={clientId}
+        initialData={existing ? toRelocationInitialData(existing) : undefined}
+        onClose={close}
+        onSaved={close}
+        onSubmitDraft={(t) =>
+          onChange({
+            kind: "relocation-upsert",
             id: t.id,
             value: { ...t, enabled: existing?.enabled },
           })
@@ -317,6 +342,27 @@ export function SolverTechniquesTab({
           }
           onAdd={() => setEditor({ kind: "reinvestment" })}
           addLabel="reinvestment"
+        />
+      </SolverSection>
+
+      <SolverSection title="Relocation">
+        <TechniqueGroup
+          working={workingRelocations}
+          baseIds={baseTechniqueIds?.relocation}
+          summarize={summarizeRelocation}
+          onEdit={(id) => setEditor({ kind: "relocation", editId: id })}
+          onRemove={(id) =>
+            onChange({ kind: "relocation-upsert", id, value: null })
+          }
+          onToggle={(t) =>
+            onChange({
+              kind: "relocation-upsert",
+              id: t.id,
+              value: { ...t, enabled: t.enabled === false ? undefined : false },
+            })
+          }
+          onAdd={() => setEditor({ kind: "relocation" })}
+          addLabel="relocation"
         />
       </SolverSection>
 
