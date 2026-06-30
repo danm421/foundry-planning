@@ -56,8 +56,10 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
 
   const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
-  const growthContext = await loadImportGrowthContext(id, firmId, imp.scenarioId);
-  const importMilestones = await loadImportMilestones(id, firmId, imp.scenarioId);
+  const [growthContext, importMilestones] = await Promise.all([
+    loadImportGrowthContext(id, firmId, imp.scenarioId),
+    loadImportMilestones(id, firmId, imp.scenarioId),
+  ]);
 
   return (
     <ImportFlow

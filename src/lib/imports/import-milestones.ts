@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { clients, crmHouseholdContacts, planSettings, scenarios } from "@/db/schema";
+import { planSettings, scenarios } from "@/db/schema";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { buildClientMilestones, type ClientMilestones } from "@/lib/milestones";
 
 export interface ImportMilestones {
@@ -66,27 +67,8 @@ export async function loadImportMilestones(
   firmId: string,
   scenarioId: string | null,
 ): Promise<ImportMilestones | null> {
-  const [clientRow] = await db
-    .select({
-      retirementAge: clients.retirementAge,
-      planEndAge: clients.planEndAge,
-      spouseRetirementAge: clients.spouseRetirementAge,
-      crmHouseholdId: clients.crmHouseholdId,
-    })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!clientRow) return null;
-
-  const contacts = await db
-    .select({
-      role: crmHouseholdContacts.role,
-      firstName: crmHouseholdContacts.firstName,
-      dateOfBirth: crmHouseholdContacts.dateOfBirth,
-    })
-    .from(crmHouseholdContacts)
-    .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
-  const primary = contacts.find((c) => c.role === "primary");
-  const spouse = contacts.find((c) => c.role === "spouse");
+  const client = await getClientWithContacts(clientId, firmId);
+  if (!client) return null;
 
   let sid = scenarioId;
   if (!sid) {
@@ -106,11 +88,17 @@ export async function loadImportMilestones(
   }
 
   return assembleImportMilestones({
-    retirementAge: clientRow.retirementAge,
-    planEndAge: clientRow.planEndAge,
-    spouseRetirementAge: clientRow.spouseRetirementAge,
-    primary: primary ? { firstName: primary.firstName, dateOfBirth: primary.dateOfBirth } : undefined,
-    spouse: spouse ? { firstName: spouse.firstName, dateOfBirth: spouse.dateOfBirth } : undefined,
+    retirementAge: client.retirementAge,
+    planEndAge: client.planEndAge,
+    spouseRetirementAge: client.spouseRetirementAge,
+    primary:
+      client.firstName != null
+        ? { firstName: client.firstName, dateOfBirth: client.dateOfBirth }
+        : undefined,
+    spouse:
+      client.spouseFirstName != null
+        ? { firstName: client.spouseFirstName, dateOfBirth: client.spouseDateOfBirth }
+        : undefined,
     planStartYear: settings?.planStartYear ?? null,
     planEndYear: settings?.planEndYear ?? null,
   });
