@@ -174,4 +174,16 @@ describe("RetirementSummaryView", () => {
     const { getByText } = render(<RetirementSummaryView data={data} />);
     expect(getByText("No data for this scenario yet.")).toBeTruthy();
   });
+
+  it("shows a small Roth slice that rounds to <1% of the by-tax-type total", () => {
+    // Regression: a $20k Roth alongside $1.4M pre-tax and $4.2M taxable rounds
+    // to 0% — the legend used to drop it, hiding the value the Tax summary shows.
+    const data: RetirementSummaryPageData = {
+      ...POPULATED,
+      byTaxType: { roth: 20_000, preTax: 1_400_000, taxable: 4_200_000, total: 5_620_000 },
+    };
+    const { container } = render(<RetirementSummaryView data={data} />);
+    expect(container.textContent).toContain("Roth");
+    expect(container.textContent).toContain("$20k");
+  });
 });

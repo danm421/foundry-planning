@@ -132,11 +132,12 @@ function SplitBar({ segments, total }: { segments: SplitSegment[]; total: number
           );
         })}
       </div>
-      {/* Legend rows */}
+      {/* Legend rows — show any segment with a real balance, even one that
+          rounds to <1% (e.g. a small Roth slice). Only genuinely-empty
+          categories are dropped, matching the bar above and the Tax summary. */}
       <div className="flex flex-col gap-0.5">
         {segments.map((seg) => {
-          const pct = total > 0 ? Math.round((seg.value / total) * 100) : 0;
-          if (pct <= 0) return null;
+          if (seg.value <= 0) return null;
           return (
             <div key={seg.label} className="flex items-center justify-between text-[12px] text-ink-3">
               <span className="flex items-center gap-1.5">
