@@ -168,7 +168,7 @@ export function SolverTechniquesTab({
   const workingRoth = workingTree.rothConversions ?? [];
   const workingAsset = workingTree.assetTransactions ?? [];
   const workingReinv = workingTree.reinvestments ?? [];
-  const workingRelocations = workingTree.relocations ?? [];
+  const workingReloc = workingTree.relocations ?? [];
 
   // Active editor form.
   let form: ReactNode = null;
@@ -245,7 +245,7 @@ export function SolverTechniquesTab({
     );
   } else if (editor?.kind === "relocation") {
     const existing: Relocation | undefined = editor.editId
-      ? workingRelocations.find((t) => t.id === editor.editId)
+      ? workingReloc.find((t) => t.id === editor.editId)
       : undefined;
     form = (
       <AddRelocationForm
@@ -347,7 +347,7 @@ export function SolverTechniquesTab({
 
       <SolverSection title="Relocation">
         <TechniqueGroup
-          working={workingRelocations}
+          working={workingReloc}
           baseIds={baseTechniqueIds?.relocation}
           summarize={summarizeRelocation}
           onEdit={(id) => setEditor({ kind: "relocation", editId: id })}

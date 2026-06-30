@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, FormEvent } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
@@ -51,13 +51,6 @@ export default function AddRelocationForm({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Auto-name "Move to <State>" until the user types a custom name.
-  useEffect(() => {
-    if (!nameTouched) {
-      setName(`Move to ${USPS_STATE_NAMES[destinationState]}`);
-    }
-  }, [destinationState, nameTouched]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -173,9 +166,12 @@ export default function AddRelocationForm({
           <select
             id="relocation-state"
             value={destinationState}
-            onChange={(e) =>
-              setDestinationState(e.target.value as Relocation["destinationState"])
-            }
+            onChange={(e) => {
+              const next = e.target.value as Relocation["destinationState"];
+              setDestinationState(next);
+              // Keep the name in sync with the state until the user customizes it.
+              if (!nameTouched) setName(`Move to ${USPS_STATE_NAMES[next]}`);
+            }}
             required
             className={selectClassName}
           >

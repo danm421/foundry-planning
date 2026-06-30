@@ -16,8 +16,7 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import { YEAR_REF_LABELS } from "@/lib/milestones";
 import { formatReinvestmentScope } from "@/lib/solver/technique-summaries";
-import { USPS_STATE_NAMES } from "@/lib/usps-states";
-import type { USPSStateCode } from "@/lib/usps-states";
+import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
