@@ -14,8 +14,11 @@ import { getCheckpointer } from "@/domain/forge/checkpointer";
 import { toUiMessages } from "@/domain/forge/transcript";
 import type { WritePreview } from "@/domain/forge/types";
 
-/** Thread list for the signed-in advisor. Pass `clientId` to narrow to one client. */
-export async function listMyConversations(clientId?: string) {
+/** Thread list for the signed-in advisor.
+ *  - Pass a `clientId` string to narrow to threads for a single client.
+ *  - Pass `null` to return ONLY clientless (global) threads.
+ *  - Omit / pass `undefined` to return all threads regardless of clientId. */
+export async function listMyConversations(clientId?: string | null) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const firmId = await requireOrgId();

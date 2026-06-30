@@ -18,6 +18,7 @@ import {
   renameConversation,
   deleteConversation,
 } from "./actions";
+import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/custom-events";
 import { ConversationList } from "./conversation-list";
 import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
@@ -26,9 +27,9 @@ import { ImportReviewLink } from "./import-review-link";
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
 
-/** Bare-prefix allowlist for client-side nav guard (mirrors NAVIGATE_ALLOWLIST_PREFIXES
- *  in custom-events.ts — defence in depth; the server already gated the emit). */
-const ALLOWED_NAV_PREFIXES = ["/clients", "/cma", "/crm", "/tasks", "/data-collection", "/settings"];
+// NAVIGATE_ALLOWLIST_PREFIXES is imported from custom-events.ts above — single
+// source of truth for the client-side nav guard (defence in depth; the server
+// already gated the emit). Previously duplicated here as NAVIGATE_ALLOWLIST_PREFIXES.
 
 /**
  * Human-readable labels for tool names that appear in the status line.
@@ -159,8 +160,11 @@ export function ForgePanel({
   }, [open, close]);
 
   // Shared helper so all three refresh sites stay DRY.
+  // Pass clientId directly: null (global mode) → SQL IS NULL filter;
+  // string (client mode) → SQL eq filter. Never coerce null→undefined here
+  // because undefined means "no filter" (returns all threads).
   function refetchThreads() {
-    listMyConversations(clientId ?? undefined)
+    listMyConversations(clientId)
       .then((t) => setThreads(t as Thread[]))
       .catch(() => {});
   }
@@ -169,7 +173,7 @@ export function ForgePanel({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listMyConversations(clientId ?? undefined)
+    listMyConversations(clientId)
       .then((t) => !cancelled && setThreads(t as Thread[]))
       .catch(() => {});
     return () => {
@@ -190,7 +194,7 @@ export function ForgePanel({
   // lastToolRender is intentionally NOT consumed yet: no renderer (plumbing only).
   useEffect(() => {
     if (!pendingNavigate) return;
-    const ok = ALLOWED_NAV_PREFIXES.some((p) => pendingNavigate.startsWith(p));
+    const ok = NAVIGATE_ALLOWLIST_PREFIXES.some((p) => pendingNavigate.startsWith(p));
     if (ok) router.push(pendingNavigate);
     setPendingNavigate(null);
   }, [pendingNavigate, router, setPendingNavigate]);
@@ -199,7 +203,7 @@ export function ForgePanel({
   // (defence in depth — the server already gated the emit) before routing.
   const jumpToPage = useCallback(
     (href: string) => {
-      if (ALLOWED_NAV_PREFIXES.some((p) => href.startsWith(p))) router.push(href);
+      if (NAVIGATE_ALLOWLIST_PREFIXES.some((p) => href.startsWith(p))) router.push(href);
     },
     [router],
   );

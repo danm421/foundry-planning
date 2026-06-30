@@ -29,8 +29,9 @@ export async function GET(_req: Request): Promise<Response> {
   }
   if (!hasForgeEntitlement(entitlements)) return json(403, { error: "Forge is not enabled for your plan." });
 
-  // GLOBAL history = the caller's threads with no client (clientId === null).
-  const all = await listMyConversations(userId, firmId);
-  const conversations = all.filter((c) => c.clientId === null);
+  // GLOBAL history = the caller's threads with no client. Pass null so the SQL
+  // WHERE clause includes IS NULL before the .limit(50) — prevents client-scoped
+  // threads from consuming limit slots and crowding out global threads.
+  const conversations = await listMyConversations(userId, firmId, null);
   return json(200, { conversations });
 }
