@@ -109,14 +109,19 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   const searchMemo = memoizeByValue<EvalEntry>((v) => computeFn(v, trials));
   const refineMemo = memoizeByValue<EvalEntry>((v) => computeFn(v, refineTrials));
 
+  // Both phases share one evaluate protocol (abort check, iteration counter,
+  // progress event); only the memo differs. A single factory keeps the search
+  // and refine evaluators structurally identical so they can never drift.
   let iteration = 0;
-  const searchEvaluate = async (value: number): Promise<number> => {
-    if (args.signal?.aborted) throw new Error("aborted");
-    iteration += 1;
-    const entry = await searchMemo(value);
-    args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
-    return entry.pos;
-  };
+  const makeEvaluate =
+    (memo: typeof searchMemo) =>
+    async (value: number): Promise<number> => {
+      if (args.signal?.aborted) throw new Error("aborted");
+      iteration += 1;
+      const entry = await memo(value);
+      args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
+      return entry.pos;
+    };
 
   // Phase 1 — localize at `trials` (250).
   const bisectResult = await bisect({
@@ -128,24 +133,15 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
     tolerance: config.tolerance,
     selection: config.selection,
     maxIterations: WIDE_LEVER_MAX_ITERATIONS,
-    evaluate: searchEvaluate,
+    evaluate: makeEvaluate(searchMemo),
   });
 
   let solvedValue = bisectResult.solvedValue;
-  let achievedPoS = bisectResult.achievedPoS;
-  let finalProjection: ProjectionYear[];
 
   if (args.target.kind === "living-expense-scale") {
     // Max-spend solve: snap to $5k, then re-select at refineTrials (500).
     solvedValue = roundToNearest5k(solvedValue);
     if (bisectResult.status !== "unreachable") {
-      const refineEvaluate = async (value: number): Promise<number> => {
-        if (args.signal?.aborted) throw new Error("aborted");
-        iteration += 1;
-        const entry = await refineMemo(value);
-        args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
-        return entry.pos;
-      };
       const refined = await refineOnGrid({
         start: solvedValue,
         step: 5000,
@@ -153,19 +149,20 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
         target: args.targetPoS,
         min: 0,
         max: config.hi,
-        evaluate: refineEvaluate,
+        evaluate: makeEvaluate(refineMemo),
       });
       solvedValue = refined.solvedValue;
     }
-    const entry = await refineMemo(solvedValue); // cached if already walked
-    achievedPoS = entry.pos;
-    finalProjection = entry.projection;
-  } else {
-    // Other levers: unchanged — report the search-trial PoS + projection at the solved value.
-    const entry = await searchMemo(solvedValue);
-    achievedPoS = entry.pos;
-    finalProjection = entry.projection;
   }
+
+  // Final PoS + projection at the solved value, read once. The living-expense
+  // lever reports at refineTrials (500) — a cache hit when the walk already
+  // visited solvedValue; every other lever reports at searchTrials (250).
+  const finalMemo =
+    args.target.kind === "living-expense-scale" ? refineMemo : searchMemo;
+  const entry = await finalMemo(solvedValue);
+  const achievedPoS = entry.pos;
+  const finalProjection = entry.projection;
 
   return {
     objective: "pos",

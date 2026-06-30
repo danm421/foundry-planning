@@ -4,7 +4,7 @@
 // closest to a target (even slightly below it), then reports it as today's
 // dollars rounded to the nearest $5,000. Same seed each iteration so MC variance
 // never perturbs monotonicity. The MC evaluator is injectable for testing.
-// a 250-trial bisection localizes the crossing, then refineOnGrid re-selects on
+// A 250-trial bisection localizes the crossing, then refineOnGrid re-selects on
 // the $5k grid at 500 trials. Finalizing at 500 (not the report's 1000) is a
 // deliberate speed/accuracy tradeoff — see specs/2026-06-30-solver-maxspend-accuracy-design.md.
 import {
