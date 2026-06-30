@@ -460,6 +460,9 @@ export interface ClientData {
   rothConversions?: RothConversion[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Relocation techniques — household moves to a different state in a chosen
+   *  year; state income + estate/inheritance tax reflect it from that year on. */
+  relocations?: Relocation[];
   /** Equity-compensation plans (stock_options accounts). The engine expands
    *  grants + strategy into per-year vest/exercise/sale events. */
   stockOptionPlans?: import("./equity/types").StockOptionPlan[];
@@ -1160,6 +1163,20 @@ export interface AssetTransaction {
   /** Sell-only. Fraction of the source's balance + basis to sell.
    *  null = full sale (today's behavior). 0 < x ≤ 1 = partial. */
   fractionSold?: number | null;
+}
+
+export interface Relocation {
+  id: string;
+  /** When false, the relocation is retained but excluded from the projection
+   *  (non-destructive "off" toggle). undefined/true = active. Overlay-only —
+   *  base-plan rows never carry this. */
+  enabled?: boolean;
+  /** Display label for the technique row, e.g. "Move to Florida". */
+  name: string;
+  /** First full tax year taxed under destinationState (clean annual switch). */
+  year: number;
+  /** USPS 2-letter code the household relocates to. */
+  destinationState: import("@/lib/usps-states").USPSStateCode;
 }
 
 export interface PlanSettings {
