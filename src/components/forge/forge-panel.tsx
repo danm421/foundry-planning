@@ -26,6 +26,10 @@ import { ImportReviewLink } from "./import-review-link";
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
 
+/** Bare-prefix allowlist for client-side nav guard (mirrors NAVIGATE_ALLOWLIST_PREFIXES
+ *  in custom-events.ts — defence in depth; the server already gated the emit). */
+const ALLOWED_NAV_PREFIXES = ["/clients", "/cma", "/crm", "/tasks", "/data-collection", "/settings"];
+
 /**
  * Human-readable labels for tool names that appear in the status line.
  * Unmapped tools fall back to `deUnderscoreTool` below.
@@ -186,7 +190,7 @@ export function ForgePanel({
   // lastToolRender is intentionally NOT consumed yet: no renderer (plumbing only).
   useEffect(() => {
     if (!pendingNavigate) return;
-    const ok = ["/clients/", "/cma/"].some((p) => pendingNavigate.startsWith(p));
+    const ok = ALLOWED_NAV_PREFIXES.some((p) => pendingNavigate.startsWith(p));
     if (ok) router.push(pendingNavigate);
     setPendingNavigate(null);
   }, [pendingNavigate, router, setPendingNavigate]);
@@ -195,7 +199,7 @@ export function ForgePanel({
   // (defence in depth — the server already gated the emit) before routing.
   const jumpToPage = useCallback(
     (href: string) => {
-      if (["/clients/", "/cma/"].some((p) => href.startsWith(p))) router.push(href);
+      if (ALLOWED_NAV_PREFIXES.some((p) => href.startsWith(p))) router.push(href);
     },
     [router],
   );
