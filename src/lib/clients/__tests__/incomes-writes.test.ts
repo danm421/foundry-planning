@@ -188,4 +188,37 @@ d("incomes-writes core", () => {
     expect(res.data.name).toBe("Update target");
     expect(res.data.type).toBe("salary");
   });
+
+  it("update persists taxType (tax-exempt edit) — regression for dropped taxType", async () => {
+    const created = await createIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        type: "salary",
+        name: "Tax-treatment edit target",
+        annualAmount: 80000,
+        startYear: 2025,
+        endYear: 2045,
+        taxType: "ordinary_income",
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.taxType).toBe("ordinary_income");
+
+    const res = await updateIncomeForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      incomeId: created.data.id,
+      input: { taxType: "tax_exempt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // The edited tax treatment must round-trip — otherwise the engine keeps
+    // taxing income the advisor marked tax-exempt.
+    expect(res.data.taxType).toBe("tax_exempt");
+  });
 });
