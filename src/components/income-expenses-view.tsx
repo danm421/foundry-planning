@@ -45,6 +45,7 @@ interface Income {
   taxType?: string | null;
   ssBenefitMode?: string | null;
   piaMonthly?: string | null;
+  linkedPropertyId?: string | null;
 }
 
 type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
@@ -475,6 +476,11 @@ function IncomeDialog({
   const [owner, setOwner] = useState<Owner>(editing?.owner ?? "client");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const [ownerAccountId, setOwnerAccountId] = useState<string | null>(editing?.ownerAccountId ?? null);
+  const [linkedPropertyId, setLinkedPropertyId] = useState<string | null>(
+    editing?.linkedPropertyId ?? null,
+  );
+  const realEstateAccounts = accounts.filter((a) => a.category === "real_estate");
+  const linkedProperty = realEstateAccounts.find((a) => a.id === linkedPropertyId) ?? null;
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing ? isTodaysDollars(editing.inflationStartYear, editing.startYear) : true
@@ -569,6 +575,7 @@ function IncomeDialog({
       startYearRef,
       endYearRef,
       taxType,
+      linkedPropertyId: type === "other" ? (linkedPropertyId || null) : null,
     };
 
     try {
@@ -662,7 +669,11 @@ function IncomeDialog({
                 name="type"
                 required
                 value={type}
-                onChange={(e) => setType(e.target.value as IncomeType)}
+                onChange={(e) => {
+                  const next = e.target.value as IncomeType;
+                  setType(next);
+                  if (next !== "other") setLinkedPropertyId(null);
+                }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
@@ -686,30 +697,56 @@ function IncomeDialog({
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300">Owner</label>
-              <input type="hidden" name="owner" value={owner} />
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                <PillToggle
-                  label={ownerNames.clientName.split(" ")[0]}
-                  active={owner === "client"}
-                  onClick={() => setOwner("client")}
-                />
-                {ownerNames.spouseName && (
+            <div className={type === "other" ? "col-span-2 grid grid-cols-2 gap-4" : undefined}>
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Owner</label>
+                <input type="hidden" name="owner" value={owner} />
+                <div
+                  className={`mt-1 flex flex-wrap gap-1.5${linkedProperty ? " pointer-events-none opacity-50" : ""}`}
+                  aria-disabled={linkedProperty ? true : undefined}
+                >
                   <PillToggle
-                    label={ownerNames.spouseName.split(" ")[0]}
-                    active={owner === "spouse"}
-                    onClick={() => setOwner("spouse")}
+                    label={ownerNames.clientName.split(" ")[0]}
+                    active={owner === "client"}
+                    onClick={() => setOwner("client")}
                   />
-                )}
-                {ownerNames.spouseName && (
-                  <PillToggle
-                    label="Joint 50/50"
-                    active={owner === "joint"}
-                    onClick={() => setOwner("joint")}
-                  />
+                  {ownerNames.spouseName && (
+                    <PillToggle
+                      label={ownerNames.spouseName.split(" ")[0]}
+                      active={owner === "spouse"}
+                      onClick={() => setOwner("spouse")}
+                    />
+                  )}
+                  {ownerNames.spouseName && (
+                    <PillToggle
+                      label="Joint 50/50"
+                      active={owner === "joint"}
+                      onClick={() => setOwner("joint")}
+                    />
+                  )}
+                </div>
+                {linkedProperty && (
+                  <p className="mt-1 text-xs text-gray-400">Owner follows {linkedProperty.name}.</p>
                 )}
               </div>
+              {type === "other" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-linked-property">
+                    Linked Property
+                  </label>
+                  <select
+                    id="inc-linked-property"
+                    value={linkedPropertyId ?? ""}
+                    onChange={(e) => setLinkedPropertyId(e.target.value || null)}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 px-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="">None</option>
+                    {realEstateAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
