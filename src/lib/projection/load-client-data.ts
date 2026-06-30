@@ -815,6 +815,7 @@ export const loadClientDataWithContext = cache(
           claimingAge: i.claimingAge,
           ownerEntityId: i.ownerEntityId,
           ownerAccountId: i.ownerAccountId,
+          linkedPropertyId: i.linkedPropertyId,
           cashAccountId: i.cashAccountId,
           inflationStartYear: i.inflationStartYear,
           taxType: i.taxType,

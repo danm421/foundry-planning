@@ -87,6 +87,13 @@ describe("view-adapters", () => {
     });
   });
 
+  describe("incomeEngineToView linkedPropertyId", () => {
+    it("carries linkedPropertyId through", () => {
+      const inc = { id: "i", type: "other", name: "Rent", annualAmount: 1, startYear: 2026, endYear: 2030, growthRate: 0, owner: "joint", linkedPropertyId: "re-1" } as EngineIncome;
+      expect(incomeEngineToView(inc).linkedPropertyId).toBe("re-1");
+    });
+  });
+
   describe("expenseEngineToView", () => {
     it("coerces numerics and preserves metadata", () => {
       const expense: EngineExpense = {
