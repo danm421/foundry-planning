@@ -80,8 +80,9 @@ describe("IncomeDialog linked property", () => {
     fireEvent.change(select, { target: { value: "re-1" } });
 
     // Owner pill group becomes disabled / non-interactive
-    const ownerGroup = screen.getByText("Owner").closest("div")!;
-    expect(ownerGroup.querySelector('[aria-disabled="true"], .pointer-events-none')).toBeTruthy();
+    const ownerGroup = screen.getByRole("group", { name: /owner/i });
+    expect(ownerGroup).toHaveAttribute("aria-disabled", "true");
+    expect(ownerGroup.className).toContain("pointer-events-none");
 
     // "Owner follows …" note appears
     expect(screen.getByText(/owner follows/i)).toBeInTheDocument();

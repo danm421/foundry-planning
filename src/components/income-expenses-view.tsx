@@ -702,6 +702,8 @@ function IncomeDialog({
                 <label className="block text-sm font-medium text-gray-300">Owner</label>
                 <input type="hidden" name="owner" value={owner} />
                 <div
+                  role="group"
+                  aria-label="Owner"
                   className={`mt-1 flex flex-wrap gap-1.5${linkedProperty ? " pointer-events-none opacity-50" : ""}`}
                   aria-disabled={linkedProperty ? true : undefined}
                 >
