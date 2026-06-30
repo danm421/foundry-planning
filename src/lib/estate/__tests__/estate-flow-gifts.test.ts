@@ -133,6 +133,7 @@ function cashRow(overrides: Partial<GiftRow> = {}): GiftRow {
     recipientExternalBeneficiaryId: null,
     accountId: null,
     liabilityId: null,
+    businessEntityId: null,
     percent: null,
     useCrummeyPowers: false,
     eventKind: "outright",
@@ -151,6 +152,7 @@ function assetRow(overrides: Partial<GiftRow> = {}): GiftRow {
     recipientExternalBeneficiaryId: null,
     accountId: "acc-1",
     liabilityId: null,
+    businessEntityId: null,
     percent: "0.4",
     useCrummeyPowers: false,
     eventKind: "outright",
@@ -538,6 +540,11 @@ describe("enabled flag (non-destructive off)", () => {
     ], 0.025);
     expect(off.giftEvents.some((e) => e.kind === "liability")).toBe(false);
   });
+});
+
+it("giftRowToDraft skips business-interest rows", () => {
+  const row = { id: "bi-1", year: 2030, amount: null, grantor: "client", recipientEntityId: "t1", recipientFamilyMemberId: null, recipientExternalBeneficiaryId: null, accountId: null, liabilityId: null, businessEntityId: "ent-9", percent: "1", useCrummeyPowers: false, eventKind: "outright" } as unknown as Parameters<typeof giftRowToDraft>[0];
+  expect(giftRowToDraft(row)).toBeNull();
 });
 
 describe("addGift / updateGift / removeGift", () => {

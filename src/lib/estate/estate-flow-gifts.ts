@@ -80,6 +80,7 @@ export interface GiftRow {
   recipientExternalBeneficiaryId: string | null;
   accountId: string | null;
   liabilityId: string | null;
+  businessEntityId: string | null;
   percent: string | null;
   useCrummeyPowers: boolean;
   eventKind: GiftEventKind;
@@ -122,6 +123,7 @@ function recipientFromRow(r: {
  */
 export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
   if (row.liabilityId != null) return null;
+  if (row.businessEntityId != null) return null; // business-interest gifts aren't EstateFlowGift-representable
   if (row.accountId != null) {
     return {
       kind: "asset-once",
