@@ -1359,6 +1359,13 @@
       "when": 1782782936755,
       "tag": "0193_gift_series_non_entity_recipients",
       "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1782831736835,
+      "tag": "0194_complete_stingray",
+      "breakpoints": true
     }
   ]
 }
