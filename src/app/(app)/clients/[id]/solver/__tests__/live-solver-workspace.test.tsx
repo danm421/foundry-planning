@@ -123,6 +123,7 @@ const baseProps = {
   clientName: "Client",
   spouseName: "Spouse",
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
+  baseGifts: [],
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {

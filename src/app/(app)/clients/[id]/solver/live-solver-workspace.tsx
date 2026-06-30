@@ -41,6 +41,7 @@ import {
   useLiNeedSolve,
 } from "./solver-tab-life-insurance";
 import { SolverTabEstatePlanning } from "./solver-tab-estate-planning";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
@@ -77,6 +78,8 @@ interface Props {
   /** Display name of the scenario loaded as the source, when one is selected
    *  (null on the base case). Labels the "Update scenario" save action. */
   scenarioName?: string | null;
+  /** Base-plan gifts loaded from DB, seeded into the estate planning tab. */
+  baseGifts: EstateFlowGift[];
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
@@ -113,6 +116,7 @@ export function LiveSolverWorkspace({
   spouseName,
   categoryGrowthDefaults,
   scenarioName,
+  baseGifts,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -1111,6 +1115,7 @@ export function LiveSolverWorkspace({
               <SolverTabEstatePlanning
                 baseClientData={baseClientData}
                 clientData={workingTree}
+                baseGifts={baseGifts}
                 onChange={pushMutation}
               />
             )}

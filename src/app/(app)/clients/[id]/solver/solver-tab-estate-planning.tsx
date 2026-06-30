@@ -12,12 +12,12 @@ import {
   buildRevocableTagMutations,
 } from "@/lib/solver/estate-levers";
 import { buildRevertFundingMutation } from "@/lib/solver/trust-levers";
+import { SolverTechniqueRow } from "./solver-technique-row";
 import { SolverTrustForm, type SolverTrustDraft } from "./solver-trust-form";
 import { SolverSection } from "./solver-section";
 import {
   currentTrustEntities,
   currentCharities,
-  summarizeCurrentGift,
 } from "@/lib/solver/estate-current";
 import type { CurrentCharity } from "@/lib/solver/estate-current";
 
@@ -29,6 +29,9 @@ interface Props {
    * scenario-added charities, and its accounts feed in-kind asset gifts.
    */
   clientData: ClientData;
+  /** Base-plan gifts loaded from DB, used to seed the gifts state and derive
+   *  which rows carry a "Base plan" badge. */
+  baseGifts: EstateFlowGift[];
   onChange: (m: SolverMutation) => void;
 }
 
@@ -135,43 +138,44 @@ export function EstateRevocableTrustList({
   );
 }
 
-/** Planned Gifts section: current gifts (read-only) plus scenario draft gifts
- *  with Edit / Remove. */
+/** Short title for a gift row (recipient-kind noun). */
+function giftTitle(g: EstateFlowGift): string {
+  const noun =
+    g.recipient.kind === "entity" ? "Trust gift" : g.recipient.kind === "family_member" ? "Family gift" : "Charitable gift";
+  return noun;
+}
+
+/** Planned Gifts section: unified list of all gifts (base + draft) rendered as
+ *  SolverTechniqueRows with toggle / edit / remove. */
 export function EstateGiftsList({
-  currentGifts,
-  draftGifts,
+  gifts,
+  baseGiftIds,
+  onToggle,
   onEdit,
   onRemove,
 }: {
-  currentGifts: { id: string; label: string }[];
-  draftGifts: EstateFlowGift[];
+  gifts: EstateFlowGift[];
+  baseGiftIds: Set<string>;
+  onToggle: (g: EstateFlowGift) => void;
   onEdit: (g: EstateFlowGift) => void;
   onRemove: (id: string) => void;
 }) {
-  if (currentGifts.length === 0 && draftGifts.length === 0) {
+  if (gifts.length === 0) {
     return <div className="col-span-2 text-[12px] text-ink-4">No planned gifts</div>;
   }
-
   return (
-    <div className="col-span-2 space-y-1">
-      {currentGifts.map((g) => (
-        <div key={g.id} className="text-[13px] text-ink-2">
-          {g.label}
-        </div>
-      ))}
-      {draftGifts.map((g) => (
-        <div key={g.id} className="flex items-center justify-between text-[13px] text-ink">
-          <button type="button" className="text-left hover:underline" onClick={() => onEdit(g)}>
-            {giftSummary(g)}
-          </button>
-          <button
-            type="button"
-            className="text-[12px] text-crit hover:underline"
-            onClick={() => onRemove(g.id)}
-          >
-            Remove
-          </button>
-        </div>
+    <div className="col-span-2 space-y-2">
+      {gifts.map((g) => (
+        <SolverTechniqueRow
+          key={g.id}
+          name={giftTitle(g)}
+          summary={giftSummary(g)}
+          enabled={g.enabled !== false}
+          onToggle={() => onToggle(g)}
+          badge={baseGiftIds.has(g.id) ? "Base plan" : "Added"}
+          onEdit={() => onEdit(g)}
+          onRemove={() => onRemove(g.id)}
+        />
       ))}
     </div>
   );
@@ -287,7 +291,7 @@ export function EstateCharitiesList({
   );
 }
 
-export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }: Props) {
+export function SolverTabEstatePlanning({ baseClientData, clientData, baseGifts, onChange }: Props) {
   const accounts = baseClientData.accounts;
   const eligible = useMemo(
     () => accounts.filter(isRevocableTagEligible),
@@ -299,7 +303,8 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
   const [taggedIds, setTaggedIds] = useState<Set<string>>(new Set());
 
   // ── Planned gifts ──────────────────────────────────────────────────────────
-  const [gifts, setGifts] = useState<EstateFlowGift[]>([]);
+  const [gifts, setGifts] = useState<EstateFlowGift[]>(() => baseGifts);
+  const baseGiftIds = useMemo(() => new Set(baseGifts.map((g) => g.id)), [baseGifts]);
   const [editing, setEditing] = useState<EstateFlowGift | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -346,14 +351,6 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
     () => currentTrustEntities(baseClientData.entities),
     [baseClientData.entities],
   );
-  const currentGiftRows = useMemo(
-    () =>
-      (baseClientData.gifts ?? []).map((g) => ({
-        id: g.id,
-        label: summarizeCurrentGift(g, baseClientData),
-      })),
-    [baseClientData],
-  );
   const baseCharities = useMemo(
     () => currentCharities(baseClientData.externalBeneficiaries),
     [baseClientData.externalBeneficiaries],
@@ -364,11 +361,17 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
     return currentCharities(clientData.externalBeneficiaries).filter((c) => !baseIds.has(c.id));
   }, [clientData.externalBeneficiaries, baseCharities]);
 
+  function toggleGift(g: EstateFlowGift) {
+    const next: EstateFlowGift = { ...g, enabled: g.enabled === false ? undefined : false };
+    setGifts((gs) => updateGift(gs, next));
+    onChange({ kind: "gift-upsert", id: g.id, value: next });
+  }
+
   function upsertGift(draft: EstateFlowGift) {
-    setGifts((gs) =>
-      gs.some((g) => g.id === draft.id) ? updateGift(gs, draft) : addGift(gs, draft),
-    );
-    onChange({ kind: "gift-upsert", id: draft.id, value: draft });
+    const prior = gifts.find((g) => g.id === draft.id);
+    const value: EstateFlowGift = { ...draft, enabled: prior?.enabled };
+    setGifts((gs) => (prior ? updateGift(gs, value) : addGift(gs, value)));
+    onChange({ kind: "gift-upsert", id: value.id, value });
     setEditing(null);
     setAdding(false);
   }
@@ -464,8 +467,9 @@ export function SolverTabEstatePlanning({ baseClientData, clientData, onChange }
         })}
       >
         <EstateGiftsList
-          currentGifts={currentGiftRows}
-          draftGifts={gifts}
+          gifts={gifts}
+          baseGiftIds={baseGiftIds}
+          onToggle={toggleGift}
           onEdit={setEditing}
           onRemove={deleteGift}
         />

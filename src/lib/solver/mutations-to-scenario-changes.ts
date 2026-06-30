@@ -485,15 +485,16 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "gift-upsert": {
-        pushTechniqueUpsert(
-          nonClientDrafts,
-          "gift",
-          (source.gifts ?? []).find((g) => g.id === m.id) as
-            | Record<string, unknown>
-            | undefined,
-          m.id,
-          m.value as Record<string, unknown> | null,
-        );
+        // Gifts use a strip-and-rematerialise overlay on reload (see
+        // apply-gift-overlays.ts), so there is no add/edit distinction and no
+        // need to diff against source.gifts (which is materialised cash-only).
+        // value → add(full draft); null → remove. Remove always emits, even for
+        // a base asset/series id absent from source.gifts.
+        if (m.value === null) {
+          nonClientDrafts.push({ opType: "remove", targetKind: "gift", targetId: m.id, payload: null, orderIndex: 0 });
+        } else {
+          nonClientDrafts.push({ opType: "add", targetKind: "gift", targetId: m.id, payload: m.value as Record<string, unknown>, orderIndex: 0 });
+        }
         break;
       }
       case "external-beneficiary-upsert": {

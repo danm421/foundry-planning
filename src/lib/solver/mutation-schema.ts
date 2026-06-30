@@ -140,6 +140,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     recipient: GIFT_RECIPIENT,
     crummey: z.boolean(),
     eventKind: GIFT_EVENT_KIND.optional(),
+    enabled: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("asset-once"),
@@ -151,6 +152,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     recipient: GIFT_RECIPIENT,
     amountOverride: MONEY.optional(),
     eventKind: GIFT_EVENT_KIND.optional(),
+    enabled: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("series"),
@@ -163,6 +165,7 @@ const GIFT_VALUE = z.discriminatedUnion("kind", [
     grantor: GRANTOR,
     recipient: GIFT_RECIPIENT,
     crummey: z.boolean(),
+    enabled: z.boolean().optional(),
   }),
 ]);
 

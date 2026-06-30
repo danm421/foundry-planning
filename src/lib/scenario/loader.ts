@@ -28,7 +28,7 @@ import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expens
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
 import { resolveRefYears } from "@/lib/year-refs";
-import { normalizeScenarioGifts } from "./normalize-scenario-gifts";
+import { applyGiftOverlays } from "./apply-gift-overlays";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
 /**
@@ -114,30 +114,32 @@ export function applyScenarioChangesWithRefs(
   groups: ToggleGroup[],
   resolutionContext?: ResolutionContext,
 ): LoadEffectiveTreeResult {
+  const giftChanges = changes.filter((c) => c.targetKind === "gift");
+  const nonGiftChanges = changes.filter((c) => c.targetKind !== "gift");
   const { effectiveTree, warnings } = applyScenarioChanges(
     treeForChanges,
-    changes,
+    nonGiftChanges,
     toggleState,
     groups,
   );
 
   const refResolved = resolveRefYears(effectiveTree);
 
-  // Approach A: re-derive giftEvents from any scenario gift drafts that
-  // applyScenarioChanges appended to tree.gifts. A solver-saved planned gift is
-  // persisted as a `gift` overlay carrying an EstateFlowGift draft; the generic
-  // replay appends it to `tree.gifts` (typed Gift[]) without rebuilding the
-  // engine's derived `giftEvents`. This runs the drafts through the same
-  // applyGiftsToClientData bridge the live solver uses and merges the derived
-  // gifts/giftEvents back in. Must run before the premium chain
-  // (withSynthesizedPremiumGifts strips only policy-sourced cash events, so
-  // scenario gifts survive). No-op (returns the same tree reference) when no
-  // draft entries are present, so the no-gift path is byte-identical.
+  // Gift overlay: apply the scenario's `gift` changes (partitioned out of
+  // applyScenarioChanges above, which mis-handles base gifts). For each targeted
+  // gift id, applyGiftOverlays strips that gift's existing footprint (base or
+  // prior) from tree.gifts/giftEvents and re-materialises `add` payload drafts
+  // through the same applyGiftsToClientData bridge the live solver uses — so a
+  // saved scenario projects identically to its live preview for edits/removes/
+  // toggles of base gifts as well as net-new adds. Must run before the premium
+  // chain (withSynthesizedPremiumGifts strips only policy-sourced cash events, so
+  // scenario gifts survive). No-op (returns the same tree reference) when there
+  // are no gift changes, so the no-gift path is byte-identical.
   const giftCpi =
     refResolved.planSettings.taxInflationRate ??
     refResolved.planSettings.inflationRate ??
     0;
-  const giftNormalized = normalizeScenarioGifts(refResolved, giftCpi);
+  const giftNormalized = applyGiftOverlays(refResolved, giftChanges, giftCpi);
 
   if (resolutionContext && giftNormalized.reinvestments) {
     giftNormalized.reinvestments = resolveReinvestments(giftNormalized.reinvestments, {

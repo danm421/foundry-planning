@@ -382,6 +382,11 @@ export type GiftEvent =
       /** Set when the recipient is an external beneficiary (charity etc.). */
       recipientExternalBeneficiaryId?: string;
       sourceAccountId?: string;
+      /** Originating gift row id. Lets a single gift's full event footprint be
+       *  stripped surgically when that gift is edited/removed/toggled in the
+       *  solver. Series occurrences use `seriesId`; bundled liabilities use
+       *  `parentGiftId`. */
+      sourceGiftId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences
       /** Set on cash gifts auto-synthesized from a life-insurance policy whose
@@ -401,6 +406,11 @@ export type GiftEvent =
       recipientFamilyMemberId?: string;
       recipientExternalBeneficiaryId?: string;
       amountOverride?: number; // if advisor provided a manual amount
+      /** Originating gift row id. Lets a single gift's full event footprint be
+       *  stripped surgically when that gift is edited/removed/toggled in the
+       *  solver. Series occurrences use `seriesId`; bundled liabilities use
+       *  `parentGiftId`. */
+      sourceGiftId?: string;
       eventKind?: GiftEventKind;
     }
   | {
@@ -423,6 +433,11 @@ export type GiftEvent =
       grantor: "client" | "spouse";
       recipientEntityId: string; // receiving trust
       amountOverride?: number;
+      /** Originating gift row id. Lets a single gift's full event footprint be
+       *  stripped surgically when that gift is edited/removed/toggled in the
+       *  solver. Series occurrences use `seriesId`; bundled liabilities use
+       *  `parentGiftId`. */
+      sourceGiftId?: string;
       eventKind?: GiftEventKind;
     };
 

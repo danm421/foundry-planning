@@ -1338,6 +1338,7 @@ export const loadClientDataWithContext = cache(
         recipientEntityId: g.recipientEntityId ?? undefined,
         useCrummeyPowers: g.useCrummeyPowers ?? false,
         eventKind: g.eventKind,
+        sourceGiftId: g.id,
       }));
 
     const assetFromGifts: GiftEvent[] = giftRows
@@ -1351,6 +1352,7 @@ export const loadClientDataWithContext = cache(
         recipientEntityId: g.recipientEntityId!,
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
         eventKind: g.eventKind,
+        sourceGiftId: g.id,
       }));
 
     const liabilityFromGifts: GiftEvent[] = giftRows
@@ -1377,6 +1379,7 @@ export const loadClientDataWithContext = cache(
         recipientEntityId: g.recipientEntityId!,
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
         eventKind: g.eventKind,
+        sourceGiftId: g.id,
       }));
 
     // Same inputs the gift-ledger uses, so annual_exclusion series net to

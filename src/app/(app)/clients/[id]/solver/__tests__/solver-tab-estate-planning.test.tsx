@@ -61,16 +61,27 @@ describe("EstateRevocableTrustList", () => {
   });
 });
 
+const baseGift: EstateFlowGift = {
+  kind: "cash-once", id: "g1", year: 2029, amount: 10000, grantor: "client",
+  recipient: { kind: "family_member", id: "f0" }, crummey: false,
+};
 const draftGift: EstateFlowGift = {
   kind: "cash-once", id: "d1", year: 2030, amount: 25000, grantor: "client",
   recipient: { kind: "family_member", id: "f1" }, crummey: false,
 };
 
-function renderGifts(over = {}) {
+function renderGifts(over: {
+  gifts?: EstateFlowGift[];
+  baseGiftIds?: Set<string>;
+  onToggle?: (g: EstateFlowGift) => void;
+  onEdit?: (g: EstateFlowGift) => void;
+  onRemove?: (id: string) => void;
+} = {}) {
   render(
     <EstateGiftsList
-      currentGifts={[{ id: "g1", label: "Cash gift 2029: $10,000 → Jane Doe" }]}
-      draftGifts={[draftGift]}
+      gifts={[baseGift, draftGift]}
+      baseGiftIds={new Set(["g1"])}
+      onToggle={vi.fn()}
       onEdit={vi.fn()}
       onRemove={vi.fn()}
       {...over}
@@ -79,14 +90,15 @@ function renderGifts(over = {}) {
 }
 
 describe("EstateGiftsList", () => {
-  it("shows current gifts plus removable drafts", () => {
+  it("shows gifts with badges and remove controls", () => {
     renderGifts();
-    expect(screen.getByText("Cash gift 2029: $10,000 → Jane Doe")).toBeTruthy();
-    expect(screen.getByText("Remove")).toBeTruthy();
+    expect(screen.getByText("Base plan")).toBeTruthy();
+    expect(screen.getByText("Added")).toBeTruthy();
+    expect(screen.getAllByText("Remove")).toHaveLength(2);
   });
 
   it("shows an empty state when there are no gifts at all", () => {
-    renderGifts({ currentGifts: [], draftGifts: [] });
+    renderGifts({ gifts: [], baseGiftIds: new Set() });
     expect(screen.getByText("No planned gifts")).toBeTruthy();
   });
 });

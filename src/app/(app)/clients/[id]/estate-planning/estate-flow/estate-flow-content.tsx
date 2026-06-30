@@ -2,18 +2,12 @@ import { db } from "@/db";
 import {
   clients,
   scenarios as scenariosTable,
-  gifts,
-  giftSeries,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
-import {
-  giftRowToDraft,
-  giftSeriesRowToDraft,
-  type EstateFlowGift,
-} from "@/lib/estate/estate-flow-gifts";
+import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
 import EstateFlowView from "@/components/estate-flow-view";
 
 interface Props {
@@ -36,13 +30,13 @@ export async function EstateFlowContent({
   // gift_series is scenario-scoped, so resolve the concrete scenario UUID first.
   // Mirrors load-client-data.ts / loadEffectiveTree: "base" → the client's
   // base-case scenario row; otherwise the searchParams UUID, firm-scoped via
-  // the join on clients. `gifts` is client-scoped and needs no resolved
-  // scenario, so it loads in parallel here; `gift_series` waits below.
+  // the join on clients. loadGiftDrafts does its own internal scenario lookup +
+  // gift queries, so it runs in parallel here.
   //
   // The do-nothing baseline (left side of the Comparison tab) is loaded in
   // parallel since it always derives from the base case regardless of the
   // active scenario — see loadProjectionForRef.
-  const [effectiveResult, scenarioRows, giftRows, doNothingLoad] = await Promise.all([
+  const [effectiveResult, scenarioRows, initialGifts, doNothingLoad] = await Promise.all([
     loadEffectiveTree(clientId, firmId, scenarioId, {}).catch(() => notFound()),
     db
       .select({
@@ -53,11 +47,7 @@ export async function EstateFlowContent({
       .from(scenariosTable)
       .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
       .where(and(eq(scenariosTable.clientId, clientId), eq(clients.firmId, firmId))),
-    db
-      .select()
-      .from(gifts)
-      .where(eq(gifts.clientId, clientId))
-      .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+    loadGiftDrafts(clientId, firmId, scenarioId),
     loadProjectionForRef(clientId, firmId, { kind: "do-nothing" }),
   ]);
   const { effectiveTree } = effectiveResult;
@@ -67,29 +57,6 @@ export async function EstateFlowContent({
       ? scenarioRows.find((s) => s.isBaseCase)
       : scenarioRows.find((s) => s.id === scenarioId);
   if (!resolvedScenario) notFound();
-
-  // Editable recurring gift rows — `gift_series` is scenario-scoped, so this
-  // query needs the resolved scenario UUID. Mirrors load-client-data.ts.
-  const giftSeriesRows = await db
-    .select()
-    .from(giftSeries)
-    .where(
-      and(
-        eq(giftSeries.clientId, clientId),
-        eq(giftSeries.scenarioId, resolvedScenario.id),
-      ),
-    );
-
-  const initialGifts: EstateFlowGift[] = [
-    ...giftRows
-      .map(giftRowToDraft)
-      .filter((g): g is EstateFlowGift => g !== null),
-    // gift_series rows carry the wider owner enum ("client" | "spouse" |
-    // "joint") and an amount_mode ("fixed" | "annual_exclusion"). GiftSeriesDbRow
-    // now models both, and applyGiftsToClientData honours the annual-exclusion
-    // fan-out (incl. the §2513 joint split), so the row maps through directly.
-    ...giftSeriesRows.map((r) => giftSeriesRowToDraft(r)),
-  ];
 
   // Strip the loader's baked-in gifts — the view re-materialises from
   // workingGifts (single source of truth).
