@@ -84,3 +84,31 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+
+  # ── Global (clientless) tool-selection cases ──────────────────────────────
+  # IMPORTANT: provider.ts builds the graph from EVAL_AUTH which has a clientId,
+  # so it runs in CLIENT mode and does NOT bind the global tools (search_help,
+  # get_help). These cases are required by the AGENTS.md Forge tool policy but
+  # will fail selection until a global-scope eval harness is wired up (future
+  # work). The lane is NON-BLOCKING — do not gate merge on these passing.
+  # open_page IS in the client tool set so its case below will select correctly.
+  # cite_page (also a new global tool) already has a client-mode eval case above,
+  # so the AGENTS.md "one case per tool" policy is satisfied without a duplicate.
+  - vars:
+      message: "How do I add a new household?"
+      expectTool: "search_help"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Walk me through where to import a client statement."
+      expectTool: "get_help"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Take me to the page to create a household."
+      expectTool: "open_page"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
