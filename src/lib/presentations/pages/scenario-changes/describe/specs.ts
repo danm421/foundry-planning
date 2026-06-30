@@ -63,6 +63,8 @@ export const SPEC: Record<TargetKind, KindSpec> = {
     whyAdd: "A planning assumption is added.", whyRemove: "A planning assumption is removed.", whyEdit: "Updates a planning assumption." },
   reinvestment: { area: "Savings", noun: "reinvestment", whatMode: "name",
     whyAdd: "A reinvestment rule is added.", whyRemove: "This reinvestment rule is removed.", whyEdit: "Adjusts this reinvestment rule." },
+  relocation: { area: "Plan & Assumptions", noun: "relocation", whatMode: "name",
+    whyAdd: "A state relocation is added to the plan.", whyRemove: "This relocation is removed.", whyEdit: "Adjusts this relocation." },
   roth_conversion: { area: "Taxes", noun: "Roth conversion", whatMode: "name",
     whyAdd: "A Roth conversion is added to the plan.", whyRemove: "This Roth conversion is removed.", whyEdit: "Adjusts this Roth conversion." },
   savings_rule: { area: "Savings", noun: "savings contribution", whatMode: "name",

@@ -28,6 +28,7 @@ export type TargetKind =
   | "life_insurance_policy"
   | "plan_settings"
   | "reinvestment"
+  | "relocation"
   | "roth_conversion"
   | "savings_rule"
   | "savings_schedule_override"

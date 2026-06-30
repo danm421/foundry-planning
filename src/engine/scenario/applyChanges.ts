@@ -102,6 +102,7 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
   ],
   // Solver gift overlays carry an EstateFlowGift draft. These flat numeric fields
   // are coerced before normalizeScenarioGifts re-derives giftEvents.
+  relocation: ["year"],
   gift: ["year", "amount", "percent", "amountOverride", "startYear", "endYear", "annualAmount"],
   entity: ["value", "basis", "valueGrowthRate", "distributionAmount", "distributionPercent", "exemptionConsumed", "grantorStatusEndYear"],
   // The withdrawal-strategy form posts startYear/endYear as strings
@@ -149,6 +150,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   savings_rule: "savingsRules",
   transfer: "transfers",
   reinvestment: "reinvestments",
+  relocation: "relocations",
   asset_transaction: "assetTransactions",
   roth_conversion: "rothConversions",
   client_deduction: "deductions",
