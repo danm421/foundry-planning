@@ -354,6 +354,12 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     survivorFmId,
     entityAccountSharesEoY: input.entityAccountSharesEoY,
     familyAccountSharesEoY: input.familyAccountSharesEoY,
+    // Gift-aware ownership: assets gifted out of the household before death
+    // leave the gross estate (and aren't double-counted vs adjusted taxable
+    // gifts). Trust gifts shift to the entity inclusion rules.
+    giftEvents: input.giftEvents ?? [],
+    deathYear: input.year,
+    planStartYear: input.planSettings.planStartYear,
   });
 
   // Phase 3.1 — §2035 three-year lookback for life-insurance policies

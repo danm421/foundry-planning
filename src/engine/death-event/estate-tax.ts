@@ -1,5 +1,5 @@
 import type {
-  Account, DeathTransfer, EntitySummary, FamilyMember, GrossEstateLine,
+  Account, DeathTransfer, EntitySummary, FamilyMember, GiftEvent, GrossEstateLine,
   EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { businessConsolidatedValue } from "./business-value";
@@ -12,7 +12,55 @@ import {
   type ExternalBeneficiarySummary,
 } from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
-import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
+import type { AccountOwner } from "../ownership";
+import { controllingEntity, ownedByHousehold, controllingFamilyMember, ownersForYear } from "../ownership";
+
+/**
+ * Year-aware owners for the gross-estate computation. A lifetime `kind:"asset"`
+ * GiftEvent retitles ownership (`ownersForYear`) — a person/charity gift becomes
+ * a `gifted_away` owner (out of estate) and an (irrevocable) trust gift becomes
+ * an `entity` owner (`deceasedEntityShare` = 0) — so the gifted asset leaves the
+ * gross estate. Without this the death path read static `account.owners` and
+ * double-counted gifted assets (in the gross estate AND in adjusted taxable
+ * gifts).
+ *
+ * Returns `account.owners` unchanged when gift context is absent (every existing
+ * direct caller of `computeGrossEstate`) or when no in-window asset gift targets
+ * this account. The household-share guard skips retitling when the static owners
+ * already encode the transfer (e.g. an ILIT-gifted policy modeled as entity-owned
+ * with a redundant gift event for §2035 / ATG) — there `ownersForYear` would
+ * over-draw the zero household share and throw.
+ */
+function giftAwareOwners(
+  account: Account,
+  giftEvents: GiftEvent[] | undefined,
+  deathYear: number | undefined,
+  planStartYear: number | undefined,
+): AccountOwner[] {
+  if (!giftEvents || deathYear == null || planStartYear == null) return account.owners;
+  let giftedPercent = 0;
+  for (const e of giftEvents) {
+    if (e.kind !== "asset") continue;
+    if (e.accountId !== account.id) continue;
+    if (e.year < planStartYear || e.year > deathYear) continue;
+    giftedPercent += e.percent;
+  }
+  if (giftedPercent <= 0) return account.owners;
+  const householdShare = account.owners
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + o.percent, 0);
+  // `ownersForYear` draws each gift sequentially from the (shrinking) household
+  // share, reducing it by exactly each gift's percent, and throws once the
+  // cumulative draw would exceed it. That throw condition is therefore precisely
+  // `Σ giftedPercent > householdShare`. Guarding on the aggregate here lets us
+  // fall back to the static owners in the one legitimate case where the gifts
+  // can't be drawn from the household — they already encode the transfer (e.g. an
+  // ILIT policy modeled as entity-owned with a redundant §2035 gift event) —
+  // without an exception, while still letting a genuine sum-to-1 integrity throw
+  // inside `ownersForYear` surface for valid-household inputs.
+  if (giftedPercent > householdShare + 1e-9) return account.owners;
+  return ownersForYear(account, giftEvents, deathYear, planStartYear);
+}
 
 // Local helper: legacy business-entity gate. After Task 1.7 purges non-trust
 // entities from `data.entities`, this always returns false and the related
@@ -153,6 +201,17 @@ export function computeGrossEstate(input: {
    *  whole), but threaded through for parity with the other locked-share
    *  consumers. Reserved for future per-FM attribution. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Lifetime gift events. When provided with `deathYear` + `planStartYear`,
+   *  each account's owners are resolved year-aware (`ownersForYear`) so assets
+   *  gifted out of the household before death leave the gross estate. Omit
+   *  (compute-only / preview callers) to read the static `account.owners`. */
+  giftEvents?: GiftEvent[];
+  /** Death year — upper bound for in-window gift events. Required alongside
+   *  `giftEvents` for gift-aware ownership. */
+  deathYear?: number;
+  /** Projection start year — gifts before it are assumed already reflected in
+   *  the static owners. Required alongside `giftEvents`. */
+  planStartYear?: number;
 }): GrossEstateOutput {
   const lines: GrossEstateLine[] = [];
   const entityById = new Map(input.entities.map((e) => [e.id, e]));
@@ -170,21 +229,36 @@ export function computeGrossEstate(input: {
     if (a.category === "business") continue;
     if (a.parentAccountId != null) continue;
 
+    // Year-aware owners: a lifetime asset gift retitles ownership so the gifted
+    // share leaves the gross estate (person/charity → gifted_away, weight 0) or
+    // shifts to a trust (entity, weighted by deceasedEntityShare) before the
+    // split below. Falls back to the static owners when there's no gift context
+    // or no in-window gift targets this account.
+    const owners = giftAwareOwners(a, input.giftEvents, input.deathYear, input.planStartYear);
+    const ownedThing = { owners };
+
     // Compute per-owner locked entity slices once. Used both to derive the
     // family pool and to evaluate rev-trust-grantor inclusion below.
     const entitySlices: Array<{ entityId: string; locked: number }> = [];
     let totalEntityLocked = 0;
-    for (const o of a.owners) {
+    let totalGiftedAway = 0;
+    for (const o of owners) {
+      if (o.kind === "gifted_away") {
+        // Gifted to a person / charity during life — out of the gross estate.
+        // Subtract from the family pool so it never contributes an account line.
+        totalGiftedAway += fmv * o.percent;
+        continue;
+      }
       if (o.kind !== "entity") continue;
       const locked = input.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
       const slice = locked ?? fmv * o.percent;
       entitySlices.push({ entityId: o.entityId, locked: slice });
       totalEntityLocked += slice;
     }
-    const familyPool = Math.max(0, fmv - totalEntityLocked);
+    const familyPool = Math.max(0, fmv - totalEntityLocked - totalGiftedAway);
 
     // ── Sole-entity routing (100% entity-owned) — preserved early-out ────
-    const solEntityId = controllingEntity(a);
+    const solEntityId = controllingEntity(ownedThing);
     if (solEntityId != null) {
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
@@ -212,13 +286,13 @@ export function computeGrossEstate(input: {
     let sawTrust = false;
 
     // Family contribution
-    const cfm = controllingFamilyMember(a);
+    const cfm = controllingFamilyMember(ownedThing);
     if (cfm != null) {
       // Single FM, no entity owners — sole-owner of the family pool ( = fmv).
       if (cfm === input.deceasedFmId) amount += familyPool * 1;
       // survivor / non-principal-heir → contributes 0
     } else {
-      const fmOwners = a.owners.filter((o) => o.kind === "family_member");
+      const fmOwners = owners.filter((o) => o.kind === "family_member");
       if (fmOwners.length === 1) {
         const lone = fmOwners[0] as { familyMemberId: string };
         if (lone.familyMemberId === input.deceasedFmId) amount += familyPool * 1;
@@ -227,7 +301,7 @@ export function computeGrossEstate(input: {
         // Multi-FM joint (with or without entity owners). Apply joint
         // convention to the family pool. Skip entity-dominated accounts
         // (no household ownership at all).
-        const hh = ownedByHousehold(a);
+        const hh = ownedByHousehold(ownedThing);
         if (hh >= 0.0001) {
           const pct = input.deathOrder === 1 ? 0.5 : 1;
           amount += familyPool * pct;

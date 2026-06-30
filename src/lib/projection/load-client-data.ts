@@ -1397,7 +1397,9 @@ export const loadClientDataWithContext = cache(
         {
           id: s.id,
           grantor: s.grantor as "client" | "spouse" | "joint",
-          recipientEntityId: s.recipientEntityId,
+          recipientEntityId: s.recipientEntityId ?? undefined,
+          recipientFamilyMemberId: s.recipientFamilyMemberId ?? undefined,
+          recipientExternalBeneficiaryId: s.recipientExternalBeneficiaryId ?? undefined,
           startYear: s.startYear,
           endYear: s.endYear,
           annualAmount: Number(s.annualAmount),

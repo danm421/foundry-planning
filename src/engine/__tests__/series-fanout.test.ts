@@ -88,3 +88,22 @@ describe("fanOutGiftSeries — annual_exclusion mode", () => {
     expect(events.map((e) => e.kind === "cash" && e.amount)).toEqual([5_000, 5_000, 5_000]);
   });
 });
+
+describe("fanOutGiftSeries — non-entity recipients", () => {
+  it("carries a family-member recipient onto each occurrence", () => {
+    const events = fanOutGiftSeries(
+      { id: "s1", grantor: "client", recipientFamilyMemberId: "fm-kid", startYear: 2027, endYear: 2029, annualAmount: 18000, amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false },
+      { cpi: 0.03 },
+    );
+    expect(events).toHaveLength(3);
+    expect(events[0]).toMatchObject({ kind: "cash", recipientFamilyMemberId: "fm-kid", recipientEntityId: undefined });
+  });
+
+  it("still carries an entity recipient", () => {
+    const events = fanOutGiftSeries(
+      { id: "s2", grantor: "client", recipientEntityId: "trust-1", startYear: 2027, endYear: 2027, annualAmount: 1000, amountMode: "fixed", inflationAdjust: false, useCrummeyPowers: false },
+      { cpi: 0.03 },
+    );
+    expect(events[0]).toMatchObject({ recipientEntityId: "trust-1" });
+  });
+});

@@ -9,6 +9,7 @@ import type {
   ClientInfo,
   EntitySummary,
   FamilyMember,
+  GiftEvent,
   Liability,
   PlanSettings,
   Will,
@@ -1459,6 +1460,241 @@ describe("4e — liability bequests at final death", () => {
       (t) => t.via === "will_liability_bequest",
     );
     expect(anyFirstDeathLiabBequest).toHaveLength(0);
+  });
+});
+
+// ── Describe block N: gross-estate gift-awareness ───────────────────────────
+//
+// A lifetime `kind:"asset"` GiftEvent retitles ownership year-aware via
+// `ownersForYear`. The death-year gross-estate computation must consume that
+// gift-aware ownership so a gifted asset actually leaves the projected gross
+// estate. These cases drive a *real* GiftEvent through applyFinalDeath /
+// applyFirstDeath (not a hand-built `gifted_away` owner) so they exercise the
+// retitle inside the death pipeline. The no-gift baseline is the falsifiable
+// contrast: same account, same balance, same death year — the only difference
+// is the presence of the gift event.
+//
+// Recipient matrix (post-fix). Gifts to revocable trusts are rejected upstream
+// (incomplete gift), so the only trust recipient here is an irrevocable trust.
+//   family member     → out (gifted_away, weight 0; only in ATG)
+//   external charity   → out (gifted_away; also $0 ATG, deductible)
+//   irrevocable trust  → out (entity, deceasedEntityShare = 0)
+//   no gift            → in (unchanged)
+
+const brokerage1M: Account = {
+  id: "brokerage", name: "Client Brokerage",
+  category: "taxable", subType: "brokerage",
+  titlingType: "jtwros",
+  value: 1_000_000, basis: 500_000,
+  growthRate: 0, rmdEnabled: false,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+};
+
+/** A gift-year-2040 asset gift of `brokerage` to the given recipient. Death
+ *  years in these tests are 2052 (final) / 2045 (first), both > 2040 and inside
+ *  the (2026..) projection window, so the gift is always in-window. */
+function assetGiftTo(
+  recipient:
+    | { recipientFamilyMemberId: string }
+    | { recipientExternalBeneficiaryId: string }
+    | { recipientEntityId: string },
+  percent = 1,
+): GiftEvent {
+  return {
+    kind: "asset", year: 2040, accountId: "brokerage", percent,
+    grantor: "client", ...recipient,
+  };
+}
+
+describe("gross-estate gift-awareness — asset gift leaves the gross estate", () => {
+  it("no-gift baseline: the account IS in the gross estate at death", () => {
+    const result = applyFinalDeath(
+      mkFinalDeathInput({ accounts: [brokerage1M], familyMembers: [kidA] }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(1_000_000, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line).toBeDefined();
+    expect(line!.amount).toBeCloseTo(1_000_000, 0);
+  });
+
+  it("100% asset gift to a family member EXCLUDES the account from the gross estate", () => {
+    const result = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA],
+        giftEvents: [assetGiftTo({ recipientFamilyMemberId: "kid-a" })],
+      }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line === undefined || line.amount === 0).toBe(true);
+  });
+
+  it("100% asset gift to an external charity EXCLUDES the account from the gross estate", () => {
+    const result = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA],
+        externalBeneficiaries: [{ id: "charity-1", name: "Hospital Fund", kind: "charity" }],
+        giftEvents: [assetGiftTo({ recipientExternalBeneficiaryId: "charity-1" })],
+      }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line === undefined || line.amount === 0).toBe(true);
+  });
+
+  it("100% asset gift to an irrevocable trust EXCLUDES the account from the gross estate", () => {
+    const ilit: EntitySummary = {
+      id: "ilit-1", name: "Family ILIT", includeInPortfolio: false,
+      isGrantor: false, entityType: "trust", isIrrevocable: true, grantor: "client",
+    };
+    const result = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA],
+        entities: [ilit],
+        giftEvents: [assetGiftTo({ recipientEntityId: "ilit-1" })],
+      }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line === undefined || line.amount === 0).toBe(true);
+  });
+
+  // Note: there is no "gift to a revocable trust" case — the engine rejects it
+  // upstream ("gifts to revocable trusts are not completed gifts"). Retitling an
+  // account INTO a revocable trust is an ownership change, not a gift event, and
+  // doesn't flow through this retitle path (the account keeps its static owners
+  // and stays in the gross estate via the existing rev-trust inclusion rules).
+
+  it("40% partial asset gift to a family member includes only the retained 60%", () => {
+    const result = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA],
+        giftEvents: [assetGiftTo({ recipientFamilyMemberId: "kid-a" }, 0.4)],
+      }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(600_000, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line).toBeDefined();
+    expect(line!.amount).toBeCloseTo(600_000, 0);
+    expect(line!.percentage).toBeCloseTo(0.6, 4);
+  });
+
+  it("two separate gifts summing within the household retitle correctly (aggregate guard)", () => {
+    // 0.3 to kidA + 0.3 to kidB = 0.6 ≤ the 100% household share, so ownersForYear
+    // applies both (no over-draw). The guard's aggregate test (Σ giftedPercent vs
+    // household share) matches ownersForYear's sequential per-event drawdown, so
+    // the retained 40% is includible — proving the guard doesn't over-fall-back.
+    const result = applyFinalDeath(
+      mkFinalDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA, kidB],
+        giftEvents: [
+          assetGiftTo({ recipientFamilyMemberId: "kid-a" }, 0.3),
+          assetGiftTo({ recipientFamilyMemberId: "kid-b" }, 0.3),
+        ],
+      }),
+    );
+    expect(result.estateTax.grossEstate).toBeCloseTo(400_000, 0);
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line).toBeDefined();
+    expect(line!.amount).toBeCloseTo(400_000, 0);
+  });
+
+  it("first death: 100% asset gift to a family member EXCLUDES the account (symmetry)", () => {
+    const result = applyFirstDeath(
+      mkFirstDeathInput({
+        accounts: [brokerage1M],
+        familyMembers: [kidA],
+        giftEvents: [assetGiftTo({ recipientFamilyMemberId: "kid-a" })],
+      }),
+    );
+    const line = result.estateTax.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line === undefined || line.amount === 0).toBe(true);
+  });
+});
+
+// ── Describe block N+1: end-to-end via runProjection (redo of Task 9) ────────
+//
+// The death-event-level cases above retitle inside applyFinalDeath. This block
+// proves the *full* pipeline: a `kind:"asset"` GiftEvent on ClientData.giftEvents
+// flows through runProjection → the scheduled final death → computeGrossEstate,
+// and the account leaves the gross estate end-to-end. The no-gift run is the
+// falsifiable baseline.
+
+describe("gift-awareness end-to-end via runProjection", () => {
+  const singleClient: ClientInfo = {
+    firstName: "Pat", lastName: "Single",
+    dateOfBirth: "1970-01-01",
+    retirementAge: 65, planEndAge: 95,
+    filingStatus: "single",
+    lifeExpectancy: 82,            // dies 2052 — inside the 2026..2066 window
+  };
+  const e2ePlanSettings: PlanSettings = {
+    flatFederalRate: 0, flatStateRate: 0,
+    inflationRate: 0.025, planStartYear: 2026, planEndYear: 2066,
+    taxInflationRate: 0.025, estateAdminExpenses: 0, flatStateEstateRate: 0,
+  };
+  const e2eWill: Will = {
+    id: "w-pat", grantor: "client",
+    bequests: [{
+      id: "beq", name: "Residual to kid",
+      kind: "asset" as const, assetMode: "all_assets" as const,
+      accountId: null, liabilityId: null, entityId: null,
+      percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
+    }],
+  };
+  function mkData(giftEvents: GiftEvent[]): ClientData {
+    return {
+      client: singleClient,
+      accounts: [{
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        titlingType: "jtwros",
+        value: 1_000_000, basis: 500_000,
+        growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      }],
+      incomes: [], expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [], planSettings: e2ePlanSettings,
+      // The death event resolves deceasedFmId via role === "client", so the
+      // brokerage's LEGACY_FM_CLIENT owner only counts toward the gross estate
+      // when a matching client principal FM is present.
+      familyMembers: [
+        { id: LEGACY_FM_CLIENT, role: "client", relationship: "other", firstName: "Pat", lastName: "Single", dateOfBirth: "1970-01-01" },
+        { ...kidA, id: "kid-a" },
+      ],
+      wills: [e2eWill],
+      giftEvents,
+    };
+  }
+
+  it("no-gift baseline: the brokerage is in the gross estate at the scheduled death", () => {
+    const years = runProjection(mkData([]));
+    const deathYr = years.find((y) => y.estateTax != null);
+    expect(deathYr?.estateTax).toBeDefined();
+    expect(deathYr!.estateTax!.grossEstate).toBeCloseTo(1_000_000, 0);
+    expect(
+      deathYr!.estateTax!.grossEstateLines.some((l) => l.accountId === "brokerage"),
+    ).toBe(true);
+  });
+
+  it("100% asset gift to a family member: the brokerage leaves the gross estate end-to-end", () => {
+    const giftEvent: GiftEvent = {
+      kind: "asset", year: 2040, accountId: "brokerage", percent: 1,
+      grantor: "client", recipientFamilyMemberId: "kid-a",
+    };
+    const years = runProjection(mkData([giftEvent]));
+    const deathYr = years.find((y) => y.estateTax != null);
+    expect(deathYr?.estateTax).toBeDefined();
+    // The gifted brokerage is no longer the decedent's property → out of estate.
+    expect(deathYr!.estateTax!.grossEstate).toBeCloseTo(0, 0);
+    const line = deathYr!.estateTax!.grossEstateLines.find((l) => l.accountId === "brokerage");
+    expect(line === undefined || line.amount === 0).toBe(true);
   });
 });
 

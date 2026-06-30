@@ -23,6 +23,7 @@ export interface BusinessAssetsTabProps {
       | { kind: "family_member"; familyMemberId: string; percent: number }
       | { kind: "entity"; entityId: string; percent: number }
       | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+      | { kind: "gifted_away"; recipient: { kind: "family_member" | "entity" | "external_beneficiary"; id: string }; percent: number }
     >;
   }>;
   allLiabilities: Array<{
@@ -34,6 +35,7 @@ export interface BusinessAssetsTabProps {
       | { kind: "family_member"; familyMemberId: string; percent: number }
       | { kind: "entity"; entityId: string; percent: number }
       | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+      | { kind: "gifted_away"; recipient: { kind: "family_member" | "entity" | "external_beneficiary"; id: string }; percent: number }
     >;
   }>;
   familyMembers: Array<{ id: string; firstName: string }>;

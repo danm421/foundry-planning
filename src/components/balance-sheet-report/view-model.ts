@@ -303,6 +303,8 @@ function classifySlice(
   // External beneficiaries (death-benefit recipients / charities) never hold
   // present interest in the household estate.
   if (owner.kind === "external_beneficiary") return "out_of_estate";
+  // Gifted-away slices have left the estate entirely — same treatment as OOE.
+  if (owner.kind === "gifted_away") return "out_of_estate";
   const entity = entitiesById.get(owner.entityId);
   if (!entity) return "out_of_estate";
   if (entity.entityType === "trust") {
@@ -475,6 +477,16 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         // the full balance (resolveOwnerSlices gives them the residual pool).
         // Only surface external value when it would otherwise be dropped entirely
         // (e.g. an external-only account), to avoid double-counting into OOE.
+        const absorbedByInEstateOwner = acct.owners.some(
+          (o) => o.kind === "family_member" || o.kind === "entity",
+        );
+        if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
+          ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+        }
+        continue;
+      }
+      // Gifted-away slices have left the estate — same treatment as external_beneficiary.
+      if (owner.kind === "gifted_away") {
         const absorbedByInEstateOwner = acct.owners.some(
           (o) => o.kind === "family_member" || o.kind === "entity",
         );
@@ -805,6 +817,11 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       const sliceBalance = balance * owner.percent;
       if (sliceBalance <= 0) continue;
       if (owner.kind === "external_beneficiary") {
+        if (view === "consolidated") ooeAdd("ext", "Other (out of estate)", "external", 0, sliceBalance);
+        continue;
+      }
+      // Gifted-away slices have left the estate — same as external_beneficiary.
+      if (owner.kind === "gifted_away") {
         if (view === "consolidated") ooeAdd("ext", "Other (out of estate)", "external", 0, sliceBalance);
         continue;
       }

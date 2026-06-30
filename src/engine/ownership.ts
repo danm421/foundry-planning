@@ -3,7 +3,15 @@ import type { GiftEvent } from "./types";
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
   | { kind: "entity"; entityId: string; percent: number }
-  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number };
+  | { kind: "external_beneficiary"; externalBeneficiaryId: string; percent: number }
+  | {
+      kind: "gifted_away";
+      recipient: {
+        kind: "entity" | "family_member" | "external_beneficiary";
+        id: string;
+      };
+      percent: number;
+    };
 
 /** Ownership row for a business entity (sourced from the `entity_owners`
  *  table). Polymorphic: an owner is either a household family member or
@@ -23,6 +31,21 @@ export interface AccountWithOwners {
 
 export interface OwnedThing {
   owners: AccountOwner[];
+}
+
+/** Resolve the owner row a non-household asset/liability gift slice becomes:
+ *  a modeled entity owner for trust recipients, else an out-of-estate
+ *  gifted_away owner carrying the person/charity recipient ref. */
+function recipientOwnerRow(
+  e: { recipientEntityId?: string; recipientFamilyMemberId?: string; recipientExternalBeneficiaryId?: string },
+  percent: number,
+): Extract<AccountOwner, { kind: "entity" | "gifted_away" }> {
+  if (e.recipientEntityId) return { kind: "entity", entityId: e.recipientEntityId, percent };
+  if (e.recipientFamilyMemberId)
+    return { kind: "gifted_away", recipient: { kind: "family_member", id: e.recipientFamilyMemberId }, percent };
+  if (e.recipientExternalBeneficiaryId)
+    return { kind: "gifted_away", recipient: { kind: "external_beneficiary", id: e.recipientExternalBeneficiaryId }, percent };
+  throw new Error("gift event has no recipient");
 }
 
 /** Legacy synthetic family-member ids used only when normalizing pre-Phase-2
@@ -196,14 +219,24 @@ export function ownersForYear(
     // Drop any household rows that rounded to ~0.
     owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
 
-    // Add or merge the recipient entity row.
-    const existing = owners.findIndex(
-      (o) => o.kind === "entity" && o.entityId === e.recipientEntityId,
-    );
-    if (existing >= 0) {
-      owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+    // Add or merge the recipient row (entity for trusts, gifted_away for people).
+    const row = recipientOwnerRow(e, e.percent);
+    if (row.kind === "entity") {
+      const existing = owners.findIndex((o) => o.kind === "entity" && o.entityId === row.entityId);
+      if (existing >= 0) {
+        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+      } else {
+        owners.push(row);
+      }
     } else {
-      owners.push({ kind: "entity", entityId: e.recipientEntityId, percent: e.percent });
+      const existing = owners.findIndex(
+        (o) => o.kind === "gifted_away" && o.recipient.kind === row.recipient.kind && o.recipient.id === row.recipient.id,
+      );
+      if (existing >= 0) {
+        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+      } else {
+        owners.push(row);
+      }
     }
   }
 
@@ -266,6 +299,10 @@ function ownerSortKey(o: AccountOwner): string {
       return `entity:${o.entityId}`;
     case "external_beneficiary":
       return `external_beneficiary:${o.externalBeneficiaryId}`;
+    case "gifted_away":
+      // Computed (never-stored) owner from a lifetime asset gift. Keyed by its
+      // recipient ref so two gifted_away rows sort deterministically.
+      return `gifted_away:${o.recipient.kind}:${o.recipient.id}`;
   }
 }
 
@@ -324,13 +361,24 @@ export function liabilityOwnersForYear(
       o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
     );
     owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
-    const existing = owners.findIndex(
-      (o) => o.kind === "entity" && o.entityId === e.recipientEntityId,
-    );
-    if (existing >= 0) {
-      owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+    // Add or merge the recipient row (entity for trusts, gifted_away for people).
+    const row = recipientOwnerRow(e, e.percent);
+    if (row.kind === "entity") {
+      const existing = owners.findIndex((o) => o.kind === "entity" && o.entityId === row.entityId);
+      if (existing >= 0) {
+        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+      } else {
+        owners.push(row);
+      }
     } else {
-      owners.push({ kind: "entity", entityId: e.recipientEntityId, percent: e.percent });
+      const existing = owners.findIndex(
+        (o) => o.kind === "gifted_away" && o.recipient.kind === row.recipient.kind && o.recipient.id === row.recipient.id,
+      );
+      if (existing >= 0) {
+        owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+      } else {
+        owners.push(row);
+      }
     }
   }
 

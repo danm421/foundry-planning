@@ -86,6 +86,9 @@ export function computeSection2035Lookback(
     if (policy.category !== "life_insurance") continue;
     if (!policy.lifeInsurance) continue;
 
+    // Only entity-recipient gifts can be §2035 trust transfers; gifts to a
+    // person / charity have no recipientEntityId and can never be an ILIT.
+    if (!ev.recipientEntityId) continue;
     const trust = entityById.get(ev.recipientEntityId);
     if (!trust) continue;
     if (trust.entityType !== "trust") continue;

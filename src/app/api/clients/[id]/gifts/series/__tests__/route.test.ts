@@ -650,4 +650,100 @@ d("gift_series CRUD", () => {
       .where(drizzleOrm.eq(giftSeries.clientId, clientId));
     expect(rows).toHaveLength(0);
   });
+
+  it("10. POST with recipientFamilyMemberId belonging to this client → 201 and persists recipientFamilyMemberId", async () => {
+    const { clientId, familyMemberId, scenarioId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientFamilyMemberId: familyMemberId,
+        startYear: 2026,
+        endYear: 2035,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.id).toBeTruthy();
+
+    const [row] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, body.id));
+
+    expect(row).toBeDefined();
+    expect(row.clientId).toBe(clientId);
+    expect(row.scenarioId).toBe(scenarioId);
+    expect(row.recipientFamilyMemberId).toBe(familyMemberId);
+    expect(row.recipientEntityId).toBeNull();
+    expect(row.recipientExternalBeneficiaryId).toBeNull();
+  });
+
+  it("11. POST with a recipientFamilyMemberId belonging to another client returns 400", async () => {
+    const { clientId: clientA } = await setupClient();
+
+    // Create a second client + a family member that belongs to clientB only.
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers } = schema;
+    const [_crmHousehold] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: TEST_FIRM, advisorId: "advisor_series_test", name: "Other Household" })
+      .returning();
+    await db.insert(crmHouseholdContacts).values({
+      householdId: _crmHousehold.id,
+      role: "primary",
+      firstName: "Other",
+      lastName: "Person",
+      dateOfBirth: "1980-03-15",
+    });
+    const [clientB] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_series_test",
+        crmHouseholdId: _crmHousehold.id,
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+    await db
+      .insert(scenarios)
+      .values({ clientId: clientB.id, name: "base", isBaseCase: true });
+    const [fmB] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: clientB.id,
+        firstName: "Bob",
+        lastName: "B",
+        role: "client" as const,
+      })
+      .returning();
+
+    // Attempt to POST under clientA using clientB's family member id.
+    const res = await POST(
+      makePostReq(clientA, {
+        grantor: "client",
+        recipientFamilyMemberId: fmB.id,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientA }) },
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Recipient family member not found for this client");
+  });
 });

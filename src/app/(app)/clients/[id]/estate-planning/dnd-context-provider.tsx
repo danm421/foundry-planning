@@ -347,13 +347,16 @@ export function CanvasDndProvider({
           if (target.kind === "external_beneficiary") {
             throw new Error("Cannot retitle to a charity");
           }
-          const currentOwners: SaveAccountOwner[] = account.owners.map((o) =>
-            o.kind === "family_member"
-              ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
-              : o.kind === "entity"
-                ? { kind: "entity", entityId: o.entityId, percent: o.percent }
-                : { kind: "external_beneficiary", externalBeneficiaryId: o.externalBeneficiaryId, percent: o.percent },
-          );
+          const currentOwners: SaveAccountOwner[] = account.owners
+            // gifted_away owners are computed projections, not stored; skip them during retitle
+            .filter((o): o is Exclude<SaveAccountOwner, { kind: "gifted_away" }> => o.kind !== "gifted_away")
+            .map((o) =>
+              o.kind === "family_member"
+                ? { kind: "family_member" as const, familyMemberId: o.familyMemberId, percent: o.percent }
+                : o.kind === "entity"
+                  ? { kind: "entity" as const, entityId: o.entityId, percent: o.percent }
+                  : { kind: "external_beneficiary" as const, externalBeneficiaryId: o.externalBeneficiaryId, percent: o.percent },
+            );
           await saveRetitle({
             clientId,
             accountId: source.accountId,

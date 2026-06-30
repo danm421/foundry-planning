@@ -32,15 +32,15 @@ describe("GiftDialog", () => {
     expect([...grantor.options].map((o) => o.value)).not.toContain("joint");
   });
 
-  it("narrows recipients to trusts when Recurring is selected", () => {
+  it("all recipients remain selectable when Recurring is selected (trust gate lifted)", () => {
     render(<GiftDialog {...baseProps} />);
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Recurring"));
     const recipient = screen.getByTestId("recipient") as HTMLSelectElement;
     const values = [...recipient.options].map((o) => o.value);
     expect(values).toContain("entity:t1");
-    expect(values).not.toContain("family_member:m1");
-    expect(values).not.toContain("external_beneficiary:x1");
+    expect(values).toContain("family_member:m1");
+    expect(values).toContain("external_beneficiary:x1");
   });
 
   it("maps the encoded recipient value to the correct FK on a cash POST", async () => {

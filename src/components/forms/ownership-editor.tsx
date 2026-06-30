@@ -136,6 +136,7 @@ function PresetButton({ label, active, onClick }: PresetButtonProps) {
 function ownerToSelectValue(o: AccountOwner): string {
   if (o.kind === "family_member") return `fm:${o.familyMemberId}`;
   if (o.kind === "entity") return `ent:${o.entityId}`;
+  if (o.kind === "gifted_away") return `ga:${o.recipient.kind}:${o.recipient.id}`;
   return `eb:${o.externalBeneficiaryId}`;
 }
 

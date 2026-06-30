@@ -33,6 +33,9 @@ export function inEstateWeight(tree: ClientData, owner: AccountOwner): number {
   // external_beneficiary owners represent death-benefit recipients, not present
   // ownership — they carry no current value into the gross estate.
   if (owner.kind === "external_beneficiary") return 0;
+  // A completed gift to a person/charity we do not separately model — the slice
+  // has left the client's gross estate.
+  if (owner.kind === "gifted_away") return 0;
   return entityInEstateWeight(tree, owner.entityId);
 }
 
@@ -45,6 +48,7 @@ export function outOfEstateWeight(
   // external_beneficiary owners carry no current value — neither in nor out
   // of the household estate.
   if (owner.kind === "external_beneficiary") return 0;
+  if (owner.kind === "gifted_away") return 0;
   // Orphan-entity guard: missing entity returns 0 from BOTH inEstateWeight and
   // outOfEstateWeight (see in-estate-at-year.ts comment block) — without this
   // guard, the 1 - 0 here would assign the slice to out-of-estate, breaking

@@ -377,6 +377,10 @@ export type GiftEvent =
        *  cash gifts to family members / external beneficiaries — those have no
        *  in-projection account to credit; the cash simply leaves the household. */
       recipientEntityId?: string;
+      /** Set when the recipient is a family member (not a modeled trust entity). */
+      recipientFamilyMemberId?: string;
+      /** Set when the recipient is an external beneficiary (charity etc.). */
+      recipientExternalBeneficiaryId?: string;
       sourceAccountId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences
@@ -391,7 +395,11 @@ export type GiftEvent =
       accountId: string;
       percent: number; // 0.0001..1
       grantor: "client" | "spouse";
-      recipientEntityId: string;
+      /** Set only for a modeled trust-entity recipient. For gifts to a person /
+       *  charity exactly one of the two sibling ids below is set instead. */
+      recipientEntityId?: string;
+      recipientFamilyMemberId?: string;
+      recipientExternalBeneficiaryId?: string;
       amountOverride?: number; // if advisor provided a manual amount
       eventKind?: GiftEventKind;
     }
@@ -401,7 +409,9 @@ export type GiftEvent =
       liabilityId: string;
       percent: number;
       grantor: "client" | "spouse";
-      recipientEntityId: string;
+      recipientEntityId?: string;
+      recipientFamilyMemberId?: string;
+      recipientExternalBeneficiaryId?: string;
       parentGiftId: string;
       eventKind?: GiftEventKind;
     }

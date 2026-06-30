@@ -49,13 +49,33 @@ describe("GiftForm", () => {
     ]);
   });
 
-  it("restricts recipients to trusts when recurring", () => {
+  it("all recipients remain selectable when recurring (trust gate lifted)", () => {
     render(<GiftForm {...base()} />);
+    // Switch to recurring mode (trust pre-selected so the toggle is enabled initially)
     fireEvent.change(screen.getByTestId("recipient"), { target: { value: "entity:t1" } });
     fireEvent.click(screen.getByText("Recurring"));
     const values = [...(screen.getByTestId("recipient") as HTMLSelectElement).options].map((o) => o.value);
     expect(values).toContain("entity:t1");
-    expect(values).not.toContain("family_member:m1");
+    // Family members and externals must also remain in the list
+    expect(values).toContain("family_member:m1");
+    expect(values).toContain("external_beneficiary:x1");
+  });
+
+  it("recurring + specific-asset controls are available for a family member; Crummey is absent", () => {
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ onChange })} />);
+    // Select a family member (non-trust)
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+
+    // (a) Recurring segment should NOT be disabled
+    const recurringOption = screen.getByText("Recurring");
+    expect(recurringOption.closest("button")).not.toBeDisabled();
+
+    // (b) "Specific asset" funding segment should be present (accounts list is non-empty)
+    expect(screen.getByText("Specific asset")).toBeInTheDocument();
+
+    // (c) Crummey checkbox is absent for a non-trust recipient
+    expect(screen.queryByText(/crummey/i)).not.toBeInTheDocument();
   });
 
   it("round-trips an existing series draft without spurious change (diff stability)", () => {
@@ -78,6 +98,24 @@ describe("GiftForm", () => {
     fireEvent.change(screen.getByTestId("account"), { target: { value: "a1" } });
     const d = lastDraft(onChange);
     expect(d).toMatchObject({ kind: "asset-once", accountId: "a1", percent: 1, recipient: { kind: "entity", id: "t1" } });
+  });
+
+  it("series draft has crummey:false when recipient is switched from trust to family member", () => {
+    // Regression: series branch emitted bare `crummey` state without the recipientIsTrust guard.
+    // Start editing an existing trust series with crummey:true, then switch recipient to family member.
+    const editing: EstateFlowGift = {
+      kind: "series", id: "se2", startYear: 2026, endYear: 2026, annualAmount: 5_000,
+      amountMode: "fixed", inflationAdjust: false, grantor: "client",
+      recipient: { kind: "entity", id: "t1" }, crummey: true,
+    };
+    const onChange = vi.fn();
+    render(<GiftForm {...base({ editing, onChange })} />);
+    // Switch recipient to family member (non-trust) — Crummey checkbox disappears but state stays true.
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    const d = lastDraft(onChange);
+    expect(d?.kind).toBe("series");
+    // Without the recipientIsTrust guard this would be `true`, proving falsifiability.
+    expect((d as Extract<EstateFlowGift, { kind: "series" }>).crummey).toBe(false);
   });
 
   it("round-trips an existing asset-once gift with no sourceAccount", () => {

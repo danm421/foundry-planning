@@ -225,6 +225,8 @@ function seriesRow(overrides: Partial<GiftSeriesDbRow> = {}): GiftSeriesDbRow {
     id: "sr1",
     grantor: "client",
     recipientEntityId: "trust-series",
+    recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null,
     startYear: 2030,
     endYear: 2034,
     annualAmount: "18000",
@@ -462,6 +464,32 @@ describe("applyGiftsToClientData — bundled liability transfer", () => {
     const data = { accounts: [], entities: [], wills: [], gifts: [], giftEvents: [] } as unknown as ClientData;
     const out = applyGiftsToClientData(data, [assetGift], 0.025);
     expect(out.giftEvents.filter((e) => e.kind === "liability")).toHaveLength(0);
+  });
+});
+
+describe("estate-flow-gifts — non-entity recipients", () => {
+  it("maps a family-member series row to a draft with a family_member recipient", () => {
+    const draft = giftSeriesRowToDraft({
+      id: "s1", grantor: "client",
+      recipientEntityId: null, recipientFamilyMemberId: "fm-kid", recipientExternalBeneficiaryId: null,
+      startYear: 2027, endYear: 2029, annualAmount: "18000", amountMode: "fixed",
+      inflationAdjust: false, useCrummeyPowers: false,
+    } as never);
+    expect(draft.recipient).toEqual({ kind: "family_member", id: "fm-kid" });
+  });
+
+  it("emits an asset GiftEvent crediting an external-beneficiary recipient", () => {
+    const data = {
+      planSettings: { planStartYear: 2026, planEndYear: 2030, inflationRate: 0.03, taxInflationRate: 0.03 },
+      accounts: [], liabilities: [], taxYearRows: [],
+    } as unknown as ClientData;
+    const out = applyGiftsToClientData(
+      data,
+      [{ kind: "asset-once", id: "g1", year: 2027, accountId: "a1", percent: 0.1, grantor: "client", recipient: { kind: "external_beneficiary", id: "charity-1" } }],
+      0.03,
+    );
+    const ev = out.giftEvents.find((e) => e.kind === "asset");
+    expect(ev).toMatchObject({ recipientExternalBeneficiaryId: "charity-1", recipientEntityId: undefined });
   });
 });
 

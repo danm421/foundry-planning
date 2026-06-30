@@ -50,6 +50,10 @@ export function resolveOwnerSlices(
     if (owner.kind === "external_beneficiary") {
       return { owner, value: 0 };
     }
+    // Gifted-away slices have left the estate — carry no present balance-sheet value.
+    if (owner.kind === "gifted_away") {
+      return { owner, value: 0 };
+    }
     const lockedFm = familyAccountSharesEoY
       ?.get(owner.familyMemberId)
       ?.get(accountId);

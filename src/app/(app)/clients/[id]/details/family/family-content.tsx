@@ -302,6 +302,8 @@ export async function FamilyContent({ clientId: id, scenarioParam }: FamilyConte
     id: s.id,
     grantor: s.grantor as "client" | "spouse" | "joint",
     recipientEntityId: s.recipientEntityId,
+    recipientFamilyMemberId: s.recipientFamilyMemberId,
+    recipientExternalBeneficiaryId: s.recipientExternalBeneficiaryId,
     startYear: s.startYear,
     endYear: s.endYear,
     annualAmount: parseFloat(s.annualAmount as string),

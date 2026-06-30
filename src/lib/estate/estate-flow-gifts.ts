@@ -54,7 +54,7 @@ export type EstateFlowGift =
       amountMode: "fixed" | "annual_exclusion";
       inflationAdjust: boolean;
       grantor: "client" | "spouse" | "joint";
-      recipient: GiftRecipientRef; // recipient.kind is always "entity" (irrevocable trust)
+      recipient: GiftRecipientRef; // recipient.kind may be entity, family_member, or external_beneficiary
       crummey: boolean;
     };
 
@@ -76,11 +76,17 @@ export interface GiftRow {
   eventKind: GiftEventKind;
 }
 
-/** Shape of a `gift_series` table row as returned by a plain `select()`. */
+/** Shape of a `gift_series` table row as returned by a plain `select()`.
+ * The recipient columns are mutually-exclusive nullable FK columns;
+ * only one will be set per row. `recipientFamilyMemberId` and
+ * `recipientExternalBeneficiaryId` are optional here because existing DB rows
+ * predating the migration that added those columns will not carry them. */
 export interface GiftSeriesDbRow {
   id: string;
   grantor: "client" | "spouse" | "joint";
-  recipientEntityId: string;
+  recipientEntityId: string | null;
+  recipientFamilyMemberId?: string | null;
+  recipientExternalBeneficiaryId?: string | null;
   startYear: number;
   endYear: number;
   annualAmount: string;
@@ -91,8 +97,8 @@ export interface GiftSeriesDbRow {
 
 function recipientFromRow(r: {
   recipientEntityId: string | null;
-  recipientFamilyMemberId: string | null;
-  recipientExternalBeneficiaryId: string | null;
+  recipientFamilyMemberId?: string | null;
+  recipientExternalBeneficiaryId?: string | null;
 }): GiftRecipientRef {
   if (r.recipientEntityId) return { kind: "entity", id: r.recipientEntityId };
   if (r.recipientFamilyMemberId)
@@ -147,7 +153,7 @@ export function giftSeriesRowToDraft(row: GiftSeriesDbRow): EstateFlowGift {
     amountMode: row.amountMode,
     inflationAdjust: row.inflationAdjust,
     grantor: row.grantor,
-    recipient: { kind: "entity", id: row.recipientEntityId },
+    recipient: recipientFromRow(row),
     crummey: row.useCrummeyPowers,
   };
 }
@@ -187,6 +193,12 @@ export function applyGiftsToClientData(
   gifts: EstateFlowGift[],
   cpi: number,
 ): ClientData {
+  const recipientFields = (r: GiftRecipientRef) => ({
+    recipientEntityId: r.kind === "entity" ? r.id : undefined,
+    recipientFamilyMemberId: r.kind === "family_member" ? r.id : undefined,
+    recipientExternalBeneficiaryId: r.kind === "external_beneficiary" ? r.id : undefined,
+  });
+
   const cashGifts: Gift[] = [];
   const giftEvents: GiftEvent[] = [];
 
@@ -253,7 +265,7 @@ export function applyGiftsToClientData(
         accountId: g.accountId,
         percent: g.percent,
         grantor: g.grantor as "client" | "spouse",
-        recipientEntityId: g.recipient.id,
+        ...recipientFields(g.recipient),
         amountOverride: g.amountOverride,
         eventKind: g.eventKind ?? "outright",
       });
@@ -274,7 +286,7 @@ export function applyGiftsToClientData(
           liabilityId: linkedLiability.id,
           percent: g.percent,
           grantor: g.grantor as "client" | "spouse",
-          recipientEntityId: g.recipient.id,
+          ...recipientFields(g.recipient),
           parentGiftId: g.id,
           eventKind: g.eventKind ?? "outright",
         });
@@ -286,7 +298,7 @@ export function applyGiftsToClientData(
           {
             id: g.id,
             grantor: g.grantor,
-            recipientEntityId: g.recipient.id,
+            ...recipientFields(g.recipient),
             startYear: g.startYear,
             endYear: g.endYear,
             annualAmount: g.annualAmount,

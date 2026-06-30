@@ -3,7 +3,9 @@ import type { GiftEvent } from "./types";
 export interface GiftSeriesRow {
   id: string;
   grantor: "client" | "spouse" | "joint";
-  recipientEntityId: string;
+  recipientEntityId?: string;
+  recipientFamilyMemberId?: string;
+  recipientExternalBeneficiaryId?: string;
   startYear: number;
   endYear: number;
   annualAmount: number;
@@ -37,6 +39,8 @@ export function fanOutGiftSeries(
       amount,
       grantor: series.grantor,
       recipientEntityId: series.recipientEntityId,
+      recipientFamilyMemberId: series.recipientFamilyMemberId,
+      recipientExternalBeneficiaryId: series.recipientExternalBeneficiaryId,
       sourceAccountId: series.sourceAccountId,
       useCrummeyPowers: series.useCrummeyPowers,
       seriesId: series.id,
