@@ -1,0 +1,4 @@
+ALTER TABLE "incomes" DROP CONSTRAINT "incomes_one_owner";--> statement-breakpoint
+ALTER TABLE "incomes" ADD COLUMN "linked_property_id" uuid;--> statement-breakpoint
+ALTER TABLE "incomes" ADD CONSTRAINT "incomes_linked_property_id_accounts_id_fk" FOREIGN KEY ("linked_property_id") REFERENCES "public"."accounts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "incomes" ADD CONSTRAINT "incomes_one_owner" CHECK (("incomes"."owner_entity_id" IS NOT NULL)::int + ("incomes"."owner_account_id" IS NOT NULL)::int + ("incomes"."linked_property_id" IS NOT NULL)::int <= 1);

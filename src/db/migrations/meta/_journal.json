@@ -1366,6 +1366,13 @@
       "when": 1782831736835,
       "tag": "0194_complete_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1782857737730,
+      "tag": "0195_income_linked_property",
+      "breakpoints": true
     }
   ]
 }

@@ -2176,12 +2176,19 @@ export const incomes = pgTable("incomes", {
   ownerAccountId: uuid("owner_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  // For an "Other" income that follows a real estate property. Mutually
+  // exclusive with ownerEntityId / ownerAccountId (see incomes_one_owner).
+  // When set, the engine derives the income's per-year owner from the
+  // property's ownership (sale stops it, gift reroutes/scales it).
+  linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   exactlyOneOwner: check(
     "incomes_one_owner",
-    sql`(${t.ownerEntityId} IS NOT NULL)::int + (${t.ownerAccountId} IS NOT NULL)::int <= 1`,
+    sql`(${t.ownerEntityId} IS NOT NULL)::int + (${t.ownerAccountId} IS NOT NULL)::int + (${t.linkedPropertyId} IS NOT NULL)::int <= 1`,
   ),
   // Engine load path filters incomes by (client_id, scenario_id) (audit F7).
   clientScenarioIdx: index("incomes_client_scenario_idx").on(t.clientId, t.scenarioId),
@@ -3305,6 +3312,10 @@ export const incomesRelations = relations(incomes, ({ one }) => ({
   scenario: one(scenarios, {
     fields: [incomes.scenarioId],
     references: [scenarios.id],
+  }),
+  linkedProperty: one(accounts, {
+    fields: [incomes.linkedPropertyId],
+    references: [accounts.id],
   }),
 }));
 
