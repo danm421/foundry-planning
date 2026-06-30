@@ -1,6 +1,8 @@
 "use client";
 
 import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
+import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import SourceBadge from "./source-badge";
@@ -20,6 +22,9 @@ interface ReviewStepExpensesProps {
   onChange: (expenses: ExtractedExpense[]) => void;
   defaultStartYear: number;
   defaultEndYear: number;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 const INPUT_CLASS =
@@ -34,10 +39,27 @@ export default function ReviewStepExpenses({
   onChange,
   defaultStartYear,
   defaultEndYear,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: ReviewStepExpensesProps) {
   const updateField = (index: number, field: keyof ExtractedExpense, value: unknown) => {
     const updated = expenses.map((exp, i) =>
       i === index ? { ...exp, [field]: value } : exp
+    );
+    onChange(updated);
+  };
+
+  const updateTiming = (
+    index: number,
+    side: "start" | "end",
+    year: number,
+    ref: YearRef | null,
+  ) => {
+    const yearField = side === "start" ? "startYear" : "endYear";
+    const refField = side === "start" ? "startYearRef" : "endYearRef";
+    const updated = expenses.map((exp, i) =>
+      i === index ? { ...exp, [yearField]: year, [refField]: ref ?? undefined } : exp,
     );
     onChange(updated);
   };
@@ -103,24 +125,61 @@ export default function ReviewStepExpenses({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Start Year</label>
-                <input
-                  type="number"
-                  value={expense.startYear ?? ""}
-                  onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
-                  className={expense.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
-                  placeholder={String(defaultStartYear)}
-                />
+                {milestones ? (
+                  <MilestoneYearPicker
+                    name={`exp-start-${i}`}
+                    id={`exp-start-${i}`}
+                    value={expense.startYear ?? defaultStartYear}
+                    yearRef={expense.startYearRef ?? null}
+                    milestones={milestones}
+                    showSSRefs={false}
+                    onChange={(yr, ref) => updateTiming(i, "start", yr, ref)}
+                    label="Start Year"
+                    clientFirstName={clientFirstName}
+                    spouseFirstName={spouseFirstName}
+                    position="start"
+                  />
+                ) : (
+                  <>
+                    <label className="mb-1 block text-xs text-gray-300">Start Year</label>
+                    <input
+                      type="number"
+                      value={expense.startYear ?? ""}
+                      onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
+                      className={expense.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                      placeholder={String(defaultStartYear)}
+                    />
+                  </>
+                )}
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-300">End Year</label>
-                <input
-                  type="number"
-                  value={expense.endYear ?? ""}
-                  onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
-                  className={expense.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
-                  placeholder={String(defaultEndYear)}
-                />
+                {milestones ? (
+                  <MilestoneYearPicker
+                    name={`exp-end-${i}`}
+                    id={`exp-end-${i}`}
+                    value={expense.endYear ?? defaultEndYear}
+                    yearRef={expense.endYearRef ?? null}
+                    milestones={milestones}
+                    showSSRefs={false}
+                    onChange={(yr, ref) => updateTiming(i, "end", yr, ref)}
+                    label="End Year"
+                    clientFirstName={clientFirstName}
+                    spouseFirstName={spouseFirstName}
+                    startYearForDuration={expense.startYear ?? defaultStartYear}
+                    position="end"
+                  />
+                ) : (
+                  <>
+                    <label className="mb-1 block text-xs text-gray-300">End Year</label>
+                    <input
+                      type="number"
+                      value={expense.endYear ?? ""}
+                      onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
+                      className={expense.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                      placeholder={String(defaultEndYear)}
+                    />
+                  </>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>

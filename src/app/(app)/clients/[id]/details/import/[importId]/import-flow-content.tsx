@@ -9,6 +9,7 @@ import {
 import { getOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
+import { loadImportMilestones } from "@/lib/imports/import-milestones";
 import ImportFlow from "./import-flow";
 
 interface ImportFlowContentProps {
@@ -56,6 +57,7 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
   const payloadJson = imp.payloadJson as ImportPayloadJson | null;
 
   const growthContext = await loadImportGrowthContext(id, firmId, imp.scenarioId);
+  const importMilestones = await loadImportMilestones(id, firmId, imp.scenarioId);
 
   return (
     <ImportFlow
@@ -75,6 +77,9 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
       }))}
       payload={payloadJson?.payload ?? null}
       perTabCommittedAt={imp.perTabCommittedAt as Record<string, string> | null}
+      milestones={importMilestones?.milestones ?? null}
+      clientFirstName={importMilestones?.clientFirstName}
+      spouseFirstName={importMilestones?.spouseFirstName}
     />
   );
 }
