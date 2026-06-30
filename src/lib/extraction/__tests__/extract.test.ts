@@ -33,15 +33,21 @@ vi.mock("../vision-ocr", () => ({
     visionOcrPdf: vi.fn(),
 }));
 
+vi.mock("../docx-parser", () => ({
+    extractDocxText: vi.fn(),
+}));
+
 import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
 import { extractPdfText, extractPdfPages } from "../pdf-parser";
 import { visionOcrPdf } from "../vision-ocr";
+import { extractDocxText } from "../docx-parser";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
 const mockedPages = vi.mocked(extractPdfPages);
 const mockedVision = vi.mocked(visionOcrPdf);
+const mockedDocx = vi.mocked(extractDocxText);
 
 beforeEach(() => {
     mockedPdf.mockResolvedValue(
@@ -170,6 +176,37 @@ describe("extractDocument", () => {
             expect.any(String),
             "mini",
         );
+    });
+
+    it("routes a fact_finder .docx through multi-pass, not the single-pass fallback", async () => {
+        // A Word fact-finder carries multiple sections (income, expenses,
+        // accounts…). Before the fix it fell through to the account_statement
+        // single-pass prompt — which extracts nothing from an income summary,
+        // yielding the misleading "No data could be extracted" warning.
+        mockedDocx.mockResolvedValueOnce(
+            "Income, Transfers and Savings Summary\n" +
+                "John receives Social Security of $38,400 per year."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () =>  // income-summary
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "Income, Transfers and Savings Summary.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.extracted.incomes).toHaveLength(1);
+        expect(result.extracted.incomes[0].name).toBe("John SS");
+        expect(
+            result.warnings.some((w) => /No data could be extracted/i.test(w))
+        ).toBe(false);
     });
 
     it("comprehensive mode runs multi-pass for a non-fact_finder PDF", async () => {

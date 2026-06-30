@@ -186,6 +186,16 @@ export async function extractDocument(
         // fact_finder/comprehensive branch so an explicit fact_finder docx
         // never gets fed to the PDF page extractor.
         text = await extractDocxText(fileBuffer);
+        // A fact-finder spans multiple sections (income, expenses, accounts…),
+        // so it needs the multi-pass orchestrator — the single-pass fallback
+        // prompt (account_statement) extracts nothing from, e.g., an income
+        // summary. Multi-pass keys off pdfPages, which docx lacks, so feed the
+        // whole document as one pseudo-page: the classifier sees all of it
+        // (more complete than a PDF's first-3-+-last anchors) and runs each
+        // section prompt over the full text.
+        if (documentType === "fact_finder" || comprehensive) {
+            pdfPages = [text];
+        }
     } else if (documentType === "fact_finder" || (comprehensive && kind === "pdf")) {
         pdfPages = await extractPdfPages(fileBuffer);
         text = pdfPages.join("\n");
