@@ -40,6 +40,7 @@ import {
 import { computeIrdAttributions, hasUntaxedInheritedIrd } from "./ird-tax";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGiftsByYear } from "@/lib/estate/adjusted-taxable-gifts";
+import { resolveResidenceState } from "../relocation";
 
 interface FirstDeathChainResult {
   accounts: Account[];
@@ -506,7 +507,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     dsueReceived: input.dsueReceived,
     probateCostRate,
     probateEstate,
-    residenceState: input.planSettings.residenceState ?? null,
+    residenceState: resolveResidenceState(
+      input.planSettings.residenceState ?? null,
+      input.relocations,
+      input.year,
+    ),
     stateEstateTaxFallbackRate: input.planSettings.flatStateEstateRate ?? 0,
     inflationRate: taxInflation,
     estateTaxDebits: [],
@@ -653,7 +658,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     dsueReceived: input.dsueReceived,
     probateCostRate,
     probateEstate,
-    residenceState: input.planSettings.residenceState ?? null,
+    residenceState: resolveResidenceState(
+      input.planSettings.residenceState ?? null,
+      input.relocations,
+      input.year,
+    ),
     stateEstateTaxFallbackRate: input.planSettings.flatStateEstateRate ?? 0,
     inflationRate: taxInflation,
     estateTaxDebits: estateTaxDrain.debits,
