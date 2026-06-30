@@ -341,6 +341,12 @@ function computeGrossEstateAtYear(
     survivorFmId: otherFmId,
     entityAccountSharesEoY: useLockedShares ? yearRow.entityAccountSharesEoY : undefined,
     familyAccountSharesEoY: useLockedShares ? yearRow.familyAccountSharesEoY : undefined,
+    // Gift-aware ownership: assets gifted out of the household by `year` leave
+    // the gross estate here too, keeping the spine consistent with the estate
+    // report and balance sheet.
+    giftEvents: tree.giftEvents,
+    deathYear: year,
+    planStartYear,
   });
   return result.total;
 }
