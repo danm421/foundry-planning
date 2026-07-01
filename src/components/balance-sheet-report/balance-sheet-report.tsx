@@ -14,6 +14,7 @@ import {
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
 import YearPicker from "./year-picker";
 import HouseholdTable from "./household-table";
+import HouseholdSummaryPanel from "./household-summary-panel";
 import OutOfEstateTable from "./out-of-estate-table";
 import EntityBalanceSheets from "./entity-balance-sheets";
 
@@ -109,7 +110,22 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
 
       {tab === "household" ? (
         <>
-          <HouseholdTable model={household} clientLabel={props.clientLabel} spouseLabel={props.spouseLabel} />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+            <div className="lg:w-80 lg:shrink-0">
+              <HouseholdSummaryPanel
+                donut={consolidated.donut}
+                totalAssets={household.totalAssets}
+                totalLiabilities={household.totalLiabilities}
+                netWorth={household.netWorth}
+                hasSpouse={household.hasSpouse}
+                clientLabel={props.clientLabel}
+                spouseLabel={props.spouseLabel}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <HouseholdTable model={household} clientLabel={props.clientLabel} spouseLabel={props.spouseLabel} />
+            </div>
+          </div>
           <OutOfEstateTable vm={consolidated} />
         </>
       ) : (

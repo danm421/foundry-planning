@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 // src/components/balance-sheet-report/__tests__/balance-sheet-report.test.tsx
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { FamilyMember } from "@/engine/types";
+
+// The summary panel renders a Chart.js Pie; stub it so jsdom never touches <canvas>.
+vi.mock("react-chartjs-2", () => ({ Pie: () => <div data-testid="pie" /> }));
+
 import BalanceSheetReport, { type BalanceSheetReportProps } from "../balance-sheet-report";
 
 const familyMembers: FamilyMember[] = [
