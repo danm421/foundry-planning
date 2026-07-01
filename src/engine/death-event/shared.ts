@@ -649,9 +649,22 @@ export function applyBeneficiaryDesignations(
       } else {
         removed = true;
       }
-      recipientKind = b.householdRole === "spouse" ? "spouse" : "family_member";
+      // Bug #5 (parallel to the familyMemberId branch above): the survivor
+      // earns the unlimited IRC §2056 marital deduction — and their inherited
+      // pre-tax balance defers income tax via spousal rollover (no IRD) —
+      // whenever they ARE the surviving spouse, regardless of whether their
+      // household role is "spouse" or "client". When the spouse predeceases,
+      // the surviving CLIENT is the decedent's surviving spouse, so a
+      // householdRole:"client" designation must tag "spouse" too. Key off
+      // identity (survivorFmId), not the role literal — matching by role alone
+      // mislabeled the surviving client "family_member", triggering phantom
+      // estate tax AND phantom IRD income tax on the rolled-over account.
+      const inheritedBySurvivingSpouse =
+        roleFm != null && survivorFmId != null && roleFm.id === survivorFmId;
+      recipientKind = inheritedBySurvivingSpouse ? "spouse" : "family_member";
       recipientId = roleFm?.id ?? null;
-      recipientLabel = b.householdRole === "spouse" ? "Spouse" : "Client";
+      recipientLabel =
+        inheritedBySurvivingSpouse || b.householdRole === "spouse" ? "Spouse" : "Client";
     } else if (b.entityIdRef) {
       ownerMutation = { owners: [{ kind: "entity", entityId: b.entityIdRef, percent: 1 }] };
       recipientKind = "entity";
