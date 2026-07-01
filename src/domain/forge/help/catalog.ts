@@ -202,7 +202,7 @@ export const WALKTHROUGHS: readonly Walkthrough[] = [
       {
         anchorId: "crm-primary-contact-fields",
         page: "/crm/new",
-        callout: "Enter the primary contact's first and last name, then click Next.",
+        callout: "Enter the primary contact's first and last name, then continue.",
         advanceOn: "manual",
       },
       {

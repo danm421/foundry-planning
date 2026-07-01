@@ -12,6 +12,7 @@ import type { ForgeGlobalToolContext } from "../context";
 import { getWalkthrough } from "../help/catalog";
 import { emitWalkthrough } from "../custom-events";
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for build*Tools(toolCtx) signature uniformity; start_walkthrough is read-only and consumes no tool context.
 export function buildWalkthroughTools(_toolCtx: ForgeGlobalToolContext): StructuredToolInterface[] {
   const startWalkthrough = tool(
     async ({ walkthroughId }: { walkthroughId: string }) => {
