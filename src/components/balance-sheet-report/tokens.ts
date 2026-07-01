@@ -45,11 +45,11 @@ export const CATEGORY_ORDER: AssetCategoryKey[] = [
 export const CATEGORY_HEX: Record<AssetCategoryKey, string> = {
   cash: dataLight.green,            // #1f8d5f
   taxable: dataLight.blue,          // #2d61aa
-  retirement: dataLight.purple,     // #6c41a2
+  retirement: dataLight.red,        // #c5392b — distinct from taxable blue
   annuity: dataLight.yellow,        // #c2941b
   realEstate: dataLight.orange,     // #cf671d
   business: dataLight.pink,         // #ab3f6b
-  stockOptions: dataLight.red,      // #c5392b
+  stockOptions: dataLight.purple,   // #6c41a2 — swapped off red for retirement
   lifeInsurance: dataLight.teal,    // #198b83
 };
 
