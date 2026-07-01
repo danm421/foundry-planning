@@ -47,13 +47,16 @@ const dirClass = (d: 1 | -1 | 0) => (d === 1 ? "text-good" : d === -1 ? "text-cr
 function ComparisonKpiCard({ kpi }: { kpi: TaxComparisonKpi }) {
   if (!kpi.show) return null;
   return (
-    <div className="min-w-[150px] flex-1 rounded-lg border border-hair bg-card-2 px-4 py-3">
+    <div className="flex min-w-[150px] flex-1 flex-col rounded-lg border border-hair bg-card-2 px-4 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{kpi.label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-lg font-semibold text-ink">{kpi.scenario}</span>
-        <span className={`text-[12px] font-medium ${dirClass(kpi.direction)}`}>{kpi.delta}</span>
+      {/* mt-auto pins the value block to the bottom so values line up across cards with 1- vs 2-line labels */}
+      <div className="mt-auto">
+        <div className="mt-1 flex items-baseline gap-2">
+          <span className="text-lg font-semibold text-ink">{kpi.scenario}</span>
+          <span className={`text-[12px] font-medium ${dirClass(kpi.direction)}`}>{kpi.delta}</span>
+        </div>
+        <div className="text-[11px] text-ink-3">Base {kpi.base}</div>
       </div>
-      <div className="text-[11px] text-ink-3">Base {kpi.base}</div>
     </div>
   );
 }

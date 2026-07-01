@@ -10,7 +10,8 @@ const s = StyleSheet.create({
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
   subtitle: { fontSize: 8, color: T.ink2, marginBottom: 6 },
   kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
-  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
+  // space-between pins the value to the card bottom so values align across 1- vs 2-line labels
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 },
   kpiVal: { fontSize: 14, fontWeight: 700, marginTop: 2 },
   body: { flexDirection: "row", gap: 10 },

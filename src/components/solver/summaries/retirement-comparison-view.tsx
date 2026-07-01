@@ -35,13 +35,16 @@ ChartJS.register(
 function ComparisonKpiCard({ kpi }: { kpi: KpiCardData }) {
   if (!kpi.show) return null;
   return (
-    <div className="min-w-[150px] flex-1 rounded-lg border border-hair bg-card-2 px-4 py-3">
+    <div className="flex min-w-[150px] flex-1 flex-col rounded-lg border border-hair bg-card-2 px-4 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{kpi.label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-lg font-semibold text-ink">{kpi.scenario}</span>
-        {kpi.delta ? <span className="text-[12px] font-medium text-good">{kpi.delta}</span> : null}
+      {/* mt-auto pins the value block to the bottom so values line up across cards with 1- vs 2-line labels */}
+      <div className="mt-auto">
+        <div className="mt-1 flex items-baseline gap-2">
+          <span className="text-lg font-semibold text-ink">{kpi.scenario}</span>
+          {kpi.delta ? <span className="text-[12px] font-medium text-good">{kpi.delta}</span> : null}
+        </div>
+        <div className="text-[11px] text-ink-3">Base {kpi.base}</div>
       </div>
-      <div className="text-[11px] text-ink-3">Base {kpi.base}</div>
     </div>
   );
 }

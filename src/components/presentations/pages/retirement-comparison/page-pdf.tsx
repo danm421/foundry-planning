@@ -36,7 +36,8 @@ const s = StyleSheet.create({
   metricVal: { fontSize: 9, fontWeight: 600, color: T.ink, fontFamily: MONO },
 
   kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
-  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
+  // space-between pins the value block to the card bottom so values align across 1- vs 2-line labels
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, lineHeight: 1.2 },
   kpiVals: { flexDirection: "row", alignItems: "baseline", marginTop: 5 },
   kpiBase: { fontSize: 8, color: T.ink3, fontFamily: MONO },
@@ -54,12 +55,14 @@ function KpiCardView({ card }: { card: KpiCard }) {
   return (
     <View style={s.kpi}>
       <Text style={s.kpiLbl}>{card.label}</Text>
-      <View style={s.kpiVals}>
-        <Text style={s.kpiBase}>{card.base}</Text>
-        <Text style={s.kpiArrow}>→</Text>
-        <Text style={s.kpiScn}>{card.scenario}</Text>
+      <View>
+        <View style={s.kpiVals}>
+          <Text style={s.kpiBase}>{card.base}</Text>
+          <Text style={s.kpiArrow}>→</Text>
+          <Text style={s.kpiScn}>{card.scenario}</Text>
+        </View>
+        {card.delta ? <Text style={s.kpiDelta}>{card.delta}</Text> : null}
       </View>
-      {card.delta ? <Text style={s.kpiDelta}>{card.delta}</Text> : null}
     </View>
   );
 }

@@ -9,7 +9,8 @@ import { EstateSummaryChartPdf } from "./chart-pdf";
 
 const s = StyleSheet.create({
   kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
-  kpi: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
+  // space-between pins the value block to the card bottom so values align across 1- vs 2-line labels
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
   kpiLbl: { fontSize: 6.5, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.4 },
   kpiVal: { fontSize: 15, fontWeight: 700, marginTop: 2 },
   kpiSub: { fontSize: 6.5, color: T.ink2, marginTop: 1 },
@@ -35,8 +36,10 @@ function Kpi({ lbl, val, sub }: { lbl: string; val: string; sub: string }) {
   return (
     <View style={s.kpi}>
       <Text style={s.kpiLbl}>{lbl}</Text>
-      <Text style={s.kpiVal}>{val}</Text>
-      <Text style={s.kpiSub}>{sub}</Text>
+      <View>
+        <Text style={s.kpiVal}>{val}</Text>
+        <Text style={s.kpiSub}>{sub}</Text>
+      </View>
     </View>
   );
 }

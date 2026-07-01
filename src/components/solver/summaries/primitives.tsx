@@ -27,10 +27,13 @@ export function SummaryKpiRow({ children }: { children: ReactNode }) {
 
 export function SummaryKpiCard({ label, value, delta }: { label: string; value: string; delta?: string }) {
   return (
-    <div className="min-w-[140px] flex-1 rounded-lg border border-hair bg-card-2 px-4 py-3">
+    <div className="flex min-w-[140px] flex-1 flex-col rounded-lg border border-hair bg-card-2 px-4 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-ink">{value}</div>
-      {delta ? <div className="text-[11px] text-ink-3">{delta}</div> : null}
+      {/* mt-auto pins the value block to the bottom so values line up across cards with 1- vs 2-line labels */}
+      <div className="mt-auto">
+        <div className="mt-1 text-xl font-semibold text-ink">{value}</div>
+        {delta ? <div className="text-[11px] text-ink-3">{delta}</div> : null}
+      </div>
     </div>
   );
 }
