@@ -14,6 +14,7 @@ import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
 import { getOpsAdmin } from "@/lib/ops/ops-auth";
 import { GlobalForgeMount } from "@/components/forge/global-forge-mount";
+import { WalkthroughProvider } from "@/components/forge/walkthrough-provider";
 import { isForgeEnabled } from "@/domain/forge/flag";
 
 export default async function AppLayout({
@@ -45,24 +46,26 @@ export default async function AppLayout({
   }
 
   return (
-    <SidebarProvider initialCollapsed={collapsed}>
-      <AppShell>
-        <SidebarFrame>
-          <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
-        </SidebarFrame>
-        <BackNavProvider>
-          <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
-            {impersonatedName && <ImpersonationBanner advisorName={impersonatedName} />}
-            <Topbar />
-            <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
-              <SubscriptionGuard state={state} isFounder={isFounder} />
+    <WalkthroughProvider>
+      <SidebarProvider initialCollapsed={collapsed}>
+        <AppShell>
+          <SidebarFrame>
+            <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
+          </SidebarFrame>
+          <BackNavProvider>
+            <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
+              {impersonatedName && <ImpersonationBanner advisorName={impersonatedName} />}
+              <Topbar />
+              <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
+                <SubscriptionGuard state={state} isFounder={isFounder} />
+              </div>
+              <main className="flex min-h-0 flex-1 flex-col bg-paper">{children}</main>
+              <Footer />
+              <GlobalForgeMount enabled={isForgeEnabled()} />
             </div>
-            <main className="flex min-h-0 flex-1 flex-col bg-paper">{children}</main>
-            <Footer />
-            <GlobalForgeMount enabled={isForgeEnabled()} />
-          </div>
-        </BackNavProvider>
-      </AppShell>
-    </SidebarProvider>
+          </BackNavProvider>
+        </AppShell>
+      </SidebarProvider>
+    </WalkthroughProvider>
   );
 }
