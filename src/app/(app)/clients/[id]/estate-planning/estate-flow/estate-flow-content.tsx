@@ -8,12 +8,12 @@ import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
+import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
 import EstateFlowView from "@/components/estate-flow-view";
 
 interface Props {
   clientId: string;
   firmId: string;
-  filingStatus: string;
   firstName: string | null;
   spouseName: string | null;
   scenarioId: string;
@@ -22,7 +22,6 @@ interface Props {
 export async function EstateFlowContent({
   clientId,
   firmId,
-  filingStatus,
   firstName,
   spouseName,
   scenarioId,
@@ -67,8 +66,11 @@ export async function EstateFlowContent({
   // inflation rate — the only inflation field reachable on effectiveTree.
   const cpi = effectiveTree.planSettings.inflationRate;
 
-  const isMarried =
-    filingStatus === "married_joint" || filingStatus === "married_separate";
+  // Gate the second-death column on spouse existence, matching the engine's
+  // second-death signal (client.spouseDob) — NOT filing status. A spouse'd
+  // household that files single/separately still gets a modeled second death.
+  // See hasSpouseForEstate.
+  const isMarried = hasSpouseForEstate(effectiveTree.client.spouseDob);
 
   return (
     <EstateFlowView

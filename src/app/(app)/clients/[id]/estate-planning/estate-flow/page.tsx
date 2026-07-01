@@ -20,7 +20,6 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
 
   const [client] = await db
     .select({
-      filingStatus: clients.filingStatus,
       crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
@@ -44,7 +43,6 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         <EstateFlowContent
           clientId={id}
           firmId={firmId}
-          filingStatus={client.filingStatus}
           firstName={primaryContact.firstName}
           spouseName={spouseContact?.firstName ?? null}
           scenarioId={scenarioId}

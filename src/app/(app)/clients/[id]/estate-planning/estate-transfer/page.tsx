@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import EstateTransferTabbedView from "@/components/estate-transfer-tabbed-view";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
+import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -39,9 +40,9 @@ export default async function EstateTransferReportPage({ params, searchParams }:
   const spouseFirstName = spouseContact?.firstName ?? null;
   const spouseDob = spouseContact?.dateOfBirth ?? null;
 
-  const isMarried =
-    client.filingStatus === "married_joint" ||
-    client.filingStatus === "married_separate";
+  // Gate the second-death column on spouse existence, matching the engine's
+  // second-death signal — NOT filing status. See hasSpouseForEstate.
+  const isMarried = hasSpouseForEstate(spouseDob);
 
   const ownerNames = {
     clientName: clientFirstName ?? "Client",
