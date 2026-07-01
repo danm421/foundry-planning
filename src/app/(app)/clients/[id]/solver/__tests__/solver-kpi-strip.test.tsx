@@ -14,6 +14,9 @@ describe("SolverKpiStrip", () => {
     yearsFundedDelta: 0,
     lifetimeTax: 4_010_000,
     lifetimeTaxDelta: 386_000,
+    netToHeirs: 2_400_000,
+    netToHeirsDelta: 180_000,
+    netToHeirsLoading: false,
     dimmed: false,
     onRegenerate: () => {},
     solveActive: false,
@@ -34,5 +37,17 @@ describe("SolverKpiStrip", () => {
     // showing the delta from base until the recompute lands.
     render(<SolverKpiStrip {...base} posState="stale" />);
     expect(screen.getByText(/from 84%/)).toBeTruthy();
+  });
+
+  it("renders the Net to Heirs tile with its vs-Base delta", () => {
+    render(<SolverKpiStrip {...base} />);
+    expect(screen.getByText(/Net to Heirs/)).toBeTruthy();
+    expect(screen.getByText(/\$2\.40M/)).toBeTruthy();
+    expect(screen.getByText(/\+\$180,000 vs Base/)).toBeTruthy();
+  });
+
+  it("shows a loading placeholder for Net to Heirs before the estate fetch resolves", () => {
+    render(<SolverKpiStrip {...base} netToHeirs={null} netToHeirsDelta={null} netToHeirsLoading />);
+    expect(screen.getByText("…")).toBeTruthy();
   });
 });

@@ -4,6 +4,7 @@ import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
 import { SolverYearsFundedKpi } from "./solver-years-funded-kpi";
 import { SolverLifetimeTaxKpi } from "./solver-lifetime-tax-kpi";
+import { SolverNetToHeirsKpi } from "./solver-net-to-heirs-kpi";
 
 interface Props {
   posState: "idle" | "computing" | "ready" | "stale" | "error";
@@ -15,6 +16,9 @@ interface Props {
   yearsFundedDelta: number;
   lifetimeTax: number;
   lifetimeTaxDelta: number;
+  netToHeirs: number | null;
+  netToHeirsDelta: number | null;
+  netToHeirsLoading: boolean;
   dimmed: boolean;
   onRegenerate: () => void;
   solveActive: boolean;
@@ -31,6 +35,9 @@ export function SolverKpiStrip({
   yearsFundedDelta,
   lifetimeTax,
   lifetimeTaxDelta,
+  netToHeirs,
+  netToHeirsDelta,
+  netToHeirsLoading,
   dimmed,
   onRegenerate,
   solveActive,
@@ -47,6 +54,12 @@ export function SolverKpiStrip({
       <SolverEndingAssetsKpi value={endingAssets} delta={endingAssetsDelta} dimmed={dimmed} />
       <SolverYearsFundedKpi value={yearsFunded} delta={yearsFundedDelta} dimmed={dimmed} />
       <SolverLifetimeTaxKpi value={lifetimeTax} delta={lifetimeTaxDelta} dimmed={dimmed} />
+      <SolverNetToHeirsKpi
+        value={netToHeirs}
+        delta={netToHeirsDelta}
+        dimmed={dimmed}
+        loading={netToHeirsLoading}
+      />
     </div>
   );
 }

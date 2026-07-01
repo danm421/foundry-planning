@@ -35,6 +35,13 @@ vi.mock("../use-solver-mc", () => ({
   },
 }));
 
+// The Net-to-Heirs KPI hook fires its own (debounced) projection fetches on
+// mount; stub it so it doesn't consume the shared fetchMock queue the solve /
+// project tests rely on. Its own behavior is covered by net-to-heirs.test.ts.
+vi.mock("../use-solver-net-to-heirs", () => ({
+  useSolverNetToHeirs: () => ({ netToHeirs: null, netToHeirsDelta: null, loading: false }),
+}));
+
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
   PortfolioBarsChart: ({ current }: { current: Array<{ portfolioAssets: { total: number } }> }) => (
     <div data-testid="chart-current-total">

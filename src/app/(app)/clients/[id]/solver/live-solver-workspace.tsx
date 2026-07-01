@@ -33,6 +33,7 @@ import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
+import { useSolverNetToHeirs } from "./use-solver-net-to-heirs";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
 import { SolverStressTestTab } from "./solver-stress-test-tab";
@@ -486,6 +487,23 @@ export function LiveSolverWorkspace({
   const workingYearsFunded = yearsFullyFunded(currentProjection);
   const baseLifetimeTax = lifetimeTaxes(baseProjection);
   const workingLifetimeTax = lifetimeTaxes(currentProjection);
+
+  // Net to Heirs needs a full projection *with death events* (server fetch,
+  // debounced), unlike the synchronous KPIs above. Gated to when the KPI strip
+  // is visible (any report except the Summaries/Monte Carlo decks).
+  const netToHeirsEnabled =
+    activeReport !== "summaries" && activeReport !== "monteCarlo";
+  const { netToHeirs, netToHeirsDelta, loading: netToHeirsLoading } =
+    useSolverNetToHeirs({
+      clientId,
+      source: initialSource,
+      mutations,
+      workingTree,
+      baseClientData,
+      clientName,
+      spouseName,
+      enabled: netToHeirsEnabled,
+    });
 
   // Launch an MC run. `withBase` true on the first/auto run (computes and
   // caches Base + Scenario); false on Recalculate (Scenario only). Clearing
@@ -1251,6 +1269,9 @@ export function LiveSolverWorkspace({
                 yearsFundedDelta={workingYearsFunded - baseYearsFunded}
                 lifetimeTax={workingLifetimeTax}
                 lifetimeTaxDelta={workingLifetimeTax - baseLifetimeTax}
+                netToHeirs={netToHeirs}
+                netToHeirsDelta={netToHeirsDelta}
+                netToHeirsLoading={netToHeirsLoading}
                 dimmed={computeStatus === "computing"}
                 onRegenerate={handleRecalculate}
                 solveActive={activeSolve !== null}
