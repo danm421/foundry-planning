@@ -21,6 +21,8 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import { applyMutations } from "@/lib/solver/apply-mutations";
+import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +100,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             signal: abortController.signal,
           });
         } else {
-          const mcPayload = await loadMonteCarloData(clientId, access.firmId, "base", extraAccountMixes ?? []);
+          // Build the MC payload from a reinvestment-aware tree so "solve to
+          // target" reflects a model-portfolio reinvestment's allocation switch
+          // (a switch segment at ri.year), matching the deterministic search
+          // tree and every other MC surface. The reinvestment arrives only as a
+          // FIXED baseline mutation (never the searched lever — see
+          // SolveLeverKey), so applying baseline mutations once produces the
+          // correct static timeline. Mirrors solver-mc.ts:loadEditedInputs.
+          let mixTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
+          if (resolutionContext) {
+            mixTree = resolveTechniqueMutations(mixTree, mutations as SolverMutation[], resolutionContext);
+          }
+          const mcPayload = await loadMonteCarloData(
+            clientId,
+            access.firmId,
+            "base",
+            extraAccountMixes ?? [],
+            mixTree,
+          );
           result = await solveTarget({
             effectiveTree,
             mcPayload,

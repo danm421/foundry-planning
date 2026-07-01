@@ -78,7 +78,7 @@ beforeEach(() => {
   vi.mocked(requireOrgId).mockResolvedValue("firm-1");
   vi.mocked(findClientInFirm).mockResolvedValue({ id: "c1" } as never);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
-    effectiveTree: { client: {}, accounts: [], incomes: [], expenses: [], liabilities: [], savingsRules: [], withdrawalStrategy: [], planSettings: {} } as never,
+    effectiveTree: { client: {}, accounts: [], incomes: [], expenses: [], liabilities: [], savingsRules: [], withdrawalStrategy: [], planSettings: {}, reinvestments: [] } as never,
     warnings: [],
   } as never);
   vi.mocked(loadMonteCarloData).mockResolvedValue({
@@ -196,5 +196,53 @@ describe("POST /api/clients/[id]/solver/solve", () => {
     await POST(makeRequest(body), ctx);
     // 4th positional arg of loadMonteCarloData is extraAccountMixes
     expect(vi.mocked(loadMonteCarloData).mock.calls[0][3]).toEqual(body.extraAccountMixes);
+  });
+
+  it("passes a reinvestment-aware effective tree to loadMonteCarloData (I1)", async () => {
+    // A model-portfolio reinvestment in the baseline mutations must reach the MC
+    // loader (5th positional arg) so "solve to target" reflects the allocation
+    // switch — matching the deterministic search tree and the Techniques gauge.
+    // Without the fix, the route passed no effectiveTree and MC stayed base-mix.
+    vi.mocked(loadEffectiveTree).mockResolvedValueOnce({
+      effectiveTree: {
+        client: {},
+        accounts: [{ id: "acct-1", value: 100000, category: "taxable", owners: [] }],
+        incomes: [], expenses: [], liabilities: [], savingsRules: [],
+        withdrawalStrategy: [], planSettings: {}, reinvestments: [],
+      } as never,
+      warnings: [],
+    } as never);
+    vi.mocked(solveTarget).mockResolvedValueOnce({
+      status: "converged", solvedValue: 65, achievedPoS: 0.85, iterations: 1, finalProjection: [],
+    } as never);
+
+    const reinvestment = {
+      id: "ri-1",
+      name: "Shift to conservative",
+      accountIds: ["acct-1"],
+      year: 2035,
+      newGrowthRate: 0.05,
+      realizeTaxesOnSwitch: false,
+      soldFractionByAccount: {},
+      targetType: "model_portfolio",
+      modelPortfolioId: "mp-1",
+    };
+
+    await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "reinvestment-upsert", id: "ri-1", value: reinvestment }],
+        target: { kind: "retirement-age", person: "client" },
+        targetPoS: 0.85,
+      }),
+      ctx,
+    );
+
+    // 5th positional arg is the effectiveTree; it must carry the reinvestment so
+    // buildAccountMixSegments emits a switch segment at ri.year (not base-only).
+    const treeArg = vi.mocked(loadMonteCarloData).mock.calls[0][4];
+    expect(treeArg?.reinvestments).toEqual([
+      expect.objectContaining({ id: "ri-1", year: 2035, modelPortfolioId: "mp-1" }),
+    ]);
   });
 });

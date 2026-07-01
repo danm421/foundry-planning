@@ -32,6 +32,10 @@ export function segmentMixForYear(
   if (!segments || segments.length === 0) return undefined;
   let chosen: MixSegment | undefined;
   for (const seg of segments) {
+    // Strict `>` on the tie-break: on a `fromYear` tie the earlier-listed
+    // segment wins. Harmless in practice — the base segment's sentinel
+    // `fromYear: 0` never collides with a reinvestment's switch year (>= plan
+    // start), and build-account-mix-segments emits one segment per year.
     if (seg.fromYear <= year && (chosen === undefined || seg.fromYear > chosen.fromYear)) {
       chosen = seg;
     }
