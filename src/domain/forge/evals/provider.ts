@@ -6,7 +6,7 @@
 import { MemorySaver } from "@langchain/langgraph";
 import { HumanMessage, type AIMessage } from "@langchain/core/messages";
 import { buildGraph } from "../graph";
-import { EVAL_AUTH, evalSystemPrompt } from "./fixtures";
+import { EVAL_AUTH, EVAL_AUTH_GLOBAL, evalSystemPrompt } from "./fixtures";
 
 export interface ForgeTrajectoryStep {
   tool: string;
@@ -23,15 +23,19 @@ export interface ForgeTurnResult {
 
 let counter = 0;
 
-export async function runForgeTurn(message: string): Promise<ForgeTurnResult> {
+export async function runForgeTurn(
+  message: string,
+  mode?: string,
+): Promise<ForgeTurnResult> {
+  const auth = mode === "global" ? EVAL_AUTH_GLOBAL : EVAL_AUTH;
   const threadId = `eval_${counter++}`;
-  const graph = buildGraph(EVAL_AUTH, new MemorySaver(), threadId, evalSystemPrompt);
+  const graph = buildGraph(auth, new MemorySaver(), threadId, evalSystemPrompt);
 
   const trajectory: ForgeTrajectoryStep[] = [];
   let output = "";
 
   const events = graph.streamEvents(
-    { messages: [new HumanMessage(message)], authContext: EVAL_AUTH },
+    { messages: [new HumanMessage(message)], authContext: auth },
     { version: "v2", configurable: { thread_id: threadId }, recursionLimit: 25 },
   );
   for await (const ev of events) {
@@ -78,8 +82,9 @@ export async function runForgeTurn(message: string): Promise<ForgeTurnResult> {
 /** promptfoo custom provider (callApi contract). */
 export const forgeProvider = {
   id: () => "forge-graph",
-  async callApi(prompt: string) {
-    const { output, trajectory } = await runForgeTurn(prompt);
+  async callApi(prompt: string, context?: { vars?: Record<string, unknown> }) {
+    const mode = context?.vars?.mode as string | undefined;
+    const { output, trajectory } = await runForgeTurn(prompt, mode);
     return { output, metadata: { trajectory } };
   },
 };
