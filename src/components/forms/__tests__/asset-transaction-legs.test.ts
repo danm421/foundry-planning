@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { emptySellLeg, emptyBuyLeg } from "../asset-transaction-leg-model";
-import { legToBody, deriveLegName, mergeEditBody, combinedNet } from "../use-asset-transaction-legs";
+import { legToBody, combinedNet } from "../use-asset-transaction-legs";
 import { emptySellLeg as mkSell, emptyBuyLeg as mkBuy } from "../asset-transaction-leg-model";
 
 describe("leg factories", () => {

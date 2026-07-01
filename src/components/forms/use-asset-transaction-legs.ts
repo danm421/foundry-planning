@@ -1,5 +1,5 @@
 // src/components/forms/use-asset-transaction-legs.ts
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { AssetTransactionInitialData } from "./add-asset-transaction-form";
