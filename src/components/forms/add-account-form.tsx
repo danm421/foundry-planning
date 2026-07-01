@@ -1562,7 +1562,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               />
             </div>
 
-            {!isSystemManagedCash && milestones && (
+            {!isSystemManagedCash && category !== "stock_options" && milestones && (
               <div className="col-span-2">
                 <label className="flex items-center gap-2 text-sm text-ink-2">
                   <input
