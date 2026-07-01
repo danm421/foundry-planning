@@ -4,6 +4,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverTechniquesTab } from "../solver-techniques-tab";
 import type { ClientData } from "@/engine/types";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/clients/c1",
+}));
+
 const rc: {
   id: string;
   name: string;
@@ -164,5 +170,31 @@ describe("SolverTechniquesTab", () => {
     );
     expect(screen.getByText("Base plan")).toBeInTheDocument();
     expect(screen.getByText("Added")).toBeInTheDocument();
+  });
+
+  it("emits an account-upsert when a Roth IRA is created inline in the dialog", () => {
+    const onChange = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([])}
+        owners={[{ familyMemberId: "fm-client", label: "John" }]}
+        retirementGrowthDefault={0.06}
+        resolvedInflationRate={0.025}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "account-upsert",
+        value: expect.objectContaining({
+          subType: "roth_ira",
+          name: "Roth IRA - John",
+          growthRate: 0.06,
+        }),
+      }),
+    );
   });
 });

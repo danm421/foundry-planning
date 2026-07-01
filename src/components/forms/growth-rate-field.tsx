@@ -32,6 +32,8 @@ export interface GrowthRateFieldProps {
   assetMixBlendedPct: number | null;
   /** Placeholder for the custom % input. */
   customPlaceholder?: string;
+  /** When true, hides the "Asset mix (custom)" option (e.g. for accounts with no holdings yet). */
+  hideAssetMix?: boolean;
   /** Receives the raw <select> value ("default" | "mp:<id>" | "tp:<id>" | "asset_mix" | "inflation" | "custom"). */
   onSourceChange: (rawSelectValue: string) => void;
   onCustomPctChange: (raw: string) => void;
@@ -62,6 +64,7 @@ export function GrowthRateField({
   resolvedInflationRate,
   assetMixBlendedPct,
   customPlaceholder,
+  hideAssetMix = false,
   onSourceChange,
   onCustomPctChange,
 }: GrowthRateFieldProps) {
@@ -97,7 +100,7 @@ export function GrowthRateField({
             ))}
           </optgroup>
         )}
-        {ASSET_MIX_CATEGORIES.includes(category) && (
+        {ASSET_MIX_CATEGORIES.includes(category) && !hideAssetMix && (
           <option value="asset_mix">
             {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
           </option>
