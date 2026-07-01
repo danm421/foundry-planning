@@ -115,6 +115,11 @@ export function ForgePanel({
   const [threads, setThreads] = useState<Thread[]>([]);
   const [input, setInput] = useState("");
   const [loadingThread, setLoadingThread] = useState(false);
+  // The conversation-history list is collapsible so it never buries an active
+  // chat. `null` = follow the default (open only when no conversation is
+  // happening); a boolean = an explicit user toggle. Reset to null on
+  // new-chat / thread-switch so the default takes over again.
+  const [historyOverride, setHistoryOverride] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
@@ -229,6 +234,7 @@ export function ForgePanel({
     setImportResult(null);
     setInput("");
     resetTranscriptState();
+    setHistoryOverride(null);
   }
 
   async function processTranscript(text: string, source: "paste" | "explicit") {
@@ -263,6 +269,8 @@ export function ForgePanel({
 
   async function selectThread(id: string) {
     if (busy || loadingThread || id === conversationId) return;
+    // Let the history collapse back to its default once the thread loads.
+    setHistoryOverride(null);
     setLoadingThread(true);
     setPendingApproval(null);
     setResolvedApproval(null);
@@ -347,6 +355,11 @@ export function ForgePanel({
 
   const lastMsg = messages[messages.length - 1];
   const streamingEmpty = busy && lastMsg?.role === "assistant" && lastMsg.text === "";
+  // A conversation is "happening" once it has messages (or is loading one). In
+  // that state the history list collapses by default so it doesn't push the
+  // chat down; an explicit toggle (historyOverride) wins either way.
+  const inConversation = messages.length > 0 || loadingThread;
+  const showHistory = threads.length > 0 && (historyOverride ?? !inConversation);
   const scenarioLabel = scenarioId ? scenarioNames[scenarioId] ?? "Scenario" : "Base case";
   const pageLabel = pageLabelForPath(pathname);
 
@@ -406,15 +419,42 @@ export function ForgePanel({
 
         {/* Thread row */}
         <div className="flex flex-col gap-2 border-b border-hair px-4 py-2">
-          <button
-            type="button"
-            onClick={newChat}
-            disabled={busy}
-            className="self-start rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
-          >
-            + New chat
-          </button>
-          {threads.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={newChat}
+              disabled={busy}
+              className="rounded-[var(--radius-sm)] border border-secondary/40 bg-secondary-wash px-2.5 py-1 text-[12px] font-medium text-secondary-ink hover:bg-secondary/20 disabled:opacity-50"
+            >
+              + New chat
+            </button>
+            {threads.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setHistoryOverride(!showHistory)}
+                aria-expanded={showHistory}
+                className="ml-auto flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-medium text-ink-3 hover:bg-card-hover hover:text-ink"
+              >
+                <svg
+                  aria-hidden
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`transition-transform ${showHistory ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+                History
+                <span className="text-ink-4">{threads.length}</span>
+              </button>
+            )}
+          </div>
+          {showHistory && (
             <ConversationList
               threads={threads}
               activeId={conversationId}

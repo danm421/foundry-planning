@@ -65,8 +65,9 @@ export function ConversationList({
         />
       </div>
 
-      {/* Thread list */}
-      <ul role="list" className="flex flex-col gap-px">
+      {/* Thread list — capped so a long history scrolls internally instead of
+          pushing the composer off-screen. */}
+      <ul role="list" className="flex max-h-[45vh] flex-col gap-px overflow-y-auto">
         {visible.map((thread) => {
           const isActive = thread.id === activeId;
           const isEditing = renaming === thread.id;
