@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { YEAR_REFS } from "@/lib/milestones";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuidSchema = z.string().regex(uuidRegex, "Invalid UUID format");
@@ -37,6 +38,8 @@ const base = {
       deathBenefit: z.number().gte(0).optional(),
     }),
   ).optional().default([]),
+  activationYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
+  activationYearRef: z.enum(YEAR_REFS as unknown as [string, ...string[]]).nullable().optional(),
 };
 
 function validateTermFields(

@@ -153,6 +153,8 @@ export async function POST(
           // `accounts.basis` is unused for life-insurance — the policy's
           // cost basis is tracked on the life_insurance_policies row.
           basis: "0",
+          activationYear: input.activationYear ?? null,
+          activationYearRef: (input.activationYearRef ?? null) as (typeof accounts.$inferInsert)["activationYearRef"],
         })
         .returning({ id: accounts.id, name: accounts.name });
 

@@ -109,6 +109,8 @@ export async function PATCH(
         income: number | null;
         deathBenefit: number | null;
       }[];
+      activationYear: number | null;
+      activationYearRef: string | null;
     }>;
 
     // Look up FM ids for the OwnerRef → account_owners translation.
@@ -131,6 +133,12 @@ export async function PATCH(
       }
       if (input.policyType !== undefined) {
         acctUpdates.subType = mapPolicyTypeToSubType(input.policyType);
+      }
+      if (input.activationYear !== undefined) {
+        acctUpdates.activationYear = input.activationYear ?? null;
+      }
+      if (input.activationYearRef !== undefined) {
+        acctUpdates.activationYearRef = input.activationYearRef ?? null;
       }
       if (Object.keys(acctUpdates).length > 0) {
         acctUpdates.updatedAt = new Date();
