@@ -153,6 +153,36 @@ export function EstateGiftsList({
   );
 }
 
+/** Compact planned-gift on/off list for the Techniques tab — toggle + title +
+ *  summary only (no Edit / Remove / Add). The heavier actions and the other
+ *  estate sections stay behind the "Edit" modal. Renders nothing when there are
+ *  no gifts, so callers can drop it in unconditionally. */
+export function EstateGiftsToggleList({
+  gifts,
+  baseGiftIds,
+  onToggle,
+}: {
+  gifts: EstateFlowGift[];
+  baseGiftIds: Set<string>;
+  onToggle: (g: EstateFlowGift) => void;
+}) {
+  if (gifts.length === 0) return null;
+  return (
+    <div className="col-span-2 space-y-2">
+      {gifts.map((g) => (
+        <SolverTechniqueRow
+          key={g.id}
+          name={giftTitle(g)}
+          summary={giftSummary(g)}
+          enabled={g.enabled !== false}
+          onToggle={() => onToggle(g)}
+          badge={baseGiftIds.has(g.id) ? "Base plan" : "Added"}
+        />
+      ))}
+    </div>
+  );
+}
+
 /** Trusts section: existing trust entities (read-only) plus scenario-added
  *  trusts (Remove). The Add-trust form renders once at the bottom of the tab,
  *  gated by `addingTrust`. */
