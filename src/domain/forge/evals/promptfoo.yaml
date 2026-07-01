@@ -136,3 +136,24 @@ tests:
         value: file://./assertions.ts:usedExpectedTool
       - type: javascript
         value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "How do I add a new household?"
+      mode: global
+      expectTool: search_help
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Walk me through where to import a client statement."
+      mode: global
+      expectTool: get_help
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Take me to the page to create a household."
+      mode: global
+      expectTool: open_page
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
