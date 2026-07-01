@@ -7,7 +7,7 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * Bump when MC/LI engine logic or the cached payload shape changes. Folded into
  * every hash, so a bump invalidates all existing cache rows automatically.
  */
-export const ENGINE_VERSION = 4;
+export const ENGINE_VERSION = 5;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

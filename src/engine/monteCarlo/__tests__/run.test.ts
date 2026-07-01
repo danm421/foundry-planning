@@ -3,6 +3,7 @@ import { runMonteCarlo } from "../run";
 import { createReturnEngine } from "../returns";
 import { buildClientData } from "../../__tests__/fixtures";
 import type { ClientData } from "../../types";
+import { type MixSegment } from "../trial";
 
 const INDICES = [
   { id: "eq", arithMean: 0.08, stdDev: 0.15 },
@@ -22,14 +23,14 @@ function easyPlan(): ClientData {
   return { ...base, expenses: [], liabilities: [], savingsRules: [], withdrawalStrategy: [] };
 }
 
-function mixForAll(data: ClientData) {
+function mixForAll(data: ClientData): Map<string, MixSegment[]> {
   return new Map(
     data.accounts
       .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
-      .map((a) => [a.id, [
+      .map((a) => [a.id, [{ fromYear: 0, mix: [
         { assetClassId: "eq", weight: 0.6 },
         { assetClassId: "bd", weight: 0.4 },
-      ]])
+      ] }]]),
   );
 }
 

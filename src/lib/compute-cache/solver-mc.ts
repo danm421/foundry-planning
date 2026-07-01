@@ -82,7 +82,7 @@ function computeAndCacheEdited(
       correlation: mcPayload.correlation,
       seed: mcPayload.seed,
     });
-    const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+    const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
     const raw = await runMonteCarlo({
       data: mutated,
       returnEngine: engine,

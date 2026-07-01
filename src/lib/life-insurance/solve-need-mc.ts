@@ -127,7 +127,7 @@ export async function solveLifeInsuranceNeedMc(
 ): Promise<NeedMcResult> {
   const trials = opts.trials ?? DEFAULT_TRIALS;
   const target = assumptions.mcTargetScore;
-  const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+  const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
   const total = EXPECTED_EVALUATIONS;
 
   let iterations = 0;

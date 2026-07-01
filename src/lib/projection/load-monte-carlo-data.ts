@@ -18,7 +18,7 @@ import {
 } from "@/db/schema";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
-import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
+import type { AccountAssetMix, MixSegment } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
 import { ClientNotFoundError, ProjectionInputError } from "./load-client-data";
 import { type HoldingInput } from "@/lib/investments/holdings-rollup";
@@ -32,7 +32,7 @@ import {
 export type MonteCarloPayload = {
   indices: IndexInput[];
   correlation: number[][];
-  accountMixes: Array<{ accountId: string; mix: AccountAssetMix[] }>;
+  accountMixes: Array<{ accountId: string; segments: MixSegment[] }>;
   startingLiquidBalance: number;
   seed: number;
   requiredMinimumAssetLevel: number;
@@ -233,7 +233,7 @@ export const loadMonteCarloData = cache(
       return { source: "custom", portfolioId: null };
     };
 
-    const accountMixes: Array<{ accountId: string; mix: AccountAssetMix[] }> = [];
+    const accountMixes: Array<{ accountId: string; segments: MixSegment[] }> = [];
     for (const acct of accountRows) {
       // Skip non-investable categories (per PDF: real estate/business/life insurance
       // don't participate in MC — they use their fixed rates).
@@ -264,19 +264,25 @@ export const loadMonteCarloData = cache(
       } else if (effectiveSource === "ticker_portfolio" && acct.tickerPortfolioId) {
         mix = tickerMixByPortfolioId.get(acct.tickerPortfolioId) ?? [];
       }
-      if (mix.length > 0) accountMixes.push({ accountId: acct.id, mix });
+      if (mix.length > 0) {
+        accountMixes.push({ accountId: acct.id, segments: [{ fromYear: 0, mix }] });
+      }
     }
 
     // LI solver: a synthetic (non-DB) account mix whose asset classes must also
     // feed the indices / correlation matrix below.
     for (const extra of extraAccountMixes) {
-      if (extra.mix.length > 0) accountMixes.push({ accountId: extra.accountId, mix: extra.mix });
+      if (extra.mix.length > 0) {
+        accountMixes.push({ accountId: extra.accountId, segments: [{ fromYear: 0, mix: extra.mix }] });
+      }
     }
 
     // ── Used asset classes ────────────────────────────────────────────────
     const usedIds = new Set<string>();
-    for (const { mix } of accountMixes) {
-      for (const m of mix) if (m.weight !== 0) usedIds.add(m.assetClassId);
+    for (const { segments } of accountMixes) {
+      for (const seg of segments) {
+        for (const m of seg.mix) if (m.weight !== 0) usedIds.add(m.assetClassId);
+      }
     }
 
     const indices: IndexInput[] = assetClassRows
