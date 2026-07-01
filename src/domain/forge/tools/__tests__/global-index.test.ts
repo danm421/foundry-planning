@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn() }));
 // global-actions imports @/lib/crm/households which transitively imports server-only
 // via audit/snapshots/household. Mock it so the assembly test stays pure.
-vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds: vi.fn(), getCrmHousehold: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds: vi.fn(), getCrmHousehold: vi.fn(), createCrmHousehold: vi.fn() }));
 
 import { buildGlobalTools } from "../global-index";
 
@@ -14,7 +14,7 @@ const toolCtx = { ctx: { userId: "u1", firmId: "f1" }, conversationId: "c1" };
 describe("buildGlobalTools", () => {
   it("contains ONLY help + global-navigate tools", () => {
     const names = buildGlobalTools(toolCtx).map((t) => t.name).sort();
-    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_client", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "create_household", "find_client", "get_help", "open_client", "open_page", "search_help"]);
   });
 
   it("contains NO client-scoped tool", () => {

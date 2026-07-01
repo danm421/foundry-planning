@@ -51,7 +51,7 @@ vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.
 vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
 vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
-vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn(), listCrmHouseholds: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn(), listCrmHouseholds: vi.fn(), createCrmHousehold: vi.fn() }));
 vi.mock("@/lib/overview/get-overview-data", () => ({ getOverviewData: vi.fn() }));
 vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -229,9 +229,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (21 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (22 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 1 global write)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(21);
+    expect(WRITE_TOOL_NAMES.size).toBe(22);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -365,7 +365,7 @@ describe("global tool set (clientless)", () => {
     .map((t) => t.name)
     .sort();
   it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_client", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "create_household", "find_client", "get_help", "open_client", "open_page", "search_help"]);
   });
 });
 

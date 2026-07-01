@@ -10,7 +10,8 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { listCrmHouseholds, getCrmHousehold } from "@/lib/crm/households";
+import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
+import { isUSPSStateCode } from "@/lib/usps-states";
 import { emitNavigate } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
@@ -61,8 +62,60 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  // (unused now; Tasks 3–5 add ctx/conversationId/recordAudit/requireOrgId usages)
-  void ctx; void conversationId; void requireOrgId; void recordAudit;
+  const contactSchema = z.object({
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().min(1).max(100),
+    dob: z.string().optional().describe("date of birth, YYYY-MM-DD"),
+  });
 
-  return [findClient, openClient];
+  const createHousehold = tool(
+    async (args: {
+      name: string; state: string;
+      primaryContact: { firstName: string; lastName: string; dob?: string };
+      spouseContact?: { firstName: string; lastName: string; dob?: string };
+    }) => {
+      try {
+        const state = isUSPSStateCode(args.state) ? args.state : undefined;
+        const firmId = await requireOrgId(); // re-derive for the audit; createCrmHousehold re-derives too
+        const contacts = [
+          { role: "primary" as const, firstName: args.primaryContact.firstName,
+            lastName: args.primaryContact.lastName, dateOfBirth: args.primaryContact.dob },
+          ...(args.spouseContact
+            ? [{ role: "spouse" as const, firstName: args.spouseContact.firstName,
+                 lastName: args.spouseContact.lastName, dateOfBirth: args.spouseContact.dob }]
+            : []),
+        ];
+        const hh = await createCrmHousehold({
+          name: args.name,
+          status: "prospect",
+          advisorId: ctx.userId, // server-forced; model can never widen the actor
+          state,
+          contacts,
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "crm_household", resourceId: hh.id,
+          firmId, actorId: ctx.userId, metadata: { tool: "create_household", conversationId },
+        });
+        await emitNavigate(`/crm/households/${hh.id}`);
+        return JSON.stringify({ householdId: hh.id, name: hh.name, suggestion: "set_up_plan" });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create the household.";
+      }
+    },
+    {
+      name: "create_household",
+      description:
+        "Create a new CRM household (client record) for this firm. Requires human approval. " +
+        "Collect the household name, US state (2-letter), and the primary contact's name (DOB optional); " +
+        "a spouse contact is optional. After it's created, offer to set up the financial plan (set_up_plan).",
+      schema: z.object({
+        name: z.string().min(1).max(200),
+        state: z.string().length(2).describe("USPS 2-letter state code, e.g. NJ"),
+        primaryContact: contactSchema,
+        spouseContact: contactSchema.optional(),
+      }),
+    },
+  );
+
+  return [findClient, openClient, createHousehold];
 }

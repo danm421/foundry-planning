@@ -58,4 +58,14 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     const out = await describeProposedWrite({ name: "create_scenario", args: { name: "Roth ladder", copyFrom: "base" } });
     expect(out.summary).toContain("Roth ladder");
   });
+
+  it("previews create_household without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({
+      name: "create_household",
+      args: { name: "Doe Household", state: "NJ", primaryContact: { firstName: "Jane", lastName: "Doe" } },
+    });
+    expect(out.name).toBe("create_household");
+    expect(out.summary).toMatch(/Doe Household/);
+    expect(out.summary).toMatch(/Jane Doe/);
+  });
 });

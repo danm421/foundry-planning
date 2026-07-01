@@ -174,6 +174,15 @@ function previewCrmCreateTasks(a: Record<string, unknown>): WritePreview {
   return { name: "crm_create_tasks", summary: `Create ${tasks.length} task${tasks.length === 1 ? "" : "s"}: ${titles.slice(0, 5).join(", ")}.` };
 }
 
+function previewCreateHousehold(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  const state = str(a.state);
+  const pc = a.primaryContact as { firstName?: string; lastName?: string } | undefined;
+  const contact = pc ? `${pc.firstName ?? ""} ${pc.lastName ?? ""}`.trim() : "";
+  const tail = [contact && `primary contact ${contact}`, state].filter(Boolean).join(", ");
+  return { name: "create_household", summary: `Create household "${name}"${tail ? ` — ${tail}` : ""}.` };
+}
+
 function previewAddExpense(a: Record<string, unknown>): WritePreview {
   const name = str(a.name) ?? "(unnamed)";
   const type = str(a.type);
@@ -311,6 +320,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCrmDeleteTask(call.args);
     case "crm_create_tasks":
       return previewCrmCreateTasks(call.args);
+    case "create_household":
+      return previewCreateHousehold(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }

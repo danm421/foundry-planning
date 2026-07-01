@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { listCrmHouseholds } = vi.hoisted(() => ({ listCrmHouseholds: vi.fn() }));
-vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds, getCrmHousehold: vi.fn() }));
+const { listCrmHouseholds, createCrmHousehold } = vi.hoisted(() => ({
+  listCrmHouseholds: vi.fn(),
+  createCrmHousehold: vi.fn(),
+}));
+vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds, getCrmHousehold: vi.fn(), createCrmHousehold }));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
@@ -9,6 +12,7 @@ vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
 import { buildGlobalActionTools } from "../global-actions";
 import { getCrmHousehold } from "@/lib/crm/households";
 import { emitNavigate } from "../../custom-events";
+import { recordAudit } from "@/lib/audit";
 
 const toolCtx = { ctx: { userId: "user_1", firmId: "org_A" }, conversationId: "conv_1" };
 function getTool(name: string) {
@@ -54,5 +58,27 @@ describe("open_client", () => {
     const out = String(await getTool("open_client").invoke({ householdId: "hh_evil" }));
     expect(out).toMatch(/not found/i);
     expect(emitNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe("create_household (HITL)", () => {
+  it("creates via createCrmHousehold with advisorId forced to ctx.userId, audits, and navigates", async () => {
+    (createCrmHousehold as any).mockResolvedValue({ id: "hh_new", name: "Doe Household" });
+    const out = JSON.parse(String(await getTool("create_household").invoke({
+      name: "Doe Household",
+      state: "NJ",
+      primaryContact: { firstName: "Jane", lastName: "Doe", dob: "1970-05-15" },
+    })));
+    expect(createCrmHousehold).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Doe Household",
+      advisorId: "user_1", // ctx.userId — NOT model-supplied
+      state: "NJ",
+      contacts: [{ role: "primary", firstName: "Jane", lastName: "Doe", dateOfBirth: "1970-05-15" }],
+    }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "forge.write_approved", resourceType: "crm_household", resourceId: "hh_new",
+    }));
+    expect(emitNavigate).toHaveBeenCalledWith("/crm/households/hh_new");
+    expect(out).toEqual({ householdId: "hh_new", name: "Doe Household", suggestion: "set_up_plan" });
   });
 });
