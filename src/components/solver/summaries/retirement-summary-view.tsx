@@ -331,8 +331,12 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
         <SummaryKpiCard label="Monte Carlo" value={kpis.monteCarlo} />
         <SummaryKpiCard
           label="Retire"
-          value={`Age ${kpis.retirementAge}`}
-          delta={String(kpis.retirementYear)}
+          value={
+            <>
+              Age {kpis.retirementAge}
+              <span className="ml-1.5 text-[13px] font-normal text-ink-3">· {kpis.retirementYear}</span>
+            </>
+          }
         />
         <SummaryKpiCard label="Total Spend" value={fmtUsd(kpis.totalSpend)} />
         <SummaryKpiCard label="Liquid — Now" value={fmtUsd(liquid.now)} />

@@ -25,7 +25,7 @@ export function SummaryKpiRow({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap gap-3">{children}</div>;
 }
 
-export function SummaryKpiCard({ label, value, delta }: { label: string; value: string; delta?: string }) {
+export function SummaryKpiCard({ label, value, delta }: { label: string; value: ReactNode; delta?: string }) {
   return (
     <div className="flex min-w-[140px] flex-1 flex-col rounded-lg border border-hair bg-card-2 px-4 py-3">
       <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{label}</div>
