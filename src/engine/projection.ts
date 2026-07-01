@@ -2008,7 +2008,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // (which reads taxableIncome, not taxDetail buckets) picks it up correctly.
     // Bracket mode reads taxDetail directly, so both modes are covered.
     const businessAccountsThisYear = data.accounts.filter(
-      (a) => a.category === "business" && a.parentAccountId == null,
+      (a) =>
+        a.category === "business" &&
+        a.parentAccountId == null &&
+        !isPreActivation(a, year),
     );
     for (const business of businessAccountsThisYear) {
       const flow = computeBusinessYearFlow(
@@ -5817,6 +5820,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     accountFlowOverrides: data.accountFlowOverrides,
   });
 
+  // Future-activated business accounts: `computeBusinessAccountCashFlow` walks
+  // per-year value off ledgers (skips accounts with no ledger, so pre-activation
+  // years contribute $0 to the value walk) BUT its income/expense/distribution
+  // fields come from `computeBusinessYearFlow`, which gates only on the income
+  // row's own start/end year — not the account's `activationYear`. Without this
+  // strip, a business account whose income rows start before it activates would
+  // surface a phantom cashflow row (income + distributions) before the account
+  // exists. Mirror the Phase-3 tax gate: drop the row for any year before the
+  // account's activation year. No-op for accounts without `activationYear`.
+  for (const acct of businessAccountsById.keys()) {
+    const account = data.accounts.find((a) => a.id === acct);
+    if (account?.activationYear == null) continue;
+    for (const year of years) {
+      if (isPreActivation(account, year.year)) {
+        year.entityCashFlow.delete(acct);
+      }
+    }
+  }
+
   // Per-family-member locked-share ledger for jointly-held accounts. Only
   // accounts with ≥2 distinct family-member owners get a per-member ledger.
   const accountFamilyOwners = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
@@ -5995,9 +6017,20 @@ function computeTodayHypotheticalEstateTax(
 ): HypotheticalEstateTax {
   const planStartYear = data.planSettings.planStartYear;
 
+  // Future-activated accounts don't exist "today": an account whose
+  // activationYear is after plan start is a not-yet-received windfall
+  // (e.g. a future inheritance). Including it would inflate the "if they
+  // died today" estate with assets the household doesn't hold. Filter the
+  // account list AND the balance/basis maps from the same set — the
+  // first-death chain throws on any account missing an accountBalances
+  // entry (first-death.ts), so the two must stay consistent.
+  const todayAccounts = data.accounts.filter(
+    (acct) => acct.activationYear == null || acct.activationYear <= planStartYear,
+  );
+
   const accountBalances: Record<string, number> = {};
   const basisMap: Record<string, number> = {};
-  for (const acct of data.accounts) {
+  for (const acct of todayAccounts) {
     accountBalances[acct.id] = acct.value;
     basisMap[acct.id] = acct.basis;
   }
@@ -6025,7 +6058,7 @@ function computeTodayHypotheticalEstateTax(
   return computeHypotheticalEstateTax({
     year: planStartYear,
     isMarried,
-    accounts: data.accounts,
+    accounts: todayAccounts,
     accountBalances,
     basisMap,
     incomes: data.incomes,

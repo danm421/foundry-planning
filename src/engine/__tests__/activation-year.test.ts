@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { basePlanSettings, buildClientData } from "./fixtures";
-import type { Account } from "../types";
+import type { Account, SavingsRule } from "../types";
 
 /**
  * Task 3 — future-activated accounts. An account with a resolved
@@ -66,5 +66,56 @@ describe("account activation year", () => {
     expect(
       years.find((y) => y.year === 2031)!.accountLedgers["future-2"]?.beginningValue,
     ).toBeCloseTo(110000, 0);
+  });
+
+  it("receives no savings contribution before activation, then contributes once active", () => {
+    // A future taxable brokerage that is the TARGET of a savings rule spanning
+    // both pre- and post-activation years. Exercises Task 3's `notYetActive`
+    // employee-contribution guard (projection.ts): a pre-activation account has
+    // no ledger and must not be credited a contribution; once active it appears
+    // and the rule funds it. A flat `annualAmount` rule on a taxable subtype
+    // resolves deterministically (no IRS cap / percent-of-salary path).
+    const future: Account = {
+      id: "future-sav",
+      name: "Future brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [],
+      activationYear: 2030,
+      activationYearRef: null,
+    };
+    const savingsRule: SavingsRule = {
+      id: "sav-future",
+      accountId: "future-sav",
+      annualAmount: 12000,
+      isDeductible: false,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const base = buildClientData({
+      planSettings: { ...basePlanSettings, planStartYear: 2025, planEndYear: 2035 },
+    });
+    const data = {
+      ...base,
+      accounts: [...base.accounts, future],
+      savingsRules: [...base.savingsRules, savingsRule],
+    };
+
+    const years = runProjection(data);
+    const y2028 = years.find((y) => y.year === 2028)!;
+    const y2031 = years.find((y) => y.year === 2031)!;
+
+    // Before activation: no ledger, so no contribution can land.
+    expect(y2028.accountLedgers["future-sav"]).toBeUndefined();
+
+    // In/after activation: the account exists and the rule funds it.
+    const activeLedger = y2031.accountLedgers["future-sav"];
+    expect(activeLedger).toBeDefined();
+    expect(activeLedger!.contributions).toBeGreaterThan(0);
   });
 });
