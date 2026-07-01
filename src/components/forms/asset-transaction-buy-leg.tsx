@@ -116,11 +116,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
           />
         </div>
         <div>
-          <label className={fieldLabelClassName} htmlFor="buyGrowthRate">
+          <label className={fieldLabelClassName} htmlFor="growthRate">
             Growth Rate (%)
           </label>
           <PercentInput
-            id="buyGrowthRate"
+            id="growthRate"
             value={leg.growthRate}
             onChange={(raw) => onChange({ growthRate: raw })}
             placeholder="e.g., 3.5"
@@ -132,11 +132,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
       {/* Basis + Funding Source */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={fieldLabelClassName} htmlFor="buyBasis">
+          <label className={fieldLabelClassName} htmlFor="basis">
             Basis ($)
           </label>
           <CurrencyInput
-            id="buyBasis"
+            id="basis"
             value={leg.basis}
             onChange={(raw) => onChange({ basis: raw })}
             placeholder="Optional"
