@@ -1136,6 +1136,9 @@ export function LiveSolverWorkspace({
             }))}
             modelPortfolios={modelPortfolios}
             milestones={milestones}
+            owners={ownerOptions}
+            retirementGrowthDefault={categoryGrowthDefaults.retirement}
+            resolvedInflationRate={baseClientData.planSettings.inflationRate}
             onChange={pushMutation}
             onSolveStart={handleSolveStart}
           />
