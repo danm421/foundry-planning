@@ -250,4 +250,29 @@ describe("SolverTechniquesTab", () => {
       }),
     );
   });
+
+  it("renders the Estate planning technique only when baseClientData is provided", () => {
+    const base = {
+      client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],
+      incomes: [], expenses: {}, savingsRules: [], liabilities: [], gifts: [], giftEvents: [],
+      taxYearRows: [], planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025 },
+    } as unknown as ClientData;
+
+    const { rerender } = render(
+      <SolverTechniquesTab {...baseProps} workingTree={tree([])} onChange={vi.fn()} />,
+    );
+    // No estate props → no estate row.
+    expect(screen.queryByRole("button", { name: /edit estate planning/i })).toBeNull();
+
+    rerender(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={base}
+        baseClientData={base}
+        baseGifts={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /edit estate planning/i })).toBeInTheDocument();
+  });
 });
