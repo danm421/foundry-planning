@@ -1,6 +1,8 @@
 "use client";
 
 import type React from "react";
+import { useState } from "react";
+import { cleanInput, formatDisplay } from "@/components/currency-input";
 
 export const selectCls =
   "block w-full max-w-xs rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink";
@@ -36,6 +38,43 @@ export function NumberInput({
       onChange={(e) => onChange(Number(e.target.value))}
       className={`${className ?? ""} block w-full max-w-[10rem] rounded border border-ink-3 bg-card px-2 py-1.5 text-sm text-ink`}
     />
+  );
+}
+
+/** Whole/decimal-dollar input that thousands-groups and strips leading zeros as
+ *  you type, with a leading `$`. Holds its own text buffer so an in-progress
+ *  value (e.g. a trailing ".") survives round-trips through the numeric prop.
+ *  Seeds once from `value`; callers that need to re-seed (e.g. switching which
+ *  amount field is shown) should give the instance a distinct `key`. */
+export function MoneyInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => (value ? String(value) : ""));
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const cleaned = cleanInput(e.target.value);
+    setText(cleaned);
+    const parsed = cleaned === "" || cleaned === "-" ? 0 : Number(cleaned);
+    onChange(Number.isFinite(parsed) ? parsed : 0);
+  };
+
+  return (
+    <div className={`relative w-full max-w-[10rem] ${className ?? ""}`}>
+      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-ink-3">$</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={formatDisplay(text)}
+        onChange={handleChange}
+        className="block w-full rounded border border-ink-3 bg-card py-1.5 pl-6 pr-2 text-sm text-ink"
+      />
+    </div>
   );
 }
 

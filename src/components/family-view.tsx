@@ -1094,7 +1094,7 @@ function GiftsSection(props: {
                 <td className="px-2 py-1 text-right">
                   {s.amountMode === "annual_exclusion" ? "Max exclusion" : `$${s.annualAmount.toLocaleString()}/yr`}
                 </td>
-                <td className="px-2 py-1">{recipientLabel({ entity: s.recipientEntityId })}</td>
+                <td className="px-2 py-1">{recipientLabel({ entity: s.recipientEntityId, family: s.recipientFamilyMemberId, external: s.recipientExternalBeneficiaryId })}</td>
                 <td className="px-2 py-1">{s.useCrummeyPowers ? "✓" : ""}</td>
                 <td className="px-2 py-1 text-right">
                   {props.canEdit && (

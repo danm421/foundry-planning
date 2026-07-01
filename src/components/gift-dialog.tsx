@@ -32,9 +32,14 @@ export interface GiftDialogProps {
 
 export default function GiftDialog(props: GiftDialogProps) {
   const editing = props.editingGift ?? props.editingSeries ?? null;
-  const [draft, setDraft] = useState<EstateFlowGift | null>(() =>
+  // Stable form seed. The live `draft` (below) must NOT be fed back as the seed:
+  // GiftForm treats a non-null `editing` as "editing an existing gift" and locks
+  // the Frequency/Funding toggles, so passing the in-progress draft would freeze
+  // those controls the moment the form first becomes valid.
+  const initialDraft = useState(() =>
     toEditingDraft(props.editingGift ?? null, props.editingSeries ?? null),
-  );
+  )[0];
+  const [draft, setDraft] = useState<EstateFlowGift | null>(initialDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,7 +159,7 @@ export default function GiftDialog(props: GiftDialogProps) {
           .map((a) => ({ id: a.id, name: a.name }))}
         hasSpouse={props.hasSpouse}
         annualExclusionByYear={props.annualExclusionByYear}
-        editing={draft}
+        editing={initialDraft}
         onChange={setDraft}
       />
       {error && <p data-testid="gift-error" className="mt-3 text-sm text-crit">{error}</p>}

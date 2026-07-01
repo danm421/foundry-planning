@@ -57,6 +57,29 @@ describe("GiftDialog", () => {
     expect(body.recipientEntityId).toBeUndefined();
   });
 
+  it("keeps Frequency editable after the form becomes a valid draft (no kind lock on add)", () => {
+    // Regression: the dialog fed its live `draft` back as the form's `editing`
+    // seed, so the first valid draft flipped kindLocked=true and froze the
+    // Frequency/Funding toggles mid-entry.
+    render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    fireEvent.change(screen.getByLabelText(/amount/i, { selector: "input" }), { target: { value: "1000" } });
+    // Draft is now valid (recipient + positive amount). Recurring must stay live.
+    const recurring = screen.getByText("Recurring").closest("button")!;
+    expect(recurring).not.toBeDisabled();
+    fireEvent.click(recurring);
+    expect(screen.getByText("Start year")).toBeInTheDocument();
+    expect(screen.getByText("End year")).toBeInTheDocument();
+  });
+
+  it("formats the typed dollar amount with thousands separators and a $ prefix", () => {
+    render(<GiftDialog {...baseProps} />);
+    fireEvent.change(screen.getByTestId("recipient"), { target: { value: "family_member:m1" } });
+    const amount = screen.getByLabelText(/amount/i, { selector: "input" }) as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: "75000" } });
+    expect(amount.value).toBe("75,000");
+  });
+
   it("posts a series with amountMode=annual_exclusion to the series route with the scenario param", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: "se1", grantor: "joint", recipientEntityId: "t1", startYear: 2026, endYear: 2035, annualAmount: "38000", amountMode: "annual_exclusion", inflationAdjust: false, useCrummeyPowers: true }), { status: 201 }),

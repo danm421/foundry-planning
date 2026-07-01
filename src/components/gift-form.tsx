@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Field, NumberInput, Segmented, selectCls } from "@/components/gift-dialog-controls";
+import { Field, MoneyInput, NumberInput, Segmented, selectCls } from "@/components/gift-dialog-controls";
 import { GiftWarningAlert, type GiftWarningBreach } from "@/components/gift-warning-alert";
 import { checkExemptionImpact } from "@/engine/gift-exemption-warning";
 import type { ClientData } from "@/engine/types";
@@ -310,9 +310,9 @@ export default function GiftForm(props: GiftFormProps) {
           />
           {amountMode === "fixed" ? (
             effectiveRecurring ? (
-              <NumberInput className="mt-2" value={annualAmount} onChange={setAnnualAmount} />
+              <MoneyInput key="annual" className="mt-2" value={annualAmount} onChange={setAnnualAmount} />
             ) : (
-              <NumberInput className="mt-2" value={amount} onChange={setAmount} />
+              <MoneyInput key="once" className="mt-2" value={amount} onChange={setAmount} />
             )
           ) : (
             <p className="mt-2 text-xs text-ink-3" data-testid="exclusion-hint">
