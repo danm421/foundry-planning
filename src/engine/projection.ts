@@ -13,6 +13,7 @@ import type {
   Income,
   Expense,
   EstateTaxResult,
+  DeathTransfer,
   HypotheticalEstateTax,
   LifeInsurancePayout,
   MedicareCoverage,
@@ -89,7 +90,10 @@ import {
   applyFirstDeath,
   applyFinalDeath,
 } from "./death-event";
-import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
+import {
+  computeHypotheticalEstateTax,
+  computeAnchoredHypotheticalEstateTax,
+} from "./what-if/hypothetical-estate-tax";
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
@@ -721,6 +725,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // can claim it via §2010(c)(4) portability. Stays 0 for the single-filer path
   // (no first-death event fires, so no DSUE is ever generated).
   let stashedDSUE = 0;
+
+  // The real projected first death, frozen at year F. Populated in the
+  // first-death block below; null until then. Once set, every subsequent year's
+  // hypothetical anchors to this frozen event (survivor-dies-at-N) instead of
+  // re-running the first death against post-death (drained) state.
+  let realFirstDeath:
+    | { decedent: "client" | "spouse"; estateTax: EstateTaxResult; transfers: DeathTransfer[]; dsueGenerated: number }
+    | null = null;
 
   let currentIncomes: Income[] = expandLinkedIncomes(data.incomes, {
     accountById,
@@ -5397,37 +5409,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 4d-2: hypothetical estate tax — computed on the pre-real-death snapshot
-    // of year-N state, so the report always displays consistent "both die in
-    // year N" numbers regardless of where real deaths land. Attached to the
-    // ProjectionYear at push time so the required field is always populated.
-    // "Married" for the hypothetical means "a spouse exists to die second" —
-    // the same signal the real projection uses to schedule the second death
-    // (see computeFinalDeathYear, which keys off `client.spouseDob`). Deriving
-    // this from filingStatus would model only one death for a spouse'd
-    // household that files single/separately, routing everything to the
-    // surviving spouse under the marital deduction and showing $0 to heirs.
+    // 4d-2: hypothetical estate tax — anchored to the real projected first death.
+    //
+    // For years N ≤ F (the real first death, or before it): both spouses are
+    // still assumed alive, so we run the "both die in year N" hypothetical
+    // (both orderings) on the pre-real-death snapshot of year-N state. This is
+    // the `computeHypotheticalEstateTax` else-branch below, byte-identical to
+    // the legacy behavior.
+    //
+    // For years N strictly after F (once `realFirstDeath` is populated — this
+    // block runs before the current year's death block, so it is null in year F
+    // itself and only non-null from F+1 onward): we FREEZE the real first death
+    // and model only the survivor dying at N. Re-running the first death here
+    // would recompute it against the drained post-death state (assets already
+    // passed to the survivor), producing a bogus $0 first-death estate; the
+    // anchored path reuses the frozen year-F event instead.
+    //
+    // Attached to the ProjectionYear at push time so the required field is
+    // always populated. "Married" for the (pre-F) hypothetical means "a spouse
+    // exists to die second" — the same signal the real projection uses to
+    // schedule the second death (see computeFinalDeathYear, which keys off
+    // `client.spouseDob`). Deriving this from filingStatus would model only one
+    // death for a spouse'd household that files single/separately, routing
+    // everything to the surviving spouse under the marital deduction and
+    // showing $0 to heirs.
     const hypotheticalIsMarried = client.spouseDob != null;
-    const hypotheticalEstateTax = computeHypotheticalEstateTax({
-      year,
-      isMarried: hypotheticalIsMarried,
-      accounts: workingAccounts,
-      accountBalances,
-      basisMap,
-      incomes: currentIncomes,
-      liabilities: currentLiabilities,
-      familyMembers: data.familyMembers ?? [],
-      externalBeneficiaries: data.externalBeneficiaries ?? [],
-      entities: currentEntities,
-      wills: data.wills ?? [],
-      planSettings,
-      gifts: data.gifts ?? [],
-      giftEvents: data.giftEvents,
-      yearEndAccountBalances,
-      annualExclusionsByYear,
-      entityAccountSharesEoY: lockedEntityShareCarry,
-      familyAccountSharesEoY: lockedFamilyShareCarry,
-    });
+    const hypotheticalEstateTax =
+      realFirstDeath != null
+        ? computeAnchoredHypotheticalEstateTax({
+            year,
+            survivor: realFirstDeath.decedent === "client" ? "spouse" : "client",
+            realFirstDeath,
+            accounts: workingAccounts,
+            accountBalances,
+            basisMap,
+            incomes: currentIncomes,
+            liabilities: currentLiabilities,
+            familyMembers: data.familyMembers ?? [],
+            externalBeneficiaries: data.externalBeneficiaries ?? [],
+            entities: currentEntities,
+            wills: data.wills ?? [],
+            planSettings,
+            gifts: data.gifts ?? [],
+            giftEvents: data.giftEvents,
+            relocations: data.relocations,
+            yearEndAccountBalances,
+            annualExclusionsByYear,
+            priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+            entityAccountSharesEoY: lockedEntityShareCarry,
+            familyAccountSharesEoY: lockedFamilyShareCarry,
+          })
+        : computeHypotheticalEstateTax({
+            year,
+            isMarried: hypotheticalIsMarried,
+            accounts: workingAccounts,
+            accountBalances,
+            basisMap,
+            incomes: currentIncomes,
+            liabilities: currentLiabilities,
+            familyMembers: data.familyMembers ?? [],
+            externalBeneficiaries: data.externalBeneficiaries ?? [],
+            entities: currentEntities,
+            wills: data.wills ?? [],
+            planSettings,
+            gifts: data.gifts ?? [],
+            giftEvents: data.giftEvents,
+            yearEndAccountBalances,
+            annualExclusionsByYear,
+            entityAccountSharesEoY: lockedEntityShareCarry,
+            familyAccountSharesEoY: lockedFamilyShareCarry,
+          });
 
     // Stamp end-of-year basis onto each ledger now that all sales, growth
     // realization, contributions, and Roth conversions have settled. Death-
@@ -5688,6 +5739,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Stash DSUE for the final-death call (portability per §2010(c)(4)).
       stashedDSUE = deathResult.dsueGenerated;
+
+      // Freeze the real first death so every subsequent year's hypothetical
+      // anchors to it (survivor-dies-at-N) rather than re-running the first
+      // death against the now-drained post-death state. `firstDeathDeceased` is
+      // narrowed to "client" | "spouse" by this block's guard.
+      realFirstDeath = {
+        decedent: firstDeathDeceased,
+        estateTax: deathResult.estateTax,
+        transfers: deathResult.transfers,
+        dsueGenerated: deathResult.dsueGenerated,
+      };
     }
 
     // Final-death event (spec 4c) — fires at the final death year. For
