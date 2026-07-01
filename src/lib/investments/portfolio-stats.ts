@@ -4,6 +4,12 @@ import { buildCorrelationMatrix, type CorrelationRow } from "@/engine/monteCarlo
 
 export interface RiskReturnStats {
   arithmeticMean: number;
+  /**
+   * Naive weighted average of per-class geometric returns (eMoney parity,
+   * matches the projection engine). Display-oriented — NOT a mean-variance
+   * optimization input; an optimizer would need a diversification-aware
+   * expected return instead.
+   */
   geometricReturn: number;
   stdDev: number;
   /** null when stdDev === 0 (Sharpe undefined). */

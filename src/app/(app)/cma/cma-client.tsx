@@ -8,6 +8,8 @@ import {
 } from "@/lib/investments/asset-types";
 import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
 import { buildStatsContext, computeStats } from "@/lib/investments/portfolio-stats";
+import type { AssetClassWeight } from "@/lib/investments/benchmarks";
+import type { CorrelationRow } from "@/engine/monteCarlo/correlation-matrix";
 import { TrashIcon } from "@/components/icons";
 import { HelpTip } from "@/components/help-tip";
 import { benchmarkTooltip } from "@/lib/investments/cma-benchmarks";
@@ -128,9 +130,7 @@ export default function CmaClient() {
   const [tab, setTab] = useState<Tab>("asset-classes");
   const [assetClasses, setAssetClasses] = useState<AssetClass[]>([]);
   const [portfolios, setPortfolios] = useState<ModelPortfolio[]>([]);
-  const [correlationRows, setCorrelationRows] = useState<
-    { assetClassIdA: string; assetClassIdB: string; correlation: string }[]
-  >([]);
+  const [correlationRows, setCorrelationRows] = useState<CorrelationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -735,7 +735,7 @@ function AssetClassRow({
 interface ModelPortfoliosTabProps {
   portfolios: ModelPortfolio[];
   assetClasses: AssetClass[];
-  correlationRows: { assetClassIdA: string; assetClassIdB: string; correlation: string }[];
+  correlationRows: CorrelationRow[];
   onRefresh: () => void;
 }
 
@@ -803,23 +803,22 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
           pctQualifiedDividends: Number(ac.pctQualifiedDividends),
           pctTaxExempt: Number(ac.pctTaxExempt),
         }));
-        const ctx = buildStatsContext(acData, correlationRows, 0);
-        const weights = selected.allocations.map((a) => ({
-          assetClassId: a.assetClassId,
-          weight: Number(a.weight),
-        }));
-        const stats = computeStats(weights, ctx);
         const acMap = new Map(acData.map((ac) => [ac.id, ac]));
+        // Single pass: gather weights for computeStats and the linear
+        // realization fold together.
+        const weights: AssetClassWeight[] = [];
         let oi = 0, ltcg = 0, qdiv = 0, taxEx = 0;
         for (const a of selected.allocations) {
           const ac = acMap.get(a.assetClassId);
           if (!ac) continue;
           const w = Number(a.weight);
+          weights.push({ assetClassId: a.assetClassId, weight: w });
           oi += w * ac.pctOrdinaryIncome;
           ltcg += w * ac.pctLtCapitalGains;
           qdiv += w * ac.pctQualifiedDividends;
           taxEx += w * ac.pctTaxExempt;
         }
+        const stats = computeStats(weights, buildStatsContext(acData, correlationRows, 0));
         return {
           geoReturn: stats.geometricReturn,
           arithMean: stats.arithmeticMean,
