@@ -85,7 +85,7 @@ export default function HouseholdTable({ model, clientLabel, spouseLabel }: Hous
           {model.liabilityRows.length > 0 && (
             <>
               <tr className="border-t border-hair">
-                <td className="px-3 py-1.5 font-medium text-accent-ink" colSpan={showSplit ? 5 : 3}>Liabilities</td>
+                <td className="px-3 py-2 text-base font-semibold text-accent-ink" colSpan={showSplit ? 5 : 3}>Liabilities</td>
               </tr>
               {model.liabilityRows.map((r) => rowEl(r, true))}
             </>
@@ -116,7 +116,7 @@ function CategoryBlock({
   return (
     <>
       <tr className="border-t border-hair">
-        <td className="px-3 py-1.5 font-medium text-accent-ink">{cat.label}</td>
+        <td className="px-3 py-2 text-base font-semibold text-accent-ink">{cat.label}</td>
         {cols(cat)}
       </tr>
       {cat.rows.map((r) => rowEl(r))}

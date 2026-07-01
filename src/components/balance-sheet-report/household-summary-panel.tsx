@@ -93,16 +93,45 @@ export default function HouseholdSummaryPanel({
             <thead>
               <tr className="text-[10px] uppercase tracking-wide text-ink-4">
                 <th className="py-1 pr-2 text-left font-medium" />
-                <th className="px-2 py-1 text-right font-medium">{clientLabel}</th>
-                {showSplit && <th className="px-2 py-1 text-right font-medium">{spouseLabel}</th>}
-                {showSplit && <th className="px-2 py-1 text-right font-medium">Joint</th>}
-                <th className="px-2 py-1 text-right font-medium">Total</th>
+                <th className="px-2 py-1 text-right font-medium">Total Assets</th>
+                <th className="px-2 py-1 text-right font-medium">Total Liabilities</th>
+                <th className="px-2 py-1 text-right font-medium">Net Worth</th>
               </tr>
             </thead>
             <tbody>
-              <SummaryRow label="Total Assets" cols={totalAssets} showSplit={showSplit} />
-              <SummaryRow label="Total Liabilities" cols={totalLiabilities} showSplit={showSplit} variant="negative" />
-              <SummaryRow label="Net Worth" cols={netWorth} showSplit={showSplit} variant="netWorth" />
+              <OwnerRow
+                label={clientLabel}
+                owner="client"
+                totalAssets={totalAssets}
+                totalLiabilities={totalLiabilities}
+                netWorth={netWorth}
+              />
+              {showSplit && (
+                <OwnerRow
+                  label={spouseLabel}
+                  owner="spouse"
+                  totalAssets={totalAssets}
+                  totalLiabilities={totalLiabilities}
+                  netWorth={netWorth}
+                />
+              )}
+              {showSplit && (
+                <OwnerRow
+                  label="Joint"
+                  owner="joint"
+                  totalAssets={totalAssets}
+                  totalLiabilities={totalLiabilities}
+                  netWorth={netWorth}
+                />
+              )}
+              <OwnerRow
+                label="Total"
+                owner="total"
+                totalAssets={totalAssets}
+                totalLiabilities={totalLiabilities}
+                netWorth={netWorth}
+                emphasize
+              />
             </tbody>
           </table>
         </div>
@@ -111,33 +140,31 @@ export default function HouseholdSummaryPanel({
   );
 }
 
-function SummaryRow({
+function OwnerRow({
   label,
-  cols,
-  showSplit,
-  variant = "default",
+  owner,
+  totalAssets,
+  totalLiabilities,
+  netWorth,
+  emphasize = false,
 }: {
   label: string;
-  cols: OwnerColumns;
-  showSplit: boolean;
-  variant?: "default" | "negative" | "netWorth";
+  owner: keyof OwnerColumns;
+  totalAssets: OwnerColumns;
+  totalLiabilities: OwnerColumns;
+  netWorth: OwnerColumns;
+  emphasize?: boolean;
 }) {
-  const cell = (v: number) => {
-    if (variant === "negative") {
-      return <td className="px-2 py-1.5 text-right tabular-nums text-crit">{v === 0 ? "—" : `(${fmt(v)})`}</td>;
-    }
-    if (variant === "netWorth") {
-      return <td className={`px-2 py-1.5 text-right tabular-nums ${v < 0 ? "text-crit" : "text-good"}`}>{fmt(v)}</td>;
-    }
-    return <td className="px-2 py-1.5 text-right tabular-nums text-ink">{fmt(v)}</td>;
-  };
+  const liability = totalLiabilities[owner];
+  const nw = netWorth[owner];
   return (
     <tr className="border-t border-hair">
-      <td className={`py-1.5 pr-2 ${variant === "netWorth" ? "font-medium text-ink" : "text-ink-2"}`}>{label}</td>
-      {cell(cols.client)}
-      {showSplit && cell(cols.spouse)}
-      {showSplit && cell(cols.joint)}
-      {cell(cols.total)}
+      <td className={`py-1.5 pr-2 ${emphasize ? "font-medium text-ink" : "text-ink-2"}`}>{label}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-ink">{fmt(totalAssets[owner])}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-crit">
+        {liability === 0 ? "—" : `(${fmt(liability)})`}
+      </td>
+      <td className={`px-2 py-1.5 text-right tabular-nums ${nw < 0 ? "text-crit" : "text-good"}`}>{fmt(nw)}</td>
     </tr>
   );
 }
