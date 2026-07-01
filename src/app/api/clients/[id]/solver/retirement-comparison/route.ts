@@ -70,12 +70,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const targetConfidence = parsed.data.targetConfidence ?? 0.85;
     const mixes = extraAccountMixes ?? [];
 
+    // ── Load both trees in parallel (independent DB reads) ──
+    const [{ effectiveTree: baseTree }, { effectiveTree, resolutionContext }] = await Promise.all([
+      loadEffectiveTree(clientId, firmId, "base", {}),
+      loadEffectiveTree(clientId, firmId, source, {}),
+    ]);
+
     // ── Base Case ──
-    const { effectiveTree: baseTree } = await loadEffectiveTree(clientId, firmId, "base", {});
     const baseYears = runProjection(baseTree);
 
     // ── Working tree (source + live mutations) ──
-    const { effectiveTree, resolutionContext } = await loadEffectiveTree(clientId, firmId, source, {});
     let workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
     if (resolutionContext) {
       workingTree = resolveTechniqueMutations(workingTree, mutations as SolverMutation[], resolutionContext);
@@ -135,7 +139,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       showPortfolioMatrix: showPortfolioMatrix ?? false,
       showAiSummary: false,
       showConfidenceRange: true,
-      maxSpend: { show: true, targetConfidence },
+      // The max-spend KPI is driven by the bundles carrying maxSpend (always on
+      // here); this option only gates the per-year max-spend series/block, which
+      // RetirementComparisonView doesn't render — so keep it off to skip that work.
+      maxSpend: { show: false, targetConfidence },
       ai: { tone: "detailed", length: "medium", customInstructions: "", generatedText: "", generatedAt: null, sourceHash: null },
     });
 

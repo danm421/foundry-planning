@@ -2,7 +2,7 @@
 "use client";
 import { useState } from "react";
 import { RetirementComparisonView } from "@/components/solver/summaries/retirement-comparison-view";
-import { SummarySkeleton } from "@/components/solver/summaries/primitives";
+import { SummarySkeleton, SummaryEmpty } from "@/components/solver/summaries/primitives";
 import { useSolverRetirementComparison } from "./use-solver-retirement-comparison";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 
@@ -14,11 +14,11 @@ interface Props {
 }
 
 export function SolverRetirementComparisonPanel({ clientId, source, mutations, extraAccountMixes }: Props) {
-  const [enabled, setEnabled] = useState(false);
+  // nonce === 0 means "not run yet"; each Run/Recalculate bumps it to launch a fetch.
   const [nonce, setNonce] = useState(0);
-  const run = () => { setEnabled(true); setNonce((n) => n + 1); };
+  const run = () => setNonce((n) => n + 1);
 
-  const rc = useSolverRetirementComparison({ clientId, source, mutations, extraAccountMixes, enabled, nonce });
+  const rc = useSolverRetirementComparison({ clientId, source, mutations, extraAccountMixes, nonce });
 
   return (
     <div className="flex flex-col gap-3">
@@ -45,15 +45,7 @@ export function SolverRetirementComparisonPanel({ clientId, source, mutations, e
       ) : rc.data ? (
         <RetirementComparisonView data={rc.data} />
       ) : (
-        <RetirementComparisonView data={{
-          title: "Retirement Comparison", subtitle: "", isEmpty: true,
-          verdict: { headline: "" }, kpis: [], overlay: [],
-          atRetirement: { year: 0, base: { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 }, scenario: { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 } },
-          atEndOfLife: { year: 0, base: { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 }, scenario: { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 } },
-          maxSpend: { show: false, baseToday: 0, scenarioToday: 0, series: [] },
-          confidence: { show: false, points: [] },
-          showPortfolioMatrix: false, showAiSummary: false, aiMarkdown: "",
-        }} />
+        <SummaryEmpty message="Run the comparison to see Base Case vs your working plan." />
       )}
     </div>
   );

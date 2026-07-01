@@ -15,21 +15,19 @@ interface Args {
   source: "base" | string;
   mutations: SolverMutation[];
   extraAccountMixes?: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
-  /** Only fetch once the advisor presses Run. */
-  enabled: boolean;
-  /** Bump to launch a fresh run. */
+  /** 0 = not run yet; bump to launch a fresh run (Run / Recalculate). */
   nonce: number;
 }
 
 export function useSolverRetirementComparison({
-  clientId, source, mutations, extraAccountMixes = [], enabled, nonce,
+  clientId, source, mutations, extraAccountMixes = [], nonce,
 }: Args): SolverRetirementComparisonState {
   const [state, setState] = useState<SolverRetirementComparisonState>({ status: "idle", data: null });
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
 
   useEffect(() => {
-    if (!enabled) {
+    if (nonce === 0) {
       setState({ status: "idle", data: null });
       return;
     }
@@ -61,7 +59,7 @@ export function useSolverRetirementComparison({
     })();
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, source, enabled, nonce, JSON.stringify(extraAccountMixes)]);
+  }, [clientId, source, nonce, JSON.stringify(extraAccountMixes)]);
 
   return state;
 }

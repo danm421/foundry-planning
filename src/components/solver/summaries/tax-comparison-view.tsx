@@ -38,7 +38,10 @@ ChartJS.register(
   LineController, BarController, Tooltip, Legend,
 );
 
-const dirClass = (d: 1 | -1 | 0) => (d === 1 ? "text-good" : d === -1 ? "text-crit" : "text-ink-3");
+// Neutral (0) uses full ink to match the canonical PDF renderer
+// (presentations/pages/tax-comparison/page-pdf.tsx), so identical KPI data
+// reads consistently across the live view and the exported PDF.
+const dirClass = (d: 1 | -1 | 0) => (d === 1 ? "text-good" : d === -1 ? "text-crit" : "text-ink");
 
 /** Comparison KPI: same metric for both plans + a signed, direction-colored delta. */
 function ComparisonKpiCard({ kpi }: { kpi: TaxComparisonKpi }) {
