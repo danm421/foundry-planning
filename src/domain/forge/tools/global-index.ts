@@ -8,7 +8,12 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { ForgeGlobalToolContext } from "../context";
 import { buildHelpTools } from "./help";
 import { buildGlobalNavigateTools } from "./navigate-global";
+import { buildGlobalActionTools } from "./global-actions";
 
 export function buildGlobalTools(toolCtx: ForgeGlobalToolContext): StructuredToolInterface[] {
-  return [...buildHelpTools(toolCtx), ...buildGlobalNavigateTools(toolCtx)];
+  return [
+    ...buildHelpTools(toolCtx),
+    ...buildGlobalNavigateTools(toolCtx),
+    ...buildGlobalActionTools(toolCtx),
+  ];
 }

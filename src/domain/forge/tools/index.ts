@@ -101,4 +101,8 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "crm_create_tasks",
   // Meetings — commits note + transcript doc + tasks (destructive: deletes staging row)
   "save_meeting_record",
+  // Global agentic writes (Plan 2) — HITL-gated global-action tools
+  "create_household",
+  "set_up_plan",
+  "create_task_for_client",
 ]);

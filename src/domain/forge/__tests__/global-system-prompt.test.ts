@@ -22,4 +22,12 @@ describe("buildGlobalSystemPrompt", () => {
     expect(prompt).toContain("Dana");
     expect(prompt).toContain("2026-06-30");
   });
+
+  it("tells global Forge it can create households/plans/tasks and must ask for required fields", () => {
+    const p = buildGlobalSystemPrompt({ firmName: "Acme" });
+    expect(p).toMatch(/create a (new )?household/i);
+    expect(p).toMatch(/set up (a|the) plan/i);
+    expect(p).toMatch(/ask/i); // gather-then-ask rule
+    expect(p).toMatch(/approv/i); // confirmation framing
+  });
 });

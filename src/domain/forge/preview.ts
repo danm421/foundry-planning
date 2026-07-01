@@ -174,6 +174,26 @@ function previewCrmCreateTasks(a: Record<string, unknown>): WritePreview {
   return { name: "crm_create_tasks", summary: `Create ${tasks.length} task${tasks.length === 1 ? "" : "s"}: ${titles.slice(0, 5).join(", ")}.` };
 }
 
+function previewCreateHousehold(a: Record<string, unknown>): WritePreview {
+  const name = str(a.name) ?? "(unnamed)";
+  const state = str(a.state);
+  const pc = a.primaryContact as { firstName?: string; lastName?: string } | undefined;
+  const contact = pc ? `${pc.firstName ?? ""} ${pc.lastName ?? ""}`.trim() : "";
+  const tail = [contact && `primary contact ${contact}`, state].filter(Boolean).join(", ");
+  return { name: "create_household", summary: `Create household "${name}"${tail ? ` — ${tail}` : ""}.` };
+}
+
+function previewSetUpPlan(a: Record<string, unknown>): WritePreview {
+  const filing = str(a.filingStatus);
+  const ret = typeof a.retirementAge === "number" ? a.retirementAge : undefined;
+  const bits = [ret != null && `retire at ${ret}`, filing && `filing ${filing}`].filter(Boolean).join(", ");
+  return { name: "set_up_plan", summary: `Set up a financial plan${bits ? ` (${bits})` : ""}.` };
+}
+
+function previewCreateTaskForClient(a: Record<string, unknown>): WritePreview {
+  return { name: "create_task_for_client", summary: `Create task "${str(a.title) ?? ""}" for a client.`.trim() };
+}
+
 function previewAddExpense(a: Record<string, unknown>): WritePreview {
   const name = str(a.name) ?? "(unnamed)";
   const type = str(a.type);
@@ -311,6 +331,12 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCrmDeleteTask(call.args);
     case "crm_create_tasks":
       return previewCrmCreateTasks(call.args);
+    case "create_household":
+      return previewCreateHousehold(call.args);
+    case "set_up_plan":
+      return previewSetUpPlan(call.args);
+    case "create_task_for_client":
+      return previewCreateTaskForClient(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }

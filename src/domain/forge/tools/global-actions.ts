@@ -1,0 +1,224 @@
+// src/domain/forge/tools/global-actions.ts
+//
+// GLOBAL (clientless) AGENTIC tools — Plan 2. Firm-scoped via requireOrgId();
+// the model never supplies scope. Reads reuse firm-scoped lib queries; writes
+// (create_household / set_up_plan / create_task_for_client) are in
+// WRITE_TOOL_NAMES → held by the approval node, run only on the resume pass, and
+// emit forge.write_approved themselves on real success (mirroring Tier-B CRM tools).
+import { tool } from "@langchain/core/tools";
+import type { StructuredToolInterface } from "@langchain/core/tools";
+import { z } from "zod";
+import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
+import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
+import { isUSPSStateCode } from "@/lib/usps-states";
+import { createClientForHousehold } from "@/lib/clients/create-client";
+import { createTask } from "@/lib/crm-tasks/mutations";
+import type { CreateCrmTaskInput } from "@/lib/crm-tasks/schemas";
+import { emitNavigate } from "../custom-events";
+import type { ForgeGlobalToolContext } from "../context";
+
+export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolContext): StructuredToolInterface[] {
+  const findClient = tool(
+    async ({ query }: { query: string }) => {
+      try {
+        const rows = await listCrmHouseholds({ search: query, limit: 10 });
+        const matches = rows.map((h) => ({
+          name: h.name,
+          householdId: h.id,
+          clientId: h.planningClient?.id ?? null,
+          status: h.status,
+        }));
+        return JSON.stringify({ matches });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to search clients.";
+      }
+    },
+    {
+      name: "find_client",
+      description:
+        "Search this advisor's households/clients by name (case-insensitive). Read-only, firm-scoped. " +
+        "Returns up to 10 matches with householdId, clientId (null if no plan yet), and status. " +
+        "Use to resolve a name the advisor mentions before open_client or create_task_for_client.",
+      schema: z.object({ query: z.string().min(1).describe("a client or household name to search for") }),
+    },
+  );
+
+  const openClient = tool(
+    async ({ householdId }: { householdId: string }) => {
+      try {
+        const hh = await getCrmHousehold(householdId); // firm-scoped → undefined if not owned
+        if (!hh) return "Client not found.";
+        const href = hh.planningClient ? `/clients/${hh.planningClient.id}` : `/crm/households/${hh.id}`;
+        await emitNavigate(href); // throws if not allowlisted
+        return JSON.stringify({ navigated: true, href });
+      } catch {
+        return "Could not open that client.";
+      }
+    },
+    {
+      name: "open_client",
+      description:
+        "Open an existing client the advisor names (by householdId from find_client — never a raw name). " +
+        "Navigates to the client's plan if it has one, otherwise the CRM household page. Firm-scoped, non-destructive.",
+      schema: z.object({ householdId: z.string().min(1).describe("a householdId returned by find_client") }),
+    },
+  );
+
+  const contactSchema = z.object({
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().min(1).max(100),
+    dob: z.string().optional().describe("date of birth, YYYY-MM-DD"),
+  });
+
+  const createHousehold = tool(
+    async (args: {
+      name: string; state: string;
+      primaryContact: { firstName: string; lastName: string; dob?: string };
+      spouseContact?: { firstName: string; lastName: string; dob?: string };
+    }) => {
+      try {
+        const state = isUSPSStateCode(args.state) ? args.state : undefined;
+        const firmId = await requireOrgId(); // re-derive for the audit; createCrmHousehold re-derives too
+        const contacts = [
+          { role: "primary" as const, firstName: args.primaryContact.firstName,
+            lastName: args.primaryContact.lastName, dateOfBirth: args.primaryContact.dob },
+          ...(args.spouseContact
+            ? [{ role: "spouse" as const, firstName: args.spouseContact.firstName,
+                 lastName: args.spouseContact.lastName, dateOfBirth: args.spouseContact.dob }]
+            : []),
+        ];
+        const hh = await createCrmHousehold({
+          name: args.name,
+          status: "prospect",
+          advisorId: ctx.userId, // server-forced; model can never widen the actor
+          state,
+          contacts,
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "crm_household", resourceId: hh.id,
+          firmId, actorId: ctx.userId, metadata: { tool: "create_household", conversationId },
+        });
+        await emitNavigate(`/crm/households/${hh.id}`);
+        return JSON.stringify({ householdId: hh.id, name: hh.name, suggestion: "set_up_plan" });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create the household.";
+      }
+    },
+    {
+      name: "create_household",
+      description:
+        "Create a new CRM household (client record) for this firm. Requires human approval. " +
+        "Collect the household name, US state (2-letter), and the primary contact's name (DOB optional); " +
+        "a spouse contact is optional. After it's created, offer to set up the financial plan (set_up_plan).",
+      schema: z.object({
+        name: z.string().min(1).max(200),
+        state: z.string().length(2).describe("USPS 2-letter state code, e.g. NJ"),
+        primaryContact: contactSchema,
+        spouseContact: contactSchema.optional(),
+      }),
+    },
+  );
+
+  const setUpPlan = tool(
+    async (args: {
+      householdId: string; retirementAge: number; lifeExpectancy: number;
+      filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
+      primaryDob: string; spouseDob?: string;
+      spouseRetirementAge?: number; spouseLifeExpectancy?: number;
+    }) => {
+      try {
+        const firmId = await requireOrgId();
+        const hh = await getCrmHousehold(args.householdId); // firm-scoped IDOR
+        if (!hh) return "Household not found.";
+        if (hh.planningClient) return "That household already has a plan — open it instead.";
+        const primary = hh.contacts.find((c: { role: string }) => c.role === "primary");
+        if (!primary) return "That household has no primary contact — add one before setting up a plan.";
+        const spouse = hh.contacts.find((c: { role: string }) => c.role === "spouse");
+        const result = await createClientForHousehold({
+          household: { id: hh.id, firmId, advisorId: hh.advisorId, state: hh.state },
+          primaryContact: { firstName: primary.firstName, lastName: primary.lastName, dateOfBirth: args.primaryDob },
+          spouseContact: spouse
+            ? { firstName: spouse.firstName, lastName: spouse.lastName, dateOfBirth: args.spouseDob ?? null }
+            : null,
+          retirementAge: args.retirementAge,
+          lifeExpectancy: args.lifeExpectancy,
+          filingStatus: args.filingStatus,
+          spouseRetirementAge: args.spouseRetirementAge ?? null,
+          spouseLifeExpectancy: args.spouseLifeExpectancy ?? null,
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "client", resourceId: result.clientId,
+          firmId, actorId: ctx.userId, metadata: { tool: "set_up_plan", conversationId, householdId: hh.id },
+        });
+        await emitNavigate(`/clients/${result.clientId}`);
+        return JSON.stringify({ clientId: result.clientId });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to set up the plan.";
+      }
+    },
+    {
+      name: "set_up_plan",
+      description:
+        "Turn an existing household into a full financial plan (projection client). Requires human approval. " +
+        "Needs the household id (from find_client/create_household), the primary contact's date of birth, " +
+        "retirement age, life expectancy, and filing status (single, married_joint, married_separate, head_of_household). " +
+        "Uses the household's stored contact names and state.",
+      schema: z.object({
+        householdId: z.string().min(1),
+        retirementAge: z.number().int().min(30).max(90),
+        lifeExpectancy: z.number().int().min(60).max(120),
+        filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]),
+        primaryDob: z.string().describe("primary contact's date of birth, YYYY-MM-DD"),
+        spouseDob: z.string().optional().describe("spouse's date of birth, YYYY-MM-DD"),
+        spouseRetirementAge: z.number().int().min(30).max(90).optional(),
+        spouseLifeExpectancy: z.number().int().min(60).max(120).optional(),
+      }),
+    },
+  );
+
+  const createTaskForClient = tool(
+    async (args: {
+      householdId: string; title: string; description?: string;
+      priority?: "low" | "med" | "high"; dueDate?: string | null;
+    }) => {
+      try {
+        const firmId = await requireOrgId();
+        const hh = await getCrmHousehold(args.householdId); // firm-scoped IDOR (createTask re-checks too)
+        if (!hh) return "Household not found.";
+        const taskInput: CreateCrmTaskInput = {
+          title: args.title,
+          description: args.description ?? "",
+          priority: args.priority ?? "med",
+          status: "open",
+          recurrence: "none",
+          dueDate: args.dueDate ?? null,
+          householdId: hh.id,
+        };
+        const task = await createTask(firmId, ctx.userId, taskInput);
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "crm_task", resourceId: task.id,
+          firmId, actorId: ctx.userId, metadata: { tool: "create_task_for_client", conversationId, householdId: hh.id },
+        });
+        return JSON.stringify({ taskId: task.id, title: task.title });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create the task.";
+      }
+    },
+    {
+      name: "create_task_for_client",
+      description:
+        "Create a CRM task for a named client's household. Requires human approval. " +
+        "Resolve the household with find_client first, then pass its householdId (never a raw name). Firm-scoped.",
+      schema: z.object({
+        householdId: z.string().min(1),
+        title: z.string().min(1).max(200),
+        description: z.string().max(10_000).optional(),
+        priority: z.enum(["low", "med", "high"]).optional(),
+        dueDate: z.string().nullable().optional().describe("due date, YYYY-MM-DD"),
+      }),
+    },
+  );
+
+  return [findClient, openClient, createHousehold, setUpPlan, createTaskForClient];
+}

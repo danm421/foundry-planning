@@ -51,7 +51,7 @@ vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.
 vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
 vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
-vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn(), listCrmHouseholds: vi.fn(), createCrmHousehold: vi.fn() }));
 vi.mock("@/lib/overview/get-overview-data", () => ({ getOverviewData: vi.fn() }));
 vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -87,6 +87,11 @@ vi.mock("@/lib/forge/meeting-transcripts", () => ({ getOwnedMeetingTranscript: v
 // Meetings bundle: stub CRM write deps so assembly stays pure.
 vi.mock("@/lib/crm/documents", () => ({ uploadCrmDocument: vi.fn() }));
 vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
+// navigate-global / global-actions import custom-events which imports server-only
+// (not resolvable from the worktree node_modules). Mock it so the global set test passes.
+vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn() }));
+// global-actions (set_up_plan) imports create-client which imports @/db.
+vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -226,9 +231,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (21 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (24 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 3 global writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(21);
+    expect(WRITE_TOOL_NAMES.size).toBe(24);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -361,8 +366,8 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "get_help", "open_page", "search_help"]);
+  it("is exactly the help + navigation + global-action set (9 tools)", () => {
+    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan"]);
   });
 });
 

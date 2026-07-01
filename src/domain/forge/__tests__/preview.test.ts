@@ -58,4 +58,34 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     const out = await describeProposedWrite({ name: "create_scenario", args: { name: "Roth ladder", copyFrom: "base" } });
     expect(out.summary).toContain("Roth ladder");
   });
+
+  it("previews create_household without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({
+      name: "create_household",
+      args: { name: "Doe Household", state: "NJ", primaryContact: { firstName: "Jane", lastName: "Doe" } },
+    });
+    expect(out.name).toBe("create_household");
+    expect(out.summary).toMatch(/Doe Household/);
+    expect(out.summary).toMatch(/Jane Doe/);
+  });
+
+  it("previews set_up_plan without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({
+      name: "set_up_plan",
+      args: { householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95, filingStatus: "married_joint", primaryDob: "1970-05-15" },
+    });
+    expect(out.name).toBe("set_up_plan");
+    expect(out.summary).toMatch(/financial plan/i);
+    expect(out.summary).toMatch(/retire at 65/);
+    expect(out.summary).toMatch(/married_joint/);
+  });
+
+  it("previews create_task_for_client without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({
+      name: "create_task_for_client",
+      args: { householdId: "hh_1", title: "Call Jane", priority: "high" },
+    });
+    expect(out.name).toBe("create_task_for_client");
+    expect(out.summary).toMatch(/Call Jane/);
+  });
 });

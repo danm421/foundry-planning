@@ -123,8 +123,9 @@ export function buildGraph(
   }
 
   async function approvalNode(state: typeof ForgeState.State) {
-    // Writes/meeting tools exist only in client mode (Plan 1). Assert client
-    // scope so describeProposedWrite + the audit's clientId read are well-typed.
+    // In client mode ctx carries clientId/scenarioId (enrichment reads them); in
+    // global mode (Plan 2 agentic writes) it does not — pass undefined so
+    // describeProposedWrite falls back to the pure formatter (no clientId deref).
     const ctx = authContext as ForgeAuthContext;
     const last = state.messages[state.messages.length - 1] as AIMessage;
     const writeCalls = (last.tool_calls ?? []).filter((c) => WRITE_TOOL_NAMES.has(c.name));
@@ -132,7 +133,7 @@ export function buildGraph(
     // impact for propose_changes; pure summary otherwise). describeProposedWrite
     // never throws — its enrichment IO is wrapped in try/catch.
     const previews = await Promise.all(
-      writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, ctx)),
+      writeCalls.map((c) => describeProposedWrite({ name: c.name, args: c.args }, isClient ? ctx : undefined)),
     );
 
     // Pause; the resume value is { decisions: Record<toolCallId, 'confirm'|'reject'> }.
