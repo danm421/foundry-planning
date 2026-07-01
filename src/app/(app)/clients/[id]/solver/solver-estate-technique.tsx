@@ -11,6 +11,7 @@ import { SolverTrustForm } from "./solver-trust-form";
 import {
   EstateRevocableTrustList,
   EstateGiftsList,
+  EstateGiftsToggleList,
   EstateTrustsList,
   EstateCharitiesList,
 } from "./solver-tab-estate-planning";
@@ -165,6 +166,16 @@ export function SolverEstateTechnique({
           Edit
         </button>
       </div>
+
+      {editor.gifts.length > 0 && (
+        <div className="mt-2">
+          <EstateGiftsToggleList
+            gifts={editor.gifts}
+            baseGiftIds={editor.baseGiftIds}
+            onToggle={editor.toggleGift}
+          />
+        </div>
+      )}
 
       <DialogShell
         open={open}

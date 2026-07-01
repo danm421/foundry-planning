@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import type { ClientData } from "@/engine/types";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import type { SolverMutation } from "@/lib/solver/types";
 import { SolverEstateTechnique } from "../solver-estate-technique";
 
 vi.mock("next/navigation", () => ({
@@ -25,17 +26,25 @@ const gift: EstateFlowGift = {
   recipient: { kind: "family_member", id: "f1" }, crummey: false,
 };
 
-function renderTech(over: { baseGifts?: EstateFlowGift[]; onOpen?: () => void } = {}) {
+function renderTech(
+  over: {
+    baseGifts?: EstateFlowGift[];
+    onOpen?: () => void;
+    onChange?: (m: SolverMutation) => void;
+  } = {},
+) {
   const base = tree();
-  return render(
+  const onChange = over.onChange ?? vi.fn();
+  render(
     <SolverEstateTechnique
       baseClientData={base}
       clientData={base}
       baseGifts={over.baseGifts ?? []}
-      onChange={vi.fn()}
+      onChange={onChange}
       onOpen={over.onOpen}
     />,
   );
+  return { onChange };
 }
 
 describe("SolverEstateTechnique", () => {
@@ -55,7 +64,8 @@ describe("SolverEstateTechnique", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
     expect(onOpen).toHaveBeenCalledTimes(1);
     // The gift row is present inside the open editor.
-    expect(screen.getByText(/Cash gift 2030/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: /estate planning/i });
+    expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();
   });
 
   it("keeps a base gift visible after closing and reopening the editor (lossless)", () => {
@@ -63,6 +73,34 @@ describe("SolverEstateTechnique", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Done$/ }));
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
+    const dialog = screen.getByRole("dialog", { name: /estate planning/i });
+    expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();
+  });
+
+  it("shows inline gift toggles in the Techniques area without opening the editor", () => {
+    renderTech({ baseGifts: [gift] });
+    // The modal is closed…
+    expect(screen.queryByRole("dialog", { name: /estate planning/i })).toBeNull();
+    // …yet the gift's on/off toggle + summary are visible inline.
+    expect(
+      screen.getByRole("switch", { name: /include family gift/i }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Cash gift 2030/)).toBeInTheDocument();
+  });
+
+  it("emits a gift-upsert disable mutation when an inline toggle is flipped", () => {
+    const onChange = vi.fn();
+    renderTech({ baseGifts: [gift], onChange });
+    fireEvent.click(screen.getByRole("switch", { name: /include family gift/i }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "gift-upsert", id: "g1" }),
+    );
+    expect(onChange.mock.calls[0][0].value).toMatchObject({ enabled: false });
+  });
+
+  it("renders no inline gift toggles when there are no planned gifts", () => {
+    renderTech();
+    expect(screen.queryByRole("switch")).toBeNull();
   });
 });
