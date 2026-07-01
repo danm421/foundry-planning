@@ -40,6 +40,8 @@ export interface QuickAddArgs {
   growthRate: number;
   accountId: string;
   ruleId: string;
+  activationYear?: number | null;
+  activationYearRef?: string | null;
 }
 
 export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; rule: SavingsRule } {
@@ -55,6 +57,8 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
     rmdEnabled: map.rmdEnabled,
     titlingType: "jtwros", // engine ignores titling for solo-owned accounts; field is still required
     owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
+    activationYear: args.activationYear ?? null,
+    activationYearRef: args.activationYearRef ?? null,
   };
   const rule: SavingsRule = {
     id: args.ruleId,

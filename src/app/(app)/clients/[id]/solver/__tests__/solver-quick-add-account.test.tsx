@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverQuickAddAccount } from "../solver-quick-add-account";
+import type { ClientMilestones } from "@/lib/milestones";
 
 const owners = [{ familyMemberId: "fm-1", label: "John" }];
 
@@ -9,6 +10,10 @@ const existingAccounts = [
   { id: "acct-brokerage", name: "Joint Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberId: "fm-1" },
   { id: "acct-401k", name: "John 401(k)", category: "retirement", subType: "401k", ownerFamilyMemberId: "fm-1" },
 ];
+
+const milestones: ClientMilestones = {
+  planStart: 2026, planEnd: 2061, clientRetirement: 2045, clientEnd: 2061,
+};
 
 function renderForm(props: Partial<React.ComponentProps<typeof SolverQuickAddAccount>> = {}) {
   const onChange = vi.fn();
@@ -19,6 +24,7 @@ function renderForm(props: Partial<React.ComponentProps<typeof SolverQuickAddAcc
       currentYear={2026}
       retirementYearForOwner={() => 2045}
       growthForType={() => 0.06}
+      milestones={milestones}
       onChange={onChange}
     />,
   );
