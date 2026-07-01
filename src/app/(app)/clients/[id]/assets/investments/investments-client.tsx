@@ -102,8 +102,11 @@ export default function InvestmentsClient({
     useCallback(() => donutCanvasRef.current, []),
   );
 
-  const shouldShowDrift =
-    selectedGroupIsDefault && selectedGroupKey !== "all-liquid";
+  // Show drift vs the selected target portfolio for every default group,
+  // including All Liquid — the target column already renders in the table there,
+  // so hiding only the drift chart was inconsistent. Custom groups stay hidden:
+  // an arbitrary account set has no meaningful single-benchmark comparison.
+  const shouldShowDrift = selectedGroupIsDefault;
 
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
