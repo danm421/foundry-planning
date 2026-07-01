@@ -164,7 +164,7 @@ describe.skipIf(!HAS_DB)("detail-writes preview (add_income dry run)", () => {
 
     expect(insertSpy).not.toHaveBeenCalled();
     expect(preview.name).toBe("add_income");
-    expect(preview.summary).toMatch(/Cannot set both ownerEntityId and ownerAccountId/i);
+    expect(preview.summary).toMatch(/Set at most one of ownerEntityId, ownerAccountId, linkedPropertyId/i);
     // A validation failure renders no field diff.
     expect(preview.details).toBeUndefined();
   });
