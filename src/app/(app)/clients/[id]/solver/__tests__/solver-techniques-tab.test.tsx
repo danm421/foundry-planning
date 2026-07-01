@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SolverTechniquesTab } from "../solver-techniques-tab";
 import type { ClientData } from "@/engine/types";
 
@@ -170,6 +170,59 @@ describe("SolverTechniquesTab", () => {
     );
     expect(screen.getByText("Base plan")).toBeInTheDocument();
     expect(screen.getByText("Added")).toBeInTheDocument();
+  });
+
+  it("resolves a draft-created Roth as the destination on re-edit (no forced re-create)", () => {
+    // Repro: the plan had no Roth, so one was created inline (a draft
+    // account-upsert that lives in the working tree, NOT in base accounts).
+    // Re-opening the conversion to edit it must still resolve that draft Roth
+    // as the destination instead of re-showing the create panel.
+    const draftRoth = {
+      id: "roth-draft",
+      name: "Roth IRA - John",
+      category: "retirement",
+      subType: "roth_ira",
+      value: 0,
+      basis: 0,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const tradIra = {
+      id: "trad-1",
+      name: "Trad IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      value: 500000,
+      basis: 0,
+      growthRate: 0.05,
+      rmdEnabled: true,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const conv = { ...rc, id: "rc-draft", destinationAccountId: "roth-draft", sourceAccountIds: ["trad-1"] };
+    const workingTree = { accounts: [tradIra, draftRoth], rothConversions: [conv] } as unknown as ClientData;
+
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        accounts={[
+          { id: "trad-1", name: "Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
+        ]}
+        workingTree={workingTree}
+        owners={[{ familyMemberId: "fm-client", label: "John" }]}
+        retirementGrowthDefault={0.06}
+        resolvedInflationRate={0.025}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // The draft Roth resolves as the destination — no dead-end / re-create panel.
+    expect(screen.queryByRole("button", { name: "Create Roth IRA" })).not.toBeInTheDocument();
+    const dest = screen.getByLabelText(/Destination Account/i) as HTMLSelectElement;
+    expect(dest.value).toBe("roth-draft");
+    expect(within(dest).getByText("Roth IRA - John")).toBeInTheDocument();
   });
 
   it("emits an account-upsert when a Roth IRA is created inline in the dialog", () => {

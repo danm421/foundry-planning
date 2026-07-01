@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   Account,
@@ -12,6 +12,7 @@ import type {
 } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { ClientMilestones } from "@/lib/milestones";
+import { controllingFamilyMember } from "@/engine/ownership";
 import {
   summarizeRothConversion,
   summarizeAssetTransaction,
@@ -181,6 +182,26 @@ export function SolverTechniquesTab({
   const workingReinv = workingTree.reinvestments ?? [];
   const workingReloc = workingTree.relocations ?? [];
 
+  // The `accounts` prop is base-sourced. Accounts created inline as solver
+  // drafts (e.g. a Roth IRA added from the Roth-conversion dialog) live only as
+  // account-upsert mutations in the working tree, not in base client data.
+  // Merge those drafts in so a technique that targets one still resolves it
+  // when its dialog is re-opened to edit — otherwise the destination looks
+  // missing and the form forces a re-create.
+  const accountsWithDrafts = useMemo(() => {
+    const baseIds = new Set(accounts.map((a) => a.id));
+    const drafts = (workingTree.accounts ?? [])
+      .filter((a) => !baseIds.has(a.id))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        subType: a.subType ?? "",
+        ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
+      }));
+    return drafts.length ? [...accounts, ...drafts] : accounts;
+  }, [accounts, workingTree.accounts]);
+
   const rothAccountCreation =
     owners && owners.length > 0 && retirementGrowthDefault != null && resolvedInflationRate != null
       ? {
@@ -206,7 +227,7 @@ export function SolverTechniquesTab({
     form = (
       <AddRothConversionForm
         clientId={clientId}
-        accounts={accounts}
+        accounts={accountsWithDrafts}
         milestones={milestones}
         rothAccountCreation={rothAccountCreation}
         initialData={
@@ -230,7 +251,7 @@ export function SolverTechniquesTab({
     form = (
       <AddReinvestmentForm
         clientId={clientId}
-        accounts={accounts}
+        accounts={accountsWithDrafts}
         modelPortfolios={modelPortfolios}
         milestones={milestones}
         initialData={
@@ -254,7 +275,7 @@ export function SolverTechniquesTab({
     form = (
       <AddAssetTransactionForm
         clientId={clientId}
-        accounts={accounts}
+        accounts={accountsWithDrafts}
         liabilities={liabilities}
         milestones={milestones}
         existingNames={workingAsset.map((t) => t.name)}
