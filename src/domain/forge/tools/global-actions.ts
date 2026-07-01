@@ -10,7 +10,8 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
-import { listCrmHouseholds } from "@/lib/crm/households";
+import { listCrmHouseholds, getCrmHousehold } from "@/lib/crm/households";
+import { emitNavigate } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
 export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolContext): StructuredToolInterface[] {
@@ -39,8 +40,29 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  // (unused now; Tasks 2–5 add ctx/conversationId/recordAudit/requireOrgId usages)
+  const openClient = tool(
+    async ({ householdId }: { householdId: string }) => {
+      try {
+        const hh = await getCrmHousehold(householdId); // firm-scoped → undefined if not owned
+        if (!hh) return "Client not found.";
+        const href = hh.planningClient ? `/clients/${hh.planningClient.id}` : `/crm/households/${hh.id}`;
+        await emitNavigate(href); // throws if not allowlisted
+        return JSON.stringify({ navigated: true, href });
+      } catch {
+        return "Could not open that client.";
+      }
+    },
+    {
+      name: "open_client",
+      description:
+        "Open an existing client the advisor names (by householdId from find_client — never a raw name). " +
+        "Navigates to the client's plan if it has one, otherwise the CRM household page. Firm-scoped, non-destructive.",
+      schema: z.object({ householdId: z.string().min(1).describe("a householdId returned by find_client") }),
+    },
+  );
+
+  // (unused now; Tasks 3–5 add ctx/conversationId/recordAudit/requireOrgId usages)
   void ctx; void conversationId; void requireOrgId; void recordAudit;
 
-  return [findClient];
+  return [findClient, openClient];
 }

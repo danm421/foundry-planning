@@ -365,7 +365,7 @@ describe("global tool set (clientless)", () => {
     .map((t) => t.name)
     .sort();
   it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_client", "open_page", "search_help"]);
   });
 });
 

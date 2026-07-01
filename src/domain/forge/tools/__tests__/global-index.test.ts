@@ -14,7 +14,7 @@ const toolCtx = { ctx: { userId: "u1", firmId: "f1" }, conversationId: "c1" };
 describe("buildGlobalTools", () => {
   it("contains ONLY help + global-navigate tools", () => {
     const names = buildGlobalTools(toolCtx).map((t) => t.name).sort();
-    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_client", "open_page", "search_help"]);
   });
 
   it("contains NO client-scoped tool", () => {
