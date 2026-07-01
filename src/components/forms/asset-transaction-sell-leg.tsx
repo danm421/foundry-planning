@@ -362,7 +362,7 @@ export default function SellLegEditor({
           {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
             <p className="mt-1 text-[12px] text-ink-3">
               Projected value in {year}:{" "}
-              <span className="text-ink-2 tabular">
+              <span className="text-ink-2 tabular-nums">
                 {formatCurrency(projectedSellInfo.projectedValue)}
               </span>
             </p>
@@ -381,7 +381,7 @@ export default function SellLegEditor({
             {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
               <p className="mt-1 text-[12px] text-ink-3">
                 Projected basis in {year}:{" "}
-                <span className="text-ink-2 tabular">
+                <span className="text-ink-2 tabular-nums">
                   {formatCurrency(projectedSellInfo.projectedBasis)}
                 </span>
               </p>
@@ -408,7 +408,7 @@ export default function SellLegEditor({
               {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
                 <p className="mt-1 text-[12px] text-ink-3">
                   Projected value in {year}:{" "}
-                  <span className="text-ink-2 tabular">
+                  <span className="text-ink-2 tabular-nums">
                     {formatCurrency(projectedSellInfo.projectedValue)}
                   </span>
                 </p>
@@ -428,7 +428,7 @@ export default function SellLegEditor({
               {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
                 <p className="mt-1 text-[12px] text-ink-3">
                   Projected basis in {year}:{" "}
-                  <span className="text-ink-2 tabular">
+                  <span className="text-ink-2 tabular-nums">
                     {formatCurrency(projectedSellInfo.projectedBasis)}
                   </span>
                 </p>
@@ -475,7 +475,7 @@ export default function SellLegEditor({
           </div>
           <div className="mt-0.5">
             Projected balance in {year}:{" "}
-            <span className="tabular">
+            <span className="tabular-nums">
               {formatCurrency(
                 projectedMortgageBalance ?? parseNum(linkedMortgage.balance)
               )}
@@ -521,6 +521,7 @@ export default function SellLegEditor({
       )}
 
       {/* Proceeds destination — hidden in business mode */}
+      {/* Always shown in account mode; the ledger shell (parent) may suppress when proceeds fund a buy leg. */}
       {leg.sellMode !== "business" && (
         <div>
           <label className={fieldLabelClassName} htmlFor="proceedsAccountId">
