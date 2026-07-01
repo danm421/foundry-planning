@@ -25,6 +25,7 @@ import InsurancePanel, {
 } from "@/components/insurance-panel";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
+import { buildClientMilestones } from "@/lib/milestones";
 
 interface InsuranceStepProps {
   clientId: string;
@@ -122,6 +123,8 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
       ownerRef: ref ?? { kind: "joint" },
       insuredPerson: a.insuredPerson ?? null,
       value: String(a.value),
+      activationYear: a.activationYear ?? null,
+      activationYearRef: a.activationYearRef ?? null,
     };
   });
   const fams: InsurancePanelFamilyMember[] = familyRows.map((f) => ({
@@ -162,6 +165,21 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
       planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
     });
 
+  // Milestones power the policy dialog's activation-year picker.
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(
+    {
+      dateOfBirth: effectiveTree.client.dateOfBirth,
+      retirementAge: effectiveTree.client.retirementAge,
+      planEndAge: effectiveTree.client.planEndAge,
+      spouseDob: effectiveTree.client.spouseDob,
+      spouseRetirementAge: effectiveTree.client.spouseRetirementAge,
+    },
+    planStartYear,
+    planEndYear,
+  );
+
   return (
     <Suspense fallback={null}>
       <InsurancePanel
@@ -177,6 +195,7 @@ export default async function InsuranceStep({ clientId, firmId }: InsuranceStepP
         resolvedInflationRate={resolvedInflationRate}
         scheduleStartYear={scheduleStartYear}
         scheduleEndYear={scheduleEndYear}
+        milestones={milestones}
         embed="wizard"
       />
     </Suspense>

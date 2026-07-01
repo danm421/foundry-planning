@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LifeInsurancePolicy } from "@/engine/types";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type {
   InsurancePanelAccount,
   InsurancePanelEntity,
@@ -37,6 +38,11 @@ export interface PolicyFormState {
   termIssueYear: number | null;
   termLengthYears: number | null;
   endsAtInsuredRetirement: boolean;
+  /** Future-activation year (persisted onto the account row, not the policy).
+   *  Null = the policy is already in force. */
+  activationYear: number | null;
+  /** Milestone anchor for `activationYear`; null = a plain calendar year. */
+  activationYearRef: YearRef | null;
   cashValueGrowthMode: "basic" | "free_form";
   postPayoutGrowthRate: number;
   postPayoutModelPortfolioId: string | null;
@@ -67,6 +73,9 @@ export interface InsurancePolicyDialogProps {
    *  plan start year → household second-to-die year. */
   scheduleStartYear: number;
   scheduleEndYear: number;
+  /** Resolved client milestones for the activation-year picker. Optional so the
+   *  control renders only when a caller supplies milestones (mirrors Add Account). */
+  milestones?: ClientMilestones;
   mode: "create" | "edit";
   policyId?: string;
   onClose: () => void;
@@ -143,6 +152,8 @@ const DEFAULT_STATE: PolicyFormState = {
   termIssueYear: null,
   termLengthYears: null,
   endsAtInsuredRetirement: false,
+  activationYear: null,
+  activationYearRef: null,
   cashValueGrowthMode: "basic",
   postPayoutGrowthRate: 0.06,
   postPayoutModelPortfolioId: null,
@@ -168,6 +179,9 @@ function seedStateFromRecord(
     termIssueYear: policy.termIssueYear,
     termLengthYears: policy.termLengthYears,
     endsAtInsuredRetirement: policy.endsAtInsuredRetirement,
+    // Activation lives on the account row (Task 9), so seed it from the account.
+    activationYear: account.activationYear ?? null,
+    activationYearRef: (account.activationYearRef ?? null) as YearRef | null,
     cashValueGrowthMode: policy.cashValueGrowthMode,
     postPayoutGrowthRate: policy.postPayoutGrowthRate,
     postPayoutModelPortfolioId: policy.postPayoutModelPortfolioId ?? null,
@@ -235,6 +249,9 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termIssueYear: state.termIssueYear,
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
+    // Activation is persisted onto the account row by the LI create/edit routes.
+    activationYear: state.activationYear,
+    activationYearRef: state.activationYearRef,
     cashValueGrowthMode: state.cashValueGrowthMode,
     premiumScheduleMode: scheduleMode,
     deathBenefitScheduleMode: scheduleMode,
@@ -586,6 +603,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               externalBeneficiaries={props.externalBeneficiaries}
               modelPortfolios={props.modelPortfolios}
               resolvedInflationRate={props.resolvedInflationRate}
+              milestones={props.milestones}
               mode={effectiveMode}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
