@@ -52,7 +52,13 @@ export function StackedBarChart({ years, series, title, height = 300 }: StackedB
       labels: years.map((y) => String(y.year)),
       datasets: series.map((s, i) => ({
         label: s.label,
-        data: years.map(s.valueFor),
+        // Round to whole dollars. Tax/cash-flow values carry sub-dollar
+        // floating-point residue; without this the y-axis auto-scales to a
+        // fraction of a dollar and amplifies that noise into full-height bars
+        // while every gridline rounds to "$0" (see: state-tax chart showing
+        // bars with an all-"$0" axis). Whole-dollar rounding matches the axis +
+        // tooltip formatter and makes effectively-zero years render as no bar.
+        data: years.map((y) => Math.round(s.valueFor(y))),
         backgroundColor: s.colorKey ? themePalette[s.colorKey] : palette[i],
         stack: "main",
       })),
@@ -83,8 +89,12 @@ export function StackedBarChart({ years, series, title, height = 300 }: StackedB
         x: { stacked: true, ticks: { color: chrome.tick }, grid: { color: chrome.grid } },
         y: {
           stacked: true,
+          beginAtZero: true,
           ticks: {
             color: chrome.tick,
+            // Integer ticks only — stops an all-zero (or tiny) dataset from
+            // generating fractional-dollar gridlines that every render as "$0".
+            precision: 0,
             callback: (value: unknown) => fmt.format(Number(value)),
           },
           grid: { color: chrome.grid },
