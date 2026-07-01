@@ -173,7 +173,9 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
           type="button"
           onClick={() => onChange({ showMortgage: !leg.showMortgage })}
           aria-expanded={leg.showMortgage}
-          className="flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink"
+          className={`flex items-center gap-1.5 text-[13px] font-medium transition-colors ${
+            leg.showMortgage ? "text-good" : "text-ink-2 hover:text-ink"
+          }`}
         >
           <ChevronIcon expanded={leg.showMortgage} />
           Mortgage / Financing

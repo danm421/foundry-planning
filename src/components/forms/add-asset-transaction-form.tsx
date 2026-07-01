@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
 import type { AssetTransaction } from "@/engine/types";
@@ -206,33 +206,39 @@ export default function AddAssetTransactionForm({
   );
 
   /** Informational net proceeds for a sell leg (sale − costs − mortgage payoff). */
-  const sellNetFor = (leg: SellLegDraft): number => {
-    const projectedValue = leg.sellAccountId
-      ? projYear?.accountLedgers[leg.sellAccountId]?.beginningValue ?? 0
-      : 0;
-    const saleValue = parseNum(leg.overrideSaleValue) || projectedValue;
+  const sellNetFor = useCallback(
+    (leg: SellLegDraft): number => {
+      const projectedValue = leg.sellAccountId
+        ? projYear?.accountLedgers[leg.sellAccountId]?.beginningValue ?? 0
+        : 0;
+      const saleValue = parseNum(leg.overrideSaleValue) || projectedValue;
 
-    const costPct = parseNum(leg.transactionCostPct) / 100;
-    const costFlat = parseNum(leg.transactionCostFlat);
-    const totalCosts = saleValue * costPct + costFlat;
+      const costPct = parseNum(leg.transactionCostPct) / 100;
+      const costFlat = parseNum(leg.transactionCostFlat);
+      const totalCosts = saleValue * costPct + costFlat;
 
-    const linkedMortgage = leg.sellAccountId
-      ? liabilities.find((l) => l.linkedPropertyId === leg.sellAccountId)
-      : null;
-    const mortgagePayoff = linkedMortgage
-      ? projYear?.liabilityBalancesBoY?.[linkedMortgage.id] ??
-        parseNum(linkedMortgage.balance)
-      : 0;
+      const linkedMortgage = leg.sellAccountId
+        ? liabilities.find((l) => l.linkedPropertyId === leg.sellAccountId)
+        : null;
+      const mortgagePayoff = linkedMortgage
+        ? projYear?.liabilityBalancesBoY?.[linkedMortgage.id] ??
+          parseNum(linkedMortgage.balance)
+        : 0;
 
-    return saleValue - totalCosts - mortgagePayoff;
-  };
+      return saleValue - totalCosts - mortgagePayoff;
+    },
+    [projYear, liabilities],
+  );
 
   /** Informational cash cost for a buy leg (price − mortgage financed). */
-  const buyCostFor = (leg: BuyLegDraft): number => {
-    const price = parseNum(leg.purchasePrice);
-    const mortgage = leg.showMortgage ? parseNum(leg.mortgageAmount) : 0;
-    return price - mortgage;
-  };
+  const buyCostFor = useCallback(
+    (leg: BuyLegDraft): number => {
+      const price = parseNum(leg.purchasePrice);
+      const mortgage = leg.showMortgage ? parseNum(leg.mortgageAmount) : 0;
+      return price - mortgage;
+    },
+    [],
+  );
 
   // ── Per-leg validity ────────────────────────────────────────────────────────
   const sellHasData = (leg: SellLegDraft): boolean =>
@@ -284,9 +290,7 @@ export default function AddAssetTransactionForm({
     const sellNets = sellLegs.filter(sellHasData).map(sellNetFor);
     const buyCosts = buyLegs.filter(buyHasData).map(buyCostFor);
     return combinedNet(sellNets, buyCosts);
-    // sellNetFor/buyCostFor close over projYear/liabilities; legs drive the rest.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellLegs, buyLegs, projYear, liabilities]);
+  }, [sellLegs, buyLegs, sellNetFor, buyCostFor]);
 
   const showNet = sellLegs.some(sellHasData) || buyLegs.some(buyHasData);
 
@@ -429,9 +433,9 @@ export default function AddAssetTransactionForm({
                 />
               </>
             )}
-            {anyYearBeforeBuy && (
+            {anyYearBeforeBuy && minSellYear != null && (
               <p className="mt-1 text-[12px] text-crit">
-                Sell year must be after the referenced buy year.
+                Sell year must be after {minSellYear - 1} (the referenced buy year).
               </p>
             )}
           </div>
@@ -483,7 +487,7 @@ export default function AddAssetTransactionForm({
         {/* ── Focused leg editor ─────────────────────────────────────────── */}
         {activeLeg && (
           <div
-            className={`rounded-[var(--radius-sm)] border p-4 ${
+            className={`rounded-[var(--radius-sm)] border p-4 transition-colors ${
               activeLeg.kind === "sell"
                 ? "border-crit/30 bg-crit/5"
                 : "border-good/30 bg-good/5"
@@ -542,8 +546,11 @@ export default function AddAssetTransactionForm({
               </span>
             </div>
             <p className="mt-1 text-[12px] text-ink-3">
-              Proceeds {formatCurrency(combined.proceeds)} − cash needed{" "}
-              {formatCurrency(combined.purchases)}. Informational only.
+              Proceeds{" "}
+              <span className="tabular-nums">{formatCurrency(combined.proceeds)}</span>
+              {" "}−{" "}cash needed{" "}
+              <span className="tabular-nums">{formatCurrency(combined.purchases)}</span>
+              . Pre-tax estimate.
             </p>
           </div>
         )}
