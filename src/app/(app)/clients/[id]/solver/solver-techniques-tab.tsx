@@ -12,6 +12,7 @@ import type {
 } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { ClientMilestones } from "@/lib/milestones";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingFamilyMember } from "@/engine/ownership";
 import {
   summarizeRothConversion,
@@ -31,6 +32,7 @@ import AddAssetTransactionForm from "@/components/forms/add-asset-transaction-fo
 import AddRelocationForm from "@/components/forms/add-relocation-form";
 import { SolverSection } from "./solver-section";
 import { SolverTechniqueRow } from "./solver-technique-row";
+import { SolverEstateTechnique } from "./solver-estate-technique";
 
 type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation";
 
@@ -83,6 +85,14 @@ interface Props {
     target: { kind: "roth-conversion-amount"; techniqueId: string },
     targetPoS: number,
   ) => void;
+  /** Base facts + base-plan gifts for the estate technique. Optional so the
+   *  component still renders in isolation (tests, storybook). When absent the
+   *  Estate Planning section is hidden. */
+  baseClientData?: ClientData;
+  baseGifts?: EstateFlowGift[];
+  /** Forwarded to the estate technique's onOpen — the workspace uses it to
+   *  switch the right pane to the Estate report. */
+  onEstateOpen?: () => void;
 }
 
 /** Dashed "add" tile that lives in the Scenario (working) column — the affordance
@@ -172,6 +182,9 @@ export function SolverTechniquesTab({
   baseTechniqueIds,
   onChange,
   onSolveStart,
+  baseClientData,
+  baseGifts,
+  onEstateOpen,
 }: Props) {
   const [editor, setEditor] = useState<EditorState | null>(null);
 
@@ -415,6 +428,18 @@ export function SolverTechniquesTab({
           addLabel="relocation"
         />
       </SolverSection>
+
+      {baseClientData ? (
+        <SolverSection title="Estate Planning">
+          <SolverEstateTechnique
+            baseClientData={baseClientData}
+            clientData={workingTree}
+            baseGifts={baseGifts ?? []}
+            onChange={onChange}
+            onOpen={onEstateOpen}
+          />
+        </SolverSection>
+      ) : null}
 
       {form}
     </div>
