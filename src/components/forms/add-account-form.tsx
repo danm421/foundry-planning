@@ -1562,6 +1562,42 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               />
             </div>
 
+            {!isSystemManagedCash && milestones && (
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 text-sm text-ink-2">
+                  <input
+                    type="checkbox"
+                    checked={activationEnabled}
+                    onChange={(e) => setActivationEnabled(e.target.checked)}
+                  />
+                  <span>Activates in a future year (inheritance, new account)</span>
+                </label>
+                {activationEnabled && (
+                  <div className="mt-2 max-w-xs">
+                    <MilestoneYearPicker
+                      id="activationYear"
+                      name="activationYear"
+                      label="Activates"
+                      value={activationYear}
+                      yearRef={activationYearRef}
+                      milestones={milestones}
+                      clientFirstName={clientFirstName}
+                      spouseFirstName={spouseFirstName}
+                      position="start"
+                      minYear={currentYear}
+                      onChange={(y, ref) => {
+                        setActivationYear(y);
+                        setActivationYearRef(ref);
+                      }}
+                    />
+                    <p className="mt-1 text-[11px] text-ink-4">
+                      The value above is the balance in this year; it grows from here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── Stock Options equity fields — only visible for stock_options ── */}
             {category === "stock_options" && (
               <>
