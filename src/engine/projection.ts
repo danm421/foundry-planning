@@ -3361,10 +3361,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // ── Retirement breakdown for state income tax exclusions ─────────────────
     // Classify per-source ordinary income into the four state-exclusion buckets:
     //   db     = pension/deferred (Income.type === "deferred")
-    //   ira    = traditional IRA RMDs + supplemental draws (subType = traditional_ira)
-    //   k401   = 401k/403b RMDs + supplemental draws (subType = 401k | 403b)
+    //   ira    = traditional IRA distributions (subType = traditional_ira)
+    //   k401   = 401k/403b distributions (subType = 401k | 403b)
     //   annuity = (no current account subType maps here; reserved for future use)
-    // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>", or "<incomeId>"
+    // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>", or "<incomeId>".
+    // NOTE: this captures RMDs (+ any scheduled draws already in bySource) but NOT
+    // the spending-driven supplemental IRA/401(k) draws — those are planned later
+    // in the convergence loop and folded into `supplementalRetirementBreakdown`
+    // there, so state exclusions apply to them too.
     const retirementBreakdown = { db: 0, ira: 0, k401: 0, annuity: 0 };
     {
       const incomeById = new Map(currentIncomes.map((inc) => [inc.id, inc]));
@@ -4469,6 +4473,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           bySource: { ...baselineTaxDetail.bySource },
         };
 
+        // Fold this iteration's supplemental IRA/401(k) draws into the per-source
+        // retirement breakdown so state retirement-income exclusions (PA, IL, MS,
+        // and every capped state) apply to spending-driven distributions — not
+        // just RMDs. The base `retirementBreakdown` captured only RMDs + scheduled
+        // draws; the supplemental draw is recognized as ordinary income above but
+        // must also enter the state exclusion bucket or the state engine taxes a
+        // distribution the state exempts. Re-derived each iteration because
+        // `supplementalPlan` is re-planned (not accumulated) from the current
+        // shortfall. Mirrors the base classification (subType → ira/k401) above.
+        const supplementalRetirementBreakdown = { ...retirementBreakdown };
+        for (const draw of supplementalPlan.draws) {
+          if (draw.ordinaryIncome <= 0) continue;
+          const sub = accountById.get(draw.accountId)?.subType ?? "";
+          if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
+          else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
+        }
+
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
           socialSecurityGross: income.socialSecurity,
@@ -4491,7 +4512,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
-          retirementBreakdown,
+          retirementBreakdown: supplementalRetirementBreakdown,
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
