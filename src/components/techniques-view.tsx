@@ -1239,6 +1239,7 @@ export default function TechniquesView({
           milestones={milestones}
           clientFirstName={clientFirstName}
           spouseFirstName={spouseFirstName}
+          existingNames={assetTransactions.map((t) => t.name)}
           initialData={editingTransaction ?? undefined}
           onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}
           onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}

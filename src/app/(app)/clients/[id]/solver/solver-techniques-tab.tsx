@@ -229,6 +229,7 @@ export function SolverTechniquesTab({
         accounts={accounts}
         liabilities={liabilities}
         milestones={milestones}
+        existingNames={workingAsset.map((t) => t.name)}
         initialData={
           existing ? toAssetTransactionInitialData(existing) : undefined
         }

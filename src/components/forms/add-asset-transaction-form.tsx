@@ -100,6 +100,8 @@ interface AddAssetTransactionFormProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /** Names of existing transactions — used to seed a unique default name in add mode. */
+  existingNames?: string[];
   initialData?: AssetTransactionInitialData;
   /** When provided, the form emits the assembled AssetTransaction engine object
    *  via this callback and does NOT persist. Add mode fans out ONE call PER LEG;
@@ -107,6 +109,16 @@ interface AddAssetTransactionFormProps {
   onSubmitDraft?: (technique: AssetTransaction) => void;
   onClose: () => void;
   onSaved: () => void;
+}
+
+/** First unused name in the "Transaction", "Transaction 2", … sequence. */
+function nextTransactionName(existing: string[] = []): string {
+  const base = "Transaction";
+  const taken = new Set(existing.map((n) => n.trim()));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -120,6 +132,7 @@ export default function AddAssetTransactionForm({
   milestones,
   clientFirstName,
   spouseFirstName,
+  existingNames,
   initialData,
   onSubmitDraft,
   onClose,
@@ -138,7 +151,9 @@ export default function AddAssetTransactionForm({
   const [error, setError] = useState<string | null>(null);
 
   // ── Ledger state ────────────────────────────────────────────────────────────
-  const [name, setName] = useState(initialData?.name ?? "");
+  const [name, setName] = useState(
+    () => initialData?.name ?? nextTransactionName(existingNames),
+  );
   const [year, setYear] = useState(initialData?.year ?? currentYear);
   const [yearRef, setYearRef] = useState<YearRef | null>(null);
   const [legs, setLegs] = useState<LegDraft[]>(() =>
@@ -381,7 +396,7 @@ export default function AddAssetTransactionForm({
         )}
 
         {/* ── Shared name + year ─────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="grid grid-cols-2 items-start gap-4">
           <div>
             <label className={fieldLabelClassName} htmlFor="txn-name">
               Name <span className="text-crit">*</span>
@@ -397,7 +412,7 @@ export default function AddAssetTransactionForm({
             />
           </div>
 
-          <div className="w-1/2">
+          <div>
             {milestones ? (
               <MilestoneYearPicker
                 name="txn-year"
