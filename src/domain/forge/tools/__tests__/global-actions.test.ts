@@ -44,7 +44,7 @@ describe("find_client", () => {
 
 describe("open_client", () => {
   it("navigates to the plan when the household has one", async () => {
-    (getCrmHousehold as any).mockResolvedValue({ id: "hh_1", planningClient: { id: "client_9" }, contacts: [] });
+    vi.mocked(getCrmHousehold).mockResolvedValue({ id: "hh_1", planningClient: { id: "client_9" }, contacts: [] } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
     const out = JSON.parse(String(await getTool("open_client").invoke({ householdId: "hh_1" })));
     expect(getCrmHousehold).toHaveBeenCalledWith("hh_1");
     expect(emitNavigate).toHaveBeenCalledWith("/clients/client_9");
@@ -52,13 +52,13 @@ describe("open_client", () => {
   });
 
   it("navigates to the CRM household page when there is no plan yet", async () => {
-    (getCrmHousehold as any).mockResolvedValue({ id: "hh_2", planningClient: null, contacts: [] });
+    vi.mocked(getCrmHousehold).mockResolvedValue({ id: "hh_2", planningClient: null, contacts: [] } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
     await getTool("open_client").invoke({ householdId: "hh_2" });
     expect(emitNavigate).toHaveBeenCalledWith("/crm/households/hh_2");
   });
 
   it("returns an error for a wrong-firm / missing household (IDOR)", async () => {
-    (getCrmHousehold as any).mockResolvedValue(undefined);
+    vi.mocked(getCrmHousehold).mockResolvedValue(undefined);
     const out = String(await getTool("open_client").invoke({ householdId: "hh_evil" }));
     expect(out).toMatch(/not found/i);
     expect(emitNavigate).not.toHaveBeenCalled();
@@ -67,7 +67,7 @@ describe("open_client", () => {
 
 describe("create_household (HITL)", () => {
   it("creates via createCrmHousehold with advisorId forced to ctx.userId, audits, and navigates", async () => {
-    (createCrmHousehold as any).mockResolvedValue({ id: "hh_new", name: "Doe Household" });
+    createCrmHousehold.mockResolvedValue({ id: "hh_new", name: "Doe Household" });
     const out = JSON.parse(String(await getTool("create_household").invoke({
       name: "Doe Household",
       state: "NJ",
@@ -93,8 +93,8 @@ describe("set_up_plan (HITL)", () => {
     contacts: [{ role: "primary", firstName: "Jane", lastName: "Doe", dateOfBirth: null }],
   };
   it("creates the plan from the household's primary contact + model-supplied planning fields", async () => {
-    (getCrmHousehold as any).mockResolvedValue(household);
-    (createClientForHousehold as any).mockResolvedValue({ clientId: "client_9", scenarioId: "base" });
+    vi.mocked(getCrmHousehold).mockResolvedValue(household as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
     const out = JSON.parse(String(await getTool("set_up_plan").invoke({
       householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
       filingStatus: "married_joint", primaryDob: "1970-05-15",
@@ -111,7 +111,7 @@ describe("set_up_plan (HITL)", () => {
     expect(out).toEqual({ clientId: "client_9" });
   });
   it("refuses when the household already has a plan", async () => {
-    (getCrmHousehold as any).mockResolvedValue({ ...household, planningClient: { id: "client_x" } });
+    vi.mocked(getCrmHousehold).mockResolvedValue({ ...household, planningClient: { id: "client_x" } } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
     const out = String(await getTool("set_up_plan").invoke({
       householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
     }));
@@ -119,7 +119,7 @@ describe("set_up_plan (HITL)", () => {
     expect(createClientForHousehold).not.toHaveBeenCalled();
   });
   it("rejects a wrong-firm household (IDOR)", async () => {
-    (getCrmHousehold as any).mockResolvedValue(undefined);
+    vi.mocked(getCrmHousehold).mockResolvedValue(undefined);
     const out = String(await getTool("set_up_plan").invoke({
       householdId: "hh_evil", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
     }));
@@ -130,8 +130,8 @@ describe("set_up_plan (HITL)", () => {
 
 describe("create_task_for_client (HITL)", () => {
   it("creates a household-scoped task after an IDOR check", async () => {
-    (getCrmHousehold as any).mockResolvedValue({ id: "hh_1", planningClient: null, contacts: [] });
-    (createTask as any).mockResolvedValue({ id: "task_5", title: "Call Jane" });
+    vi.mocked(getCrmHousehold).mockResolvedValue({ id: "hh_1", planningClient: null, contacts: [] } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createTask).mockResolvedValue({ id: "task_5", title: "Call Jane" } as unknown as Awaited<ReturnType<typeof createTask>>);
     const out = JSON.parse(String(await getTool("create_task_for_client").invoke({
       householdId: "hh_1", title: "Call Jane", priority: "high", dueDate: "2026-07-15",
     })));
@@ -144,7 +144,7 @@ describe("create_task_for_client (HITL)", () => {
     expect(out).toEqual({ taskId: "task_5", title: "Call Jane" });
   });
   it("rejects a wrong-firm household (IDOR) before createTask", async () => {
-    (getCrmHousehold as any).mockResolvedValue(undefined);
+    vi.mocked(getCrmHousehold).mockResolvedValue(undefined);
     const out = String(await getTool("create_task_for_client").invoke({ householdId: "hh_evil", title: "x" }));
     expect(out).toMatch(/not found/i);
     expect(createTask).not.toHaveBeenCalled();
