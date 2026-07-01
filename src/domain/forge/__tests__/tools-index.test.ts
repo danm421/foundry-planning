@@ -51,7 +51,7 @@ vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.
 vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
 vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
-vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn() }));
+vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn(), listCrmHouseholds: vi.fn() }));
 vi.mock("@/lib/overview/get-overview-data", () => ({ getOverviewData: vi.fn() }));
 vi.mock("@/lib/alerts", () => ({ computeAlerts: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -87,6 +87,9 @@ vi.mock("@/lib/forge/meeting-transcripts", () => ({ getOwnedMeetingTranscript: v
 // Meetings bundle: stub CRM write deps so assembly stays pure.
 vi.mock("@/lib/crm/documents", () => ({ uploadCrmDocument: vi.fn() }));
 vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
+// navigate-global / global-actions import custom-events which imports server-only
+// (not resolvable from the worktree node_modules). Mock it so the global set test passes.
+vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -362,7 +365,7 @@ describe("global tool set (clientless)", () => {
     .map((t) => t.name)
     .sort();
   it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "get_help", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "find_client", "get_help", "open_page", "search_help"]);
   });
 });
 
