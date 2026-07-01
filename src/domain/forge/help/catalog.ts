@@ -44,6 +44,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
       "Click Save. The household opens — from there you can set up the financial plan.",
     ],
     href: "/crm/new",
+    walkthroughId: "add-household",
   },
   {
     id: "set-up-plan",
@@ -157,4 +158,82 @@ export function getHelpTopic(id: string): HelpTopic | undefined {
  *  model knows what topics exist and calls get_help/search_help for detail. */
 export function helpTopicIndex(): string {
   return HELP_TOPICS.map((t) => `${t.id} — ${t.title}`).join("\n");
+}
+
+// --- Plan 3: guided walkthroughs (coachmark tours) ---------------------------
+// A walkthrough is an ordered list of steps; each step spotlights a real UI
+// element by its stable data-forge-anchor id. The model triggers a walkthrough
+// BY ID only (start_walkthrough); it never supplies a selector/URL/coordinate.
+
+export type WalkStepAdvance = "click" | "navigate" | "input" | "manual";
+
+export type WalkStep = {
+  /** Stable data-forge-anchor id of the element to spotlight. */
+  anchorId: string;
+  /** Route this step lives on (allowlisted prefix — asserted in tests). */
+  page: string;
+  /** Plain-language instruction shown in the callout. */
+  callout: string;
+  /** How the tour advances past this step. */
+  advanceOn: WalkStepAdvance;
+  /** For advanceOn:"navigate" — the route pattern (":id" wildcards) whose
+   *  arrival advances the step. */
+  nextPage?: string;
+};
+
+export type Walkthrough = {
+  id: string;
+  title: string;
+  steps: WalkStep[];
+};
+
+export const WALKTHROUGHS: readonly Walkthrough[] = [
+  {
+    id: "add-household",
+    title: "Add a new household",
+    steps: [
+      {
+        anchorId: "crm-new-household-button",
+        page: "/clients",
+        callout: 'Click "New household" to start creating one.',
+        advanceOn: "navigate",
+        nextPage: "/crm/new",
+      },
+      {
+        anchorId: "crm-primary-contact-fields",
+        page: "/crm/new",
+        callout: "Enter the primary contact's first and last name, then click Next.",
+        advanceOn: "manual",
+      },
+      {
+        anchorId: "crm-household-state-input",
+        page: "/crm/new",
+        callout: "Choose the household's state of residence.",
+        advanceOn: "input",
+      },
+      {
+        anchorId: "crm-household-name-input",
+        page: "/crm/new",
+        callout: "Give the household a name.",
+        advanceOn: "input",
+      },
+      {
+        anchorId: "crm-household-save-button",
+        page: "/crm/new",
+        callout: 'Click "Create household" to finish.',
+        advanceOn: "navigate",
+        nextPage: "/crm/households/:id",
+      },
+    ],
+  },
+];
+
+export function getWalkthrough(id: string): Walkthrough | undefined {
+  return WALKTHROUGHS.find((w) => w.id === id);
+}
+
+/** Compact `id — title` list injected into the global system prompt so the
+ *  model knows which guided tours exist and can call start_walkthrough. */
+export function walkthroughIndex(): string {
+  return WALKTHROUGHS.map((w) => `${w.id} — ${w.title}`).join("\n");
 }
