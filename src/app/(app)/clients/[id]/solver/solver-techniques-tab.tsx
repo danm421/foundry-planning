@@ -190,6 +190,16 @@ export function SolverTechniquesTab({
 
   const close = () => setEditor(null);
 
+  const reinvestmentPortfolioGrowth = useMemo(
+    () =>
+      new Map(
+        modelPortfolios
+          .filter((p): p is { id: string; name: string; growthRate: number } => p.growthRate != null)
+          .map((p) => [p.id, p.growthRate]),
+      ),
+    [modelPortfolios],
+  );
+
   const workingRoth = workingTree.rothConversions ?? [];
   const workingAsset = workingTree.assetTransactions ?? [];
   const workingReinv = workingTree.reinvestments ?? [];
@@ -391,7 +401,7 @@ export function SolverTechniquesTab({
         <TechniqueGroup
           working={workingReinv}
           baseIds={baseTechniqueIds?.reinvestment}
-          summarize={summarizeReinvestment}
+          summarize={(ri) => summarizeReinvestment(ri, reinvestmentPortfolioGrowth)}
           onEdit={(id) => setEditor({ kind: "reinvestment", editId: id })}
           onRemove={(id) =>
             onChange({ kind: "reinvestment-upsert", id, value: null })

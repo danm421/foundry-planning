@@ -32,7 +32,7 @@ export const getMonteCarloResult = cache(
         correlation: mcPayload.correlation,
         seed: mcPayload.seed,
       });
-      const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+      const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
       return await runMonteCarlo({
         data: clientData,
         returnEngine,

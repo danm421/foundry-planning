@@ -67,7 +67,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   const refineTrials = args.refineTrials ?? 500;
   const searchTree = applyMutations(args.effectiveTree, args.baselineMutations);
   const config = leverSearchConfig(args.target, searchTree);
-  const accountMixes = new Map(args.mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+  const accountMixes = new Map(args.mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
 
   interface EvalEntry {
     pos: number;

@@ -46,4 +46,33 @@ describe("technique summaries", () => {
     expect(s).toContain("2040");
     expect(s).toContain("2 account");
   });
+
+  it("resolves the rate from the target portfolio when newGrowthRate is unresolved (0)", () => {
+    const s = summarizeReinvestment(
+      {
+        id: "ri-2",
+        name: "Model switch",
+        accountIds: ["a"],
+        year: 2026,
+        newGrowthRate: 0, // fresh reinvestment — server resolves the real rate
+        realizeTaxesOnSwitch: false,
+        soldFractionByAccount: {},
+        targetType: "model_portfolio",
+        modelPortfolioId: "mp-1",
+      },
+      new Map([["mp-1", 0.068]]),
+    );
+    expect(s).toContain("7%"); // 0.068 -> 7%
+    expect(s).not.toContain("0%");
+    expect(s).toContain("2026");
+  });
+
+  it("resolves a custom-rate reinvestment from customGrowthRate", () => {
+    const s = summarizeReinvestment({
+      id: "ri-3", name: "Custom", accountIds: ["a", "b"], year: 2030,
+      newGrowthRate: 0, realizeTaxesOnSwitch: false, soldFractionByAccount: {},
+      targetType: "custom", customGrowthRate: 0.04,
+    });
+    expect(s).toContain("4%");
+  });
 });

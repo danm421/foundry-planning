@@ -1,11 +1,11 @@
 import type { ClientData } from "../types";
 import type { ReturnEngine } from "./returns";
-import { runTrial, type AccountAssetMix } from "./trial";
+import { runTrial, type MixSegment } from "./trial";
 
 export interface RunMonteCarloInput {
   data: ClientData;
   returnEngine: ReturnEngine;
-  accountMixes: Map<string, AccountAssetMix[]>;
+  accountMixes: Map<string, MixSegment[]>;
   /** Number of trials to run. eMoney whitepaper default = 1000 (p.12). */
   trials?: number;
   /** PDF p.14: "Minimum Assets for Solving" — end-of-sim threshold. */

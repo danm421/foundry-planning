@@ -9,17 +9,46 @@ export interface AccountAssetMix {
   weight: number;
 }
 
+/**
+ * A time-segment of an account's asset mix. `fromYear` is the absolute plan
+ * year the segment takes effect; an account's base mix uses `fromYear: 0`, and
+ * a reinvestment appends a segment at its switch year. An empty `mix` means the
+ * account is NOT randomized from that year on — the trial falls back to the
+ * account's deterministic `growthRate` (which `applyReinvestments` has already
+ * set to the reinvestment's `newGrowthRate` for those years).
+ */
+export interface MixSegment {
+  fromYear: number;
+  mix: AccountAssetMix[];
+}
+
+/** Pick the mix effective for `year`: the latest segment with fromYear <= year.
+ *  Returns undefined when no segment applies (no segments, or year precedes the
+ *  first fromYear) — the caller then uses the account's fixed growthRate. */
+export function segmentMixForYear(
+  segments: MixSegment[] | undefined,
+  year: number,
+): AccountAssetMix[] | undefined {
+  if (!segments || segments.length === 0) return undefined;
+  let chosen: MixSegment | undefined;
+  for (const seg of segments) {
+    if (seg.fromYear <= year && (chosen === undefined || seg.fromYear > chosen.fromYear)) {
+      chosen = seg;
+    }
+  }
+  return chosen?.mix;
+}
+
 export interface RunTrialInput {
   data: ClientData;
   returnEngine: ReturnEngine;
   trialIndex: number;
   /**
-   * Asset-class mix per account id. Accounts absent from the map keep their
-   * fixed `growthRate` — per the eMoney whitepaper, custom growth rates,
-   * inflation-linked rates, and non-investable asset types (real estate,
-   * business, life insurance) do not randomize.
+   * Asset-mix TIMELINE per account id (segments sorted or unsorted; the lookup
+   * scans). Accounts absent from the map — or in a year before their first
+   * segment, or in an empty-mix segment — keep their fixed `growthRate`.
    */
-  accountMixes: Map<string, AccountAssetMix[]>;
+  accountMixes: Map<string, MixSegment[]>;
   /** PDF p.14: "Minimum Assets for Solving" — end-of-sim threshold. */
   requiredMinimumAssetLevel: number;
 }
@@ -68,8 +97,8 @@ export function runTrial(input: RunTrialInput): TrialResult {
   const drawsByYear = new Map<number, Record<string, number>>();
 
   const returnsOverride = (year: number, accountId: string): number | undefined => {
-    const mix = accountMixes.get(accountId);
-    if (!mix || mix.length === 0) return undefined; // fixed-rate account
+    const mix = segmentMixForYear(accountMixes.get(accountId), year);
+    if (!mix || mix.length === 0) return undefined; // fixed-rate account (this year)
 
     let yearReturns = drawsByYear.get(year);
     if (!yearReturns) {

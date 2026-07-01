@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runTrial, liquidPortfolioTotal } from "../trial";
+import { runTrial, liquidPortfolioTotal, segmentMixForYear, type MixSegment } from "../trial";
 import { createReturnEngine } from "../returns";
 import { buildClientData } from "../../__tests__/fixtures";
 import type { ClientData } from "../../types";
@@ -54,10 +54,10 @@ describe("runTrial — success/failure classification (PDF p.11)", () => {
     const mixes = new Map(
       easyPlan.accounts
         .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
-        .map((a) => [a.id, [
+        .map((a) => [a.id, [{ fromYear: 0, mix: [
           { assetClassId: "eq", weight: 0.6 },
           { assetClassId: "bd", weight: 0.4 },
-        ]])
+        ] }]])
     );
 
     const result = runTrial({
@@ -131,7 +131,7 @@ describe("runTrial — success/failure classification (PDF p.11)", () => {
     };
 
     const engine = simpleEngine(1);
-    const mixes = new Map<string, { assetClassId: string; weight: number }[]>();
+    const mixes = new Map<string, MixSegment[]>();
     const result = runTrial({
       data: brokePlan,
       returnEngine: engine,
@@ -156,7 +156,7 @@ describe("runTrial — success/failure classification (PDF p.11)", () => {
     const mixes = new Map(
       easyPlan.accounts
         .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
-        .map((a) => [a.id, [{ assetClassId: "eq", weight: 1.0 }]])
+        .map((a) => [a.id, [{ fromYear: 0, mix: [{ assetClassId: "eq", weight: 1.0 }] }]])
     );
 
     // Low required minimum passes.
@@ -182,7 +182,7 @@ describe("runTrial — determinism", () => {
     const mixes = new Map(
       plan.accounts
         .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
-        .map((a) => [a.id, [{ assetClassId: "eq", weight: 1.0 }]])
+        .map((a) => [a.id, [{ fromYear: 0, mix: [{ assetClassId: "eq", weight: 1.0 }] }]])
     );
 
     const a = runTrial({ data: plan, returnEngine: simpleEngine(42), trialIndex: 7, accountMixes: mixes, requiredMinimumAssetLevel: 0 });
@@ -199,7 +199,7 @@ describe("runTrial — determinism", () => {
     const mixes = new Map(
       plan.accounts
         .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
-        .map((a) => [a.id, [{ assetClassId: "eq", weight: 1.0 }]])
+        .map((a) => [a.id, [{ fromYear: 0, mix: [{ assetClassId: "eq", weight: 1.0 }] }]])
     );
 
     const t0 = runTrial({ data: plan, returnEngine: engine, trialIndex: 0, accountMixes: mixes, requiredMinimumAssetLevel: 0 });
@@ -221,7 +221,7 @@ describe("runTrial — accounts without a mix keep their fixed growth rate", () 
     const plan: ClientData = { ...data, expenses: [], liabilities: [] };
     const engine = simpleEngine(1);
     // accountMixes intentionally excludes real-estate — its fixed rate applies.
-    const mixes = new Map<string, { assetClassId: string; weight: number }[]>();
+    const mixes = new Map<string, MixSegment[]>();
 
     const result = runTrial({
       data: plan, returnEngine: engine, trialIndex: 0,
@@ -234,5 +234,66 @@ describe("runTrial — accounts without a mix keep their fixed growth rate", () 
     // (We don't assert equality on result.byYearLiquidAssets because the
     // real-estate account doesn't contribute to the liquid total.)
     expect(expected).toBeGreaterThan(0); // basic sanity
+  });
+});
+
+describe("segmentMixForYear", () => {
+  const EQ = [{ assetClassId: "eq", weight: 1 }];
+  const BOND = [{ assetClassId: "bd", weight: 1 }];
+
+  it("returns undefined when there are no segments", () => {
+    expect(segmentMixForYear(undefined, 2030)).toBeUndefined();
+    expect(segmentMixForYear([], 2030)).toBeUndefined();
+  });
+
+  it("returns undefined for years before the first segment's fromYear", () => {
+    // Account switched IN at 2035 (no base segment) — earlier years fall back.
+    expect(segmentMixForYear([{ fromYear: 2035, mix: EQ }], 2030)).toBeUndefined();
+  });
+
+  it("selects the latest segment whose fromYear <= year", () => {
+    const segs = [
+      { fromYear: 0, mix: EQ },
+      { fromYear: 2035, mix: BOND },
+    ];
+    expect(segmentMixForYear(segs, 2030)).toBe(EQ);
+    expect(segmentMixForYear(segs, 2035)).toBe(BOND);
+    expect(segmentMixForYear(segs, 2040)).toBe(BOND);
+  });
+
+  it("returns the empty mix of the active segment (fixed-rate switch)", () => {
+    const segs = [
+      { fromYear: 0, mix: EQ },
+      { fromYear: 2035, mix: [] },
+    ];
+    expect(segmentMixForYear(segs, 2040)).toEqual([]);
+  });
+});
+
+describe("runTrial — year-aware mix switch", () => {
+  it("a mid-plan switch to a higher-return mix differs from base-only and from whole-horizon", () => {
+    const data = buildClientData();
+    const plan: ClientData = { ...data, expenses: [], liabilities: [], savingsRules: [], withdrawalStrategy: [] };
+    const invIds = plan.accounts
+      .filter((a) => a.category === "taxable" || a.category === "retirement" || a.category === "cash")
+      .map((a) => a.id);
+    const switchYear = plan.planSettings.planStartYear + 5;
+    const BASE = [{ assetClassId: "bd", weight: 1 }];   // low-return
+    const NEW = [{ assetClassId: "eq", weight: 1 }];    // high-return
+
+    const baseOnly = new Map(invIds.map((id) => [id, [{ fromYear: 0, mix: BASE }]]));
+    const switched = new Map(invIds.map((id) => [id, [
+      { fromYear: 0, mix: BASE },
+      { fromYear: switchYear, mix: NEW },
+    ]]));
+    const wholeHorizon = new Map(invIds.map((id) => [id, [{ fromYear: 0, mix: NEW }]]));
+
+    const run = (mixes: typeof baseOnly) =>
+      runTrial({ data: plan, returnEngine: simpleEngine(7), trialIndex: 0, accountMixes: mixes, requiredMinimumAssetLevel: 0 })
+        .endingLiquidAssets;
+
+    const a = run(baseOnly), b = run(switched), c = run(wholeHorizon);
+    expect(b).not.toBeCloseTo(a, 0);       // the switch moves the outcome
+    expect(b).not.toBeCloseTo(c, 0);       // year-aware != whole-horizon (pre-switch uses BASE)
   });
 });

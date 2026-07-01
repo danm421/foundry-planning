@@ -5,10 +5,15 @@ exports[`loadMonteCarloData > returns indices, correlation, accountMixes, and se
   "accountMixes": [
     {
       "accountId": "00000000-0000-0000-0000-000000000022",
-      "mix": [
+      "segments": [
         {
-          "assetClassId": "00000000-0000-0000-0000-000000000080",
-          "weight": 1,
+          "fromYear": 0,
+          "mix": [
+            {
+              "assetClassId": "00000000-0000-0000-0000-000000000080",
+              "weight": 1,
+            },
+          ],
         },
       ],
     },

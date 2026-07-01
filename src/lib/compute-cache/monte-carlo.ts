@@ -74,7 +74,7 @@ export async function getOrComputeMonteCarlo(args: {
         seed: mcPayload.seed,
       });
       const accountMixes = new Map(
-        mcPayload.accountMixes.map((a) => [a.accountId, a.mix]),
+        mcPayload.accountMixes.map((a) => [a.accountId, a.segments]),
       );
       const raw = await runMonteCarlo({
         data: effectiveTree,

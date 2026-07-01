@@ -274,10 +274,12 @@ describe("loadMonteCarloData", () => {
 
     const entry = payload.accountMixes.find((m) => m.accountId === FIXTURE_TICKER_ACCOUNT_ID);
     expect(entry).toBeDefined();
-    expect(entry!.mix.length).toBeGreaterThan(0);
+    expect(entry!.segments).toEqual([{ fromYear: 0, mix: expect.any(Array) }]);
+    const mix = entry!.segments[0].mix;
+    expect(mix.length).toBeGreaterThan(0);
     // The look-through should resolve to FIXTURE_ASSET_CLASS_ID (us-equity).
-    expect(entry!.mix[0].assetClassId).toBe(FIXTURE_ASSET_CLASS_ID);
+    expect(mix[0].assetClassId).toBe(FIXTURE_ASSET_CLASS_ID);
     // Weight should be 1.0 (holding weight 1 × security weight 1).
-    expect(entry!.mix[0].weight).toBeCloseTo(1.0, 4);
+    expect(mix[0].weight).toBeCloseTo(1.0, 4);
   });
 });

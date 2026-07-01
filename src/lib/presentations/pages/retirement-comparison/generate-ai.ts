@@ -67,7 +67,7 @@ async function projectAndMc(clientId: string, firmId: string, raw: string) {
       correlation: mc.correlation,
       seed: mc.seed,
     });
-    const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.mix]));
+    const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.segments]));
     const result = await runMonteCarlo({
       data: effectiveTree,
       returnEngine: engine,

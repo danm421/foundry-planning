@@ -52,7 +52,7 @@ export function makeMcScaleEvaluator(
   mcPayload: MonteCarloPayload,
   signal?: AbortSignal,
 ): (scale: number, trials: number) => Promise<number> {
-  const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.mix]));
+  const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
   return async (scale, trials) => {
     const mutated = applyMutations(tree, [{ kind: "living-expense-scale", multiplier: scale }]);
     runProjection(mutated);
