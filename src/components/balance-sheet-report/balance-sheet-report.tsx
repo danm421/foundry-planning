@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { useViewParam } from "@/hooks/use-view-param";
 import type { FamilyMember } from "@/engine/types";
-import type { LiabilityLike, EntityInfo, ProjectionYearLike } from "./view-model";
+import type { LiabilityLike, EntityInfo, ProjectionYearLike, AsOfMode } from "./view-model";
 import { buildViewModel } from "./view-model";
 import {
   buildHouseholdColumns,
@@ -12,7 +12,7 @@ import {
   type HouseholdAccountLike,
 } from "./household-columns";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
-import YearPicker from "./year-picker";
+import YearPicker, { type AgesByYear, type AsOfSelection } from "./year-picker";
 import HouseholdTable from "./household-table";
 import HouseholdSummaryPanel from "./household-summary-panel";
 import OutOfEstateTable from "./out-of-estate-table";
@@ -31,7 +31,10 @@ export interface BalanceSheetReportProps {
    *  and HouseholdProjYear (for buildHouseholdColumns). */
   projectionYears: BalanceSheetProjYear[];
   selectableYears: number[];
-  defaultYear: number;
+  /** Household ages per year, for the year picker. Defaults to none. */
+  agesByYear?: AgesByYear;
+  /** Current calendar year — its picker option reads "Today (YYYY)". */
+  todayYear?: number;
   clientLabel: string;
   spouseLabel: string | null;
 }
@@ -39,10 +42,14 @@ export interface BalanceSheetReportProps {
 type Tab = "household" | "entities";
 
 export default function BalanceSheetReport(props: BalanceSheetReportProps) {
-  const { selectableYears, defaultYear } = props;
-  const [year, setYear] = useState(
-    selectableYears.includes(defaultYear) ? defaultYear : selectableYears[0],
-  );
+  const { selectableYears } = props;
+  // Default to "Today" — a beginning-of-year snapshot of the advisor-entered
+  // current balances, distinct from the current year's end-of-year projection.
+  const [asOf, setAsOf] = useState<AsOfSelection>({ mode: "today" });
+  const asOfMode: AsOfMode = asOf.mode === "today" ? "today" : "eoy";
+  // "Today" anchors to the first projection year (plan start); "eoy" uses the
+  // picked year.
+  const selectedYear = asOf.mode === "today" ? selectableYears[0] : asOf.year;
   const [tab, setTab] = useViewParam<Tab>(["household", "entities"], "household");
 
   const household = useMemo(
@@ -54,9 +61,10 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         notesReceivable: props.notesReceivable,
         familyMembers: props.familyMembers,
         projectionYears: props.projectionYears,
-        selectedYear: year,
+        selectedYear,
+        asOfMode,
       }),
-    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, year],
+    [props.accounts, props.liabilities, props.entities, props.notesReceivable, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
   );
 
   const consolidated = useMemo(
@@ -67,10 +75,11 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
         entities: props.entities,
         familyMembers: props.familyMembers,
         projectionYears: props.projectionYears,
-        selectedYear: year,
+        selectedYear,
         view: "consolidated",
+        asOfMode,
       }),
-    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
+    [props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
   );
 
   const entityModel = useMemo(
@@ -82,11 +91,12 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
             entities: props.entities,
             familyMembers: props.familyMembers,
             projectionYears: props.projectionYears,
-            selectedYear: year,
+            selectedYear,
             view: "entities",
+            asOfMode,
           })
         : null,
-    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, year],
+    [tab, props.accounts, props.liabilities, props.entities, props.familyMembers, props.projectionYears, selectedYear, asOfMode],
   );
 
   const tabClass = (active: boolean) =>
@@ -105,7 +115,13 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
             By Entity
           </button>
         </div>
-        <YearPicker years={selectableYears} value={year} onChange={setYear} />
+        <YearPicker
+          years={selectableYears}
+          value={asOf}
+          onChange={setAsOf}
+          agesByYear={props.agesByYear}
+          todayYear={props.todayYear}
+        />
       </div>
 
       {tab === "household" ? (

@@ -688,7 +688,9 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   //     share so the Business category appears in their personal totals.
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
-    const flat = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, selectedYear, planStartYear).now;
+    const flatCalc = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, selectedYear, planStartYear);
+    // "Today" = beginning-of-year (prior) value; "eoy" = end-of-year (now).
+    const flat = asOfMode === "today" ? flatCalc.prior : flatCalc.now;
     if (flat <= 0) continue;
     const familyShare = familyOwnedFraction(e);
 

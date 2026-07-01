@@ -6,7 +6,7 @@ import {
 } from "@/lib/balance-sheet/attribute";
 import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { FamilyMember } from "@/engine/types";
-import type { AccountLike, LiabilityLike, EntityInfo } from "./view-model";
+import type { AccountLike, LiabilityLike, EntityInfo, AsOfMode } from "./view-model";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
 import { CATEGORY_LABELS, CATEGORY_ORDER, type AssetCategoryKey } from "./tokens";
 
@@ -85,6 +85,10 @@ export interface BuildHouseholdColumnsInput {
   familyMembers: FamilyMember[];
   projectionYears: HouseholdProjYear[];
   selectedYear: number;
+  /** "today" = beginning-of-year balances for the first projection year
+   *  (the advisor-entered current values). "eoy" = end-of-year balances for
+   *  the selected year. Default: "eoy". */
+  asOfMode?: AsOfMode;
 }
 
 function buildCtx(
@@ -145,9 +149,17 @@ function splitToColumns(split: { cooper: number; sarah: number; joint: number })
 
 export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): HouseholdColumnsModel {
   const { accounts, liabilities, entities, notesReceivable, familyMembers, projectionYears, selectedYear } = input;
+  const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
   const planStartYear = projectionYears[0]?.year ?? selectedYear;
-  const yearData = projectionYears.find((y) => y.year === selectedYear);
+  const yearData =
+    asOfMode === "today"
+      ? projectionYears[0]
+      : projectionYears.find((y) => y.year === selectedYear);
   if (!yearData) throw new Error(`Projection year ${selectedYear} not found`);
+  // "Today" reads beginning-of-year values of the first projection year and
+  // anchors flat business valuations (and the model's reported year) to plan
+  // start. "eoy" reads end-of-year values of the selected year.
+  const valuationYear = asOfMode === "today" ? planStartYear : selectedYear;
 
   const ctx = buildCtx(familyMembers, entities);
   for (const a of accounts) {
@@ -170,7 +182,8 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
   for (const acct of accounts) {
     const cat = DB_TO_KEY[acct.category];
     if (!cat) continue;
-    const value = yearData.accountLedgers[acct.id]?.endingValue ?? 0;
+    const ledger = yearData.accountLedgers[acct.id];
+    const value = (asOfMode === "today" ? ledger?.beginningValue : ledger?.endingValue) ?? 0;
     if (value <= 0) continue;
     const cols = splitToColumns(attributeToColumns({ id: acct.id, value, owners: acct.owners }, ctx));
     if (cols.total <= 0) continue; // entirely OOE / held back
@@ -186,7 +199,9 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
   // Family-owned flat-valued businesses → one Business row each.
   for (const e of entities) {
     if (!ctx.inEstateFlatValuedEntityIds.has(e.id)) continue;
-    const flat = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, selectedYear, planStartYear).now;
+    const flatCalc = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, valuationYear, planStartYear);
+    // "Today" = beginning-of-year (prior) value at plan start; "eoy" = end-of-year (now).
+    const flat = asOfMode === "today" ? flatCalc.prior : flatCalc.now;
     if (flat <= 0) continue;
     const familyOwners = (e.owners ?? [])
       .filter((o) => o.kind === "family_member")
@@ -237,5 +252,5 @@ export function buildHouseholdColumns(input: BuildHouseholdColumnsInput): Househ
     total: totalAssets.total - totalLiabilities.total,
   };
 
-  return { selectedYear, hasSpouse, assetCategories, liabilityRows, totalAssets, totalLiabilities, netWorth };
+  return { selectedYear: valuationYear, hasSpouse, assetCategories, liabilityRows, totalAssets, totalLiabilities, netWorth };
 }

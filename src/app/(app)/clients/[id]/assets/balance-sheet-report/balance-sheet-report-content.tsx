@@ -65,7 +65,9 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
 
   const selectableYears = projectionYears.map((y) => y.year);
   const currentYear = new Date().getFullYear();
-  const defaultYear = selectableYears.includes(currentYear) ? currentYear : selectableYears[0];
+  // Household ages per projection year — annotates each year-picker option.
+  const agesByYear: Record<number, { client: number; spouse?: number }> = {};
+  for (const y of result.years) agesByYear[y.year] = y.ages;
   const clientLabel =
     contactRows.find((c) => c.role === "primary")?.firstName ?? tree.client.firstName ?? "Client";
   const spouseContact = contactRows.find((c) => c.role === "spouse");
@@ -83,7 +85,8 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
       familyMembers={inputs.familyMembers}
       projectionYears={projectionYears}
       selectableYears={selectableYears}
-      defaultYear={defaultYear ?? currentYear}
+      agesByYear={agesByYear}
+      todayYear={currentYear}
       clientLabel={clientLabel}
       spouseLabel={spouseLabel}
     />
