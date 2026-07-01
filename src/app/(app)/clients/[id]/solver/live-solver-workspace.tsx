@@ -16,6 +16,7 @@ import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { useSolverSolve } from "./use-solver-solve";
 import { useSolverMc } from "./use-solver-mc";
+import { useSolverDraft, mutationMapFromDraft, type SolverDraft } from "./use-solver-draft";
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
@@ -64,6 +65,8 @@ function growthForType(type: QuickAddType, d: { taxable: number; retirement: num
 
 interface Props {
   clientId: string;
+  /** Authenticated advisor id — scopes the browser-side working-state draft. */
+  userId: string;
   baseClientData: ClientData;
   baseProjection: ProjectionYear[];
   initialSource: "base" | string;
@@ -104,6 +107,7 @@ const SOLVER_LEFT_PCT_DEFAULT = 35;
 
 export function LiveSolverWorkspace({
   clientId,
+  userId,
   baseClientData,
   baseProjection,
   initialSource,
@@ -263,6 +267,10 @@ export function LiveSolverWorkspace({
   const pendingSyntheticRef = useRef<{ accountId: string; ruleId: string } | null>(null);
   // Working-tree year-0 living captured at solve start, for the outcome delta.
   const baselineLivingRef = useRef<number>(0);
+
+  // Shown once, after a saved draft is restored on entry, so the advisor knows
+  // why the plan isn't the clean source. Dismissed on ack or Discard.
+  const [restoredBanner, setRestoredBanner] = useState(false);
 
   const solveController = useSolverSolve({
     clientId,
@@ -503,14 +511,43 @@ export function LiveSolverWorkspace({
   }, [launchMc, activeSolve, cachedBaseSuccess]);
 
   // Auto-run MC once on first entry so both gauges populate without a click.
-  // Never re-fires; after this, edits mark the Scenario stale and the user
-  // presses Recalculate.
+  // Fired by the draft-restore pass (onReady below) — after any restored
+  // mutations are applied — so the first run reflects the restored working tree
+  // rather than the clean source. Never re-fires; after this, edits mark the
+  // Scenario stale and the user presses Recalculate.
   const didAutoRunMc = useRef(false);
-  useEffect(() => {
+  const handleDraftReady = useCallback(() => {
     if (didAutoRunMc.current) return;
     didAutoRunMc.current = true;
     handleGenerateMc();
   }, [handleGenerateMc]);
+
+  // Restore a previously-saved working-state draft (mutations + solve seed +
+  // synthetic-account mixes), keying the map by lever exactly like pushMutation.
+  const handleRestoreDraft = useCallback((draft: SolverDraft) => {
+    setMutationMap(mutationMapFromDraft(draft.mutations));
+    if (draft.solvedSeed != null) setSolvedSeed(draft.solvedSeed);
+    if (draft.savingsAccountMixes.length > 0) {
+      setSavingsAccountMixes(new Map(draft.savingsAccountMixes));
+    }
+    setRestoredBanner(true);
+  }, []);
+
+  // Persist the unsaved working state to localStorage (scoped per client /
+  // advisor / source) and restore it on re-entry, so leaving the solver without
+  // saving a scenario doesn't lose the work. The draft mirrors the live mutation
+  // set: it's removed the moment the set empties (Reset / Update scenario), so
+  // there's no TTL — it lives until the advisor resolves it.
+  useSolverDraft({
+    clientId,
+    userId,
+    source: initialSource,
+    mutations,
+    solvedSeed,
+    savingsAccountMixes,
+    onRestore: handleRestoreDraft,
+    onReady: handleDraftReady,
+  });
 
   const handleReset = useCallback(() => {
     setMutationMap(new Map());
@@ -1126,6 +1163,46 @@ export function LiveSolverWorkspace({
         {/* RIGHT — reports, scroll as one document */}
         <div className="min-h-0 overflow-y-auto">
           <div className="space-y-4 p-4">
+            {restoredBanner ? (
+              <div
+                role="status"
+                className="flex items-center justify-between gap-3 rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-[13px] text-ink"
+              >
+                <span className="flex items-center gap-2">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    className="h-4 w-4 shrink-0 text-accent"
+                    fill="currentColor"
+                  >
+                    <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm-.75 3.75a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Zm.75 2a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 7.25Z" />
+                  </svg>
+                  Restored your unsaved changes from a previous session.
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleReset();
+                      setRestoredBanner(false);
+                    }}
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={() => setRestoredBanner(false)}
+                    className="text-ink-3 transition-colors hover:text-ink"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            ) : null}
             <SolverChartPanel
               currentProjection={currentProjection}
               baseProjection={baseProjection}

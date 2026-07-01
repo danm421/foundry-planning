@@ -12,10 +12,12 @@ import { LiveSolverWorkspace } from "./live-solver-workspace";
 interface Props {
   clientId: string;
   firmId: string;
+  /** Authenticated advisor id — scopes the browser-side working-state draft. */
+  userId: string;
   source: string;
 }
 
-export async function SolverContent({ clientId, firmId, source }: Props) {
+export async function SolverContent({ clientId, firmId, userId, source }: Props) {
   const [baseLoaded, sourceLoaded, scenarioRow] = await Promise.all([
     loadEffectiveTree(clientId, firmId, "base", {}),
     source === "base"
@@ -96,6 +98,7 @@ export async function SolverContent({ clientId, firmId, source }: Props) {
       // previous source's projection.
       key={source}
       clientId={clientId}
+      userId={userId}
       baseClientData={baseLoaded.effectiveTree}
       baseProjection={baseProjection}
       initialSource={source}

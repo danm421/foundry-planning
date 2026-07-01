@@ -37,6 +37,9 @@ vi.mock("../use-solver-solve", () => ({
 }));
 
 beforeEach(() => {
+  // Clear the working-state draft so mutations persisted by one test can't be
+  // restored into the next (the workspace autosaves mutations to localStorage).
+  localStorage.clear();
   startMock.mockReset();
   startMock.mockResolvedValue(undefined);
   capturedOnResult = undefined;
@@ -85,6 +88,7 @@ const baseProjectionYear = {
 
 const baseProps = {
   clientId: "client-id",
+  userId: "user-id",
   baseClientData,
   baseProjection: [baseProjectionYear],
   initialSource: "base" as const,

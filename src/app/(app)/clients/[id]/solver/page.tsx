@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { SolverContent } from "./solver-content";
 import SolverSkeleton from "./loading-skeleton";
@@ -14,7 +14,7 @@ interface PageProps {
 }
 
 export default async function SolverPage({ params, searchParams }: PageProps) {
-  const firmId = await requireOrgId();
+  const { orgId: firmId, userId } = await requireOrgAndUser();
   const { id: clientId } = await params;
   const { scenario } = await searchParams;
 
@@ -26,7 +26,7 @@ export default async function SolverPage({ params, searchParams }: PageProps) {
   return (
     <ScenarioDrawerShell clientId={clientId} scenarioId={scenario}>
       <Suspense fallback={<SolverSkeleton />}>
-        <SolverContent clientId={clientId} firmId={firmId} source={source} />
+        <SolverContent clientId={clientId} firmId={firmId} userId={userId} source={source} />
       </Suspense>
     </ScenarioDrawerShell>
   );

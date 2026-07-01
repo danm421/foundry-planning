@@ -50,6 +50,9 @@ vi.mock("@/components/charts/portfolio-bars-chart", () => ({
 
 const fetchMock = vi.fn();
 beforeEach(() => {
+  // Clear the working-state draft so a mutation persisted by one test can't be
+  // restored into the next (the workspace now autosaves mutations to localStorage).
+  localStorage.clear();
   fetchMock.mockReset();
   routerPush.mockReset();
   routerRefresh.mockReset();
@@ -64,6 +67,7 @@ beforeEach(() => {
 
 const baseProps = {
   clientId: "client-id",
+  userId: "user-id",
   baseClientData: {
     client: {
       firstName: "Cooper",
