@@ -41,10 +41,28 @@ export function formatReinvestmentScope(groupCount: number, accountCount: number
     : `${accountCount} ${accountCount === 1 ? "account" : "accounts"}`;
 }
 
-export function summarizeReinvestment(ri: Reinvestment): string {
+export function summarizeReinvestment(
+  ri: Reinvestment,
+  portfolioGrowthById?: Map<string, number>,
+): string {
   const target = formatReinvestmentScope(ri.groupKeys?.length ?? 0, ri.accountIds.length);
-  const rate = `${Math.round(ri.newGrowthRate * 100)}%`;
+  const rate = `${Math.round(reinvestmentDisplayRate(ri, portfolioGrowthById) * 100)}%`;
   return `${target} · ${rate} from ${ri.year}`;
+}
+
+/** The rate to show in the chip. Prefers the server-resolved `newGrowthRate`;
+ *  for a freshly-added reinvestment (newGrowthRate still 0) it derives the rate
+ *  from the raw inputs — the target portfolio's growth rate or the custom rate. */
+function reinvestmentDisplayRate(
+  ri: Reinvestment,
+  portfolioGrowthById?: Map<string, number>,
+): number {
+  if (ri.newGrowthRate) return ri.newGrowthRate;
+  if (ri.targetType === "model_portfolio" && ri.modelPortfolioId) {
+    return portfolioGrowthById?.get(ri.modelPortfolioId) ?? 0;
+  }
+  if (ri.targetType === "custom") return ri.customGrowthRate ?? 0;
+  return 0;
 }
 
 export function summarizeRelocation(r: Relocation): string {
