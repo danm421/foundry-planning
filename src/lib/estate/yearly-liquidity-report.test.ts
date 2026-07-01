@@ -93,7 +93,13 @@ function deathResult(opts: {
     charitableDeduction: 0,
     stateEstateTax: 0,
     estateAdminExpenses: 0,
-    federalEstateTax: 0,
+    // Engine invariant: totalTaxesAndExpenses === federal + state + admin +
+    // probate. Route the whole figure through federalEstateTax so the transfer
+    // report's component-based `taxAndCosts` (consumed by the yearly-estate-
+    // report via estateDistributionAtYear) reconciles with the liquidity
+    // report's `totalTaxesAndExpenses`-based transfer cost — matching real
+    // projections, where the two are always equal.
+    federalEstateTax: opts.totalTaxesAndExpenses,
     totalTaxesAndExpenses: opts.totalTaxesAndExpenses,
     drainAttributions,
   } as unknown as EstateTaxResult;
