@@ -28,7 +28,6 @@ export function useAnchorRect(
     }
     const selector = `[data-forge-anchor="${anchorId}"]`;
     let el: HTMLElement | null = null;
-    let timedOut = false;
 
     const measure = () => {
       if (!el) return;
@@ -54,13 +53,12 @@ export function useAnchorRect(
     if (!el) observer.observe(document.body, { childList: true, subtree: true });
 
     const timer = setTimeout(() => {
-      timedOut = true;
       observer.disconnect();
       if (!el) setState({ element: null, rect: null, status: "missing" });
     }, timeoutMs);
 
     const onReflow = () => {
-      if (el && !timedOut) measure();
+      if (el) measure();
     };
     window.addEventListener("scroll", onReflow, true);
     window.addEventListener("resize", onReflow);

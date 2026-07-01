@@ -45,4 +45,24 @@ describe("useAnchorRect", () => {
     expect(result.current.status).toBe("idle");
     expect(result.current.element).toBeNull();
   });
+
+  it("keeps recomputing the rect on scroll after the resolve timeout elapses", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("div");
+    el.setAttribute("data-forge-anchor", "persist");
+    const spy = vi.spyOn(el, "getBoundingClientRect");
+    document.body.appendChild(el);
+    const { result } = renderHook(() => useAnchorRect("persist", { timeoutMs: 1000 }));
+    expect(result.current.status).toBe("found");
+    const callsAfterResolve = spy.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(1100); // resolve timeout fires
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    // Reflow must still fire for a successfully-found anchor after the timeout window.
+    expect(spy.mock.calls.length).toBeGreaterThan(callsAfterResolve);
+    expect(result.current.status).toBe("found");
+  });
 });
