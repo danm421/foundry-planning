@@ -18,6 +18,7 @@ import {
   renameConversation,
   deleteConversation,
 } from "./actions";
+import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/custom-events";
 import { ConversationList } from "./conversation-list";
 import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
@@ -25,6 +26,10 @@ import { ImportReviewLink } from "./import-review-link";
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
+
+// NAVIGATE_ALLOWLIST_PREFIXES is imported from custom-events.ts above — single
+// source of truth for the client-side nav guard (defence in depth; the server
+// already gated the emit). Previously duplicated here as NAVIGATE_ALLOWLIST_PREFIXES.
 
 /**
  * Human-readable labels for tool names that appear in the status line.
@@ -63,9 +68,9 @@ function toolStatusLabel(status: string): string {
 type Thread = { id: string; title: string; updatedAt?: Date | string };
 
 interface ForgePanelProps {
-  clientId: string;
-  /** Household display name (e.g. "Jane & John Smith") for the context line. */
-  clientName: string;
+  clientId: string | null;
+  /** Household display name (e.g. "Jane & John Smith") for the context line. Optional in global mode. */
+  clientName?: string;
   /** Scenario id → display name, for the scenario context line. */
   scenarioNames: Record<string, string>;
   /** Test-only: render the panel open without the provider toggle. */
@@ -155,6 +160,9 @@ export function ForgePanel({
   }, [open, close]);
 
   // Shared helper so all three refresh sites stay DRY.
+  // Pass clientId directly: null (global mode) → SQL IS NULL filter;
+  // string (client mode) → SQL eq filter. Never coerce null→undefined here
+  // because undefined means "no filter" (returns all threads).
   function refetchThreads() {
     listMyConversations(clientId)
       .then((t) => setThreads(t as Thread[]))
@@ -186,7 +194,7 @@ export function ForgePanel({
   // lastToolRender is intentionally NOT consumed yet: no renderer (plumbing only).
   useEffect(() => {
     if (!pendingNavigate) return;
-    const ok = ["/clients/", "/cma/"].some((p) => pendingNavigate.startsWith(p));
+    const ok = NAVIGATE_ALLOWLIST_PREFIXES.some((p) => pendingNavigate.startsWith(p));
     if (ok) router.push(pendingNavigate);
     setPendingNavigate(null);
   }, [pendingNavigate, router, setPendingNavigate]);
@@ -195,7 +203,7 @@ export function ForgePanel({
   // (defence in depth — the server already gated the emit) before routing.
   const jumpToPage = useCallback(
     (href: string) => {
-      if (["/clients/", "/cma/"].some((p) => href.startsWith(p))) router.push(href);
+      if (NAVIGATE_ALLOWLIST_PREFIXES.some((p) => href.startsWith(p))) router.push(href);
     },
     [router],
   );
@@ -274,7 +282,8 @@ export function ForgePanel({
     // A new turn supersedes the prior approval receipt.
     setResolvedApproval(null);
     // Send-with-files: run the import pipeline, then immediately engage the agent.
-    if (attached.length > 0) {
+    // Import is a client-only affordance; the attach button is hidden in global mode.
+    if (attached.length > 0 && clientId != null) {
       const files = attached;
       const prompt = input.trim(); // may be empty — the attachment is the turn
       setAttached([]);
@@ -375,12 +384,21 @@ export function ForgePanel({
         </div>
 
         {/* Context line — who/what/where Forge is scoped to. Humanized: client
-            name, scenario, and a friendly page label (no raw IDs or route keys). */}
+            name, scenario, and a friendly page label (no raw IDs or route keys).
+            In global mode (clientId == null) the client/scenario chips are hidden. */}
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 border-b border-hair px-4 py-2 text-[11px] text-ink-3">
-          <span data-testid="chip-client" className="text-ink-2">{clientName}</span>
-          <span aria-hidden className="text-ink-4">·</span>
-          <span data-testid="chip-scenario" className="text-ink-2">{scenarioLabel}</span>
-          <span aria-hidden className="text-ink-4">·</span>
+          {clientId != null && clientName && (
+            <>
+              <span data-testid="chip-client" className="text-ink-2">{clientName}</span>
+              <span aria-hidden className="text-ink-4">·</span>
+            </>
+          )}
+          {clientId != null && (
+            <>
+              <span data-testid="chip-scenario" className="text-ink-2">{scenarioLabel}</span>
+              <span aria-hidden className="text-ink-4">·</span>
+            </>
+          )}
           <span data-testid="chip-page" className="text-ink-2">{pageLabel}</span>
         </div>
 
@@ -528,7 +546,7 @@ export function ForgePanel({
             </div>
           )}
 
-          {importResult && (
+          {importResult && clientId != null && (
             <ImportReviewLink
               clientId={clientId}
               importId={importResult.importId}
@@ -738,57 +756,62 @@ export function ForgePanel({
             }}
           />
           <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={locked}
-              aria-label="Attach a document"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
-            >
-              {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
-                  (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
-              <svg
-                aria-hidden
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {/* Attach button — client-only (imports require a client context). */}
+            {clientId != null && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={locked}
+                aria-label="Attach a document"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
               >
-                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            </button>
-            {/* Explicit transcript affordance — opens an inline paste box. */}
-            <button
-              type="button"
-              onClick={() => setShowTranscriptPaste((v) => !v)}
-              disabled={locked}
-              aria-label="Paste a meeting transcript"
-              aria-pressed={showTranscriptPaste}
-              className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
-            >
-              {/* Inline doc-text icon */}
-              <svg
-                aria-hidden
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                {/* Inline Lucide-style paperclip — lucide-react isn't a repo dep
+                    (see theme-toggle.tsx); outline, 1.5 stroke, currentColor. */}
+                <svg
+                  aria-hidden
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
+            )}
+            {/* Explicit transcript affordance — client-only (transcript tools need a client context). */}
+            {clientId != null && (
+              <button
+                type="button"
+                onClick={() => setShowTranscriptPaste((v) => !v)}
+                disabled={locked}
+                aria-label="Paste a meeting transcript"
+                aria-pressed={showTranscriptPaste}
+                className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
               >
-                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-                <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
-              </svg>
-              Transcript
-            </button>
+                {/* Inline doc-text icon */}
+                <svg
+                  aria-hidden
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                  <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
+                </svg>
+                Transcript
+              </button>
+            )}
             <textarea
               ref={composerRef}
               aria-label="Ask Forge"

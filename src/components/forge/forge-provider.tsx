@@ -13,7 +13,7 @@ import { useScenarioState } from "@/hooks/use-scenario-state";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
 
 interface ForgeContextValue {
-  clientId: string;
+  clientId: string | null;
   /** Live scenario id from the URL (null = base case). Re-read every render so
    *  each turn captures the current scope (scenario-drift guard). */
   scenarioId: string | null;
@@ -43,31 +43,41 @@ export function ForgeProvider({
   clientId,
   children,
 }: {
-  clientId: string;
+  clientId: string | null;
   children: ReactNode;
 }) {
-  const { scenarioId } = useScenarioState(clientId);
+  // Call hooks unconditionally (Rules of Hooks).
+  // Pass a stable sentinel when global so useScenarioState always has a string arg.
+  const liveScenario = useScenarioState(clientId ?? "__none__");
   const pathname = usePathname();
   const drawer = useScenarioDrawerOptional();
   const [isOpen, setIsOpen] = useState(false);
 
   const open = useCallback(() => {
-    drawer?.setOpen(false); // mutual exclusion: close the scenario drawer
+    if (clientId) drawer?.setOpen(false); // mutual exclusion only in client scope
     setIsOpen(true);
-  }, [drawer]);
+  }, [drawer, clientId]);
 
   const close = useCallback(() => setIsOpen(false), []);
 
   const toggle = useCallback(() => {
     setIsOpen((wasOpen) => {
-      if (!wasOpen) drawer?.setOpen(false);
+      if (!wasOpen && clientId) drawer?.setOpen(false);
       return !wasOpen;
     });
-  }, [drawer]);
+  }, [drawer, clientId]);
 
   return (
     <ForgeCtx.Provider
-      value={{ clientId, scenarioId, pathname, open, close, toggle, isOpen }}
+      value={{
+        clientId,
+        scenarioId: clientId ? liveScenario.scenarioId : null,
+        pathname,
+        open,
+        close,
+        toggle,
+        isOpen,
+      }}
     >
       {children}
     </ForgeCtx.Provider>

@@ -1,7 +1,7 @@
 // src/domain/forge/context.ts
-import type { ForgeAuthContext } from "./state";
+import type { ForgeAuthContext, ForgeGlobalAuthContext } from "./state";
 
-export type { ForgeAuthContext } from "./state";
+export type { ForgeAuthContext, ForgeGlobalAuthContext } from "./state";
 
 /**
  * Everything a tool needs, all derived server-side. The model never supplies
@@ -18,5 +18,19 @@ export function buildToolContext(
   ctx: ForgeAuthContext,
   conversationId: string,
 ): ForgeToolContext {
+  return { ctx, conversationId };
+}
+
+/** Everything a GLOBAL (clientless) tool needs. Mirrors ForgeToolContext but
+ *  its ctx has no clientId/scenarioId — so a global tool can't read client scope. */
+export type ForgeGlobalToolContext = {
+  ctx: ForgeGlobalAuthContext;
+  conversationId: string;
+};
+
+export function buildGlobalToolContext(
+  ctx: ForgeGlobalAuthContext,
+  conversationId: string,
+): ForgeGlobalToolContext {
   return { ctx, conversationId };
 }

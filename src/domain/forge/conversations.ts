@@ -1,5 +1,5 @@
 // src/domain/forge/conversations.ts
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { forgeConversations } from "@/db/schema";
 
@@ -27,11 +27,18 @@ export async function createConversation(input: {
 }
 
 /** List the caller's own threads, newest-touched first. Org + user scoped.
- *  Pass `clientId` to narrow to threads for a single client. */
-export async function listMyConversations(userId: string, firmId: string, clientId?: string) {
-  const where = clientId
-    ? and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId), eq(forgeConversations.clientId, clientId))
-    : and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId));
+ *  - Pass a `clientId` string to narrow to threads for a single client.
+ *  - Pass `null` to return ONLY clientless (global) threads (IS NULL in SQL,
+ *    applied before `.limit(50)` so the limit never truncates global threads away).
+ *  - Omit / pass `undefined` to return all threads regardless of clientId. */
+export async function listMyConversations(userId: string, firmId: string, clientId?: string | null) {
+  const baseFilter = and(eq(forgeConversations.userId, userId), eq(forgeConversations.firmId, firmId));
+  const where =
+    clientId === null
+      ? and(baseFilter, isNull(forgeConversations.clientId))
+      : typeof clientId === "string"
+        ? and(baseFilter, eq(forgeConversations.clientId, clientId))
+        : baseFilter;
   return db
     .select({
       id: forgeConversations.id,

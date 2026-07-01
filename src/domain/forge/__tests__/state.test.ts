@@ -1,7 +1,7 @@
 // src/domain/forge/__tests__/state.test.ts
 import { describe, it, expect } from "vitest";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { ForgeState, mergeToolErrorCounts, type ForgeAuthContext } from "../state";
+import { ForgeState, mergeToolErrorCounts, type ForgeAuthContext, type ForgeGlobalAuthContext } from "../state";
 
 const ctx: ForgeAuthContext = {
   userId: "u1",
@@ -46,6 +46,22 @@ describe("ForgeState", () => {
   it("declares verifyAttempts and verifyDecision channels", () => {
     expect(ForgeState.spec).toHaveProperty("verifyAttempts");
     expect(ForgeState.spec).toHaveProperty("verifyDecision");
+  });
+});
+
+describe("ForgeState.authContext accepts a global (clientless) context", () => {
+  it("last-write-wins reducer carries a global context", () => {
+    const global: ForgeGlobalAuthContext = { userId: "u1", firmId: "f1" };
+    // LangGraph uses `.operator` (not `.reducer`) for the binary reduce function
+    const reduce = (ForgeState.spec.authContext as {
+      operator?: (a: unknown, b: unknown) => unknown;
+    }).operator!;
+    const reduced = reduce(
+      { userId: "u0", firmId: "f0", clientId: "c0", scenarioId: "base" },
+      global,
+    ) as ForgeGlobalAuthContext;
+    expect(reduced).toEqual(global);
+    expect("clientId" in reduced).toBe(false);
   });
 });
 

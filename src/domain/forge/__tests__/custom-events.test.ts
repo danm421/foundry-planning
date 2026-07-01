@@ -32,3 +32,18 @@ describe("custom events", () => {
     expect(dispatch).toHaveBeenCalledWith("activity", { label: "Loading plan…" });
   });
 });
+
+describe("navigate allowlist covers global product-help targets", () => {
+  it("allows /crm/new and the bare /clients list", async () => {
+    await expect(emitNavigate("/crm/new")).resolves.toBeUndefined();
+    await expect(emitNavigate("/clients")).resolves.toBeUndefined();
+    await expect(emitNavigate("/tasks")).resolves.toBeUndefined();
+  });
+  it("still rejects an external url", async () => {
+    await expect(emitNavigate("https://evil.example")).rejects.toThrow();
+  });
+  it("exports the broadened prefix list", () => {
+    expect(NAVIGATE_ALLOWLIST_PREFIXES).toContain("/crm");
+    expect(NAVIGATE_ALLOWLIST_PREFIXES).toContain("/tasks");
+  });
+});

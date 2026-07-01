@@ -4,10 +4,11 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { BaseCheckpointSaver, LangGraphRunnableConfig } from "@langchain/langgraph";
-import { ForgeState, type ForgeAuthContext } from "./state";
+import { ForgeState, type ForgeAuthContext, type ForgeAnyAuthContext } from "./state";
 import { chatModel } from "./llm"; // Phase 0 infra section: AzureChatOpenAI factory
 import { buildTools, WRITE_TOOL_NAMES } from "./tools";
-import { buildToolContext } from "./context";
+import { buildGlobalTools } from "./tools/global-index";
+import { buildToolContext, buildGlobalToolContext } from "./context";
 import { getStore } from "./store";
 import { parseResumeDecisions, parseMeetingReviewResume } from "./interrupts";
 import { routeAfterAgent, MEETING_REVIEW_TOOL } from "./routing";
@@ -69,13 +70,17 @@ function routeAfterToolExec(state: typeof ForgeState.State): "agent" | "escalate
  *   Supplied by the route (which has DB/Clerk access) so graph.ts stays pure.
  */
 export function buildGraph(
-  authContext: ForgeAuthContext,
+  authContext: ForgeAnyAuthContext,
   checkpointer: BaseCheckpointSaver,
   conversationId: string,
   systemPrompt: () => string,
 ) {
-  const toolCtx = buildToolContext(authContext, conversationId);
-  const tools = buildTools(toolCtx);
+  const isClient = "clientId" in authContext;
+  const tools = isClient
+    ? buildTools(buildToolContext(authContext, conversationId))
+    : buildGlobalTools(buildGlobalToolContext(authContext, conversationId));
+  // clientId for audit metadata — undefined in global mode (recordAudit clientId is optional).
+  const auditClientId = isClient ? authContext.clientId : undefined;
   const model = chatModel().bindTools(tools);
   const toolNode = new ToolNode(tools);
   // Map for the approval node to invoke a confirmed write tool by name. The args
@@ -95,12 +100,13 @@ export function buildGraph(
     // OFF (validate via the eval harness before enabling); classifyIntent has a
     // full-tool fallback so a misclassification never hides every tool.
     let turnModel = model;
-    if (process.env.FORGE_TIERING_ENABLED === "true") {
+    if (isClient && process.env.FORGE_TIERING_ENABLED === "true") {
       const lastHuman = [...state.messages].reverse().find((m) => m instanceof HumanMessage);
       const text =
         lastHuman && typeof lastHuman.content === "string" ? lastHuman.content : "";
+      const clientToolCtx = buildToolContext(authContext, conversationId);
       const bundles = await classifyIntent(text);
-      turnModel = chatModel().bindTools(buildTools(toolCtx, bundles));
+      turnModel = chatModel().bindTools(buildTools(clientToolCtx, bundles));
     }
     const response = await turnModel.invoke([system, ...window]);
     return { messages: [response] };
@@ -117,9 +123,9 @@ export function buildGraph(
   }
 
   async function approvalNode(state: typeof ForgeState.State) {
-    // authContext is the server-derived scope (firm/client); it's the `ctx`
-    // describeProposedWrite + the audit calls below need.
-    const ctx = authContext;
+    // Writes/meeting tools exist only in client mode (Plan 1). Assert client
+    // scope so describeProposedWrite + the audit's clientId read are well-typed.
+    const ctx = authContext as ForgeAuthContext;
     const last = state.messages[state.messages.length - 1] as AIMessage;
     const writeCalls = (last.tool_calls ?? []).filter((c) => WRITE_TOOL_NAMES.has(c.name));
     // Rich, best-effort previews for the approval card (field-level diff + plan
@@ -159,7 +165,7 @@ export function buildGraph(
         action: "forge.write_proposed",
         resourceType: "forge_conversation",
         resourceId: conversationId,
-        clientId: ctx.clientId,
+        clientId: auditClientId,
         firmId: ctx.firmId,
         metadata: { tool: c.name, toolCallId: c.id },
       });
@@ -188,7 +194,7 @@ export function buildGraph(
             action: "forge.write_rejected",
             resourceType: "forge_conversation",
             resourceId: conversationId,
-            clientId: ctx.clientId,
+            clientId: auditClientId,
             firmId: ctx.firmId,
             metadata: { tool: c.name, toolCallId: c.id },
           });
@@ -208,7 +214,9 @@ export function buildGraph(
   }
 
   async function meetingReviewNode(state: typeof ForgeState.State) {
-    const ctx = authContext;
+    // Writes/meeting tools exist only in client mode (Plan 1). Assert client
+    // scope so describeProposedWrite + the audit's clientId read are well-typed.
+    const ctx = authContext as ForgeAuthContext;
     const last = state.messages[state.messages.length - 1] as AIMessage;
     const call = (last.tool_calls ?? []).find((c) => c.name === MEETING_REVIEW_TOOL);
     if (!call?.id) return { messages: [] };
@@ -238,7 +246,7 @@ export function buildGraph(
       action: "forge.write_proposed",
       resourceType: "forge_conversation",
       resourceId: conversationId,
-      clientId: ctx.clientId,
+      clientId: auditClientId,
       firmId: ctx.firmId,
       metadata: { tool: MEETING_REVIEW_TOOL, toolCallId: call.id },
     });
@@ -265,7 +273,7 @@ export function buildGraph(
         action: "forge.write_rejected",
         resourceType: "forge_conversation",
         resourceId: conversationId,
-        clientId: ctx.clientId,
+        clientId: auditClientId,
         firmId: ctx.firmId,
         metadata: { tool: MEETING_REVIEW_TOOL, toolCallId: call.id },
       });

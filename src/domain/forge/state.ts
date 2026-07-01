@@ -17,6 +17,20 @@ export type ForgeAuthContext = {
   scenarioId: string;
 };
 
+/**
+ * Global (clientless) scope — Forge running off-client (e.g. on the /clients
+ * list). Carries firm + user only; it has NO clientId/scenarioId, so a global
+ * tool cannot read client scope (the absence is a compile-time guarantee).
+ */
+export type ForgeGlobalAuthContext = {
+  userId: string;
+  firmId: string;
+};
+
+/** Either scope the graph may run under. Discriminate structurally with
+ *  `"clientId" in ctx` (true ⇒ client mode). */
+export type ForgeAnyAuthContext = ForgeAuthContext | ForgeGlobalAuthContext;
+
 export type VerifyDecision = "pass" | "retry" | "caveat";
 
 /**
@@ -42,7 +56,7 @@ export function mergeToolErrorCounts(
  */
 export const ForgeState = Annotation.Root({
   ...MessagesAnnotation.spec,
-  authContext: Annotation<ForgeAuthContext>({ reducer: (_, b) => b }),
+  authContext: Annotation<ForgeAnyAuthContext>({ reducer: (_, b) => b }),
   toolErrorCounts: Annotation<Record<string, number>>({
     reducer: mergeToolErrorCounts,
     default: () => ({}),

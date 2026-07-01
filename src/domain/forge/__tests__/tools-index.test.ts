@@ -1,6 +1,7 @@
 // src/domain/forge/__tests__/tools-index.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { buildToolContext } from "../context";
+import { buildGlobalTools } from "../tools/global-index";
 import type { ForgeAuthContext } from "../state";
 
 // Stub the IO/engine deps the read+compute+whatif tools import at module load
@@ -351,6 +352,17 @@ describe("buildTools bundles", () => {
 
   it("narrowing to a subset is strictly smaller than the full set", () => {
     expect(buildTools(TOOL_CTX, ["read", "memory"]).length).toBeLessThan(buildTools(TOOL_CTX).length);
+  });
+});
+
+// ── Global tool set (clientless) ──────────────────────────────────────────────
+// buildGlobalTools has no IO deps — no mocks needed beyond those already set.
+describe("global tool set (clientless)", () => {
+  const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
+    .map((t) => t.name)
+    .sort();
+  it("is exactly the read-only help + navigation set", () => {
+    expect(names).toEqual(["cite_page", "get_help", "open_page", "search_help"]);
   });
 });
 

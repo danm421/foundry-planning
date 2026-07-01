@@ -26,8 +26,16 @@ export interface PageLinkFrame {
 }
 export type ForgeCustomFrame = ToolRenderFrame | NavigateFrame | ActivityFrame | PageLinkFrame;
 
-/** Only in-app paths may be navigated; never an external URL. */
-export const NAVIGATE_ALLOWLIST_PREFIXES = ["/clients/", "/cma/"];
+/** Only in-app paths may be navigated; never an external URL. Covers the
+ *  advisor app's navigable surface (client + global product-help targets). */
+export const NAVIGATE_ALLOWLIST_PREFIXES = [
+  "/clients",
+  "/cma",
+  "/crm",
+  "/tasks",
+  "/data-collection",
+  "/settings",
+];
 
 export async function emitToolRender(name: string, status: ToolRenderFrame["status"], data: unknown) {
   await dispatchCustomEvent("tool_render", { name, status, data });
