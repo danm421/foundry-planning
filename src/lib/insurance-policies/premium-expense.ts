@@ -73,7 +73,8 @@ export function resolvePremiumSchedule(
     }
     const years = Object.keys(overrides).map(Number);
     if (years.length === 0) return null;
-    const startYear = Math.max(input.currentYear, Math.min(...years));
+    let startYear = Math.max(input.currentYear, Math.min(...years));
+    if (acct.activationYear != null) startYear = Math.max(startYear, acct.activationYear);
     const endYear = Math.max(...years);
     if (endYear < startYear) return null;
     return { startYear, endYear, mode: "scheduled", annualAmount: 0, overrides };
@@ -82,8 +83,9 @@ export function resolvePremiumSchedule(
   if (policy.premiumAmount <= 0) return null;
 
   const issueYear = policy.termIssueYear ?? input.currentYear;
-  const startYear =
+  let startYear =
     issueYear < input.currentYear ? input.currentYear : issueYear;
+  if (acct.activationYear != null) startYear = Math.max(startYear, acct.activationYear);
 
   let endYear: number;
   if (policy.premiumYears != null) {
