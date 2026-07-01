@@ -91,6 +91,9 @@ export interface AccountFormInitial {
   parentAccountId?: string | null;
   custodian?: string | null;
   accountNumberLast4?: string | null;
+  /** Future-activation year (null ⇒ active today). */
+  activationYear?: number | null;
+  activationYearRef?: YearRef | null;
 }
 
 export interface BusinessOption {
@@ -559,6 +562,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Future-activation year — account doesn't exist in the projection until
+  // this year (inheritance, planned new account, etc.). Declared ahead of
+  // `currentSerialized` below (which references it) rather than alongside
+  // the savings-year state further down, which runs after this useMemo.
+  const [activationEnabled, setActivationEnabled] = useState<boolean>(
+    initial?.activationYear != null || initial?.activationYearRef != null,
+  );
+  const [activationYear, setActivationYear] = useState<number>(
+    initial?.activationYear ?? new Date().getFullYear(),
+  );
+  const [activationYearRef, setActivationYearRef] = useState<YearRef | null>(
+    initial?.activationYearRef ?? null,
+  );
+
   // ── Dirty-tracking for autosave ─────────────────────────────────────────────
   // Serialize every controlled field into a snapshot string so tab-switch
   // autosave can tell whether there are unsaved changes.
@@ -605,6 +622,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     customAllocations,
     custodian,
     accountNumberLast4,
+    activationEnabled,
+    activationYear,
+    activationYearRef,
   }), [
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
@@ -615,6 +635,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     ticker, isPublic, pricePerShare, autoCreateDestination, sellToCover,
     withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
     defaultSellYear, defaultSellPercentPerYear, defaultSellStartYear,
+    activationEnabled, activationYear, activationYearRef,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -928,6 +949,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       custodian: custodian.trim() === "" ? null : custodian.trim(),
       accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
       hsaCoverage: isHsa ? hsaCoverage : null,
+      activationYear: activationEnabled ? activationYear : null,
+      activationYearRef: activationEnabled ? activationYearRef : null,
     };
 
     setLoading(true);
@@ -1019,7 +1042,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
-    saveEquityAccount,
+    saveEquityAccount, activationEnabled, activationYear, activationYearRef,
   ]);
 
   useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
@@ -1123,6 +1146,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       custodian: custodian.trim() === "" ? null : custodian.trim(),
       accountNumberLast4: accountNumberLast4.trim() === "" ? null : accountNumberLast4.trim(),
       hsaCoverage: isHsa ? hsaCoverage : null,
+      activationYear: activationEnabled ? activationYear : null,
+      activationYearRef: activationEnabled ? activationYearRef : null,
     };
 
     try {
