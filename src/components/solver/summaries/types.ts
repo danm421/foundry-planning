@@ -1,1 +1,1 @@
-export type SummaryKey = "retirement" | "tax" | "medicare" | "estate" | "lifeInsurance";
+export type SummaryKey = "retirement" | "tax" | "taxComparison" | "medicare" | "estate" | "lifeInsurance";

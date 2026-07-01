@@ -5,18 +5,22 @@ import type { SummaryKey } from "./types";
 
 import { buildRetirementSummaryData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import { buildTaxSummaryData } from "@/lib/presentations/pages/tax-summary/view-model";
+import { buildTaxComparisonData } from "@/lib/presentations/pages/tax-comparison/view-model";
 import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import { buildEstateSummaryData } from "@/lib/presentations/pages/estate-summary/view-model";
 import { buildLifeInsuranceSummaryData } from "@/lib/presentations/pages/life-insurance-summary/view-model";
 
 import { RETIREMENT_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/retirement-summary/options-schema";
 import { TAX_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/tax-summary/options-schema";
+import { TAX_COMPARISON_OPTIONS_DEFAULT } from "@/lib/presentations/pages/tax-comparison/options-schema";
 import { MEDICARE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/medicare-summary/options-schema";
 import { ESTATE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/estate-summary/options-schema";
 import { LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import { WORKING_SCENARIO_ID } from "@/lib/solver/comparison-bundles";
 
 import { RetirementSummaryView } from "./retirement-summary-view";
 import { TaxSummaryView } from "./tax-summary-view";
+import { TaxComparisonView } from "./tax-comparison-view";
 import { MedicareSummaryView } from "./medicare-summary-view";
 import { EstateSummaryView } from "./estate-summary-view";
 import { LifeInsuranceSummaryView } from "./life-insurance-summary-view";
@@ -42,6 +46,12 @@ export const SUMMARY_REGISTRY: Record<SummaryKey, SummaryDef> = {
     Component: TaxSummaryView,
     needs: {},
   },
+  taxComparison: {
+    label: "Tax Comparison",
+    build: (ctx) => buildTaxComparisonData(ctx, { ...TAX_COMPARISON_OPTIONS_DEFAULT, scenarioId: WORKING_SCENARIO_ID }),
+    Component: TaxComparisonView,
+    needs: {},
+  },
   medicare: {
     label: "Medicare",
     build: (ctx) => buildMedicareSummaryData(ctx, MEDICARE_SUMMARY_OPTIONS_DEFAULT),
@@ -62,5 +72,5 @@ export const SUMMARY_REGISTRY: Record<SummaryKey, SummaryDef> = {
   },
 };
 
-const SUMMARY_TAB_ORDER: SummaryKey[] = ["retirement", "tax", "medicare", "estate", "lifeInsurance"];
+const SUMMARY_TAB_ORDER: SummaryKey[] = ["retirement", "tax", "taxComparison", "medicare", "estate", "lifeInsurance"];
 export const SUMMARY_TABS = SUMMARY_TAB_ORDER.map((key) => ({ key, label: SUMMARY_REGISTRY[key].label }));
