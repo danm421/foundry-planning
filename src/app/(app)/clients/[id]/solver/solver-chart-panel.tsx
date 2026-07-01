@@ -297,6 +297,7 @@ export function SolverChartPanel({
           mcSuccessRate={mcSuccessRate}
           baseClientData={baseTree}
           baseProjection={baseProjection}
+          extraAccountMixes={extraAccountMixes}
           activeSummary={activeSummary}
           onSummaryChange={onSummaryChange}
         />

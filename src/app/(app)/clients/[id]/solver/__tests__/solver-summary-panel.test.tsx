@@ -30,6 +30,7 @@ const base = {
   clientName: "Ada", spouseName: null, mcSuccessRate: 0.9,
   baseClientData: { client: {} } as never,
   baseProjection: years,
+  extraAccountMixes: [],
 };
 
 describe("SolverSummaryPanel", () => {
