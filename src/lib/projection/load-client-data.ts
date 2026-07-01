@@ -797,6 +797,11 @@ export const loadClientDataWithContext = cache(
       acct.revocableTrustName = a.revocableTrustId
         ? (revocableTrustNameById.get(a.revocableTrustId) ?? null)
         : null;
+      acct.activationYear =
+        a.activationYear == null && a.activationYearRef == null
+          ? null
+          : resolvedStart(a.activationYearRef ?? null, a.activationYear ?? settings.planStartYear);
+      acct.activationYearRef = a.activationYearRef ?? null;
       return acct;
     });
 
