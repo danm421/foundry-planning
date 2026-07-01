@@ -122,6 +122,16 @@ import {
 import { summarizeTaxSummaryOptions } from "@/lib/presentations/pages/tax-summary/summarize-options";
 import { estimateTaxSummaryPageCount } from "@/lib/presentations/pages/tax-summary/estimate-page-count";
 import { TaxSummaryPagePdf } from "./pages/tax-summary/page-pdf";
+import { buildTaxComparisonData } from "@/lib/presentations/pages/tax-comparison/view-model";
+import type { TaxComparisonPageData } from "@/lib/presentations/pages/tax-comparison/view-model";
+import {
+  taxComparisonOptionsSchema,
+  TAX_COMPARISON_OPTIONS_DEFAULT,
+  type TaxComparisonOptions,
+} from "@/lib/presentations/pages/tax-comparison/options-schema";
+import { summarizeTaxComparisonOptions } from "@/lib/presentations/pages/tax-comparison/summarize-options";
+import { estimateTaxComparisonPageCount } from "@/lib/presentations/pages/tax-comparison/estimate-page-count";
+import { TaxComparisonPagePdf } from "./pages/tax-comparison/page-pdf";
 import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import {
@@ -898,6 +908,26 @@ export const taxSummaryPage: PresentationPage<TaxSummaryPageData, TaxSummaryOpti
   renderPdf: (input) => <TaxSummaryPagePdf {...input} />,
 };
 
+export const taxComparisonPage: PresentationPage<TaxComparisonPageData, TaxComparisonOptions> = {
+  id: "taxComparison",
+  title: "Tax Comparison",
+  description: "Base Case vs. a selected scenario: lifetime tax deltas, taxes-by-year with a base overlay, bracket-exposure change, and the Roth/pre-tax/taxable shift at retirement.",
+  category: "Comparison",
+  defaultOptions: TAX_COMPARISON_OPTIONS_DEFAULT,
+  optionsSchema: taxComparisonOptionsSchema,
+  summarizeOptions: summarizeTaxComparisonOptions,
+  estimatePageCount: () => estimateTaxComparisonPageCount(),
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
+  inlineScenarioOption: {
+    get: (o) => o.scenarioId,
+    set: (o, scenarioId) => ({ ...o, scenarioId }),
+    placeholder: "Compare to…",
+  },
+  buildData: (ctx, options) => buildTaxComparisonData(ctx, options),
+  renderPdf: (input) => <TaxComparisonPagePdf {...input} />,
+};
+
 export const medicareSummaryPage: PresentationPage<MedicareSummaryPageData, MedicareSummaryOptions> = {
   id: "medicareSummary",
   title: "Medicare & IRMAA Summary",
@@ -960,6 +990,7 @@ export const PRESENTATION_PAGES = {
   cashFlowAssets: cashFlowAssetsPage,
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
+  taxComparison: taxComparisonPage,
   medicareSummary: medicareSummaryPage,
   retirementSummary: retirementSummaryPage,
   incomeTaxIncome: incomeTaxIncomePage,
