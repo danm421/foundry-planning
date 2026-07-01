@@ -22,6 +22,7 @@ export function useAnchorRect(
 
   useEffect(() => {
     if (!anchorId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resolution must run in an effect (document is unavailable during SSR); the synchronous "resolving"/reset is the intended one-render transition, and all other setStates fire in async observer/timer/reflow callbacks. Rule fires once per effect, covering the whole body.
       setState(IDLE);
       return;
     }
@@ -44,9 +45,8 @@ export function useAnchorRect(
     };
 
     setState({ element: null, rect: null, status: "resolving" });
-    if (tryResolve()) {
-      // fall through to attach live listeners below
-    }
+    // Resolve synchronously if the anchor is already mounted; the observer below handles async mounts.
+    tryResolve();
 
     const observer = new MutationObserver(() => {
       if (!el && tryResolve()) observer.disconnect();
