@@ -8,7 +8,9 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import type { RothConversionType, RothConversion } from "@/engine/types";
+import type { RothConversionType, RothConversion, Account } from "@/engine/types";
+import type { GrowthSource } from "@/lib/investments/allocation";
+import { GrowthRateField, parseGrowthSourceSelection } from "./growth-rate-field";
 
 const ROTH_SUBTYPES = new Set(["roth_ira"]);
 const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "403b", "sep_ira", "simple_ira"]);
@@ -46,6 +48,14 @@ export interface RothConversionInitialData {
   inflationStartYear: number | null;
 }
 
+export interface RothAccountCreation {
+  owners: { familyMemberId: string; label: string }[];
+  modelPortfolios: { id: string; name: string; growthRate: number }[];
+  retirementGrowthDefault: number;
+  resolvedInflationRate: number;
+  onCreate: (account: Account) => void;
+}
+
 interface Props {
   clientId: string;
   accounts: {
@@ -62,6 +72,7 @@ interface Props {
   clientFirstName?: string;
   spouseFirstName?: string;
   initialData?: RothConversionInitialData;
+  rothAccountCreation?: RothAccountCreation;   // solver-only: enables inline Roth-IRA creation
   onClose: () => void;
   onSaved: () => void;
   /** When provided, the form emits the assembled RothConversion engine object
@@ -76,19 +87,43 @@ export default function AddRothConversionForm({
   clientFirstName,
   spouseFirstName,
   initialData,
+  rothAccountCreation,
   onClose,
   onSaved,
   onSubmitDraft,
 }: Props) {
   const writer = useScenarioWriter(clientId);
 
+  const [newRothAccounts, setNewRothAccounts] = useState<Account[]>([]);
+  const [addingRoth, setAddingRoth] = useState(false);
+  const [newOwnerId, setNewOwnerId] = useState(
+    rothAccountCreation?.owners[0]?.familyMemberId ?? "",
+  );
+  const [newGrowthSource, setNewGrowthSource] = useState<GrowthSource>("default");
+  const [newModelPortfolioId, setNewModelPortfolioId] = useState("");
+  const [newGrowthPct, setNewGrowthPct] = useState("");
+
+  const allAccounts = useMemo(() => {
+    const localRows = newRothAccounts.map((a) => {
+      const o = a.owners[0];
+      return {
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        subType: a.subType,
+        ownerFamilyMemberId: o && o.kind === "family_member" ? o.familyMemberId : null,
+      };
+    });
+    return [...accounts, ...localRows];
+  }, [accounts, newRothAccounts]);
+
   const rothAccounts = useMemo(
-    () => accounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType)),
-    [accounts],
+    () => allAccounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType)),
+    [allAccounts],
   );
   const taxDeferredAccounts = useMemo(
-    () => accounts.filter((a) => a.category === "retirement" && TAX_DEFERRED_SUBTYPES.has(a.subType)),
-    [accounts],
+    () => allAccounts.filter((a) => a.category === "retirement" && TAX_DEFERRED_SUBTYPES.has(a.subType)),
+    [allAccounts],
   );
 
   const [name, setName] = useState(initialData?.name ?? "Roth Conversion");
@@ -130,7 +165,49 @@ export default function AddRothConversionForm({
   const showBracketSelect = conversionType === "fill_up_bracket";
   const showIndexing = conversionType === "fixed_amount";
 
-  const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+  const accountMap = useMemo(() => new Map(allAccounts.map((a) => [a.id, a])), [allAccounts]);
+
+  const canCreateRoth = !!rothAccountCreation && rothAccountCreation.owners.length > 0;
+  const showRothPanel = canCreateRoth && (addingRoth || rothAccounts.length === 0);
+  const showNewRothButton = canCreateRoth && rothAccounts.length > 0 && !addingRoth;
+
+  function resolveNewGrowthRate(): number {
+    if (!rothAccountCreation) return 0;
+    if (newGrowthSource === "model_portfolio") {
+      return (
+        rothAccountCreation.modelPortfolios.find((p) => p.id === newModelPortfolioId)?.growthRate ??
+        rothAccountCreation.retirementGrowthDefault
+      );
+    }
+    if (newGrowthSource === "inflation") return rothAccountCreation.resolvedInflationRate;
+    if (newGrowthSource === "custom") return (parseFloat(newGrowthPct) || 0) / 100;
+    return rothAccountCreation.retirementGrowthDefault;
+  }
+
+  function handleCreateRoth() {
+    if (!rothAccountCreation || !newOwnerId) return;
+    const ownerLabel =
+      rothAccountCreation.owners.find((o) => o.familyMemberId === newOwnerId)?.label ?? "";
+    const account: Account = {
+      id: crypto.randomUUID(),
+      name: `Roth IRA - ${ownerLabel}`,
+      category: "retirement",
+      subType: "roth_ira",
+      value: 0,
+      basis: 0,
+      growthRate: resolveNewGrowthRate(),
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "family_member", familyMemberId: newOwnerId, percent: 1 }],
+    };
+    rothAccountCreation.onCreate(account);
+    setNewRothAccounts((prev) => [...prev, account]);
+    setDestinationAccountId(account.id);
+    setAddingRoth(false);
+    setNewGrowthSource("default");
+    setNewModelPortfolioId("");
+    setNewGrowthPct("");
+  }
 
   // A Roth IRA is owned by a single person, so a conversion may only draw from
   // tax-deferred accounts owned by that same person. Filter the source list to
@@ -375,11 +452,7 @@ export default function AddRothConversionForm({
         {/* Destination */}
         <div>
           <label className={fieldLabelClassName} htmlFor="rc-destination">Destination Account</label>
-          {rothAccounts.length === 0 ? (
-            <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-              No Roth account on this plan yet. Add a Roth IRA or Roth 401(k) account first.
-            </p>
-          ) : (
+          {rothAccounts.length > 0 ? (
             <select
               id="rc-destination"
               value={destinationAccountId}
@@ -391,6 +464,83 @@ export default function AddRothConversionForm({
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+          ) : canCreateRoth ? null : (
+            <p className="rounded-[var(--radius-sm)] border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+              No Roth account on this plan yet. Add a Roth IRA or Roth 401(k) account first.
+            </p>
+          )}
+
+          {showNewRothButton && (
+            <button
+              type="button"
+              onClick={() => setAddingRoth(true)}
+              className="mt-2 rounded-[var(--radius-sm)] border border-hair-2 px-3 py-1.5 text-[12px] font-medium text-accent hover:border-accent/60"
+            >
+              + New Roth IRA
+            </button>
+          )}
+
+          {showRothPanel && rothAccountCreation && (
+            <div
+              role="group"
+              aria-label="New Roth IRA account"
+              className="mt-2 space-y-3 rounded-[var(--radius-sm)] border border-hair-2 bg-card-2 p-3"
+            >
+              <div>
+                <label className={fieldLabelClassName} htmlFor="rc-new-owner">Owner</label>
+                <select
+                  id="rc-new-owner"
+                  aria-label="Roth IRA owner"
+                  value={newOwnerId}
+                  onChange={(e) => setNewOwnerId(e.target.value)}
+                  className={selectClassName}
+                >
+                  {rothAccountCreation.owners.map((o) => (
+                    <option key={o.familyMemberId} value={o.familyMemberId}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <GrowthRateField
+                category="retirement"
+                growthSource={newGrowthSource}
+                modelPortfolioId={newModelPortfolioId}
+                growthRatePct={newGrowthPct}
+                modelPortfolios={rothAccountCreation.modelPortfolios.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  blendedReturn: p.growthRate,
+                }))}
+                defaultPctForCategory={Math.round(rothAccountCreation.retirementGrowthDefault * 10000) / 100}
+                catDefaultPortfolioName={null}
+                resolvedInflationRate={rothAccountCreation.resolvedInflationRate}
+                assetMixBlendedPct={null}
+                hideAssetMix
+                onSourceChange={(raw) => {
+                  const parsed = parseGrowthSourceSelection(raw);
+                  setNewGrowthSource(parsed.growthSource);
+                  setNewModelPortfolioId(parsed.modelPortfolioId ?? "");
+                }}
+                onCustomPctChange={setNewGrowthPct}
+              />
+              <p className="text-[11px] text-ink-3">
+                Creates a Roth IRA named &ldquo;Roth IRA - {rothAccountCreation.owners.find((o) => o.familyMemberId === newOwnerId)?.label ?? ""}&rdquo; with a $0 starting balance.
+              </p>
+              <div className="flex justify-end gap-2">
+                {rothAccounts.length > 0 && (
+                  <button type="button" onClick={() => setAddingRoth(false)} className="px-3 py-1 text-[12px] text-ink-3">
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCreateRoth}
+                  disabled={!newOwnerId}
+                  className="rounded bg-accent/20 px-3 py-1 text-[12px] font-medium text-ink disabled:opacity-40"
+                >
+                  Create Roth IRA
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

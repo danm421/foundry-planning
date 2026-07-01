@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 import AddRothConversionForm from "../add-roth-conversion-form";
 
@@ -227,5 +227,131 @@ describe("AddRothConversionForm — draft mode", () => {
 
     // onSaved must have been called to close the dialog
     expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AddRothConversionForm — inline Roth IRA creation", () => {
+  const NO_ROTH = [
+    { id: "trad-client", name: "Client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
+    { id: "trad-spouse", name: "Spouse Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
+  ];
+  const creation = (onCreate = vi.fn()) => ({
+    owners: [
+      { familyMemberId: "fm-client", label: "John" },
+      { familyMemberId: "fm-spouse", label: "Jane" },
+    ],
+    modelPortfolios: [{ id: "mp-1", name: "Growth 70/30", growthRate: 0.065 }],
+    retirementGrowthDefault: 0.06,
+    resolvedInflationRate: 0.025,
+    onCreate,
+  });
+  const panel = () => screen.getByRole("group", { name: /new roth ira account/i });
+  const growthSelect = () =>
+    within(panel())
+      .getAllByRole("combobox")
+      .find((s) => within(s).queryByText("Custom %"))!;
+
+  it("replaces the dead-end warning with an Owner + Growth creation panel", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={NO_ROTH}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={vi.fn()}
+        rothAccountCreation={creation()}
+      />,
+    );
+    expect(screen.queryByText(/No Roth account on this plan yet/i)).not.toBeInTheDocument();
+    expect(within(panel()).getByLabelText(/Roth IRA owner/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Roth IRA" })).toBeInTheDocument();
+  });
+
+  it("creates a roth_ira account named 'Roth IRA - {owner}' at the plan default growth and auto-selects it", () => {
+    const onCreate = vi.fn();
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={NO_ROTH}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={vi.fn()}
+        rothAccountCreation={creation(onCreate)}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    const acct = onCreate.mock.calls[0][0];
+    expect(acct.subType).toBe("roth_ira");
+    expect(acct.category).toBe("retirement");
+    expect(acct.name).toBe("Roth IRA - John");
+    expect(acct.value).toBe(0);
+    expect(acct.growthRate).toBeCloseTo(0.06);
+    expect(acct.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }]);
+
+    // Destination now offers + selects the new account; submit is enabled.
+    const dest = screen.getByLabelText(/Destination Account/i) as HTMLSelectElement;
+    expect(dest.value).toBe(acct.id);
+    expect(within(dest).getByText("Roth IRA - John")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Conversion" })).not.toBeDisabled();
+  });
+
+  it("resolves the selected owner and a model-portfolio growth rate", () => {
+    const onCreate = vi.fn();
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={NO_ROTH}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={vi.fn()}
+        rothAccountCreation={creation(onCreate)}
+      />,
+    );
+    fireEvent.change(within(panel()).getByLabelText(/Roth IRA owner/i), { target: { value: "fm-spouse" } });
+    fireEvent.change(growthSelect(), { target: { value: "mp:mp-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    const acct = onCreate.mock.calls[0][0];
+    expect(acct.name).toBe("Roth IRA - Jane");
+    expect(acct.owners[0].familyMemberId).toBe("fm-spouse");
+    expect(acct.growthRate).toBeCloseTo(0.065);
+  });
+
+  it("resolves a custom growth percent to a decimal", () => {
+    const onCreate = vi.fn();
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={NO_ROTH}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={vi.fn()}
+        rothAccountCreation={creation(onCreate)}
+      />,
+    );
+    fireEvent.change(growthSelect(), { target: { value: "custom" } });
+    fireEvent.change(within(panel()).getByRole("textbox"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    expect(onCreate.mock.calls[0][0].growthRate).toBeCloseTo(0.08);
+  });
+
+  it("restricts conversion sources to the new Roth's owner", () => {
+    render(
+      <AddRothConversionForm
+        clientId="client-123"
+        accounts={NO_ROTH}
+        onClose={() => {}}
+        onSaved={vi.fn()}
+        onSubmitDraft={vi.fn()}
+        rothAccountCreation={creation()}
+      />,
+    );
+    // Owner defaults to the first (John / fm-client).
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+    expect(screen.getByText("Client Trad IRA")).toBeInTheDocument();
+    expect(screen.queryByText("Spouse Trad IRA")).not.toBeInTheDocument();
   });
 });
