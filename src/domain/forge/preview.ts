@@ -190,6 +190,10 @@ function previewSetUpPlan(a: Record<string, unknown>): WritePreview {
   return { name: "set_up_plan", summary: `Set up a financial plan${bits ? ` (${bits})` : ""}.` };
 }
 
+function previewCreateTaskForClient(a: Record<string, unknown>): WritePreview {
+  return { name: "create_task_for_client", summary: `Create task "${str(a.title) ?? ""}" for a client.`.trim() };
+}
+
 function previewAddExpense(a: Record<string, unknown>): WritePreview {
   const name = str(a.name) ?? "(unnamed)";
   const type = str(a.type);
@@ -331,6 +335,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCreateHousehold(call.args);
     case "set_up_plan":
       return previewSetUpPlan(call.args);
+    case "create_task_for_client":
+      return previewCreateTaskForClient(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }

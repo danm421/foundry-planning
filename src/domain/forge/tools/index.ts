@@ -104,4 +104,5 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Global agentic writes (Plan 2) — HITL-gated global-action tools
   "create_household",
   "set_up_plan",
+  "create_task_for_client",
 ]);

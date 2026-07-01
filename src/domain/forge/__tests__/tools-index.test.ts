@@ -231,9 +231,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (23 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 2 global writes)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (24 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 3 global writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(23);
+    expect(WRITE_TOOL_NAMES.size).toBe(24);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -366,8 +366,8 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "create_household", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan"]);
+  it("is exactly the help + navigation + global-action set (9 tools)", () => {
+    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan"]);
   });
 });
 

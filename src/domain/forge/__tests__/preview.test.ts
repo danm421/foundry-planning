@@ -79,4 +79,13 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     expect(out.summary).toMatch(/retire at 65/);
     expect(out.summary).toMatch(/married_joint/);
   });
+
+  it("previews create_task_for_client without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({
+      name: "create_task_for_client",
+      args: { householdId: "hh_1", title: "Call Jane", priority: "high" },
+    });
+    expect(out.name).toBe("create_task_for_client");
+    expect(out.summary).toMatch(/Call Jane/);
+  });
 });
