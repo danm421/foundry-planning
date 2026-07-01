@@ -224,6 +224,19 @@ describe("accountCreateSchema parity with inline route coercion", () => {
     expect(r.success).toBe(true);
   });
 
+  it("hsaCoverage: null (what the form sends for non-HSA accounts) → ACCEPT", () => {
+    // add-account-form sends `hsaCoverage: isHsa ? hsaCoverage : null`, so every
+    // non-HSA account (Traditional IRA, brokerage, cash, …) posts null. The
+    // schema must accept it or all non-HSA account creation 400s.
+    const r = accountCreateSchema.safeParse({
+      ...base,
+      category: "retirement",
+      subType: "traditional_ira",
+      hsaCoverage: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
   it("extra unknown keys tolerated (no .strict())", () => {
     const r = accountCreateSchema.safeParse({ ...base, somethingExtra: "x" });
     expect(r.success).toBe(true);

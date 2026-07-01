@@ -50,7 +50,10 @@ const shared = {
   // Passthrough — core defaults to "annual" for business, hard "annual" otherwise.
   flowMode: z.string().optional(),
   businessTaxTreatment: z.string().optional(),
-  hsaCoverage: z.string().optional(),
+  // Nullable: the form sends `hsaCoverage: null` for every non-HSA account
+  // (isHsa ? hsaCoverage : null). The write-core only reads it for HSA
+  // retirement rows and stores null otherwise, so null must parse cleanly.
+  hsaCoverage: z.string().nullable().optional(),
   // Legacy/ownership fields consumed by ownership helpers in the core.
   owner: z.string().optional(),
   ownerEntityId: uuidSchema.nullable().optional(),
