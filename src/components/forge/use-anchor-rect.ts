@@ -1,0 +1,77 @@
+"use client";
+import { useEffect, useState } from "react";
+
+export type AnchorRectState = {
+  element: HTMLElement | null;
+  rect: DOMRect | null;
+  status: "idle" | "resolving" | "found" | "missing";
+};
+
+const IDLE: AnchorRectState = { element: null, rect: null, status: "idle" };
+
+/** Resolve a [data-forge-anchor="<id>"] element to its live bounding rect.
+ *  Handles async page mounts (MutationObserver + retry) and keeps the rect
+ *  current on scroll/resize. Returns status:"missing" if the anchor never
+ *  appears within timeoutMs so callers can degrade gracefully. */
+export function useAnchorRect(
+  anchorId: string | null,
+  opts?: { timeoutMs?: number },
+): AnchorRectState {
+  const timeoutMs = opts?.timeoutMs ?? 4000;
+  const [state, setState] = useState<AnchorRectState>(IDLE);
+
+  useEffect(() => {
+    if (!anchorId) {
+      setState(IDLE);
+      return;
+    }
+    const selector = `[data-forge-anchor="${anchorId}"]`;
+    let el: HTMLElement | null = null;
+    let timedOut = false;
+
+    const measure = () => {
+      if (!el) return;
+      setState({ element: el, rect: el.getBoundingClientRect(), status: "found" });
+    };
+    const tryResolve = () => {
+      const found = document.querySelector<HTMLElement>(selector);
+      if (found) {
+        el = found;
+        measure();
+        return true;
+      }
+      return false;
+    };
+
+    setState({ element: null, rect: null, status: "resolving" });
+    if (tryResolve()) {
+      // fall through to attach live listeners below
+    }
+
+    const observer = new MutationObserver(() => {
+      if (!el && tryResolve()) observer.disconnect();
+    });
+    if (!el) observer.observe(document.body, { childList: true, subtree: true });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      observer.disconnect();
+      if (!el) setState({ element: null, rect: null, status: "missing" });
+    }, timeoutMs);
+
+    const onReflow = () => {
+      if (el && !timedOut) measure();
+    };
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [anchorId, timeoutMs]);
+
+  return state;
+}
