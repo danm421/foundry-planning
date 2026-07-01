@@ -15,6 +15,8 @@ export interface StatsContext {
   indexOf: Map<string, number>;
   mean: number[];
   vol: number[];
+  /** Per-class geometric returns, for the naive (eMoney-parity) return blend. */
+  geo: number[];
   corr: number[][];
   riskFreeRate: number;
 }
@@ -32,19 +34,28 @@ export function buildStatsContext(
     indexOf,
     mean: assetClasses.map((c) => c.arithmeticMean),
     vol: assetClasses.map((c) => c.volatility),
+    geo: assetClasses.map((c) => c.geometricReturn),
     corr: buildCorrelationMatrix(ids, correlationRows),
     riskFreeRate,
   };
 }
 
-/** Mean is linear in weights; variance uses Σᵢⱼ = σᵢσⱼρᵢⱼ (diversification-aware). */
+/**
+ * Mean and geometric return are linear in weights (matches eMoney and the
+ * projection engine: the headline return gets no diversification credit).
+ * Volatility uses Σᵢⱼ = σᵢσⱼρᵢⱼ, so std dev IS diversification-aware.
+ */
 export function computeStats(weights: AssetClassWeight[], ctx: StatsContext): RiskReturnStats {
   const present = weights
     .map((w) => ({ idx: ctx.indexOf.get(w.assetClassId), weight: w.weight }))
     .filter((w): w is { idx: number; weight: number } => w.idx !== undefined);
 
   let mean = 0;
-  for (const w of present) mean += w.weight * ctx.mean[w.idx]!;
+  let geometricReturn = 0;
+  for (const w of present) {
+    mean += w.weight * ctx.mean[w.idx]!;
+    geometricReturn += w.weight * ctx.geo[w.idx]!;
+  }
 
   let variance = 0;
   for (const a of present) {
@@ -53,7 +64,6 @@ export function computeStats(weights: AssetClassWeight[], ctx: StatsContext): Ri
     }
   }
   const stdDev = Math.sqrt(Math.max(0, variance));
-  const geometricReturn = mean - (stdDev * stdDev) / 2;
   const sharpe = stdDev > 0 ? (mean - ctx.riskFreeRate) / stdDev : null;
 
   return { arithmeticMean: mean, geometricReturn, stdDev, sharpe };
