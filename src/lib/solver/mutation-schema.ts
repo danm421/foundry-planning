@@ -119,6 +119,8 @@ const ACCOUNT_VALUE = z
     // account-upsert that spreads such an account must validate, or the
     // revocable-trust lever 400s the recompute.
     owners: z.array(z.object({ kind: z.string(), percent: z.number() }).passthrough()),
+    activationYear: z.number().int().nullable().optional(),
+    activationYearRef: z.string().nullable().optional(),
   })
   .passthrough();
 

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
 import { AddBusinessInputSchema } from "./accounts-business";
+import { YEAR_REFS } from "@/lib/milestones";
+
+// Local per-file enum (mirrors note-receivable.ts / gifts.ts / gift-series.ts —
+// no shared cross-file yearRef export exists yet to reuse).
+const yearRefZodEnum = z.enum(YEAR_REFS);
 
 // Single validation path for account create/update. Reproduces the inline
 // coercion the POST route (`/api/clients/[id]/accounts`) does today so the
@@ -77,6 +82,8 @@ const nullDefaultCreate = {
   overridePctTaxExempt: nullablePassthrough.default(null),
   custodian: z.string().nullable().optional().default(null),
   accountNumberLast4: z.string().nullable().optional().default(null),
+  activationYear: z.number().int().gte(1900).lte(2200).nullable().optional().default(null),
+  activationYearRef: yearRefZodEnum.nullable().optional().default(null),
 };
 
 const nullDefaultUpdate = {
@@ -91,6 +98,8 @@ const nullDefaultUpdate = {
   overridePctTaxExempt: nullablePassthrough,
   custodian: z.string().nullable().optional(),
   accountNumberLast4: z.string().nullable().optional(),
+  activationYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
+  activationYearRef: yearRefZodEnum.nullable().optional(),
 };
 
 // CREATE: name/category required; loose fields default to mirror the POST route's

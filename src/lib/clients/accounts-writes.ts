@@ -261,6 +261,8 @@ export async function createAccountForClient(args: {
         // Collapse empty-string custodian / last4 to null (the `|| null` Task 13 deferred).
         custodian: (p.custodian ?? null) || null,
         accountNumberLast4: (p.accountNumberLast4 ?? null) || null,
+        activationYear: p.activationYear ?? null,
+        activationYearRef: (p.activationYearRef ?? null) as (typeof accounts.$inferInsert)["activationYearRef"],
       })
       .returning();
     account = inserted;
