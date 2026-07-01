@@ -781,6 +781,17 @@ export interface Account {
    * engine's own end-of-year balances are authoritative.
    */
   priorYearEndValue?: number;
+  /**
+   * Optional activation year: the account does not exist in the projection
+   * before this year, then appears at `value` (a windfall) and behaves
+   * normally after. Null / undefined ⇒ active from plan start (default).
+   * Resolved from `activationYearRef` at load time; the ref is kept for
+   * re-anchoring when household milestones move (see resolveRefYears).
+   */
+  activationYear?: number | null;
+  /** Milestone anchor for `activationYear` (opaque string in the engine; a
+   *  `YearRef` in @/lib). Null ⇒ plain calendar-year activation. */
+  activationYearRef?: string | null;
   beneficiaries?: BeneficiaryRef[];
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;
