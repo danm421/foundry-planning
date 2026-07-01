@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  Account,
   ClientData,
   RothConversion,
   AssetTransaction,
@@ -59,6 +60,13 @@ interface Props {
   }[];
   modelPortfolios: { id: string; name: string; growthRate?: number }[];
   milestones?: ClientMilestones;
+  /** Household members eligible to own an inline-created Roth IRA. Optional —
+   *  when absent (or empty), the inline creation panel stays disabled. */
+  owners?: { familyMemberId: string; label: string }[];
+  /** Default growth rate for a newly created retirement account. */
+  retirementGrowthDefault?: number;
+  /** Resolved inflation rate, offered as a growth-rate option for the new account. */
+  resolvedInflationRate?: number;
   /** Ids of techniques present in the base plan, by kind — used to tag rows
    *  "Base plan" vs "Added". Optional so the component renders in isolation. */
   baseTechniqueIds?: {
@@ -157,6 +165,9 @@ export function SolverTechniquesTab({
   liabilities,
   modelPortfolios,
   milestones,
+  owners,
+  retirementGrowthDefault,
+  resolvedInflationRate,
   baseTechniqueIds,
   onChange,
   onSolveStart,
@@ -170,6 +181,22 @@ export function SolverTechniquesTab({
   const workingReinv = workingTree.reinvestments ?? [];
   const workingReloc = workingTree.relocations ?? [];
 
+  const rothAccountCreation =
+    owners && owners.length > 0 && retirementGrowthDefault != null && resolvedInflationRate != null
+      ? {
+          owners,
+          modelPortfolios: modelPortfolios.map((p) => ({
+            id: p.id,
+            name: p.name,
+            growthRate: p.growthRate ?? 0,
+          })),
+          retirementGrowthDefault,
+          resolvedInflationRate,
+          onCreate: (account: Account) =>
+            onChange({ kind: "account-upsert", id: account.id, value: account }),
+        }
+      : undefined;
+
   // Active editor form.
   let form: ReactNode = null;
   if (editor?.kind === "roth") {
@@ -181,6 +208,7 @@ export function SolverTechniquesTab({
         clientId={clientId}
         accounts={accounts}
         milestones={milestones}
+        rothAccountCreation={rothAccountCreation}
         initialData={
           existing ? toRothConversionInitialData(existing) : undefined
         }
