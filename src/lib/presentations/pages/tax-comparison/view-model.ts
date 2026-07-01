@@ -74,6 +74,21 @@ function signedUsd(delta: number): string {
 function signedInt(delta: number): string {
   return `${delta >= 0 ? "+" : "−"}${Math.abs(delta)}`;
 }
+function kpiUsd(label: string, base: number, scn: number): TaxComparisonKpi {
+  const delta = scn - base;
+  return { label, base: fmtUsd(base), scenario: fmtUsd(scn), delta: signedUsd(delta), direction: costDirection(delta), show: true };
+}
+function kpiRate(label: string, base: number, scn: number): TaxComparisonKpi {
+  const pts = Math.round(scn * 100) - Math.round(base * 100);
+  return {
+    label,
+    base: fmtPct(base),
+    scenario: fmtPct(scn),
+    delta: `${pts >= 0 ? "+" : "−"}${Math.abs(pts)} pts`,
+    direction: costDirection(pts),
+    show: true,
+  };
+}
 
 export function buildTaxComparisonData(
   ctx: BuildDataContext,
@@ -192,20 +207,4 @@ export function buildTaxComparisonData(
     composition,
     narrative,
   };
-
-  function kpiUsd(label: string, base: number, scn: number): TaxComparisonKpi {
-    const delta = scn - base;
-    return { label, base: fmtUsd(base), scenario: fmtUsd(scn), delta: signedUsd(delta), direction: costDirection(delta), show: true };
-  }
-  function kpiRate(label: string, base: number, scn: number): TaxComparisonKpi {
-    const pts = Math.round(scn * 100) - Math.round(base * 100);
-    return {
-      label,
-      base: fmtPct(base),
-      scenario: fmtPct(scn),
-      delta: `${pts >= 0 ? "+" : "−"}${Math.abs(pts)} pts`,
-      direction: costDirection(pts),
-      show: true,
-    };
-  }
 }
