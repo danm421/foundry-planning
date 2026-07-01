@@ -42,7 +42,6 @@ import {
   SolverLifeInsuranceResults,
   useLiNeedSolve,
 } from "./solver-tab-life-insurance";
-import { SolverTabEstatePlanning } from "./solver-tab-estate-planning";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
@@ -55,7 +54,6 @@ import {
   TechniquesIcon,
   StressTestIcon,
   LifeInsuranceIcon,
-  EstatePlanningIcon,
 } from "./solver-tab-icons";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
@@ -99,7 +97,6 @@ const LEFT_TABS: {
   { id: "techniques", label: "Techniques", short: "Techniques", icon: TechniquesIcon },
   { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
   { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
-  { id: "estate_planning", label: "Estate Planning", short: "Estate", icon: EstatePlanningIcon },
 ];
 
 // Persisted, draggable split between the inputs (left) and reports (right) panes.
@@ -1141,6 +1138,9 @@ export function LiveSolverWorkspace({
             resolvedInflationRate={baseClientData.planSettings.inflationRate}
             onChange={pushMutation}
             onSolveStart={handleSolveStart}
+            baseClientData={baseClientData}
+            baseGifts={baseGifts}
+            onEstateOpen={() => setActiveReport("estate")}
           />
         )}
 
@@ -1169,15 +1169,6 @@ export function LiveSolverWorkspace({
             modelPortfolios={modelPortfolios}
           />
         )}
-
-            {activeTab === "estate_planning" && (
-              <SolverTabEstatePlanning
-                baseClientData={baseClientData}
-                clientData={workingTree}
-                baseGifts={baseGifts}
-                onChange={pushMutation}
-              />
-            )}
           </div>
         </div>
 
