@@ -265,14 +265,15 @@ export default function InsurancePolicyDetailsTab({
                 spouseFirstName={spouseFirstName ?? undefined}
                 position="start"
                 onChange={(y, ref) => {
-                  // For term policies, keep the issue year in lockstep with a
-                  // plain-year activation so term-length math and coverage-start
-                  // agree.
+                  // For term policies, keep the issue year in lockstep with the
+                  // resolved activation year — whether activation is a plain
+                  // calendar year or a milestone-anchored one — so term-length
+                  // math and coverage-start agree.
                   const patch: Partial<PolicyFormState> = {
                     activationYear: y,
                     activationYearRef: ref,
                   };
-                  if (state.policyType === "term" && ref === null) {
+                  if (state.policyType === "term") {
                     patch.termIssueYear = y;
                   }
                   onChange(patch);
