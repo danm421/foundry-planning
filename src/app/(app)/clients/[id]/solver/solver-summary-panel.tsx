@@ -53,41 +53,38 @@ export function SolverSummaryPanel(props: Props) {
   const def = SUMMARY_REGISTRY[activeSummary];
 
   // The retirementComparison tab has its own Run-button panel that calls a
-  // dedicated server route — render it here and skip the normal build path.
-  if (activeSummary === "retirementComparison") {
-    return (
-      <div className="flex flex-col gap-3">
-        <SummaryTabList activeSummary={activeSummary} onSummaryChange={onSummaryChange} />
-        <SolverRetirementComparisonPanel
-          clientId={props.clientId}
-          source={props.source}
-          mutations={props.mutations}
-          extraAccountMixes={props.extraAccountMixes}
-        />
-      </div>
-    );
-  }
+  // dedicated server route — it renders instead of the normal build path.
+  // Hooks below must stay unconditional (rules-of-hooks), so we branch in the
+  // JSX rather than returning early.
+  const isRetirementComparison = activeSummary === "retirementComparison";
 
   const loading =
     (activeSummary === "estate" && estateLoading && !context.projection?.firstDeathEvent) ||
     (activeSummary === "lifeInsurance" && liLoading && !context.lifeInsurance);
 
   const data = useMemo<unknown>(() => {
-    if (loading) return null;
+    if (loading || isRetirementComparison) return null;
     try {
       return def.build(context);
     } catch (err) {
       console.error("[SolverSummaryPanel] summary builder threw for", activeSummary, err);
       return null;
     }
-  }, [def, context, loading, activeSummary]);
+  }, [def, context, loading, activeSummary, isRetirementComparison]);
   const View = def.Component;
-  const buildFailed = !loading && data === null;
+  const buildFailed = !loading && !isRetirementComparison && data === null;
 
   return (
     <div className="flex flex-col gap-3">
       <SummaryTabList activeSummary={activeSummary} onSummaryChange={onSummaryChange} />
-      {loading ? (
+      {isRetirementComparison ? (
+        <SolverRetirementComparisonPanel
+          clientId={props.clientId}
+          source={props.source}
+          mutations={props.mutations}
+          extraAccountMixes={props.extraAccountMixes}
+        />
+      ) : loading ? (
         <SummarySkeleton label="Loading…" />
       ) : buildFailed ? (
         <SummaryEmpty message="This summary is unavailable." />
