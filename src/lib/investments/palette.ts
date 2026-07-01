@@ -2,10 +2,12 @@ import { colors, data } from "@/brand";
 import { chartSeriesColors } from "@/lib/chart-palette";
 import type { AssetTypeId } from "./asset-types";
 
-// 12-color palette sourced from the Deep Jewel brand palette — the nine named
-// data hues (adjacency order) extended in-band to length 12. Keep length at
-// 12 — tests pin the wrap-around.
-const PALETTE: readonly string[] = chartSeriesColors(12, "dark");
+// Asset-class palette sourced from the Deep Jewel brand palette — the nine named
+// data hues (adjacency order) extended in-band with evenly-spaced `dataScale`
+// fills so the whole set still reads as one family. Sized to 24 so the standard
+// 16 asset classes (plus headroom for firm-custom ones) each get a distinct
+// color instead of wrapping to a repeat. Tests pin the length.
+const PALETTE: readonly string[] = chartSeriesColors(24, "dark");
 
 export const UNALLOCATED_COLOR = colors.ink4; // neutral ink-4 gray
 

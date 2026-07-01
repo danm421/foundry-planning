@@ -15,10 +15,18 @@ describe("colorForAssetClass", () => {
     expect(a).not.toBe(b);
   });
 
+  it("gives every one of the 16 standard asset classes a distinct color", () => {
+    // The standard seed has 16 classes (sortOrder 0–15); none should share a hue.
+    const colorsForStandard = Array.from({ length: 16 }, (_, i) =>
+      colorForAssetClass({ id: `c${i}`, sortOrder: i }),
+    );
+    expect(new Set(colorsForStandard).size).toBe(16);
+  });
+
   it("wraps around for sortOrder beyond the palette length", () => {
     const a = colorForAssetClass({ id: "x", sortOrder: 0 });
-    // Palette has 12 colors; index 12 should equal index 0.
-    const b = colorForAssetClass({ id: "y", sortOrder: 12 });
+    // Palette has 24 colors; index 24 wraps back to index 0.
+    const b = colorForAssetClass({ id: "y", sortOrder: 24 });
     expect(a).toBe(b);
   });
 

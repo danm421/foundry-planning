@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useEffect, useRef } from "react";
 import { Doughnut } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, type TooltipItem } from "chart.js";
 import { useThemeName } from "@/lib/chart-colors";
 import { colors, colorsLight } from "@/brand";
 import {
@@ -29,8 +29,14 @@ const options = {
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: (ctx: { label: string; parsed: number }) =>
-          `${ctx.label}: $${ctx.parsed.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+        // Combined mode nests two rings with different segment counts, so a shared
+        // top-level labels array can't name both. Each dataset carries its own
+        // __labels; fall back to ctx.label for the single-ring modes.
+        label: (ctx: TooltipItem<"doughnut">) => {
+          const perRing = (ctx.dataset as { __labels?: string[] }).__labels;
+          const name = perRing?.[ctx.dataIndex] ?? ctx.label;
+          return `${name}: $${ctx.parsed.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+        },
       },
     },
   },
@@ -129,47 +135,48 @@ function buildDatasets(
     };
   }
 
-  // combined — nested donut: inner ring = types, outer ring = classes
-  // (class colors shaded within their type's hue).
-  const typeRows = household.byAssetType.map((t) => ({
+  // combined — nested donut: outer ring = types (equities, bonds, cash…),
+  // inner ring = classes (shaded within their type's hue). Chart.js draws
+  // dataset[0] as the outermost ring and each later dataset inside it.
+  const typeSegments = household.byAssetType.map((t) => ({
     label: t.label,
     value: t.value,
     color: colorForAssetType(t.id),
   }));
-  const outerRows: { label: string; value: number; color: string }[] = [];
+  const classSegments: { label: string; value: number; color: string }[] = [];
   for (const t of household.byAssetType) {
     const classes = household.byAssetClass
       .filter((c) => c.assetType === t.id)
       .sort((a, b) => b.value - a.value);
     classes.forEach((c, idx) => {
-      outerRows.push({
+      classSegments.push({
         label: c.name,
         value: c.value,
         color: shadeForClassInType(t.id, idx, classes.length),
       });
     });
   }
-  const innerWithUnalloc = unallocated ? [...typeRows, unallocated] : typeRows;
-  const outerWithUnalloc = unallocated ? [...outerRows, unallocated] : outerRows;
+  const typesWithUnalloc = unallocated ? [...typeSegments, unallocated] : typeSegments;
+  const classesWithUnalloc = unallocated ? [...classSegments, unallocated] : classSegments;
 
   return {
-    // Use outer ring labels for tooltips (more informative); inner ring shares
-    // the same data points by weight so the tooltip index still resolves.
-    labels: outerWithUnalloc.map((r) => r.label),
+    labels: classesWithUnalloc.map((r) => r.label),
     datasets: [
       {
-        // Outer ring = classes
-        data: outerWithUnalloc.map((r) => r.value),
-        backgroundColor: outerWithUnalloc.map((r) => r.color),
+        // Outer ring = types
+        data: typesWithUnalloc.map((r) => r.value),
+        backgroundColor: typesWithUnalloc.map((r) => r.color),
         borderColor: segmentBorder,
         borderWidth: 2,
+        __labels: typesWithUnalloc.map((r) => r.label),
       },
       {
-        // Inner ring = types
-        data: innerWithUnalloc.map((r) => r.value),
-        backgroundColor: innerWithUnalloc.map((r) => r.color),
+        // Inner ring = classes
+        data: classesWithUnalloc.map((r) => r.value),
+        backgroundColor: classesWithUnalloc.map((r) => r.color),
         borderColor: segmentBorder,
         borderWidth: 2,
+        __labels: classesWithUnalloc.map((r) => r.label),
       },
     ],
   };
