@@ -441,8 +441,8 @@ export default function AddAssetTransactionForm({
           </div>
         </div>
 
-        {/* ── Two-column ledger ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-6">
+        {/* ── Three-column ledger: sell · editor · buy ────────────────────── */}
+        <div className="grid grid-cols-[180px_minmax(0,1fr)_180px] items-start gap-4">
           {/* Sell column */}
           <LedgerColumn
             testId="sell-column"
@@ -451,6 +451,7 @@ export default function AddAssetTransactionForm({
             emptyLabel="No sell legs"
             subtotalLabel="Sale proceeds"
             subtotal={combined.proceeds}
+            activeKey={activeLegKey}
             rows={sellLegs.map((leg) => ({
               key: leg.key,
               label: assetLabelFor(leg) || "New sale",
@@ -463,6 +464,65 @@ export default function AddAssetTransactionForm({
             addLabel="Add sell"
           />
 
+          {/* Editor column — shared surface for the active sell or buy leg */}
+          <div
+            className={`min-h-[300px] rounded-[var(--radius-sm)] border p-4 transition-colors ${
+              activeLeg
+                ? activeLeg.kind === "sell"
+                  ? "border-crit/30 bg-crit/5"
+                  : "border-good/30 bg-good/5"
+                : "border-dashed border-hair bg-card-2"
+            }`}
+          >
+            {activeLeg ? (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <h4
+                    className={`text-[13px] font-semibold ${
+                      activeLeg.kind === "sell" ? "text-crit" : "text-good"
+                    }`}
+                  >
+                    {activeLeg.kind === "sell" ? "Edit sell leg" : "Edit buy leg"}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setActiveLegKey(null)}
+                    className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1 text-[12px] font-medium text-ink-2 hover:border-hair-2 hover:text-ink"
+                  >
+                    Done
+                  </button>
+                </div>
+                {activeLeg.kind === "sell" ? (
+                  <SellLegEditor
+                    leg={activeLeg}
+                    year={year}
+                    onChange={(patch) => updateLeg(activeLeg.key, patch)}
+                    accounts={accounts}
+                    liabilities={liabilities}
+                    businesses={businessOptions}
+                    pastBuys={pastBuys}
+                    projectionYears={projectionYears}
+                    isOrphan={isOrphan(activeLeg)}
+                  />
+                ) : (
+                  <BuyLegEditor
+                    leg={activeLeg}
+                    onChange={(patch) => updateLeg(activeLeg.key, patch)}
+                    accounts={accounts}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="flex min-h-[268px] flex-col items-center justify-center gap-1 text-center">
+                <p className="text-[13px] font-medium text-ink-2">Nothing selected</p>
+                <p className="max-w-[240px] text-[12px] text-ink-3">
+                  Choose a sell or buy leg to edit it here, or add one on either
+                  side.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Buy column */}
           <LedgerColumn
             testId="buy-column"
@@ -471,6 +531,7 @@ export default function AddAssetTransactionForm({
             emptyLabel="No buy legs"
             subtotalLabel="Cash needed"
             subtotal={combined.purchases}
+            activeKey={activeLegKey}
             rows={buyLegs.map((leg) => ({
               key: leg.key,
               label: assetLabelFor(leg) || "New purchase",
@@ -483,53 +544,6 @@ export default function AddAssetTransactionForm({
             addLabel="Add buy"
           />
         </div>
-
-        {/* ── Focused leg editor ─────────────────────────────────────────── */}
-        {activeLeg && (
-          <div
-            className={`rounded-[var(--radius-sm)] border p-4 transition-colors ${
-              activeLeg.kind === "sell"
-                ? "border-crit/30 bg-crit/5"
-                : "border-good/30 bg-good/5"
-            }`}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h4
-                className={`text-[13px] font-semibold ${
-                  activeLeg.kind === "sell" ? "text-crit" : "text-good"
-                }`}
-              >
-                {activeLeg.kind === "sell" ? "Edit sell leg" : "Edit buy leg"}
-              </h4>
-              <button
-                type="button"
-                onClick={() => setActiveLegKey(null)}
-                className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1 text-[12px] font-medium text-ink-2 hover:border-hair-2 hover:text-ink"
-              >
-                Done
-              </button>
-            </div>
-            {activeLeg.kind === "sell" ? (
-              <SellLegEditor
-                leg={activeLeg}
-                year={year}
-                onChange={(patch) => updateLeg(activeLeg.key, patch)}
-                accounts={accounts}
-                liabilities={liabilities}
-                businesses={businessOptions}
-                pastBuys={pastBuys}
-                projectionYears={projectionYears}
-                isOrphan={isOrphan(activeLeg)}
-              />
-            ) : (
-              <BuyLegEditor
-                leg={activeLeg}
-                onChange={(patch) => updateLeg(activeLeg.key, patch)}
-                accounts={accounts}
-              />
-            )}
-          </div>
-        )}
 
         {/* ── Combined-net footer (informational) ────────────────────────── */}
         {showNet && (
@@ -575,6 +589,7 @@ function LedgerColumn({
   emptyLabel,
   subtotalLabel,
   subtotal,
+  activeKey,
   rows,
   onEdit,
   onRemove,
@@ -587,6 +602,7 @@ function LedgerColumn({
   emptyLabel: string;
   subtotalLabel: string;
   subtotal: number;
+  activeKey: string | null;
   rows: LedgerRow[];
   onEdit: (key: string) => void;
   onRemove: (key: string) => void;
@@ -595,6 +611,8 @@ function LedgerColumn({
 }) {
   const headText = accent === "crit" ? "text-crit" : "text-good";
   const surface = accent === "crit" ? "border-crit/30 bg-crit/5" : "border-good/30 bg-good/5";
+  const activeRow =
+    accent === "crit" ? "border-crit/60 bg-crit/15" : "border-good/60 bg-good/15";
 
   return (
     <div
@@ -609,43 +627,52 @@ function LedgerColumn({
             {emptyLabel}
           </li>
         )}
-        {rows.map((row) => (
-          <li
-            key={row.key}
-            className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card px-3 py-2"
-          >
-            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
-              {row.label}
-            </span>
-            <span
-              className={`shrink-0 text-[12px] tabular-nums ${
-                row.hasData ? "text-ink-2" : "text-ink-4"
-              }`}
-            >
-              {row.hasData ? formatCurrency(row.net) : "—"}
-            </span>
-            <button
-              type="button"
-              onClick={() => onEdit(row.key)}
-              className="shrink-0 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1 text-[11px] font-medium text-ink-2 hover:border-hair-2 hover:text-ink"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(row.key)}
-              aria-label={`Remove ${row.label}`}
-              className="shrink-0 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1 text-[11px] font-medium text-ink-3 hover:border-crit/40 hover:text-crit"
-            >
-              Remove
-            </button>
-          </li>
-        ))}
+        {rows.map((row) => {
+          const isActive = row.key === activeKey;
+          return (
+            <li key={row.key} className="flex items-stretch gap-1">
+              {/* Whole row selects the leg into the middle editor. */}
+              <button
+                type="button"
+                onClick={() => onEdit(row.key)}
+                aria-pressed={isActive}
+                className={`flex min-w-0 flex-1 flex-col gap-0.5 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-left transition-colors ${
+                  isActive ? activeRow : "border-hair bg-card hover:border-hair-2"
+                }`}
+              >
+                <span className="min-w-0 truncate text-[13px] text-ink">{row.label}</span>
+                <span
+                  className={`text-[11px] tabular-nums ${
+                    row.hasData ? "text-ink-2" : "text-ink-4"
+                  }`}
+                >
+                  {row.hasData ? formatCurrency(row.net) : "—"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onRemove(row.key)}
+                aria-label={`Remove ${row.label}`}
+                className="flex w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-hair bg-card-2 text-ink-3 transition-colors hover:border-crit/40 hover:text-crit"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
-      <div className="mt-1 flex items-center justify-between border-t border-hair pt-2 text-[12px]">
-        <span className="text-ink-3">{subtotalLabel}</span>
-        <span className="font-medium tabular-nums text-ink-2">{formatCurrency(subtotal)}</span>
+      <div className="mt-1 flex items-center justify-between gap-1 border-t border-hair pt-2 text-[11px]">
+        <span className="truncate text-ink-3">{subtotalLabel}</span>
+        <span className="shrink-0 font-medium tabular-nums text-ink-2">
+          {formatCurrency(subtotal)}
+        </span>
       </div>
 
       {onAdd && (

@@ -31,7 +31,11 @@ function sellLegToBody(leg: SellLegDraft, year: number, isRealEstate: boolean): 
     body.purchaseTransactionId = leg.sellPurchaseTransactionId || null;
     body.businessAccountId = null;
     if (leg.sellAmountMode === "full") {
-      body.fractionSold = null; body.overrideSaleValue = null;
+      // Full sale: fractionSold stays null (fraction = 1 → whole account). A
+      // value override, when the user typed one over the projected default,
+      // sets the realized sale value — the engine already honors it
+      // (saleValue = overrideSaleValue ?? balance). Empty ⇒ use the projection.
+      body.fractionSold = null; body.overrideSaleValue = optStr(leg.overrideSaleValue);
     } else if (leg.sellAmountMode === "percent") {
       body.fractionSold = Number(leg.fractionSoldPct) / 100; body.overrideSaleValue = null;
     } else {

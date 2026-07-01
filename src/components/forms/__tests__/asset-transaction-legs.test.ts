@@ -34,6 +34,14 @@ describe("legToBody — sell", () => {
     expect(body.transactionCostFlat).toBe("1000");
     expect(body.qualifiesForHomeSaleExclusion).toBe(true);
   });
+  it("full sale persists a typed value/basis override (engine honors saleValue override)", () => {
+    const leg = { ...mkSell("s"), sellAccountId: "acc-1",
+      overrideSaleValue: "850000", overrideBasis: "600000" };
+    const body = legToBody(leg, 2030, { isRealEstate: false });
+    expect(body.fractionSold).toBeNull();
+    expect(body.overrideSaleValue).toBe("850000");
+    expect(body.overrideBasis).toBe("600000");
+  });
   it("non-real-estate never persists §121 true", () => {
     const leg = { ...mkSell("s"), sellAccountId: "acc-1", qualifiesForHomeSaleExclusion: true };
     const body = legToBody(leg, 2030, { isRealEstate: false });

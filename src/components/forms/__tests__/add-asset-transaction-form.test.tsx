@@ -47,14 +47,14 @@ describe("AddAssetTransactionForm — add mode fan-out", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add sell/i }));
     fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
 
-    // Source both sell legs to the brokerage account. Each sell summary row has
-    // its own "Edit" button; opening it renders the SellLegEditor full-width.
+    // Source both sell legs to the brokerage account. Each sell row selects the
+    // leg into the middle editor column when clicked.
     const sellColumn = screen.getByTestId("sell-column");
-    const sellEditButtons = within(sellColumn).getAllByRole("button", { name: /^Edit$/i });
-    expect(sellEditButtons).toHaveLength(2);
+    const sellRows = within(sellColumn).getAllByRole("button", { name: /^New sale/i });
+    expect(sellRows).toHaveLength(2);
 
-    for (const editBtn of sellEditButtons) {
-      fireEvent.click(editBtn);
+    for (const row of sellRows) {
+      fireEvent.click(row);
       const sourceSelect = screen.getByLabelText(/Account to Sell/i);
       fireEvent.change(sourceSelect, { target: { value: "acc-brokerage" } });
       fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
@@ -62,7 +62,7 @@ describe("AddAssetTransactionForm — add mode fan-out", () => {
 
     // Fill the buy leg: asset name + purchase price make it valid.
     const buyColumn = screen.getByTestId("buy-column");
-    fireEvent.click(within(buyColumn).getByRole("button", { name: /^Edit$/i }));
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^New purchase/i }));
     fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
     fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
       target: { value: "800000" },

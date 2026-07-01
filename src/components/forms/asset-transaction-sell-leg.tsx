@@ -5,13 +5,14 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import type { ProjectionYear } from "@/engine/types";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { FieldTooltip } from "./field-tooltip";
 import type { SellLegDraft } from "./asset-transaction-leg-model";
 import { parseNum, formatCurrency } from "./asset-transaction-leg-model";
 import type { BusinessSaleOption } from "./add-asset-transaction-form";
 
-// ── Local icon (only used by §121 toggle in this component) ──────────────────
+// ── Local icon (only used by §121 checkbox in this component) ─────────────────
 
-/** 12×12 check glyph for the §121 toggle. */
+/** 12×12 check glyph for the §121 checkbox. */
 function CheckIcon() {
   return (
     <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" aria-hidden>
@@ -23,6 +24,17 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/** Segmented-control button styling. Selected reads as a filled accent chip so
+ *  it's unmistakable which mode is active. */
+function segmentClass(active: boolean): string {
+  return (
+    "rounded-[var(--radius-sm)] border px-2.5 py-1 text-[12px] font-medium transition-colors " +
+    (active
+      ? "border-accent bg-accent/20 text-accent-ink font-semibold"
+      : "border-hair bg-card-2 text-ink-2 hover:border-hair-2")
   );
 }
 
@@ -106,6 +118,27 @@ export default function SellLegEditor({
     [accounts],
   );
 
+  // Pre-fill the value/basis fields with the projected figures for the sale
+  // year (rounded to whole dollars). The stored override stays empty until the
+  // user types over it, so an untouched field still uses the exact projection.
+  const projValue = projectedSellInfo?.projectedValue ?? null;
+  const projBasis = projectedSellInfo?.projectedBasis ?? null;
+  const saleValueDisplay =
+    leg.overrideSaleValue !== ""
+      ? leg.overrideSaleValue
+      : projValue != null
+        ? String(Math.round(projValue))
+        : "";
+  const basisDisplay =
+    leg.overrideBasis !== ""
+      ? leg.overrideBasis
+      : projBasis != null
+        ? String(Math.round(projBasis))
+        : "";
+
+  // Label variant that lays out inline so a FieldTooltip can sit beside the text.
+  const tooltipLabelClass = `${fieldLabelClassName.replace("block", "flex")} items-center gap-1.5`;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -148,12 +181,7 @@ export default function SellLegEditor({
                     }
                   }}
                   aria-pressed={active}
-                  className={
-                    "rounded-[var(--radius-sm)] border px-2.5 py-1 text-[12px] font-medium transition-colors " +
-                    (active
-                      ? "border-accent/50 bg-accent/10 text-accent-ink"
-                      : "border-hair bg-card-2 text-ink-2 hover:border-hair-2")
-                  }
+                  className={segmentClass(active)}
                 >
                   {opt.label}
                 </button>
@@ -314,12 +342,7 @@ export default function SellLegEditor({
                 type="button"
                 onClick={() => onChange({ sellAmountMode: m })}
                 aria-pressed={active}
-                className={
-                  "rounded-[var(--radius-sm)] border px-2.5 py-1 text-[12px] font-medium transition-colors " +
-                  (active
-                    ? "border-accent/50 bg-accent/10 text-accent-ink"
-                    : "border-hair bg-card-2 text-ink-2 hover:border-hair-2")
-                }
+                className={segmentClass(active)}
               >
                 {m === "full"
                   ? "Full sale"
@@ -346,96 +369,62 @@ export default function SellLegEditor({
         )}
       </div>
 
-      {/* Sale value / basis: dollar-mode inline vs More overrides */}
-      {leg.sellAmountMode === "dollar" ? (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="overrideSaleValue">
-            Sell amount ($)
+      {/* Sale value & basis in the sale year — pre-filled from the projection;
+          type to override. In % mode the fraction drives the value, so only the
+          basis is shown. */}
+      {leg.sellAmountMode === "percent" ? (
+        <div className="w-1/2 pr-2">
+          <label className={tooltipLabelClass} htmlFor="overrideBasis">
+            Basis ($)
+            <FieldTooltip
+              text={`Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`}
+            />
           </label>
           <CurrencyInput
-            id="overrideSaleValue"
-            value={leg.overrideSaleValue}
-            onChange={(raw) => onChange({ overrideSaleValue: raw })}
-            placeholder="Leave blank for projected"
+            id="overrideBasis"
+            value={basisDisplay}
+            onChange={(raw) => onChange({ overrideBasis: raw })}
+            placeholder="Enter basis"
             className={inputClassName.replace("px-3", "pr-3")}
           />
-          {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
-            <p className="mt-1 text-[12px] text-ink-3">
-              Projected value in {year}:{" "}
-              <span className="text-ink-2 tabular-nums">
-                {formatCurrency(projectedSellInfo.projectedValue)}
-              </span>
-            </p>
-          )}
-          <div className="mt-3">
-            <label className={fieldLabelClassName} htmlFor="overrideBasis">
-              Override Basis ($)
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={tooltipLabelClass} htmlFor="overrideSaleValue">
+              {leg.sellAmountMode === "dollar" ? "Amount to sell ($)" : "Sale value ($)"}
+              <FieldTooltip
+                text={
+                  leg.sellAmountMode === "dollar"
+                    ? `Dollar amount to sell from this asset in ${year}.`
+                    : `Value realized in ${year}, pre-filled from the projection. Type to override; clear to use the projection.`
+                }
+              />
+            </label>
+            <CurrencyInput
+              id="overrideSaleValue"
+              value={leg.sellAmountMode === "dollar" ? leg.overrideSaleValue : saleValueDisplay}
+              onChange={(raw) => onChange({ overrideSaleValue: raw })}
+              placeholder={leg.sellAmountMode === "dollar" ? "e.g. 50,000" : "Enter value"}
+              className={inputClassName.replace("px-3", "pr-3")}
+            />
+          </div>
+          <div>
+            <label className={tooltipLabelClass} htmlFor="overrideBasis">
+              Basis ($)
+              <FieldTooltip
+                text={`Cost basis in ${year}, pre-filled from the projection. Type to override; used to compute the capital gain.`}
+              />
             </label>
             <CurrencyInput
               id="overrideBasis"
-              value={leg.overrideBasis}
+              value={basisDisplay}
               onChange={(raw) => onChange({ overrideBasis: raw })}
-              placeholder="Leave blank for projected"
+              placeholder="Enter basis"
               className={inputClassName.replace("px-3", "pr-3")}
             />
-            {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-              <p className="mt-1 text-[12px] text-ink-3">
-                Projected basis in {year}:{" "}
-                <span className="text-ink-2 tabular-nums">
-                  {formatCurrency(projectedSellInfo.projectedBasis)}
-                </span>
-              </p>
-            )}
           </div>
         </div>
-      ) : (
-        <details className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">
-          <summary className="cursor-pointer text-[13px] text-ink-2">
-            More overrides
-          </summary>
-          <div className="mt-2 grid grid-cols-2 gap-4">
-            <div>
-              <label className={fieldLabelClassName} htmlFor="overrideSaleValue">
-                Override Sale Value ($)
-              </label>
-              <CurrencyInput
-                id="overrideSaleValue"
-                value={leg.overrideSaleValue}
-                onChange={(raw) => onChange({ overrideSaleValue: raw })}
-                placeholder="Leave blank for projected"
-                className={inputClassName.replace("px-3", "pr-3")}
-              />
-              {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
-                <p className="mt-1 text-[12px] text-ink-3">
-                  Projected value in {year}:{" "}
-                  <span className="text-ink-2 tabular-nums">
-                    {formatCurrency(projectedSellInfo.projectedValue)}
-                  </span>
-                </p>
-              )}
-            </div>
-            <div>
-              <label className={fieldLabelClassName} htmlFor="overrideBasis">
-                Override Basis ($)
-              </label>
-              <CurrencyInput
-                id="overrideBasis"
-                value={leg.overrideBasis}
-                onChange={(raw) => onChange({ overrideBasis: raw })}
-                placeholder="Leave blank for projected"
-                className={inputClassName.replace("px-3", "pr-3")}
-              />
-              {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                <p className="mt-1 text-[12px] text-ink-3">
-                  Projected basis in {year}:{" "}
-                  <span className="text-ink-2 tabular-nums">
-                    {formatCurrency(projectedSellInfo.projectedBasis)}
-                  </span>
-                </p>
-              )}
-            </div>
-          </div>
-        </details>
       )}
 
       {/* Transaction costs */}
@@ -485,39 +474,27 @@ export default function SellLegEditor({
         </div>
       )}
 
-      {/* IRC §121 home-sale exclusion toggle — real estate sells only */}
+      {/* IRC §121 home-sale exclusion — real estate sells only */}
       {isSellRealEstate && (
-        <button
-          type="button"
-          onClick={() =>
-            onChange({ qualifiesForHomeSaleExclusion: !leg.qualifiesForHomeSaleExclusion })
-          }
-          aria-pressed={leg.qualifiesForHomeSaleExclusion}
-          className={`flex w-full items-start gap-2.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left transition-colors ${
-            leg.qualifiesForHomeSaleExclusion
-              ? "border-accent/50 bg-accent/10"
-              : "border-hair bg-card-2 hover:border-hair-2"
-          }`}
-        >
-          <span
-            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
-              leg.qualifiesForHomeSaleExclusion
-                ? "border-accent bg-accent text-accent-on"
-                : "border-hair-2 bg-card"
-            }`}
-          >
-            {leg.qualifiesForHomeSaleExclusion && <CheckIcon />}
-          </span>
-          <span>
+        <div className="flex items-center gap-1.5">
+          <label className="flex cursor-pointer select-none items-center gap-2">
+            <input
+              type="checkbox"
+              checked={leg.qualifiesForHomeSaleExclusion}
+              onChange={(e) =>
+                onChange({ qualifiesForHomeSaleExclusion: e.target.checked })
+              }
+              className="peer sr-only"
+            />
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-hair-2 bg-card text-transparent transition-colors peer-checked:border-accent peer-checked:bg-accent peer-checked:text-accent-on peer-focus-visible:ring-2 peer-focus-visible:ring-accent/50">
+              <CheckIcon />
+            </span>
             <span className="text-[13px] font-medium text-ink">
               Qualifies for home-sale gain exclusion (§121)
             </span>
-            <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">
-              Excludes up to $250k single / $500k married-joint of capital gain
-              on this sale. Advisor confirms 2-of-5-year eligibility.
-            </span>
-          </span>
-        </button>
+          </label>
+          <FieldTooltip text="Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility." />
+        </div>
       )}
 
       {/* Proceeds destination — hidden in business mode */}
