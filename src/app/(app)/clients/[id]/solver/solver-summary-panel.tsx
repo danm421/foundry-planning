@@ -6,6 +6,7 @@ import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SUMMARY_TABS, SUMMARY_REGISTRY } from "@/components/solver/summaries/registry";
 import { SummarySkeleton, SummaryEmpty } from "@/components/solver/summaries/primitives";
 import { useSolverSummaryData } from "./use-solver-summary-data";
+import { SolverRetirementComparisonPanel } from "./solver-retirement-comparison-panel";
 
 interface Props {
   clientId: string;
@@ -16,8 +17,34 @@ interface Props {
   clientName: string;
   spouseName: string | null;
   mcSuccessRate: number | null;
+  baseClientData: ClientData;
+  baseProjection: ProjectionYear[];
+  extraAccountMixes: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
+}
+
+// Shared tablist — rendered in both the normal branch and the
+// retirementComparison special-case so both branches let the advisor switch tabs.
+function SummaryTabList({ activeSummary, onSummaryChange }: { activeSummary: SummaryKey; onSummaryChange: (s: SummaryKey) => void }) {
+  return (
+    <div role="tablist" className="flex flex-wrap gap-1 border-b border-hair pb-2">
+      {SUMMARY_TABS.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={activeSummary === t.key}
+          onClick={() => onSummaryChange(t.key)}
+          className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
+            activeSummary === t.key ? "bg-accent/20 text-ink" : "text-ink-3 hover:text-ink"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function SolverSummaryPanel(props: Props) {
@@ -25,41 +52,39 @@ export function SolverSummaryPanel(props: Props) {
   const { context, estateLoading, liLoading } = useSolverSummaryData({ ...props, enabled: true });
   const def = SUMMARY_REGISTRY[activeSummary];
 
+  // The retirementComparison tab has its own Run-button panel that calls a
+  // dedicated server route — it renders instead of the normal build path.
+  // Hooks below must stay unconditional (rules-of-hooks), so we branch in the
+  // JSX rather than returning early.
+  const isRetirementComparison = activeSummary === "retirementComparison";
+
   const loading =
     (activeSummary === "estate" && estateLoading && !context.projection?.firstDeathEvent) ||
     (activeSummary === "lifeInsurance" && liLoading && !context.lifeInsurance);
 
   const data = useMemo<unknown>(() => {
-    if (loading) return null;
+    if (loading || isRetirementComparison) return null;
     try {
       return def.build(context);
     } catch (err) {
       console.error("[SolverSummaryPanel] summary builder threw for", activeSummary, err);
       return null;
     }
-  }, [def, context, loading, activeSummary]);
+  }, [def, context, loading, activeSummary, isRetirementComparison]);
   const View = def.Component;
-  const buildFailed = !loading && data === null;
+  const buildFailed = !loading && !isRetirementComparison && data === null;
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="tablist" className="flex flex-wrap gap-1 border-b border-hair pb-2">
-        {SUMMARY_TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={activeSummary === t.key}
-            onClick={() => onSummaryChange(t.key)}
-            className={`rounded px-3 py-1 text-[12px] font-medium transition-colors ${
-              activeSummary === t.key ? "bg-accent/20 text-ink" : "text-ink-3 hover:text-ink"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {loading ? (
+      <SummaryTabList activeSummary={activeSummary} onSummaryChange={onSummaryChange} />
+      {isRetirementComparison ? (
+        <SolverRetirementComparisonPanel
+          clientId={props.clientId}
+          source={props.source}
+          mutations={props.mutations}
+          extraAccountMixes={props.extraAccountMixes}
+        />
+      ) : loading ? (
         <SummarySkeleton label="Loading…" />
       ) : buildFailed ? (
         <SummaryEmpty message="This summary is unavailable." />

@@ -3,6 +3,7 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { comparisonBundlesByRef } from "@/lib/solver/comparison-bundles";
 
 export interface SolverSummaryContextInput {
   years: ProjectionYear[];
@@ -17,6 +18,10 @@ export interface SolverSummaryContextInput {
   fullProjection?: ProjectionResult;
   /** DB-loaded inventory — required only by the Life Insurance summary. */
   lifeInsurance?: LifeInsuranceInventory;
+  /** Base Case client data — enables the comparison summaries (base vs working). */
+  baseClientData?: ClientData;
+  /** Base Case projection years — enables the comparison summaries. */
+  baseProjection?: ProjectionYear[];
 }
 
 /**
@@ -30,6 +35,7 @@ export function buildSolverSummaryContext(
   const {
     years, clientData, clientName, spouseName, mcSuccessRate,
     scenarioLabel = "Proposed", fullProjection, lifeInsurance,
+    baseClientData, baseProjection,
   } = input;
 
   // The retirement builder reads only `monteCarlo?.summary.successRate`.
@@ -37,6 +43,24 @@ export function buildSolverSummaryContext(
     mcSuccessRate == null
       ? null
       : ({ summary: { successRate: mcSuccessRate } } as unknown as MonteCarloReportPayload);
+
+  // Comparison summaries (Tax Comparison) read `bundlesByRef`: Base Case vs the
+  // live working tree. Deterministic-only — projection years are enough.
+  const bundlesByRef =
+    baseClientData && baseProjection
+      ? comparisonBundlesByRef(
+          {
+            clientData: baseClientData,
+            projection: { years: baseProjection } as ProjectionResult,
+            scenarioLabel: "Base Case",
+          },
+          {
+            clientData,
+            projection: { years } as ProjectionResult,
+            scenarioLabel,
+          },
+        )
+      : undefined;
 
   return {
     years,
@@ -57,5 +81,6 @@ export function buildSolverSummaryContext(
     accentColor: "var(--color-accent)",
     monteCarlo,
     lifeInsurance,
+    bundlesByRef,
   };
 }

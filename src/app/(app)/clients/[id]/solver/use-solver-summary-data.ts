@@ -15,12 +15,14 @@ interface Args {
   clientName: string;
   spouseName: string | null;
   mcSuccessRate: number | null;
+  baseClientData: ClientData;
+  baseProjection: ProjectionYear[];
   activeSummary: SummaryKey;
   enabled: boolean;
 }
 
 export function useSolverSummaryData(args: Args) {
-  const { clientId, source, mutations, years, workingTree, clientName, spouseName, mcSuccessRate, activeSummary, enabled } = args;
+  const { clientId, source, mutations, years, workingTree, clientName, spouseName, mcSuccessRate, baseClientData, baseProjection, activeSummary, enabled } = args;
 
   const [fullProjection, setFullProjection] = useState<ProjectionResult | undefined>(undefined);
   const [estateLoading, setEstateLoading] = useState(false);
@@ -80,8 +82,8 @@ export function useSolverSummaryData(args: Args) {
   }, [enabled, activeSummary, lifeInsurance, clientId, clientName, spouseName]);
 
   const context = useMemo(
-    () => buildSolverSummaryContext({ years, clientData: workingTree, clientName, spouseName, mcSuccessRate, fullProjection, lifeInsurance }),
-    [years, workingTree, clientName, spouseName, mcSuccessRate, fullProjection, lifeInsurance],
+    () => buildSolverSummaryContext({ years, clientData: workingTree, clientName, spouseName, mcSuccessRate, fullProjection, lifeInsurance, baseClientData, baseProjection }),
+    [years, workingTree, clientName, spouseName, mcSuccessRate, fullProjection, lifeInsurance, baseClientData, baseProjection],
   );
 
   return { context, estateLoading, liLoading };
