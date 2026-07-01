@@ -9,6 +9,7 @@
 import "server-only";
 import { dispatchCustomEvent } from "@langchain/core/callbacks/dispatch";
 import { NAVIGATE_ALLOWLIST_PREFIXES } from "./navigate-allowlist";
+import { getWalkthrough } from "./help/catalog";
 
 // Re-exported so existing server callers (tools/navigate*, custom-events.test)
 // keep importing the allowlist from here unchanged.
@@ -34,7 +35,16 @@ export interface PageLinkFrame {
   section: string;
   label: string;
 }
-export type ForgeCustomFrame = ToolRenderFrame | NavigateFrame | ActivityFrame | PageLinkFrame;
+export interface WalkthroughFrame {
+  type: "walkthrough";
+  walkthroughId: string;
+}
+export type ForgeCustomFrame =
+  | ToolRenderFrame
+  | NavigateFrame
+  | ActivityFrame
+  | PageLinkFrame
+  | WalkthroughFrame;
 
 export async function emitToolRender(name: string, status: ToolRenderFrame["status"], data: unknown) {
   await dispatchCustomEvent("tool_render", { name, status, data });
@@ -56,4 +66,13 @@ export async function emitPageLink(href: string, section: string, label: string)
     throw new Error("page_link href not allowlisted");
   }
   await dispatchCustomEvent("page_link", { href, section, label });
+}
+/** Emit a request for the client to start an on-screen guided walkthrough.
+ *  The id is re-validated against the catalog here (defence in depth) — the
+ *  model can never trigger a tour that isn't curated. */
+export async function emitWalkthrough(walkthroughId: string) {
+  if (!getWalkthrough(walkthroughId)) {
+    throw new Error("unknown walkthrough id");
+  }
+  await dispatchCustomEvent("walkthrough", { walkthroughId });
 }
