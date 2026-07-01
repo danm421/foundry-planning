@@ -52,6 +52,15 @@ describe("MonteCarloReportView", () => {
     expect(screen.getByTestId("fan-compact")).toBeInTheDocument();
   });
 
+  it("stacks the sub-charts below the main chart and drops the Key Findings card in stacked layout", () => {
+    renderView({ layout: "stacked" });
+    expect(screen.getByTestId("fan-main")).toBeInTheDocument();
+    expect(screen.getByTestId("hist-compact")).toBeInTheDocument();
+    expect(screen.getByTestId("long-compact")).toBeInTheDocument();
+    // Findings fold into the KPI band, so the standalone findings card is gone.
+    expect(screen.queryByTestId("findings")).not.toBeInTheDocument();
+  });
+
   it("hides the header when showHeader is false", () => {
     renderView({ showHeader: false });
     expect(screen.queryByTestId("header")).not.toBeInTheDocument();

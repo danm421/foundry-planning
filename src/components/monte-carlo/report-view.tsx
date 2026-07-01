@@ -21,11 +21,18 @@ interface MonteCarloReportViewProps {
   onReseed?: () => void;
   reseedBusy?: boolean;
   reseedError?: string | null;
+  /**
+   * "sidebar" (default): two-column with the compact charts + Key Findings in a
+   * right rail. "stacked": single column — sub-charts sit below the main chart
+   * and the failure finding folds into the KPI band (used by the solver tab).
+   */
+  layout?: "sidebar" | "stacked";
 }
 
 export function MonteCarloReportView({
   summary, raw, deterministic, meta,
   showHeader = true, onReseed, reseedBusy = false, reseedError = null,
+  layout = "sidebar",
 }: MonteCarloReportViewProps) {
   const theme = useThemeName();
   const brandColors = theme === "light" ? colorsLight : colors;
@@ -55,101 +62,157 @@ export function MonteCarloReportView({
     return <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />;
   }
 
+  const headerBlock = (
+    <>
+      {showHeader && <ReportHeader clientDisplayName={meta.clientDisplayName} />}
+      {/* F16 disclosure: MC volatility/mixes are always base-case. The
+          -mt-3 only snugs it under ReportHeader; drop it when headerless. */}
+      <p className={`text-[12px] text-ink-3${showHeader ? " -mt-3" : ""}`}>
+        Monte Carlo uses base-case asset mixes and volatility.
+      </p>
+    </>
+  );
+
+  const kpiBlock = summary ? (
+    <KpiBand
+      summary={summary}
+      startAge={summary.byYear[0]?.age?.client ?? 0}
+      annualIncome={meta.annualIncomeAtStart}
+      includeFailureKpi={layout === "stacked"}
+    />
+  ) : (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className={`rounded-lg bg-card ring-1 ring-hair p-4 min-h-[96px] animate-pulse${i === 0 ? " lg:col-span-2" : ""}`}
+        />
+      ))}
+    </div>
+  );
+
+  const mainChartBlock = summary && raw ? (
+    <>
+      {mainChart === "fan" && (
+        <FanChart
+          summary={summary}
+          deterministic={deterministic}
+          ageMarkers={ageMarkers}
+          variant="main"
+        />
+      )}
+      {mainChart === "histogram" && (
+        <TerminalHistogram
+          endingValues={endingValues}
+          trialsRun={summary.trialsRun}
+          requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
+          startingLiquidBalance={meta.startingLiquidBalance}
+          variant="main"
+        />
+      )}
+      {mainChart === "longevity" && (
+        <LongevityChart
+          byYearLiquidAssetsPerTrial={raw.byYearLiquidAssetsPerTrial}
+          requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
+          planStartYear={meta.planStartYear}
+          clientBirthYear={meta.clientBirthYear}
+          variant="main"
+        />
+      )}
+    </>
+  ) : (
+    <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />
+  );
+
+  const compactCharts = summary && raw ? (
+    <>
+      {mainChart !== "fan" && (
+        <FanChart
+          summary={summary}
+          deterministic={deterministic}
+          ageMarkers={ageMarkers}
+          variant="compact"
+          onPromote={() => setMainChart("fan")}
+        />
+      )}
+      {mainChart !== "histogram" && (
+        <TerminalHistogram
+          endingValues={endingValues}
+          trialsRun={summary.trialsRun}
+          requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
+          startingLiquidBalance={meta.startingLiquidBalance}
+          variant="compact"
+          onPromote={() => setMainChart("histogram")}
+        />
+      )}
+      {mainChart !== "longevity" && (
+        <LongevityChart
+          byYearLiquidAssetsPerTrial={raw.byYearLiquidAssetsPerTrial}
+          requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
+          planStartYear={meta.planStartYear}
+          clientBirthYear={meta.clientBirthYear}
+          variant="compact"
+          onPromote={() => setMainChart("longevity")}
+        />
+      )}
+    </>
+  ) : null;
+
+  const yearlyBlock = summary ? (
+    <YearlyBreakdown summary={summary} />
+  ) : (
+    <div className="rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
+  );
+
+  const errorBanner = reseedError ? (
+    <div className="rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
+      {"Couldn’t generate a new seed: "}{reseedError}
+    </div>
+  ) : null;
+
+  const reseedButton = summary && onReseed ? (
+    <button
+      onClick={onReseed}
+      disabled={reseedBusy}
+      className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
+    >
+      {reseedBusy ? "Generating…" : "Generate New Seed"}
+    </button>
+  ) : null;
+
+  if (layout === "stacked") {
+    return (
+      <div className="flex flex-col gap-6">
+        {headerBlock}
+        {mainChartBlock}
+        {kpiBlock}
+        {summary && raw ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{compactCharts}</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-lg bg-card ring-1 ring-hair h-[280px] animate-pulse" />
+            <div className="rounded-lg bg-card ring-1 ring-hair h-[280px] animate-pulse" />
+          </div>
+        )}
+        {errorBanner}
+        {yearlyBlock}
+        {reseedButton && <div className="flex justify-center pt-2">{reseedButton}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
       <div className="flex flex-col gap-6 min-w-0">
-        {showHeader && (
-          <ReportHeader clientDisplayName={meta.clientDisplayName} />
-        )}
-        {/* F16 disclosure: MC volatility/mixes are always base-case. The
-            -mt-3 only snugs it under ReportHeader; drop it when headerless. */}
-        <p className={`text-[12px] text-ink-3${showHeader ? " -mt-3" : ""}`}>
-          Monte Carlo uses base-case asset mixes and volatility.
-        </p>
-
-        {summary ? (
-          <KpiBand
-            summary={summary}
-            startAge={summary.byYear[0]?.age?.client ?? 0}
-            annualIncome={meta.annualIncomeAtStart}
-          />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className={`rounded-lg bg-card ring-1 ring-hair p-4 min-h-[96px] animate-pulse${i === 0 ? " lg:col-span-2" : ""}`}
-              />
-            ))}
-          </div>
-        )}
-
-        {summary && raw ? (
-          <>
-            {mainChart === "fan" && (
-              <FanChart
-                summary={summary}
-                deterministic={deterministic}
-                ageMarkers={ageMarkers}
-                variant="main"
-              />
-            )}
-            {mainChart === "histogram" && (
-              <TerminalHistogram
-                endingValues={endingValues}
-                trialsRun={summary.trialsRun}
-                requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
-                startingLiquidBalance={meta.startingLiquidBalance}
-                variant="main"
-              />
-            )}
-            {mainChart === "longevity" && (
-              <LongevityChart
-                byYearLiquidAssetsPerTrial={raw.byYearLiquidAssetsPerTrial}
-                requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
-                planStartYear={meta.planStartYear}
-                clientBirthYear={meta.clientBirthYear}
-                variant="main"
-              />
-            )}
-          </>
-        ) : (
-          <div className="rounded-lg bg-card ring-1 ring-hair h-[440px] animate-pulse" />
-        )}
+        {headerBlock}
+        {kpiBlock}
+        {mainChartBlock}
       </div>
       <aside className="flex flex-col gap-4">
         {summary && raw ? (
           <>
             <FindingsCard summary={summary} />
-            {mainChart !== "fan" && (
-              <FanChart
-                summary={summary}
-                deterministic={deterministic}
-                ageMarkers={ageMarkers}
-                variant="compact"
-                onPromote={() => setMainChart("fan")}
-              />
-            )}
-            {mainChart !== "histogram" && (
-              <TerminalHistogram
-                endingValues={endingValues}
-                trialsRun={summary.trialsRun}
-                requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
-                startingLiquidBalance={meta.startingLiquidBalance}
-                variant="compact"
-                onPromote={() => setMainChart("histogram")}
-              />
-            )}
-            {mainChart !== "longevity" && (
-              <LongevityChart
-                byYearLiquidAssetsPerTrial={raw.byYearLiquidAssetsPerTrial}
-                requiredMinimumAssetLevel={meta.requiredMinimumAssetLevel}
-                planStartYear={meta.planStartYear}
-                clientBirthYear={meta.clientBirthYear}
-                variant="compact"
-                onPromote={() => setMainChart("longevity")}
-              />
-            )}
+            {compactCharts}
           </>
         ) : (
           <>
@@ -160,31 +223,13 @@ export function MonteCarloReportView({
         )}
       </aside>
 
-      {reseedError && (
-        <div className="lg:col-span-2 rounded border border-crit/40 bg-crit/10 p-4 text-sm text-crit">
-          {"Couldn’t generate a new seed: "}{reseedError}
-        </div>
-      )}
+      {errorBanner && <div className="lg:col-span-2">{errorBanner}</div>}
 
-      {summary ? (
-        <div className="lg:col-span-2">
-          <YearlyBreakdown summary={summary} />
-        </div>
-      ) : (
-        <div className="lg:col-span-2 rounded-lg bg-card ring-1 ring-hair h-[320px] animate-pulse" />
-      )}
+      <div className="lg:col-span-2">{yearlyBlock}</div>
 
-      {summary && onReseed ? (
-        <div className="lg:col-span-2 flex justify-center pt-2">
-          <button
-            onClick={onReseed}
-            disabled={reseedBusy}
-            className="rounded-lg border border-hair bg-card px-4 py-2 text-sm text-ink-2 hover:border-good/60 hover:text-good disabled:opacity-50"
-          >
-            {reseedBusy ? "Generating…" : "Generate New Seed"}
-          </button>
-        </div>
-      ) : null}
+      {reseedButton && (
+        <div className="lg:col-span-2 flex justify-center pt-2">{reseedButton}</div>
+      )}
     </div>
   );
 }

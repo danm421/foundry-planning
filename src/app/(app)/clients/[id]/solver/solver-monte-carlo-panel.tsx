@@ -40,6 +40,7 @@ export function SolverMonteCarloPanel({
       deterministic={mc.result.payload.deterministic}
       meta={mc.result.meta}
       showHeader={false}
+      layout="stacked"
     />
   );
 }
