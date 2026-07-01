@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import AddAssetTransactionForm from "../add-asset-transaction-form";
 
 vi.mock("next/navigation", () => ({
@@ -13,31 +12,22 @@ vi.mock("next/navigation", () => ({
 const ACCOUNTS = [
   { id: "acc-brokerage", name: "Brokerage", category: "taxable", subType: "brokerage" },
 ];
-
 const LIABILITIES: { id: string; name: string; linkedPropertyId: string | null; balance: string }[] = [];
 
 let fetchMock: ReturnType<typeof vi.fn>;
-
 beforeEach(() => {
-  fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({}),
-  });
+  fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
   vi.stubGlobal("fetch", fetchMock);
-  vi.stubGlobal("crypto", {
-    randomUUID: () => "test-uuid-1234",
-  });
+  let n = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${++n}` });
 });
+afterEach(() => vi.unstubAllGlobals());
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe("AddAssetTransactionForm — draft mode", () => {
-  it("calls onSubmitDraft with a numeric AssetTransaction and does NOT POST to asset-transactions", async () => {
-    const onSubmitDraft = vi.fn();
+describe("AddAssetTransactionForm — add mode fan-out", () => {
+  it("emits one draft per leg for a 2-sell + 1-buy bundle, all sharing the year", async () => {
+    const drafts: unknown[] = [];
+    const onSubmitDraft = vi.fn((t) => drafts.push(t));
     const onSaved = vi.fn();
-
     render(
       <AddAssetTransactionForm
         clientId="client-123"
@@ -49,41 +39,77 @@ describe("AddAssetTransactionForm — draft mode", () => {
       />,
     );
 
-    // Fill in the required Transaction Name field
-    fireEvent.change(screen.getByLabelText(/Transaction Name/i), {
-      target: { value: "Buy Rental" },
+    // Shared name + year.
+    fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: "Downsize 2030" } });
+    fireEvent.change(screen.getByLabelText(/^Year/i), { target: { value: "2030" } });
+
+    // The ledger starts with one sell leg. Add a second sell and one buy.
+    fireEvent.click(screen.getByRole("button", { name: /Add sell/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add buy/i }));
+
+    // Source both sell legs to the brokerage account. Each sell summary row has
+    // its own "Edit" button; opening it renders the SellLegEditor full-width.
+    const sellColumn = screen.getByTestId("sell-column");
+    const sellEditButtons = within(sellColumn).getAllByRole("button", { name: /^Edit$/i });
+    expect(sellEditButtons).toHaveLength(2);
+
+    for (const editBtn of sellEditButtons) {
+      fireEvent.click(editBtn);
+      const sourceSelect = screen.getByLabelText(/Account to Sell/i);
+      fireEvent.change(sourceSelect, { target: { value: "acc-brokerage" } });
+      fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
+    }
+
+    // Fill the buy leg: asset name + purchase price make it valid.
+    const buyColumn = screen.getByTestId("buy-column");
+    fireEvent.click(within(buyColumn).getByRole("button", { name: /^Edit$/i }));
+    fireEvent.change(screen.getByLabelText(/Asset Name/i), { target: { value: "Condo" } });
+    fireEvent.change(document.getElementById("purchasePrice") as HTMLInputElement, {
+      target: { value: "800000" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /^Done$/i }));
 
-    // Expand Buy Side and fill asset name + purchase price
-    fireEvent.click(screen.getByRole("button", { name: /Buy Side/i }));
-
-    fireEvent.change(screen.getByLabelText(/Asset Name/i), {
-      target: { value: "123 Oak Ave" },
-    });
-
-    // Purchase Price is a CurrencyInput — interact via its input element
-    const purchasePriceInput = document.getElementById("purchasePrice") as HTMLInputElement;
-    fireEvent.change(purchasePriceInput, { target: { value: "450000" } });
-
-    // Submit via the form element (as DialogShell primaryAction does)
     fireEvent.submit(document.getElementById("asset-transaction-form")!);
 
-    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
-
-    const technique = onSubmitDraft.mock.calls[0][0];
-
-    // purchasePrice must be coerced to a number
-    expect(technique.purchasePrice).toBe(450000);
-    expect(typeof technique.id).toBe("string");
-    expect(technique.id.length).toBeGreaterThan(0);
-
-    // Assert that the persist endpoint was NOT called
-    const assetTransactionWriteCalls = fetchMock.mock.calls.filter(
-      (args) => typeof args[0] === "string" && (args[0] as string).includes("asset-transactions"),
-    );
-    expect(assetTransactionWriteCalls).toHaveLength(0);
-
-    // onSaved must be called to close the dialog
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(3));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(drafts.filter((d: any) => d.type === "sell")).toHaveLength(2);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(drafts.filter((d: any) => d.type === "buy")).toHaveLength(1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((drafts as any[]).every((d) => d.year === 2030)).toBe(true);
+    // no persist POST in draft mode
+    expect(fetchMock.mock.calls.filter((a) => String(a[0]).includes("asset-transactions"))).toHaveLength(0);
     expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AddAssetTransactionForm — edit mode", () => {
+  it("loads a single sell record and emits exactly one draft on save", async () => {
+    const onSubmitDraft = vi.fn();
+    render(
+      <AddAssetTransactionForm
+        clientId="client-123"
+        accounts={ACCOUNTS}
+        liabilities={LIABILITIES}
+        onClose={() => {}}
+        onSaved={() => {}}
+        onSubmitDraft={onSubmitDraft}
+        initialData={{
+          id: "rec-1", name: "Sell Brokerage", type: "sell", year: 2031,
+          accountId: "acc-brokerage", purchaseTransactionId: null, businessAccountId: null,
+          fractionSold: null, overrideSaleValue: null, overrideBasis: null,
+          transactionCostPct: null, transactionCostFlat: null, proceedsAccountId: null,
+          qualifiesForHomeSaleExclusion: null, assetName: null, assetCategory: null, assetSubType: null,
+          purchasePrice: null, growthRate: null, basis: null, fundingAccountId: null,
+          mortgageAmount: null, mortgageRate: null, mortgageTermMonths: null,
+        }}
+      />,
+    );
+    fireEvent.submit(document.getElementById("asset-transaction-form")!);
+    await waitFor(() => expect(onSubmitDraft).toHaveBeenCalledTimes(1));
+    expect(onSubmitDraft.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ id: "rec-1", type: "sell", year: 2031 }),
+    );
   });
 });
