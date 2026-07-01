@@ -7,6 +7,7 @@ import {
   type AssetTypeId,
 } from "@/lib/investments/asset-types";
 import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
+import { buildStatsContext, computeStats } from "@/lib/investments/portfolio-stats";
 import { TrashIcon } from "@/components/icons";
 import { HelpTip } from "@/components/help-tip";
 import { benchmarkTooltip } from "@/lib/investments/cma-benchmarks";
@@ -127,6 +128,9 @@ export default function CmaClient() {
   const [tab, setTab] = useState<Tab>("asset-classes");
   const [assetClasses, setAssetClasses] = useState<AssetClass[]>([]);
   const [portfolios, setPortfolios] = useState<ModelPortfolio[]>([]);
+  const [correlationRows, setCorrelationRows] = useState<
+    { assetClassIdA: string; assetClassIdB: string; correlation: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,15 +175,18 @@ export default function CmaClient() {
         // on top of a banner if data actually exists.
       }
 
-      const [acRes, mpRes, setsRes, migRes] = await Promise.all([
+      const [acRes, mpRes, setsRes, migRes, corrRes] = await Promise.all([
         fetch("/api/cma/asset-classes"),
         fetch("/api/cma/model-portfolios"),
         fetch("/api/cma/sets"),
         // Drives whether the remapping ("Update to historical CMAs") button shows.
         fetch("/api/cma/migration-preview"),
+        // Feeds the diversification-aware volatility in the model-portfolio summary.
+        fetch("/api/cma/correlations"),
       ]);
       if (acRes.ok) setAssetClasses(await acRes.json());
       if (mpRes.ok) setPortfolios(await mpRes.json());
+      if (corrRes.ok) setCorrelationRows(await corrRes.json());
       if (migRes.ok) {
         const mig = (await migRes.json()) as {
           assetClasses: { added: unknown[]; removed: unknown[] };
@@ -469,6 +476,7 @@ export default function CmaClient() {
         <ModelPortfoliosTab
           portfolios={portfolios}
           assetClasses={assetClasses}
+          correlationRows={correlationRows}
           onRefresh={fetchData}
         />
       )}
@@ -727,10 +735,11 @@ function AssetClassRow({
 interface ModelPortfoliosTabProps {
   portfolios: ModelPortfolio[];
   assetClasses: AssetClass[];
+  correlationRows: { assetClassIdA: string; assetClassIdB: string; correlation: string }[];
   onRefresh: () => void;
 }
 
-function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfoliosTabProps) {
+function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefresh }: ModelPortfoliosTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(portfolios[0]?.id ?? null);
   const [error, setError] = useState<string | null>(null);
 
@@ -779,24 +788,44 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
     }
   }
 
-  // Compute blended stats for the selected portfolio
+  // Compute blended stats for the selected portfolio. Return + arith mean are
+  // naive weighted blends (eMoney parity); volatility is diversification-aware
+  // (correlation matrix) via the shared computeStats. Realization stays linear.
   const blended = selected
     ? (() => {
-        const result = { geoReturn: 0, arithMean: 0, vol: 0, oi: 0, ltcg: 0, qdiv: 0, taxEx: 0 };
-        const acMap = new Map(assetClasses.map((ac) => [ac.id, ac]));
-        for (const alloc of selected.allocations) {
-          const ac = acMap.get(alloc.assetClassId);
+        const acData = assetClasses.map((ac) => ({
+          id: ac.id,
+          geometricReturn: Number(ac.geometricReturn),
+          arithmeticMean: Number(ac.arithmeticMean),
+          volatility: Number(ac.volatility),
+          pctOrdinaryIncome: Number(ac.pctOrdinaryIncome),
+          pctLtCapitalGains: Number(ac.pctLtCapitalGains),
+          pctQualifiedDividends: Number(ac.pctQualifiedDividends),
+          pctTaxExempt: Number(ac.pctTaxExempt),
+        }));
+        const ctx = buildStatsContext(acData, correlationRows, 0);
+        const weights = selected.allocations.map((a) => ({
+          assetClassId: a.assetClassId,
+          weight: Number(a.weight),
+        }));
+        const stats = computeStats(weights, ctx);
+        const acMap = new Map(acData.map((ac) => [ac.id, ac]));
+        let oi = 0, ltcg = 0, qdiv = 0, taxEx = 0;
+        for (const a of selected.allocations) {
+          const ac = acMap.get(a.assetClassId);
           if (!ac) continue;
-          const w = Number(alloc.weight);
-          result.geoReturn += w * Number(ac.geometricReturn);
-          result.arithMean += w * Number(ac.arithmeticMean);
-          result.vol += w * Number(ac.volatility);
-          result.oi += w * Number(ac.pctOrdinaryIncome);
-          result.ltcg += w * Number(ac.pctLtCapitalGains);
-          result.qdiv += w * Number(ac.pctQualifiedDividends);
-          result.taxEx += w * Number(ac.pctTaxExempt);
+          const w = Number(a.weight);
+          oi += w * ac.pctOrdinaryIncome;
+          ltcg += w * ac.pctLtCapitalGains;
+          qdiv += w * ac.pctQualifiedDividends;
+          taxEx += w * ac.pctTaxExempt;
         }
-        return result;
+        return {
+          geoReturn: stats.geometricReturn,
+          arithMean: stats.arithmeticMean,
+          vol: stats.stdDev,
+          oi, ltcg, qdiv, taxEx,
+        };
       })()
     : null;
 
