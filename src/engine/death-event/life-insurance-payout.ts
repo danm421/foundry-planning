@@ -63,6 +63,12 @@ export function prepareLifeInsurancePayouts(
       continue;
     }
 
+    // Not-yet-activated policy: no coverage in force at the death year.
+    if (account.activationYear != null && input.year < account.activationYear) {
+      resultAccounts.push(account);
+      continue;
+    }
+
     const policy = account.lifeInsurance;
     const { postPayoutGrowthRate } = policy;
     const scheduledDb =

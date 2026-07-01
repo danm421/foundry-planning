@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import type { SolverMutation } from "@/lib/solver/types";
 import {
   buildQuickAddAccount,
@@ -32,6 +34,8 @@ interface Props {
   retirementYearForOwner: (familyMemberId: string) => number;
   /** CMA-resolved growth rate for the chosen type. */
   growthForType: (type: QuickAddType) => number;
+  /** Resolved milestones, for the "Activates" year picker. */
+  milestones: ClientMilestones;
   onChange: (m: SolverMutation) => void;
 }
 
@@ -39,7 +43,7 @@ const TYPE_ORDER: QuickAddType[] = ["taxable", "ira", "roth_ira", "cash"];
 const NEW_ACCOUNT = "__new__";
 
 export function SolverQuickAddAccount({
-  owners, existingAccounts, currentYear, retirementYearForOwner, growthForType, onChange,
+  owners, existingAccounts, currentYear, retirementYearForOwner, growthForType, milestones, onChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const defaultSelection = existingAccounts[0]?.id ?? NEW_ACCOUNT;
@@ -49,6 +53,9 @@ export function SolverQuickAddAccount({
   const [name, setName] = useState("");
   const [nameDirty, setNameDirty] = useState(false);
   const [amount, setAmount] = useState("");
+  const [activationEnabled, setActivationEnabled] = useState(false);
+  const [activationYear, setActivationYear] = useState(currentYear);
+  const [activationYearRef, setActivationYearRef] = useState<YearRef | null>(null);
 
   const isNew = selection === NEW_ACCOUNT;
   const selectedExisting = existingAccounts.find((a) => a.id === selection);
@@ -64,6 +71,7 @@ export function SolverQuickAddAccount({
     setSelection(defaultSelection);
     setType("taxable"); setOwnerId(owners[0]?.familyMemberId ?? "");
     setName(""); setNameDirty(false); setAmount("");
+    setActivationEnabled(false); setActivationYear(currentYear); setActivationYearRef(null);
   }
 
   function submit() {
@@ -80,6 +88,8 @@ export function SolverQuickAddAccount({
         growthRate: growthForType(type),
         accountId: crypto.randomUUID(),
         ruleId: crypto.randomUUID(),
+        activationYear: activationEnabled ? activationYear : null,
+        activationYearRef: activationEnabled ? activationYearRef : null,
       });
       onChange({ kind: "account-upsert", id: account.id, value: account });
       onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
@@ -168,6 +178,34 @@ export function SolverQuickAddAccount({
                 className="mt-1 w-full rounded border border-hair-2 bg-card px-2 py-1 text-ink"
               />
             </label>
+            <div className="col-span-2">
+              <label className="flex items-center gap-2 text-[12px] text-ink-3">
+                <input
+                  type="checkbox"
+                  checked={activationEnabled}
+                  onChange={(e) => setActivationEnabled(e.target.checked)}
+                />
+                <span>Activates in a future year (inheritance, new account)</span>
+              </label>
+              {activationEnabled && (
+                <div className="mt-2 max-w-xs">
+                  <MilestoneYearPicker
+                    id="quick-add-activationYear"
+                    name="activationYear"
+                    label="Activates"
+                    value={activationYear}
+                    yearRef={activationYearRef}
+                    milestones={milestones}
+                    position="start"
+                    minYear={currentYear}
+                    onChange={(y, ref) => {
+                      setActivationYear(y);
+                      setActivationYearRef(ref);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </>
         ) : null}
 
@@ -183,7 +221,7 @@ export function SolverQuickAddAccount({
         </label>
       </div>
       <p className="mt-2 text-[11px] text-ink-4">
-        Starts {currentYear}, ends at retirement ({endYear}).
+        Starts {isNew && activationEnabled ? activationYear : currentYear}, ends at retirement ({endYear}).
       </p>
       <div className="mt-2 flex justify-end gap-2">
         <button type="button" onClick={() => { reset(); setOpen(false); }} className="px-3 py-1 text-[12px] text-ink-3">

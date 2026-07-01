@@ -1084,6 +1084,7 @@ export function LiveSolverWorkspace({
                 currentYear={currentYear}
                 retirementYearForOwner={retirementYearForOwner}
                 growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
+                milestones={milestones}
                 onChange={pushMutation}
               />
               <SolverMinSavingsPanel

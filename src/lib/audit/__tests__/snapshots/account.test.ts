@@ -25,6 +25,8 @@ const baseRow: typeof accounts.$inferSelect = {
   growthRate: "0.05",
   rmdEnabled: false,
   priorYearEndValue: null,
+  activationYear: null,
+  activationYearRef: null,
   isDefaultChecking: false,
   growthSource: "default",
   deriveFromHoldings: true,

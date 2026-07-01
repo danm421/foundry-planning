@@ -9,6 +9,7 @@ import type {
   familyMembers,
 } from "@/db/schema";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
+import type { ClientMilestones } from "@/lib/milestones";
 import InsurancePolicyDialog from "./insurance-policy-dialog";
 import { useClientAccess } from "@/components/client-access-provider";
 
@@ -25,6 +26,11 @@ export interface InsurancePanelAccount {
   ownerRef: OwnerRef;
   insuredPerson: AccountRow["insuredPerson"];
   value: string; // decimal-as-string from DB
+  /** Future-activation year for the policy (activation lives on the account row).
+   *  Null = the policy is already in force. */
+  activationYear: number | null;
+  /** Milestone anchor for `activationYear`; null = a plain calendar year. */
+  activationYearRef: string | null;
 }
 
 export interface InsurancePanelFamilyMember {
@@ -72,6 +78,10 @@ export interface InsurancePanelProps {
    *  plan start year → household second-to-die year. */
   scheduleStartYear: number;
   scheduleEndYear: number;
+  /** Resolved client milestones for the policy dialog's activation-year picker.
+   *  Optional so test fixtures need not supply one; the control renders only
+   *  when present (mirrors the Add Account form pattern). */
+  milestones?: ClientMilestones;
   embed?: "page" | "wizard";
 }
 
@@ -251,6 +261,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
           resolvedInflationRate={props.resolvedInflationRate}
           scheduleStartYear={props.scheduleStartYear}
           scheduleEndYear={props.scheduleEndYear}
+          milestones={props.milestones}
           mode={dialogState.mode}
           policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
           onClose={() => setDialogState(null)}

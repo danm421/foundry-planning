@@ -133,6 +133,8 @@ const INSURANCE_ACCOUNT = {
   ownerRef: { kind: "family" as const, id: "fm-1" },
   insuredPerson: "client" as const,
   value: "0",
+  activationYear: null,
+  activationYearRef: null,
 };
 
 const INSURANCE_BASE_PROPS: InsurancePanelProps = {

@@ -1787,6 +1787,12 @@ export const accounts = pgTable("accounts", {
   // custodian's letter. Ignored after Year 1 (the engine tracks year-end
   // balances itself).
   priorYearEndValue: decimal("prior_year_end_value", { precision: 15, scale: 2 }),
+  // Optional future-activation year: the account is absent from the projection
+  // (no balance, growth, contributions, premiums, or death benefit) until this
+  // year, then appears at `value`. Null ⇒ active from plan start. `*_ref` is an
+  // optional milestone anchor mirroring incomes' startYearRef.
+  activationYear: integer("activation_year"),
+  activationYearRef: yearRefEnum("activation_year_ref"),
   // Exactly one account per (client, scenario) has this flag set. Household income is
   // paid into this account and expenses, taxes, and savings are drawn from it; when it
   // goes negative the engine pulls from the withdrawal strategy to top it up.

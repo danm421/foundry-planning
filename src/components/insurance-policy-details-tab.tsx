@@ -11,6 +11,8 @@ import type {
 import type { PolicyFormState } from "./insurance-policy-dialog";
 import { isOwnerPrincipal } from "./insurance-policy-dialog";
 import type { OwnerRef } from "@/lib/insurance-policies/owner-ref";
+import type { ClientMilestones } from "@/lib/milestones";
+import MilestoneYearPicker from "./milestone-year-picker";
 import {
   inputClassName,
   selectClassName,
@@ -25,6 +27,9 @@ interface InsurancePolicyDetailsTabProps {
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
   resolvedInflationRate: number;
+  /** Resolved client milestones for the activation-year picker. When absent the
+   *  activation control is hidden (e.g. test fixtures without milestone data). */
+  milestones?: ClientMilestones;
   mode: "create" | "edit";
   clientFirstName: string;
   spouseFirstName: string | null;
@@ -59,12 +64,14 @@ export default function InsurancePolicyDetailsTab({
   externalBeneficiaries,
   modelPortfolios,
   resolvedInflationRate,
+  milestones,
   mode,
   clientFirstName,
   spouseFirstName,
   nameInvalid,
 }: InsurancePolicyDetailsTabProps) {
   const isTerm = state.policyType === "term";
+  const currentYear = new Date().getFullYear();
   const spouseLabel = spouseFirstName ?? "Spouse";
 
   // Build the unified owner option list.
@@ -242,6 +249,40 @@ export default function InsurancePolicyDetailsTab({
                 />
                 <span>Term ends at insured&apos;s retirement</span>
               </label>
+            </div>
+          )}
+
+          {milestones && (
+            <div className="max-w-xs">
+              <MilestoneYearPicker
+                id="li-activationYear"
+                name="li-activationYear"
+                label="Activates (policy purchased)"
+                value={state.activationYear ?? currentYear}
+                yearRef={state.activationYearRef}
+                milestones={milestones}
+                clientFirstName={clientFirstName}
+                spouseFirstName={spouseFirstName ?? undefined}
+                position="start"
+                onChange={(y, ref) => {
+                  // For term policies, keep the issue year in lockstep with the
+                  // resolved activation year — whether activation is a plain
+                  // calendar year or a milestone-anchored one — so term-length
+                  // math and coverage-start agree.
+                  const patch: Partial<PolicyFormState> = {
+                    activationYear: y,
+                    activationYearRef: ref,
+                  };
+                  if (state.policyType === "term") {
+                    patch.termIssueYear = y;
+                  }
+                  onChange(patch);
+                }}
+              />
+              <p className={helpCls}>
+                Leave at the current year for an existing policy; set a future
+                year to model buying it later.
+              </p>
             </div>
           )}
 

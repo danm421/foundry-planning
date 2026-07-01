@@ -65,6 +65,19 @@ export function resolveRefYears(tree: ClientData): ClientData {
     return { ...row, startYear, endYear };
   };
 
+  const remapActivation = <T extends { activationYear?: number | null; activationYearRef?: string | null }>(
+    row: T,
+  ): T => {
+    if (!row.activationYearRef) return row;
+    const activationYear = resolve(
+      row.activationYearRef,
+      row.activationYear ?? tree.planSettings.planStartYear,
+      "start",
+    );
+    if (activationYear === row.activationYear) return row;
+    return { ...row, activationYear };
+  };
+
   return {
     ...tree,
     incomes: tree.incomes.map(remapInOut),
@@ -73,5 +86,6 @@ export function resolveRefYears(tree: ClientData): ClientData {
     withdrawalStrategy: tree.withdrawalStrategy.map(remapInOut),
     transfers: tree.transfers?.map(remapNullableEnd),
     rothConversions: tree.rothConversions?.map(remapNullableEnd),
+    accounts: tree.accounts.map(remapActivation),
   };
 }
