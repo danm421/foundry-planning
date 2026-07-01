@@ -16,6 +16,8 @@ interface Props {
   clientName: string;
   spouseName: string | null;
   mcSuccessRate: number | null;
+  baseClientData: ClientData;
+  baseProjection: ProjectionYear[];
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
 }

@@ -22,11 +22,14 @@ const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal("fetch", fetchMock); });
 afterEach(() => vi.unstubAllGlobals());
 
+const years = [{ year: 2025 }] as unknown as ProjectionYear[];
 const base = {
   clientId: "c1", source: "base" as const, mutations: [],
-  years: [{ year: 2025 }] as unknown as ProjectionYear[],
+  years,
   workingTree: { client: {} } as never,
   clientName: "Ada", spouseName: null, mcSuccessRate: 0.9,
+  baseClientData: { client: {} } as never,
+  baseProjection: years,
 };
 
 describe("SolverSummaryPanel", () => {

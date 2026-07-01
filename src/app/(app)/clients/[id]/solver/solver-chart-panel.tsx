@@ -295,6 +295,8 @@ export function SolverChartPanel({
           clientName={clientName}
           spouseName={spouseName || null}
           mcSuccessRate={mcSuccessRate}
+          baseClientData={baseTree}
+          baseProjection={baseProjection}
           activeSummary={activeSummary}
           onSummaryChange={onSummaryChange}
         />

@@ -10,6 +10,8 @@ const workingTree = { client: {} } as never;
 const base = {
   clientId: "c1", source: "base" as const, mutations: [],
   years, workingTree, clientName: "Ada", spouseName: null, mcSuccessRate: 0.9, enabled: true,
+  baseClientData: { client: {} } as never,
+  baseProjection: years,
 };
 
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal("fetch", fetchMock); });
