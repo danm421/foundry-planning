@@ -89,7 +89,7 @@ vi.mock("@/lib/crm/documents", () => ({ uploadCrmDocument: vi.fn() }));
 vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
 // navigate-global / global-actions import custom-events which imports server-only
 // (not resolvable from the worktree node_modules). Mock it so the global set test passes.
-vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn() }));
+vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn(), emitWalkthrough: vi.fn() }));
 // global-actions (set_up_plan) imports create-client which imports @/db.
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
 
@@ -366,8 +366,8 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the help + navigation + global-action set (9 tools)", () => {
-    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan"]);
+  it("is exactly the help + navigation + global-action + walkthrough set (10 tools)", () => {
+    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough"]);
   });
 });
 
