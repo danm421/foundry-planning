@@ -376,6 +376,8 @@ export function SolverChartPanel({
                 baseTree={baseTree}
                 proposedTree={workingTree}
                 isMarried={isMarried}
+                // TODO(Task 7): wire real firstDeathEvent.year
+                firstDeathYear={null}
               />
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-2">
