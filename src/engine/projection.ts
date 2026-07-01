@@ -341,6 +341,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
 
+  // Future-activated accounts: an account with a resolved `activationYear`
+  // does not exist in the projection before that year (no seed, no ledger, no
+  // contributions), then joins the working set at its entered `value` in the
+  // activation year (see the top-of-year join below). Null/undefined ⇒ active
+  // from plan start, so this is a provable no-op for every existing plan.
+  const isPreActivation = (acct: Account, atYear: number): boolean =>
+    acct.activationYear != null && acct.activationYear > atYear;
+
   // Year-keyed MAGI history for IRMAA's 2-year lookback. Populated each year
   // after the converged tax calc. The medicare block reads `year - 2` from
   // this map; for the first two projection years (or when an explicit override
@@ -568,6 +576,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // Mutable state that carries across years
   const accountBalances: Record<string, number> = {};
   for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
     accountBalances[acct.id] = acct.value;
   }
 
@@ -579,6 +588,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // Basis tracking for transfers and sales
   const basisMap: Record<string, number> = {};
   for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
     basisMap[acct.id] = acct.basis;
   }
 
@@ -594,11 +604,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // conversions out.
   const rothValueMap: Record<string, number> = {};
   for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
     rothValueMap[acct.id] = acct.rothValue ?? 0;
   }
 
-  // Mutable accounts list — techniques can add/remove accounts
-  let workingAccounts = [...data.accounts];
+  // Mutable accounts list — techniques can add/remove accounts. Pre-activation
+  // accounts are excluded here and join at their activation year (see the
+  // top-of-year activation join inside the loop below).
+  let workingAccounts = data.accounts.filter(
+    (a) => !isPreActivation(a, planSettings.planStartYear),
+  );
 
   // Invariant account-id → Account map for ownership lookups that must
   // survive the BoY sale step's account removal. Trust-tax routing for
@@ -802,6 +817,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     year <= planSettings.planEndYear;
     year++
   ) {
+    // Activation-year join: a future account joins the working set at its
+    // activation year, seeded at its entered value (windfall). The ledger-init
+    // loop below picks it up automatically. Balance carries forward across
+    // later years (workingAccounts is never rebuilt from data.accounts).
+    for (const acct of data.accounts) {
+      if (acct.activationYear === year && !workingAccounts.some((w) => w.id === acct.id)) {
+        workingAccounts.push(acct);
+        accountBalances[acct.id] = acct.value;
+        basisMap[acct.id] = acct.basis;
+        rothValueMap[acct.id] = acct.rothValue ?? 0;
+      }
+    }
+
+    // Accounts not yet activated this year: no contributions/match may land on
+    // them until they join. Empty set for every plan without future accounts.
+    const notYetActive = new Set(
+      data.accounts
+        .filter((a) => a.activationYear != null && a.activationYear > year)
+        .map((a) => a.id),
+    );
+
     // Residence state can change mid-plan via relocation techniques. Override
     // only residenceState; a no-op (same reference) when there are no moves, so
     // existing plans are byte-for-byte unchanged.
@@ -3975,6 +4011,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Credit employee contributions to destination accounts and debit household checking.
     for (const [acctId, amount] of Object.entries(savings.byAccount)) {
+      if (notYetActive.has(acctId)) continue; // pre-activation account: no contributions yet
       if (amount === 0) continue;
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + amount;
       if (accountLedgers[acctId]) {
@@ -4021,6 +4058,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Living expense pool still available to cut this year.
       let livingAvailable = Math.max(0, expenseBreakdown.living);
       for (const rule of selfFundingRules) {
+        if (notYetActive.has(rule.accountId)) continue; // pre-activation account: no contributions yet
         const gate = itemProrationGate(rule, year, data.client);
         if (!gate.include) continue;
         const target = rule.annualAmount * gate.factor;
@@ -4078,6 +4116,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // spouse's salary can't ground the other spouse's 401k match. Joint-owned or
     // orphaned-rule accounts get no match (no individual salary to base it on).
     for (const rule of normalSavingsRules) {
+      if (notYetActive.has(rule.accountId)) continue; // pre-activation account: no match yet
       const matchGate = itemProrationGate(rule, year, data.client);
       if (!matchGate.include) continue;
       const acct = data.accounts.find((a) => a.id === rule.accountId);
