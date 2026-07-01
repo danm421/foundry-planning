@@ -73,4 +73,41 @@ describe("WalkthroughProvider state machine", () => {
     for (let i = 0; i < 5; i++) act(() => void screen.getByText("next").click());
     expect(screen.getByTestId("active").textContent).toBe("none");
   });
+
+  it("auto-advances when the target route arrives (advanceOn:navigate)", () => {
+    const { rerender } = render(
+      <WalkthroughProvider>
+        <Probe />
+      </WalkthroughProvider>,
+    );
+    act(() => void screen.getByText("start").click());
+    expect(screen.getByTestId("step").textContent).toBe("0");
+
+    act(() => {
+      pathname = "/crm/new";
+      rerender(
+        <WalkthroughProvider>
+          <Probe />
+        </WalkthroughProvider>,
+      );
+    });
+
+    expect(screen.getByTestId("step").textContent).toBe("1");
+  });
+
+  it("Escape key ends an active tour", () => {
+    render(
+      <WalkthroughProvider>
+        <Probe />
+      </WalkthroughProvider>,
+    );
+    act(() => void screen.getByText("start").click());
+    expect(screen.getByTestId("active").textContent).toBe("add-household");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(screen.getByTestId("active").textContent).toBe("none");
+  });
 });
