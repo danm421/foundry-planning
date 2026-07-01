@@ -18,6 +18,7 @@ import {
 } from "@/db/schema";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
+import { buildAccountMixSegments } from "./build-account-mix-segments";
 import type { AccountAssetMix, MixSegment } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
 import { ClientNotFoundError, ProjectionInputError } from "./load-client-data";
@@ -61,7 +62,7 @@ export const loadMonteCarloData = cache(
     // Account MIXES, asset-class volatility, and correlations stay base/firm-
     // sourced (the tree's engine Account drops growthSource/modelPortfolioId).
     // Omitted → byte-identical base behavior.
-    effectiveTree?: Pick<ClientData, "accounts" | "entities">,
+    effectiveTree?: Pick<ClientData, "accounts" | "entities" | "reinvestments">,
   ): Promise<MonteCarloPayload> => {
     const [client] = await db
       .select()
@@ -233,7 +234,7 @@ export const loadMonteCarloData = cache(
       return { source: "custom", portfolioId: null };
     };
 
-    const accountMixes: Array<{ accountId: string; segments: MixSegment[] }> = [];
+    const baseMixByAccount = new Map<string, AccountAssetMix[]>();
     for (const acct of accountRows) {
       // Skip non-investable categories (per PDF: real estate/business/life insurance
       // don't participate in MC — they use their fixed rates).
@@ -264,18 +265,27 @@ export const loadMonteCarloData = cache(
       } else if (effectiveSource === "ticker_portfolio" && acct.tickerPortfolioId) {
         mix = tickerMixByPortfolioId.get(acct.tickerPortfolioId) ?? [];
       }
-      if (mix.length > 0) {
-        accountMixes.push({ accountId: acct.id, segments: [{ fromYear: 0, mix }] });
-      }
+      if (mix.length > 0) baseMixByAccount.set(acct.id, mix);
     }
 
     // LI solver: a synthetic (non-DB) account mix whose asset classes must also
     // feed the indices / correlation matrix below.
     for (const extra of extraAccountMixes) {
-      if (extra.mix.length > 0) {
-        accountMixes.push({ accountId: extra.accountId, segments: [{ fromYear: 0, mix: extra.mix }] });
-      }
+      if (extra.mix.length > 0) baseMixByAccount.set(extra.accountId, extra.mix);
     }
+
+    // Reinvestment techniques (Techniques tab / MC solver) switch an account's
+    // allocation at a future year — resolve their target mixes through the
+    // same allocsByPortfolio map the base loop uses above.
+    const resolvePortfolioMix = (portfolioId: string): AccountAssetMix[] => {
+      const allocs = allocsByPortfolio.get(portfolioId) ?? [];
+      return allocs.map((a) => ({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) }));
+    };
+    const accountMixes = buildAccountMixSegments({
+      baseMixByAccount,
+      reinvestments: effectiveTree?.reinvestments ?? [],
+      resolvePortfolioMix,
+    });
 
     // ── Used asset classes ────────────────────────────────────────────────
     const usedIds = new Set<string>();
