@@ -18,7 +18,7 @@ import {
   renameConversation,
   deleteConversation,
 } from "./actions";
-import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/custom-events";
+import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/navigate-allowlist";
 import { ConversationList } from "./conversation-list";
 import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
@@ -27,9 +27,11 @@ import { ImportReviewLink } from "./import-review-link";
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
 
-// NAVIGATE_ALLOWLIST_PREFIXES is imported from custom-events.ts above — single
-// source of truth for the client-side nav guard (defence in depth; the server
-// already gated the emit). Previously duplicated here as NAVIGATE_ALLOWLIST_PREFIXES.
+// NAVIGATE_ALLOWLIST_PREFIXES is imported from navigate-allowlist.ts above — the
+// pure (LangChain-free) source of truth for the client-side nav guard (defence in
+// depth; the server already gated the emit). custom-events.ts re-exports the same
+// constant for server callers. Client MUST NOT import from custom-events (it's
+// server-only — pulls @langchain/core / node:async_hooks into the browser bundle).
 
 /**
  * Human-readable labels for tool names that appear in the status line.

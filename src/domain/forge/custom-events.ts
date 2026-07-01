@@ -2,7 +2,17 @@
 // PLUMBING ONLY — no renderers yet. Emits via dispatchCustomEvent so the frames
 // surface as on_custom_event in graph.streamEvents(v2). Payloads must already be
 // account-masked/grounded by the caller (same contract as the text path).
+//
+// server-only: dispatchCustomEvent pulls in @langchain/core (node:async_hooks),
+// which cannot be bundled for the browser. Client callers must import the pure
+// NAVIGATE_ALLOWLIST_PREFIXES from ./navigate-allowlist instead of this module.
+import "server-only";
 import { dispatchCustomEvent } from "@langchain/core/callbacks/dispatch";
+import { NAVIGATE_ALLOWLIST_PREFIXES } from "./navigate-allowlist";
+
+// Re-exported so existing server callers (tools/navigate*, custom-events.test)
+// keep importing the allowlist from here unchanged.
+export { NAVIGATE_ALLOWLIST_PREFIXES };
 
 export interface ToolRenderFrame {
   type: "tool_render";
@@ -25,17 +35,6 @@ export interface PageLinkFrame {
   label: string;
 }
 export type ForgeCustomFrame = ToolRenderFrame | NavigateFrame | ActivityFrame | PageLinkFrame;
-
-/** Only in-app paths may be navigated; never an external URL. Covers the
- *  advisor app's navigable surface (client + global product-help targets). */
-export const NAVIGATE_ALLOWLIST_PREFIXES = [
-  "/clients",
-  "/cma",
-  "/crm",
-  "/tasks",
-  "/data-collection",
-  "/settings",
-];
 
 export async function emitToolRender(name: string, status: ToolRenderFrame["status"], data: unknown) {
   await dispatchCustomEvent("tool_render", { name, status, data });
