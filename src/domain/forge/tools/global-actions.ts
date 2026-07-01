@@ -12,6 +12,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { createClientForHousehold } from "@/lib/clients/create-client";
 import { emitNavigate } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
@@ -117,5 +118,62 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  return [findClient, openClient, createHousehold];
+  const setUpPlan = tool(
+    async (args: {
+      householdId: string; retirementAge: number; lifeExpectancy: number;
+      filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
+      primaryDob: string; spouseDob?: string;
+      spouseRetirementAge?: number; spouseLifeExpectancy?: number;
+    }) => {
+      try {
+        const firmId = await requireOrgId();
+        const hh = await getCrmHousehold(args.householdId); // firm-scoped IDOR
+        if (!hh) return "Household not found.";
+        if (hh.planningClient) return "That household already has a plan — open it instead.";
+        const primary = hh.contacts.find((c: { role: string }) => c.role === "primary");
+        if (!primary) return "That household has no primary contact — add one before setting up a plan.";
+        const spouse = hh.contacts.find((c: { role: string }) => c.role === "spouse");
+        const result = await createClientForHousehold({
+          household: { id: hh.id, firmId, advisorId: hh.advisorId, state: hh.state },
+          primaryContact: { firstName: primary.firstName, lastName: primary.lastName, dateOfBirth: args.primaryDob },
+          spouseContact: spouse
+            ? { firstName: spouse.firstName, lastName: spouse.lastName, dateOfBirth: args.spouseDob ?? null }
+            : null,
+          retirementAge: args.retirementAge,
+          lifeExpectancy: args.lifeExpectancy,
+          filingStatus: args.filingStatus,
+          spouseRetirementAge: args.spouseRetirementAge ?? null,
+          spouseLifeExpectancy: args.spouseLifeExpectancy ?? null,
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "client", resourceId: result.clientId,
+          firmId, actorId: ctx.userId, metadata: { tool: "set_up_plan", conversationId, householdId: hh.id },
+        });
+        await emitNavigate(`/clients/${result.clientId}`);
+        return JSON.stringify({ clientId: result.clientId });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to set up the plan.";
+      }
+    },
+    {
+      name: "set_up_plan",
+      description:
+        "Turn an existing household into a full financial plan (projection client). Requires human approval. " +
+        "Needs the household id (from find_client/create_household), the primary contact's date of birth, " +
+        "retirement age, life expectancy, and filing status (single, married_joint, married_separate, head_of_household). " +
+        "Uses the household's stored contact names and state.",
+      schema: z.object({
+        householdId: z.string().min(1),
+        retirementAge: z.number().int().min(30).max(90),
+        lifeExpectancy: z.number().int().min(60).max(120),
+        filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]),
+        primaryDob: z.string().describe("primary contact's date of birth, YYYY-MM-DD"),
+        spouseDob: z.string().optional().describe("spouse's date of birth, YYYY-MM-DD"),
+        spouseRetirementAge: z.number().int().min(30).max(90).optional(),
+        spouseLifeExpectancy: z.number().int().min(60).max(120).optional(),
+      }),
+    },
+  );
+
+  return [findClient, openClient, createHousehold, setUpPlan];
 }

@@ -8,11 +8,13 @@ vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds, getCrmHousehold: vi.
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
+vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
 
 import { buildGlobalActionTools } from "../global-actions";
 import { getCrmHousehold } from "@/lib/crm/households";
 import { emitNavigate } from "../../custom-events";
 import { recordAudit } from "@/lib/audit";
+import { createClientForHousehold } from "@/lib/clients/create-client";
 
 const toolCtx = { ctx: { userId: "user_1", firmId: "org_A" }, conversationId: "conv_1" };
 function getTool(name: string) {
@@ -80,5 +82,46 @@ describe("create_household (HITL)", () => {
     }));
     expect(emitNavigate).toHaveBeenCalledWith("/crm/households/hh_new");
     expect(out).toEqual({ householdId: "hh_new", name: "Doe Household", suggestion: "set_up_plan" });
+  });
+});
+
+describe("set_up_plan (HITL)", () => {
+  const household = {
+    id: "hh_1", advisorId: "user_1", state: "NJ", planningClient: null,
+    contacts: [{ role: "primary", firstName: "Jane", lastName: "Doe", dateOfBirth: null }],
+  };
+  it("creates the plan from the household's primary contact + model-supplied planning fields", async () => {
+    (getCrmHousehold as any).mockResolvedValue(household);
+    (createClientForHousehold as any).mockResolvedValue({ clientId: "client_9", scenarioId: "base" });
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15",
+    })));
+    expect(createClientForHousehold).toHaveBeenCalledWith(expect.objectContaining({
+      household: { id: "hh_1", firmId: "org_A", advisorId: "user_1", state: "NJ" },
+      primaryContact: { firstName: "Jane", lastName: "Doe", dateOfBirth: "1970-05-15" },
+      retirementAge: 65, lifeExpectancy: 95, filingStatus: "married_joint",
+    }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "forge.write_approved", resourceType: "client", resourceId: "client_9",
+    }));
+    expect(emitNavigate).toHaveBeenCalledWith("/clients/client_9");
+    expect(out).toEqual({ clientId: "client_9" });
+  });
+  it("refuses when the household already has a plan", async () => {
+    (getCrmHousehold as any).mockResolvedValue({ ...household, planningClient: { id: "client_x" } });
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
+    }));
+    expect(out).toMatch(/already has a plan/i);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+  it("rejects a wrong-firm household (IDOR)", async () => {
+    (getCrmHousehold as any).mockResolvedValue(undefined);
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_evil", retirementAge: 65, lifeExpectancy: 95, filingStatus: "single", primaryDob: "1970-05-15",
+    }));
+    expect(out).toMatch(/not found/i);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
   });
 });

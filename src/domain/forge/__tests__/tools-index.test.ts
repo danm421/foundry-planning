@@ -90,6 +90,8 @@ vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
 // navigate-global / global-actions import custom-events which imports server-only
 // (not resolvable from the worktree node_modules). Mock it so the global set test passes.
 vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn() }));
+// global-actions (set_up_plan) imports create-client which imports @/db.
+vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -229,9 +231,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (22 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 1 global write)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (23 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 2 global writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(22);
+    expect(WRITE_TOOL_NAMES.size).toBe(23);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -365,7 +367,7 @@ describe("global tool set (clientless)", () => {
     .map((t) => t.name)
     .sort();
   it("is exactly the read-only help + navigation set", () => {
-    expect(names).toEqual(["cite_page", "create_household", "find_client", "get_help", "open_client", "open_page", "search_help"]);
+    expect(names).toEqual(["cite_page", "create_household", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan"]);
   });
 });
 

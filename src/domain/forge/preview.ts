@@ -183,6 +183,13 @@ function previewCreateHousehold(a: Record<string, unknown>): WritePreview {
   return { name: "create_household", summary: `Create household "${name}"${tail ? ` — ${tail}` : ""}.` };
 }
 
+function previewSetUpPlan(a: Record<string, unknown>): WritePreview {
+  const filing = str(a.filingStatus);
+  const ret = typeof a.retirementAge === "number" ? a.retirementAge : undefined;
+  const bits = [ret != null && `retire at ${ret}`, filing && `filing ${filing}`].filter(Boolean).join(", ");
+  return { name: "set_up_plan", summary: `Set up a financial plan${bits ? ` (${bits})` : ""}.` };
+}
+
 function previewAddExpense(a: Record<string, unknown>): WritePreview {
   const name = str(a.name) ?? "(unnamed)";
   const type = str(a.type);
@@ -322,6 +329,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCrmCreateTasks(call.args);
     case "create_household":
       return previewCreateHousehold(call.args);
+    case "set_up_plan":
+      return previewSetUpPlan(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }
