@@ -15,7 +15,7 @@ import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
 import { ScenarioDrawerProvider } from "@/components/scenario/scenario-drawer-provider";
 import { ForgeMount } from "@/components/forge/forge-mount";
 import { isForgeEnabled } from "@/domain/forge/flag";
-import ShareClientButton from "@/components/sharing/share-client-button";
+import CrmHouseholdLink from "@/components/crm-household-link";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import { getHouseholdLinkForClient } from "@/lib/orion/households";
 import { OrionClientStatus } from "@/components/OrionClientStatus";
@@ -27,18 +27,12 @@ interface Props {
 
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
   const { id } = await params;
-  const [access, { userId, orgRole }] = await Promise.all([
+  const [access, { orgRole }] = await Promise.all([
     requireClientAccess(id).catch(() => null),
     auth(),
   ]);
   if (!access) notFound();
   const { client: clientRow } = access;
-
-  // Only the owning advisor or an org admin of the owning firm may manage shares.
-  // Recipients who received a shared client (access === "shared") cannot share further.
-  const canManageShares =
-    access.access === "own" &&
-    (userId === clientRow.advisorId || orgRole === "org:admin");
 
   const [household] = await db
     .select({ deletedAt: crmHouseholds.deletedAt })
@@ -126,11 +120,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
           rightSlot={
             <>
               <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
-              <ShareClientButton
-                clientId={id}
-                isPrivate={clientRow.isPrivate}
-                canManage={canManageShares}
-              />
+              <CrmHouseholdLink crmHouseholdId={clientRow.crmHouseholdId} />
               {orionLink ? (
                 <OrionClientStatus
                   clientId={id}
