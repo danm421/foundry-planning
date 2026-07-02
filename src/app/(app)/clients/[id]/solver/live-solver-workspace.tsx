@@ -44,6 +44,7 @@ import {
 } from "./solver-tab-life-insurance";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
+import { SolverEducationSection } from "./solver-education-section";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
@@ -1218,7 +1219,16 @@ export function LiveSolverWorkspace({
         )}
 
         {activeTab === "education" && (
-          <div className="px-5 py-4 text-[12px] text-ink-3">Education section — coming in Task 10.</div>
+          <SolverEducationSection
+            baseExpenses={baseClientData.expenses}
+            workingTree={workingTree}
+            currentYear={currentYear}
+            clientId={clientId}
+            source={initialSource}
+            mutations={mutations}
+            onChange={pushMutation}
+            onResetField={clearMutations}
+          />
         )}
           </div>
         </div>
