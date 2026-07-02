@@ -23,6 +23,7 @@
 //     round-trip; the others need junction-table writes. Deferred.
 
 import type { ClientData, Account, SavingsRule, Expense } from "@/engine/types";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
 
@@ -69,6 +70,9 @@ export interface BaseUpdates {
   savingsFieldUpdates: { id: string; set: ColumnPatch }[];
   /** Partial update to the clients row (firm-scoped, not scenario-scoped). */
   clientUpdate: ColumnPatch | null;
+  /** Partial update to plan_settings (all the client's scenarios) — emitted
+   *  when a life-expectancy edit moves the plan horizon (planEndYear). */
+  planSettingsUpdate: ColumnPatch | null;
   incomeUpdates: { id: string; set: ColumnPatch }[];
   expenseUpdates: { id: string; set: ColumnPatch }[];
   /** Full new expense rows (e.g. a synthesized retirement living expense). */
@@ -108,6 +112,7 @@ export function mutationsToBaseUpdates(
     savingsRemoves: [],
     savingsFieldUpdates: [],
     clientUpdate: null,
+    planSettingsUpdate: null,
     incomeUpdates: [],
     expenseUpdates: [],
     expenseInserts: [],
@@ -320,6 +325,28 @@ export function mutationsToBaseUpdates(
   }
 
   // Finalize client patch.
+  // A life-expectancy edit moves the plan horizon (the engine's year loop is
+  // bounded by planSettings.planEndYear), so persist the re-derived planEndAge
+  // alongside it and hand the route a planEndYear patch — mirrors the
+  // base-facts PUT route. Skipped when the DOB is missing (no horizon
+  // derivable from the source tree).
+  if (mutations.some((m) => m.kind === "life-expectancy")) {
+    // Optional-chained: minimal non-client fixtures omit the client singleton.
+    const horizon = planHorizonFromLifeExpectancy({
+      ...source.client,
+      lifeExpectancy:
+        (clientPatch.lifeExpectancy as number | undefined) ??
+        source.client?.lifeExpectancy,
+      spouseLifeExpectancy:
+        (clientPatch.spouseLifeExpectancy as number | undefined) ??
+        source.client?.spouseLifeExpectancy,
+    });
+    if (horizon) {
+      clientPatch.planEndAge = horizon.planEndAge;
+      out.planSettingsUpdate = { planEndYear: horizon.planEndYear };
+    }
+  }
+
   if (Object.keys(clientPatch).length > 0) out.clientUpdate = clientPatch;
 
   // Finalize income / expense partial updates.

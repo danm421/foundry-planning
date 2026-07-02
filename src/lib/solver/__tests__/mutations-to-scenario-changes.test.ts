@@ -74,7 +74,11 @@ function makeSource(): ClientData {
     ],
     withdrawalStrategy: [],
     giftEvents: [],
-    planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
+    planSettings: {
+      planStartYear: 2026,
+      // Matches the derived horizon (client born 1965, LE 95, no spouse DOB).
+      planEndYear: 2060,
+    } as ClientData["planSettings"],
   } as ClientData;
 }
 
@@ -103,10 +107,34 @@ describe("mutationsToScenarioChanges", () => {
         { kind: "life-expectancy", person: "client", age: 100 },
       ],
     );
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0].payload).toEqual({
+    // The LE change moves the plan horizon, so a plan_settings row rides along.
+    expect(drafts).toHaveLength(2);
+    const clientDraft = drafts.find((d) => d.targetKind === "client")!;
+    expect(clientDraft.payload).toEqual({
       retirementAge: { from: 65, to: 67 },
       lifeExpectancy: { from: 95, to: 100 },
+      planEndAge: { from: 95, to: 100 },
+    });
+    const settingsDraft = drafts.find((d) => d.targetKind === "plan_settings")!;
+    expect(settingsDraft.payload).toEqual({
+      planEndYear: { from: 2060, to: 2065 },
+    });
+  });
+
+  it("lowering life expectancy shrinks the horizon diff", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [{ kind: "life-expectancy", person: "client", age: 85 }],
+    );
+    const clientDraft = drafts.find((d) => d.targetKind === "client")!;
+    expect(clientDraft.payload).toEqual({
+      lifeExpectancy: { from: 95, to: 85 },
+      planEndAge: { from: 95, to: 85 },
+    });
+    const settingsDraft = drafts.find((d) => d.targetKind === "plan_settings")!;
+    expect(settingsDraft.payload).toEqual({
+      planEndYear: { from: 2060, to: 2050 },
     });
   });
 
@@ -559,7 +587,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     expect(ps).toHaveLength(1); // single row → no (scenarioId, kind, id, opType) collision
     expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
     expect(ps[0].payload).toEqual({
-      inflationRate: { from: 0.025, to: 0.05 },
+      livingExpenseInflationOverride: { from: null, to: 0.05 },
       ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
       disabilityEvent: { from: null, to: { person: "client", startYear: 2032 } },
       marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
@@ -567,13 +595,17 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     });
   });
 
-  it("drops a stress-inflation override that matches the base rate (no-op)", () => {
+  it("drops a stress-inflation override that matches an existing override (no-op)", () => {
     const src = {
       ...makeSource(),
-      planSettings: { planStartYear: 2026, inflationRate: 0.03 } as ClientData["planSettings"],
+      planSettings: {
+        planStartYear: 2026,
+        inflationRate: 0.03,
+        livingExpenseInflationOverride: 0.05,
+      } as ClientData["planSettings"],
     };
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "stress-inflation", rate: 0.03 },
+      { kind: "stress-inflation", rate: 0.05 },
     ]);
     expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
   });

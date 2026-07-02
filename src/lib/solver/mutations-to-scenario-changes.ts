@@ -9,6 +9,7 @@
 // Returns an empty array (not null) when every mutation is a no-op vs base.
 
 import type { ClientData } from "@/engine/types";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type {
   SolverMutation,
@@ -53,6 +54,13 @@ export function mutationsToScenarioChanges(
     { fields: Record<string, { from: unknown; to: unknown }> }
   >();
   const nonClientDrafts: SolverScenarioChangeDraft[] = [];
+
+  // Track the working life expectancies so a post-loop horizon recompute sees
+  // the final values even when both spouses' LE levers moved in one batch.
+  // Optional-chained: minimal non-client fixtures omit the client singleton.
+  let leTouched = false;
+  let workingClientLE = source.client?.lifeExpectancy;
+  let workingSpouseLE = source.client?.spouseLifeExpectancy;
 
   const ssRowFor = (person: SolverPerson) =>
     source.incomes.find((i) => i.type === "social_security" && i.owner === person);
@@ -150,6 +158,7 @@ export function mutationsToScenarioChanges(
       case "life-expectancy": {
         if (m.person === "client") {
           maybeDiff(clientFieldDiff, "lifeExpectancy", source.client.lifeExpectancy, m.age);
+          workingClientLE = m.age;
         } else {
           maybeDiff(
             clientFieldDiff,
@@ -157,7 +166,9 @@ export function mutationsToScenarioChanges(
             source.client.spouseLifeExpectancy,
             m.age,
           );
+          workingSpouseLE = m.age;
         }
+        leTouched = true;
         break;
       }
       case "living-expense-scale": {
@@ -541,7 +552,12 @@ export function mutationsToScenarioChanges(
       // Without these a saved "Bear case" scenario silently drops its stressors
       // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).
       case "stress-inflation": {
-        maybeDiff(planSettingsDiff, "inflationRate", source.planSettings.inflationRate, m.rate);
+        maybeDiff(
+          planSettingsDiff,
+          "livingExpenseInflationOverride",
+          source.planSettings.livingExpenseInflationOverride ?? null,
+          m.rate,
+        );
         break;
       }
       case "stress-ss-haircut": {
@@ -574,6 +590,28 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+    }
+  }
+
+  // A life-expectancy change moves the plan horizon (the engine's year loop is
+  // bounded by planSettings.planEndYear), so the saved scenario must carry the
+  // re-derived planEndAge + planEndYear — mirrors applyMutations and the
+  // base-facts PUT route. Skipped when the DOB is missing (no horizon
+  // derivable) or nothing actually changed (maybeDiff drops no-op diffs).
+  if (leTouched) {
+    const horizon = planHorizonFromLifeExpectancy({
+      ...source.client,
+      lifeExpectancy: workingClientLE,
+      spouseLifeExpectancy: workingSpouseLE,
+    });
+    if (horizon) {
+      maybeDiff(clientFieldDiff, "planEndAge", source.client?.planEndAge, horizon.planEndAge);
+      maybeDiff(
+        planSettingsDiff,
+        "planEndYear",
+        source.planSettings?.planEndYear,
+        horizon.planEndYear,
+      );
     }
   }
 

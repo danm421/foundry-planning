@@ -108,7 +108,48 @@ describe("mutationsToBaseUpdates", () => {
       { kind: "retirement-age", person: "client", age: 67 },
       { kind: "life-expectancy", person: "spouse", age: 90 },
     ]);
+    // richSource has no dateOfBirth, so no horizon recompute can ride along.
     expect(out.clientUpdate).toEqual({ retirementAge: 67, spouseLifeExpectancy: 90 });
+    expect(out.planSettingsUpdate).toBeNull();
+  });
+
+  describe("life-expectancy → plan-horizon recompute", () => {
+    // Client born 1965 (LE 95 → 2060), spouse born 1967 (LE 92 → 2059).
+    const horizonSource = {
+      ...richSource,
+      client: {
+        ...(richSource as unknown as { client: object }).client,
+        dateOfBirth: "1965-03-15",
+        spouseDob: "1967-05-20",
+        planEndAge: 95,
+      },
+      planSettings: { planStartYear: 2026, planEndYear: 2060 },
+    } as unknown as ClientData;
+
+    it("raising client LE patches planEndAge and emits a planEndYear settings patch", () => {
+      const out = mutationsToBaseUpdates(horizonSource, [
+        { kind: "life-expectancy", person: "client", age: 105 },
+      ]);
+      expect(out.clientUpdate).toEqual({ lifeExpectancy: 105, planEndAge: 105 });
+      expect(out.planSettingsUpdate).toEqual({ planEndYear: 2070 });
+    });
+
+    it("lowering client LE anchors the horizon to the surviving spouse", () => {
+      const out = mutationsToBaseUpdates(horizonSource, [
+        { kind: "life-expectancy", person: "client", age: 85 },
+      ]);
+      // Spouse death (1967 + 92 = 2059) now bounds the plan.
+      expect(out.clientUpdate).toEqual({ lifeExpectancy: 85, planEndAge: 94 });
+      expect(out.planSettingsUpdate).toEqual({ planEndYear: 2059 });
+    });
+
+    it("non-LE mutations emit no plan-settings patch", () => {
+      const out = mutationsToBaseUpdates(horizonSource, [
+        { kind: "retirement-age", person: "client", age: 67 },
+      ]);
+      expect(out.clientUpdate).toEqual({ retirementAge: 67 });
+      expect(out.planSettingsUpdate).toBeNull();
+    });
   });
 
   it("emits a string-coerced annualAmount on an income edit", () => {

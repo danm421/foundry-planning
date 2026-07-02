@@ -26,3 +26,40 @@ export function computePlanEndAge(params: {
 
   return lastDeathYear - clientBirthYear;
 }
+
+/**
+ * Solver-side variant: re-derive the plan horizon from a (possibly mutated)
+ * client singleton. Same last-death rule as computePlanEndAge, but parses
+ * birth years the way the engine does (string slice, no Date/timezone) so the
+ * returned planEndYear always matches the engine's death-year math (see
+ * engine computeFinalDeathYear), and both LEs fall back to 95 like the engine
+ * and the solver sliders do.
+ *
+ * Returns null when the client DOB is missing or unparsable (minimal solver
+ * fixtures) — callers skip the horizon recompute in that case.
+ */
+export function planHorizonFromLifeExpectancy(client: {
+  dateOfBirth?: string | null;
+  lifeExpectancy?: number | null;
+  spouseDob?: string | null;
+  spouseLifeExpectancy?: number | null;
+}): { planEndAge: number; planEndYear: number } | null {
+  if (!client.dateOfBirth) return null;
+  const clientBirthYear = parseInt(String(client.dateOfBirth).slice(0, 4), 10);
+  if (!Number.isFinite(clientBirthYear)) return null;
+
+  let lastDeathYear = clientBirthYear + (client.lifeExpectancy ?? 95);
+  if (client.spouseDob) {
+    const spouseBirthYear = parseInt(String(client.spouseDob).slice(0, 4), 10);
+    if (Number.isFinite(spouseBirthYear)) {
+      lastDeathYear = Math.max(
+        lastDeathYear,
+        spouseBirthYear + (client.spouseLifeExpectancy ?? 95),
+      );
+    }
+  }
+  return {
+    planEndAge: lastDeathYear - clientBirthYear,
+    planEndYear: lastDeathYear,
+  };
+}

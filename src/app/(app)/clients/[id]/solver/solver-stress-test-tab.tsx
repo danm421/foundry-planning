@@ -37,7 +37,7 @@ export function SolverStressTestTab({
   const defaultEventYear = currentYear + 1;
 
   // Derived on/off state — the working tree is the single source of truth.
-  const inflationOn = ps.inflationRate !== baseInflation;
+  const inflationOn = ps.livingExpenseInflationOverride != null;
   const ssOn = ps.ssBenefitHaircut != null;
   const disabilityOn = ps.disabilityEvent != null;
   const crashOn = ps.marketShock != null;
@@ -55,7 +55,7 @@ export function SolverStressTestTab({
       {/* Inflation */}
       <StressRow
         label="Higher inflation"
-        hint={`Replaces the plan's inflation assumption (currently ${pct(baseInflation)}) for the whole projection.`}
+        hint={`Grows living expenses at this rate instead of the plan's inflation assumption (currently ${pct(baseInflation)}). Other items — incomes, savings, taxes, insurance — are unaffected.`}
         on={inflationOn}
         onToggle={(checked) =>
           checked
@@ -65,7 +65,7 @@ export function SolverStressTestTab({
       >
         <PercentField
           label="Inflation rate"
-          value={inflationOn ? ps.inflationRate : roundRate(baseInflation + 0.02)}
+          value={ps.livingExpenseInflationOverride ?? roundRate(baseInflation + 0.02)}
           onCommit={(rate) => onChange({ kind: "stress-inflation", rate })}
         />
       </StressRow>
