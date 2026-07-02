@@ -134,6 +134,47 @@ describe("view-adapters", () => {
       expect(view.ownerAccountId).toBe("acct-acme");
       expect(view.ownerEntityId).toBeNull();
     });
+
+    it("round-trips education fields for edit (create→edit round-trip)", () => {
+      const expense: EngineExpense = {
+        id: "e3",
+        type: "education",
+        name: "Penn State tuition",
+        annualAmount: 40_000,
+        startYear: 2030,
+        endYear: 2034,
+        growthRate: 0.05,
+        payShortfallOutOfPocket: true,
+        institutionState: "PA",
+        institutionName: "Penn State",
+        forFamilyMemberId: "fm1",
+        dedicatedAccountIds: ["a1", "a2"],
+      };
+      const view = expenseEngineToView(expense);
+      expect(view.payShortfallOutOfPocket).toBe(true);
+      expect(view.institutionState).toBe("PA");
+      expect(view.institutionName).toBe("Penn State");
+      expect(view.forFamilyMemberId).toBe("fm1");
+      expect(view.dedicatedAccountIds).toEqual(["a1", "a2"]);
+    });
+
+    it("nullifies/defaults absent education fields", () => {
+      const expense: EngineExpense = {
+        id: "e4",
+        type: "education",
+        name: "Unspecified education goal",
+        annualAmount: 10_000,
+        startYear: 2030,
+        endYear: 2034,
+        growthRate: 0.05,
+      };
+      const view = expenseEngineToView(expense);
+      expect(view.payShortfallOutOfPocket).toBe(false);
+      expect(view.institutionState).toBeNull();
+      expect(view.institutionName).toBeNull();
+      expect(view.forFamilyMemberId).toBeNull();
+      expect(view.dedicatedAccountIds).toEqual([]);
+    });
   });
 
   describe("savingsRuleEngineToView", () => {

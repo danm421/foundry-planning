@@ -103,6 +103,11 @@ export interface ExpenseView {
   endYearRef?: string | null;
   deductionType?: string | null;
   isDefault?: boolean;
+  payShortfallOutOfPocket?: boolean;
+  institutionState?: string | null;
+  institutionName?: string | null;
+  forFamilyMemberId?: string | null;
+  dedicatedAccountIds?: string[];
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -123,6 +128,11 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     endYearRef: expense.endYearRef ?? null,
     deductionType: expense.deductionType ?? null,
     isDefault: expense.isDefault ?? false,
+    payShortfallOutOfPocket: expense.payShortfallOutOfPocket ?? false,
+    institutionState: expense.institutionState ?? null,
+    institutionName: expense.institutionName ?? null,
+    forFamilyMemberId: expense.forFamilyMemberId ?? null,
+    dedicatedAccountIds: expense.dedicatedAccountIds ?? [],
   };
 }
 
