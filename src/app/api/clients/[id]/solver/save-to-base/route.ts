@@ -221,6 +221,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const baseTree = source === "base" ? sourceTree : baseTreeLoad!.effectiveTree;
     const baseMembership = {
       accountIds: new Set((baseTree.accounts ?? []).map((a) => a.id)),
+      expenseIds: new Set((baseTree.expenses ?? []).map((e) => e.id)),
       ruleIds: new Set((baseTree.savingsRules ?? []).map((r) => r.id)),
     };
 
