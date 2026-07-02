@@ -525,6 +525,11 @@ export function computeDeductions(input: {
    *  surviving spouse, the linked liability follows it; IRC §2056(b)(4)(B)
    *  reduces the marital deduction by that encumbrance. */
   resultingLiabilities?: Liability[];
+  /** §2056(b)(7)(C) deemed-QTIP marital deduction for a survivor annuity that is
+   *  also added to the gross estate under §2039 (see computeSurvivorAnnuityInclusion).
+   *  Added to the marital deduction at first death only; net gross-estate impact is
+   *  zero. No source account/entity, so it bypasses the ledger cap machinery. */
+  survivorAnnuityMaritalDeduction?: number;
 }): DeductionOutput {
   const externalKindById = new Map(
     input.externalBeneficiaries.map((e) => [e.id, e.kind] as const),
@@ -617,6 +622,12 @@ export function computeDeductions(input: {
       }
     }
     maritalDeduction = Math.max(0, maritalDeduction - unlinkedDebtToSpouse);
+  }
+
+  // §2056(b)(7)(C) deemed QTIP: added after the debt clamp because it is a
+  // standalone valuation deduction, unrelated to spouse-assumed encumbrances.
+  if (input.deathOrder === 1 && input.survivorAnnuityMaritalDeduction) {
+    maritalDeduction += input.survivorAnnuityMaritalDeduction;
   }
 
   return {

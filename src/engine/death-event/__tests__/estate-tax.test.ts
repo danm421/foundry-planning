@@ -1361,6 +1361,28 @@ describe("computeDeductions", () => {
     });
     expect(r.charitableDeduction).toBeCloseTo(50_000, 2);
   });
+
+  it("adds the survivor-annuity deemed-QTIP marital deduction at first death", () => {
+    const r = computeDeductions({
+      transferLedger: [transfer({ recipientKind: "spouse", amount: 200_000 })],
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+      survivorAnnuityMaritalDeduction: 100_000,
+    });
+    expect(r.maritalDeduction).toBeCloseTo(300_000, 2);
+  });
+
+  it("ignores the survivor-annuity marital deduction at final death", () => {
+    const r = computeDeductions({
+      transferLedger: [],
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 2,
+      survivorAnnuityMaritalDeduction: 100_000,
+    });
+    expect(r.maritalDeduction).toBe(0);
+  });
 });
 
 // Bug #5 — Marital deduction must NOT be denied when the surviving spouse is
