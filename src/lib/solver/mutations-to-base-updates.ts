@@ -37,10 +37,20 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "roth-conversion-upsert",
   "asset-transaction-upsert",
   "reinvestment-upsert",
+  // Estate / relocation techniques: the switch below has no case for these, so
+  // they must NOT report base-savable — otherwise Save-to-base drops them
+  // silently AND the workspace clears them from the working set (data loss), and
+  // a new account funding a not-yet-persisted entity FK-crashes the whole save.
+  // They round-trip correctly via save-as-scenario (mutations-to-scenario-changes).
+  "gift-upsert",
+  "external-beneficiary-upsert",
+  "entity-upsert",
+  "relocation-upsert",
   "stress-inflation",
   "stress-ss-haircut",
   "stress-disability",
   "stress-market-crash",
+  "stress-exemption-cap",
 ]);
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {

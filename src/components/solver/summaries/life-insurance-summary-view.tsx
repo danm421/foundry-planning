@@ -214,7 +214,7 @@ export function LifeInsuranceSummaryView({ data }: { data: LifeInsuranceSummaryP
       <SummaryKpiRow>
         <SummaryKpiCard label="Policies" value={String(data.totals.count)} />
         <SummaryKpiCard
-          label="In-force death benefit"
+          label="Total death benefit"
           value={fmtUsd(data.totals.deathBenefit)}
         />
         <SummaryKpiCard label="Cash value" value={fmtUsd(data.totals.cashValue)} />

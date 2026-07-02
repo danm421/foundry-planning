@@ -101,7 +101,7 @@ export function LifeInsuranceSummaryPagePdf(
 
         <View style={s.kpis}>
           <Kpi lbl="Policies" val={String(data.totals.count)} />
-          <Kpi lbl="In-force death benefit" val={fmtUsd(data.totals.deathBenefit)} />
+          <Kpi lbl="Total death benefit" val={fmtUsd(data.totals.deathBenefit)} />
           <Kpi lbl="Cash value" val={fmtUsd(data.totals.cashValue)} />
           <Kpi lbl="Annual premium" val={fmtUsd(data.totals.premium)} />
         </View>

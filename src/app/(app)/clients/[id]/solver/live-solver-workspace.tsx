@@ -640,10 +640,16 @@ export function LiveSolverWorkspace({
     setSavingToBase(true);
     setSaveToBaseError(null);
     try {
+      // Only send levers the base-facts writer can persist. Technique/stress
+      // mutations (entity/gift/relocation/beneficiary/roth/stress/…) are
+      // retained in the working set below and saved as a scenario instead.
       const res = await fetch(`/api/clients/${clientId}/solver/save-to-base`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: initialSource, mutations }),
+        body: JSON.stringify({
+          source: initialSource,
+          mutations: mutations.filter(isBaseSavableMutation),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

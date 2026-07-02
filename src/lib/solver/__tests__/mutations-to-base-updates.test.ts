@@ -163,4 +163,79 @@ describe("isBaseSavableMutation", () => {
     expect(isBaseSavableMutation({ kind: "asset-transaction-upsert", id: "t", value: null })).toBe(false);
     expect(isBaseSavableMutation({ kind: "reinvestment-upsert", id: "r", value: null })).toBe(false);
   });
+
+  it("is false for estate/relocation/exemption techniques the base writer cannot persist", () => {
+    // Regression for the data-loss/FK-crash: these kinds have no case in
+    // mutationsToBaseUpdates, so they must not report base-savable.
+    expect(isBaseSavableMutation({ kind: "gift-upsert", id: "g", value: null })).toBe(false);
+    expect(isBaseSavableMutation({ kind: "external-beneficiary-upsert", id: "b", value: null })).toBe(false);
+    expect(isBaseSavableMutation({ kind: "entity-upsert", id: "e", value: null })).toBe(false);
+    expect(isBaseSavableMutation({ kind: "relocation-upsert", id: "r", value: null })).toBe(false);
+    expect(isBaseSavableMutation({ kind: "stress-exemption-cap", cap: 5_000_000 })).toBe(false);
+  });
+});
+
+// Completeness guard: every mutation kind that reports base-savable MUST produce
+// at least one write in mutationsToBaseUpdates. If a new kind is added that is
+// savable but unhandled by the switch, this fails (it would otherwise be a
+// silent Save-to-base no-op) — see the NON_BASE_SAVABLE data-loss finding.
+describe("every base-savable mutation kind produces a write", () => {
+  const guardSource = {
+    client: { retirementAge: 65, spouseRetirementAge: 63, lifeExpectancy: 95, spouseLifeExpectancy: 92 },
+    accounts: [{ id: "acct1" }],
+    savingsRules: [RULE],
+    incomes: [
+      { id: "inc1", type: "salary", owner: "client", annualAmount: 200000 },
+      { id: "ss1", type: "social_security", owner: "client", annualAmount: 0 },
+    ],
+    expenses: [{ id: "exp1", type: "living", annualAmount: 100000, startYear: 2030 }],
+    planSettings: { planStartYear: 2026 },
+  } as unknown as ClientData;
+
+  const representatives: Record<string, unknown> = {
+    "retirement-age": { kind: "retirement-age", person: "client", age: 67 },
+    "life-expectancy": { kind: "life-expectancy", person: "client", age: 90 },
+    "living-expense-scale": { kind: "living-expense-scale", multiplier: 1.1 },
+    "living-expense-amount": { kind: "living-expense-amount", amount: 80000 },
+    "expense-annual-amount": { kind: "expense-annual-amount", expenseId: "exp1", annualAmount: 50000 },
+    "income-annual-amount": { kind: "income-annual-amount", incomeId: "inc1", annualAmount: 1 },
+    "income-growth-rate": { kind: "income-growth-rate", incomeId: "inc1", rate: 0.02 },
+    "income-growth-source": { kind: "income-growth-source", incomeId: "inc1", source: "inflation" },
+    "income-tax-type": { kind: "income-tax-type", incomeId: "inc1", taxType: "ordinary_income" },
+    "income-start-year": { kind: "income-start-year", incomeId: "inc1", year: 2030 },
+    "income-end-year": { kind: "income-end-year", incomeId: "inc1", year: 2050 },
+    "ss-claim-age": { kind: "ss-claim-age", person: "client", age: 70 },
+    "ss-claim-age-mode": { kind: "ss-claim-age-mode", person: "client", mode: "years" },
+    "ss-benefit-mode": { kind: "ss-benefit-mode", person: "client", mode: "manual_amount" },
+    "ss-pia-monthly": { kind: "ss-pia-monthly", person: "client", amount: 3200 },
+    "ss-annual-amount": { kind: "ss-annual-amount", person: "client", amount: 20000 },
+    "ss-cola": { kind: "ss-cola", person: "client", rate: 0.02 },
+    "savings-contribution": { kind: "savings-contribution", accountId: "acct1", annualAmount: 2500 },
+    "savings-annual-percent": { kind: "savings-annual-percent", accountId: "acct1", percent: 0.1 },
+    "savings-roth-percent": { kind: "savings-roth-percent", accountId: "acct1", rothPercent: 0.5 },
+    "savings-contribute-max": { kind: "savings-contribute-max", accountId: "acct1", value: true },
+    "savings-growth-rate": { kind: "savings-growth-rate", accountId: "acct1", rate: 0.05 },
+    "savings-growth-source": { kind: "savings-growth-source", accountId: "acct1", source: "inflation" },
+    "savings-deductible": { kind: "savings-deductible", accountId: "acct1", value: false },
+    "savings-apply-cap": { kind: "savings-apply-cap", accountId: "acct1", value: false },
+    "savings-employer-match-pct": { kind: "savings-employer-match-pct", accountId: "acct1", pct: 0.05, cap: 1000 },
+    "savings-employer-match-amount": { kind: "savings-employer-match-amount", accountId: "acct1", amount: 500 },
+    "savings-start-year": { kind: "savings-start-year", accountId: "acct1", year: 2027 },
+    "savings-end-year": { kind: "savings-end-year", accountId: "acct1", year: 2050 },
+    "account-upsert": { kind: "account-upsert", id: "new", value: ACCT },
+    "savings-rule-upsert": { kind: "savings-rule-upsert", id: "r2", value: { ...RULE, id: "r2", accountId: "acct1" } },
+  };
+
+  for (const [kind, m] of Object.entries(representatives)) {
+    it(`writes something for base-savable kind '${kind}'`, () => {
+      expect(isBaseSavableMutation(m as never)).toBe(true);
+      const out = mutationsToBaseUpdates(guardSource, [m as never]);
+      const total =
+        out.accountInserts.length + out.accountUpdates.length + out.accountRemoves.length +
+        out.savingsInserts.length + out.savingsUpdates.length + out.savingsRemoves.length +
+        out.savingsFieldUpdates.length + (out.clientUpdate ? 1 : 0) +
+        out.incomeUpdates.length + out.expenseUpdates.length + out.expenseInserts.length;
+      expect(total).toBeGreaterThan(0);
+    });
+  }
 });

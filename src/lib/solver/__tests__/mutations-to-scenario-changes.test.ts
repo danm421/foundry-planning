@@ -540,3 +540,41 @@ describe("mutationsToScenarioChanges — technique upserts", () => {
     expect(drafts).toHaveLength(0);
   });
 });
+
+describe("mutationsToScenarioChanges — stress overrides → plan_settings", () => {
+  it("coalesces every stressor into ONE plan_settings edit (no unique-index collision)", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, inflationRate: 0.025 } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "stress-inflation", rate: 0.05 },
+      { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
+      { kind: "stress-disability", person: "client", startYear: 2032 },
+      { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
+      { kind: "stress-exemption-cap", cap: 7_000_000 },
+    ]);
+
+    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
+    expect(ps).toHaveLength(1); // single row → no (scenarioId, kind, id, opType) collision
+    expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
+    expect(ps[0].payload).toEqual({
+      inflationRate: { from: 0.025, to: 0.05 },
+      ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
+      disabilityEvent: { from: null, to: { person: "client", startYear: 2032 } },
+      marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
+      lifetimeExemptionCap: { from: null, to: 7_000_000 },
+    });
+  });
+
+  it("drops a stress-inflation override that matches the base rate (no-op)", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, inflationRate: 0.03 } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "stress-inflation", rate: 0.03 },
+    ]);
+    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+  });
+});

@@ -262,7 +262,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation";
+  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;

@@ -1,4 +1,5 @@
 import type { ClientData, ProjectionYear } from "@/engine";
+import { controllingFamilyMember } from "@/engine/ownership";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 
 export interface CashFlowLineItem {
@@ -19,6 +20,11 @@ export interface CashFlowYearDetail {
   ageLabel: string;
   inflows: CashFlowCategory[];
   outflows: CashFlowCategory[];
+  /** Portfolio drawdown funding a negative cash-flow year. Surfaced on its own
+   *  because the engine's `totalIncome` (and therefore the reconciled inflow
+   *  categories) excludes withdrawals — folding them into `inflows` would break
+   *  the tie-out to Total Inflows and spawn a bogus balancing "Other" row. */
+  withdrawals: CashFlowCategory | null;
   totals: { inflows: number; outflows: number; net: number; endingPortfolio: number };
 }
 
@@ -127,8 +133,17 @@ export function buildCashFlowYearDetail(
     .filter(([key]) => !isOtherInflowKey(key))
     .map(([id, amount]) => ({ id, label: m.incomeNames[id] ?? id, amount }));
 
+  // Only household-owned RMDs flow into year.totalIncome — the engine routes an
+  // entity-owned account's RMD to entity checking (grantor pass-through), not the
+  // household. Mirror that here so the RMD category reconciles to totalIncome
+  // instead of overshooting by every entity RMD.
+  const accountsById = new Map((clientData.accounts ?? []).map((a) => [a.id, a]));
   const rmdItems: CashFlowLineItem[] = Object.entries(year.accountLedgers)
-    .filter(([, l]) => l.rmdAmount > 0)
+    .filter(([id, l]) => {
+      if (l.rmdAmount <= 0) return false;
+      const acc = accountsById.get(id);
+      return acc != null && Array.isArray(acc.owners) && controllingFamilyMember(acc) != null;
+    })
     .map(([id, l]) => ({ id, label: m.accountNames[id] ?? id, amount: l.rmdAmount }));
 
   const withdrawalItems: CashFlowLineItem[] = Object.entries(year.withdrawals.byAccount)
@@ -148,14 +163,19 @@ export function buildCashFlowYearDetail(
   const inflows: CashFlowCategory[] = [
     summedCategory("income", "Income", incomeItems),
     summedCategory("rmds", "RMDs", rmdItems),
-    summedCategory("withdrawals", "Portfolio Withdrawals", withdrawalItems),
     summedCategory("otherInflows", "Other Inflows", otherInflowItems),
   ].filter((c) => Math.abs(c.total) >= EPSILON);
 
+  // Reconcile the income-derived categories against year.totalIncome (which
+  // EXCLUDES withdrawals). Withdrawals are surfaced separately, below.
   const inflowResidual = year.totalIncome - inflows.reduce((s, c) => s + c.total, 0);
   if (Math.abs(inflowResidual) >= EPSILON) {
     inflows.push({ key: "residual", label: "Other", total: inflowResidual, items: [] });
   }
+
+  const withdrawalCategory = summedCategory("withdrawals", "Portfolio Withdrawals", withdrawalItems);
+  const withdrawals =
+    Math.abs(withdrawalCategory.total) >= EPSILON ? withdrawalCategory : null;
 
   // ── Outflows ──────────────────────────────────────────────────────────
   const livingItems = Object.entries(year.expenses.bySource)
@@ -213,6 +233,7 @@ export function buildCashFlowYearDetail(
     ageLabel,
     inflows,
     outflows,
+    withdrawals,
     totals: {
       inflows: year.totalIncome,
       outflows: year.totalExpenses,

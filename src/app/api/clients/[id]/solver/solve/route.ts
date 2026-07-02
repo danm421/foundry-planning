@@ -111,10 +111,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           if (resolutionContext) {
             mixTree = resolveTechniqueMutations(mixTree, mutations as SolverMutation[], resolutionContext);
           }
+          // Seed off the SAME scenario the gauge/report use (loadEditedInputs
+          // passes `source`, not "base"): each scenario row carries its own MC
+          // seed, so a hardcoded "base" seed makes the solved PoS disagree with
+          // the gauge rendered beside it for any non-base source. Account mixes /
+          // volatility / correlations stay base/firm-sourced regardless of this
+          // arg — only seed selection and startingLiquidBalance are source-aware.
           const mcPayload = await loadMonteCarloData(
             clientId,
             access.firmId,
-            "base",
+            source,
             extraAccountMixes ?? [],
             mixTree,
           );

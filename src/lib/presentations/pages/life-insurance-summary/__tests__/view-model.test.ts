@@ -37,6 +37,7 @@ const solved: LiSolved = {
 function ctx(over: Partial<BuildDataContext> = {}): BuildDataContext {
   const clientData = {
     client: { filingStatus: "married_joint", spouseDob: "1968-01-01" },
+    planSettings: { planStartYear: 2025 },
   } as unknown as ClientData;
   return {
     clientData,
@@ -55,11 +56,16 @@ describe("buildLifeInsuranceSummaryData", () => {
     });
     expect(data.isEmpty).toBe(false);
     expect(data.notSolved).toBe(false);
+    // Total death benefit is the full inventory (term $1M + whole $500k).
     expect(data.totals.deathBenefit).toBe(1_500_000);
     expect(data.policies).toHaveLength(2);
-    expect(data.clientGap?.have).toBe(1_000_000);
+    // The client's only policy is a term that expires in 2041; the solved death
+    // year is 2048, so it's out of force → $0 in-force coverage, full-need shortfall.
+    expect(data.clientGap?.have).toBe(0);
     expect(data.clientGap?.need).toBe(2_000_000);
-    expect(data.clientGap?.gap).toEqual({ kind: "shortfall", amount: 1_000_000 });
+    expect(data.clientGap?.gap).toEqual({ kind: "shortfall", amount: 2_000_000 });
+    // The spouse holds a permanent (whole) policy → still in force at 2048.
+    expect(data.spouseGap?.have).toBe(500_000);
     expect(data.spouseGap?.need).toBe(1_300_000);
     expect(data.chart.rows).toHaveLength(2);
     expect(data.married).toBe(true);

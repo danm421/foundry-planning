@@ -4,6 +4,7 @@ import type { LiPolicyRow } from "@/lib/insurance-policies/load-li-inventory";
 import {
   inventoryTotals,
   coverageForDecedent,
+  isInForce,
   gapFor,
   type InventoryTotals,
   type Gap,
@@ -96,9 +97,13 @@ export function buildLifeInsuranceSummaryData(
   const isEmpty = policies.length === 0 && solved == null;
   const notSolved = solved == null;
 
-  const clientCov = coverageForDecedent(policies, "client");
-  const spouseCov = coverageForDecedent(policies, "spouse");
-  const jointFootnote = policies.some((p) => p.insuredPerson === "joint");
+  // Compare coverage as of the solved death year (so expired term is dropped to
+  // match the engine's need), falling back to the current plan year for the
+  // not-yet-solved inventory view.
+  const asOfYear = solved?.assumptions.deathYear ?? ctx.clientData.planSettings.planStartYear;
+  const clientCov = coverageForDecedent(policies, "client", asOfYear);
+  const spouseCov = coverageForDecedent(policies, "spouse", asOfYear);
+  const jointFootnote = policies.some((p) => p.insuredPerson === "joint" && isInForce(p, asOfYear));
 
   const clientGap =
     solved != null

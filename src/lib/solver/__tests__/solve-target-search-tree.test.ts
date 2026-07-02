@@ -81,4 +81,53 @@ describe("solveTarget applies baseline mutations before leverSearchConfig", () =
     };
     expect(treeSeenBySearch.savingsRules.some((r) => r.accountId === "a1")).toBe(true);
   });
+
+  it("solves a roth-conversion-amount lever whose conversion exists only in baseline mutations (F4 — no throw)", async () => {
+    const { solveTarget } = await import("../solve-target");
+
+    const effectiveTree = {
+      accounts: [],
+      savingsRules: [],
+      rothConversions: [], // conversion is NOT in the saved tree — created inline in the workspace
+      expenses: [{ type: "living", annualAmount: 80_000 }],
+      incomes: [],
+      liabilities: [],
+      withdrawalStrategy: [],
+      planSettings: {},
+      giftEvents: [],
+      client: {},
+    } as never;
+
+    // buildLeverMutation(roth-conversion-amount) throws if it can't find the
+    // conversion in the tree it is handed. It must resolve against the
+    // post-baseline searchTree, not the pre-baseline effectiveTree.
+    const result = await solveTarget({
+      effectiveTree,
+      mcPayload: {
+        indices: [],
+        correlation: [],
+        seed: 1,
+        accountMixes: [],
+        requiredMinimumAssetLevel: 0,
+      } as never,
+      baselineMutations: [
+        {
+          kind: "roth-conversion-upsert",
+          id: "rc-new",
+          value: {
+            id: "rc-new",
+            fixedAmount: 20_000,
+            startYear: 2030,
+            endYear: 2035,
+          } as never,
+        },
+      ],
+      target: { kind: "roth-conversion-amount", techniqueId: "rc-new" },
+      targetPoS: 0.9,
+      trials: 1,
+    });
+
+    expect(result.objective).toBe("pos");
+    expect(Number.isFinite(result.solvedValue)).toBe(true);
+  });
 });

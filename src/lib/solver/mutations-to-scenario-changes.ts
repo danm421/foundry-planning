@@ -22,6 +22,10 @@ export function mutationsToScenarioChanges(
   mutations: SolverMutation[],
 ): SolverScenarioChangeDraft[] {
   const clientFieldDiff: Record<string, { from: unknown; to: unknown }> = {};
+  // Stress-test overrides all land on planSettings; coalesce into ONE
+  // plan_settings edit so multiple stressors don't collide on the
+  // (scenarioId, targetKind, targetId, opType) unique index.
+  const planSettingsDiff: Record<string, { from: unknown; to: unknown }> = {};
   // Coalesce per-owner SS edits into one income row per owner so the
   // (scenarioId, targetKind, targetId, opType) unique index isn't violated.
   const ssDiffs = new Map<
@@ -533,6 +537,43 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      // ── Stress-test overrides → plan_settings (mirror apply-mutations.ts) ──
+      // Without these a saved "Bear case" scenario silently drops its stressors
+      // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).
+      case "stress-inflation": {
+        maybeDiff(planSettingsDiff, "inflationRate", source.planSettings.inflationRate, m.rate);
+        break;
+      }
+      case "stress-ss-haircut": {
+        planSettingsDiff.ssBenefitHaircut = {
+          from: source.planSettings.ssBenefitHaircut ?? null,
+          to: { pct: m.pct, startYear: m.startYear },
+        };
+        break;
+      }
+      case "stress-disability": {
+        planSettingsDiff.disabilityEvent = {
+          from: source.planSettings.disabilityEvent ?? null,
+          to: { person: m.person, startYear: m.startYear },
+        };
+        break;
+      }
+      case "stress-market-crash": {
+        planSettingsDiff.marketShock = {
+          from: source.planSettings.marketShock ?? null,
+          to: { year: m.year, drawdownPct: m.drawdownPct },
+        };
+        break;
+      }
+      case "stress-exemption-cap": {
+        maybeDiff(
+          planSettingsDiff,
+          "lifetimeExemptionCap",
+          source.planSettings.lifetimeExemptionCap ?? null,
+          m.cap,
+        );
+        break;
+      }
     }
   }
 
@@ -543,6 +584,16 @@ export function mutationsToScenarioChanges(
       targetKind: "client",
       targetId: clientId,
       payload: clientFieldDiff,
+      orderIndex: 0,
+    });
+  }
+  if (Object.keys(planSettingsDiff).length > 0) {
+    // Singleton: targetId is a stable sentinel (not used to locate the row).
+    drafts.push({
+      opType: "edit",
+      targetKind: "plan_settings",
+      targetId: "plan_settings",
+      payload: planSettingsDiff,
       orderIndex: 0,
     });
   }
