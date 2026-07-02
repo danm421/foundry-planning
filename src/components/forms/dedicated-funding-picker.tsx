@@ -5,6 +5,8 @@ interface PickerAccount {
   name: string;
   category: string;
   subType: string;
+  /** Family member ids that own this account (from the polymorphic owners[]). */
+  ownerFamilyMemberIds?: string[];
 }
 
 interface Props {
@@ -12,10 +14,19 @@ interface Props {
   /** Selected account ids, in draw order. */
   value: string[];
   onChange: (ids: string[]) => void;
+  /**
+   * When provided, only accounts owned by ≥1 of these family members are shown —
+   * i.e. the household (client/spouse) plus the person the goal is for. Omit to
+   * skip the ownership filter (category eligibility only).
+   */
+  allowedOwnerFamilyMemberIds?: string[];
 }
 
-// Accounts eligible to fund a goal: liquid/investable only.
-const ELIGIBLE = new Set(["cash", "taxable", "retirement"]);
+// Accounts eligible to fund an education goal: cash, taxable, and 529 plans.
+// 529s can be categorized under retirement, so key off the sub-type explicitly.
+function isEligibleType(a: PickerAccount): boolean {
+  return a.category === "cash" || a.category === "taxable" || a.subType === "529";
+}
 
 /**
  * Multi-account "Dedicated Funding" picker. A checkbox list of eligible accounts;
@@ -23,10 +34,15 @@ const ELIGIBLE = new Set(["cash", "taxable", "retirement"]);
  * expenses have no multi-account precedent (mirrors CashAccountPicker's category
  * filter, rebuilt as a checklist).
  */
-export function DedicatedFundingPicker({ accounts, value, onChange }: Props) {
-  const eligible = accounts.filter((a) => ELIGIBLE.has(a.category));
+export function DedicatedFundingPicker({ accounts, value, onChange, allowedOwnerFamilyMemberIds }: Props) {
+  const allowed = allowedOwnerFamilyMemberIds ? new Set(allowedOwnerFamilyMemberIds) : null;
+  const eligible = accounts.filter(
+    (a) =>
+      isEligibleType(a) &&
+      (allowed === null || (a.ownerFamilyMemberIds ?? []).some((id) => allowed.has(id))),
+  );
   if (eligible.length === 0) {
-    return <p className="text-xs text-gray-400">No eligible funding accounts (cash / taxable / retirement).</p>;
+    return <p className="text-xs text-gray-400">No eligible funding accounts (cash / taxable / 529).</p>;
   }
   const toggle = (id: string) =>
     value.includes(id) ? onChange(value.filter((v) => v !== id)) : onChange([...value, id]);

@@ -126,6 +126,7 @@ interface Account {
   value?: number;
   isDefaultChecking?: boolean | null;
   ownerEntityId?: string | null;
+  ownerFamilyMemberIds?: string[];
 }
 
 interface Entity {
@@ -138,6 +139,7 @@ interface FamilyMember {
   firstName: string;
   lastName?: string | null;
   role: string;
+  dateOfBirth?: string | null;
 }
 
 interface ClientInfo {
@@ -1032,6 +1034,7 @@ function ExpenseDialog({
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
   const [dedicatedAccountIds, setDedicatedAccountIds] = useState<string[]>(editing?.dedicatedAccountIds ?? []);
+  const [name, setName] = useState<string>(editing?.name ?? "");
   const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
@@ -1064,6 +1067,33 @@ function ExpenseDialog({
   const [endYear, setEndYear] = useState<number>(
     editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") ?? (currentYear + 20) : currentYear + 20)
   );
+
+  // Eligible education funding = household accounts (client/spouse) plus any
+  // owned by the beneficiary. Recomputed as the "For" person changes.
+  const householdMemberIds = (familyMembers ?? [])
+    .filter((fm) => fm.role === "client" || fm.role === "spouse")
+    .map((fm) => fm.id);
+  const allowedFundingOwnerIds = [...householdMemberIds, ...(forFamilyMemberId ? [forFamilyMemberId] : [])];
+
+  // Picking the beneficiary auto-titles the goal and time-boxes it: a 4-year
+  // program starting the year they turn 18 (or the current year, whichever is
+  // later). Both stay editable afterward.
+  function handleForChange(fmId: string) {
+    setForFamilyMemberId(fmId);
+    const fm = (familyMembers ?? []).find((f) => f.id === fmId);
+    if (!fm) return;
+    setName(`${fm.firstName} - Education`);
+    if (fm.dateOfBirth) {
+      // Parse the year off the ISO string to dodge the Jan-1 DOB timezone
+      // off-by-one that `new Date(...).getFullYear()` produces.
+      const birthYear = Number(fm.dateOfBirth.slice(0, 4));
+      const start = Math.max(currentYear, birthYear + 18);
+      setStartYear(start);
+      setStartYearRef(null);
+      setEndYear(start + 3);
+      setEndYearRef(null);
+    }
+  }
 
   if (!open) return null;
 
@@ -1205,7 +1235,7 @@ function ExpenseDialog({
                 <select
                   id="exp-for"
                   value={forFamilyMemberId}
-                  onChange={(e) => setForFamilyMemberId(e.target.value)}
+                  onChange={(e) => handleForChange(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 >
                   <option value="">— Select —</option>
@@ -1242,6 +1272,7 @@ function ExpenseDialog({
                 accounts={accounts}
                 value={dedicatedAccountIds}
                 onChange={setDedicatedAccountIds}
+                allowedOwnerFamilyMemberIds={allowedFundingOwnerIds}
               />
               <label className="flex items-center gap-2 text-sm text-gray-100">
                 <input
@@ -1263,7 +1294,8 @@ function ExpenseDialog({
               name="name"
               type="text"
               required
-              defaultValue={editing?.name ?? ""}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Housing"
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
@@ -1301,7 +1333,7 @@ function ExpenseDialog({
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
-                <div className="col-span-2">
+                <div className={type === "education" ? undefined : "col-span-2"}>
                   <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
                   <div className="mt-1">
                     <GrowthSourceRadio
