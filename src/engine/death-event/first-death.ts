@@ -62,6 +62,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     accounts, accountBalances, basisMap,
     incomes, liabilities,
     familyMembers, externalBeneficiaries, entities,
+    survivorBirthYear, survivorLifeExpectancy,
   } = input;
 
   // Resolve household principal FM ids for ownership comparisons.
@@ -276,7 +277,14 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
   }
 
   // Income termination
-  const nextIncomes = applyIncomeTermination(incomes, deceased, survivor, year);
+  const survivorDeathYear =
+    survivorBirthYear != null && survivorLifeExpectancy != null
+      ? survivorBirthYear + survivorLifeExpectancy
+      : null;
+  const nextIncomes = applyIncomeTermination(
+    incomes, deceased, survivor, year,
+    survivorDeathYear != null ? { survivorDeathYear } : undefined,
+  );
 
   return {
     accounts: nextAccounts,

@@ -6147,6 +6147,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
+        // Survivor birth year + LE so first-death can extend a continued
+        // deferred income to the survivor's death year. Mirrors
+        // computeFirstDeathYear's arithmetic (spouseLifeExpectancy ?? 95).
+        survivorBirthYear: parseInt(
+          (firstDeathSurvivor === "spouse" ? client.spouseDob : client.dateOfBirth)!.slice(0, 4), 10),
+        survivorLifeExpectancy:
+          firstDeathSurvivor === "spouse" ? (client.spouseLifeExpectancy ?? 95) : (client.lifeExpectancy ?? 95),
       });
 
       // Death-event creates synthetic accounts/liabilities mid-projection with

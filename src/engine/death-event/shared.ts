@@ -1143,16 +1143,43 @@ export function effectiveFilingStatus(
 }
 
 /** Clip deceased-owner personal incomes at the death year, and retitle joint
- *  personal incomes to the survivor. Entity-owned incomes pass through. */
+ *  personal incomes to the survivor. Entity-owned incomes pass through.
+ *  When `survivorContinuation` is supplied (first death only), a deferred
+ *  income with survivorshipPct > 0 is instead retitled to the survivor,
+ *  scaled by that fraction, and extended to the survivor's death year. */
 export function applyIncomeTermination(
   incomes: Income[],
   deceased: "client" | "spouse",
   survivor: "client" | "spouse",
   deathYear: number,
+  survivorContinuation?: { survivorDeathYear: number },
 ): Income[] {
   return incomes.map((inc) => {
     if (inc.ownerEntityId) return inc;
     if (inc.owner === deceased) {
+      const pct = inc.survivorshipPct ?? 0;
+      if (
+        survivorContinuation &&
+        inc.type === "deferred" &&
+        pct > 0 &&
+        survivorContinuation.survivorDeathYear > deathYear
+      ) {
+        // ASSUMPTION (Task 6 must verify the death-year amount): the owner's
+        // death year is expected to pay the FULL benefit (death-year runs to
+        // completion) because the death event fires at year-end after
+        // computeIncome already ran on the pre-termination (unscaled) row, and
+        // the scaled survivor stream begins year+1. If Task 6's golden shows the
+        // reduced amount in the death year, gate the retitle by setting
+        // startYear = deathYear + 1 (leaving inflationStartYear unchanged).
+        // computeIncome grows from inflationStartYear ?? startYear, so scaling
+        // annualAmount by pct yields pct × projectedBenefit each year.
+        return {
+          ...inc,
+          owner: survivor,
+          annualAmount: inc.annualAmount * pct,
+          endYear: survivorContinuation.survivorDeathYear,
+        };
+      }
       // Death year runs to completion; year+1 onward is suppressed.
       return { ...inc, endYear: Math.min(inc.endYear, deathYear) };
     }
@@ -1489,6 +1516,11 @@ export interface DeathEventInput {
    *  actively consumed by the balance sheet, in-estate-at-year, and the
    *  yearly-liquidity report. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Survivor birth year + life expectancy (from ClientInfo) so first-death can
+   *  compute the survivor's death year for deferred-income continuation and the
+   *  survivor-annuity estate inclusion. Optional for back-compat with fixtures. */
+  survivorBirthYear?: number;
+  survivorLifeExpectancy?: number;
 }
 
 export interface DeathEventResult {
