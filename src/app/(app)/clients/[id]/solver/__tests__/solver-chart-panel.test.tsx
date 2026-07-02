@@ -50,6 +50,9 @@ vi.mock("@/components/cashflow/tax-bracket-tab", () => ({
 vi.mock("../solver-monte-carlo-panel", () => ({
   SolverMonteCarloPanel: () => <div data-testid="solver-mc-panel" />,
 }));
+vi.mock("../solver-balance-sheet-panel", () => ({
+  SolverBalanceSheetPanel: () => <div data-testid="solver-balance-sheet-panel" />,
+}));
 
 import { SolverChartPanel } from "../solver-chart-panel";
 
@@ -118,6 +121,7 @@ describe("SolverChartPanel", () => {
       "Tax Bracket",
       "Life Insurance Need",
       "Estate",
+      "Balance Sheet",
     ]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
@@ -231,5 +235,11 @@ describe("SolverChartPanel", () => {
     );
     await userEvent.click(screen.getByRole("tab", { name: "Estate" }));
     expect(onReportChange).toHaveBeenCalledWith("estate");
+  });
+
+  it("renders the Balance Sheet panel when that tab is active", () => {
+    render(<ControlledPanel initialReport="balanceSheet" />);
+    expect(screen.getByRole("tab", { name: "Balance Sheet" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("solver-balance-sheet-panel")).toBeInTheDocument();
   });
 });
