@@ -10,6 +10,7 @@ import type {
   AssetTransaction,
   Reinvestment,
   Account,
+  Expense,
   SavingsRule,
   ExternalBeneficiary,
   EntitySummary,
@@ -75,6 +76,7 @@ export type SolverMutation =
   | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null }
   | { kind: "relocation-upsert"; id: string; value: Relocation | null }
   | { kind: "account-upsert"; id: string; value: Account | null }
+  | { kind: "expense-upsert"; id: string; value: Expense | null }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
   | { kind: "gift-upsert";                 id: string; value: EstateFlowGift | null }
   | { kind: "external-beneficiary-upsert"; id: string; value: ExternalBeneficiary | null }
@@ -122,6 +124,7 @@ export type SolverMutationKey =
   | `reinvestment-upsert:${string}`
   | `relocation-upsert:${string}`
   | `account-upsert:${string}`
+  | `expense-upsert:${string}`
   | `savings-rule-upsert:${string}`
   | `gift-upsert:${string}`
   | `external-beneficiary-upsert:${string}`
@@ -204,6 +207,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `relocation-upsert:${m.id}`;
     case "account-upsert":
       return `account-upsert:${m.id}`;
+    case "expense-upsert":
+      return `expense-upsert:${m.id}`;
     case "savings-rule-upsert":
       return `savings-rule-upsert:${m.id}`;
     case "gift-upsert":

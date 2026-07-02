@@ -44,6 +44,7 @@ import {
 } from "./solver-tab-life-insurance";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
+import { SolverEducationSection } from "./solver-education-section";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
@@ -55,6 +56,7 @@ import {
   TechniquesIcon,
   StressTestIcon,
   LifeInsuranceIcon,
+  EducationIcon,
 } from "./solver-tab-icons";
 
 function growthForType(type: QuickAddType, d: { taxable: number; retirement: number; cash: number }): number {
@@ -110,6 +112,7 @@ const LEFT_TABS: {
   { id: "techniques", label: "Techniques", short: "Techniques", icon: TechniquesIcon },
   { id: "stress_test", label: "Stress Test", short: "Stress", icon: StressTestIcon },
   { id: "life_insurance", label: "Life Insurance", short: "Insurance", icon: LifeInsuranceIcon },
+  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
 ];
 
 // Persisted, draggable split between the inputs (left) and reports (right) panes.
@@ -1212,6 +1215,19 @@ export function LiveSolverWorkspace({
             }))}
             estateAdminExpenses={baseClientData.planSettings.estateAdminExpenses ?? 0}
             modelPortfolios={modelPortfolios}
+          />
+        )}
+
+        {activeTab === "education" && (
+          <SolverEducationSection
+            baseExpenses={baseClientData.expenses}
+            workingTree={workingTree}
+            currentYear={currentYear}
+            clientId={clientId}
+            source={initialSource}
+            mutations={mutations}
+            onChange={pushMutation}
+            onResetField={clearMutations}
           />
         )}
           </div>

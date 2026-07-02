@@ -33,7 +33,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings } from "@/db/schema";
+import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings, expenseDedicatedAccounts } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
@@ -97,6 +97,27 @@ async function insertAccountOwnerRows(
       percent: String(o.percent),
     });
   }
+}
+
+/** (Re)write expense_dedicated_accounts for one expense, in draw order. Remaps
+ *  solver-synthetic account ids to their inserted DB uuids via idRemap (a
+ *  dedicated account may have just been created in this same save). Dedupes to
+ *  respect the (expense_id, account_id) unique constraint. */
+async function insertExpenseDedicatedRows(
+  tx: Tx,
+  expenseId: string,
+  accountIds: string[] | undefined,
+  idRemap: Map<string, string>,
+): Promise<void> {
+  const deduped = [...new Set(accountIds ?? [])];
+  if (deduped.length === 0) return;
+  await tx.insert(expenseDedicatedAccounts).values(
+    deduped.map((accountId, i) => ({
+      expenseId,
+      accountId: idRemap.get(accountId) ?? accountId,
+      sortOrder: i,
+    })),
+  );
 }
 
 function accountInsertValues(
@@ -200,6 +221,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const baseTree = source === "base" ? sourceTree : baseTreeLoad!.effectiveTree;
     const baseMembership = {
       accountIds: new Set((baseTree.accounts ?? []).map((a) => a.id)),
+      expenseIds: new Set((baseTree.expenses ?? []).map((e) => e.id)),
       ruleIds: new Set((baseTree.savingsRules ?? []).map((r) => r.id)),
     };
 
@@ -216,6 +238,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       incomeUpdates,
       expenseUpdates,
       expenseInserts,
+      expenseFullUpdates,
+      expenseRemoves,
     } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[], baseMembership);
 
     // Validate any savings-rule accountId that is NOT satisfied by an account
@@ -228,6 +252,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const acctCheck = await assertAccountsInClient(clientId, externalAccountIds);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+
+    // Validate every dedicated-account id an education goal draws from. The
+    // expense_dedicated_accounts.account_id FK is GLOBAL (no tenant column), so an
+    // unvalidated id could FK-succeed against another firm's account (cross-tenant
+    // link) or FK-crash the whole save. Ids satisfied by an in-batch account insert
+    // are remapped to their generated uuid inside the txn, so skip those here (same
+    // pattern as the savings-rule guard above).
+    const dedicatedAccountIds = [...expenseInserts, ...expenseFullUpdates]
+      .flatMap((e) => e.dedicatedAccountIds ?? [])
+      .filter((aid) => !insertedSyntheticIds.has(aid));
+    const dedicatedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
+    if (!dedicatedCheck.ok) {
+      return NextResponse.json({ error: dedicatedCheck.reason }, { status: 400 });
     }
 
     // Validate the owner FKs on every account we (re)write — family members,
@@ -385,22 +423,64 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           );
       }
 
-      // Insert synthesized expense rows (e.g. a retirement living expense that
-      // didn't previously exist in the base facts).
+      // Insert synthesized / new expense rows (a retirement living expense that
+      // didn't previously exist, or a solver-added education goal). Runs AFTER the
+      // account-insert loop so a goal's just-created dedicated account resolves via
+      // idRemap. Captures the generated id to (re)write the dedicated-account join.
       for (const e of expenseInserts) {
-        await tx.insert(expenses).values({
-          clientId,
-          scenarioId: baseScenarioId,
-          type: e.type,
-          name: e.name,
-          annualAmount: String(e.annualAmount),
-          startYear: e.startYear,
-          endYear: e.endYear,
-          growthRate: String(e.growthRate),
-          startYearRef: (e.startYearRef ?? null) as typeof expenses.$inferInsert.startYearRef,
-          endYearRef: (e.endYearRef ?? null) as typeof expenses.$inferInsert.endYearRef,
-          source: (e.source ?? "manual") as typeof expenses.$inferInsert.source,
-        });
+        const [inserted] = await tx
+          .insert(expenses)
+          .values({
+            clientId,
+            scenarioId: baseScenarioId,
+            type: e.type,
+            name: e.name,
+            annualAmount: String(e.annualAmount),
+            startYear: e.startYear,
+            endYear: e.endYear,
+            growthRate: String(e.growthRate),
+            startYearRef: (e.startYearRef ?? null) as typeof expenses.$inferInsert.startYearRef,
+            endYearRef: (e.endYearRef ?? null) as typeof expenses.$inferInsert.endYearRef,
+            source: (e.source ?? "manual") as typeof expenses.$inferInsert.source,
+            payShortfallOutOfPocket: e.payShortfallOutOfPocket ?? false,
+            institutionState: e.institutionState ?? null,
+            institutionName: e.institutionName ?? null,
+            forFamilyMemberId: e.forFamilyMemberId ?? null,
+          })
+          .returning({ id: expenses.id });
+        await insertExpenseDedicatedRows(tx, inserted.id, e.dedicatedAccountIds, idRemap);
+      }
+
+      // Full-row updates to existing base expenses from an education-goal edit
+      // (expense-upsert against a row already in base). Re-materialize the
+      // dedicated-account join delete-then-reinsert, mirroring updateExpenseForClient.
+      for (const e of expenseFullUpdates) {
+        await tx
+          .update(expenses)
+          .set({
+            type: e.type,
+            name: e.name,
+            annualAmount: String(e.annualAmount),
+            startYear: e.startYear,
+            endYear: e.endYear,
+            growthRate: String(e.growthRate),
+            payShortfallOutOfPocket: e.payShortfallOutOfPocket ?? false,
+            institutionState: e.institutionState ?? null,
+            institutionName: e.institutionName ?? null,
+            forFamilyMemberId: e.forFamilyMemberId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(expenses.id, e.id),
+              eq(expenses.clientId, clientId),
+              eq(expenses.scenarioId, baseScenarioId),
+            ),
+          );
+        await tx
+          .delete(expenseDedicatedAccounts)
+          .where(eq(expenseDedicatedAccounts.expenseId, e.id));
+        await insertExpenseDedicatedRows(tx, e.id, e.dedicatedAccountIds, idRemap);
       }
 
       // Removes — savings rules before accounts (FK: rules reference accounts).
@@ -423,6 +503,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               eq(accounts.id, id),
               eq(accounts.clientId, clientId),
               eq(accounts.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
+      // Removed education goals. The expense_dedicated_accounts.expense_id FK is
+      // onDelete: "cascade", so the join rows disappear with the expense — no
+      // explicit join delete needed.
+      for (const id of expenseRemoves) {
+        await tx
+          .delete(expenses)
+          .where(
+            and(
+              eq(expenses.id, id),
+              eq(expenses.clientId, clientId),
+              eq(expenses.scenarioId, baseScenarioId),
             ),
           );
       }
@@ -471,6 +566,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         incomeUpdates: incomeUpdates.length,
         expenseUpdates: expenseUpdates.length,
         expenseInserts: expenseInserts.length,
+        expenseFullUpdates: expenseFullUpdates.length,
+        expenseRemoves: expenseRemoves.length,
       }),
     });
 
@@ -487,6 +584,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       incomeUpdates: incomeUpdates.length,
       expenseUpdates: expenseUpdates.length,
       expenseInserts: expenseInserts.length,
+      expenseFullUpdates: expenseFullUpdates.length,
+      expenseRemoves: expenseRemoves.length,
     });
   } catch (err) {
     const authResp = authErrorResponse(err);

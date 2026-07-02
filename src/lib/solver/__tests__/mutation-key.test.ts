@@ -21,6 +21,14 @@ describe("mutationKey — technique upserts", () => {
   });
 });
 
+describe("mutationKey — expense-upsert", () => {
+  it("keys by id", () => {
+    expect(mutationKey({ kind: "expense-upsert", id: "goal-1", value: null })).toBe(
+      "expense-upsert:goal-1",
+    );
+  });
+});
+
 describe("mutationKey — stress test", () => {
   it("keys each stressor as a single global lever", () => {
     expect(mutationKey({ kind: "stress-inflation", rate: 0.05 })).toBe("stress-inflation");
