@@ -11,6 +11,7 @@ import type {
   Relocation,
 } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingFamilyMember } from "@/engine/ownership";
@@ -61,15 +62,22 @@ interface Props {
     linkedPropertyId: string | null;
     balance: string;
   }[];
-  modelPortfolios: { id: string; name: string; growthRate?: number }[];
+  modelPortfolios: { id: string; name: string; growthRate?: number; mix?: AccountAssetMix[] }[];
   milestones?: ClientMilestones;
   /** Household members eligible to own an inline-created Roth IRA. Optional —
    *  when absent (or empty), the inline creation panel stays disabled. */
   owners?: { familyMemberId: string; label: string }[];
   /** Default growth rate for a newly created retirement account. */
   retirementGrowthDefault?: number;
+  /** MC asset mix of the retirement category default (the "Plan default" growth
+   *  option). Empty/absent when that default is a custom/inflation rate. */
+  retirementDefaultMix?: AccountAssetMix[];
   /** Resolved inflation rate, offered as a growth-rate option for the new account. */
   resolvedInflationRate?: number;
+  /** Registers an inline-created draft account's MC asset mix (keyed by account
+   *  id) so its dollars are randomized in Monte Carlo. No-op when the mix is
+   *  empty (custom/inflation growth). Optional so the tab renders in isolation. */
+  onRegisterAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
   /** Ids of techniques present in the base plan, by kind — used to tag rows
    *  "Base plan" vs "Added". Optional so the component renders in isolation. */
   baseTechniqueIds?: {
@@ -178,7 +186,9 @@ export function SolverTechniquesTab({
   milestones,
   owners,
   retirementGrowthDefault,
+  retirementDefaultMix,
   resolvedInflationRate,
+  onRegisterAccountMix,
   baseTechniqueIds,
   onChange,
   onSolveStart,
@@ -233,11 +243,17 @@ export function SolverTechniquesTab({
             id: p.id,
             name: p.name,
             growthRate: p.growthRate ?? 0,
+            mix: p.mix ?? [],
           })),
           retirementGrowthDefault,
+          retirementDefaultMix: retirementDefaultMix ?? [],
           resolvedInflationRate,
-          onCreate: (account: Account) =>
-            onChange({ kind: "account-upsert", id: account.id, value: account }),
+          onCreate: (account: Account, mix: AccountAssetMix[]) => {
+            onChange({ kind: "account-upsert", id: account.id, value: account });
+            // Only register a mix for randomized sources; custom/inflation stay
+            // deterministic (empty mix) and must not enter extraAccountMixes.
+            if (mix.length > 0) onRegisterAccountMix?.(account.id, mix);
+          },
         }
       : undefined;
 

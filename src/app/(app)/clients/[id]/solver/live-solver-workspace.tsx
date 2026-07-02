@@ -46,6 +46,7 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import { SolverMinSavingsPanel, type MinSavingsResult } from "./solver-min-savings-panel";
 import { buildLockInCutMutations } from "@/lib/solver/lock-in-cut";
 import { SolverYearDetailPanel } from "./solver-year-detail-panel";
@@ -77,6 +78,12 @@ interface Props {
   clientName: string;
   spouseName: string;
   categoryGrowthDefaults: { taxable: number; retirement: number; cash: number };
+  /** MC asset mix of the retirement category default, resolved server-side.
+   *  Threaded to the Techniques tab so an inline Roth created on "Plan default"
+   *  growth registers the same allocation a DB account would (else those
+   *  converted dollars grow at a fixed zero-vol rate in Monte Carlo). Empty when
+   *  the retirement default is a custom/inflation rate rather than a portfolio. */
+  retirementDefaultMix: AccountAssetMix[];
   /** Display name of the scenario loaded as the source, when one is selected
    *  (null on the base case). Labels the "Update scenario" save action. */
   scenarioName?: string | null;
@@ -117,6 +124,7 @@ export function LiveSolverWorkspace({
   clientName,
   spouseName,
   categoryGrowthDefaults,
+  retirementDefaultMix,
   scenarioName,
   baseGifts,
 }: Props) {
@@ -252,7 +260,9 @@ export function LiveSolverWorkspace({
 
   // Min-savings result currently shown in the panel (null = idle/no result).
   const [minSavingsResult, setMinSavingsResult] = useState<MinSavingsResult | null>(null);
-  // Synthetic-account asset mixes to inject into MC, keyed by account id.
+  // Draft-account asset mixes to inject into MC, keyed by account id. Holds both
+  // synthetic Additional-Savings accounts (min-savings solve) and inline-created
+  // draft accounts (e.g. a Roth IRA from the Roth-conversion dialog).
   const [savingsAccountMixes, setSavingsAccountMixes] = useState<Map<string, { assetClassId: string; weight: number }[]>>(() => new Map());
   // fundFromExpenseReduction accounts surfaced as editable boxes ("Keep self-funding").
   const [visibleSelfFundingAccts, setVisibleSelfFundingAccts] = useState<Set<string>>(() => new Set());
@@ -405,6 +415,16 @@ export function LiveSolverWorkspace({
       .filter(([accountId]) => ids.has(accountId))
       .map(([accountId, mix]) => ({ accountId, mix }));
   }, [workingTree.accounts, savingsAccountMixes]);
+
+  // Register the MC asset mix of an inline-created draft account (e.g. a Roth
+  // IRA minted from the Roth-conversion dialog). Reuses the savingsAccountMixes
+  // map so the mix rides the same extraAccountMixes → MC path, draft persistence,
+  // and stale-account cleanup as synthetic Additional-Savings accounts.
+  const registerDraftAccountMix = useCallback(
+    (accountId: string, mix: AccountAssetMix[]) =>
+      setSavingsAccountMixes((prev) => new Map(prev).set(accountId, mix)),
+    [],
+  );
 
   const existingAddable = useMemo(() => {
     const withRule = new Set(workingTree.savingsRules.map((r) => r.accountId));
@@ -857,7 +877,7 @@ export function LiveSolverWorkspace({
       pendingSyntheticRef.current = { accountId, ruleId };
       setMinSavings({ accountId, ruleId, rule, portfolio, targetPoS });
       setMinSavingsResult(null);
-      setSavingsAccountMixes((prev) => new Map(prev).set(accountId, portfolio.mix));
+      registerDraftAccountMix(accountId, portfolio.mix);
       // Pass the retire + account + rule as extra baseline mutations: pushMutation's
       // state updates haven't flushed yet, so the solve must be told about them
       // directly or the search range would resolve against a stale tree.
@@ -878,6 +898,7 @@ export function LiveSolverWorkspace({
       currentYear,
       retirementYearForOwner,
       retireSyntheticMutations,
+      registerDraftAccountMix,
       handleSolveStart,
     ],
   );
@@ -1142,7 +1163,9 @@ export function LiveSolverWorkspace({
             milestones={milestones}
             owners={ownerOptions}
             retirementGrowthDefault={categoryGrowthDefaults.retirement}
+            retirementDefaultMix={retirementDefaultMix}
             resolvedInflationRate={baseClientData.planSettings.inflationRate}
+            onRegisterAccountMix={registerDraftAccountMix}
             onChange={pushMutation}
             onSolveStart={handleSolveStart}
             baseClientData={baseClientData}

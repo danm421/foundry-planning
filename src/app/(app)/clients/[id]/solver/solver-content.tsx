@@ -6,7 +6,7 @@ import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/sche
 import { and, eq } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
-import { assembleSolverPortfolios, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
+import { assembleSolverPortfolios, mixFromAllocationRows, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 interface Props {
@@ -73,6 +73,22 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     ? assembleSolverPortfolios(modelPortfolioRows, allocsByPortfolio, (id) => growthResolver.resolvePortfolio(id))
     : [];
 
+  // MC asset mix for the retirement category default ("Plan default" growth).
+  // Only a model-portfolio default carries a mix; custom/inflation defaults grow
+  // deterministically, so their mix is empty. An inline Roth created on "Plan
+  // default" registers this so its converted dollars are randomized in MC, the
+  // same as a DB account would be.
+  const retirementDefaultPortfolioId =
+    growthResolver?.getCategoryGrowthSource("retirement") === "model_portfolio"
+      ? growthResolver.categoryDefaultPortfolioId("retirement")
+      : null;
+  // Resolve from the raw allocation rows (same source assembleSolverPortfolios
+  // folds), not the derived solverPortfolios picklist — that array is built for
+  // the model-portfolio UI and could be filtered/reshaped for that purpose.
+  const retirementDefaultMix = retirementDefaultPortfolioId
+    ? mixFromAllocationRows(allocsByPortfolio.get(retirementDefaultPortfolioId) ?? [])
+    : [];
+
   const milestones = buildClientMilestones(
     baseLoaded.effectiveTree.client,
     baseLoaded.effectiveTree.planSettings.planStartYear,
@@ -110,6 +126,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       clientName={clientName}
       spouseName={spouseName}
       categoryGrowthDefaults={categoryGrowthDefaults}
+      retirementDefaultMix={retirementDefaultMix}
       scenarioName={scenarioName}
       baseGifts={baseGifts}
     />

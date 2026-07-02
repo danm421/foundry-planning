@@ -37,6 +37,18 @@ function tree(rothConversions = [] as (typeof rc)[]): ClientData {
   return { accounts: [], rothConversions } as unknown as ClientData;
 }
 
+// MC asset mixes used to prove an inline-created draft Roth registers its
+// allocation into the workspace's extraAccountMixes map (so converted dollars
+// are randomized in Monte Carlo instead of growing at a fixed zero-vol rate).
+const RET_DEFAULT_MIX = [
+  { assetClassId: "ac-eq", weight: 0.7 },
+  { assetClassId: "ac-bond", weight: 0.3 },
+];
+const AGG_MIX = [
+  { assetClassId: "ac-eq", weight: 0.9 },
+  { assetClassId: "ac-bond", weight: 0.1 },
+];
+
 const baseProps = {
   clientId: "c1",
   accounts: [],
@@ -249,6 +261,95 @@ describe("SolverTechniquesTab", () => {
         }),
       }),
     );
+  });
+
+  it("registers the retirement-default mix for an inline Roth created on Plan default growth", () => {
+    // The create panel defaults to "Plan default" growth, which for DB accounts
+    // resolves to the retirement category default's model-portfolio mix. Parity
+    // requires the draft Roth to register that same mix so its converted dollars
+    // carry MC volatility instead of a fixed zero-vol growth rate.
+    const onChange = vi.fn();
+    const onRegisterAccountMix = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([])}
+        owners={[{ familyMemberId: "fm-client", label: "John" }]}
+        retirementGrowthDefault={0.06}
+        resolvedInflationRate={0.025}
+        retirementDefaultMix={RET_DEFAULT_MIX}
+        onRegisterAccountMix={onRegisterAccountMix}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    const upsert = onChange.mock.calls
+      .map((c) => c[0])
+      .find((m) => m.kind === "account-upsert");
+    expect(upsert).toBeTruthy();
+    // Same account id in the upsert and the mix registration — they describe one account.
+    expect(onRegisterAccountMix).toHaveBeenCalledWith(upsert!.value.id, RET_DEFAULT_MIX);
+  });
+
+  it("registers the chosen model-portfolio mix for an inline Roth", () => {
+    const onChange = vi.fn();
+    const onRegisterAccountMix = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([])}
+        modelPortfolios={[{ id: "mp-agg", name: "Aggressive", growthRate: 0.08, mix: AGG_MIX }]}
+        owners={[{ familyMemberId: "fm-client", label: "John" }]}
+        retirementGrowthDefault={0.06}
+        resolvedInflationRate={0.025}
+        retirementDefaultMix={RET_DEFAULT_MIX}
+        onRegisterAccountMix={onRegisterAccountMix}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    const growthSelect = screen
+      .getByRole("option", { name: /Plan default/i })
+      .closest("select") as HTMLSelectElement;
+    fireEvent.change(growthSelect, { target: { value: "mp:mp-agg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    const upsert = onChange.mock.calls
+      .map((c) => c[0])
+      .find((m) => m.kind === "account-upsert");
+    expect(upsert!.value.growthRate).toBe(0.08);
+    expect(onRegisterAccountMix).toHaveBeenCalledWith(upsert!.value.id, AGG_MIX);
+  });
+
+  it("does NOT register a mix for an inline Roth created on custom growth", () => {
+    // custom / inflation growth are deterministic by design — no mix synthesized.
+    const onChange = vi.fn();
+    const onRegisterAccountMix = vi.fn();
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([])}
+        owners={[{ familyMemberId: "fm-client", label: "John" }]}
+        retirementGrowthDefault={0.06}
+        resolvedInflationRate={0.025}
+        retirementDefaultMix={RET_DEFAULT_MIX}
+        onRegisterAccountMix={onRegisterAccountMix}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add roth conversion/i }));
+    const growthSelect = screen
+      .getByRole("option", { name: /Plan default/i })
+      .closest("select") as HTMLSelectElement;
+    fireEvent.change(growthSelect, { target: { value: "custom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
+
+    expect(
+      onChange.mock.calls.map((c) => c[0]).some((m) => m.kind === "account-upsert"),
+    ).toBe(true);
+    expect(onRegisterAccountMix).not.toHaveBeenCalled();
   });
 
   it("renders the Estate planning technique only when baseClientData is provided", () => {
