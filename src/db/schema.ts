@@ -65,6 +65,7 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "life_insurance",
   "notes_receivable",
   "stock_options",
+  "education_savings",
 ]);
 
 export const grantTypeEnum = pgEnum("grant_type", ["rsu", "nqso", "iso"]);
@@ -1855,6 +1856,37 @@ export const accounts = pgTable("accounts", {
   // SET NULL so deleting a trust just untags its accounts (no asset loss).
   revocableTrustId: uuid("revocable_trust_id").references(
     (): AnyPgColumn => revocableTrusts.id,
+    { onDelete: "set null" },
+  ),
+  // ── 529 / education-savings columns. Null for every other category. ──
+  // Grantor: exactly one of the two may be set. A household family member
+  // (grantorFamilyMemberId) funds contributions from household cash flow and
+  // earns the state contribution deduction; a named outside person
+  // (grantorName, e.g. a grandparent) funds the account without touching
+  // household cash and earns no household deduction.
+  grantorFamilyMemberId: uuid("grantor_family_member_id").references(
+    () => familyMembers.id,
+    { onDelete: "set null" },
+  ),
+  grantorName: text("grantor_name"),
+  // Designated beneficiary: exactly one of the two must be set for
+  // education_savings accounts. The account is attributed to (displayed
+  // under) this person and is OUT of the household estate. No
+  // account_owners rows are written for education_savings accounts.
+  beneficiaryFamilyMemberId: uuid("beneficiary_family_member_id").references(
+    () => familyMembers.id,
+    { onDelete: "set null" },
+  ),
+  beneficiaryName: text("beneficiary_name"),
+  // SECURE 2.0 529→Roth rollover. When enabled, the engine drips leftover
+  // balance into rothRolloverAccountId (a household Roth IRA) starting at
+  // rothRolloverStartYear, capped at the annual IRA limit per year and
+  // $35,000 lifetime per beneficiary. Null destination = funds exit the
+  // plan to the beneficiary (out of household scope).
+  rothRolloverEnabled: boolean("roth_rollover_enabled").notNull().default(false),
+  rothRolloverStartYear: integer("roth_rollover_start_year"),
+  rothRolloverAccountId: uuid("roth_rollover_account_id").references(
+    (): AnyPgColumn => accounts.id,
     { onDelete: "set null" },
   ),
   // Orion integration: provider identifier + external account ID for accounts
