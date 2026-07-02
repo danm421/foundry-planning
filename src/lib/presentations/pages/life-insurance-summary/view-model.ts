@@ -236,8 +236,8 @@ export function buildLifeInsuranceSummaryData(
   const narrative = buildLifeInsuranceNarrative({
     totalDeathBenefit: totals.deathBenefit,
     policyCount: totals.count,
-    clientGap,
-    spouseGap,
+    clientRange,
+    spouseRange,
     notSolved,
     jointFootnote,
   });
