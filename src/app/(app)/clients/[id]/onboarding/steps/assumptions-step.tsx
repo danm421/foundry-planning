@@ -233,6 +233,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         residenceState: (settings.residenceState ?? null) as import("@/lib/usps-states").USPSStateCode | null,
         irdTaxRate: String(settings.irdTaxRate),
         probateCostRate: String(settings.probateCostRate),
+        pvDiscountRate: settings.pvDiscountRate != null ? String(settings.pvDiscountRate) : "",
         inflationRate: String(settings.inflationRate),
         inflationRateSource: settings.inflationRateSource,
         planStartYear: settings.planStartYear,

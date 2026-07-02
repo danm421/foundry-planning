@@ -175,6 +175,7 @@ const TAX_RATES_BASE_PROPS = {
   residenceState: null,
   irdTaxRate: "0.37",
   probateCostRate: "0.03",
+  pvDiscountRate: "",
   lifetimeExemptionCap: "",
   outOfHouseholdDniRate: "0.37",
   priorTaxableGiftsClient: "0",

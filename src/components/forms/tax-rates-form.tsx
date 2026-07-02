@@ -18,6 +18,7 @@ interface TaxRatesFormProps {
   residenceState: USPSStateCode | null;
   irdTaxRate: string;
   probateCostRate: string;
+  pvDiscountRate: string;
   lifetimeExemptionCap: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
@@ -29,6 +30,10 @@ interface TaxRatesFormProps {
 }
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
+// Like `pct`, but leaves a blank/null-backed value blank instead of showing "0.00" —
+// used for fields whose blank state carries meaning (falls back to another rate)
+// rather than defaulting to zero.
+const pctOrBlank = (v: string) => (v === "" ? "" : (Number(v) * 100).toFixed(2));
 
 function topRate(brackets: Bracket[]): number {
   return brackets.reduce((m, b) => Math.max(m, b.rate), 0);
@@ -104,6 +109,7 @@ export default function TaxRatesForm({
   residenceState,
   irdTaxRate,
   probateCostRate,
+  pvDiscountRate,
   lifetimeExemptionCap,
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
@@ -146,6 +152,12 @@ export default function TaxRatesForm({
       residenceState: residence,
       irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
       probateCostRate: String(Number(data.get("probateCostRate") ?? "0") / 100),
+      pvDiscountRate: (() => {
+        const raw = ((data.get("pvDiscountRate") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? String(n / 100) : null;
+      })(),
       lifetimeExemptionCap: (() => {
         const raw = ((data.get("lifetimeExemptionCap") as string | null) ?? "").trim();
         if (raw === "") return null;
@@ -318,6 +330,18 @@ export default function TaxRatesForm({
               id="probateCostRate"
               name="probateCostRate"
               defaultValue={pct(probateCostRate)}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            />
+          </FieldRow>
+          <FieldRow
+            label="PV discount rate"
+            help="Defaults to inflation when blank."
+          >
+            <PercentInput
+              id="pvDiscountRate"
+              name="pvDiscountRate"
+              defaultValue={pctOrBlank(pvDiscountRate)}
+              placeholder="Inflation"
               className={`${INPUT_CLS} max-w-[10rem]`}
             />
           </FieldRow>
