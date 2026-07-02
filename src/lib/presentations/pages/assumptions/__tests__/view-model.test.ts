@@ -93,6 +93,20 @@ describe("buildAssumptionsData", () => {
     expect(re).toEqual({ category: "Real Estate", source: "Custom", rate: "3.0%" });
   });
 
+  it("labels asset-mix and ticker-portfolio category sources with rate em-dash", () => {
+    const inv = bundle();
+    inv.planGrowthDefaults = {
+      ...inv.planGrowthDefaults!,
+      taxable: { source: "asset_mix", modelPortfolioId: null, customRate: 0.06 },
+      retirement: { source: "ticker_portfolio", modelPortfolioId: null, customRate: 0.07 },
+    };
+    const d = buildAssumptionsData(input({ investments: inv }));
+    const taxable = d.categoryGrowth.find((r) => r.category === "Taxable")!;
+    expect(taxable).toEqual({ category: "Taxable", source: "Asset mix", rate: "—" });
+    const retirement = d.categoryGrowth.find((r) => r.category === "Retirement")!;
+    expect(retirement).toEqual({ category: "Retirement", source: "Fund portfolio", rate: "—" });
+  });
+
   it("resolves withdrawal order to account names by priority", () => {
     expect(buildAssumptionsData(input()).withdrawalOrder).toEqual(["Checking", "Joint Brokerage"]);
   });

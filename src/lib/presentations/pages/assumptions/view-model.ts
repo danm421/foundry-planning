@@ -142,6 +142,7 @@ function categoryRate(
 
 function categorySourceLabel(def: CategoryGrowthDefault, portfolioNameById: Map<string, string>): string {
   if (def.source === "model_portfolio") return `Model: ${def.modelPortfolioId ? portfolioNameById.get(def.modelPortfolioId) ?? "—" : "—"}`;
+  if (def.source === "ticker_portfolio") return "Fund portfolio";
   if (def.source === "inflation") return "Inflation";
   if (def.source === "custom") return "Custom";
   if (def.source === "asset_mix") return "Asset mix";
