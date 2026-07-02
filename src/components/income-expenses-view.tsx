@@ -48,6 +48,7 @@ interface Income {
   ssBenefitMode?: string | null;
   piaMonthly?: string | null;
   linkedPropertyId?: string | null;
+  survivorshipPct?: string | null;
 }
 
 type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
@@ -509,6 +510,11 @@ function IncomeDialog({
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate, 3))
   );
+  // Stored as a whole-number percent for display (e.g. "50"); converted to a
+  // fraction string (e.g. "0.5") on submit — schema expects a fraction in [0,1].
+  const [survivorshipPctInput, setSurvivorshipPctInput] = useState<string>(
+    editing?.survivorshipPct != null ? String(Math.round(Number(editing.survivorshipPct) * 100)) : "",
+  );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const [taxType, setTaxType] = useState<IncomeTaxType>(
@@ -592,6 +598,10 @@ function IncomeDialog({
       endYearRef,
       taxType,
       linkedPropertyId: type === "other" ? (linkedPropertyId || null) : null,
+      survivorshipPct:
+        type === "deferred" && survivorshipPctInput.trim() !== ""
+          ? String(Number(survivorshipPctInput) / 100)
+          : null,
     };
 
     try {
@@ -908,6 +918,28 @@ function IncomeDialog({
               </>
             )}
           </div>
+
+          {type === "deferred" && (owner === "client" || owner === "spouse") && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-survivorship-pct">
+                Survivor benefit %
+              </label>
+              <input
+                id="inc-survivorship-pct"
+                type="number"
+                min={0}
+                max={100}
+                inputMode="numeric"
+                value={survivorshipPctInput}
+                onChange={(e) => setSurvivorshipPctInput(e.target.value)}
+                placeholder="e.g. 50"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Reduced % the surviving spouse keeps after the owner&apos;s death.
+              </p>
+            </div>
+          )}
 
           <CashAccountPicker
             id="inc-cash"
