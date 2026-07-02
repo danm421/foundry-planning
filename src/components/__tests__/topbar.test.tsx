@@ -8,6 +8,10 @@ vi.mock("next/navigation", () => ({
   useRouter: vi.fn(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() })),
 }));
 
+vi.mock("@clerk/nextjs", () => ({
+  useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
+}));
+
 import { usePathname, useSearchParams } from "next/navigation";
 import Topbar from "../topbar";
 import { BackNavProvider } from "../back-nav-provider";
