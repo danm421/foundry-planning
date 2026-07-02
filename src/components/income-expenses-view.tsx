@@ -49,6 +49,7 @@ interface Income {
   piaMonthly?: string | null;
   linkedPropertyId?: string | null;
   survivorshipPct?: string | null;
+  survivorAnnuityQtipElectOut?: boolean | null;
 }
 
 type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
@@ -517,6 +518,9 @@ function IncomeDialog({
   const [survivorshipPctInput, setSurvivorshipPctInput] = useState<string>(
     editing?.survivorshipPct != null ? String(Math.round(Number(editing.survivorshipPct) * 100)) : "",
   );
+  const [qtipElectOut, setQtipElectOut] = useState<boolean>(
+    editing?.survivorAnnuityQtipElectOut ?? false,
+  );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const [taxType, setTaxType] = useState<IncomeTaxType>(
@@ -609,6 +613,8 @@ function IncomeDialog({
         survivorshipPctInput.trim() !== ""
           ? String(Number(survivorshipPctInput) / 100)
           : null,
+      survivorAnnuityQtipElectOut:
+        type === "deferred" && (owner === "client" || owner === "spouse") ? qtipElectOut : null,
     };
 
     try {
@@ -945,6 +951,25 @@ function IncomeDialog({
               <p className="mt-1 text-xs text-gray-400">
                 Reduced % the surviving spouse keeps after the owner&apos;s death.
               </p>
+            </div>
+          )}
+
+          {type === "deferred" && (owner === "client" || owner === "spouse") && (
+            <div className="flex items-start gap-2">
+              <input
+                id="inc-qtip-elect-out"
+                type="checkbox"
+                checked={qtipElectOut}
+                onChange={(e) => setQtipElectOut(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+              />
+              <label htmlFor="inc-qtip-elect-out" className="text-sm text-gray-300">
+                Elect out of survivor-annuity marital deduction
+                <span className="mt-0.5 block text-xs text-gray-400">
+                  Default (unchecked): the annuity qualifies as deemed QTIP and is not
+                  taxed in the first estate. Check to tax its present value at the first death.
+                </span>
+              </label>
             </div>
           )}
 
