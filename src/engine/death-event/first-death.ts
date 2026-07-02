@@ -463,6 +463,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     planSettings: input.planSettings,
     deathOrder: 1,
     resultingLiabilities: chainResult.liabilities,
+    survivorAnnuityMaritalDeduction: survivorAnnuity.maritalDeduction,
   });
 
   // Phase 5 — tax computation. Preview first so we know the drain amount,
@@ -663,6 +664,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     planSettings: input.planSettings,
     deathOrder: 1,
     resultingLiabilities: pouredLiabs,
+    survivorAnnuityMaritalDeduction: survivorAnnuity.maritalDeduction,
   });
 
   // Phase 11 — final EstateTaxResult with drain debits populated.

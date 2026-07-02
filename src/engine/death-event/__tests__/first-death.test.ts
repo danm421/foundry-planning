@@ -454,3 +454,37 @@ describe("applyFirstDeath — §2039 survivor-annuity gross-estate inclusion", (
     ).toBe(false);
   });
 });
+
+describe("applyFirstDeath — §2056(b)(7)(C) survivor-annuity marital deduction", () => {
+  const deferred: Income = {
+    id: "pension", type: "deferred", name: "Pension",
+    annualAmount: 60_000, startYear: 2030, endYear: 2075,
+    growthRate: 0.02, owner: "client", survivorshipPct: 0.5,
+  };
+  const over = {
+    incomes: [deferred],
+    survivorBirthYear: 1972,
+    survivorLifeExpectancy: 90,
+    planSettings: planSettings({ flatStateEstateRate: 0.1, pvDiscountRate: 0.02 }),
+  };
+
+  it("offsets the §2039 annuity inclusion with a marital deduction by default (net zero)", () => {
+    const result = applyFirstDeath(mkInput(over));
+    const annuityLine = result.estateTax.grossEstateLines.find((l) => /survivor/i.test(l.label));
+    expect(annuityLine).toBeDefined();
+    expect(annuityLine!.amount).toBeGreaterThan(0);
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(annuityLine!.amount, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(0, 0);
+    expect(result.estateTax.federalEstateTax).toBeCloseTo(0, 0);
+  });
+
+  it("taxes the annuity in the decedent's estate when QTIP is elected out", () => {
+    const result = applyFirstDeath(
+      mkInput({ ...over, incomes: [{ ...deferred, survivorAnnuityQtipElectOut: true }] }),
+    );
+    const annuityLine = result.estateTax.grossEstateLines.find((l) => /survivor/i.test(l.label));
+    expect(annuityLine).toBeDefined();
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(0, 0);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(annuityLine!.amount * 0.1, 0);
+  });
+});
