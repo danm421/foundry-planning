@@ -13,6 +13,7 @@ import {
   computeInEstateAtYear,
   computeOutOfEstateAtYear,
 } from "@/lib/estate/in-estate-at-year";
+import { collectCharityExternalBeneficiaryIds } from "./charity-recipients";
 import { estateDistributionAtYear } from "./estate-distribution-at-year";
 import { isPolicyInForce } from "./insurance-in-force";
 
@@ -358,14 +359,6 @@ function resolveInsuredRetirementYear(
     default:
       return null;
   }
-}
-
-function collectCharityExternalBeneficiaryIds(tree: ClientData): Set<string> {
-  const ids = new Set<string>();
-  for (const eb of tree.externalBeneficiaries ?? []) {
-    if (eb.kind === "charity") ids.add(eb.id);
-  }
-  return ids;
 }
 
 /** Sum lifetime cash gifts to charity external beneficiaries given in years

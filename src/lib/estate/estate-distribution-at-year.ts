@@ -1,4 +1,5 @@
 import type { ProjectionResult, ClientData } from "@/engine";
+import { collectCharityExternalBeneficiaryIds } from "./charity-recipients";
 import { buildEstateTransferReportData, type RecipientGroup } from "./transfer-report";
 import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
 
@@ -41,7 +42,7 @@ export function estateDistributionAtYear(args: {
   // buildAggregateTotals), so charity is currently folded into it.
   //
   // Charity is resolved exactly as the existing estate-comparison chart does
-  // (yearly-estate-report.ts `collectCharityExternalBeneficiaryIds`): an
+  // (shared `collectCharityExternalBeneficiaryIds` in ./charity-recipients): an
   // external-beneficiary recipient counts as charity only when its backing
   // `clientData.externalBeneficiaries` entry has `kind === "charity"`. Matching
   // that predicate keeps this builder reconcilable with the chart when the chart
@@ -68,12 +69,3 @@ export function estateDistributionAtYear(args: {
   };
 }
 
-/** Ids of external beneficiaries flagged as charities. Mirrors the identical
- *  helper in yearly-estate-report.ts so the two charity buckets agree. */
-function collectCharityExternalBeneficiaryIds(tree: ClientData): Set<string> {
-  const ids = new Set<string>();
-  for (const eb of tree.externalBeneficiaries ?? []) {
-    if (eb.kind === "charity") ids.add(eb.id);
-  }
-  return ids;
-}
