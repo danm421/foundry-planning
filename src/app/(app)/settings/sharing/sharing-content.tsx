@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientShares, clients, crmHouseholds } from "@/db/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
@@ -29,8 +29,10 @@ export type IncomingShare = {
   clientCount: number;
 };
 
+export type ShareableClient = { id: string; name: string; isPrivate: boolean };
+
 export async function SharingContent(): Promise<ReactElement> {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, orgRole } = await auth();
   if (!userId || !orgId) {
     return (
       <p className="text-sm text-ink-3">Sign in to manage sharing.</p>
@@ -124,5 +126,27 @@ export async function SharingContent(): Promise<ReactElement> {
     clientCount: e.count,
   }));
 
-  return <SharingPanels outgoing={outgoing} incoming={incoming} />;
+  // Clients the caller may create per-client shares for: own book, or the
+  // whole firm for org admins — the same rule the client header used
+  // (owning advisor OR org:admin).
+  const shareableRows = await db
+    .select({
+      id: clients.id,
+      name: crmHouseholds.name,
+      isPrivate: clients.isPrivate,
+    })
+    .from(clients)
+    .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
+    .where(
+      and(
+        eq(clients.firmId, orgId),
+        isNull(crmHouseholds.deletedAt),
+        ...(orgRole === "org:admin" ? [] : [eq(clients.advisorId, userId)]),
+      ),
+    )
+    .orderBy(asc(crmHouseholds.name));
+
+  return (
+    <SharingPanels outgoing={outgoing} incoming={incoming} shareableClients={shareableRows} />
+  );
 }
