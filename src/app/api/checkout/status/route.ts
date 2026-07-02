@@ -12,6 +12,15 @@ export const dynamic = "force-dynamic";
 // burning a Stripe API call.
 const SESSION_ID_RE = /^cs_(test|live)_[a-zA-Z0-9_-]{10,}$/;
 
+// This endpoint is unauthenticated (a checkout session id is the only
+// credential), so never return the full purchase email — the success page
+// only needs a recognizable hint of where the invite went.
+function maskEmail(email: string): string {
+  const at = email.indexOf("@");
+  if (at <= 0) return "***";
+  return `${email[0]}***${email.slice(at)}`;
+}
+
 export async function GET(req: Request): Promise<Response> {
   const ip = extractClientIp(req);
   const rl = await checkCheckoutStatusRateLimit(ip);
@@ -68,7 +77,7 @@ export async function GET(req: Request): Promise<Response> {
   return NextResponse.json({
     ready: true,
     firmName: rows[0]!.firmName,
-    buyerEmail,
+    buyerEmail: maskEmail(buyerEmail),
   });
 }
 

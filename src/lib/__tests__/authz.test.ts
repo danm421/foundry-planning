@@ -105,7 +105,7 @@ describe("requireActiveSubscription", () => {
     await expect(requireActiveSubscription()).resolves.toBeUndefined();
   });
 
-  it("passes for subscription_status=past_due (dunning window mutations allowed)", async () => {
+  it("passes for subscription_status=past_due with no current_period_end (dunning window mutations allowed)", async () => {
     mockAuth.mockResolvedValue({
       userId: "u1",
       sessionClaims: {
@@ -113,6 +113,34 @@ describe("requireActiveSubscription", () => {
       },
     });
     await expect(requireActiveSubscription()).resolves.toBeUndefined();
+  });
+
+  it("passes for past_due within the 14-day grace window", async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      sessionClaims: {
+        org_public_metadata: {
+          subscription_status: "past_due",
+          current_period_end: fiveDaysAgo,
+        },
+      },
+    });
+    await expect(requireActiveSubscription()).resolves.toBeUndefined();
+  });
+
+  it("throws ForbiddenError for past_due beyond the 14-day grace window (aligned with decideAccess)", async () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    mockAuth.mockResolvedValue({
+      userId: "u1",
+      sessionClaims: {
+        org_public_metadata: {
+          subscription_status: "past_due",
+          current_period_end: twentyDaysAgo,
+        },
+      },
+    });
+    await expect(requireActiveSubscription()).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("throws ForbiddenError for subscription_status=canceled", async () => {
