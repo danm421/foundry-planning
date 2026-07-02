@@ -17,6 +17,7 @@ import { computeRetirementSubtraction } from "./retirement-subtraction";
 import { computeCapGainsAdjustment, computeWaCapGainsTax } from "./cap-gains";
 import { CAP_GAINS_RULES } from "./data/cap-gains-rules";
 import { applyRecapture } from "./special-rules";
+import { get529Rule } from "./data/five-two-nine-rules";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -48,6 +49,10 @@ export interface ComputeStateIncomeTaxInput {
   retirementBreakdown: RetirementBreakdown;
   preTaxContrib: number;
   fallbackFlatRate: number;
+  /** Household-grantor 529 contributions this year (post-cap actual amounts).
+   *  total = sum across beneficiaries; byBeneficiary keeps per-beneficiary
+   *  dollars for per_beneficiary-cap states. Absent ⇒ no 529 benefit. */
+  contrib529?: { total: number; byBeneficiary: number[] };
 }
 
 const EMPTY_SUBTRACTIONS = {
@@ -205,13 +210,42 @@ export function computeStateIncomeTax(
     stcg: input.federalIncome.shortCapitalGains,
   });
 
+  // Section F: 529 contribution benefit. A deduction reduces state taxable
+  // income (added to `other` subtractions); a credit reduces the final tax
+  // (clamped at 0). Fed by projection-built contrib529 (post-cap amounts).
+  const rule529 = get529Rule(input.state);
+  let deduction529 = 0;
+  let credit529 = 0;
+  if (input.contrib529 && input.contrib529.total > 0 && rule529.kind !== "none") {
+    const isJoint = input.filingStatus === "married_joint";
+    const cap = (single?: number, joint?: number) =>
+      (isJoint ? joint : single) ?? Number.POSITIVE_INFINITY;
+    const cappedBase =
+      rule529.basis === "per_beneficiary"
+        ? input.contrib529.byBeneficiary.reduce(
+            (s, amt) => s + Math.min(amt, cap(rule529.capSingle, rule529.capJoint)),
+            0,
+          )
+        : rule529.basis === "unlimited"
+          ? input.contrib529.total
+          : Math.min(input.contrib529.total, cap(rule529.capSingle, rule529.capJoint));
+    if (rule529.kind === "deduction") {
+      deduction529 = cappedBase;
+    } else {
+      credit529 = Math.min(
+        cappedBase * (rule529.creditRate ?? 0),
+        (isJoint ? rule529.creditMaxJoint : rule529.creditMaxSingle) ?? Number.POSITIVE_INFINITY,
+      );
+    }
+  }
+
   const subtractions = {
     socialSecurity: ssResult.amount,
     retirementIncome: retirementAmount,
     capitalGains: capGainsAdj,
     preTaxContrib: 0,       // Section E remaining: preTaxContrib
-    other: 0,
-    total: ssResult.amount + retirementAmount + capGainsAdj,
+    other: deduction529,
+    total: ssResult.amount + retirementAmount + capGainsAdj + deduction529,
   };
 
   // Easy path: lookup brackets, std deduction, exemption.
@@ -239,13 +273,20 @@ export function computeStateIncomeTax(
     filingStatus: stateFs,
   });
   const adjustedPreCreditTax = preCreditTax + recapture.adjustment;
-  const stateTax = Math.max(0, adjustedPreCreditTax - exemptionCredits);
+  const stateTax = Math.max(0, adjustedPreCreditTax - exemptionCredits - credit529);
   const specialRulesApplied: string[] = [];
   if (recapture.adjustment > 0) specialRulesApplied.push(`${input.state}-recapture`);
   if (capGainsAdj > 0) specialRulesApplied.push(`${input.state}-LTCG-carveout`);
+  if (deduction529 > 0 || credit529 > 0) specialRulesApplied.push(`${input.state}-529`);
 
   const notes = [ssResult.note, retirementResult.note];
   if (recapture.adjustment > 0) notes.push(recapture.note);
+  if (deduction529 > 0) {
+    notes.push(`529 contribution deduction: $${deduction529.toLocaleString()} subtracted from state taxable income.`);
+  }
+  if (credit529 > 0) {
+    notes.push(`529 contribution credit: $${credit529.toLocaleString()} reduces state tax.`);
+  }
 
   return {
     state: input.state,

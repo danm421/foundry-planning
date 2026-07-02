@@ -51,6 +51,10 @@ export interface YearTaxInput {
     k401: number;
     annuity: number;
   };
+  /** Household-grantor 529 contributions this year, for the state 529
+   *  deduction/credit. Built in projection.ts from the savings pass. Optional —
+   *  absent ⇒ no 529 benefit. */
+  contrib529?: { total: number; byBeneficiary: number[] };
   /** Ages at projection year, for state retirement-exclusion age thresholds. */
   primaryAge?: number;
   spouseAge?: number;
@@ -82,7 +86,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     aboveLineDeductions, itemizedDeductions: itemizedIn,
     charityCarryforwardIn, charityGiftsThisYear, secaResult,
     transferEarlyWithdrawalPenalty, interestIncomeForTax, deductionBreakdownIn,
-    retirementBreakdown, primaryAge, spouseAge, isoSpread,
+    retirementBreakdown, contrib529, primaryAge, spouseAge, isoSpread,
   } = input;
 
   // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
@@ -190,6 +194,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         taxParams: resolved!.params,
         inflationFactor: resolved!.inflationFactor,
         retirementBreakdown,
+        contrib529,
         residenceState: planSettings.residenceState,
         primaryAge,
         spouseAge,

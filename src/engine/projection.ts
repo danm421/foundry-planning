@@ -3065,6 +3065,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
     const cappedByRuleId = capResult.cappedByRuleId;
 
+    // Household-grantor 529 contributions → state 529 deduction/credit input.
+    // Derived from post-cap rule amounts (cappedByRuleId) prorated by the
+    // partial-year gate factor, mirroring how applySavingsRules applies them.
+    // NB: this is built BEFORE the savings pass runs (savings.byAccount at
+    // ~4174), so we cannot use the applied-amount map here — we re-derive from
+    // the same capped/prorated rule amounts the savings pass will use. External
+    // grantors (no grantorFamilyMemberId) earn no household deduction. Keyed per
+    // beneficiary (family-member id, else name, else account id) for
+    // per_beneficiary-cap states.
+    const contrib529: { total: number; byBeneficiary: number[] } | undefined =
+      (() => {
+        const byBeneficiary = new Map<string, number>();
+        for (const rule of data.savingsRules) {
+          const acct = accountById.get(rule.accountId);
+          if (acct?.category !== "education_savings") continue;
+          if (!acct.education529?.grantorFamilyMemberId) continue; // external grantor
+          const gate = itemProrationGate(rule, year, data.client);
+          if (!gate.include) continue;
+          const amount =
+            (cappedByRuleId[rule.id] ?? resolvedByRuleId[rule.id] ?? 0) * gate.factor;
+          if (amount <= 0) continue;
+          const key =
+            acct.education529.beneficiaryFamilyMemberId ??
+            acct.education529.beneficiaryName ??
+            acct.id;
+          byBeneficiary.set(key, (byBeneficiary.get(key) ?? 0) + amount);
+        }
+        if (byBeneficiary.size === 0) return undefined;
+        const values = [...byBeneficiary.values()];
+        return { total: values.reduce((s, v) => s + v, 0), byBeneficiary: values };
+      })();
+
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
@@ -3584,6 +3616,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // (seededTaxInput, supplementalTaxInput) — the rebuilt input becomes the
       // stored taxResult, so omitting them silently drops the senior deductions.
       retirementBreakdown,
+      contrib529,
       primaryAge: ages.client,
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
@@ -4702,6 +4735,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown,
+          contrib529,
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
@@ -4863,6 +4897,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown: supplementalRetirementBreakdown,
+          contrib529,
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
@@ -4996,6 +5031,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             interestIncomeForTax,
             deductionBreakdownIn: deductionBreakdownResult ?? null,
             retirementBreakdown: supplementalRetirementBreakdown,
+            contrib529,
             primaryAge: ages.client,
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,

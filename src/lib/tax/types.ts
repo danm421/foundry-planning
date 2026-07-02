@@ -136,6 +136,10 @@ export interface CalcInput {
     k401: number;
     annuity: number;
   };
+  /** Household-grantor 529 contributions this year, for the state 529
+   *  deduction/credit. total = sum; byBeneficiary keeps per-beneficiary
+   *  dollars for per_beneficiary-cap states. Absent ⇒ no 529 benefit. */
+  contrib529?: { total: number; byBeneficiary: number[] };
   /** Residence state for the bracket-mode state income tax engine. */
   residenceState?: import("@/lib/usps-states").USPSStateCode | null;
   primaryAge?: number;

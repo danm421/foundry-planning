@@ -208,6 +208,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       taxExemptIncome: input.taxExemptIncome ?? 0,
     },
     retirementBreakdown: input.retirementBreakdown ?? { db: 0, ira: 0, k401: 0, annuity: 0 },
+    contrib529: input.contrib529,
     preTaxContrib: input.aboveLineDeductions,
     fallbackFlatRate: input.flatStateRate,
   });
