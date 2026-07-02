@@ -178,4 +178,44 @@ d("accounts-writes core — 529 / education_savings", () => {
       .where(eq(accountOwners.accountId, created.data.id));
     expect(owners.length).toBe(0);
   });
+
+  it("update: the seven grantor/beneficiary/rollover columns round-trip via mass-assign passthrough", async () => {
+    const created = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        name: "529 to be re-designated",
+        category: "education_savings",
+        beneficiaryFamilyMemberId: COOPER_FM_ID,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+
+    const res = await updateAccountForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      accountId: created.data.id,
+      input: {
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: "Junior",
+        grantorName: "Grandma",
+        rothRolloverEnabled: true,
+        rothRolloverStartYear: 2040,
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    expect(res.data.beneficiaryFamilyMemberId).toBeNull();
+    expect(res.data.beneficiaryName).toBe("Junior");
+    expect(res.data.grantorName).toBe("Grandma");
+    expect(res.data.grantorFamilyMemberId).toBeNull();
+    expect(res.data.rothRolloverEnabled).toBe(true);
+    expect(res.data.rothRolloverStartYear).toBe(2040);
+    expect(res.data.rothRolloverAccountId).toBeNull();
+  });
 });
