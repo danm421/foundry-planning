@@ -115,13 +115,24 @@ export function runTrial(input: RunTrialInput): TrialResult {
     }
 
     let weighted = 0;
+    let totalW = 0;
     for (const m of mix) {
       const r = yearReturns[m.assetClassId];
-      if (r !== undefined) weighted += m.weight * r;
+      if (r !== undefined) {
+        weighted += m.weight * r;
+        totalW += m.weight;
+      }
       // Missing asset-class in the engine = treated as 0 return for that slice.
       // Orchestrator is expected to only include accounts whose mix references
       // engine indices; this is a defensive fallback.
     }
+    // H10: per-account mixes can legitimately sum to <1 (holdings rollup stores
+    // only the classified fraction). The deterministic engine's foldWeighted
+    // grows that residual at the inflation fallback; MC must match, else the
+    // residual earns 0% every year — a systematic downward growth bias that
+    // overstates the failure rate and breaks MC↔runProjection parity.
+    const unclassified = Math.max(0, 1 - totalW);
+    weighted += unclassified * data.planSettings.inflationRate;
     return weighted;
   };
 

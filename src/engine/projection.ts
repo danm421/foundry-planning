@@ -1840,8 +1840,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
       }
       if (inc.type === "social_security") continue;
-      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * incGate.factor;
+      // H2: honor scheduleOverrides so the taxed amount matches the cash
+      // deposited by computeIncome (income.ts:133-142) and the cash-routing
+      // loop (which read income.bySource). Re-deriving from annualAmount×growth
+      // here taxed a different number than was received whenever an override
+      // cell diverged from the growth curve.
+      let amount: number;
+      if (inc.scheduleOverrides) {
+        amount = inc.scheduleOverrides[year] ?? 0;
+      } else {
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      }
+      amount *= incGate.factor;
       const tt = inc.taxType ?? legacyTaxType(inc.type);
       switch (tt) {
         case "earned_income": taxDetail.earnedIncome += amount; break;
@@ -2080,6 +2091,71 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── Phase 3 (entity model): EntitySummary business K-1 tax incidence ─────
+    // H1: account-model counterpart of the loop above, for businesses modeled
+    // as EntitySummary rows (entityType llc|s_corp|c_corp|partnership|
+    // foundation|other). Their income is skipped by the household-1040 loop
+    // (ownerEntityId rows, lines 1834-1840) on the promise it's taxed here —
+    // but that block only ever iterated account-model businesses, so entity
+    // pass-through income was distributed as cash (the sweep further below) yet
+    // taxed $0. Tax exactly the set that sweep distributes: all non-trust
+    // currentEntities with family owners and positive net income (the sweep
+    // ignores grantor status, so we do too). Trusts keep the 1041/grantor
+    // passes and are excluded. Keyed off ownerEntityId (via
+    // computeBusinessEntityNetIncome) vs the account-model block's ownerAccountId
+    // (via computeBusinessYearFlow), so the two never double-tax the same row.
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+        data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
+        data.client,
+      );
+      if (netIncome <= 0) continue;
+      const treatment = entity.taxTreatment ?? "ordinary";
+      const familyOwners = (entity.owners ?? []).filter(
+        (o) => o.kind === "family_member",
+      );
+      let entityFamilyTaxable = 0;
+      for (const owner of familyOwners) {
+        const taxableShare = netIncome * owner.percent;
+        if (taxableShare === 0) continue;
+        entityFamilyTaxable += taxableShare;
+        switch (treatment) {
+          case "qbi":
+            taxDetail.qbi += taxableShare;
+            break;
+          case "ordinary":
+            taxDetail.ordinaryIncome += taxableShare;
+            break;
+          case "non_taxable":
+            taxDetail.taxExempt += taxableShare;
+            break;
+        }
+      }
+      // Flat-rate mode reads taxableIncome, not taxDetail buckets — mirror the
+      // account-model block (non_taxable stays out of taxableIncome).
+      if (treatment !== "non_taxable") {
+        taxableIncome += entityFamilyTaxable;
+      }
+      const totalTaxable =
+        netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
+      if (totalTaxable !== 0) {
+        const bySourceType =
+          treatment === "qbi" ? "qbi"
+          : treatment === "non_taxable" ? "tax_exempt"
+          : "ordinary_income";
+        taxDetail.bySource[`business_passthrough:${entity.id}`] = {
+          type: bySourceType,
+          amount: totalTaxable,
+        };
+      }
+    }
+
     // Add RMDs to ordinary income
     if (householdRmdIncome > 0) {
       taxDetail.ordinaryIncome += householdRmdIncome;
@@ -2306,21 +2382,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // counts toward IRMAA MAGI.
       taxDetail.taxExemptInterest += trustPassResult.householdIncomeDelta.taxExempt;
 
-      // Apply trust cash debits (distributions drawn from cash + trust tax paid).
+      // Apply trust cash debits (full distribution + trust tax paid) and credit
+      // the household beneficiary's share. Mirrors the grantor pass below.
+      //
       // We deliberately allow checking to go negative here — step 12c (entity
       // gap-fill) runs later in the year and will liquidate the trust's other
       // liquid assets to cover the deficit, emitting `entity_overdraft` if the
-      // remaining liquid pool is insufficient. The previous force-zero behavior
-      // here would mask deficits that gap-fill could legitimately recover from.
+      // remaining liquid pool is insufficient.
+      //
+      // H8/H9/M10: debit the FULL `actualAmount` (not just `drawFromCash`) via
+      // creditCash — so (a) the `drawFromTaxable` slice actually drives checking
+      // negative and gap-fill drains the trust's own brokerage to fund it
+      // (realizing the gain), rather than the distribution being recognized-but-
+      // never-drained (H9 value creation); and (b) the trust-checking ledger
+      // records the outflow so I1 holds (M10). Then credit the household its
+      // share of the distributed cash (H8): previously the DNI was taxed to the
+      // household via householdIncomeDelta above but the cash never arrived.
+      // Non-household beneficiary shares (family members / external) exit the
+      // projection scope, same as the grantor pass's non-household case.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
         if (!checkingId) continue;
         const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
         const tax = trustPassResult.taxByEntity.get(trust.entityId);
-        const debit = (dist?.drawFromCash ?? 0) + (tax?.total ?? 0);
-        if (debit <= 0) continue;
-        const currentCash = accountBalances[checkingId] ?? 0;
-        accountBalances[checkingId] = currentCash - debit;
+        const distAmount = dist?.actualAmount ?? 0;
+        const taxAmount = tax?.total ?? 0;
+        if (distAmount > 0) {
+          creditCash(checkingId, -distAmount, {
+            category: "expense",
+            label: `Non-grantor trust distribution out`,
+            sourceId: trust.entityId,
+          });
+        }
+        if (taxAmount > 0) {
+          creditCash(checkingId, -taxAmount, {
+            category: "tax",
+            label: `Trust income tax`,
+            sourceId: trust.entityId,
+          });
+        }
+        // Household beneficiary share of the distributed cash (client/spouse
+        // income beneficiaries). Matches the householdIncomeDelta share taxed
+        // above, so the household is taxed on and receives the same proportion.
+        const householdSharePct = (trust.incomeBeneficiaries ?? [])
+          .filter((b) => b.householdRole === "client" || b.householdRole === "spouse")
+          .reduce((sum, b) => sum + b.percentage, 0);
+        if (distAmount > 0 && householdSharePct > 0) {
+          creditCash(defaultChecking?.id, (distAmount * householdSharePct) / 100, {
+            category: "income",
+            label: `Non-grantor trust distribution`,
+            sourceId: trust.entityId,
+          });
+        }
       }
     }
 
@@ -3965,7 +4078,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // T9: use year-aware liabilityOwnersForYear so gift events that transferred
     // liability ownership to an entity route debt service to the entity's checking
     // starting the year the gift fires.
-    for (const liab of data.liabilities) {
+    // C1: iterate currentLiabilities (not the static data.liabilities) so
+    // purchase-created synthetic mortgages (technique-liab-*) — which are absent
+    // from data.liabilities but present in liabResult.byLiability / the P&L total
+    // — actually have their payment debited from cash. Removed liabilities are
+    // harmless: byLiability lacks them, so payment is 0 and the loop continues.
+    for (const liab of currentLiabilities) {
       const payment = liabResult.byLiability[liab.id] ?? 0;
       if (payment === 0) continue;
       const liabYearOwners = liabilityOwnersForYear(liab, data.giftEvents, year, planSettings.planStartYear);
@@ -5329,6 +5447,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             basis: -saveAmount, // cash outflow: basis == amount (signed)
           });
           accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
+          // H5: the saved surplus is after-tax cash, so it raises the
+          // destination's cost basis 1:1 — otherwise a later sale re-recognizes
+          // it as capital gain (basisMap persists across years and feeds the
+          // withdrawal cap-gain gate at draw time). Only taxable destinations
+          // track a basisMap-backed basis: the EoY stamp reads basisMap for
+          // non-cash, cash stamps endingValue, and pre-tax carries no cost
+          // basis. Gate the ledger entry's basis to match so I2 holds for the
+          // destination in every case. Mirrors the hypo-savings path.
+          const destCategory = accountById.get(saveDestId!)?.category;
+          const destTaxable = destCategory === "taxable";
+          if (destTaxable) {
+            basisMap[saveDestId!] = (basisMap[saveDestId!] ?? 0) + saveAmount;
+          }
           const destLedger = accountLedgers[saveDestId!];
           if (destLedger) {
             destLedger.endingValue += saveAmount;
@@ -5338,7 +5469,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: "Surplus transferred in",
               amount: saveAmount,
               sourceId: checkingId,
-              basis: saveAmount, // post-tax surplus deposit: basis == amount
+              // Taxable & cash carry basis == amount (after-tax / cash
+              // convention); pre-tax got no basisMap bump, so its entry basis is
+              // 0 to keep basisBoY + Σ entry.basis == basisEoY.
+              basis: destTaxable || destCategory === "cash" ? saveAmount : 0,
             });
           }
         } else if (saveAmount > 0 && checkingLedger) {
