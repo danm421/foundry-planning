@@ -1,4 +1,4 @@
-import type { ClientData, ProjectionYear } from "@/engine";
+import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 
@@ -87,10 +87,44 @@ export function buildNameMaps(clientData: ClientData) {
   const expenseTypeById: Record<string, string> = {};
   for (const exp of clientData.expenses ?? []) expenseTypeById[exp.id] = exp.type;
 
+  const incomeTypeById: Record<string, Income["type"]> = {};
+  for (const inc of clientData.incomes ?? []) incomeTypeById[inc.id] = inc.type;
+
   const noteNames: Record<string, string> = {};
   for (const note of clientData.notesReceivable ?? []) noteNames[note.id] = note.name;
 
-  return { incomeNames, accountNames, liabilityNames, expenseNames, otherInflowNames, expenseTypeById, noteNames };
+  return { incomeNames, accountNames, liabilityNames, expenseNames, otherInflowNames, expenseTypeById, incomeTypeById, noteNames };
+}
+
+type NameMaps = ReturnType<typeof buildNameMaps>;
+
+export function ageLabel(year: ProjectionYear): string {
+  return year.ages.spouse != null
+    ? `Age ${year.ages.client} / ${year.ages.spouse}`
+    : `Age ${year.ages.client}`;
+}
+
+export function livingExpenseItems(year: ProjectionYear, m: NameMaps): CashFlowLineItem[] {
+  return Object.entries(year.expenses.bySource)
+    .filter(([id]) => m.expenseTypeById[id] === "living")
+    .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
+}
+
+export function noteReceivableItems(year: ProjectionYear, m: NameMaps): CashFlowLineItem[] {
+  return Object.entries(year.notesReceivableByNote ?? {}).map(([id, n]) => ({
+    id: `note:${id}`,
+    label: m.noteNames[id] ? `Note: ${m.noteNames[id]}` : `Note ${id}`,
+    amount: n.totalCashIn,
+  }));
+}
+
+export function taxLineItems(year: ProjectionYear): CashFlowLineItem[] {
+  return year.taxResult
+    ? [
+        { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
+        { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
+      ]
+    : [];
 }
 
 function isOtherInflowKey(key: string): boolean {
@@ -153,11 +187,7 @@ export function buildCashFlowYearDetail(
     ...Object.entries(year.income.bySource)
       .filter(([key]) => isOtherInflowKey(key))
       .map(([id, amount]) => ({ id, label: m.otherInflowNames[id] ?? id, amount })),
-    ...Object.entries(year.notesReceivableByNote ?? {}).map(([id, n]) => ({
-      id: `note:${id}`,
-      label: m.noteNames[id] ? `Note: ${m.noteNames[id]}` : `Note ${id}`,
-      amount: n.totalCashIn,
-    })),
+    ...noteReceivableItems(year, m),
   ];
 
   const inflows: CashFlowCategory[] = [
@@ -178,9 +208,7 @@ export function buildCashFlowYearDetail(
     Math.abs(withdrawalCategory.total) >= EPSILON ? withdrawalCategory : null;
 
   // ── Outflows ──────────────────────────────────────────────────────────
-  const livingItems = Object.entries(year.expenses.bySource)
-    .filter(([id]) => m.expenseTypeById[id] === "living")
-    .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
+  const livingItems = livingExpenseItems(year, m);
 
   const liabilityItems = Object.entries(year.expenses.byLiability)
     .map(([id, amount]) => ({ id, label: m.liabilityNames[id] ?? id, amount }));
@@ -197,12 +225,9 @@ export function buildCashFlowYearDetail(
     .filter(([id]) => id.startsWith("synth-proptax-"))
     .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
 
-  const taxItems: CashFlowLineItem[] = year.taxResult
-    ? [
-        { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
-        { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
-      ].filter((i) => Math.abs(i.amount) >= EPSILON)
-    : [];
+  const taxItems: CashFlowLineItem[] = taxLineItems(year).filter(
+    (i) => Math.abs(i.amount) >= EPSILON,
+  );
 
   const savingsItems = Object.entries(year.savings.byAccount)
     .map(([id, amount]) => ({ id, label: m.accountNames[id] ?? id, amount }));
@@ -222,15 +247,9 @@ export function buildCashFlowYearDetail(
     outflows.push({ key: "residual", label: "Other", total: outflowResidual, items: [] });
   }
 
-  // ── Header + totals ───────────────────────────────────────────────────
-  const ageLabel =
-    year.ages.spouse != null
-      ? `Age ${year.ages.client} / ${year.ages.spouse}`
-      : `Age ${year.ages.client}`;
-
   return {
     year: year.year,
-    ageLabel,
+    ageLabel: ageLabel(year),
     inflows,
     outflows,
     withdrawals,

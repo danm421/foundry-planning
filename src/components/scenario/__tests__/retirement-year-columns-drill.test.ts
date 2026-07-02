@@ -15,18 +15,12 @@ const MONEY_KEYS = [
 ];
 
 describe("retirementYearColumns drill wiring", () => {
-  it("gives every money column a drill fn when clientData is supplied", () => {
+  it("gives every money column a drill fn", () => {
     const cols = retirementYearColumns(true, clientData);
     for (const key of MONEY_KEYS) {
       expect(cols.find((c) => c.key === key)?.drill, key).toBeTypeOf("function");
     }
     expect(cols.find((c) => c.key === "year")?.drill).toBeUndefined();
     expect(cols.find((c) => c.key === "age")?.drill).toBeUndefined();
-  });
-
-  it("gives no column a drill fn without clientData", () => {
-    for (const col of retirementYearColumns(true)) {
-      expect(col.drill).toBeUndefined();
-    }
   });
 });

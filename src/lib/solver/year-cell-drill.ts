@@ -7,7 +7,13 @@ import type { ClientData, Income, ProjectionYear } from "@/engine";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
 import type { CellDrillGroup, CellDrillProps, CellDrillRow } from "@/lib/cell-drill/types";
 import { retirementInflows, rmdTotal } from "@/lib/retirement/retirement-inflows";
-import { buildNameMaps } from "./cashflow-year-detail";
+import {
+  ageLabel,
+  buildNameMaps,
+  livingExpenseItems,
+  noteReceivableItems,
+  taxLineItems,
+} from "./cashflow-year-detail";
 
 export type YearDrillColumnKey =
   | "socialSecurity"
@@ -40,6 +46,15 @@ function cachedNameMaps(clientData: ClientData): NameMaps {
   return m;
 }
 
+// Drill results are pure in (columnKey, year, clientData), and both refs are
+// stable across renders (a new projection run allocates new ProjectionYear
+// objects), so each cell's breakdown is built once instead of on every table
+// render — including the re-render that opening the modal itself triggers.
+const drillCache = new WeakMap<
+  ClientData,
+  WeakMap<ProjectionYear, Map<YearDrillColumnKey, CellDrillProps | null>>
+>();
+
 /** Drop sub-dollar rows, sort descending, and append a balancing "Other" row
  *  when the survivors don't sum to `total`. */
 function balanced(key: string, total: number, rows: CellDrillRow[]): CellDrillRow[] {
@@ -51,12 +66,6 @@ function balanced(key: string, total: number, rows: CellDrillRow[]): CellDrillRo
     nonZero.push({ id: `${key}-other`, label: "Other", amount: total - sum });
   }
   return nonZero;
-}
-
-function ageSubtitle(year: ProjectionYear): string {
-  return year.ages.spouse != null
-    ? `Age ${year.ages.client} / ${year.ages.spouse}`
-    : `Age ${year.ages.client}`;
 }
 
 function drillResult(
@@ -73,7 +82,7 @@ function drillResult(
   if (Math.abs(total) < EPSILON && finalRows.length === 0) return null;
   return {
     title: `${title} — ${year.year}`,
-    subtitle: ageSubtitle(year),
+    subtitle: ageLabel(year),
     total,
     totalLabel: opts?.totalLabel,
     groups: [{ rows: finalRows }],
@@ -83,14 +92,12 @@ function drillResult(
 
 function incomeRowsByTypes(
   year: ProjectionYear,
-  clientData: ClientData,
   m: NameMaps,
   types: ReadonlySet<Income["type"]>,
 ): CellDrillRow[] {
-  const typeById = new Map((clientData.incomes ?? []).map((i) => [i.id, i.type]));
   return Object.entries(year.income.bySource)
     .filter(([id]) => {
-      const t = typeById.get(id);
+      const t = m.incomeTypeById[id];
       return t != null && types.has(t);
     })
     .map(([id, amount]) => ({ id, label: m.incomeNames[id] ?? id, amount }));
@@ -101,11 +108,27 @@ export function buildYearCellDrill(
   year: ProjectionYear,
   clientData: ClientData,
 ): CellDrillProps | null {
+  let byYear = drillCache.get(clientData);
+  if (!byYear) drillCache.set(clientData, (byYear = new WeakMap()));
+  let byKey = byYear.get(year);
+  if (!byKey) byYear.set(year, (byKey = new Map()));
+  const cached = byKey.get(columnKey);
+  if (cached !== undefined) return cached;
+  const result = computeYearCellDrill(columnKey, year, clientData);
+  byKey.set(columnKey, result);
+  return result;
+}
+
+function computeYearCellDrill(
+  columnKey: YearDrillColumnKey,
+  year: ProjectionYear,
+  clientData: ClientData,
+): CellDrillProps | null {
   const m = cachedNameMaps(clientData);
-  const inflows = retirementInflows(year);
 
   switch (columnKey) {
     case "socialSecurity": {
+      const inflows = retirementInflows(year);
       const d = year.socialSecurityDetail;
       let rows: CellDrillRow[];
       if (d) {
@@ -125,7 +148,7 @@ export function buildYearCellDrill(
           ...(d.spouse ? person(spouseName, "spouse", d.spouse) : []),
         ];
       } else {
-        rows = incomeRowsByTypes(year, clientData, m, new Set(["social_security"]));
+        rows = incomeRowsByTypes(year, m, new Set(["social_security"]));
       }
       return drillResult("socialSecurity", "Social Security", year, inflows.socialSecurity, rows);
     }
@@ -135,8 +158,8 @@ export function buildYearCellDrill(
         "salaries",
         "Salaries",
         year,
-        inflows.salaries,
-        incomeRowsByTypes(year, clientData, m, new Set(["salary"])),
+        retirementInflows(year).salaries,
+        incomeRowsByTypes(year, m, new Set(["salary"])),
       );
 
     case "otherIncome": {
@@ -144,7 +167,6 @@ export function buildYearCellDrill(
       // (business/trust/deferred/cap-gains/other), entity pass-throughs, and
       // synthetic proceeds keys — plus notes-receivable cash, mirroring
       // otherInflows() in retirement-inflows.ts.
-      const typeById = new Map((clientData.incomes ?? []).map((i) => [i.id, i.type]));
       const excluded: ReadonlySet<Income["type"]> = new Set(["salary", "social_security"]);
       const sourceRows: CellDrillRow[] = Object.entries(year.income.bySource)
         .filter(([id]) => {
@@ -153,7 +175,7 @@ export function buildYearCellDrill(
           // totalIncome separately, so including it here would show an
           // equity row offset by a negative balancing "Other" row.
           if (id.startsWith("equity-proceeds:")) return false;
-          const t = typeById.get(id);
+          const t = m.incomeTypeById[id];
           return t == null || !excluded.has(t);
         })
         .map(([id, amount]) => ({
@@ -161,16 +183,9 @@ export function buildYearCellDrill(
           label: m.incomeNames[id] ?? m.otherInflowNames[id] ?? id,
           amount,
         }));
-      const noteRows: CellDrillRow[] = Object.entries(year.notesReceivableByNote ?? {}).map(
-        ([id, n]) => ({
-          id: `note:${id}`,
-          label: m.noteNames[id] ? `Note: ${m.noteNames[id]}` : `Note ${id}`,
-          amount: n.totalCashIn,
-        }),
-      );
-      return drillResult("otherIncome", "Other Income", year, inflows.otherInflows, [
+      return drillResult("otherIncome", "Other Income", year, retirementInflows(year).otherInflows, [
         ...sourceRows,
-        ...noteRows,
+        ...noteReceivableItems(year, m),
       ]);
     }
 
@@ -191,6 +206,7 @@ export function buildYearCellDrill(
     }
 
     case "totalIncomeWithdrawals": {
+      const inflows = retirementInflows(year);
       const rows: CellDrillRow[] = [
         { id: "socialSecurity", label: "Social Security", amount: inflows.socialSecurity },
         { id: "salaries", label: "Salaries", amount: inflows.salaries },
@@ -208,22 +224,17 @@ export function buildYearCellDrill(
       );
     }
 
-    case "livingExpenses": {
-      const rows: CellDrillRow[] = Object.entries(year.expenses.bySource)
-        .filter(([id]) => m.expenseTypeById[id] === "living")
-        .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
-      return drillResult("livingExpenses", "Living Expenses", year, year.expenses.living, rows);
-    }
+    case "livingExpenses":
+      return drillResult(
+        "livingExpenses",
+        "Living Expenses",
+        year,
+        year.expenses.living,
+        livingExpenseItems(year, m),
+      );
 
-    case "taxes": {
-      const rows: CellDrillRow[] = year.taxResult
-        ? [
-            { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
-            { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
-          ]
-        : [];
-      return drillResult("taxes", "Taxes", year, year.expenses.taxes, rows);
-    }
+    case "taxes":
+      return drillResult("taxes", "Taxes", year, year.expenses.taxes, taxLineItems(year));
 
     case "totalExpenses": {
       // Category subtotals. cashGifts is already rolled into expenses.other
@@ -249,6 +260,7 @@ export function buildYearCellDrill(
     }
 
     case "shortfall": {
+      const inflows = retirementInflows(year);
       const s = inflows.shortfall;
       if (s < EPSILON) return null;
       const rows: CellDrillRow[] = [
@@ -291,7 +303,7 @@ export function buildYearCellDrill(
       if (Math.abs(total) < EPSILON && groups.length === 0) return null;
       return {
         title: `Total Portfolio Assets — ${year.year}`,
-        subtitle: ageSubtitle(year),
+        subtitle: ageLabel(year),
         total,
         groups,
         footnote:
