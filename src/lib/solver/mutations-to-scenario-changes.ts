@@ -451,6 +451,16 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "expense-upsert": {
+        pushTechniqueUpsert(
+          nonClientDrafts,
+          "expense",
+          source.expenses.find((e) => e.id === m.id) as Record<string, unknown> | undefined,
+          m.id,
+          m.value as Record<string, unknown> | null,
+        );
+        break;
+      }
       case "savings-rule-upsert": {
         pushTechniqueUpsert(
           nonClientDrafts,

@@ -71,6 +71,9 @@ export function buildSolverSummaryContext(
     scenarioLabel,
     clientName,
     spouseName,
+    // No summary here renders the cover or Client Profile spouse card (the
+    // surfaces that need the surname), so leave it unset.
+    spouseLastName: null,
     firmName: "",
     firmTagline: null,
     reportDate: "",

@@ -292,6 +292,9 @@ export function buildComputeTools(
         scenarioLabel: ctx.scenarioId === "base" ? "Base case" : "Scenario",
         clientName,
         spouseName: c.spouseName ?? null,
+        // Engine client carries no spouse surname; the surname only affects the
+        // cover / Client Profile card, which the forge doesn't render.
+        spouseLastName: null,
         firmName: "",
         firmTagline: null,
         reportDate: new Date().toISOString().slice(0, 10),

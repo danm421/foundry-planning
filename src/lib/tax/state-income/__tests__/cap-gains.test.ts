@@ -12,8 +12,14 @@ describe("computeCapGainsAdjustment", () => {
   it("ND exempts 40% of LTCG", () => {
     expect(computeCapGainsAdjustment("ND", { ltcg: 100_000, stcg: 0 })).toBe(40_000);
   });
+  it("SC exempts 44% of LTCG", () => {
+    expect(computeCapGainsAdjustment("SC", { ltcg: 100_000, stcg: 0 })).toBe(44_000);
+  });
   it("WI exempts 30% of LTCG", () => {
     expect(computeCapGainsAdjustment("WI", { ltcg: 100_000, stcg: 0 })).toBe(30_000);
+  });
+  it("NM has no carve-out (broad 40% deduction repealed by HB 547, 2025+)", () => {
+    expect(computeCapGainsAdjustment("NM", { ltcg: 100_000, stcg: 0 })).toBe(0);
   });
   it("CA has no carve-out", () => {
     expect(computeCapGainsAdjustment("CA", { ltcg: 100_000, stcg: 0 })).toBe(0);

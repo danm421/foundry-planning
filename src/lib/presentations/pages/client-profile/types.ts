@@ -56,4 +56,7 @@ export interface BuildClientProfileInput {
   scenarioLabel: string;
   clientName: string;
   spouseName: string | null;
+  /** Spouse surname from the CRM contact; appended to the spouse's person card
+   *  so a different last name shows. Null when solo or unknown. */
+  spouseLastName: string | null;
 }

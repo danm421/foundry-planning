@@ -43,6 +43,7 @@ const base: Omit<BuildClientProfileInput, "clientData"> = {
   scenarioLabel: "Base Case",
   clientName: "John Smith",
   spouseName: "Jane Smith",
+  spouseLastName: null,
 };
 
 describe("buildClientProfileData — persons", () => {
@@ -63,6 +64,19 @@ describe("buildClientProfileData — persons", () => {
       name: "Jane Smith", age: 56, retirementAge: 63,
       retirementYear: 2033, lifeExpectancyAge: 94, lifeExpectancyYear: 2064,
     });
+  });
+
+  it("appends the spouse's surname when it differs from the primary's", () => {
+    const data = buildClientProfileData({
+      ...base,
+      spouseName: "Teresa",
+      spouseLastName: "Cox",
+      clientData: clientData({
+        spouseName: "Teresa", spouseDob: "1970-07-04",
+        spouseRetirementAge: 63, spouseLifeExpectancy: 94,
+      }),
+    });
+    expect(data.persons[1]).toMatchObject({ name: "Teresa Cox" });
   });
 
   it("builds one card for a single client and falls back to planEndAge", () => {
@@ -225,6 +239,24 @@ describe("buildClientProfileData — expenses", () => {
     const total = data.expenses.find((r) => r.isTotal)!;
     expect(total).toMatchObject({ current: 99400, retirement: 88000 });
     // Current column = first projection year; Retirement column = retirement year (2033)
+    const living = data.expenses.find((r) => r.label === "Living")!;
+    expect(living).toMatchObject({ current: 52400, retirement: 60000 });
+  });
+
+  it("anchors the Retirement column to the LAST spouse to retire, not the first", () => {
+    // Spouse retires (2031) before the client (2033). The Retirement column must
+    // sample the client's later retirement year so the retirement-phase living
+    // expense is fully active — sampling the earlier year would show current $.
+    const coupleYears = [
+      py({ year: 2026, expenses: { living: 52400, total: 52400 } }),
+      py({ year: 2031, expenses: { living: 53000, total: 53000 } }), // spouse retires — not yet retirement-living
+      py({ year: 2033, expenses: { living: 60000, total: 60000 } }), // both retired
+    ];
+    const data = buildClientProfileData({
+      ...base,
+      years: coupleYears,
+      clientData: clientData({ spouseDob: "1970-07-04", spouseRetirementAge: 61 }), // spouse retires 2031
+    });
     const living = data.expenses.find((r) => r.label === "Living")!;
     expect(living).toMatchObject({ current: 52400, retirement: 60000 });
   });

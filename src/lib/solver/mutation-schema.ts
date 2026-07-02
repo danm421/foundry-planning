@@ -124,6 +124,24 @@ const ACCOUNT_VALUE = z
   })
   .passthrough();
 
+const EXPENSE_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    // Must match Expense["type"] in src/engine/types.ts exactly.
+    type: z.enum(["living", "other", "insurance", "education"]),
+    annualAmount: MONEY,
+    startYear: YEAR,
+    endYear: YEAR,
+    growthRate: RATE,
+    dedicatedAccountIds: z.array(z.string().min(1)).optional(),
+    payShortfallOutOfPocket: z.boolean().optional(),
+    institutionState: z.string().nullable().optional(),
+    institutionName: z.string().nullable().optional(),
+    forFamilyMemberId: z.string().nullable().optional(),
+  })
+  .passthrough();
+
 const SAVINGS_RULE_VALUE = z
   .object({
     id: z.string().min(1),
@@ -415,6 +433,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("account-upsert"),
     id: z.string().min(1),
     value: ACCOUNT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("expense-upsert"),
+    id: z.string().min(1),
+    value: EXPENSE_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("savings-rule-upsert"),

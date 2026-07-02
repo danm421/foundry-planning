@@ -275,6 +275,8 @@ export interface BuildDataContext {
   scenarioLabel: string;
   clientName: string;
   spouseName: string | null;
+  /** Spouse surname from the CRM contact; null when solo or unknown. */
+  spouseLastName: string | null;
   firmName: string;
   firmTagline: string | null;
   reportDate: string;
@@ -392,7 +394,11 @@ export const coverPage: PresentationPage<CoverPageData, CoverPageOptions> = {
     firmName: ctx.firmName,
     firmTagline: ctx.firmTagline,
     clientName: ctx.clientName,
-    spouseName: ctx.spouseName,
+    // Full spouse name so `formatHouseholdName` keeps a different surname
+    // ("Alan Bradshaw & Teresa Cox") instead of folding on the primary's.
+    spouseName: ctx.spouseName
+      ? `${ctx.spouseName}${ctx.spouseLastName ? ` ${ctx.spouseLastName}` : ""}`.trim()
+      : null,
     scenarioLabel: ctx.scenarioLabel,
     reportDate: ctx.reportDate,
     logoDataUrl: ctx.firmLogoDataUrl,
@@ -423,12 +429,12 @@ export const tocPage: PresentationPage<TocPageData, TocPageOptions> = {
   summarizeOptions: summarizeTocOptions,
   estimatePageCount: estimateTocPageCount,
   supportsScenarioOverride: false,
-  buildData: () => ({}),
-  renderPdf: ({ documentSections, firmName, clientName, reportDate }) => (
+  buildData: (ctx) => ({ clientName: ctx.clientName }),
+  renderPdf: ({ data, documentSections, firmName, reportDate }) => (
     <TocPdf
       sections={documentSections ?? []}
       firmName={firmName}
-      clientName={clientName}
+      clientName={data.clientName}
       reportDate={reportDate}
     />
   ),
@@ -451,6 +457,7 @@ export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientPr
       scenarioLabel: ctx.scenarioLabel,
       clientName: ctx.clientName,
       spouseName: ctx.spouseName,
+      spouseLastName: ctx.spouseLastName,
     }),
   renderPdf: (input) => <ClientProfilePagePdf {...input} />,
 };

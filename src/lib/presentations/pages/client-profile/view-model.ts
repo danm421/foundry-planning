@@ -56,15 +56,22 @@ function isChildMember(m: { role?: string | null; relationship?: string | null }
 }
 
 export function buildClientProfileData(input: BuildClientProfileInput): ClientProfilePageData {
-  const { years, clientData, scenarioLabel, clientName, spouseName } = input;
+  const { years, clientData, scenarioLabel, clientName, spouseName, spouseLastName } = input;
   const ci = clientData.client;
   const firstYear = years[0]?.year ?? new Date().getUTCFullYear();
   const lastYear = years[years.length - 1]?.year ?? firstYear;
 
+  // Spouse card shows first + last so a different surname isn't dropped. The
+  // engine client only carries the spouse's first name, so the last name is
+  // threaded in separately from the CRM contact.
+  const spouseFullName = spouseName
+    ? `${spouseName}${spouseLastName ? ` ${spouseLastName}` : ""}`.trim()
+    : null;
+
   return {
     title: "Client Profile",
     subtitle: scenarioLabel,
-    persons: buildPersons(ci, years, clientName, spouseName),
+    persons: buildPersons(ci, years, clientName, spouseFullName),
     children: buildChildren(clientData, firstYear),
     income: buildIncome(clientData, years, firstYear, lastYear),
     expenses: buildExpenses(ci, years),
@@ -180,20 +187,24 @@ function ssAnnualAmount(inc: Income, years: ProjectionYear[], startYear: number)
   return years.find((y) => y.year === startYear)?.income.bySource[inc.id] ?? inc.annualAmount;
 }
 
-// First retirement year = min of client/spouse (dob year + retirementAge).
-// Mirrors cash-flow's computeFirstRetirementYear.
-function firstRetirementYear(ci: ClientInfo): number | null {
+// Last retirement year = max of client/spouse (dob year + retirementAge). The
+// "Retirement" expense column should reflect the phase where BOTH primary
+// clients have retired — using the later retiree avoids sampling a transition
+// year in which the retirement-anchored living expense hasn't started yet
+// (which made the column collapse onto "Current" for couples where the spouse
+// retires first).
+function lastRetirementYear(ci: ClientInfo): number | null {
   const candidates: number[] = [];
   const cy = birthYear(ci.dateOfBirth);
   if (cy != null && ci.retirementAge != null) candidates.push(cy + ci.retirementAge);
   const sy = birthYear(ci.spouseDob);
   if (sy != null && ci.spouseRetirementAge != null) candidates.push(sy + ci.spouseRetirementAge);
-  return candidates.length ? Math.min(...candidates) : null;
+  return candidates.length ? Math.max(...candidates) : null;
 }
 
 function buildExpenses(ci: ClientInfo, years: ProjectionYear[]): ProfileExpenseRow[] {
   const currentPy = years[0];
-  const retYear = firstRetirementYear(ci);
+  const retYear = lastRetirementYear(ci);
   const retirementPy =
     (retYear != null ? years.find((y) => y.year >= retYear) : undefined) ??
     years[years.length - 1];
