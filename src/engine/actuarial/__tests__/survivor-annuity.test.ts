@@ -25,6 +25,17 @@ describe("survivorAnnuityPresentValue", () => {
     expect(pv).toBeCloseTo(0.5 * 100_000 * p, 4);
   });
 
+  it("pins the multi-year summation exactly (2-yr window, 2% discount)", () => {
+    const expected =
+      0.5 * 100_000 * survivalProbability(60, 1) / Math.pow(1.02, 1) +
+      0.5 * 100_000 * survivalProbability(60, 2) / Math.pow(1.02, 2);
+    const pv = survivorAnnuityPresentValue({
+      ...base, discountRate: 0.02, survivorAgeAtDeath: 60,
+      deathYear: 2040, survivorDeathYear: 2042,
+    });
+    expect(pv).toBeCloseTo(expected, 4);
+  });
+
   it("discounting reduces PV; higher discount → lower PV", () => {
     const low = survivorAnnuityPresentValue({ ...base, discountRate: 0.02, survivorAgeAtDeath: 60, survivorDeathYear: 2050 });
     const high = survivorAnnuityPresentValue({ ...base, discountRate: 0.08, survivorAgeAtDeath: 60, survivorDeathYear: 2050 });
