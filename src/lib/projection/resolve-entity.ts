@@ -284,6 +284,7 @@ type RawIncome = {
   taxType?: string | null;
   ssBenefitMode?: string | null;
   piaMonthly?: string | number | null;
+  survivorshipPct?: string | number | null;
   claimingAgeMonths?: number | null;
   claimingAgeMode?: string | null;
   startYearRef?: string | null;
@@ -315,6 +316,7 @@ export function resolveIncomeFromRaw(
     taxType: (raw.taxType as Income["taxType"]) ?? undefined,
     ssBenefitMode: (raw.ssBenefitMode as Income["ssBenefitMode"]) ?? undefined,
     piaMonthly: nNullable(raw.piaMonthly),
+    survivorshipPct: raw.survivorshipPct != null ? n(raw.survivorshipPct) : null,
     claimingAgeMonths: raw.claimingAgeMonths ?? 0,
     claimingAgeMode: (raw.claimingAgeMode as Income["claimingAgeMode"]) ?? undefined,
     scheduleOverrides: raw.scheduleOverrides,

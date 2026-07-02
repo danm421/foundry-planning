@@ -889,6 +889,10 @@ export interface Income {
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
   piaMonthly?: number;
+  /** Fraction (0..1) of a deferred income the surviving spouse continues to
+   *  receive after the owner's death. null/0 = income simply ends at owner death.
+   *  Only honored for type === "deferred" with a single owner. */
+  survivorshipPct?: number | null;
   /** Additional months beyond `claimingAge` (0-11). Absent = 0. */
   claimingAgeMonths?: number;
   /** SS-specific. Resolves effective claim age at projection time.

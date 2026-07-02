@@ -1,0 +1,1 @@
+ALTER TABLE "incomes" ADD COLUMN "survivorship_pct" numeric(5, 4);

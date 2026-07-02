@@ -2173,6 +2173,9 @@ export const incomes = pgTable("incomes", {
   taxType: incomeTaxTypeEnum("tax_type"),
   ssBenefitMode: text("ss_benefit_mode"),
   piaMonthly: decimal("pia_monthly", { precision: 15, scale: 2 }),
+  // Fraction (0..1) of a deferred income the surviving spouse continues to
+  // receive after the owner's death. Null/0 = income simply ends at owner death.
+  survivorshipPct: decimal("survivorship_pct", { precision: 5, scale: 4 }),
   claimingAgeMonths: integer("claiming_age_months").default(0),
   claimingAgeMode: text("claiming_age_mode"),
   source: sourceEnum("source").notNull().default("manual"),

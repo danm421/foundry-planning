@@ -841,6 +841,7 @@ export const loadClientDataWithContext = cache(
           taxType: i.taxType,
           ssBenefitMode: i.ssBenefitMode,
           piaMonthly: i.piaMonthly,
+          survivorshipPct: i.survivorshipPct,
           claimingAgeMonths: i.claimingAgeMonths,
           claimingAgeMode: i.claimingAgeMode,
           startYearRef: i.startYearRef,

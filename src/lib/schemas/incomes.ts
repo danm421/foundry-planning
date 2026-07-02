@@ -79,6 +79,23 @@ const piaMonthlyOptional = z
   .optional()
   .transform((v) => (v === undefined ? undefined : v != null ? String(v) : null));
 
+// survivorshipPct: fraction in [0,1]. null/absent → passes through; present → String(v).
+// Rejects out-of-range so a 50 (percent) typo can't slip through as 5000%.
+const survivorshipPctOptional = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v, ctx) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      ctx.addIssue({ code: "custom", message: "Survivorship must be a fraction between 0 and 1" });
+      return z.NEVER;
+    }
+    return String(n);
+  });
+
 // Fields shared verbatim by both create and update (no defaults attached).
 const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
@@ -132,6 +149,7 @@ export const incomeCreateSchema = z
     claimingAge: claimingAgeOptional.default(null),
     claimingAgeMonths: claimingAgeMonthsOptional.default(0),
     piaMonthly: piaMonthlyOptional.default(null),
+    survivorshipPct: survivorshipPctOptional,
     ...shared,
     ...nullableStringCreate,
   })
@@ -161,6 +179,7 @@ export const incomeUpdateSchema = z
     claimingAge: claimingAgeOptional,
     claimingAgeMonths: claimingAgeMonthsOptional,
     piaMonthly: piaMonthlyOptional,
+    survivorshipPct: survivorshipPctOptional,
     ...shared,
     ...nullableStringUpdate,
   })

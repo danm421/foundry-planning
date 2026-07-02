@@ -95,6 +95,7 @@ export async function createIncomeForClient(args: {
       taxType: (p.taxType ?? null) as IncomeRow["taxType"],
       ssBenefitMode: (p.ssBenefitMode ?? null) as IncomeRow["ssBenefitMode"],
       piaMonthly: p.piaMonthly ?? null,
+      survivorshipPct: p.survivorshipPct ?? null,
       claimingAgeMonths: p.claimingAgeMonths ?? 0,
       claimingAgeMode: (p.claimingAgeMode ?? null) as IncomeRow["claimingAgeMode"],
     })
@@ -190,6 +191,7 @@ export async function updateIncomeForClient(args: {
         ssBenefitMode: (p.ssBenefitMode ?? null) as IncomeRow["ssBenefitMode"],
       }),
       ...(p.piaMonthly !== undefined && { piaMonthly: p.piaMonthly ?? null }),
+      ...(p.survivorshipPct !== undefined && { survivorshipPct: p.survivorshipPct ?? null }),
       ...(p.claimingAgeMonths !== undefined && { claimingAgeMonths: p.claimingAgeMonths ?? 0 }),
       ...(p.claimingAgeMode !== undefined && {
         claimingAgeMode: (p.claimingAgeMode ?? null) as IncomeRow["claimingAgeMode"],

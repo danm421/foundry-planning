@@ -233,3 +233,23 @@ describe("incomeCreateSchema linkedPropertyId", () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe("survivorshipPct", () => {
+  it("accepts a fractional survivorship on create", () => {
+    const parsed = incomeCreateSchema.parse({
+      type: "deferred", name: "Pension", annualAmount: "50000",
+      startYear: 2027, endYear: 2068, survivorshipPct: "0.5",
+    });
+    expect(parsed.survivorshipPct).toBe("0.5");
+  });
+  it("rejects survivorship above 1", () => {
+    expect(() => incomeCreateSchema.parse({
+      type: "deferred", name: "Pension", annualAmount: "50000",
+      startYear: 2027, endYear: 2068, survivorshipPct: "1.5",
+    })).toThrow();
+  });
+  it("leaves survivorshipPct undefined when omitted on update", () => {
+    const parsed = incomeUpdateSchema.parse({ name: "x" });
+    expect("survivorshipPct" in parsed).toBe(false);
+  });
+});
