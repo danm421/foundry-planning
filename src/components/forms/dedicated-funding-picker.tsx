@@ -22,10 +22,16 @@ interface Props {
   allowedOwnerFamilyMemberIds?: string[];
 }
 
-// Accounts eligible to fund an education goal: cash, taxable, and 529 plans.
-// 529s can be categorized under retirement, so key off the sub-type explicitly.
+// Accounts eligible to fund an education goal: cash, taxable, dedicated
+// education_savings (529) accounts, and any account whose sub-type is 529
+// even when categorized elsewhere (legacy import paths file 529s as taxable).
 function isEligibleType(a: PickerAccount): boolean {
-  return a.category === "cash" || a.category === "taxable" || a.subType === "529";
+  return (
+    a.category === "cash" ||
+    a.category === "taxable" ||
+    a.category === "education_savings" ||
+    a.subType === "529"
+  );
 }
 
 /**
