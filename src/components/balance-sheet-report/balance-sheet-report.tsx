@@ -12,6 +12,7 @@ import {
   type HouseholdAccountLike,
 } from "./household-columns";
 import type { NoteLike } from "@/lib/balance-sheet/build-view-model-inputs";
+import type { TrustDetails } from "@/lib/balance-sheet/trust-details";
 import YearPicker, { type AgesByYear, type AsOfSelection } from "./year-picker";
 import HouseholdTable from "./household-table";
 import HouseholdSummaryPanel from "./household-summary-panel";
@@ -25,6 +26,8 @@ export interface BalanceSheetReportProps {
   accounts: HouseholdAccountLike[];
   liabilities: LiabilityLike[];
   entities: EntityInfo[];
+  /** Display-ready trust attributes for the By-Entity tab's detail cards. */
+  trustDetails?: TrustDetails[];
   notesReceivable: NoteLike[];
   familyMembers: FamilyMember[];
   /** Slim per-year data: must satisfy both ProjectionYearLike (for buildViewModel)
@@ -145,7 +148,7 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
           <OutOfEstateTable vm={consolidated} />
         </>
       ) : (
-        <EntityBalanceSheets groups={entityModel?.entityGroups ?? []} />
+        <EntityBalanceSheets groups={entityModel?.entityGroups ?? []} trustDetails={props.trustDetails ?? []} />
       )}
     </div>
   );
