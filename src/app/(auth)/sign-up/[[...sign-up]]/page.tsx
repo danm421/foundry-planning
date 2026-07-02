@@ -21,7 +21,7 @@ export default function SignUpPage() {
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignUp
           appearance={{
-            baseTheme: dark,
+            theme: dark,
             variables: {
               colorPrimary: "var(--color-accent)",
               colorPrimaryForeground: "var(--color-accent-on)",

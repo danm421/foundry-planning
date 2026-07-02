@@ -29,7 +29,7 @@ export default function SignInPage() {
         <SignIn
           forceRedirectUrl="/clients"
           appearance={{
-            baseTheme: dark,
+            theme: dark,
             variables: {
               colorPrimary: "var(--color-accent)",
               colorPrimaryForeground: "var(--color-accent-on)",

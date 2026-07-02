@@ -26,7 +26,7 @@ export default async function BetaSignUpPage() {
           forceRedirectUrl="/beta/redeem"
           signInUrl="/sign-in"
           appearance={{
-            baseTheme: dark,
+            theme: dark,
             variables: {
               colorPrimary: "var(--color-accent)",
               colorPrimaryForeground: "var(--color-accent-on)",
