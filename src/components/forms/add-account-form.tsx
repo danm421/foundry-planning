@@ -479,6 +479,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
+  // 529s use the same growth-source dropdown as investable accounts (so they
+  // participate in Monte Carlo via model/fund portfolios) but stay out of the
+  // investments rollup. Their "Plan default" aliases the retirement category —
+  // mirrors resolve-entity.ts's growthCategory.
+  const usesGrowthDropdown = isInvestable || category === "education_savings";
+  const growthCategory = category === "education_savings" ? "retirement" : category;
   const [growthSource, setGrowthSource] = useState<GrowthSource>(
     (initial?.growthSource as GrowthSource) ?? "default"
   );
@@ -512,7 +518,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       return (Number(initial.growthRate) * 100).toString();
     }
     const cat = initial?.category ?? defaultCategory ?? "taxable";
-    const def = categoryDefaultSources?.[cat]?.blendedReturn;
+    const def = categoryDefaultSources?.[cat === "education_savings" ? "retirement" : cat]?.blendedReturn;
     return def != null ? String(def) : "7";
   });
   const [overridePctOi, setOverridePctOi] = useState<string>(
@@ -728,7 +734,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
 
   // Resolve category default info for display
-  const catDefaultSource = categoryDefaultSources?.[category];
+  const catDefaultSource = categoryDefaultSources?.[growthCategory];
 
   useEffect(() => {
     if (allocationsLoaded) return;
@@ -782,7 +788,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const defaultPctForCategory = catDefaultSource?.blendedReturn != null
     ? Math.round(catDefaultSource.blendedReturn * 10000) / 100
     : categoryDefaults
-      ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
+      ? Math.round(Number(categoryDefaults[growthCategory]) * 10000) / 100
       : null;
 
   // Blended return implied by the current custom asset mix. Mirrors the
@@ -976,7 +982,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     } else if (growthSource === "custom") {
       growthRate = String(Number(growthRatePct) / 100);
     } else {
-      growthRate = isInvestable ? null : String(Number(growthRatePct) / 100);
+      growthRate = usesGrowthDropdown ? null : String(Number(growthRatePct) / 100);
     }
 
     const toPctOrNull = (val: string) =>
@@ -1003,7 +1009,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isInvestable
+      growthSource: usesGrowthDropdown
         ? growthSource
         : category === "real_estate"
           ? realEstateGrowthSource
@@ -1129,7 +1135,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     }
   }, [
     canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
-    isInvestable, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
+    usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
@@ -1191,7 +1197,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     } else if (growthSource === "custom") {
       growthRate = String(Number(data.get("growthRate")) / 100);
     } else {
-      growthRate = isInvestable ? null : String(Number(data.get("growthRate")) / 100);
+      growthRate = usesGrowthDropdown ? null : String(Number(data.get("growthRate")) / 100);
     }
 
     const toPctOrNull = (n: string) => {
@@ -1224,7 +1230,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isInvestable
+      growthSource: usesGrowthDropdown
         ? growthSource
         : category === "real_estate"
           ? realEstateGrowthSource
@@ -1771,51 +1777,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     <p className="text-xs text-red-400">A 529 requires a designated beneficiary.</p>
                   )}
                 </div>
-
-                {/* Roth rollover (SECURE 2.0) */}
-                <div className="space-y-2 border-t border-hair pt-3">
-                  <label className="flex items-center gap-2 text-sm text-ink-2">
-                    <input
-                      type="checkbox"
-                      checked={rothRolloverEnabled}
-                      onChange={(e) => setRothRolloverEnabled(e.target.checked)}
-                    />
-                    <span>Roll leftover funds to a Roth IRA (SECURE 2.0)</span>
-                    <FieldTooltip text="$35,000 lifetime cap; annual IRA limit per year." />
-                  </label>
-                  {rothRolloverEnabled && (
-                    <div className="grid grid-cols-2 gap-3 pl-6">
-                      <div>
-                        <label className={fieldLabelClassName} htmlFor="roth-rollover-start-year">
-                          Start year
-                        </label>
-                        <input
-                          id="roth-rollover-start-year"
-                          type="number"
-                          value={rothRolloverStartYear}
-                          onChange={(e) => setRothRolloverStartYear(e.target.value)}
-                          className={inputClassName}
-                        />
-                      </div>
-                      <div>
-                        <label className={fieldLabelClassName} htmlFor="roth-rollover-account">
-                          Destination Roth IRA
-                        </label>
-                        <select
-                          id="roth-rollover-account"
-                          value={rothRolloverAccountId}
-                          onChange={(e) => setRothRolloverAccountId(e.target.value)}
-                          className={selectClassName}
-                        >
-                          <option value="">Beneficiary&rsquo;s own Roth (outside this plan)</option>
-                          {rothIraAccounts.map((a) => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             ) : (
               <div className="col-span-2">
@@ -1845,42 +1806,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   }}
                   childNoun="sub-asset"
                 />
-              </div>
-            )}
-
-            {!isSystemManagedCash && category !== "stock_options" && milestones && (
-              <div className="col-span-2">
-                <label className="flex items-center gap-2 text-sm text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={activationEnabled}
-                    onChange={(e) => setActivationEnabled(e.target.checked)}
-                  />
-                  <span>Activates in a future year (inheritance, new account)</span>
-                </label>
-                {activationEnabled && (
-                  <div className="mt-2 max-w-xs">
-                    <MilestoneYearPicker
-                      id="activationYear"
-                      name="activationYear"
-                      label="Activates"
-                      value={activationYear}
-                      yearRef={activationYearRef}
-                      milestones={milestones}
-                      clientFirstName={clientFirstName}
-                      spouseFirstName={spouseFirstName}
-                      position="start"
-                      minYear={currentYear}
-                      onChange={(y, ref) => {
-                        setActivationYear(y);
-                        setActivationYearRef(ref);
-                      }}
-                    />
-                    <p className="mt-1 text-[11px] text-ink-4">
-                      The value above is the balance in this year; it grows from here.
-                    </p>
-                  </div>
-                )}
               </div>
             )}
 
@@ -2132,7 +2057,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             ))}
 
             {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
-              {isInvestable ? (
+              {usesGrowthDropdown ? (
                 <GrowthRateField
                   category={category}
                   growthSource={growthSource}
@@ -2227,6 +2152,89 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </>
               )}
             </div>}
+
+            {/* Roth rollover (SECURE 2.0) */}
+            {category === "education_savings" && (
+              <div className="col-span-2 space-y-2">
+                <label className="flex items-center gap-2 text-sm text-ink-2">
+                  <input
+                    type="checkbox"
+                    checked={rothRolloverEnabled}
+                    onChange={(e) => setRothRolloverEnabled(e.target.checked)}
+                  />
+                  <span>Roll leftover funds to a Roth IRA (SECURE 2.0)</span>
+                  <FieldTooltip text="$35,000 lifetime cap; annual IRA limit per year." />
+                </label>
+                {rothRolloverEnabled && (
+                  <div className="grid grid-cols-2 gap-3 pl-6">
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="roth-rollover-start-year">
+                        Start year
+                      </label>
+                      <input
+                        id="roth-rollover-start-year"
+                        type="number"
+                        value={rothRolloverStartYear}
+                        onChange={(e) => setRothRolloverStartYear(e.target.value)}
+                        className={inputClassName}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabelClassName} htmlFor="roth-rollover-account">
+                        Destination Roth IRA
+                      </label>
+                      <select
+                        id="roth-rollover-account"
+                        value={rothRolloverAccountId}
+                        onChange={(e) => setRothRolloverAccountId(e.target.value)}
+                        className={selectClassName}
+                      >
+                        <option value="">Beneficiary&rsquo;s own Roth (outside this plan)</option>
+                        {rothIraAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isSystemManagedCash && category !== "stock_options" && milestones && (
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 text-sm text-ink-2">
+                  <input
+                    type="checkbox"
+                    checked={activationEnabled}
+                    onChange={(e) => setActivationEnabled(e.target.checked)}
+                  />
+                  <span>Activates in a future year (inheritance, new account)</span>
+                </label>
+                {activationEnabled && (
+                  <div className="mt-2 max-w-xs">
+                    <MilestoneYearPicker
+                      id="activationYear"
+                      name="activationYear"
+                      label="Activates"
+                      value={activationYear}
+                      yearRef={activationYearRef}
+                      milestones={milestones}
+                      clientFirstName={clientFirstName}
+                      spouseFirstName={spouseFirstName}
+                      position="start"
+                      minYear={currentYear}
+                      onChange={(y, ref) => {
+                        setActivationYear(y);
+                        setActivationYearRef(ref);
+                      }}
+                    />
+                    <p className="mt-1 text-[11px] text-ink-4">
+                      The value above is the balance in this year; it grows from here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {isHsa && (
               <div className="col-span-2">
