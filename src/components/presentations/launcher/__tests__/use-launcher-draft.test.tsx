@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { StrictMode } from "react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useLauncherState } from "../use-launcher-state";
+import { useLauncherState, type LauncherState } from "../use-launcher-state";
 import { useLauncherDraft, draftKey } from "../use-launcher-draft";
 
 /** Drives the real reducer + the draft hook together, the way the launcher does. */
@@ -9,6 +10,21 @@ function useHarness(clientId = "client-1", userId = "user-1") {
   const [state, dispatch] = useLauncherState();
   useLauncherDraft(clientId, userId, state, dispatch);
   return { state, dispatch };
+}
+
+/** A non-empty seeded deck, the way the real launcher seeds Foundation Plan. */
+function seededDeck(): LauncherState {
+  return {
+    topScenarioPickerValue: "base",
+    filename: "",
+    pages: [
+      { pageId: "cover", options: {}, scenarioOverride: undefined },
+      { pageId: "toc", options: {}, scenarioOverride: undefined },
+      { pageId: "cashFlow", options: {}, scenarioOverride: undefined },
+    ],
+    loadedTemplate: null,
+    isModified: false,
+  };
 }
 
 beforeEach(() => {
@@ -115,5 +131,45 @@ describe("useLauncherDraft", () => {
   it("survives corrupt JSON in storage without throwing", () => {
     localStorage.setItem(draftKey("client-1", "user-1"), "{not valid json");
     expect(() => renderHook(() => useHarness())).not.toThrow();
+  });
+
+  // Regression: under React Strict Mode (which Next dev enables) effects are
+  // double-invoked. A seeded (non-empty) initial deck must NOT be persisted
+  // over the saved draft before restore lands — otherwise the effect replay
+  // re-reads the clobbered default and the deck resets, so added/removed pages
+  // appear to "not persist" across navigation.
+  it("restores a saved draft under StrictMode even when seeded with a default deck", () => {
+    localStorage.setItem(
+      draftKey("client-1", "user-1"),
+      JSON.stringify({
+        v: 1,
+        state: {
+          topScenarioPickerValue: "base",
+          filename: "",
+          pages: [
+            { pageId: "cover", options: {}, scenarioOverride: undefined },
+            { pageId: "toc", options: {}, scenarioOverride: undefined },
+            { pageId: "cashFlow", options: {}, scenarioOverride: undefined },
+            { pageId: "cashFlow", options: {}, scenarioOverride: undefined },
+          ],
+          loadedTemplate: null,
+          isModified: false,
+        },
+      }),
+    );
+    const { result } = renderHook(
+      () => {
+        const [state, dispatch] = useLauncherState(seededDeck());
+        useLauncherDraft("client-1", "user-1", state, dispatch);
+        return { state };
+      },
+      { wrapper: StrictMode },
+    );
+    // The 4-page saved draft wins over the 3-page seeded default.
+    expect(result.current.state.pages).toHaveLength(4);
+    const stored = JSON.parse(
+      localStorage.getItem(draftKey("client-1", "user-1"))!,
+    );
+    expect(stored.state.pages).toHaveLength(4);
   });
 });

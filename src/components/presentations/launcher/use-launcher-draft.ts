@@ -60,6 +60,9 @@ export function useLauncherDraft(
 ): void {
   const key = draftKey(clientId, userId);
   const restoredRef = useRef(false);
+  // The pristine, pre-restore default state (whatever the reducer was seeded
+  // with on mount). We must NEVER persist this — see the save effect below.
+  const initialStateRef = useRef(state);
 
   // Restore the saved draft once, then mark restore complete so the save effect
   // below is allowed to start writing.
@@ -73,6 +76,15 @@ export function useLauncherDraft(
   // Persist on every change, but never before the restore pass has run.
   useEffect(() => {
     if (!restoredRef.current) return;
+    // Skip the transient pre-restore default: the restore effect above runs in
+    // the same commit as this save (restore is declared first) and dispatches
+    // `hydrate` asynchronously, so on that commit `state` is still the seeded
+    // default. Writing it here would clobber the saved draft. Under React
+    // Strict Mode (Next dev) the effect replay then re-reads that clobbered
+    // value and the deck resets to the default — the "changes don't persist"
+    // bug. `state` only equals the initial object until the first dispatch
+    // (hydrate or a user edit), so this guard writes nothing but real state.
+    if (state === initialStateRef.current) return;
     try {
       const payload: StoredDraft = { v: DRAFT_VERSION, state };
       window.localStorage.setItem(key, JSON.stringify(payload));
