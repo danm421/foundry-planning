@@ -93,16 +93,16 @@ function EntityPalette({ open, rows, selectedKeys, onAdd, onAddMany, onClose }: 
           className="w-full border-b border-hair bg-transparent px-4 py-3 text-sm text-ink outline-none placeholder:text-ink-4"
         />
 
-        <ul id="entity-palette-list" role="listbox" className="max-h-[50vh] overflow-y-auto py-1 text-sm">
+        <div id="entity-palette-list" role="listbox" className="max-h-[50vh] overflow-y-auto py-1 text-sm">
           {sections.length === 0 && (
-            <li className="px-4 py-6 text-center text-xs italic text-ink-4">
+            <div className="px-4 py-6 text-center text-xs italic text-ink-4">
               Nothing matches &ldquo;{query}&rdquo;
-            </li>
+            </div>
           )}
           {sections.map((sec) => {
             const addableKeys = sec.rows.map((r) => r.key).filter((k) => !selectedKeys.has(k));
             return (
-              <li key={sec.series.type} role="group" aria-label={sec.series.label}>
+              <div key={sec.series.type} role="group" aria-label={sec.series.label}>
                 <div className="flex items-center justify-between px-4 pb-1 pt-2">
                   <span
                     aria-hidden="true"
@@ -124,7 +124,7 @@ function EntityPalette({ open, rows, selectedKeys, onAdd, onAddMany, onClose }: 
                   const isActive = r.key === activeKey;
                   const isAdded = selectedKeys.has(r.key);
                   return (
-                    <li
+                    <div
                       key={r.key}
                       id={`entity-row-${r.key}`}
                       role="option"
@@ -146,13 +146,13 @@ function EntityPalette({ open, rows, selectedKeys, onAdd, onAddMany, onClose }: 
                         <span className="truncate text-ink">{r.name}</span>
                       </span>
                       {isAdded && <span className="shrink-0 text-[10px] text-ink-3">Added ✓</span>}
-                    </li>
+                    </div>
                   );
                 })}
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
 
         <div className="flex gap-4 border-t border-hair px-4 py-2 text-[10px] text-ink-4">
           <span>↑↓ navigate</span>
