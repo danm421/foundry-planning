@@ -35,6 +35,61 @@ export interface BundleAssetClassData {
   pctTaxExempt: number;
 }
 
+/** One plan-level category growth default, mirroring the Growth & Inflation tab.
+ *  `source` selects how the category grows; `modelPortfolioId` is set only for
+ *  the three investable categories when `source === "model_portfolio"`;
+ *  `customRate` is the flat `default_growth_*` rate (used when `source === "custom"`). */
+export interface CategoryGrowthDefault {
+  source: GrowthSource;
+  modelPortfolioId: string | null;
+  customRate: number;
+}
+
+export interface PlanGrowthDefaults {
+  taxable: CategoryGrowthDefault;
+  cash: CategoryGrowthDefault;
+  retirement: CategoryGrowthDefault;
+  realEstate: CategoryGrowthDefault;
+  business: CategoryGrowthDefault;
+  lifeInsurance: CategoryGrowthDefault;
+}
+
+/** Structural subset of the `planSettings` DB row that `buildPlanGrowthDefaults`
+ *  reads. Decimal columns arrive as strings from Drizzle. */
+interface PlanGrowthRow {
+  growthSourceTaxable?: string | null;
+  growthSourceCash?: string | null;
+  growthSourceRetirement?: string | null;
+  growthSourceRealEstate?: string | null;
+  growthSourceBusiness?: string | null;
+  growthSourceLifeInsurance?: string | null;
+  modelPortfolioIdTaxable?: string | null;
+  modelPortfolioIdCash?: string | null;
+  modelPortfolioIdRetirement?: string | null;
+  defaultGrowthTaxable?: string | number | null;
+  defaultGrowthCash?: string | number | null;
+  defaultGrowthRetirement?: string | number | null;
+  defaultGrowthRealEstate?: string | number | null;
+  defaultGrowthBusiness?: string | number | null;
+  defaultGrowthLifeInsurance?: string | number | null;
+}
+
+function num(v: string | number | null | undefined): number {
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? (n as number) : 0;
+}
+
+export function buildPlanGrowthDefaults(row: PlanGrowthRow): PlanGrowthDefaults {
+  return {
+    taxable: { source: toGrowthSource(row.growthSourceTaxable), modelPortfolioId: row.modelPortfolioIdTaxable ?? null, customRate: num(row.defaultGrowthTaxable) },
+    cash: { source: toGrowthSource(row.growthSourceCash), modelPortfolioId: row.modelPortfolioIdCash ?? null, customRate: num(row.defaultGrowthCash) },
+    retirement: { source: toGrowthSource(row.growthSourceRetirement), modelPortfolioId: row.modelPortfolioIdRetirement ?? null, customRate: num(row.defaultGrowthRetirement) },
+    realEstate: { source: toGrowthSource(row.growthSourceRealEstate), modelPortfolioId: null, customRate: num(row.defaultGrowthRealEstate) },
+    business: { source: toGrowthSource(row.growthSourceBusiness), modelPortfolioId: null, customRate: num(row.defaultGrowthBusiness) },
+    lifeInsurance: { source: toGrowthSource(row.growthSourceLifeInsurance), modelPortfolioId: null, customRate: num(row.defaultGrowthLifeInsurance) },
+  };
+}
+
 export interface InvestmentsBundle {
   clientId: string;
   firmId: string;
@@ -48,6 +103,10 @@ export interface InvestmentsBundle {
   modelPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>;
   tickerPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>;
   planLite: PlanSettingsLite;
+  /** Six plan-level category growth defaults (Growth & Inflation tab). Populated
+   *  by the loader; consumed by the Assumptions page. Optional so existing
+   *  bundle-shaped test fixtures keep compiling. */
+  planGrowthDefaults?: PlanGrowthDefaults;
   portfolioLites: ModelPortfolioLite[];
   selectedBenchmarkPortfolioId: string | null;
   customGroups: { id: string; name: string; color: string | null; accountIds: string[] }[];
@@ -238,6 +297,7 @@ export async function loadInvestmentsBundle(
     correlationRows,
     accountMixByAccountId, modelPortfolioAllocationsByPortfolioId,
     tickerPortfolioAllocationsByPortfolioId, planLite,
+    planGrowthDefaults: buildPlanGrowthDefaults(settings),
     portfolioLites: portfolioRows.map((p) => ({ id: p.id, name: p.name })),
     selectedBenchmarkPortfolioId: settings.selectedBenchmarkPortfolioId ?? null,
     customGroups,
