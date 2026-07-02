@@ -98,12 +98,13 @@ describe("applyEducationFunding", () => {
     const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
-    expect(goal.shortfall).toBe(15000);
+    expect(goal.shortfall).toBe(15000); // out-of-pocket off → genuinely unfunded
+    expect(goal.outOfPocketWithdrawal).toBe(0);
     // Out-of-pocket off: household checking must NOT absorb the shortfall.
     expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(100000, 6);
   });
 
-  it("spills the shortfall to household cash when out-of-pocket is on", () => {
+  it("out-of-pocket on: gap is a cash-flow withdrawal, not a shortfall", () => {
     const data = makeData(
       [checking, p529(5000)],
       eduExpense({ payShortfallOutOfPocket: true }),
@@ -112,7 +113,10 @@ describe("applyEducationFunding", () => {
     const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
-    expect(goal.shortfall).toBe(15000);
+    // The 15k gap is FUNDED from cash flow, so it books as an out-of-pocket
+    // withdrawal and the shortfall is zero.
+    expect(goal.outOfPocketWithdrawal).toBe(15000);
+    expect(goal.shortfall).toBe(0);
     // Checking paid the 15k out-of-pocket portion (100k − 15k).
     expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(85000, 0);
   });
@@ -148,6 +152,59 @@ describe("applyEducationFunding", () => {
     expect(src!.type).toBe("capital_gains");
     expect(src!.amount).toBeCloseTo(20000, 6);
     expect(y0.taxDetail!.capitalGains).toBeGreaterThanOrEqual(20000);
+  });
+
+  it("emits accumulation rows for the pre-expense funded years (chart lead-up)", () => {
+    // 529 funded from plan start (2026); the goal doesn't spend until 2028.
+    // The two lead-up years should each get an `accumulation` row showing the
+    // fund growing at 5% with zero goal expense / withdrawal.
+    const data = makeData(
+      [checking, p529(30000, 0.05)],
+      eduExpense({ startYear: 2028, endYear: 2028 }),
+      2028,
+    );
+    const years = runProjection(data);
+    const rowFor = (y: number) =>
+      years.find((yr) => yr.year === y)!.educationGoals?.find((g) => g.goalId === "edu");
+
+    const y2026 = rowFor(2026)!;
+    expect(y2026).toBeDefined();
+    expect(y2026.accumulation).toBe(true);
+    expect(y2026.dedicatedAssetsBOY).toBeCloseTo(30000, 6);
+    expect(y2026.growthAndSavings).toBeCloseTo(1500, 6); // 5% of 30,000
+    expect(y2026.goalExpense).toBe(0);
+    expect(y2026.dedicatedWithdrawal).toBe(0);
+    expect(y2026.shortfall).toBe(0);
+    expect(y2026.dedicatedAssetsEOY).toBeCloseTo(31500, 6);
+
+    const y2027 = rowFor(2027)!;
+    expect(y2027.accumulation).toBe(true);
+    expect(y2027.dedicatedAssetsBOY).toBeCloseTo(31500, 6);
+    expect(y2027.dedicatedAssetsEOY).toBeCloseTo(33075, 6);
+
+    // The expense year is NOT an accumulation row and actually draws the goal.
+    const y2028 = rowFor(2028)!;
+    expect(y2028.accumulation).toBeFalsy();
+    expect(y2028.goalExpense).toBeCloseTo(20000, 6);
+    expect(y2028.dedicatedWithdrawal).toBeCloseTo(20000, 6);
+  });
+
+  it("no accumulation row before the dedicated account is first funded", () => {
+    // 529 doesn't activate until 2027; the goal spends in 2029. Year 2026 has no
+    // funded dedicated asset, so it must NOT produce an accumulation row.
+    const future529: Account = { ...p529(20000, 0.05), activationYear: 2027 };
+    const data = makeData(
+      [checking, future529],
+      eduExpense({ startYear: 2029, endYear: 2029, annualAmount: 15000 }),
+      2029,
+    );
+    const years = runProjection(data);
+    const rowFor = (y: number) =>
+      years.find((yr) => yr.year === y)!.educationGoals?.find((g) => g.goalId === "edu");
+
+    expect(rowFor(2026)).toBeUndefined(); // pre-funding: no row
+    expect(rowFor(2027)?.accumulation).toBe(true); // first funded year
+    expect(rowFor(2028)?.accumulation).toBe(true);
   });
 
   it("appreciated 529: ledger entry basis is clamped to tracked basis (reconciliation identity)", () => {

@@ -11,6 +11,7 @@ export function educationYearColumns(): YearTableColumn<EducationGoalReportRow>[
     { key: "goal", header: "Goal Expense", align: "right", render: (r) => money(r.goalExpense) },
     { key: "other", header: "Other Expenses Flows", align: "right", render: (r) => money(r.otherExpenseFlows) },
     { key: "withdrawal", header: "Dedicated Withdrawals", align: "right", render: (r) => money(r.dedicatedWithdrawal) },
+    { key: "cashFlow", header: "Cash-Flow Withdrawals", align: "right", render: (r) => money(r.outOfPocketWithdrawal ?? 0) },
     { key: "eoy", header: "Dedicated Assets (EOY)", align: "right", render: (r) => money(r.dedicatedAssetsEOY) },
     {
       key: "shortfall", header: "Shortfall", align: "right",

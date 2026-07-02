@@ -1302,10 +1302,28 @@ export interface EducationGoalYear {
   otherExpenseFlows: number;
   /** Amount drawn from the dedicated accounts for the goal. */
   dedicatedWithdrawal: number;
+  /**
+   * Portion of the goal cost funded from household cash flow (out-of-pocket) —
+   * non-zero only when the goal's `payShortfallOutOfPocket` is set. This is the
+   * uncovered amount that WAS funded, as opposed to `shortfall` (unfunded).
+   */
+  outOfPocketWithdrawal: number;
   /** Dedicated-account balances at year end. */
   dedicatedAssetsEOY: number;
-  /** max(0, goalExpense − dedicatedWithdrawal). */
+  /**
+   * Goal cost that went unfunded — max(0, goalExpense − dedicatedWithdrawal)
+   * when `payShortfallOutOfPocket` is off, otherwise 0 (the gap is funded from
+   * cash flow and booked as `outOfPocketWithdrawal`).
+   */
   shortfall: number;
+  /**
+   * True for a pre-expense *accumulation* year — a year before the goal is
+   * active, emitted so the report chart/table show the dedicated funds growing
+   * (goalExpense / dedicatedWithdrawal / shortfall are all 0). Expense years
+   * omit this flag. The per-goal Monte Carlo gauge filters these rows out so its
+   * probability stays scoped to the expense phase (see education-mc-inputs.ts).
+   */
+  accumulation?: boolean;
 }
 
 export interface ProjectionYear {

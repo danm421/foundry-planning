@@ -25,4 +25,34 @@ describe("DedicatedFundingPicker", () => {
     fireEvent.click(screen.getByLabelText("529 - Caroline"));
     expect(onChange).toHaveBeenCalledWith(["a2", "a1"]);
   });
+
+  it("excludes non-529 retirement accounts (cash / taxable / 529 only)", () => {
+    const withRetirement = [
+      { id: "r1", name: "401k", category: "retirement", subType: "401k" },
+      { id: "c1", name: "Checking", category: "cash", subType: "checking" },
+    ];
+    render(<DedicatedFundingPicker accounts={withRetirement as never} value={[]} onChange={vi.fn()} />);
+    expect(screen.queryByText("401k")).toBeNull();
+    expect(screen.getByText("Checking")).toBeTruthy();
+  });
+
+  it("filters to accounts owned by the household or the beneficiary when allowed ids are given", () => {
+    const owned = [
+      { id: "p1", name: "Parent Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["client"] },
+      { id: "k1", name: "Kid 529", category: "taxable", subType: "529", ownerFamilyMemberIds: ["child-a"] },
+      { id: "o1", name: "Other Kid 529", category: "taxable", subType: "529", ownerFamilyMemberIds: ["child-b"] },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={owned as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client", "child-a"]}
+      />,
+    );
+    expect(screen.getByText("Parent Brokerage")).toBeTruthy();
+    expect(screen.getByText("Kid 529")).toBeTruthy();
+    // Owned only by a different child — excluded.
+    expect(screen.queryByText("Other Kid 529")).toBeNull();
+  });
 });

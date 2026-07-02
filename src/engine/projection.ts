@@ -1479,13 +1479,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // beginning-of-year figure. The funding pass itself runs after savings.
     // The proration gate is carried alongside each goal so the funding pass
     // below reuses it instead of recomputing per year × trial.
-    const educationGoalsThisYear = data.expenses.flatMap((e) => {
+    const allEducationGoals = data.expenses.flatMap((e) => {
       if (e.type !== "education") return [];
-      const gate = itemProrationGate(e, year, data.client);
-      return gate.include ? [{ goal: e, gate }] : [];
+      return [{ goal: e, gate: itemProrationGate(e, year, data.client) }];
     });
+    const educationGoalsThisYear = allEducationGoals.filter(({ gate }) => gate.include);
+    // BOY captured across ALL education goals (not just active ones) so the
+    // pre-expense accumulation pass below can report a true beginning-of-year
+    // balance for the funding-runway years too.
     const eduDedicatedIds = new Set<string>(
-      educationGoalsThisYear.flatMap(({ goal }) => goal.dedicatedAccountIds ?? []),
+      allEducationGoals.flatMap(({ goal }) => goal.dedicatedAccountIds ?? []),
     );
     const eduBoyBalances: Record<string, number> = {};
     for (const id of eduDedicatedIds) eduBoyBalances[id] = accountBalances[id] ?? 0;
@@ -4315,6 +4318,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // invariant BOY + G&S − dedicatedWithdrawal − otherExpenseFlows = EOY.
       const otherExpenseFlows = boy + growthAndSavings - drawResult.dedicatedWithdrawal - eoy;
 
+      // The gap not covered by dedicated funds is either FUNDED from cash flow
+      // (out-of-pocket, above) or genuinely unfunded (shortfall) — never both.
+      const outOfPocketWithdrawal = goal.payShortfallOutOfPocket ? drawResult.shortfall : 0;
+      const shortfall = goal.payShortfallOutOfPocket ? 0 : drawResult.shortfall;
+
       educationGoalYears.push({
         goalId: goal.id,
         dedicatedAssetsBOY: boy,
@@ -4322,8 +4330,46 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         goalExpense: goalCost,
         otherExpenseFlows,
         dedicatedWithdrawal: drawResult.dedicatedWithdrawal,
+        outOfPocketWithdrawal,
         dedicatedAssetsEOY: eoy,
-        shortfall: drawResult.shortfall,
+        shortfall,
+      });
+    }
+
+    // ── Education goals: pre-expense accumulation pass ───────────────────────
+    // For each goal that is not yet active (a funding-runway year before its
+    // startYear), emit a row so the report chart/table show the dedicated funds
+    // growing and any contributions made. There is no draw here — goalExpense,
+    // dedicatedWithdrawal and shortfall are 0. A row is emitted only once the
+    // dedicated pool is first funded (balance > 0 or a contribution landed),
+    // so the chart starts at first dedicated funding. Post-expense trailing
+    // years (year ≥ startYear but inactive) are intentionally excluded.
+    for (const { goal, gate } of allEducationGoals) {
+      if (gate.include) continue; // active goals handled above
+      if (year >= goal.startYear) continue; // only lead-up (pre-start) years
+      const ids = goal.dedicatedAccountIds ?? [];
+      if (ids.length === 0) continue;
+
+      const boy = ids.reduce((s, id) => s + (eduBoyBalances[id] ?? 0), 0);
+      const eoy = ids.reduce((s, id) => s + (accountBalances[id] ?? 0), 0);
+      const growthAndSavings = ids.reduce((s, id) => {
+        const led = accountLedgers[id];
+        return s + (led ? led.growth + led.contributions : 0);
+      }, 0);
+      if (boy <= 0 && growthAndSavings <= 0) continue; // not yet funded → no row
+
+      educationGoalYears.push({
+        goalId: goal.id,
+        dedicatedAssetsBOY: boy,
+        growthAndSavings,
+        goalExpense: 0,
+        // residual keeps BOY + G&S − withdrawal − otherExpenseFlows = EOY.
+        otherExpenseFlows: boy + growthAndSavings - eoy,
+        dedicatedWithdrawal: 0,
+        outOfPocketWithdrawal: 0,
+        dedicatedAssetsEOY: eoy,
+        shortfall: 0,
+        accumulation: true,
       });
     }
 

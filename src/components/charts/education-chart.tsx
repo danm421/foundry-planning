@@ -22,7 +22,8 @@ export function EducationChart({ chart }: { chart: EducationGoalReport["chart"] 
       labels: chart.labels,
       datasets: [
         { label: "Dedicated Funds Remaining", data: chart.remaining, backgroundColor: palette.blue, stack: "edu" },
-        { label: "Dedicated Withdrawals", data: chart.withdrawals, backgroundColor: palette.purple, stack: "edu" },
+        { label: "Dedicated Withdrawals", data: chart.withdrawals, backgroundColor: palette.green, stack: "edu" },
+        { label: "Cash-Flow Withdrawals", data: chart.outOfPocket, backgroundColor: palette.yellow, stack: "edu" },
         { label: "Shortfall", data: chart.shortfall, backgroundColor: palette.red, stack: "edu" },
       ],
     }),

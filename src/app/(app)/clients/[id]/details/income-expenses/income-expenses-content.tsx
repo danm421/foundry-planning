@@ -168,6 +168,9 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
     value: a.value,
     isDefaultChecking: a.isDefaultChecking ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
+    ownerFamilyMemberIds: a.owners
+      .filter((o) => o.kind === "family_member")
+      .map((o) => o.familyMemberId),
   }));
 
   return (
@@ -183,6 +186,7 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
         firstName: fm.firstName,
         lastName: fm.lastName,
         role: fm.role,
+        dateOfBirth: fm.dateOfBirth,
       }))}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,

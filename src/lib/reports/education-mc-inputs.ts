@@ -23,10 +23,15 @@ export function buildEducationMcInput(
   stats: EducationReturnStat,
   seed: number,
 ): EducationMcInput {
+  // Accumulation rows are display-only lead-up years; the gauge stays scoped to
+  // the expense phase (its v1 growth+savings-as-contributions approximation would
+  // badly amplify over a long runway). Starting balance is the first expense
+  // year's BOY, exactly as before accumulation rows existed.
+  const expenseRows = report.rows.filter((r) => !r.accumulation);
   return {
-    startingBalance: report.rows[0]?.dedicatedAssetsBOY ?? 0,
-    contributionsByYear: report.rows.map((r) => r.growthAndSavings),
-    withdrawalsByYear: report.rows.map((r) => r.dedicatedWithdrawal),
+    startingBalance: expenseRows[0]?.dedicatedAssetsBOY ?? 0,
+    contributionsByYear: expenseRows.map((r) => r.growthAndSavings),
+    withdrawalsByYear: expenseRows.map((r) => r.dedicatedWithdrawal),
     arithMean: stats.arithMean,
     stdDev: stats.stdDev,
     seed,
