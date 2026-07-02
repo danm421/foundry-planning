@@ -12,9 +12,11 @@
 // engine-only `income-self-employment` flag are not base-writable and are left
 // in the working set for the user to save as a scenario instead.
 //
-// Insert vs update is classified against the loaded `source` tree: an account /
-// savings rule whose id is NOT present in the source is INSERTED (the DB
-// generates the canonical uuid); one already present is UPDATED.
+// Insert vs update is classified against BASE-scenario membership (NOT the
+// possibly-overlay `source` tree): an account / savings rule whose id is NOT
+// present in base is INSERTED (the DB generates the canonical uuid); one already
+// present is UPDATED. This keeps an overlay-added row from becoming a base-scoped
+// UPDATE that silently matches 0 rows. (When source IS base the two coincide.)
 //
 // Security:
 //   - INSERTs are written into the client's base-case scenario, scoped by
@@ -38,7 +40,12 @@ import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
 import { authErrorResponse, requireActiveSubscriptionForFirm } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
-import { assertAccountsInClient } from "@/lib/db-scoping";
+import {
+  assertAccountsInClient,
+  assertEntitiesInClient,
+  assertExternalBeneficiariesInClient,
+  assertFamilyMembersInClient,
+} from "@/lib/db-scoping";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
@@ -61,6 +68,35 @@ function decOrZero(v: unknown): string {
     : typeof v === "string" && v.trim() !== ""
       ? v
       : "0";
+}
+
+/** Inferred transaction handle so the owners helper shares the enclosing tx. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** (Re)write the account_owners satellite rows for one account. Shared by the
+ *  insert path and the update path so a retitle (e.g. into a revocable trust)
+ *  persists on UPDATE too — the account column update never touches this table.
+ *  Carries external_beneficiary owners, which the solver supports. */
+async function insertAccountOwnerRows(
+  tx: Tx,
+  accountId: string,
+  owners: Account["owners"] | undefined,
+): Promise<void> {
+  for (const o of owners ?? []) {
+    // gifted_away owners carry a recipient ref (not a direct FK) and originate
+    // from gift events, never a base-savable account-upsert. account_owners has
+    // no column for them, so skip rather than write an all-null row that violates
+    // the one-owner check constraint.
+    if (o.kind === "gifted_away") continue;
+    await tx.insert(accountOwners).values({
+      accountId,
+      familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+      entityId: o.kind === "entity" ? o.entityId : null,
+      externalBeneficiaryId:
+        o.kind === "external_beneficiary" ? o.externalBeneficiaryId : null,
+      percent: String(o.percent),
+    });
+  }
 }
 
 function accountInsertValues(
@@ -134,12 +170,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Load the source tree to classify insert-vs-update, and fetch the base
     // scenario id to scope every write. Base-facts writes always target the
     // base case regardless of which tree the solver worked against.
-    const [{ effectiveTree: sourceTree }, baseScenarioRows] = await Promise.all([
+    const [{ effectiveTree: sourceTree }, baseScenarioRows, baseTreeLoad] = await Promise.all([
       loadEffectiveTree(clientId, firmId, source, {}),
       db
         .select({ id: scenarios.id })
         .from(scenarios)
         .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true))),
+      // Base tree for insert-vs-update classification (see the baseMembership
+      // block below). Loaded alongside the source tree so a non-base save pays one
+      // parallel round-trip, not a second serial one. Null when source IS base —
+      // the source tree already reflects base membership.
+      source === "base" ? null : loadEffectiveTree(clientId, firmId, "base", {}),
     ]);
 
     const baseScenarioId = baseScenarioRows[0]?.id;
@@ -149,6 +190,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 409 },
       );
     }
+
+    // Classify insert-vs-update against what actually lives in the BASE scenario,
+    // not the (possibly overlay) source tree. An account/rule added only in an
+    // overlay is absent from base, so a source-classified UPDATE would be scoped
+    // to base and touch 0 rows — a silent no-op reported as success. When source
+    // IS base the source tree already reflects base, so reuse it (baseTreeLoad is
+    // null in that case; see the Promise.all above).
+    const baseTree = source === "base" ? sourceTree : baseTreeLoad!.effectiveTree;
+    const baseMembership = {
+      accountIds: new Set((baseTree.accounts ?? []).map((a) => a.id)),
+      ruleIds: new Set((baseTree.savingsRules ?? []).map((r) => r.id)),
+    };
 
     const {
       accountInserts,
@@ -162,7 +215,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       incomeUpdates,
       expenseUpdates,
       expenseInserts,
-    } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[]);
+    } = mutationsToBaseUpdates(sourceTree, mutations as SolverMutation[], baseMembership);
 
     // Validate any savings-rule accountId that is NOT satisfied by an account
     // inserted in this same batch — it must already belong to this client.
@@ -174,6 +227,34 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const acctCheck = await assertAccountsInClient(clientId, externalAccountIds);
     if (!acctCheck.ok) {
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+
+    // Validate the owner FKs on every account we (re)write — family members,
+    // entities, and external beneficiaries must all belong to this client. Without
+    // this a crafted owner id would either FK-crash the whole save (500) or attach
+    // a cross-tenant owner. Mirrors the accounts write-core's owner tenant guard,
+    // extended to the external_beneficiary kind the solver supports.
+    const ownerRows = [...accountInserts, ...accountUpdates].flatMap((a) => a.owners ?? []);
+    const fmCheck = await assertFamilyMembersInClient(
+      clientId,
+      ownerRows.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : [])),
+    );
+    if (!fmCheck.ok) {
+      return NextResponse.json({ error: fmCheck.reason }, { status: 400 });
+    }
+    const entCheck = await assertEntitiesInClient(
+      clientId,
+      ownerRows.flatMap((o) => (o.kind === "entity" ? [o.entityId] : [])),
+    );
+    if (!entCheck.ok) {
+      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
+    }
+    const ebCheck = await assertExternalBeneficiariesInClient(
+      clientId,
+      ownerRows.flatMap((o) => (o.kind === "external_beneficiary" ? [o.externalBeneficiaryId] : [])),
+    );
+    if (!ebCheck.ok) {
+      return NextResponse.json({ error: ebCheck.reason }, { status: 400 });
     }
 
     await db.transaction(async (tx) => {
@@ -188,16 +269,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           .returning({ id: accounts.id });
         idRemap.set(a.id, inserted.id);
 
-        for (const o of a.owners ?? []) {
-          await tx.insert(accountOwners).values({
-            accountId: inserted.id,
-            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
-            entityId: o.kind === "entity" ? o.entityId : null,
-            externalBeneficiaryId:
-              o.kind === "external_beneficiary" ? o.externalBeneficiaryId : null,
-            percent: String(o.percent),
-          });
-        }
+        await insertAccountOwnerRows(tx, inserted.id, a.owners);
       }
 
       for (const a of accountUpdates) {
@@ -224,6 +296,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               eq(accounts.scenarioId, baseScenarioId),
             ),
           );
+
+        // The column update above leaves the account_owners satellite untouched,
+        // so a retitle (owners changed — e.g. into a revocable trust) would be
+        // lost. Re-materialize owners: delete-then-reinsert, mirroring
+        // updateAccountForClient. Guarded on a non-empty owners set so a malformed
+        // ownerless upsert can't orphan an otherwise-owned account. `a.id` is a
+        // base account (it classified as an UPDATE against base membership), so
+        // the by-accountId delete stays within this client.
+        if (a.owners && a.owners.length > 0) {
+          await tx.delete(accountOwners).where(eq(accountOwners.accountId, a.id));
+          await insertAccountOwnerRows(tx, a.id, a.owners);
+        }
       }
 
       for (const r of savingsInserts) {
