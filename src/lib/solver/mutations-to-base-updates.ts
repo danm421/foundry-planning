@@ -75,6 +75,20 @@ export interface BaseUpdates {
   expenseInserts: Expense[];
 }
 
+/**
+ * Row-id membership of the BASE scenario, used to classify account / savings-rule
+ * upserts as insert-vs-update. Supplied by the route when `source` is a non-base
+ * scenario: an overlay-added row is present in `source` but ABSENT from base, so
+ * classifying against `source` would emit a base-scoped UPDATE that touches 0 rows
+ * — a silent no-op reported as success. Classifying against base membership makes
+ * that row an INSERT instead. When `source` IS base, source membership already
+ * equals base membership, so this can be omitted.
+ */
+export interface BaseMembership {
+  accountIds: ReadonlySet<string>;
+  ruleIds: ReadonlySet<string>;
+}
+
 /** number → DB decimal string; null/undefined → null. */
 function dec(v: number | null | undefined): string | null {
   return v == null ? null : String(v);
@@ -83,6 +97,7 @@ function dec(v: number | null | undefined): string | null {
 export function mutationsToBaseUpdates(
   source: ClientData,
   mutations: SolverMutation[],
+  baseMembership?: BaseMembership,
 ): BaseUpdates {
   const out: BaseUpdates = {
     accountInserts: [],
@@ -98,8 +113,13 @@ export function mutationsToBaseUpdates(
     expenseInserts: [],
   };
 
-  const existingAccounts = new Set((source.accounts ?? []).map((a) => a.id));
-  const existingRules = new Set((source.savingsRules ?? []).map((r) => r.id));
+  // Classify account / savings-rule upserts against BASE membership when the
+  // route supplies it (source is a non-base scenario); otherwise fall back to the
+  // source tree, which — when source IS base — is identical. See BaseMembership.
+  const existingAccounts =
+    baseMembership?.accountIds ?? new Set((source.accounts ?? []).map((a) => a.id));
+  const existingRules =
+    baseMembership?.ruleIds ?? new Set((source.savingsRules ?? []).map((r) => r.id));
 
   // Coalesce field edits per target so multiple levers on one row produce a
   // single partial update.

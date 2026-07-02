@@ -4,6 +4,7 @@ import {
   type LifeInsuranceAssumptions,
   type NeedResult,
 } from "./solve-need";
+import { computeEstateTaxAddend } from "./estate-tax-addend";
 
 /**
  * One straight-line life-insurance need value per plan year, per decedent.
@@ -36,10 +37,38 @@ export function hasSpouse(data: ClientData): boolean {
 }
 
 /**
+ * Solve one decedent's straight-line need, folding the household's estate-tax
+ * addend into the target when `coverEstateTaxes` is on. Mirrors `solveCase` in
+ * the /life-insurance/solve route so the over-time curve and the single-point
+ * solve agree at any given death year. The addend depends on `a.deathYear`
+ * (later deaths grow the estate), so it is recomputed per year per decedent.
+ */
+function solveNeedWithEstateTax(
+  data: ClientData,
+  deceased: "client" | "spouse",
+  a: LifeInsuranceAssumptions,
+  coverEstateTaxes: boolean,
+): NeedResult {
+  const estateTaxAddend = coverEstateTaxes
+    ? computeEstateTaxAddend(data, deceased, a)
+    : 0;
+  const augmented: LifeInsuranceAssumptions = {
+    ...a,
+    leaveToHeirsAmount: a.leaveToHeirsAmount + estateTaxAddend,
+  };
+  return solveLifeInsuranceNeed(data, deceased, augmented);
+}
+
+/**
  * Compute the deterministic (straight-line) life-insurance need for every plan
  * year. For each year from `planStartYear` to `planEndYear`, `solveLifeInsuranceNeed`
  * is run for the client-death case and — when the client is married — the
  * spouse-death case, using that year as `deathYear`.
+ *
+ * When `coverEstateTaxes` is on, each year/decedent's target gains that death
+ * year's estate-tax addend (federal + state estate tax + IRD income tax) before
+ * the solve — matching the single-point /solve route, so a curve row and the
+ * point solve at the same death year land on the same face value.
  *
  * `onProgress` is invoked once per year with the cumulative count of years
  * solved and the total number of years, so a caller (e.g. an SSE route) can
@@ -48,6 +77,7 @@ export function hasSpouse(data: ClientData): boolean {
 export function computeNeedOverTime(
   data: ClientData,
   assumptions: Omit<LifeInsuranceAssumptions, "deathYear">,
+  coverEstateTaxes: boolean,
   onProgress?: NeedOverTimeProgress,
 ): NeedOverTimeRow[] {
   const { planStartYear, planEndYear } = data.planSettings;
@@ -61,9 +91,9 @@ export function computeNeedOverTime(
       deathYear: year,
     };
 
-    const clientResult = solveLifeInsuranceNeed(data, "client", yearAssumptions);
+    const clientResult = solveNeedWithEstateTax(data, "client", yearAssumptions, coverEstateTaxes);
     const spouseResult = married
-      ? solveLifeInsuranceNeed(data, "spouse", yearAssumptions)
+      ? solveNeedWithEstateTax(data, "spouse", yearAssumptions, coverEstateTaxes)
       : null;
 
     rows.push({

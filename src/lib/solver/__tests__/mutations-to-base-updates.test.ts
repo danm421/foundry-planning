@@ -67,6 +67,42 @@ describe("mutationsToBaseUpdates", () => {
     expect(out.accountRemoves).toEqual(["new"]);
   });
 
+  describe("base-scenario membership classification (#c)", () => {
+    // Source is a non-base OVERLAY that contains the account; base does NOT. The
+    // classifier must key off base membership so the row becomes an INSERT rather
+    // than a base-scoped UPDATE that would touch 0 rows (silent no-op).
+    it("classifies an overlay-added account as an insert against base membership", () => {
+      const overlaySource = { ...source, accounts: [ACCT] } as ClientData;
+      const out = mutationsToBaseUpdates(
+        overlaySource,
+        [{ kind: "account-upsert", id: "new", value: ACCT }],
+        { accountIds: new Set(), ruleIds: new Set() },
+      );
+      expect(out.accountInserts).toHaveLength(1);
+      expect(out.accountUpdates).toHaveLength(0);
+    });
+
+    it("classifies a base-present account as an update even if absent from the overlay source", () => {
+      const out = mutationsToBaseUpdates(
+        source, // empty source (overlay dropped the row) …
+        [{ kind: "account-upsert", id: "new", value: { ...ACCT, name: "Renamed" } }],
+        { accountIds: new Set(["new"]), ruleIds: new Set() }, // … but it exists in base
+      );
+      expect(out.accountUpdates).toHaveLength(1);
+      expect(out.accountInserts).toHaveLength(0);
+    });
+
+    it("does not record a remove for an overlay-only account absent from base", () => {
+      const overlaySource = { ...source, accounts: [ACCT] } as ClientData;
+      const out = mutationsToBaseUpdates(
+        overlaySource,
+        [{ kind: "account-upsert", id: "new", value: null }],
+        { accountIds: new Set(), ruleIds: new Set() },
+      );
+      expect(out.accountRemoves).toHaveLength(0);
+    });
+  });
+
   it("coalesces client field edits into one partial update", () => {
     const out = mutationsToBaseUpdates(richSource, [
       { kind: "retirement-age", person: "client", age: 67 },

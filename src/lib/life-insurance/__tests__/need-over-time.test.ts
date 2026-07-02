@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { LEGACY_FM_CLIENT } from "@/engine/ownership";
 import { computeNeedOverTime, hasSpouse } from "../need-over-time";
-import { marriedBase } from "./test-helpers";
+import { solveLifeInsuranceNeed, type LifeInsuranceAssumptions } from "../solve-need";
+import { computeEstateTaxAddend } from "../estate-tax-addend";
+import { marriedBase, highNetWorthBase, hnwAssumptions } from "./test-helpers";
 
 describe("computeNeedOverTime", () => {
   it("returns a client and spouse need value for each plan year", () => {
@@ -11,7 +13,7 @@ describe("computeNeedOverTime", () => {
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
       payoffLiabilityIds: [],
-    });
+    }, false);
     expect(rows.length).toBe(
       data.planSettings.planEndYear - data.planSettings.planStartYear + 1,
     );
@@ -27,7 +29,7 @@ describe("computeNeedOverTime", () => {
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
       payoffLiabilityIds: [],
-    });
+    }, false);
     expect(rows[0].year).toBe(data.planSettings.planStartYear);
     expect(rows[rows.length - 1].year).toBe(data.planSettings.planEndYear);
     for (const row of rows) {
@@ -47,7 +49,7 @@ describe("computeNeedOverTime", () => {
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
       payoffLiabilityIds: [],
-    });
+    }, false);
     for (const row of rows) {
       expect(row.spouseNeed).toBeNull();
       expect(row.spouseStatus).toBeNull();
@@ -74,8 +76,8 @@ describe("computeNeedOverTime", () => {
       livingExpenseAtDeath: null,
       payoffLiabilityIds: [],
     };
-    expect(() => computeNeedOverTime(data, opts)).not.toThrow();
-    const rows = computeNeedOverTime(data, opts);
+    expect(() => computeNeedOverTime(data, opts, false)).not.toThrow();
+    const rows = computeNeedOverTime(data, opts, false);
     for (const row of rows) {
       expect(row.spouseNeed).toBeNull();
       expect(row.spouseStatus).toBeNull();
@@ -93,6 +95,7 @@ describe("computeNeedOverTime", () => {
         livingExpenseAtDeath: null,
         payoffLiabilityIds: [],
       },
+      false,
       (done, total) => calls.push({ done, total }),
     );
     expect(calls.length).toBe(rows.length);
@@ -100,6 +103,67 @@ describe("computeNeedOverTime", () => {
     expect(calls[calls.length - 1]).toEqual({
       done: rows.length,
       total: rows.length,
+    });
+  });
+
+  describe("coverEstateTaxes (#9)", () => {
+    // Death-year 2030 addend on the HNW fixture (probed): client ≈ $12.6M,
+    // spouse ≈ $8.2M. leaveToHeirs is set to $90M so the survivor's ending
+    // portfolio (client ending0 ≈ $66.9M, spouse ≈ $54.7M) falls SHORT of the
+    // target — the solve lands a positive, sub-cap face value for both cases,
+    // so folding in the addend genuinely moves the need (guards a no-op wire).
+    const LEAVE_TO_HEIRS = 90_000_000;
+    const overTime: Omit<LifeInsuranceAssumptions, "deathYear"> = {
+      proceedsGrowthRate: hnwAssumptions.proceedsGrowthRate,
+      proceedsRealization: hnwAssumptions.proceedsRealization,
+      leaveToHeirsAmount: LEAVE_TO_HEIRS,
+      livingExpenseAtDeath: hnwAssumptions.livingExpenseAtDeath,
+      payoffLiabilityIds: hnwAssumptions.payoffLiabilityIds,
+    };
+
+    it("leaves the curve unchanged when the toggle is off", () => {
+      const data = highNetWorthBase();
+      const rows = computeNeedOverTime(data, overTime, false);
+      const deathYear = hnwAssumptions.deathYear;
+      const row = rows.find((r) => r.year === deathYear)!;
+      // Parity with the raw (no-addend) single-point solve.
+      const expected = solveLifeInsuranceNeed(data, "client", {
+        ...overTime,
+        deathYear,
+      });
+      expect(row.clientNeed).toBe(expected.faceValue);
+    });
+
+    it("folds the per-year estate-tax addend into the need when the toggle is on", () => {
+      const data = highNetWorthBase();
+      const deathYear = hnwAssumptions.deathYear;
+
+      const withTax = computeNeedOverTime(data, overTime, true);
+      const rowOn = withTax.find((r) => r.year === deathYear)!;
+
+      // The addend is genuinely positive at this death year for both decedents,
+      // so the toggle-on need must exceed the raw no-addend need.
+      const rawClient = solveLifeInsuranceNeed(data, "client", { ...overTime, deathYear });
+      const rawSpouse = solveLifeInsuranceNeed(data, "spouse", { ...overTime, deathYear });
+      expect(rowOn.clientNeed).toBeGreaterThan(rawClient.faceValue);
+      expect(rowOn.spouseNeed!).toBeGreaterThan(rawSpouse.faceValue);
+
+      // Parity: the curve's death-year row equals the single-point straight-line
+      // solve at that death year — target augmented by that year's addend
+      // (mirrors solveCase in /life-insurance/solve).
+      const yearAssumptions: LifeInsuranceAssumptions = { ...overTime, deathYear };
+      const clientAddend = computeEstateTaxAddend(data, "client", yearAssumptions);
+      const spouseAddend = computeEstateTaxAddend(data, "spouse", yearAssumptions);
+      const expectedClient = solveLifeInsuranceNeed(data, "client", {
+        ...yearAssumptions,
+        leaveToHeirsAmount: LEAVE_TO_HEIRS + clientAddend,
+      });
+      const expectedSpouse = solveLifeInsuranceNeed(data, "spouse", {
+        ...yearAssumptions,
+        leaveToHeirsAmount: LEAVE_TO_HEIRS + spouseAddend,
+      });
+      expect(rowOn.clientNeed).toBe(expectedClient.faceValue);
+      expect(rowOn.spouseNeed).toBe(expectedSpouse.faceValue);
     });
   });
 });

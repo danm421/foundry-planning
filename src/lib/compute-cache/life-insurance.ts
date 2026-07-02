@@ -85,7 +85,11 @@ export async function getOrComputeLifeInsuranceSolve(args: {
         livingExpenseAtDeath: args.assumptions.livingExpenseAtDeath,
         payoffLiabilityIds: args.assumptions.payoffLiabilityIds,
       };
-      const rows = computeNeedOverTime(effectiveTree, overTimeAssumptions);
+      const rows = computeNeedOverTime(
+        effectiveTree,
+        overTimeAssumptions,
+        args.assumptions.coverEstateTaxes,
+      );
       // The launcher maps rows down to { year, clientNeed, spouseNeed } (it drops
       // the status fields); reproduce that projection field-for-field.
       const curveRows: LiSolved["curveRows"] = rows.map((x) => ({
