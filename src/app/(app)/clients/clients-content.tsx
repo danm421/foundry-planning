@@ -143,6 +143,7 @@ export async function ClientsContent({
           </Link>
           <Link
             href="/crm/new"
+            data-forge-anchor="crm-new-household-button"
             className="inline-flex h-10 items-center rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
           >
             New household

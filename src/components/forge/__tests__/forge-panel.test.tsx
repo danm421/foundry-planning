@@ -53,6 +53,21 @@ const IMPORT_RESULT = {
   warnings: [] as string[],
 };
 
+// Task 9 handoff: mock the walkthrough context so the panel can render outside
+// a real WalkthroughProvider, and so the test can assert `start` was called
+// with the id carried by a `walkthrough` SSE frame.
+const startWalkthrough = vi.hoisted(() => vi.fn());
+vi.mock("../walkthrough-context", () => ({
+  useWalkthrough: () => ({
+    active: null,
+    stepIndex: 0,
+    currentStep: null,
+    start: startWalkthrough,
+    next: vi.fn(),
+    exit: vi.fn(),
+  }),
+}));
+
 // Controllable so a test can hold the import open and assert the user bubble
 // renders *before* the analysis resolves.
 const importMocks = vi.hoisted(() => ({ runImport: vi.fn() }));
@@ -69,6 +84,7 @@ vi.mock("../use-forge-import", () => ({
 beforeEach(() => {
   currentSearch = "scenario=s1";
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamingResponse()));
+  startWalkthrough.mockReset();
   importMocks.runImport.mockReset();
   importMocks.runImport.mockResolvedValue(IMPORT_RESULT);
   navMocks.push.mockReset();
@@ -291,6 +307,30 @@ describe("ForgePanel", () => {
 
     fireEvent.click(chip);
     expect(navMocks.push).toHaveBeenCalledWith("/clients/c1/assets/balance-sheet-report");
+  });
+
+  it("hands a pendingWalkthrough off to the walkthrough provider and clears it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeFramedResponse([
+          `data: {"type":"walkthrough","walkthroughId":"add-household"}\n\n`,
+          `data: {"type":"done"}\n\n`,
+        ]),
+      ),
+    );
+    mountPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: /ask forge/i }), {
+        target: { value: "show me how to add a household" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    // The handoff effect calls start() with the walkthrough id and closes the panel.
+    expect(startWalkthrough).toHaveBeenCalledWith("add-household");
   });
 
   it("updates the scenario chip when the URL scenario changes (drift)", () => {

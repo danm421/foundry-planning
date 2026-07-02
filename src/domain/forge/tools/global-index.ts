@@ -9,11 +9,13 @@ import type { ForgeGlobalToolContext } from "../context";
 import { buildHelpTools } from "./help";
 import { buildGlobalNavigateTools } from "./navigate-global";
 import { buildGlobalActionTools } from "./global-actions";
+import { buildWalkthroughTools } from "./walkthrough";
 
 export function buildGlobalTools(toolCtx: ForgeGlobalToolContext): StructuredToolInterface[] {
   return [
     ...buildHelpTools(toolCtx),
     ...buildGlobalNavigateTools(toolCtx),
     ...buildGlobalActionTools(toolCtx),
+    ...buildWalkthroughTools(toolCtx),
   ];
 }

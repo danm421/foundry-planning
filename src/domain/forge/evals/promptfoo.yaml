@@ -157,3 +157,10 @@ tests:
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Can you walk me through adding a new household, step by step on screen?"
+      mode: global
+      expectTool: start_walkthrough
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool

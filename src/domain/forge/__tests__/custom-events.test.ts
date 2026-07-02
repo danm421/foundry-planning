@@ -5,7 +5,13 @@ vi.mock("@langchain/core/callbacks/dispatch", () => ({
   dispatchCustomEvent: (...a: unknown[]) => dispatch(...a),
 }));
 
-import { emitNavigate, emitToolRender, emitActivity, NAVIGATE_ALLOWLIST_PREFIXES } from "../custom-events";
+import {
+  emitNavigate,
+  emitToolRender,
+  emitActivity,
+  emitWalkthrough,
+  NAVIGATE_ALLOWLIST_PREFIXES,
+} from "../custom-events";
 
 describe("custom events", () => {
   it("emitNavigate dispatches a navigate frame for an allowlisted href", async () => {
@@ -30,6 +36,17 @@ describe("custom events", () => {
   it("emitActivity dispatches an activity frame", async () => {
     await emitActivity("Loading plan…");
     expect(dispatch).toHaveBeenCalledWith("activity", { label: "Loading plan…" });
+  });
+});
+
+describe("emitWalkthrough", () => {
+  it("dispatches a walkthrough frame for a real walkthrough id", async () => {
+    await emitWalkthrough("add-household");
+    expect(dispatch).toHaveBeenCalledWith("walkthrough", { walkthroughId: "add-household" });
+  });
+
+  it("rejects an unknown walkthrough id", async () => {
+    await expect(emitWalkthrough("does-not-exist")).rejects.toThrow();
   });
 });
 
