@@ -62,6 +62,11 @@ const shared = {
   endYearRef: z.unknown().nullable().optional(),
   deductionType: z.string().nullable().optional(),
   endsAtMedicareEligibilityOwner: z.enum(["client", "spouse"]).nullable().optional(),
+  payShortfallOutOfPocket: z.boolean().optional(),
+  institutionState: z.string().nullable().optional(),
+  institutionName: z.string().nullable().optional(),
+  forFamilyMemberId: uuidSchema.nullable().optional(),
+  dedicatedAccountIds: z.array(uuidSchema).optional(),
 };
 
 function refineBothOwner(
@@ -91,6 +96,8 @@ export const expenseCreateSchema = z
     // present. To preserve prior behavior (always "custom" on create), default it.
     growthSource: growthSourceOptional.default("custom"),
     ...shared,
+    payShortfallOutOfPocket: z.boolean().default(false),
+    dedicatedAccountIds: z.array(uuidSchema).default([]),
   })
   .superRefine(refineBothOwner);
 

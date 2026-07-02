@@ -12,7 +12,7 @@
 // requireOrgId()/auth()), and NextResponse.json(...) becomes writeError(...) /
 // {ok:true,...}.
 import { db } from "@/db";
-import { expenses } from "@/db/schema";
+import { expenses, expenseDedicatedAccounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
@@ -59,33 +59,49 @@ export async function createExpenseForClient(args: {
     const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
+  if (p.dedicatedAccountIds && p.dedicatedAccountIds.length > 0) {
+    const dedCheck = await assertAccountsInClient(clientId, p.dedicatedAccountIds);
+    if (!dedCheck.ok) return writeError(400, dedCheck.reason);
+  }
 
-  const [expense] = await db
-    .insert(expenses)
-    .values({
-      clientId,
-      scenarioId,
-      type: p.type as ExpenseType,
-      name: p.name,
-      annualAmount: p.annualAmount,
-      startYear: p.startYear,
-      endYear: p.endYear,
-      growthRate: p.growthRate,
-      growthSource: p.growthSource,
-      ownerEntityId: p.ownerEntityId ?? null,
-      ownerAccountId: p.ownerAccountId ?? null,
-      cashAccountId: p.cashAccountId ?? null,
-      inflationStartYear: p.inflationStartYear ?? null,
-      startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
-      endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
-      // Living expenses are never a deduction — drop any deductionType so the
-      // UI (which hides the field for living) and the write-core stay in sync.
-      deductionType: (p.type === "living"
-        ? null
-        : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
-      endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
-    })
-    .returning();
+  const expense = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(expenses)
+      .values({
+        clientId,
+        scenarioId,
+        type: p.type as ExpenseType,
+        name: p.name,
+        annualAmount: p.annualAmount,
+        startYear: p.startYear,
+        endYear: p.endYear,
+        growthRate: p.growthRate,
+        growthSource: p.growthSource,
+        ownerEntityId: p.ownerEntityId ?? null,
+        ownerAccountId: p.ownerAccountId ?? null,
+        cashAccountId: p.cashAccountId ?? null,
+        inflationStartYear: p.inflationStartYear ?? null,
+        startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
+        endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
+        // Living expenses are never a deduction — drop any deductionType so the
+        // UI (which hides the field for living) and the write-core stay in sync.
+        deductionType: (p.type === "living"
+          ? null
+          : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
+        endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
+        payShortfallOutOfPocket: p.payShortfallOutOfPocket ?? false,
+        institutionState: p.institutionState ?? null,
+        institutionName: p.institutionName ?? null,
+        forFamilyMemberId: p.forFamilyMemberId ?? null,
+      })
+      .returning();
+    if (p.dedicatedAccountIds && p.dedicatedAccountIds.length > 0) {
+      await tx.insert(expenseDedicatedAccounts).values(
+        p.dedicatedAccountIds.map((accountId, i) => ({ expenseId: row.id, accountId, sortOrder: i })),
+      );
+    }
+    return row;
+  });
 
   await recordAudit({
     action: "expense.create",
@@ -149,44 +165,69 @@ export async function updateExpenseForClient(args: {
     const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!b.ok) return writeError(400, b.reason);
   }
+  if (p.dedicatedAccountIds !== undefined && p.dedicatedAccountIds.length > 0) {
+    const dedCheck = await assertAccountsInClient(clientId, p.dedicatedAccountIds);
+    if (!dedCheck.ok) return writeError(400, dedCheck.reason);
+  }
 
-  const [updated] = await db
-    .update(expenses)
-    .set({
-      ...(p.type !== undefined && { type: p.type as ExpenseType }),
-      ...(p.name !== undefined && { name: p.name }),
-      ...(p.annualAmount !== undefined && { annualAmount: p.annualAmount }),
-      ...(p.startYear !== undefined && { startYear: p.startYear }),
-      ...(p.endYear !== undefined && { endYear: p.endYear }),
-      ...(p.growthRate !== undefined && { growthRate: p.growthRate }),
-      ...(p.growthSource !== undefined && { growthSource: p.growthSource }),
-      ...(p.ownerEntityId !== undefined && { ownerEntityId: p.ownerEntityId ?? null }),
-      ...(p.ownerAccountId !== undefined && { ownerAccountId: p.ownerAccountId ?? null }),
-      ...(p.cashAccountId !== undefined && { cashAccountId: p.cashAccountId ?? null }),
-      ...(p.inflationStartYear !== undefined && {
-        inflationStartYear: p.inflationStartYear == null ? null : p.inflationStartYear,
-      }),
-      ...(p.startYearRef !== undefined && {
-        startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
-      }),
-      ...(p.endYearRef !== undefined && {
-        endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
-      }),
-      // Living expenses are never a deduction. When the row is (re)typed to
-      // living, force deductionType null even if the caller omitted it; otherwise
-      // pass through the supplied value.
-      ...((p.deductionType !== undefined || p.type === "living") && {
-        deductionType: (p.type === "living"
-          ? null
-          : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
-      }),
-      ...(p.endsAtMedicareEligibilityOwner !== undefined && {
-        endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
-      }),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)))
-    .returning();
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(expenses)
+      .set({
+        ...(p.type !== undefined && { type: p.type as ExpenseType }),
+        ...(p.name !== undefined && { name: p.name }),
+        ...(p.annualAmount !== undefined && { annualAmount: p.annualAmount }),
+        ...(p.startYear !== undefined && { startYear: p.startYear }),
+        ...(p.endYear !== undefined && { endYear: p.endYear }),
+        ...(p.growthRate !== undefined && { growthRate: p.growthRate }),
+        ...(p.growthSource !== undefined && { growthSource: p.growthSource }),
+        ...(p.ownerEntityId !== undefined && { ownerEntityId: p.ownerEntityId ?? null }),
+        ...(p.ownerAccountId !== undefined && { ownerAccountId: p.ownerAccountId ?? null }),
+        ...(p.cashAccountId !== undefined && { cashAccountId: p.cashAccountId ?? null }),
+        ...(p.inflationStartYear !== undefined && {
+          inflationStartYear: p.inflationStartYear == null ? null : p.inflationStartYear,
+        }),
+        ...(p.startYearRef !== undefined && {
+          startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
+        }),
+        ...(p.endYearRef !== undefined && {
+          endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
+        }),
+        // Living expenses are never a deduction. When the row is (re)typed to
+        // living, force deductionType null even if the caller omitted it; otherwise
+        // pass through the supplied value.
+        ...((p.deductionType !== undefined || p.type === "living") && {
+          deductionType: (p.type === "living"
+            ? null
+            : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
+        }),
+        ...(p.endsAtMedicareEligibilityOwner !== undefined && {
+          endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
+        }),
+        ...(p.payShortfallOutOfPocket !== undefined && {
+          payShortfallOutOfPocket: p.payShortfallOutOfPocket,
+        }),
+        ...(p.institutionState !== undefined && { institutionState: p.institutionState ?? null }),
+        ...(p.institutionName !== undefined && { institutionName: p.institutionName ?? null }),
+        ...(p.forFamilyMemberId !== undefined && { forFamilyMemberId: p.forFamilyMemberId ?? null }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)))
+      .returning();
+
+    if (!row) return undefined;
+
+    if (p.dedicatedAccountIds !== undefined) {
+      await tx.delete(expenseDedicatedAccounts).where(eq(expenseDedicatedAccounts.expenseId, expenseId));
+      if (p.dedicatedAccountIds.length > 0) {
+        await tx.insert(expenseDedicatedAccounts).values(
+          p.dedicatedAccountIds.map((accountId, i) => ({ expenseId, accountId, sortOrder: i })),
+        );
+      }
+    }
+
+    return row;
+  });
 
   if (!updated) return writeError(404, "Expense not found");
 
