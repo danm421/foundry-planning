@@ -185,6 +185,7 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "living",
   "other",
   "insurance",
+  "education",
 ]);
 
 export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid"]);
@@ -2274,6 +2275,21 @@ export const expenses = pgTable("expenses", {
   // year onward. Used to mark pre-Medicare health-insurance expenses so they auto-end
   // when projected Medicare premiums kick in.
   endsAtMedicareEligibilityOwner: ownerEnum("ends_at_medicare_eligibility_owner"),
+  // Education-goal fields (type === "education").
+  // When true, any goal cost the dedicated accounts can't cover is paid from
+  // household cash (normal withdrawal waterfall); when false, it's an unfunded
+  // shortfall. Ignored for non-education rows.
+  payShortfallOutOfPocket: boolean("pay_shortfall_out_of_pocket")
+    .notNull()
+    .default(false),
+  // Optional free-text labels (no cost-lookup DB in v1).
+  institutionState: text("institution_state"),
+  institutionName: text("institution_name"),
+  // "For": the student/beneficiary. Attribution/label only.
+  forFamilyMemberId: uuid("for_family_member_id").references(
+    () => familyMembers.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
@@ -2284,6 +2300,25 @@ export const expenses = pgTable("expenses", {
   // Engine load path filters expenses by (client_id, scenario_id) (audit F7).
   clientScenarioIdx: index("expenses_client_scenario_idx").on(t.clientId, t.scenarioId),
 }));
+
+export const expenseDedicatedAccounts = pgTable(
+  "expense_dedicated_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expenseId: uuid("expense_id")
+      .notNull()
+      .references(() => expenses.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("expense_dedicated_accounts_expense_sort_idx").on(t.expenseId, t.sortOrder),
+    unique("expense_dedicated_accounts_uniq").on(t.expenseId, t.accountId),
+  ],
+);
 
 export const liabilities = pgTable("liabilities", {
   id: uuid("id").defaultRandom().primaryKey(),
