@@ -1449,11 +1449,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Start-of-year balances for education dedicated accounts (before growth /
     // savings), so the report's "Dedicated Assets (BOY)" is a true
     // beginning-of-year figure. The funding pass itself runs after savings.
-    const educationGoalsThisYear = data.expenses.filter(
-      (e) => e.type === "education" && itemProrationGate(e, year, data.client).include,
-    );
+    // The proration gate is carried alongside each goal so the funding pass
+    // below reuses it instead of recomputing per year × trial.
+    const educationGoalsThisYear = data.expenses.flatMap((e) => {
+      if (e.type !== "education") return [];
+      const gate = itemProrationGate(e, year, data.client);
+      return gate.include ? [{ goal: e, gate }] : [];
+    });
     const eduDedicatedIds = new Set<string>(
-      educationGoalsThisYear.flatMap((e) => e.dedicatedAccountIds ?? []),
+      educationGoalsThisYear.flatMap(({ goal }) => goal.dedicatedAccountIds ?? []),
     );
     const eduBoyBalances: Record<string, number> = {};
     for (const id of eduDedicatedIds) eduBoyBalances[id] = accountBalances[id] ?? 0;
@@ -4073,8 +4077,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // accounts) reach the year's tax convergence; and BEFORE the step-11
     // cashDelta flush so an out-of-pocket spill lands on checking this year.
     const educationGoalYears: EducationGoalYear[] = [];
-    for (const goal of educationGoalsThisYear) {
-      const gate = itemProrationGate(goal, year, data.client);
+    for (const { goal, gate } of educationGoalsThisYear) {
       const inflateFrom = goal.inflationStartYear ?? goal.startYear;
       const rawCost = goal.scheduleOverrides
         ? (goal.scheduleOverrides[year] ?? 0)

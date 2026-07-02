@@ -33,6 +33,15 @@ type ExpenseRow = typeof expenses.$inferSelect;
 // boundary so a bad value still fails at the DB exactly as it did via the route.
 type ExpenseType = ExpenseRow["type"];
 
+// Dedupe dedicatedAccountIds before the FK guard and the insert: duplicate ids
+// pass assertAccountsInClient fine but violate the unique(expenseId, accountId)
+// constraint on expense_dedicated_accounts, surfacing a raw 500 instead of
+// being handled. Array order = sortOrder = draw order, so preserve
+// first-occurrence order.
+function dedupeDedicatedIds(ids: string[] | undefined): string[] | undefined {
+  return ids && [...new Set(ids)];
+}
+
 export async function createExpenseForClient(args: {
   clientId: string;
   firmId: string;
@@ -59,12 +68,7 @@ export async function createExpenseForClient(args: {
     const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
-  // Dedupe before the FK guard and the insert: duplicate ids pass
-  // assertAccountsInClient fine but violate the unique(expenseId, accountId)
-  // constraint on expense_dedicated_accounts, surfacing a raw 500 instead of
-  // being handled. Array order = sortOrder = draw order, so preserve
-  // first-occurrence order.
-  const dedicatedAccountIds = p.dedicatedAccountIds ? [...new Set(p.dedicatedAccountIds)] : p.dedicatedAccountIds;
+  const dedicatedAccountIds = dedupeDedicatedIds(p.dedicatedAccountIds);
   if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
     const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
@@ -171,12 +175,7 @@ export async function updateExpenseForClient(args: {
     const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!b.ok) return writeError(400, b.reason);
   }
-  // See create path: dedupe before the FK guard and the insert so duplicate
-  // ids can't slip past the guard and hit the unique(expenseId, accountId)
-  // constraint on expense_dedicated_accounts as a raw 500. Array order =
-  // sortOrder = draw order, so preserve first-occurrence order.
-  const dedicatedAccountIds =
-    p.dedicatedAccountIds !== undefined ? [...new Set(p.dedicatedAccountIds)] : undefined;
+  const dedicatedAccountIds = dedupeDedicatedIds(p.dedicatedAccountIds);
   if (dedicatedAccountIds !== undefined && dedicatedAccountIds.length > 0) {
     const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);

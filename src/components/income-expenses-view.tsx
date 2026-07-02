@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
+import { StateSelect } from "@/components/state-select";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
 import SavingsRulesList from "./forms/savings-rules-list";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
@@ -1218,11 +1219,11 @@ function ExpenseDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-300" htmlFor="exp-inst-state">Institution State</label>
-                  <input
+                  <StateSelect
                     id="exp-inst-state"
-                    type="text"
+                    name="institutionState"
                     value={institutionState}
-                    onChange={(e) => setInstitutionState(e.target.value)}
+                    onChange={setInstitutionState}
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>

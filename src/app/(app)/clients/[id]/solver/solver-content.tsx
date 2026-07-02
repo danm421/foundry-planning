@@ -88,6 +88,22 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     baseLoaded.effectiveTree.planSettings.planEndYear,
   );
 
+  // Per-goal education POS gauge inputs. The gauge simulates each goal's
+  // dedicated pool client-side; the blended return stats + scenario seed come
+  // from the plan Monte Carlo data (same asset-class stats + account mixes).
+  // Gated on there being at least one funded education goal, so the common
+  // no-education case skips the extra MC-data load entirely. Kicked off before
+  // the life-insurance-settings await below so the two independent loads run
+  // in parallel on this page's server-render path; a load failure resolves to
+  // null and takes the neutral-fallback branch.
+  const solverTree = sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree;
+  const hasEducationGoals = solverTree.expenses.some(
+    (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
+  );
+  const educationMcPromise = hasEducationGoals
+    ? loadMonteCarloData(clientId, firmId, source).catch(() => null)
+    : null;
+
   const lifeInsuranceSettings = await loadLifeInsuranceSettings(
     clientId,
     baseLoaded.effectiveTree,
@@ -99,27 +115,18 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   const clientName = baseClient.firstName?.trim() || "Client";
   const spouseName = baseClient.spouseName?.trim() || "Spouse";
 
-  // Per-goal education POS gauge inputs. The gauge simulates each goal's
-  // dedicated pool client-side; the blended return stats + scenario seed come
-  // from the plan Monte Carlo data (same asset-class stats + account mixes).
-  // Gated on there being at least one funded education goal, so the common
-  // no-education case skips the extra MC-data load entirely.
-  const solverTree = sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree;
-  const hasEducationGoals = solverTree.expenses.some(
-    (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
-  );
   let educationReturnStats: Record<string, EducationReturnStat> = {};
   let educationSeed = FALLBACK_EDUCATION_SEED;
-  if (hasEducationGoals) {
+  const mcData = educationMcPromise ? await educationMcPromise : null;
+  if (mcData) {
     try {
-      const mc = await loadMonteCarloData(clientId, firmId, source);
-      educationSeed = mc.seed;
+      educationSeed = mcData.seed;
       const assetClassStats = new Map<string, EducationReturnStat>(
-        mc.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
+        mcData.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
       );
       // Segments are sorted ascending by fromYear, so [0] is the base mix —
       // the right allocation for near-term education goals.
-      const accountMixes = mc.accountMixes.map((m) => ({
+      const accountMixes = mcData.accountMixes.map((m) => ({
         accountId: m.accountId,
         mix: m.segments[0]?.mix ?? [],
       }));
@@ -130,7 +137,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
         assetClassStats,
       });
     } catch {
-      // MC data unavailable (e.g. no asset-class stats seeded) — the panel
+      // Stats assembly failed (e.g. malformed asset-class stats) — the panel
       // falls back to its neutral per-goal default for every goal.
     }
   }
