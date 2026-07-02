@@ -165,7 +165,7 @@ export default function ClientIdentityMenu({
         <div
           role="dialog"
           aria-label="Client details"
-          className="absolute left-0 top-full z-40 mt-1.5 min-w-[260px] rounded-xl border border-hair bg-paper p-3 shadow-lg"
+          className="absolute left-0 top-full z-40 mt-1.5 min-w-[260px] rounded-xl border-2 border-ink-4 bg-card p-3 shadow-lg"
         >
           {people.map((p, i) => (
             <div
