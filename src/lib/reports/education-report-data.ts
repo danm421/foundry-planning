@@ -9,8 +9,16 @@ export interface EducationGoalReport {
   name: string;
   rows: EducationGoalReportRow[];
   dedicatedFundsUsed: number;
+  /** Total funded from household cash flow (out-of-pocket) across the goal. */
+  cashFlowFundsUsed: number;
   totalShortfall: number;
-  chart: { labels: string[]; remaining: number[]; withdrawals: number[]; shortfall: number[] };
+  chart: {
+    labels: string[];
+    remaining: number[];
+    withdrawals: number[];
+    outOfPocket: number[];
+    shortfall: number[];
+  };
 }
 
 /** Group ProjectionYear.educationGoals into per-goal report bundles. */
@@ -32,11 +40,13 @@ export function buildEducationReport(
     name: nameById.get(goalId) ?? "Education Goal",
     rows,
     dedicatedFundsUsed: rows.reduce((s, r) => s + r.dedicatedWithdrawal, 0),
+    cashFlowFundsUsed: rows.reduce((s, r) => s + (r.outOfPocketWithdrawal ?? 0), 0),
     totalShortfall: rows.reduce((s, r) => s + r.shortfall, 0),
     chart: {
       labels: rows.map((r) => String(r.year)),
       remaining: rows.map((r) => r.dedicatedAssetsEOY),
       withdrawals: rows.map((r) => r.dedicatedWithdrawal),
+      outOfPocket: rows.map((r) => r.outOfPocketWithdrawal ?? 0),
       shortfall: rows.map((r) => r.shortfall),
     },
   }));

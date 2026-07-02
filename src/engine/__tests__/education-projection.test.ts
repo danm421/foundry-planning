@@ -98,12 +98,13 @@ describe("applyEducationFunding", () => {
     const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
-    expect(goal.shortfall).toBe(15000);
+    expect(goal.shortfall).toBe(15000); // out-of-pocket off → genuinely unfunded
+    expect(goal.outOfPocketWithdrawal).toBe(0);
     // Out-of-pocket off: household checking must NOT absorb the shortfall.
     expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(100000, 6);
   });
 
-  it("spills the shortfall to household cash when out-of-pocket is on", () => {
+  it("out-of-pocket on: gap is a cash-flow withdrawal, not a shortfall", () => {
     const data = makeData(
       [checking, p529(5000)],
       eduExpense({ payShortfallOutOfPocket: true }),
@@ -112,7 +113,10 @@ describe("applyEducationFunding", () => {
     const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
 
     expect(goal.dedicatedWithdrawal).toBe(5000);
-    expect(goal.shortfall).toBe(15000);
+    // The 15k gap is FUNDED from cash flow, so it books as an out-of-pocket
+    // withdrawal and the shortfall is zero.
+    expect(goal.outOfPocketWithdrawal).toBe(15000);
+    expect(goal.shortfall).toBe(0);
     // Checking paid the 15k out-of-pocket portion (100k − 15k).
     expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(85000, 0);
   });

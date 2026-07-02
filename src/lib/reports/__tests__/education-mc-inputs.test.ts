@@ -3,11 +3,11 @@ import { buildEducationMcInput, buildEducationReturnStats } from "../education-m
 import type { EducationGoalReport } from "../education-report-data";
 
 const report = {
-  goalId: "edu", name: "College", dedicatedFundsUsed: 30000, totalShortfall: 10000,
-  chart: { labels: [], remaining: [], withdrawals: [], shortfall: [] },
+  goalId: "edu", name: "College", dedicatedFundsUsed: 30000, cashFlowFundsUsed: 0, totalShortfall: 10000,
+  chart: { labels: [], remaining: [], withdrawals: [], outOfPocket: [], shortfall: [] },
   rows: [
-    { goalId: "edu", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
-    { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, dedicatedAssetsEOY: 0, shortfall: 10000 },
+    { goalId: "edu", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
+    { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 40000, otherExpenseFlows: 0, dedicatedWithdrawal: 30000, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 10000 },
   ],
 } as EducationGoalReport;
 

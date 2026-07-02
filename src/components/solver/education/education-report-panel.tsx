@@ -70,6 +70,12 @@ export function EducationReportPanel({ years, expenses, returnStats, seed }: Pro
                 <span className="text-ink-3">Dedicated Funds Used</span>{" "}
                 <span className="font-semibold text-ink">{formatCurrency(r.dedicatedFundsUsed)}</span>
               </div>
+              {r.cashFlowFundsUsed > 0 && (
+                <div>
+                  <span className="text-ink-3">Cash-Flow Funds Used</span>{" "}
+                  <span className="font-semibold text-ink">{formatCurrency(r.cashFlowFundsUsed)}</span>
+                </div>
+              )}
               <div>
                 <span className="text-ink-3">Shortfall</span>{" "}
                 <span className="font-semibold text-crit">{formatCurrency(r.totalShortfall)}</span>

@@ -4318,6 +4318,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // invariant BOY + G&S − dedicatedWithdrawal − otherExpenseFlows = EOY.
       const otherExpenseFlows = boy + growthAndSavings - drawResult.dedicatedWithdrawal - eoy;
 
+      // The gap not covered by dedicated funds is either FUNDED from cash flow
+      // (out-of-pocket, above) or genuinely unfunded (shortfall) — never both.
+      const outOfPocketWithdrawal = goal.payShortfallOutOfPocket ? drawResult.shortfall : 0;
+      const shortfall = goal.payShortfallOutOfPocket ? 0 : drawResult.shortfall;
+
       educationGoalYears.push({
         goalId: goal.id,
         dedicatedAssetsBOY: boy,
@@ -4325,8 +4330,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         goalExpense: goalCost,
         otherExpenseFlows,
         dedicatedWithdrawal: drawResult.dedicatedWithdrawal,
+        outOfPocketWithdrawal,
         dedicatedAssetsEOY: eoy,
-        shortfall: drawResult.shortfall,
+        shortfall,
       });
     }
 
@@ -4360,6 +4366,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // residual keeps BOY + G&S − withdrawal − otherExpenseFlows = EOY.
         otherExpenseFlows: boy + growthAndSavings - eoy,
         dedicatedWithdrawal: 0,
+        outOfPocketWithdrawal: 0,
         dedicatedAssetsEOY: eoy,
         shortfall: 0,
         accumulation: true,

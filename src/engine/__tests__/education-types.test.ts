@@ -28,6 +28,7 @@ describe("education engine types", () => {
       goalExpense: 0,
       otherExpenseFlows: 0,
       dedicatedWithdrawal: 0,
+      outOfPocketWithdrawal: 0,
       dedicatedAssetsEOY: 31800,
       shortfall: 0,
     };
