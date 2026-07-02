@@ -55,6 +55,7 @@ export interface IncomeView {
   ssBenefitMode?: string | null;
   piaMonthly?: string | null;
   survivorshipPct?: string | null;
+  survivorAnnuityQtipElectOut?: boolean | null;
 }
 
 export function incomeEngineToView(income: EngineIncome): IncomeView {
@@ -81,6 +82,7 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     ssBenefitMode: income.ssBenefitMode ?? null,
     piaMonthly: income.piaMonthly != null ? String(income.piaMonthly) : null,
     survivorshipPct: income.survivorshipPct != null ? String(income.survivorshipPct) : null,
+    survivorAnnuityQtipElectOut: income.survivorAnnuityQtipElectOut ?? null,
   };
 }
 
