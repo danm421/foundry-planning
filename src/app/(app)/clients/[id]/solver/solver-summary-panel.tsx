@@ -7,6 +7,8 @@ import { SUMMARY_TABS, SUMMARY_REGISTRY } from "@/components/solver/summaries/re
 import { SummarySkeleton, SummaryEmpty } from "@/components/solver/summaries/primitives";
 import { useSolverSummaryData } from "./use-solver-summary-data";
 import { SolverRetirementComparisonPanel } from "./solver-retirement-comparison-panel";
+import { SolverLifeInsuranceSummaryPanel } from "./solver-life-insurance-summary-panel";
+import type { LiAssumptions } from "@/lib/life-insurance/schema";
 
 interface Props {
   clientId: string;
@@ -20,6 +22,8 @@ interface Props {
   baseClientData: ClientData;
   baseProjection: ProjectionYear[];
   extraAccountMixes: { accountId: string; mix: { assetClassId: string; weight: number }[] }[];
+  liAssumptions: LiAssumptions;
+  liModelPortfolioLabel: string;
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
 }
@@ -57,22 +61,27 @@ export function SolverSummaryPanel(props: Props) {
   // Hooks below must stay unconditional (rules-of-hooks), so we branch in the
   // JSX rather than returning early.
   const isRetirementComparison = activeSummary === "retirementComparison";
+  // Life Insurance is Run-button-gated like retirementComparison: its coverage
+  // solve is a heavy 250-trial Monte Carlo, so the dedicated panel owns it and
+  // renders instead of the normal build path (once the inventory has loaded).
+  const isLifeInsurance = activeSummary === "lifeInsurance";
 
   const loading =
     (activeSummary === "estate" && estateLoading && !context.projection?.firstDeathEvent) ||
-    (activeSummary === "lifeInsurance" && liLoading && !context.lifeInsurance);
+    (isLifeInsurance && liLoading && !context.lifeInsurance);
 
+  const skipDefaultBuild = loading || isRetirementComparison || isLifeInsurance;
   const data = useMemo<unknown>(() => {
-    if (loading || isRetirementComparison) return null;
+    if (skipDefaultBuild) return null;
     try {
       return def.build(context);
     } catch (err) {
       console.error("[SolverSummaryPanel] summary builder threw for", activeSummary, err);
       return null;
     }
-  }, [def, context, loading, activeSummary, isRetirementComparison]);
+  }, [def, context, skipDefaultBuild, activeSummary]);
   const View = def.Component;
-  const buildFailed = !loading && !isRetirementComparison && data === null;
+  const buildFailed = !skipDefaultBuild && data === null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -86,6 +95,15 @@ export function SolverSummaryPanel(props: Props) {
         />
       ) : loading ? (
         <SummarySkeleton label="Loading…" />
+      ) : isLifeInsurance ? (
+        <SolverLifeInsuranceSummaryPanel
+          clientId={props.clientId}
+          source={props.source}
+          mutations={props.mutations}
+          assumptions={props.liAssumptions}
+          modelPortfolioLabel={props.liModelPortfolioLabel}
+          context={context}
+        />
       ) : buildFailed ? (
         <SummaryEmpty message="This summary is unavailable." />
       ) : (

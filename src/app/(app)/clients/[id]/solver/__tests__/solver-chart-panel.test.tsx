@@ -74,6 +74,7 @@ function ControlledPanel({
       computeStatus={computeStatus}
       clientId="client-1"
       liAssumptions={liAssumptions}
+      liModelPortfolioLabel="Plan default rate"
       clientName="Pat"
       spouseName="Spouse"
       activeReport={activeReport}
@@ -201,6 +202,7 @@ describe("SolverChartPanel", () => {
         computeStatus="fresh"
         clientId="client-1"
         liAssumptions={liAssumptions}
+        liModelPortfolioLabel="Plan default rate"
         clientName="Pat"
         spouseName="Spouse"
         activeReport="portfolio"

@@ -18,16 +18,133 @@ import { computeEstateTaxAddend } from "@/lib/life-insurance/estate-tax-addend";
 import {
   loadLiProceedsGrowth,
   DEFAULT_LI_GROWTH,
+  type LiProceedsGrowth,
 } from "@/lib/life-insurance/load-li-portfolio";
 import { SYNTHETIC_POLICY_ID } from "@/engine/what-if/life-insurance-need";
 import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { LiSolved } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
+import type { ClientData } from "@/engine/types";
 import { hashLifeInsuranceInputs } from "./hash";
 
 /** Production Monte Carlo trial count — matches `DEFAULT_TRIALS` in
- *  solve-need-mc.ts, the value the live solve-mc route uses. */
-const CANONICAL_TRIALS = 250;
+ *  solve-need-mc.ts, the value the live solve-mc route uses. Exported so the
+ *  live solver-summary route solves at the same trial count. */
+export const CANONICAL_TRIALS = 250;
+
+/**
+ * Pure `LiSolved` producer: the over-time curve + client/spouse Monte Carlo
+ * solve + estate-tax addend, assembled exactly as `useLiPresolve.solveScenario`
+ * does. Shared by the cached scenario path (`getOrComputeLifeInsuranceSolve`)
+ * and the live solver-summary route (which solves the working tree directly,
+ * uncached — unsaved mutations change the tree per edit).
+ *
+ * `mcPayload.requiredMinimumAssetLevel` is mutated per case; callers pass a
+ * freshly loaded payload so the mutation is local.
+ */
+export async function computeLiSolved(args: {
+  tree: ClientData;
+  mcPayload: MonteCarloPayload;
+  proceeds: LiProceedsGrowth;
+  assumptions: LiAssumptions;
+  modelPortfolioLabel: string;
+  trials: number;
+}): Promise<LiSolved> {
+  const { tree, mcPayload, proceeds, assumptions, modelPortfolioLabel, trials } = args;
+
+  // 1) Over-time curve (deterministic straight-line solve, one row per plan
+  //    year). Same assumptions shape the over-time route builds.
+  const overTimeAssumptions: Omit<LifeInsuranceAssumptions, "deathYear"> = {
+    proceedsGrowthRate: proceeds.rate,
+    proceedsRealization: proceeds.realization,
+    leaveToHeirsAmount: assumptions.leaveToHeirsAmount,
+    livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
+    payoffLiabilityIds: assumptions.payoffLiabilityIds,
+  };
+  const rows = computeNeedOverTime(
+    tree,
+    overTimeAssumptions,
+    assumptions.coverEstateTaxes,
+  );
+  // The launcher maps rows down to { year, clientNeed, spouseNeed } (it drops
+  // the status fields); reproduce that projection field-for-field.
+  const curveRows: LiSolved["curveRows"] = rows.map((x) => ({
+    year: x.year,
+    clientNeed: x.clientNeed,
+    spouseNeed: x.spouseNeed,
+  }));
+
+  // 2) Monte Carlo solve. Mirror solve-mc route: build the solve assumptions,
+  //    detect spouse via hasSpouse, fold each per-case estate-tax addend into
+  //    requiredMinimumAssetLevel before that case's solve.
+  const solveAssumptions: LifeInsuranceAssumptions & { mcTargetScore: number } = {
+    deathYear: assumptions.deathYear,
+    proceedsGrowthRate: proceeds.rate,
+    proceedsRealization: proceeds.realization,
+    leaveToHeirsAmount: assumptions.leaveToHeirsAmount,
+    livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
+    payoffLiabilityIds: assumptions.payoffLiabilityIds,
+    mcTargetScore: assumptions.mcTargetScore,
+  };
+
+  const isMarried = hasSpouse(tree);
+
+  const clientAddend = assumptions.coverEstateTaxes
+    ? computeEstateTaxAddend(tree, "client", solveAssumptions)
+    : 0;
+  const spouseAddend =
+    assumptions.coverEstateTaxes && isMarried
+      ? computeEstateTaxAddend(tree, "spouse", solveAssumptions)
+      : 0;
+
+  mcPayload.requiredMinimumAssetLevel =
+    assumptions.leaveToHeirsAmount + clientAddend;
+  const clientResult = await solveLifeInsuranceNeedMc(
+    tree,
+    "client",
+    solveAssumptions,
+    mcPayload,
+    { trials },
+  );
+
+  let mcSpouse: LiSolved["mcSpouse"] = null;
+  if (isMarried) {
+    mcPayload.requiredMinimumAssetLevel =
+      assumptions.leaveToHeirsAmount + spouseAddend;
+    const spouseResult = await solveLifeInsuranceNeedMc(
+      tree,
+      "spouse",
+      solveAssumptions,
+      mcPayload,
+      { trials },
+    );
+    mcSpouse = {
+      status: spouseResult.status,
+      faceValue: spouseResult.faceValue,
+      achievedScore: spouseResult.achievedScore,
+    };
+  }
+
+  // Assemble the LiSolved exactly as `useLiPresolve.solveScenario` does: the
+  // MC results are narrowed to { status, faceValue, achievedScore } (iterations
+  // and estateTaxAddend are dropped), and assumptions carries only deathYear,
+  // modelPortfolioLabel, mcTargetScore.
+  return {
+    curveRows,
+    mcClient: {
+      status: clientResult.status,
+      faceValue: clientResult.faceValue,
+      achievedScore: clientResult.achievedScore,
+    },
+    mcSpouse,
+    assumptions: {
+      deathYear: assumptions.deathYear,
+      modelPortfolioLabel,
+      mcTargetScore: assumptions.mcTargetScore,
+    },
+  };
+}
 
 export async function getOrComputeLifeInsuranceSolve(args: {
   clientId: string;
@@ -75,98 +192,14 @@ export async function getOrComputeLifeInsuranceSolve(args: {
     trials: CANONICAL_TRIALS,
     forceRefresh: args.forceRefresh,
     label: "life_insurance_solve",
-    compute: async () => {
-      // 1) Over-time curve (deterministic straight-line solve, one row per plan
-      //    year). Same assumptions shape the over-time route builds.
-      const overTimeAssumptions: Omit<LifeInsuranceAssumptions, "deathYear"> = {
-        proceedsGrowthRate: proceeds.rate,
-        proceedsRealization: proceeds.realization,
-        leaveToHeirsAmount: args.assumptions.leaveToHeirsAmount,
-        livingExpenseAtDeath: args.assumptions.livingExpenseAtDeath,
-        payoffLiabilityIds: args.assumptions.payoffLiabilityIds,
-      };
-      const rows = computeNeedOverTime(
-        effectiveTree,
-        overTimeAssumptions,
-        args.assumptions.coverEstateTaxes,
-      );
-      // The launcher maps rows down to { year, clientNeed, spouseNeed } (it drops
-      // the status fields); reproduce that projection field-for-field.
-      const curveRows: LiSolved["curveRows"] = rows.map((x) => ({
-        year: x.year,
-        clientNeed: x.clientNeed,
-        spouseNeed: x.spouseNeed,
-      }));
-
-      // 2) Monte Carlo solve. Mirror solve-mc route: build the solve assumptions,
-      //    detect spouse via hasSpouse, fold each per-case estate-tax addend into
-      //    requiredMinimumAssetLevel before that case's solve.
-      const solveAssumptions: LifeInsuranceAssumptions & { mcTargetScore: number } = {
-        deathYear: args.assumptions.deathYear,
-        proceedsGrowthRate: proceeds.rate,
-        proceedsRealization: proceeds.realization,
-        leaveToHeirsAmount: args.assumptions.leaveToHeirsAmount,
-        livingExpenseAtDeath: args.assumptions.livingExpenseAtDeath,
-        payoffLiabilityIds: args.assumptions.payoffLiabilityIds,
-        mcTargetScore: args.assumptions.mcTargetScore,
-      };
-
-      const isMarried = hasSpouse(effectiveTree);
-
-      const clientAddend = args.assumptions.coverEstateTaxes
-        ? computeEstateTaxAddend(effectiveTree, "client", solveAssumptions)
-        : 0;
-      const spouseAddend =
-        args.assumptions.coverEstateTaxes && isMarried
-          ? computeEstateTaxAddend(effectiveTree, "spouse", solveAssumptions)
-          : 0;
-
-      mcPayload.requiredMinimumAssetLevel =
-        args.assumptions.leaveToHeirsAmount + clientAddend;
-      const clientResult = await solveLifeInsuranceNeedMc(
-        effectiveTree,
-        "client",
-        solveAssumptions,
+    compute: async () =>
+      computeLiSolved({
+        tree: effectiveTree,
         mcPayload,
-        { trials: CANONICAL_TRIALS },
-      );
-
-      let mcSpouse: LiSolved["mcSpouse"] = null;
-      if (isMarried) {
-        mcPayload.requiredMinimumAssetLevel =
-          args.assumptions.leaveToHeirsAmount + spouseAddend;
-        const spouseResult = await solveLifeInsuranceNeedMc(
-          effectiveTree,
-          "spouse",
-          solveAssumptions,
-          mcPayload,
-          { trials: CANONICAL_TRIALS },
-        );
-        mcSpouse = {
-          status: spouseResult.status,
-          faceValue: spouseResult.faceValue,
-          achievedScore: spouseResult.achievedScore,
-        };
-      }
-
-      // Assemble the LiSolved exactly as `useLiPresolve.solveScenario` does: the
-      // MC results are narrowed to { status, faceValue, achievedScore } (iterations
-      // and estateTaxAddend are dropped), and assumptions carries only deathYear,
-      // modelPortfolioLabel, mcTargetScore.
-      return {
-        curveRows,
-        mcClient: {
-          status: clientResult.status,
-          faceValue: clientResult.faceValue,
-          achievedScore: clientResult.achievedScore,
-        },
-        mcSpouse,
-        assumptions: {
-          deathYear: args.assumptions.deathYear,
-          modelPortfolioLabel: args.modelPortfolioLabel,
-          mcTargetScore: args.assumptions.mcTargetScore,
-        },
-      };
-    },
+        proceeds,
+        assumptions: args.assumptions,
+        modelPortfolioLabel: args.modelPortfolioLabel,
+        trials: CANONICAL_TRIALS,
+      }),
   });
 }

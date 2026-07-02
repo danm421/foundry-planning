@@ -22,9 +22,12 @@ vi.mock("@/components/solver/summaries/registry", () => {
   };
 });
 
-// Stub the Run-button panel so this test doesn't pull in the fetch hook/charts.
+// Stub the Run-button panels so this test doesn't pull in the fetch hook/charts.
 vi.mock("../solver-retirement-comparison-panel", () => ({
   SolverRetirementComparisonPanel: () => <div data-testid="rc-panel" />,
+}));
+vi.mock("../solver-life-insurance-summary-panel", () => ({
+  SolverLifeInsuranceSummaryPanel: () => <div data-testid="li-panel" />,
 }));
 
 const fetchMock = vi.fn();
@@ -40,6 +43,8 @@ const base = {
   baseClientData: { client: {} } as never,
   baseProjection: years,
   extraAccountMixes: [],
+  liAssumptions: {} as never,
+  liModelPortfolioLabel: "Plan default rate",
 };
 
 describe("SolverSummaryPanel", () => {

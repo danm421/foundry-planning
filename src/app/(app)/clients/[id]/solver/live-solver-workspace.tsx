@@ -208,6 +208,13 @@ export function LiveSolverWorkspace({
     activeTab === "life_insurance" || activeReport === "lifeInsurance";
   const liSolve = useLiNeedSolve(clientId, liAssumptions, liEnabled);
 
+  // Display label for the LI-proceeds portfolio, resolved from the picker
+  // selection (null → the "Plan default rate" option). Carried into the summary
+  // Life Insurance tab's Run-button solve → LiSolved.assumptions.modelPortfolioLabel.
+  const liModelPortfolioLabel =
+    modelPortfolios.find((p) => p.id === liAssumptions.modelPortfolioId)?.name ??
+    "Plan default rate";
+
   const [currentProjection, setCurrentProjection] = useState<ProjectionYear[]>(
     initialSourceProjection,
   );
@@ -1261,6 +1268,7 @@ export function LiveSolverWorkspace({
               computeStatus={computeStatus}
               clientId={clientId}
               liAssumptions={liAssumptions}
+              liModelPortfolioLabel={liModelPortfolioLabel}
               clientName={clientName}
               spouseName={spouseName}
               activeReport={activeReport}
