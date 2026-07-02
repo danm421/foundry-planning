@@ -4192,28 +4192,42 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         );
 
     // Credit employee contributions to destination accounts and debit household checking.
+    // A 529 funded by an OUTSIDE grantor (education_savings account whose
+    // education529.grantorFamilyMemberId is null/undefined — e.g. a grandparent)
+    // still receives its contribution as an account credit, but the money is a
+    // gift arriving from outside the plan: household checking is NOT debited
+    // (same shape as an employer match). Household-grantor 529s keep the
+    // existing behavior — checking is debited.
+    let householdFundedTotal = savings.total;
     for (const [acctId, amount] of Object.entries(savings.byAccount)) {
       if (notYetActive.has(acctId)) continue; // pre-activation account: no contributions yet
       if (amount === 0) continue;
+      const dest = accountById.get(acctId);
+      const externallyFunded =
+        dest?.category === "education_savings" &&
+        !dest.education529?.grantorFamilyMemberId;
+      if (externallyFunded) householdFundedTotal -= amount;
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + amount;
       if (accountLedgers[acctId]) {
         accountLedgers[acctId].contributions += amount;
         accountLedgers[acctId].endingValue += amount;
-        const destName = data.accounts.find((a) => a.id === acctId)?.name ?? "account";
+        const destName = dest?.name ?? "account";
         accountLedgers[acctId].entries.push({
           category: "savings_contribution",
           label: `Contribution to ${destName}`,
           amount,
           sourceId: acctId,
           basis: 0, // pre-tax 401k/403b contribution carries no cost basis
-          counterpartyId: defaultChecking?.id, // money came from household cash
+          // Externally-funded 529: money came from outside the plan, so there is
+          // no household-cash counterparty to reconcile against.
+          counterpartyId: externallyFunded ? undefined : defaultChecking?.id,
         });
       }
     }
-    creditCash(defaultChecking?.id, -savings.total, {
+    creditCash(defaultChecking?.id, -householdFundedTotal, {
       category: "savings_contribution",
       label: "Savings contributions",
-      basis: -savings.total, // cash outflow: basis conserves 1:1 with amount
+      basis: -householdFundedTotal, // cash outflow: basis conserves 1:1 with amount
     });
 
     // ── Education goals: dedicated funding pass ──────────────────────────────
