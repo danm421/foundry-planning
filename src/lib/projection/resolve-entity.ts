@@ -285,6 +285,7 @@ type RawIncome = {
   ssBenefitMode?: string | null;
   piaMonthly?: string | number | null;
   survivorshipPct?: string | number | null;
+  survivorAnnuityQtipElectOut?: boolean | null;
   claimingAgeMonths?: number | null;
   claimingAgeMode?: string | null;
   startYearRef?: string | null;
@@ -317,6 +318,7 @@ export function resolveIncomeFromRaw(
     ssBenefitMode: (raw.ssBenefitMode as Income["ssBenefitMode"]) ?? undefined,
     piaMonthly: nNullable(raw.piaMonthly),
     survivorshipPct: raw.survivorshipPct != null ? n(raw.survivorshipPct) : null,
+    survivorAnnuityQtipElectOut: raw.survivorAnnuityQtipElectOut ?? null,
     claimingAgeMonths: raw.claimingAgeMonths ?? 0,
     claimingAgeMode: (raw.claimingAgeMode as Income["claimingAgeMode"]) ?? undefined,
     scheduleOverrides: raw.scheduleOverrides,
