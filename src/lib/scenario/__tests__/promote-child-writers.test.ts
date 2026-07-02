@@ -1,10 +1,12 @@
 // src/lib/scenario/__tests__/promote-child-writers.test.ts
 import { describe, it, expect } from "vitest";
+import { expenseDedicatedAccounts } from "@/db/schema";
 import {
   writeAccountChildren,
   writeLiabilityChildren,
   writeIncomeChildren,
   writeExpenseChildren,
+  updateExpenseChildren,
   writeSavingsRuleChildren,
   writeTransferChildren,
   writeRothConversionChildren,
@@ -12,9 +14,10 @@ import {
   writeWillChildren,
 } from "../promote-child-writers";
 
-// Minimal fake tx that records insert operations.
+// Minimal fake tx that records insert + delete operations.
 function makeTx(returnedId?: string) {
   const inserted: { table: unknown; values: unknown }[] = [];
+  const deleted: { table: unknown }[] = [];
   const tx = {
     insert: (table: unknown) => ({
       values: async (values: unknown) => {
@@ -22,9 +25,21 @@ function makeTx(returnedId?: string) {
         return [{ id: returnedId ?? "child-id" }];
       },
     }),
+    delete: (table: unknown) => ({
+      where: async () => {
+        deleted.push({ table });
+      },
+    }),
   };
-  return { tx, inserted };
+  return { tx, inserted, deleted };
 }
+
+/** ChildWriter ctx with an optional synthetic-id → DB-uuid remap. */
+const makeCtx = (idRemap = new Map<string, string>()) => ({
+  clientId: "c1",
+  baseScenarioId: "base1",
+  idRemap,
+});
 
 // ── writeAccountChildren ───────────────────────────────────────────────────
 
@@ -160,7 +175,7 @@ describe("writeExpenseChildren", () => {
   it("writes expense schedule overrides", async () => {
     const { tx, inserted } = makeTx();
     const raw = { scheduleOverrides: { 2032: 12000 } };
-    await writeExpenseChildren(tx as never, "exp-id", raw);
+    await writeExpenseChildren(tx as never, "exp-id", raw, makeCtx());
     expect(inserted).toHaveLength(1);
     const vals = inserted[0].values as Record<string, unknown>;
     expect(vals.expenseId).toBe("exp-id");
@@ -168,10 +183,104 @@ describe("writeExpenseChildren", () => {
     expect(vals.amount).toBe("12000");
   });
 
-  it("skips when no scheduleOverrides", async () => {
+  it("writes dedicated-account join rows in draw order", async () => {
     const { tx, inserted } = makeTx();
-    await writeExpenseChildren(tx as never, "exp2", {});
+    const raw = { dedicatedAccountIds: ["a529-1", "a529-2"] };
+    await writeExpenseChildren(tx as never, "exp-id", raw, makeCtx());
+    expect(inserted).toHaveLength(2);
+    expect(inserted[0].table).toBe(expenseDedicatedAccounts);
+    const vals0 = inserted[0].values as Record<string, unknown>;
+    const vals1 = inserted[1].values as Record<string, unknown>;
+    expect(vals0).toMatchObject({ expenseId: "exp-id", accountId: "a529-1", sortOrder: 0 });
+    expect(vals1).toMatchObject({ expenseId: "exp-id", accountId: "a529-2", sortOrder: 1 });
+  });
+
+  it("dedupes dedicated ids to respect the (expense_id, account_id) unique constraint", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { dedicatedAccountIds: ["a1", "a1", "a2"] };
+    await writeExpenseChildren(tx as never, "exp-id", raw, makeCtx());
+    expect(inserted).toHaveLength(2);
+    const ids = inserted.map((r) => (r.values as Record<string, unknown>).accountId);
+    expect(ids).toEqual(["a1", "a2"]);
+  });
+
+  it("remaps same-batch synthetic account ids via ctx.idRemap", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { dedicatedAccountIds: ["syn-529"] };
+    await writeExpenseChildren(
+      tx as never,
+      "exp-id",
+      raw,
+      makeCtx(new Map([["syn-529", "db-529"]])),
+    );
+    expect(inserted).toHaveLength(1);
+    expect((inserted[0].values as Record<string, unknown>).accountId).toBe("db-529");
+  });
+
+  it("writes both schedule overrides and dedicated rows", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { scheduleOverrides: { 2032: 12000 }, dedicatedAccountIds: ["a1"] };
+    await writeExpenseChildren(tx as never, "exp-id", raw, makeCtx());
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("skips when no scheduleOverrides or dedicated ids", async () => {
+    const { tx, inserted } = makeTx();
+    await writeExpenseChildren(tx as never, "exp2", {}, makeCtx());
+    await writeExpenseChildren(tx as never, "exp2", { dedicatedAccountIds: [] }, makeCtx());
     expect(inserted).toHaveLength(0);
+  });
+});
+
+// ── updateExpenseChildren ──────────────────────────────────────────────────
+
+describe("updateExpenseChildren", () => {
+  it("no-ops when dedicatedAccountIds is not in the edit set", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateExpenseChildren(tx as never, "exp-id", { annualAmount: 20000 }, makeCtx());
+    expect(inserted).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it("rewrites dedicated rows (delete-then-reinsert) in draw order", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    const set = { annualAmount: 20000, dedicatedAccountIds: ["a2", "a1"] };
+    await updateExpenseChildren(tx as never, "exp-id", set, makeCtx());
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].table).toBe(expenseDedicatedAccounts);
+    expect(inserted).toHaveLength(2);
+    expect(inserted[0].values as Record<string, unknown>).toMatchObject({
+      expenseId: "exp-id",
+      accountId: "a2",
+      sortOrder: 0,
+    });
+    expect(inserted[1].values as Record<string, unknown>).toMatchObject({
+      expenseId: "exp-id",
+      accountId: "a1",
+      sortOrder: 1,
+    });
+  });
+
+  it("clears all rows when the edit set carries an empty or undefined value", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateExpenseChildren(tx as never, "e1", { dedicatedAccountIds: [] }, makeCtx());
+    await updateExpenseChildren(tx as never, "e2", { dedicatedAccountIds: undefined }, makeCtx());
+    expect(deleted).toHaveLength(2);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("dedupes and remaps synthetic ids via ctx.idRemap", async () => {
+    const { tx, inserted } = makeTx();
+    const set = { dedicatedAccountIds: ["syn-529", "syn-529", "a1"] };
+    await updateExpenseChildren(
+      tx as never,
+      "exp-id",
+      set,
+      makeCtx(new Map([["syn-529", "db-529"]])),
+    );
+    expect(inserted).toHaveLength(2);
+    const ids = inserted.map((r) => (r.values as Record<string, unknown>).accountId);
+    expect(ids).toEqual(["db-529", "a1"]);
   });
 });
 

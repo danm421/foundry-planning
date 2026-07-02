@@ -8,12 +8,14 @@
 // Field mapping follows the same patterns established in:
 //   - save-to-base/route.ts  (account owners)
 //   - create-with-clone.ts   (savings/transfer/roth children)
+import { eq } from "drizzle-orm";
 import {
   accountOwners,
   liabilityOwners,
   extraPayments,
   incomeScheduleOverrides,
   expenseScheduleOverrides,
+  expenseDedicatedAccounts,
   savingsScheduleOverrides,
   transferSchedules,
   reinvestmentAccounts,
@@ -24,7 +26,7 @@ import {
   willResiduaryRecipients,
 } from "@/db/schema";
 import { coerceForTable } from "./promote-coerce";
-import type { PromoteTx } from "./promote-table-registry";
+import type { PromoteTx, ChildWriterCtx } from "./promote-table-registry";
 
 // ── Account children ───────────────────────────────────────────────────────
 
@@ -106,15 +108,39 @@ export async function writeIncomeChildren(
 
 // ── Expense children ───────────────────────────────────────────────────────
 
-/** Inserts expenseScheduleOverrides rows from raw.scheduleOverrides. */
+/** Inserts expenseDedicatedAccounts rows in draw order (array index =
+ *  sortOrder). Dedupes to respect the (expense_id, account_id) unique
+ *  constraint and remaps solver/scenario-synthetic account ids via
+ *  ctx.idRemap (a dedicated 529 may be inserted in the same promote batch).
+ *  Mirrors save-to-base's insertExpenseDedicatedRows. */
+async function insertExpenseDedicatedRows(
+  tx: PromoteTx,
+  expenseId: string,
+  accountIds: string[] | undefined,
+  idRemap: Map<string, string>,
+): Promise<void> {
+  const deduped = [...new Set(accountIds ?? [])];
+  if (deduped.length === 0) return;
+  for (let i = 0; i < deduped.length; i++) {
+    await tx.insert(expenseDedicatedAccounts).values({
+      expenseId,
+      accountId: idRemap.get(deduped[i]) ?? deduped[i],
+      sortOrder: i,
+    } as never);
+  }
+}
+
+/** Inserts expenseScheduleOverrides rows from raw.scheduleOverrides and
+ *  expenseDedicatedAccounts rows from raw.dedicatedAccountIds (education
+ *  goals' dedicated funding sources). */
 export async function writeExpenseChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   const overrides = raw.scheduleOverrides as Record<number, number> | undefined;
-  if (!overrides) return;
-  for (const [year, amount] of Object.entries(overrides)) {
+  for (const [year, amount] of Object.entries(overrides ?? {})) {
     const values = coerceForTable(expenseScheduleOverrides, {
       expenseId: parentId,
       year: Number(year),
@@ -122,6 +148,36 @@ export async function writeExpenseChildren(
     });
     await tx.insert(expenseScheduleOverrides).values(values as never);
   }
+
+  await insertExpenseDedicatedRows(
+    tx,
+    parentId,
+    raw.dedicatedAccountIds as string[] | undefined,
+    ctx.idRemap,
+  );
+}
+
+/** Rewrites expenseDedicatedAccounts after an expense EDIT. The edit set only
+ *  carries `dedicatedAccountIds` when the scenario changed it (field diff), so
+ *  absence means "leave the base rows alone"; a present-but-empty/undefined
+ *  value means the funding was cleared. Delete-then-reinsert mirrors
+ *  updateExpenseForClient (expenses-writes.ts). */
+export async function updateExpenseChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Record<string, unknown>,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  if (!("dedicatedAccountIds" in set)) return;
+  await tx
+    .delete(expenseDedicatedAccounts)
+    .where(eq(expenseDedicatedAccounts.expenseId, parentId));
+  await insertExpenseDedicatedRows(
+    tx,
+    parentId,
+    (set.dedicatedAccountIds ?? undefined) as string[] | undefined,
+    ctx.idRemap,
+  );
 }
 
 // ── SavingsRule children ───────────────────────────────────────────────────

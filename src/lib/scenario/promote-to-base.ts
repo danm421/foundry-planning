@@ -33,7 +33,11 @@ import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/ch
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { recordAudit } from "@/lib/audit";
 import type { ToggleState } from "@/engine/scenario/types";
-import { scenarioChangesToBaseWrites } from "./scenario-changes-to-base-writes";
+import { assertAccountsInClient } from "@/lib/db-scoping";
+import {
+  scenarioChangesToBaseWrites,
+  collectExternalDedicatedAccountIds,
+} from "./scenario-changes-to-base-writes";
 import { executeBaseWritePlan } from "./execute-base-write-plan";
 import {
   copyFlowOverridesToBase,
@@ -61,7 +65,7 @@ export interface PromoteResult {
 
 export class PromoteError extends Error {
   constructor(
-    public code: "no_base",
+    public code: "no_base" | "invalid_ref",
     message: string,
   ) {
     super(message);
@@ -104,6 +108,18 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
   let notes = { kept: 0, dropped: 0 };
   try {
     const plan = scenarioChangesToBaseWrites(baseTree, changes, groups, toggleState);
+
+    // Tenant guard: expense_dedicated_accounts.account_id is a GLOBAL FK (no
+    // tenant column), so every dedicated-account id not satisfied by an
+    // in-batch account insert must already belong to this client — otherwise
+    // a crafted id could link another firm's account (or FK-crash the txn).
+    // Mirrors save-to-base's pre-transaction guard.
+    const dedicatedCheck = await assertAccountsInClient(
+      clientId,
+      collectExternalDedicatedAccountIds(plan),
+    );
+    if (!dedicatedCheck.ok) throw new PromoteError("invalid_ref", dedicatedCheck.reason);
+
     await db.transaction(async (tx) => {
       counts = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });
       await copyFlowOverridesToBase(tx, { clientId, scenarioId, baseScenarioId });

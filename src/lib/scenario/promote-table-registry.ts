@@ -34,6 +34,7 @@ import {
   writeLiabilityChildren,
   writeIncomeChildren,
   writeExpenseChildren,
+  updateExpenseChildren,
   writeSavingsRuleChildren,
   writeTransferChildren,
   writeRothConversionChildren,
@@ -47,18 +48,32 @@ export type PromoteTx = Parameters<
   Parameters<(typeof import("@/db"))["db"]["transaction"]>[0]
 >[0];
 
+/** Context threaded into child writers/updaters. `idRemap` maps synthetic add
+ *  ids → DB-generated uuids; the executor inserts accounts first, so any
+ *  same-batch account reference is already remapped by the time a dependent
+ *  kind's writer runs. */
+export interface ChildWriterCtx {
+  clientId: string;
+  baseScenarioId: string;
+  idRemap: Map<string, string>;
+}
+
 /** A child writer inserts the nested rows of an add payload after the parent
  *  row exists. parentId is the DB-generated parent uuid. Implemented in Task 7. */
 export type ChildWriter = (
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
-  ctx: { clientId: string; baseScenarioId: string },
+  ctx: ChildWriterCtx,
 ) => Promise<void>;
 
 export interface RegistryEntry {
   table: PgTable;
   childWriter?: ChildWriter;
+  /** Rewrites child rows after an EDIT to the parent. Receives the edit's
+   *  `set` (the diff's `to` values) instead of an add payload; the executor
+   *  only calls it when the parent UPDATE matched a base row. */
+  childUpdater?: ChildWriter;
 }
 
 /** Kinds that only ever appear nested inside a parent add payload. */
@@ -78,7 +93,11 @@ export const NESTED_ONLY_KINDS = new Set<TargetKind>([
 export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> = {
   account: { table: accounts, childWriter: writeAccountChildren },
   income: { table: incomes, childWriter: writeIncomeChildren },
-  expense: { table: expenses, childWriter: writeExpenseChildren },
+  expense: {
+    table: expenses,
+    childWriter: writeExpenseChildren,
+    childUpdater: updateExpenseChildren,
+  },
   liability: { table: liabilities, childWriter: writeLiabilityChildren },
   savings_rule: { table: savingsRules, childWriter: writeSavingsRuleChildren },
   withdrawal_strategy: { table: withdrawalStrategies },

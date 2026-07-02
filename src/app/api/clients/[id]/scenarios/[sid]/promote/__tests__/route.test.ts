@@ -116,6 +116,15 @@ describe("POST promote route", () => {
     expect(res.status).toBe(409);
   });
 
+  it("maps PromoteError(invalid_ref) to 400", async () => {
+    vi.mocked(assertScenarioRouteScope).mockResolvedValue(okScope() as never);
+    vi.mocked(promoteScenarioToBase).mockRejectedValue(
+      new PromoteError("invalid_ref", "Account x not owned by this client"),
+    );
+    const res = await POST(makeRequest({}), ctx);
+    expect(res.status).toBe(400);
+  });
+
   it("rejects a malformed toggleState body (400)", async () => {
     vi.mocked(assertScenarioRouteScope).mockResolvedValue(okScope() as never);
     const res = await POST(makeRequest({ toggleState: { g1: "yes" } }), ctx);
