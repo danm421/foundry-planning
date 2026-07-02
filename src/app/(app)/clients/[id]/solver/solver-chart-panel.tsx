@@ -484,7 +484,11 @@ export function SolverChartPanel({
         tab === "taxBracket" ? (
           <TaxBracketTab years={currentProjection} />
         ) : (
-          <SolverYearTablePanel years={currentProjection} hasSpouse={isMarried} />
+          <SolverYearTablePanel
+            years={currentProjection}
+            hasSpouse={isMarried}
+            clientData={workingTree}
+          />
         )
       ) : null}
 
