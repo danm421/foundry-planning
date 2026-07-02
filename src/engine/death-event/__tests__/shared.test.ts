@@ -71,4 +71,19 @@ describe("applyIncomeTermination survivor continuation", () => {
     expect(out.owner).toBe("client");
     expect(out.endYear).toBe(2040);
   });
+
+  it("clips (does not continue) a deferred income driven by scheduleOverrides", () => {
+    // scheduleOverrides bypasses annualAmount, so scaling can't produce the
+    // reduced survivor stream — survivorship is unsupported for override-driven
+    // incomes; the income clips at the owner's death instead.
+    const [out] = applyIncomeTermination(
+      [deferred({ scheduleOverrides: { 2041: 40_000 } })],
+      "client",
+      "spouse",
+      2040,
+      { survivorDeathYear: 2060 },
+    );
+    expect(out.owner).toBe("client");
+    expect(out.endYear).toBe(2040);
+  });
 });

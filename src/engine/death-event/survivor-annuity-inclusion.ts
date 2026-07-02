@@ -26,6 +26,11 @@ export function computeSurvivorAnnuityInclusion(input: {
     if (inc.owner !== deceased) continue;
     const pct = inc.survivorshipPct ?? 0;
     if (pct <= 0) continue;
+    // scheduleOverrides bypasses annualAmount·growth in computeIncome — the PV
+    // helper would value a stream the projection never pays. Survivorship is
+    // unsupported for override-driven incomes; emit no inclusion line (matching
+    // applyIncomeTermination, which clips rather than continuing these).
+    if (inc.scheduleOverrides) continue;
 
     const pv = survivorAnnuityPresentValue({
       annualAmount: inc.annualAmount,

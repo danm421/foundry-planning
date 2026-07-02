@@ -31,6 +31,19 @@ describe("computeSurvivorAnnuityInclusion", () => {
     expect(none.lines).toHaveLength(0);
   });
 
+  it("emits nothing for a deferred income driven by scheduleOverrides", () => {
+    // scheduleOverrides bypasses annualAmount·growth — the stream the PV helper
+    // values is never paid, so survivorship is unsupported for override-driven
+    // incomes and no inclusion line is emitted.
+    const none = computeSurvivorAnnuityInclusion({
+      incomes: [{ ...pension, scheduleOverrides: { 2041: 40_000 } }],
+      deceased: "spouse", deathYear: 2050,
+      survivorBirthYear: 1965, survivorLifeExpectancy: 90,
+      planSettings: { pvDiscountRate: 0.024, inflationRate: 0.024 },
+    });
+    expect(none.lines).toHaveLength(0);
+  });
+
   it("emits nothing when survivor life expectancy is unknown", () => {
     const none = computeSurvivorAnnuityInclusion({
       incomes: [pension], deceased: "spouse", deathYear: 2050,

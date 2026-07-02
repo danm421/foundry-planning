@@ -1162,6 +1162,11 @@ export function applyIncomeTermination(
         survivorContinuation &&
         inc.type === "deferred" &&
         pct > 0 &&
+        // scheduleOverrides bypasses annualAmount in computeIncome, so scaling
+        // annualAmount can't produce the pct-reduced stream — survivorship is
+        // unsupported for override-driven incomes. Fall through to the CLIP
+        // branch (income ends at owner death, the correct pre-feature default).
+        !inc.scheduleOverrides &&
         survivorContinuation.survivorDeathYear > deathYear
       ) {
         // ASSUMPTION (Task 6 must verify the death-year amount): the owner's
