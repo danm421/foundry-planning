@@ -28,9 +28,11 @@ describe("summarizeHoldingsOptions", () => {
 
 describe("estimateHoldingsPageCount", () => {
   it("is data-independent and returns 1", () => {
-    expect(estimateHoldingsPageCount(undefined as never, HOLDINGS_OPTIONS_DEFAULT)).toBe(1);
-    expect(
-      estimateHoldingsPageCount(undefined as never, { groupByAccount: false, includeCostBasis: false }),
-    ).toBe(1);
+    // Zero-arg like the asset-allocation sibling; the registry slot still
+    // types it as (data, options) => number, so exercise it through that shape.
+    const asRegistrySlot: (data: unknown, options: unknown) => number =
+      estimateHoldingsPageCount;
+    expect(asRegistrySlot(undefined, HOLDINGS_OPTIONS_DEFAULT)).toBe(1);
+    expect(asRegistrySlot(undefined, { groupByAccount: false, includeCostBasis: false })).toBe(1);
   });
 });
