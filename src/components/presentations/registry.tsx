@@ -62,6 +62,17 @@ import {
 import type { AssumptionsPageData } from "@/lib/presentations/pages/assumptions/types";
 import { AssumptionsPagePdf } from "./pages/assumptions/page-pdf";
 import { AssumptionsOptionsControl } from "./pages/assumptions/options-control";
+import { buildHoldingsData } from "@/lib/presentations/pages/holdings/view-model";
+import { estimateHoldingsPageCount } from "@/lib/presentations/pages/holdings/estimate-page-count";
+import { summarizeHoldingsOptions } from "@/lib/presentations/pages/holdings/summarize-options";
+import {
+  holdingsOptionsSchema,
+  HOLDINGS_OPTIONS_DEFAULT,
+  type HoldingsPageOptions,
+} from "@/lib/presentations/pages/holdings/options-schema";
+import type { HoldingsPageData } from "@/lib/presentations/pages/holdings/types";
+import { HoldingsPagePdf } from "./pages/holdings/page-pdf";
+import { HoldingsOptionsControl } from "./pages/holdings/options-control";
 // Shared drill-down infrastructure used by every Cash Flow > * drill page.
 import { DrillPagePdf } from "./shared/drill-page-pdf";
 import { DrillOptionsControl } from "./shared/drill-options-control";
@@ -493,6 +504,26 @@ export const assumptionsPage: PresentationPage<AssumptionsPageData, AssumptionsP
       options,
     }),
   renderPdf: (input) => <AssumptionsPagePdf {...input} />,
+};
+
+export const holdingsPage: PresentationPage<HoldingsPageData, HoldingsPageOptions> = {
+  id: "holdings",
+  title: "Holdings",
+  description: "Every position by account — shares, price, market value, and gain/loss.",
+  category: "Assets",
+  defaultOptions: HOLDINGS_OPTIONS_DEFAULT,
+  optionsSchema: holdingsOptionsSchema,
+  summarizeOptions: summarizeHoldingsOptions,
+  estimatePageCount: estimateHoldingsPageCount,
+  OptionsControl: HoldingsOptionsControl,
+  supportsScenarioOverride: false,
+  buildData: (ctx, options) =>
+    buildHoldingsData({
+      holdings: ctx.investments?.holdings,
+      reportDate: ctx.reportDate,
+      options,
+    }),
+  renderPdf: (input) => <HoldingsPagePdf {...input} />,
 };
 
 export const blankPage: PresentationPage<BlankPageData, BlankPageOptions> = {
@@ -1051,6 +1082,7 @@ export const PRESENTATION_PAGES = {
   monteCarlo: monteCarloPage,
   assetAllocation: assetAllocationPage,
   portfolioAnalysis: portfolioAnalysisPage,
+  holdings: holdingsPage,
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,
   scenarioChanges: scenarioChangesPage,
