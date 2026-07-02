@@ -1,6 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import type { CellDrillProps } from "@/lib/cell-drill/types";
+import { CellDrillDownModal } from "@/components/cell-drill-down-modal";
 
 export interface YearTableColumn<Row> {
   key: string;
@@ -8,6 +10,9 @@ export interface YearTableColumn<Row> {
   align?: "left" | "right";
   render: (row: Row) => React.ReactNode;
   tone?: (row: Row) => "default" | "crit";
+  /** When set and returning non-null for a row, the cell renders as a button
+   *  that opens the cell drill-down modal with the returned breakdown. */
+  drill?: (row: Row) => CellDrillProps | null;
 }
 
 export interface AnalysisYearTableProps<Row> {
@@ -27,6 +32,7 @@ export function AnalysisYearTable<Row>({
   caption,
   maxHeight,
 }: AnalysisYearTableProps<Row>) {
+  const [drill, setDrill] = useState<CellDrillProps | null>(null);
   const maxH =
     maxHeight == null
       ? undefined
@@ -34,6 +40,7 @@ export function AnalysisYearTable<Row>({
         ? `${maxHeight}px`
         : maxHeight;
   return (
+    <>
     <div
       className={maxHeight == null ? "overflow-x-auto" : "overflow-auto"}
       style={maxH ? { maxHeight: maxH } : undefined}
@@ -82,7 +89,20 @@ export function AnalysisYearTable<Row>({
                         : "text-ink")
                     }
                   >
-                    {col.render(row)}
+                    {(() => {
+                      const content = col.drill ? col.drill(row) : null;
+                      if (!content) return col.render(row);
+                      return (
+                        <button
+                          type="button"
+                          aria-haspopup="dialog"
+                          onClick={() => setDrill(content)}
+                          className="underline decoration-dotted decoration-ink-4 underline-offset-2 hover:text-accent hover:decoration-accent"
+                        >
+                          {col.render(row)}
+                        </button>
+                      );
+                    })()}
                   </td>
                 );
               })}
@@ -91,5 +111,7 @@ export function AnalysisYearTable<Row>({
         </tbody>
       </table>
     </div>
+    {drill ? <CellDrillDownModal {...drill} onClose={() => setDrill(null)} /> : null}
+    </>
   );
 }
