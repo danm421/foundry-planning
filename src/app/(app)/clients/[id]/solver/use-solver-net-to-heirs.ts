@@ -22,7 +22,7 @@ interface Args {
 }
 
 /**
- * Sources the KPI strip's "Net to Heirs" tile. Unlike the other KPIs, the
+ * Sources the KPI strip's "Total to Heirs" tile. Unlike the other KPIs, the
  * estate transfer report needs a full projection *with death events*, which
  * only comes from the server (`includeEvents: true`). Mirrors the debounced
  * fetch pattern in `useSolverSummaryData`:
@@ -44,7 +44,6 @@ export function useSolverNetToHeirs(args: Args) {
   const [firstDeathYear, setFirstDeathYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const baseFetched = useRef(false);
 
   // Working scenario — debounced, re-runs whenever mutations change.
   useEffect(() => {
@@ -100,9 +99,12 @@ export function useSolverNetToHeirs(args: Args) {
   }, [enabled, clientId, source, mutations, workingTree, ownerNames]);
 
   // Base plan — fetched once, then cached (the base tree doesn't change).
+  // Guarded on `base == null` rather than a "started" ref: a ref guard strands
+  // the base (and the vs-Base delta) forever when the first attempt is aborted
+  // by effect cleanup — StrictMode's dev double-invoke, or switching to a
+  // KPI-less report mid-flight. State-guarding retries until a value lands.
   useEffect(() => {
-    if (!enabled || baseFetched.current) return;
-    baseFetched.current = true;
+    if (!enabled || base != null) return;
     const controller = new AbortController();
     (async () => {
       try {
@@ -130,15 +132,11 @@ export function useSolverNetToHeirs(args: Args) {
             : null,
         );
       } catch {
-        if (!controller.signal.aborted) {
-          // Allow a retry on the next enable if the one-shot fetch failed.
-          baseFetched.current = false;
-          setBase(null);
-        }
+        if (!controller.signal.aborted) setBase(null);
       }
     })();
     return () => { controller.abort(); };
-  }, [enabled, clientId, baseClientData, ownerNames]);
+  }, [enabled, clientId, baseClientData, ownerNames, base]);
 
   const delta = working != null && base != null ? working - base : null;
   return { netToHeirs: working, netToHeirsDelta: delta, firstDeathYear, loading };

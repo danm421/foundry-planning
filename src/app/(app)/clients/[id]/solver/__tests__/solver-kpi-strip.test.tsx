@@ -39,14 +39,14 @@ describe("SolverKpiStrip", () => {
     expect(screen.getByText(/from 84%/)).toBeTruthy();
   });
 
-  it("renders the Net to Heirs tile with its vs-Base delta", () => {
+  it("renders the Total to Heirs tile with its vs-Base delta", () => {
     render(<SolverKpiStrip {...base} />);
-    expect(screen.getByText(/Net to Heirs/)).toBeTruthy();
+    expect(screen.getByText(/Total to Heirs/)).toBeTruthy();
     expect(screen.getByText(/\$2\.40M/)).toBeTruthy();
     expect(screen.getByText(/\+\$180,000 vs Base/)).toBeTruthy();
   });
 
-  it("shows a loading placeholder for Net to Heirs before the estate fetch resolves", () => {
+  it("shows a loading placeholder for Total to Heirs before the estate fetch resolves", () => {
     render(<SolverKpiStrip {...base} netToHeirs={null} netToHeirsDelta={null} netToHeirsLoading />);
     expect(screen.getByText("…")).toBeTruthy();
   });

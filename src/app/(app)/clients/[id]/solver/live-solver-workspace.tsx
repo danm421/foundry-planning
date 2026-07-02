@@ -485,7 +485,7 @@ export function LiveSolverWorkspace({
   const baseLifetimeTax = lifetimeTaxes(baseProjection);
   const workingLifetimeTax = lifetimeTaxes(currentProjection);
 
-  // Net to Heirs needs a full projection *with death events* (server fetch,
+  // Total to Heirs needs a full projection *with death events* (server fetch,
   // debounced), unlike the synchronous KPIs above. Gated to when the KPI strip
   // is visible (any report except the Summaries/Monte Carlo decks).
   const netToHeirsEnabled =

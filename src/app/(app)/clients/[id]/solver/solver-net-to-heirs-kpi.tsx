@@ -14,7 +14,7 @@ export function SolverNetToHeirsKpi({ value, delta, dimmed, loading }: Props) {
   return (
     <div className={dimmed ? "opacity-70" : ""}>
       <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
-        Net to Heirs
+        Total to Heirs
       </div>
       <div className="mt-0.5 text-[16px] font-semibold leading-none tabular tracking-tight text-ink">
         {value == null ? (loading ? "…" : "—") : formatCurrency(value)}
