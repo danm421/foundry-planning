@@ -31,6 +31,8 @@ const solved: LiSolved = {
   ],
   mcClient: { status: "solved", faceValue: 2_000_000, achievedScore: 0.9 },
   mcSpouse: { status: "solved", faceValue: 1_300_000, achievedScore: 0.9 },
+  estateTaxAddendClient: null,
+  estateTaxAddendSpouse: null,
   assumptions: { deathYear: 2048, modelPortfolioLabel: "Balanced 60/40", mcTargetScore: 0.9 },
 };
 
