@@ -221,6 +221,8 @@ export function HoldingsPagePdf({
 
       <View style={styles.summaryBand}>
         <Stat label="TOTAL VALUE" value={data.totalValue} />
+        {/* Accounts WITH holdings — buildHoldingsInventory skips empty accounts,
+            so this can read lower than the client's full investment-account list. */}
         <Stat label="ACCOUNTS" value={String(data.accountCount)} />
         <Stat label="POSITIONS" value={String(data.positionCount)} />
       </View>
