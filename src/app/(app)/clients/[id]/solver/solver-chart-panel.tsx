@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
@@ -216,15 +216,14 @@ export function SolverChartPanel({
 
   const resetChartHeight = () => setChartHeightStore(DEFAULT_CHART_HEIGHT, true);
 
-  const overTime = useNeedOverTime(clientId);
-  const { cancel: cancelOverTime } = overTime;
-
-  // Aborting an in-flight over-time fetch is a genuine external-system
-  // teardown, so it stays in an effect — it does not call setState. Cancel
-  // whenever the Life Insurance Need report is no longer the active tab.
-  useEffect(() => {
-    if (tab !== "lifeInsurance") cancelOverTime();
-  }, [tab, cancelOverTime]);
+  // Auto-runs the need-over-time solve while the Life Insurance Need report is
+  // active (and re-runs, debounced, when the assumptions change); deactivating
+  // the report aborts any in-flight run.
+  const overTime = useNeedOverTime(
+    clientId,
+    liAssumptions,
+    tab === "lifeInsurance",
+  );
 
   const tabs = REPORT_TABS;
   // Toggle visibility must match the over-time engine's own spouse check
@@ -393,8 +392,6 @@ export function SolverChartPanel({
             isRunning={overTime.isRunning}
             progress={overTime.progress}
             errorMessage={overTime.errorMessage}
-            onRun={() => overTime.run(liAssumptions)}
-            onCancel={overTime.cancel}
             isMarried={isMarried}
             clientName={clientName}
             spouseName={spouseName}

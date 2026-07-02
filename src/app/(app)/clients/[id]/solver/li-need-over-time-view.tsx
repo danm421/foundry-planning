@@ -2,9 +2,10 @@
 
 // Life-insurance need-over-time view — rendered as the "Life Insurance Need"
 // tab inside the solver's top chart panel. Presentational: it receives the
-// solve state from `useNeedOverTime` (owned by SolverChartPanel) and renders
-// the Run/Cancel controls, progress bar, and a single-dataset Chart.js bar
-// chart whose series is chosen by a married-only client/spouse toggle.
+// solve state from `useNeedOverTime` (owned by SolverChartPanel, which
+// auto-runs the solve when this report is active) and renders the progress
+// bar plus a single-dataset Chart.js bar chart whose series is chosen by a
+// married-only client/spouse toggle.
 import { useState } from "react";
 import {
   Chart as ChartJS,
@@ -28,8 +29,6 @@ interface Props {
   isRunning: boolean;
   progress: OverTimeProgress | null;
   errorMessage: string | null;
-  onRun: () => void;
-  onCancel: () => void;
   isMarried: boolean;
   clientName: string;
   spouseName: string;
@@ -40,8 +39,6 @@ export function LiNeedOverTimeView({
   isRunning,
   progress,
   errorMessage,
-  onRun,
-  onCancel,
   isMarried,
   clientName,
   spouseName,
@@ -53,25 +50,8 @@ export function LiNeedOverTimeView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={isRunning}
-          className="h-9 rounded-md bg-accent px-3.5 text-[12px] font-medium text-accent-on hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Run need over time
-        </button>
-        {isRunning ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="h-9 rounded-md border border-hair-2 px-3 text-[12px] text-ink-2 hover:bg-card-2"
-          >
-            Cancel
-          </button>
-        ) : null}
-        {rows && !isRunning && isMarried ? (
+      {rows && !isRunning && isMarried ? (
+        <div className="flex items-center">
           <div
             role="tablist"
             aria-label="Death scenario"
@@ -88,8 +68,8 @@ export function LiNeedOverTimeView({
               onClick={() => setDeathOf("spouse")}
             />
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {isRunning ? <OverTimeProgressBar progress={progress} /> : null}
 
@@ -108,7 +88,7 @@ export function LiNeedOverTimeView({
           <ChartPanel rows={rows} activeDeathOf={activeDeathOf} clientName={clientName} spouseName={spouseName} />
         ) : !isRunning && !errorMessage ? (
           <p className="text-[12px] text-ink-3">
-            Run the solve to see life-insurance need by year of death.
+            Preparing the life-insurance need-by-year solve…
           </p>
         ) : null}
       </div>

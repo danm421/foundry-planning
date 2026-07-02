@@ -25,6 +25,16 @@ vi.mock("@/lib/estate/yearly-liquidity-report", () => ({
 vi.mock("../li-need-over-time-view", () => ({
   LiNeedOverTimeView: () => <div data-testid="chart-li-need" />,
 }));
+// The hook now auto-runs its solve fetch when the Life Insurance Need report
+// is active — stub it so activating that tab stays network-free here.
+vi.mock("../use-need-over-time", () => ({
+  useNeedOverTime: () => ({
+    rows: null,
+    isRunning: false,
+    progress: null,
+    errorMessage: null,
+  }),
+}));
 vi.mock("@/components/charts/estate-comparison-chart", () => ({
   EstateComparisonChart: () => <div data-testid="chart-estate" />,
 }));
