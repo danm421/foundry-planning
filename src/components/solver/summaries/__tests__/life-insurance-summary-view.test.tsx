@@ -54,6 +54,8 @@ const NOT_SOLVED: LifeInsuranceSummaryPageData = {
   ],
   clientGap: null,
   spouseGap: null,
+  clientRange: null,
+  spouseRange: null,
   chart: { rows: [], markYear: null, clientCoverageLine: 1_500_000, spouseCoverageLine: null },
   jointFootnote: false,
   narrative: [
@@ -116,11 +118,24 @@ const SOLVED: LifeInsuranceSummaryPageData = {
   spouseGap: {
     decedentLabel: "Riley Avery",
     have: 500_000,
-    need: 400_000,
-    gap: { kind: "surplus", amount: 100_000 },
+    need: 900_000, // recommended = rounded MC additional (400k) + 500k in force
+    gap: { kind: "shortfall", amount: 400_000 },
     exceedsCap: false,
     hasJoint: false,
   },
+  clientRange: {
+    decedentLabel: "Jordan Avery", deathYear: 2040,
+    straightLine: { need: 100_000, exceedsCap: false },
+    mc: { need: 600_000, exceedsCap: false, achievedScorePct: 84.4 },
+    estateTaxAddend: null, existingTotal: 1_500_000,
+    existingPolicies: [
+      { name: "20-Year Term", faceValue: 1_000_000 },
+      { name: "Whole Life", faceValue: 500_000 },
+    ],
+    totalRecommended: { low: 1_600_000, high: 2_100_000 },
+    hasJoint: false,
+  },
+  spouseRange: null,
   chart: {
     rows: [
       { year: 2027, clientNeed: 1_800_000, spouseNeed: 400_000 },
@@ -172,9 +187,9 @@ describe("LifeInsuranceSummaryView", () => {
 
     // Coverage-vs-need cards
     expect(text).toContain("Jordan Avery");
-    expect(text).toContain("Shortfall");
+    expect(text).toContain("Shortfall $800k");
     expect(text).toContain("Riley Avery");
-    expect(text).toContain("Surplus");
+    expect(text).toContain("Shortfall $400k");
 
     // Chart section heading
     expect(text).toContain("Life insurance need over time");
@@ -191,5 +206,37 @@ describe("LifeInsuranceSummaryView", () => {
     const data = { isEmpty: true, title: "Life Insurance Summary", subtitle: "" } as never;
     const { getByText } = render(<LifeInsuranceSummaryView data={data} />);
     expect(getByText("No data for this scenario yet.")).toBeTruthy();
+  });
+});
+
+describe("need-range card", () => {
+  it("renders the straight-line → Monte Carlo range with coverage breakdown and total", () => {
+    const { getByText } = render(<LifeInsuranceSummaryView data={SOLVED} />);
+    getByText("If Jordan Avery dies in 2040");
+    getByText("$100,000");
+    getByText("$600,000");
+    getByText(/Monte Carlo · 84.4%/i);
+    getByText("Additional life insurance needed");
+    getByText("Existing coverage in force");
+    getByText("Total recommended coverage");
+    getByText("$1,600,000 – $2,100,000");
+  });
+
+  it("relabels the gap bars Coverage/Recommended", () => {
+    // SOLVED renders both client and spouse gap cards, so the relabel
+    // shows up twice — assert on the set rather than a single match.
+    const { queryByText, getAllByText } = render(<LifeInsuranceSummaryView data={SOLVED} />);
+    expect(getAllByText(/Recommended\s/).length).toBeGreaterThan(0);
+    expect(queryByText(/^Need\s/)).toBeNull();
+  });
+
+  it("shows the estate-tax line only when an addend is present", () => {
+    const withTax = {
+      ...SOLVED,
+      clientRange: { ...SOLVED.clientRange!, estateTaxAddend: 350_000 },
+    };
+    const { getByText } = render(<LifeInsuranceSummaryView data={withTax} />);
+    getByText("Estate taxes");
+    getByText("$350,000");
   });
 });

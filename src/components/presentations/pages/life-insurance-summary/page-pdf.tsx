@@ -6,6 +6,7 @@ import type { RenderPdfInput } from "@/components/presentations/registry";
 import type {
   LifeInsuranceSummaryPageData,
   DecedentGap,
+  DecedentRange,
 } from "@/lib/presentations/pages/life-insurance-summary/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 import { LiPolicyTablePdf } from "./table-pdf";
@@ -25,6 +26,21 @@ const s = StyleSheet.create({
   benName: { fontSize: 8, color: T.ink },
   benMeta: { fontSize: 7, color: T.ink3 },
   benPolicy: { fontSize: 8, fontWeight: 700, color: T.ink, marginTop: 5, marginBottom: 1 },
+  rangeWrap: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  rangeCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
+  rangeKicker: { fontSize: 6.5, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 },
+  rangeRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 4 },
+  rangeVal: { fontSize: 15, fontWeight: 700 },
+  rangeArrow: { fontSize: 11, color: T.ink3, marginTop: 2 },
+  rangeCap: { fontSize: 6, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 1.5 },
+  rangeSub: { fontSize: 7, color: T.ink2, marginTop: 4 },
+  covBlock: { borderTopWidth: 0.5, borderTopColor: T.hair2, marginTop: 5, paddingTop: 4 },
+  covRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 1 },
+  covTxt: { fontSize: 7, color: T.ink2 },
+  covMuted: { fontSize: 7, color: T.ink3, marginTop: 1 },
+  totRow: { flexDirection: "row", justifyContent: "space-between", borderTopWidth: 0.5, borderTopColor: T.hair2, marginTop: 5, paddingTop: 4 },
+  totLbl: { fontSize: 7.5, fontWeight: 700, color: T.ink2 },
+  totVal: { fontSize: 8.5, fontWeight: 700, color: T.ink },
   gapWrap: { flexDirection: "row", gap: 8 },
   gapCol: { flex: 1, backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   gapTitle: { fontSize: 9, fontWeight: 700, marginBottom: 4 },
@@ -69,11 +85,78 @@ function GapPanel({ g, markYear }: { g: DecedentGap; markYear: number | null }) 
   return (
     <View style={s.gapCol}>
       <Text style={s.gapTitle}>{`If ${g.decedentLabel} dies${markYear ? ` (${markYear})` : ""}`}</Text>
-      <Text style={s.barLbl}>{`Have ${fmtUsd(g.have)}`}</Text>
+      <Text style={s.barLbl}>{`Coverage ${fmtUsd(g.have)}`}</Text>
       <View style={s.barTrack}><View style={[s.barHave, { width: `${havePct}%` }]} /></View>
-      <Text style={s.barLbl}>{`Need ${fmtUsd(g.need)}`}</Text>
+      <Text style={s.barLbl}>{`Recommended ${fmtUsd(g.need)}`}</Text>
       <View style={s.barTrack}><View style={[s.barNeed, { width: "100%" }]} /></View>
       <Text style={[s.gapResult, { color: gapColor(g) }]}>{gapText(g)}</Text>
+    </View>
+  );
+}
+
+const CAP_LABEL = "exceeds $20M";
+
+function RangePanel({ r }: { r: DecedentRange }) {
+  const slValue =
+    r.straightLine == null ? null
+    : r.straightLine.exceedsCap ? CAP_LABEL
+    : fmtUsd(r.straightLine.need);
+  const mcValue = r.mc.exceedsCap ? CAP_LABEL : fmtUsd(r.mc.need);
+  const total =
+    r.totalRecommended == null ? null
+    : r.totalRecommended.low === r.totalRecommended.high
+      ? fmtUsd(r.totalRecommended.high)
+      : `${fmtUsd(r.totalRecommended.low)} – ${fmtUsd(r.totalRecommended.high)}`;
+
+  return (
+    <View style={s.rangeCol}>
+      <Text style={s.rangeKicker}>{`If ${r.decedentLabel} dies in ${r.deathYear}`}</Text>
+      <View style={s.rangeRow}>
+        {slValue != null ? (
+          <>
+            <View>
+              <Text style={[s.rangeVal, r.straightLine!.exceedsCap ? { color: T.crit } : {}]}>{slValue}</Text>
+              <Text style={s.rangeCap}>Straight-line</Text>
+            </View>
+            <Text style={s.rangeArrow}>→</Text>
+          </>
+        ) : null}
+        <View>
+          <Text style={[s.rangeVal, r.mc.exceedsCap ? { color: T.crit } : {}]}>{mcValue}</Text>
+          <Text style={s.rangeCap}>{`Monte Carlo · ${r.mc.achievedScorePct}%`}</Text>
+        </View>
+      </View>
+      <Text style={s.rangeSub}>Additional life insurance needed</Text>
+
+      <View style={s.covBlock}>
+        {r.estateTaxAddend != null ? (
+          <View style={s.covRow}>
+            <Text style={s.covTxt}>Estate taxes</Text>
+            <Text style={s.covTxt}>{fmtUsd(r.estateTaxAddend)}</Text>
+          </View>
+        ) : null}
+        <View style={s.covRow}>
+          <Text style={s.covTxt}>Existing coverage in force</Text>
+          <Text style={s.covTxt}>{fmtUsd(r.existingTotal)}</Text>
+        </View>
+        {r.existingPolicies.length === 0 ? (
+          <Text style={s.covMuted}>{`None in force in ${r.deathYear}.`}</Text>
+        ) : (
+          r.existingPolicies.map((p, i) => (
+            <View style={s.covRow} key={`${p.name}-${i}`}>
+              <Text style={s.covTxt}>{p.name}</Text>
+              <Text style={s.covTxt}>{fmtUsd(p.faceValue)}</Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      {total != null ? (
+        <View style={s.totRow}>
+          <Text style={s.totLbl}>Total recommended coverage</Text>
+          <Text style={s.totVal}>{total}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -157,6 +240,11 @@ export function LifeInsuranceSummaryPagePdf(
           </View>
         ) : (
           <>
+            <View style={s.rangeWrap}>
+              {data.clientRange ? <RangePanel r={data.clientRange} /> : null}
+              {data.spouseRange ? <RangePanel r={data.spouseRange} /> : null}
+            </View>
+
             <View style={s.gapWrap}>
               {data.clientGap ? <GapPanel g={data.clientGap} markYear={data.chart.markYear} /> : null}
               {data.spouseGap ? <GapPanel g={data.spouseGap} markYear={data.chart.markYear} /> : null}

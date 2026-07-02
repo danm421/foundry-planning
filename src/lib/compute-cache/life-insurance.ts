@@ -126,10 +126,9 @@ export async function computeLiSolved(args: {
     };
   }
 
-  // Assemble the LiSolved exactly as `useLiPresolve.solveScenario` does: the
-  // MC results are narrowed to { status, faceValue, achievedScore } (iterations
-  // and estateTaxAddend are dropped), and assumptions carries only deathYear,
-  // modelPortfolioLabel, mcTargetScore.
+  // Assemble the LiSolved payload: the MC results are narrowed to
+  // { status, faceValue, achievedScore }; per-decedent estate-tax addends
+  // carried for the summary range cards.
   return {
     curveRows,
     mcClient: {
@@ -138,6 +137,9 @@ export async function computeLiSolved(args: {
       achievedScore: clientResult.achievedScore,
     },
     mcSpouse,
+    estateTaxAddendClient: assumptions.coverEstateTaxes ? clientAddend : null,
+    estateTaxAddendSpouse:
+      assumptions.coverEstateTaxes && isMarried ? spouseAddend : null,
     assumptions: {
       deathYear: assumptions.deathYear,
       modelPortfolioLabel,

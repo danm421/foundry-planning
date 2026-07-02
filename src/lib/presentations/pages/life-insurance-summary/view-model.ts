@@ -11,6 +11,7 @@ import {
 } from "./aggregate";
 import type { LifeInsuranceSummaryOptions, LiSolved } from "./options-schema";
 import { buildLifeInsuranceNarrative } from "./narrative";
+import { roundUpTo50k } from "@/lib/life-insurance/round";
 
 export interface DecedentGap {
   decedentLabel: string;
@@ -19,6 +20,71 @@ export interface DecedentGap {
   gap: Gap;
   exceedsCap: boolean;
   hasJoint: boolean;
+}
+
+export interface RangePolicy { name: string; faceValue: number }
+export interface RangeBound { need: number; exceedsCap: boolean }
+export interface DecedentRange {
+  decedentLabel: string;
+  deathYear: number;
+  /** Lower bound from the straight-line curve at deathYear; null when the
+   *  clipped curve has no row there (card renders MC-only). Rounded up to $50k. */
+  straightLine: RangeBound | null;
+  /** Upper bound from the MC solve. Rounded up to $50k. */
+  mc: RangeBound & { achievedScorePct: number };
+  /** null → "Estate taxes" line hidden (toggle off, or legacy payload). */
+  estateTaxAddend: number | null;
+  existingTotal: number;
+  existingPolicies: RangePolicy[];
+  /** need + existing per bound, re-rounded; null when either bound exceeds cap. */
+  totalRecommended: { low: number; high: number } | null;
+  hasJoint: boolean;
+}
+
+// Solver cap — display detection only; the engine saturates at this bound.
+const LI_CAP = 20_000_000;
+
+function buildRange(args: {
+  decedentLabel: string;
+  decedent: "client" | "spouse";
+  deathYear: number;
+  /** Curve value at deathYear; null when the row is absent. */
+  curveNeed: number | null;
+  mc: NonNullable<LiSolved["mcSpouse"]>;
+  estateTaxAddend: number | null;
+  policies: LiPolicyRow[];
+  coverage: { total: number; hasJoint: boolean };
+}): DecedentRange {
+  const { decedentLabel, decedent, deathYear, curveNeed, mc, estateTaxAddend, policies, coverage } = args;
+
+  const existingPolicies: RangePolicy[] = policies
+    .filter((p) => isInForce(p, deathYear) && p.insuredPerson === decedent)
+    .map((p) => ({ name: p.name, faceValue: p.deathBenefit }));
+
+  const straightLine: RangeBound | null =
+    curveNeed == null
+      ? null
+      : { need: roundUpTo50k(curveNeed), exceedsCap: curveNeed >= LI_CAP };
+
+  const mcBound = {
+    need: roundUpTo50k(mc.faceValue),
+    exceedsCap: mc.status === "exceeds-cap",
+    achievedScorePct: Math.round(mc.achievedScore * 1000) / 10,
+  };
+
+  const anyCap = mcBound.exceedsCap || (straightLine?.exceedsCap ?? false);
+  const totalRecommended = anyCap
+    ? null
+    : {
+        low: roundUpTo50k((straightLine?.need ?? mcBound.need) + coverage.total),
+        high: roundUpTo50k(mcBound.need + coverage.total),
+      };
+
+  return {
+    decedentLabel, deathYear, straightLine, mc: mcBound, estateTaxAddend,
+    existingTotal: coverage.total, existingPolicies, totalRecommended,
+    hasJoint: coverage.hasJoint,
+  };
 }
 export interface LiChartRow {
   year: number;
@@ -58,6 +124,8 @@ export interface LifeInsuranceSummaryPageData {
   policies: LiPolicyRow[];
   clientGap: DecedentGap | null;
   spouseGap: DecedentGap | null;
+  clientRange: DecedentRange | null;
+  spouseRange: DecedentRange | null;
   chart: LiChart;
   jointFootnote: boolean;
   narrative: string[];
@@ -74,11 +142,15 @@ function gapFromMc(
   mc: LiSolved["mcClient"],
   hasJoint: boolean,
 ): DecedentGap {
+  // `need` is TOTAL RECOMMENDED coverage (rounded additional MC need + existing
+  // in force) — comparing `have` against the additional need alone produced a
+  // false "surplus" whenever coverage exceeded the additional need.
+  const recommended = roundUpTo50k(mc.faceValue) + have;
   return {
     decedentLabel,
     have,
-    need: mc.faceValue,
-    gap: gapFor(have, mc.faceValue),
+    need: recommended,
+    gap: gapFor(have, recommended),
     exceedsCap: mc.status === "exceeds-cap",
     hasJoint,
   };
@@ -114,6 +186,36 @@ export function buildLifeInsuranceSummaryData(
       ? gapFromMc(ctx.spouseName ?? "Spouse", spouseCov.total, solved.mcSpouse, spouseCov.hasJoint)
       : null;
 
+  const deathYear = solved?.assumptions.deathYear ?? null;
+  const curveAt = (year: number) => solved?.curveRows.find((r) => r.year === year) ?? null;
+
+  const clientRange =
+    solved != null && deathYear != null
+      ? buildRange({
+          decedentLabel: ctx.clientName,
+          decedent: "client",
+          deathYear,
+          curveNeed: curveAt(deathYear)?.clientNeed ?? null,
+          mc: solved.mcClient,
+          estateTaxAddend: solved.estateTaxAddendClient,
+          policies,
+          coverage: clientCov,
+        })
+      : null;
+  const spouseRange =
+    solved != null && deathYear != null && married && solved.mcSpouse != null
+      ? buildRange({
+          decedentLabel: ctx.spouseName ?? "Spouse",
+          decedent: "spouse",
+          deathYear,
+          curveNeed: curveAt(deathYear)?.spouseNeed ?? null,
+          mc: solved.mcSpouse,
+          estateTaxAddend: solved.estateTaxAddendSpouse,
+          policies,
+          coverage: spouseCov,
+        })
+      : null;
+
   const chart: LiChart = {
     rows: clipToNeedWindow(
       solved?.curveRows.map((r) => ({
@@ -134,8 +236,8 @@ export function buildLifeInsuranceSummaryData(
   const narrative = buildLifeInsuranceNarrative({
     totalDeathBenefit: totals.deathBenefit,
     policyCount: totals.count,
-    clientGap,
-    spouseGap,
+    clientRange,
+    spouseRange,
     notSolved,
     jointFootnote,
   });
@@ -150,6 +252,8 @@ export function buildLifeInsuranceSummaryData(
     policies,
     clientGap,
     spouseGap,
+    clientRange,
+    spouseRange,
     chart,
     jointFootnote,
     narrative,

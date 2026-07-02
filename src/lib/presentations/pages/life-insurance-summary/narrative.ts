@@ -1,25 +1,30 @@
 // src/lib/presentations/pages/life-insurance-summary/narrative.ts
 import { fmtUsd } from "./aggregate";
-import type { DecedentGap } from "./view-model";
+import type { DecedentRange } from "./view-model";
 
 const MAX_LINES = 4;
 
 export interface NarrativeInput {
   totalDeathBenefit: number;
   policyCount: number;
-  clientGap: DecedentGap | null;
-  spouseGap: DecedentGap | null;
+  clientRange: DecedentRange | null;
+  spouseRange: DecedentRange | null;
   notSolved: boolean;
   jointFootnote: boolean;
 }
 
-function shortfallLine(g: DecedentGap | null): string | null {
-  if (!g) return null;
-  if (g.exceedsCap) return `If ${g.decedentLabel} dies, the modeled need exceeds $20M — review assumptions.`;
-  if (g.gap.kind === "shortfall") {
-    return `If ${g.decedentLabel} dies, coverage falls ${fmtUsd(g.gap.amount)} short of the solved need.`;
+function needLine(r: DecedentRange | null): string | null {
+  if (!r) return null;
+  if (r.mc.exceedsCap || r.straightLine?.exceedsCap) {
+    return `If ${r.decedentLabel} dies, the modeled need exceeds $20M — review assumptions.`;
   }
-  return null;
+  const low = r.straightLine?.need ?? r.mc.need;
+  const high = r.mc.need;
+  if (high <= 0) {
+    return `Existing coverage of ${fmtUsd(r.existingTotal)} meets the modeled need if ${r.decedentLabel} dies in ${r.deathYear}.`;
+  }
+  const amount = low === high ? fmtUsd(high) : `${fmtUsd(low)}–${fmtUsd(high)}`;
+  return `If ${r.decedentLabel} dies in ${r.deathYear}, an additional ${amount} of coverage is suggested on top of ${fmtUsd(r.existingTotal)} in force.`;
 }
 
 export function buildLifeInsuranceNarrative(input: NarrativeInput): string[] {
@@ -35,10 +40,10 @@ export function buildLifeInsuranceNarrative(input: NarrativeInput): string[] {
     return lines.slice(0, MAX_LINES);
   }
 
-  const cs = shortfallLine(input.clientGap);
-  if (cs) lines.push(cs);
-  const ss = shortfallLine(input.spouseGap);
-  if (ss) lines.push(ss);
+  const cl = needLine(input.clientRange);
+  if (cl) lines.push(cl);
+  const sl = needLine(input.spouseRange);
+  if (sl) lines.push(sl);
 
   if (lines.length < MAX_LINES && input.jointFootnote) {
     lines.push("Joint policies are listed but excluded from per-life coverage totals.");

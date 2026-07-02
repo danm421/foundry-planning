@@ -20,6 +20,11 @@ export const liSolvedSchema = z.object({
   ),
   mcClient: liSolvedMcSchema,
   mcSpouse: liSolvedMcSchema.nullable(),
+  // Per-decedent estate-tax addend (federal + state estate tax + IRD) folded
+  // into the solve target when "Cover estate taxes" is on; null when the
+  // toggle is off — and on payloads produced before this field existed.
+  estateTaxAddendClient: z.number().nullable().default(null),
+  estateTaxAddendSpouse: z.number().nullable().default(null),
   assumptions: z.object({
     deathYear: z.number(),
     modelPortfolioLabel: z.string(),
