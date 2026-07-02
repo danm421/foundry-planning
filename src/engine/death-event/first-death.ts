@@ -33,6 +33,7 @@ import {
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { computeSection2035Lookback } from "./section-2035-lookback";
+import { computeSurvivorAnnuityInclusion } from "./survivor-annuity-inclusion";
 import {
   assertDrainAttributionsReconcile,
   attributeDrainsToLedger,
@@ -394,6 +395,22 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   if (section2035.addBackLines.length > 0) {
     gross.lines.push(...section2035.addBackLines);
     gross.total += section2035.addBackLines.reduce((s, l) => s + l.amount, 0);
+  }
+
+  // Phase 3.2 — §2039 survivor-annuity inclusion. The PV of a deferred income's
+  // survivor continuation is includible in the decedent's gross estate. Reads the
+  // pre-chain incomes (owner not yet flipped to survivor).
+  const survivorAnnuity = computeSurvivorAnnuityInclusion({
+    incomes: input.incomes,
+    deceased: prepared.deceased,
+    deathYear: input.year,
+    survivorBirthYear: input.survivorBirthYear ?? null,
+    survivorLifeExpectancy: input.survivorLifeExpectancy ?? null,
+    planSettings: input.planSettings,
+  });
+  if (survivorAnnuity.lines.length > 0) {
+    gross.lines.push(...survivorAnnuity.lines);
+    gross.total += survivorAnnuity.lines.reduce((s, l) => s + l.amount, 0);
   }
 
   // Probate cost (§2053): a rate applied to the probate estate — the subset of

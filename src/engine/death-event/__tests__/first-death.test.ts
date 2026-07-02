@@ -4,6 +4,7 @@ import type { DeathEventInput } from "../shared";
 import type {
   Account,
   FamilyMember,
+  Income,
   PlanSettings,
   Will,
 } from "../../types";
@@ -406,5 +407,50 @@ describe("applyFirstDeath — probate cost integration", () => {
     expect(withProbate.probateCost).toBeCloseTo(50_000, 0);
     expect(withProbate.totalTaxesAndExpenses - baseline.totalTaxesAndExpenses)
       .toBeCloseTo(50_000, 0);
+  });
+});
+
+describe("applyFirstDeath — §2039 survivor-annuity gross-estate inclusion", () => {
+  const decedentPension: Income = {
+    id: "pen1",
+    type: "deferred",
+    name: "VA Benefit",
+    annualAmount: 51_576,
+    startYear: 2030,
+    endYear: 2070,
+    growthRate: 0.024,
+    owner: "client",
+    survivorshipPct: 0.5,
+  };
+
+  it("adds a survivor-annuity PV line to the decedent's gross estate", () => {
+    const baseline = applyFirstDeath(
+      mkInput({ incomes: [decedentPension] }),
+    ).estateTax;
+
+    const withInclusion = applyFirstDeath(
+      mkInput({
+        incomes: [decedentPension],
+        survivorBirthYear: 1972,
+        survivorLifeExpectancy: 90,
+      }),
+    ).estateTax;
+
+    const line = withInclusion.grossEstateLines.find((l) =>
+      /^Survivor annuity — /.test(l.label),
+    );
+    expect(line).toBeDefined();
+    expect(line?.amount).toBeGreaterThan(0);
+    expect(line?.accountId).toBeNull();
+    expect(line?.liabilityId).toBeNull();
+
+    // Gross estate rises by exactly the survivor-annuity PV line.
+    expect(withInclusion.grossEstate - baseline.grossEstate).toBeCloseTo(
+      line!.amount,
+      0,
+    );
+    expect(
+      baseline.grossEstateLines.some((l) => /^Survivor annuity — /.test(l.label)),
+    ).toBe(false);
   });
 });
