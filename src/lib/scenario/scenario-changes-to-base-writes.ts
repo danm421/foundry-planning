@@ -85,3 +85,29 @@ export function scenarioChangesToBaseWrites(
 
   return plan;
 }
+
+/** Every dedicated-account id an education expense in the plan draws from,
+ *  EXCLUDING ids satisfied by an account inserted in the same plan (those are
+ *  synthetic and get remapped to their generated uuid inside the promote txn).
+ *  The expense_dedicated_accounts.account_id FK is GLOBAL (no tenant column),
+ *  so the caller must tenant-check these before executing the plan — same
+ *  guard save-to-base runs. */
+export function collectExternalDedicatedAccountIds(plan: BaseWritePlan): string[] {
+  const insertedSyntheticIds = new Set(
+    plan.inserts.filter((i) => i.kind === "account").map((i) => i.targetId),
+  );
+  const ids = new Set<string>();
+  for (const ins of plan.inserts) {
+    if (ins.kind !== "expense") continue;
+    for (const aid of (ins.raw.dedicatedAccountIds as string[] | undefined) ?? []) {
+      if (!insertedSyntheticIds.has(aid)) ids.add(aid);
+    }
+  }
+  for (const u of plan.updates) {
+    if (u.kind !== "expense") continue;
+    for (const aid of (u.set.dedicatedAccountIds as string[] | undefined) ?? []) {
+      if (!insertedSyntheticIds.has(aid)) ids.add(aid);
+    }
+  }
+  return [...ids];
+}

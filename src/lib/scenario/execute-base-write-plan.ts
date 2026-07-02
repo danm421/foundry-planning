@@ -61,6 +61,10 @@ export async function executeBaseWritePlan(
     counts[k] = (counts[k] ?? 0) + 1;
   };
   const idRemap = new Map<string, string>();
+  // Child writers/updaters remap same-batch synthetic references (e.g. an
+  // expense's dedicatedAccountIds pointing at an account added in this plan)
+  // through the shared idRemap — populated account-first by the sort below.
+  const childCtx = { clientId: ctx.clientId, baseScenarioId: ctx.baseScenarioId, idRemap };
 
   // Insert accounts first (most things FK to them), then everything else.
   const inserts = [...plan.inserts].sort(
@@ -82,7 +86,7 @@ export async function executeBaseWritePlan(
       .returning({ id: cols.id });
     const newId = (row as { id: string }).id;
     idRemap.set(ins.targetId, newId);
-    if (entry.childWriter) await entry.childWriter(tx, newId, ins.raw, ctx);
+    if (entry.childWriter) await entry.childWriter(tx, newId, ins.raw, childCtx);
     bump(ins.kind);
   }
 
@@ -95,10 +99,16 @@ export async function executeBaseWritePlan(
       remapRefs(u.set, idRemap),
     );
     if ("updatedAt" in cols) set.updatedAt = new Date();
-    await tx
+    const matched = await tx
       .update(entry.table)
       .set(set as never)
-      .where(scopeWhere(cols, u.id, ctx));
+      .where(scopeWhere(cols, u.id, ctx))
+      .returning({ id: cols.id });
+    // Only rewrite child rows for an update that hit a base row — reinserting
+    // children for a miss would FK-crash where the update itself was a no-op.
+    if (matched.length > 0 && entry.childUpdater) {
+      await entry.childUpdater(tx, u.id, u.set, childCtx);
+    }
     bump(u.kind);
   }
 

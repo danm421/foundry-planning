@@ -1,23 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { accounts, incomes, planSettings, gifts } from "@/db/schema";
+import { accounts, incomes, planSettings, gifts, expenseDedicatedAccounts } from "@/db/schema";
 import { executeBaseWritePlan } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
 
 // Minimal fake tx capturing operations. The real drizzle tables are passed
 // through so getTableColumns() (used by the executor for scoping) works.
-function makeTx() {
+// Inserts return sequential ids (db-1, db-2, …) so idRemap wiring is
+// observable; updates report `updateMatches` as their matched rows.
+function makeTx(updateMatches: { id: string }[] = [{ id: "matched" }]) {
   const ops: { op: string; table: unknown; arg: unknown }[] = [];
+  let seq = 0;
   const tx = {
     insert: (table: unknown) => ({
       values: (arg: unknown) => {
         ops.push({ op: "insert", table, arg });
-        return { returning: async () => [{ id: "db-generated" }] };
+        return { returning: async () => [{ id: `db-${++seq}` }] };
       },
     }),
     update: (table: unknown) => ({
       set: (arg: unknown) => ({
-        where: async () => {
+        where: () => {
           ops.push({ op: "update", table, arg });
+          return { returning: async () => updateMatches };
         },
       }),
     }),
@@ -124,6 +128,71 @@ describe("executeBaseWritePlan", () => {
     const update = ops.find((o) => o.op === "update")!;
     expect(update.table).toBe(planSettings);
     expect(counts.plan_settings).toBe(1);
+  });
+
+  it("remaps same-batch synthetic account ids inside an expense's dedicated rows", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "expense",
+          targetId: "syn-exp",
+          raw: {
+            id: "syn-exp",
+            name: "College",
+            type: "education",
+            annualAmount: 30000,
+            dedicatedAccountIds: ["syn-529"],
+          },
+        },
+        { kind: "account", targetId: "syn-529", raw: { id: "syn-529", name: "529 Emma" } },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    // account sorted first → db-1; expense → db-2
+    const joinInsert = ops.find(
+      (o) => o.op === "insert" && o.table === expenseDedicatedAccounts,
+    );
+    expect(joinInsert).toBeTruthy();
+    expect(joinInsert!.arg as Record<string, unknown>).toMatchObject({
+      expenseId: "db-2",
+      accountId: "db-1",
+      sortOrder: 0,
+    });
+  });
+
+  it("rewrites dedicated rows via the expense childUpdater on a matched update", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [
+        { kind: "expense", id: "e1", set: { annualAmount: 20000, dedicatedAccountIds: ["acct-9"] } },
+      ],
+    };
+    const { tx, ops } = makeTx([{ id: "e1" }]);
+    const counts = await executeBaseWritePlan(tx as never, plan, {
+      clientId: "c1",
+      baseScenarioId: "base1",
+    });
+    expect(counts.expense).toBe(1);
+    const del = ops.find((o) => o.op === "delete" && o.table === expenseDedicatedAccounts);
+    expect(del).toBeTruthy();
+    const ins = ops.find((o) => o.op === "insert" && o.table === expenseDedicatedAccounts);
+    expect(ins!.arg as Record<string, unknown>).toMatchObject({
+      expenseId: "e1",
+      accountId: "acct-9",
+      sortOrder: 0,
+    });
+  });
+
+  it("skips the childUpdater when the update matched no base row", async () => {
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      updates: [{ kind: "expense", id: "ghost", set: { dedicatedAccountIds: ["acct-9"] } }],
+    };
+    const { tx, ops } = makeTx([]); // update matches nothing
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    expect(ops.filter((o) => o.table === expenseDedicatedAccounts)).toHaveLength(0);
   });
 
   it("emits a scoped delete for a remove", async () => {

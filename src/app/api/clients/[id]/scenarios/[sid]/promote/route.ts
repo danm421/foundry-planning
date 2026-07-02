@@ -67,6 +67,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     if (err instanceof PromoteError && err.code === "no_base") {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
+    if (err instanceof PromoteError && err.code === "invalid_ref") {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST /api/clients/[id]/scenarios/[sid]/promote error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

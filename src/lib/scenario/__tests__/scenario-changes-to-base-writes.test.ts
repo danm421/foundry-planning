@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { ClientData } from "@/engine/types";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
-import { scenarioChangesToBaseWrites } from "../scenario-changes-to-base-writes";
+import {
+  scenarioChangesToBaseWrites,
+  collectExternalDedicatedAccountIds,
+} from "../scenario-changes-to-base-writes";
+import type { BaseWritePlan } from "../promote-to-base-types";
 
 const minimalClientData = (): ClientData => ({
   client: {
@@ -151,5 +155,56 @@ describe("scenarioChangesToBaseWrites", () => {
     const plan = scenarioChangesToBaseWrites(tree, changes, [], {});
     expect(plan.removes).toContainEqual({ kind: "account", id: "a1", cascade: false });
     expect(plan.removes).toContainEqual({ kind: "transfer", id: "t1", cascade: true });
+  });
+});
+
+describe("collectExternalDedicatedAccountIds", () => {
+  const plan = (over: Partial<BaseWritePlan>): BaseWritePlan => ({
+    inserts: [],
+    updates: [],
+    singletonUpdates: [],
+    removes: [],
+    ...over,
+  });
+
+  it("collects dedicated ids from expense inserts and updates", () => {
+    const ids = collectExternalDedicatedAccountIds(
+      plan({
+        inserts: [
+          { kind: "expense", targetId: "e1", raw: { dedicatedAccountIds: ["a1", "a2"] } },
+        ],
+        updates: [{ kind: "expense", id: "e2", set: { dedicatedAccountIds: ["a3"] } }],
+      }),
+    );
+    expect(ids.sort()).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("skips ids satisfied by an in-batch account insert (remapped in-txn)", () => {
+    const ids = collectExternalDedicatedAccountIds(
+      plan({
+        inserts: [
+          { kind: "account", targetId: "syn-529", raw: {} },
+          { kind: "expense", targetId: "e1", raw: { dedicatedAccountIds: ["syn-529", "a1"] } },
+        ],
+      }),
+    );
+    expect(ids).toEqual(["a1"]);
+  });
+
+  it("dedupes and ignores non-expense rows and absent fields", () => {
+    const ids = collectExternalDedicatedAccountIds(
+      plan({
+        inserts: [
+          { kind: "expense", targetId: "e1", raw: { dedicatedAccountIds: ["a1", "a1"] } },
+          { kind: "expense", targetId: "e2", raw: {} },
+          { kind: "income", targetId: "i1", raw: { dedicatedAccountIds: ["nope"] } },
+        ],
+        updates: [
+          { kind: "expense", id: "e3", set: { annualAmount: 5 } },
+          { kind: "account", id: "a9", set: { dedicatedAccountIds: ["nope2"] } },
+        ],
+      }),
+    );
+    expect(ids).toEqual(["a1"]);
   });
 });
