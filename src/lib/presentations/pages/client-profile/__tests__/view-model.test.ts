@@ -229,6 +229,24 @@ describe("buildClientProfileData — expenses", () => {
     expect(living).toMatchObject({ current: 52400, retirement: 60000 });
   });
 
+  it("anchors the Retirement column to the LAST spouse to retire, not the first", () => {
+    // Spouse retires (2031) before the client (2033). The Retirement column must
+    // sample the client's later retirement year so the retirement-phase living
+    // expense is fully active — sampling the earlier year would show current $.
+    const coupleYears = [
+      py({ year: 2026, expenses: { living: 52400, total: 52400 } }),
+      py({ year: 2031, expenses: { living: 53000, total: 53000 } }), // spouse retires — not yet retirement-living
+      py({ year: 2033, expenses: { living: 60000, total: 60000 } }), // both retired
+    ];
+    const data = buildClientProfileData({
+      ...base,
+      years: coupleYears,
+      clientData: clientData({ spouseDob: "1970-07-04", spouseRetirementAge: 61 }), // spouse retires 2031
+    });
+    const living = data.expenses.find((r) => r.label === "Living")!;
+    expect(living).toMatchObject({ current: 52400, retirement: 60000 });
+  });
+
   it("falls back to the last projection year when already retired (no retirement year ahead)", () => {
     // client already past retirement: retirementYear 2033 but projection starts 2034
     const lateYears = [

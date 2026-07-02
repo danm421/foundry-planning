@@ -180,20 +180,24 @@ function ssAnnualAmount(inc: Income, years: ProjectionYear[], startYear: number)
   return years.find((y) => y.year === startYear)?.income.bySource[inc.id] ?? inc.annualAmount;
 }
 
-// First retirement year = min of client/spouse (dob year + retirementAge).
-// Mirrors cash-flow's computeFirstRetirementYear.
-function firstRetirementYear(ci: ClientInfo): number | null {
+// Last retirement year = max of client/spouse (dob year + retirementAge). The
+// "Retirement" expense column should reflect the phase where BOTH primary
+// clients have retired — using the later retiree avoids sampling a transition
+// year in which the retirement-anchored living expense hasn't started yet
+// (which made the column collapse onto "Current" for couples where the spouse
+// retires first).
+function lastRetirementYear(ci: ClientInfo): number | null {
   const candidates: number[] = [];
   const cy = birthYear(ci.dateOfBirth);
   if (cy != null && ci.retirementAge != null) candidates.push(cy + ci.retirementAge);
   const sy = birthYear(ci.spouseDob);
   if (sy != null && ci.spouseRetirementAge != null) candidates.push(sy + ci.spouseRetirementAge);
-  return candidates.length ? Math.min(...candidates) : null;
+  return candidates.length ? Math.max(...candidates) : null;
 }
 
 function buildExpenses(ci: ClientInfo, years: ProjectionYear[]): ProfileExpenseRow[] {
   const currentPy = years[0];
-  const retYear = firstRetirementYear(ci);
+  const retYear = lastRetirementYear(ci);
   const retirementPy =
     (retYear != null ? years.find((y) => y.year >= retYear) : undefined) ??
     years[years.length - 1];
