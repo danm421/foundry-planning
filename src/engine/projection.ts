@@ -4113,9 +4113,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       for (const d of drawResult.draws) {
         accountBalances[d.accountId] = (accountBalances[d.accountId] ?? 0) - d.amount;
         // A taxable draw returns basis; reduce the source's basisMap so a later
-        // sale doesn't re-tax the same dollars.
+        // sale doesn't re-tax the same dollars. The ledger entry must book the
+        // CLAMPED delta (what basisMap actually shed) so the asset-ledger
+        // reconciliation identity basisEoY − basisBoY = Σ entry.basis holds for
+        // appreciated 529s where basisReturn (== draw amount) exceeds tracked basis.
+        const basisBefore = basisMap[d.accountId] ?? 0;
+        const entryBasisDelta = d.basisReturn > 0 ? -Math.min(d.basisReturn, basisBefore) : 0;
         if (d.basisReturn > 0) {
-          basisMap[d.accountId] = Math.max(0, (basisMap[d.accountId] ?? 0) - d.basisReturn);
+          basisMap[d.accountId] = Math.max(0, basisBefore - d.basisReturn);
         }
         const led = accountLedgers[d.accountId];
         if (led) {
@@ -4126,7 +4131,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: `Education: ${goal.name}`,
             amount: -d.amount,
             sourceId: goal.id,
-            basis: -d.basisReturn,
+            basis: entryBasisDelta,
           });
         }
       }

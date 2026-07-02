@@ -149,4 +149,29 @@ describe("applyEducationFunding", () => {
     expect(src!.amount).toBeCloseTo(20000, 6);
     expect(y0.taxDetail!.capitalGains).toBeGreaterThanOrEqual(20000);
   });
+
+  it("appreciated 529: ledger entry basis is clamped to tracked basis (reconciliation identity)", () => {
+    // value 30000 / basis 10000 — categorizeDraw's 529 branch returns
+    // basisReturn === amount, so a $20k draw's basisReturn exceeds the tracked
+    // basis. The ledger entry must book only what basisMap actually shed
+    // (−10000), NOT −20000, or the asset-ledger drill-down reports the account
+    // as non-reconciling (basisEoY − basisBoY ≠ Σ entry.basis).
+    const appreciated529: Account = { ...p529(30000), basis: 10000 };
+    const data = makeData([checking, appreciated529], eduExpense({}));
+    const y0 = runProjection(data)[0];
+
+    const led = y0.accountLedgers["p529"];
+    const eduEntry = led.entries.find(
+      (e) => e.sourceId === "edu" && e.category === "withdrawal",
+    );
+    expect(eduEntry).toBeDefined();
+    // Clamped to basisBefore (10000) — not the full draw amount (20000).
+    expect(eduEntry!.basis).toBeCloseTo(-10000, 6);
+    expect(eduEntry!.basis).not.toBeCloseTo(-20000, 6);
+
+    // Reconciliation identity build-asset-ledger enforces:
+    // basisEoY − basisBoY === Σ entries[].basis
+    const sumEntryBasis = led.entries.reduce((s, e) => s + (e.basis ?? 0), 0);
+    expect((led.basisEoY ?? 0) - (led.basisBoY ?? 0)).toBeCloseTo(sumEntryBasis, 6);
+  });
 });
