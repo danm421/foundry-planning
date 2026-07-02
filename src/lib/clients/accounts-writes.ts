@@ -141,6 +141,15 @@ export async function createAccountForClient(args: {
   const p = parsed.data;
   const category = p.category;
 
+  // ── 529 (education_savings) beneficiary requirement (spec, not a route port) ──
+  // A 529 must be attributed to a designated beneficiary — either a household
+  // family member or a named outside person. Fail fast, before any FK asserts.
+  if (category === "education_savings") {
+    if (!p.beneficiaryFamilyMemberId && !p.beneficiaryName?.trim()) {
+      return writeError(400, "A 529 requires a designated beneficiary (family member or name).");
+    }
+  }
+
   // ── Cross-tenant / cross-firm FK asserts (port ~161-192) ──────────────────
   const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
@@ -168,7 +177,11 @@ export async function createAccountForClient(args: {
   // ── owners[] validation (port ~194-247) ───────────────────────────────────
   let resolvedOwners: ValidatedOwner[] | undefined;
 
-  if (p.parentAccountId != null) {
+  if (category === "education_savings") {
+    // 529s carry no ownership rows — the beneficiary fields (validated above)
+    // are authoritative; a sentinel owner is synthesized at engine-load time.
+    resolvedOwners = undefined;
+  } else if (p.parentAccountId != null) {
     // Children of a business inherit their ownership via parentAccountId. Skip
     // both the owners[] write and the legacy synthesis path so we don't create
     // stray account_owners rows.
@@ -263,6 +276,14 @@ export async function createAccountForClient(args: {
         accountNumberLast4: (p.accountNumberLast4 ?? null) || null,
         activationYear: p.activationYear ?? null,
         activationYearRef: (p.activationYearRef ?? null) as (typeof accounts.$inferInsert)["activationYearRef"],
+        // 529 / education_savings columns — null/false for every other category.
+        grantorFamilyMemberId: p.grantorFamilyMemberId ?? null,
+        grantorName: p.grantorName ?? null,
+        beneficiaryFamilyMemberId: p.beneficiaryFamilyMemberId ?? null,
+        beneficiaryName: p.beneficiaryName ?? null,
+        rothRolloverEnabled: p.rothRolloverEnabled ?? false,
+        rothRolloverStartYear: p.rothRolloverStartYear ?? null,
+        rothRolloverAccountId: p.rothRolloverAccountId ?? null,
       })
       .returning();
     account = inserted;
@@ -376,6 +397,27 @@ export async function updateAccountForClient(args: {
 
   if (!before) return writeError(404, "Account not found");
 
+  // ── 529 (education_savings) beneficiary requirement (spec, not a route port) ──
+  // Mirrors the create-path check. Update is truly partial, so resolve the
+  // resulting category/beneficiary against `before` for any field the caller
+  // didn't touch.
+  const resultCategory: string =
+    "category" in safeUpdate ? (safeUpdate as { category?: string }).category! : before.category;
+  const isEducationSavings = resultCategory === "education_savings";
+  if (isEducationSavings) {
+    const resultBeneficiaryFamilyMemberId =
+      "beneficiaryFamilyMemberId" in safeUpdate
+        ? (safeUpdate as { beneficiaryFamilyMemberId?: string | null }).beneficiaryFamilyMemberId
+        : before.beneficiaryFamilyMemberId;
+    const resultBeneficiaryName =
+      "beneficiaryName" in safeUpdate
+        ? (safeUpdate as { beneficiaryName?: string | null }).beneficiaryName
+        : before.beneficiaryName;
+    if (!resultBeneficiaryFamilyMemberId && !resultBeneficiaryName?.trim()) {
+      return writeError(400, "A 529 requires a designated beneficiary (family member or name).");
+    }
+  }
+
   // ── isDefaultChecking system-managed guards (port ~81-114) ────────────────
   if (before.isDefaultChecking) {
     if ("category" in safeUpdate && safeUpdate.category !== before.category) {
@@ -399,7 +441,7 @@ export async function updateAccountForClient(args: {
   const isReparentingToParent = body.parentAccountId != null;
   let validatedOwners: ValidatedOwner[] | undefined;
 
-  if (!isReparentingToParent && Array.isArray(body.owners)) {
+  if (!isReparentingToParent && !isEducationSavings && Array.isArray(body.owners)) {
     const shapeResult = validateOwnersShape(body.owners);
     if ("error" in shapeResult) return writeError(400, shapeResult.error);
 
@@ -435,8 +477,10 @@ export async function updateAccountForClient(args: {
       .returning();
     updated = result;
 
-    if (isReparentingToParent) {
-      // Child-of-business accounts carry no per-row owners — clear atomically.
+    if (isReparentingToParent || isEducationSavings) {
+      // Child-of-business and 529/education_savings accounts carry no per-row
+      // owners — clear atomically (empty ownersToWrite naturally wipes any
+      // legacy rows, including on a category switch INTO education_savings).
       await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
     } else if (validatedOwners) {
       await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
