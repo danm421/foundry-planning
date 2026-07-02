@@ -1299,6 +1299,14 @@ export interface EducationGoalYear {
   dedicatedAssetsEOY: number;
   /** max(0, goalExpense − dedicatedWithdrawal). */
   shortfall: number;
+  /**
+   * True for a pre-expense *accumulation* year — a year before the goal is
+   * active, emitted so the report chart/table show the dedicated funds growing
+   * (goalExpense / dedicatedWithdrawal / shortfall are all 0). Expense years
+   * omit this flag. The per-goal Monte Carlo gauge filters these rows out so its
+   * probability stays scoped to the expense phase (see education-mc-inputs.ts).
+   */
+  accumulation?: boolean;
 }
 
 export interface ProjectionYear {

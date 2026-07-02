@@ -19,6 +19,28 @@ describe("buildEducationMcInput", () => {
     expect(input.contributionsByYear[0]).toBe(1800);
     expect(input.seed).toBe(99);
   });
+
+  it("ignores accumulation rows so the gauge stays scoped to the expense phase", () => {
+    // Two pre-expense accumulation years precede the same expense row. The MC
+    // input must be byte-for-byte identical to the no-accumulation case: start
+    // at the first EXPENSE row's BOY, and never fold the accumulation years'
+    // growthAndSavings into contributionsByYear.
+    const withAccumulation = {
+      ...report,
+      rows: [
+        { goalId: "edu", year: 2024, dedicatedAssetsBOY: 26000, growthAndSavings: 1560, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, dedicatedAssetsEOY: 27560, shortfall: 0, accumulation: true },
+        { goalId: "edu", year: 2025, dedicatedAssetsBOY: 27560, growthAndSavings: 1653, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, dedicatedAssetsEOY: 29213, shortfall: 0, accumulation: true },
+        ...report.rows,
+      ],
+    } as EducationGoalReport;
+
+    const base = buildEducationMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
+    const withAcc = buildEducationMcInput(withAccumulation, { arithMean: 0.06, stdDev: 0.12 }, 99);
+
+    expect(withAcc.startingBalance).toBe(30000); // first EXPENSE row, not 26000
+    expect(withAcc.contributionsByYear).toEqual(base.contributionsByYear);
+    expect(withAcc.withdrawalsByYear).toEqual(base.withdrawalsByYear);
+  });
 });
 
 describe("buildEducationReturnStats", () => {
