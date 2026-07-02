@@ -1,5 +1,5 @@
-/** The right-pane report views (five charts + the summaries deck). */
-export type ReportKey = "portfolio" | "cashflow" | "taxBracket" | "lifeInsurance" | "estate" | "monteCarlo" | "education" | "summaries";
+/** The right-pane report views (charts, the summaries deck, and the balance sheet). */
+export type ReportKey = "portfolio" | "cashflow" | "taxBracket" | "lifeInsurance" | "estate" | "monteCarlo" | "education" | "summaries" | "balanceSheet";
 
 /** The five left-pane input tabs. */
 export type InputTab = "retirement" | "techniques" | "stress_test" | "life_insurance" | "education";

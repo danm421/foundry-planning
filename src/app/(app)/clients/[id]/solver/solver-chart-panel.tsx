@@ -24,12 +24,14 @@ import {
   MonteCarloIcon,
   EducationIcon,
   SummariesIcon,
+  BalanceSheetIcon,
 } from "./report-tab-icons";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
 import { EducationReportPanel } from "@/components/solver/education/education-report-panel";
+import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
 
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
@@ -47,6 +49,7 @@ const REPORT_TABS: {
   { id: "estate", label: "Estate", short: "Estate", icon: EstatePlanningIcon },
   { id: "monteCarlo", label: "Monte Carlo", short: "Monte Carlo", icon: MonteCarloIcon },
   { id: "education", label: "Education", short: "Education", icon: EducationIcon },
+  { id: "balanceSheet", label: "Balance Sheet", short: "Bal Sheet", icon: BalanceSheetIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
 
@@ -353,6 +356,21 @@ export function SolverChartPanel({
           extraAccountMixes={extraAccountMixes}
           enabled={mcRequested}
           nonce={mcNonce}
+        />
+        {recalculating}
+      </div>
+    );
+  }
+
+  if (tab === "balanceSheet") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <SolverBalanceSheetPanel
+          workingTree={workingTree}
+          years={currentProjection}
+          clientName={clientName}
+          spouseName={spouseName}
         />
         {recalculating}
       </div>
