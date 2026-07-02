@@ -177,10 +177,16 @@ export async function renderPresentationPdf(
   // Conditionally load the investments bundle — only when the deck includes
   // at least one investment page, to avoid unnecessary DB queries.
   const needsInvestments = body.pages.some(
-    (p) => p.pageId === "assetAllocation" || p.pageId === "portfolioAnalysis" || p.pageId === "assumptions",
+    (p) =>
+      p.pageId === "assetAllocation" ||
+      p.pageId === "portfolioAnalysis" ||
+      p.pageId === "assumptions" ||
+      p.pageId === "holdings",
   );
   const investments = needsInvestments
-    ? (await loadInvestmentsBundle(clientId, firmId)) ?? undefined
+    ? (await loadInvestmentsBundle(clientId, firmId, {
+        includeHoldings: body.pages.some((p) => p.pageId === "holdings"),
+      })) ?? undefined
     : undefined;
 
   // Memoize the firm's investment-option catalog across the request — both the
