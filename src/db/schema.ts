@@ -2177,6 +2177,11 @@ export const incomes = pgTable("incomes", {
   // Fraction (0..1) of a deferred income the surviving spouse continues to
   // receive after the owner's death. Null/0 = income simply ends at owner death.
   survivorshipPct: decimal("survivorship_pct", { precision: 5, scale: 4 }),
+  // §2056(b)(7)(C) QTIP elect-out for a survivor annuity. Null/false = deemed
+  // QTIP (marital deduction offsets the §2039 inclusion at first death); true =
+  // elect out (PV taxed in the first decedent's estate). Nullable, no default —
+  // absence is treated as "not elected out" everywhere downstream.
+  survivorAnnuityQtipElectOut: boolean("survivor_annuity_qtip_elect_out"),
   claimingAgeMonths: integer("claiming_age_months").default(0),
   claimingAgeMode: text("claiming_age_mode"),
   source: sourceEnum("source").notNull().default("manual"),

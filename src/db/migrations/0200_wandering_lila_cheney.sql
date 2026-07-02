@@ -1,0 +1,1 @@
+ALTER TABLE "incomes" ADD COLUMN "survivor_annuity_qtip_elect_out" boolean;
