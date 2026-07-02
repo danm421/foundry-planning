@@ -59,8 +59,14 @@ export async function createExpenseForClient(args: {
     const bizCheck = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!bizCheck.ok) return writeError(400, bizCheck.reason);
   }
-  if (p.dedicatedAccountIds && p.dedicatedAccountIds.length > 0) {
-    const dedCheck = await assertAccountsInClient(clientId, p.dedicatedAccountIds);
+  // Dedupe before the FK guard and the insert: duplicate ids pass
+  // assertAccountsInClient fine but violate the unique(expenseId, accountId)
+  // constraint on expense_dedicated_accounts, surfacing a raw 500 instead of
+  // being handled. Array order = sortOrder = draw order, so preserve
+  // first-occurrence order.
+  const dedicatedAccountIds = p.dedicatedAccountIds ? [...new Set(p.dedicatedAccountIds)] : p.dedicatedAccountIds;
+  if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
+    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
   }
 
@@ -95,9 +101,9 @@ export async function createExpenseForClient(args: {
         forFamilyMemberId: p.forFamilyMemberId ?? null,
       })
       .returning();
-    if (p.dedicatedAccountIds && p.dedicatedAccountIds.length > 0) {
+    if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
       await tx.insert(expenseDedicatedAccounts).values(
-        p.dedicatedAccountIds.map((accountId, i) => ({ expenseId: row.id, accountId, sortOrder: i })),
+        dedicatedAccountIds.map((accountId, i) => ({ expenseId: row.id, accountId, sortOrder: i })),
       );
     }
     return row;
@@ -165,8 +171,14 @@ export async function updateExpenseForClient(args: {
     const b = await assertBusinessAccountsInClient(clientId, [p.ownerAccountId]);
     if (!b.ok) return writeError(400, b.reason);
   }
-  if (p.dedicatedAccountIds !== undefined && p.dedicatedAccountIds.length > 0) {
-    const dedCheck = await assertAccountsInClient(clientId, p.dedicatedAccountIds);
+  // See create path: dedupe before the FK guard and the insert so duplicate
+  // ids can't slip past the guard and hit the unique(expenseId, accountId)
+  // constraint on expense_dedicated_accounts as a raw 500. Array order =
+  // sortOrder = draw order, so preserve first-occurrence order.
+  const dedicatedAccountIds =
+    p.dedicatedAccountIds !== undefined ? [...new Set(p.dedicatedAccountIds)] : undefined;
+  if (dedicatedAccountIds !== undefined && dedicatedAccountIds.length > 0) {
+    const dedCheck = await assertAccountsInClient(clientId, dedicatedAccountIds);
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
   }
 
@@ -217,11 +229,11 @@ export async function updateExpenseForClient(args: {
 
     if (!row) return undefined;
 
-    if (p.dedicatedAccountIds !== undefined) {
+    if (dedicatedAccountIds !== undefined) {
       await tx.delete(expenseDedicatedAccounts).where(eq(expenseDedicatedAccounts.expenseId, expenseId));
-      if (p.dedicatedAccountIds.length > 0) {
+      if (dedicatedAccountIds.length > 0) {
         await tx.insert(expenseDedicatedAccounts).values(
-          p.dedicatedAccountIds.map((accountId, i) => ({ expenseId, accountId, sortOrder: i })),
+          dedicatedAccountIds.map((accountId, i) => ({ expenseId, accountId, sortOrder: i })),
         );
       }
     }
