@@ -92,6 +92,10 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
 
   // Retirement: traditional vs Roth vs HSA
   if (account.category === "retirement") {
+    // 529 education-savings: qualified education withdrawals are federal-tax-free.
+    // (v1 treats all 529 draws as qualified — no non-qualified distinction yet.)
+    if (account.subType === "529") return { ...empty, basisReturn: amount };
+
     // HSA: every draw that reaches here is tax-free — a qualified-medical /
     // post-65 distribution (zero ordinary income, zero penalty). The pre-65
     // lock is enforced upstream by the strategy walk (isHsaWithdrawalLocked),
