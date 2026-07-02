@@ -57,6 +57,13 @@ function recipientOwnerRow(
 export const LEGACY_FM_CLIENT = "__legacy_fm_client";
 export const LEGACY_FM_SPOUSE = "__legacy_fm_spouse";
 
+/** Sentinel owner id for education_savings (529) accounts. These accounts have
+ *  no account_owners rows; the loader synthesizes a single external_beneficiary
+ *  owner with this opaque id. external_beneficiary weighs 0 in BOTH
+ *  inEstateWeight and outOfEstateWeight, so every ownership-driven aggregation
+ *  excludes 529s without per-consumer special cases. Never looked up. */
+export const EDUCATION_529_SENTINEL_OWNER_ID = "__529_beneficiary";
+
 interface LegacyOwnedThing {
   owners?: AccountOwner[];
   owner?: "client" | "spouse" | "joint";
