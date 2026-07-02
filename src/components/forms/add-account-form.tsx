@@ -38,6 +38,7 @@ import ContributionCapCheckbox, {
 } from "./contribution-cap-checkbox";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
+import { growthDefaultCategory } from "@/lib/projection/resolve-growth-source";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
@@ -478,13 +479,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const isSystemManagedCash = initial?.isDefaultChecking === true;
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
-  const isInvestable = ["taxable", "cash", "retirement"].includes(category);
-  // 529s use the same growth-source dropdown as investable accounts (so they
-  // participate in Monte Carlo via model/fund portfolios) but stay out of the
-  // investments rollup. Their "Plan default" aliases the retirement category —
-  // mirrors resolve-entity.ts's growthCategory.
-  const usesGrowthDropdown = isInvestable || category === "education_savings";
-  const growthCategory = category === "education_savings" ? "retirement" : category;
+  // 529s use the same growth-source dropdown as the investable categories (so
+  // they participate in Monte Carlo via model/fund portfolios) but stay out of
+  // the investments rollup; their "Plan default" follows the retirement
+  // category (growthDefaultCategory).
+  const usesGrowthDropdown = ["taxable", "cash", "retirement", "education_savings"].includes(category);
+  const growthCategory = growthDefaultCategory(category);
   const [growthSource, setGrowthSource] = useState<GrowthSource>(
     (initial?.growthSource as GrowthSource) ?? "default"
   );
@@ -517,8 +517,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     if (initial?.growthRate != null && initial.growthRate !== "") {
       return (Number(initial.growthRate) * 100).toString();
     }
-    const cat = initial?.category ?? defaultCategory ?? "taxable";
-    const def = categoryDefaultSources?.[cat === "education_savings" ? "retirement" : cat]?.blendedReturn;
+    const def = categoryDefaultSources?.[growthCategory]?.blendedReturn;
     return def != null ? String(def) : "7";
   });
   const [overridePctOi, setOverridePctOi] = useState<string>(

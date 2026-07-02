@@ -19,6 +19,7 @@ import {
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
 import { buildAccountMixSegments } from "./build-account-mix-segments";
+import { growthDefaultCategory } from "./resolve-growth-source";
 import type { AccountAssetMix, MixSegment } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
 import { ClientNotFoundError, ProjectionInputError } from "./load-client-data";
@@ -227,12 +228,12 @@ export const loadMonteCarloData = cache(
 
     // Per-category default growth source + model portfolio from plan_settings.
     // Only the three investable categories have category-level defaults;
-    // education_savings aliases the retirement default (no dedicated
-    // plan_settings column) — mirrors resolve-entity.ts's growthCategory.
-    const categoryDefault = (category: string): { source: string; portfolioId: string | null } => {
+    // growthDefaultCategory folds education_savings into retirement.
+    const categoryDefault = (rawCategory: string): { source: string; portfolioId: string | null } => {
+      const category = growthDefaultCategory(rawCategory);
       if (category === "taxable") return { source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable };
       if (category === "cash") return { source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash };
-      if (category === "retirement" || category === "education_savings") return { source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement };
+      if (category === "retirement") return { source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement };
       return { source: "custom", portfolioId: null };
     };
 

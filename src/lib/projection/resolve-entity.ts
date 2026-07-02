@@ -119,16 +119,14 @@ export function resolveAccountFromRaw(
   const { resolver, resolvedInflationRate } = ctx;
   const gs = raw.growthSource ?? "default";
 
-  // education_savings: tax-free wrapper — no annual realization; growth-source
-  // defaults alias the retirement category (no dedicated plan_settings column).
-  const growthCategory = raw.category === "education_savings" ? "retirement" : raw.category;
-
   let growthRate: number;
   let realization: Account["realization"];
 
   let effectiveSource = gs;
   if (effectiveSource === "default") {
-    const catSource = resolver.getCategoryGrowthSource(growthCategory);
+    // education_savings aliases the retirement category defaults — handled
+    // inside the resolver (growthDefaultCategory).
+    const catSource = resolver.getCategoryGrowthSource(raw.category);
     if (catSource === "asset_mix") effectiveSource = "asset_mix";
   }
 
@@ -179,7 +177,7 @@ export function resolveAccountFromRaw(
   } else if (effectiveSource === "custom" && raw.growthRate != null) {
     growthRate = n(raw.growthRate);
   } else {
-    const catDefault = resolver.resolveCategoryDefault(growthCategory);
+    const catDefault = resolver.resolveCategoryDefault(raw.category);
     growthRate = catDefault.rate;
     realization = catDefault.realization;
   }
