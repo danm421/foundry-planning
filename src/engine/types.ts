@@ -1264,6 +1264,11 @@ export interface PlanSettings {
   /** Stress test: one-time drawdown of market-exposed account balances in `year`
    *  (e.g. drawdownPct 0.30 = −30%). Applied after the growth pass. */
   marketShock?: { year: number; drawdownPct: number };
+  /** Stress test: grow `type === "living"` expenses at this rate instead of
+   *  their resolved growthRate. Nothing else (tax indexing, incomes, savings,
+   *  other expense types) reads it — the "Higher inflation" stressor hits
+   *  living costs only. */
+  livingExpenseInflationOverride?: number | null;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────

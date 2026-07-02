@@ -292,7 +292,13 @@ export function applyMutations(
         break;
       }
       case "stress-inflation": {
-        result.planSettings = { ...result.planSettings, inflationRate: m.rate };
+        // Living expenses only — the engine pins their growth at this rate.
+        // Deliberately does NOT touch planSettings.inflationRate: tax indexing,
+        // incomes, savings, and other expenses keep the plan's assumption.
+        result.planSettings = {
+          ...result.planSettings,
+          livingExpenseInflationOverride: m.rate,
+        };
         break;
       }
       case "stress-ss-haircut": {

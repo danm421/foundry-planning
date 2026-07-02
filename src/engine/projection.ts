@@ -374,6 +374,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     liabilities: data.liabilities.map(normalizeOwners),
   };
 
+  // Stress test "Higher inflation": pin living-expense growth at the override
+  // rate. Scoped to `type === "living"` on purpose — insurance/other expenses,
+  // incomes, savings, and tax-bracket indexing keep the plan's inflation rate.
+  // One-time pre-pass: only reaches expenses present at entry, so a future
+  // synthetic `type: "living"` expense injected mid-loop (today they're all
+  // "other") must be routed through this override too.
+  if (planSettings.livingExpenseInflationOverride != null) {
+    const rate = planSettings.livingExpenseInflationOverride;
+    data = {
+      ...data,
+      expenses: data.expenses.map((e) =>
+        e.type === "living" ? { ...e, growthRate: rate } : e,
+      ),
+    };
+  }
+
   const taxYearRows: TaxYearParameters[] = data.taxYearRows ?? [];
   if (planSettings.taxEngineMode === "bracket" && taxYearRows.length === 0) {
     console.warn(

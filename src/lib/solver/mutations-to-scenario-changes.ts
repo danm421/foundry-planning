@@ -541,7 +541,12 @@ export function mutationsToScenarioChanges(
       // Without these a saved "Bear case" scenario silently drops its stressors
       // (and the stored MC seed reproduces an UNstressed, higher PoS on reload).
       case "stress-inflation": {
-        maybeDiff(planSettingsDiff, "inflationRate", source.planSettings.inflationRate, m.rate);
+        maybeDiff(
+          planSettingsDiff,
+          "livingExpenseInflationOverride",
+          source.planSettings.livingExpenseInflationOverride ?? null,
+          m.rate,
+        );
         break;
       }
       case "stress-ss-haircut": {

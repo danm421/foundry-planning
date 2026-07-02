@@ -559,7 +559,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     expect(ps).toHaveLength(1); // single row → no (scenarioId, kind, id, opType) collision
     expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
     expect(ps[0].payload).toEqual({
-      inflationRate: { from: 0.025, to: 0.05 },
+      livingExpenseInflationOverride: { from: null, to: 0.05 },
       ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
       disabilityEvent: { from: null, to: { person: "client", startYear: 2032 } },
       marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
@@ -567,13 +567,17 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     });
   });
 
-  it("drops a stress-inflation override that matches the base rate (no-op)", () => {
+  it("drops a stress-inflation override that matches an existing override (no-op)", () => {
     const src = {
       ...makeSource(),
-      planSettings: { planStartYear: 2026, inflationRate: 0.03 } as ClientData["planSettings"],
+      planSettings: {
+        planStartYear: 2026,
+        inflationRate: 0.03,
+        livingExpenseInflationOverride: 0.05,
+      } as ClientData["planSettings"],
     };
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "stress-inflation", rate: 0.03 },
+      { kind: "stress-inflation", rate: 0.05 },
     ]);
     expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
   });

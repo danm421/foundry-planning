@@ -690,11 +690,14 @@ describe("living-expense-amount", () => {
 });
 
 describe("applyMutations — stress test", () => {
-  it("stress-inflation overrides planSettings.inflationRate", () => {
+  it("stress-inflation sets planSettings.livingExpenseInflationOverride only", () => {
     const data = makeBase();
     const out = applyMutations(data, [{ kind: "stress-inflation", rate: 0.06 }]);
-    expect(out.planSettings.inflationRate).toBe(0.06);
-    expect(data.planSettings.inflationRate).not.toBe(0.06); // original untouched
+    expect(out.planSettings.livingExpenseInflationOverride).toBe(0.06);
+    // The plan's general inflation assumption stays put — the stressor is
+    // scoped to living expenses, not tax indexing / incomes / savings.
+    expect(out.planSettings.inflationRate).toBe(data.planSettings.inflationRate);
+    expect(data.planSettings.livingExpenseInflationOverride).toBeUndefined(); // original untouched
   });
 
   it("stress-ss-haircut sets planSettings.ssBenefitHaircut", () => {
