@@ -148,6 +148,11 @@ export function buildYearCellDrill(
       const excluded: ReadonlySet<Income["type"]> = new Set(["salary", "social_security"]);
       const sourceRows: CellDrillRow[] = Object.entries(year.income.bySource)
         .filter(([id]) => {
+          // equity-proceeds:* is deliberately NOT folded into income.other /
+          // otherInflows() (see projection.ts ~1320) — its cash feeds
+          // totalIncome separately, so including it here would show an
+          // equity row offset by a negative balancing "Other" row.
+          if (id.startsWith("equity-proceeds:")) return false;
           const t = typeById.get(id);
           return t == null || !excluded.has(t);
         })
@@ -234,6 +239,11 @@ export function buildYearCellDrill(
         { id: "taxes", label: "Taxes", amount: e.taxes },
         { id: "discretionary", label: "Surplus Spent", amount: e.discretionary },
         { id: "savings", label: "Savings", amount: year.savings.total },
+        {
+          id: "hypoContribution",
+          label: "Hypothetical Savings",
+          amount: year.hypotheticalSavings?.contribution ?? 0,
+        },
       ];
       return drillResult("totalExpenses", "Total Expenses", year, year.totalExpenses, rows);
     }

@@ -132,6 +132,20 @@ describe("buildYearCellDrill — income side", () => {
     expect(rowsOf(d).reduce((s, r) => s + r.amount, 0)).toBe(36_000);
   });
 
+  it("otherIncome: excludes equity-proceeds:* keys (not part of income.other/otherInflows)", () => {
+    // pension 30k + equity-proceeds 10k in bySource, but income.other /
+    // otherInflows() only ever reflect the pension — equity cash feeds
+    // totalIncome separately (projection.ts ~1320-1330).
+    const y = makeYear();
+    y.income.bySource = { ...y.income.bySource, "equity-proceeds:plan-1": 10_000 };
+    const d = buildYearCellDrill("otherIncome", y, makeClientData())!;
+    expect(d.total).toBe(36_000); // unchanged: pension 30k + note cash 6k
+    const rows = rowsOf(d);
+    expect(rows.map((r) => r.id)).not.toContain("equity-proceeds:plan-1");
+    expect(rows.map((r) => r.label)).not.toContain("Other");
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(36_000);
+  });
+
   it("rmds: one row per account with an RMD, counting ALL ledgers (matches rmdTotal)", () => {
     const d = buildYearCellDrill("rmds", makeYear(), makeClientData())!;
     expect(d.total).toBe(23_000); // 15k + 8k — entity ledger included, unlike the cash-flow panel
@@ -197,6 +211,26 @@ describe("buildYearCellDrill — expenses & portfolio", () => {
     expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(103_000);
     expect(rows.map((r) => r.label)).toContain("Savings");
     expect(rows.map((r) => r.label)).not.toContain("Cash Gifts"); // inside Other Expenses already
+  });
+
+  it("totalExpenses: includes a Hypothetical Savings row when hypotheticalSavings.contribution is nonzero", () => {
+    // totalExpenses = expenses.total + savings.total + hypoContribution
+    // (projection.ts ~5874) — bump totalExpenses by the 4k contribution so
+    // the fixture still ties, mirroring how the engine derives it.
+    const y = makeYear({
+      hypotheticalSavings: { contribution: 4_000, fromCashFlow: 4_000, fromExpenseReduction: 0 },
+      totalExpenses: 107_000,
+    });
+    const d = buildYearCellDrill("totalExpenses", y, makeClientData())!;
+    expect(d.total).toBe(107_000);
+    const rows = rowsOf(d);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: "hypoContribution", label: "Hypothetical Savings", amount: 4_000 },
+      ]),
+    );
+    expect(rows.map((r) => r.label)).not.toContain("Other");
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(107_000);
   });
 
   it("shortfall: shows the expenses-minus-inflows math when positive", () => {

@@ -4,6 +4,7 @@ import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
 import { retirementInflows } from "@/lib/retirement/retirement-inflows";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { buildYearCellDrill, type YearDrillColumnKey } from "@/lib/solver/year-cell-drill";
+import type { CellDrillProps } from "@/lib/cell-drill/types";
 
 /** Format a currency value using parenthesized notation for negatives,
  *  matching the eMoney accounting style.  Positive values use the standard
@@ -20,10 +21,11 @@ export function retirementYearColumns(
 ): YearTableColumn<ProjectionYear>[] {
   // Per-cell drill factory — undefined (no drill affordance) when the caller
   // has no ClientData to resolve account/income/expense names against.
-  const drill = clientData
-    ? (key: YearDrillColumnKey) => (row: ProjectionYear) =>
-        buildYearCellDrill(key, row, clientData)
-    : (_key: YearDrillColumnKey) => undefined;
+  const drill: (
+    key: YearDrillColumnKey,
+  ) => ((row: ProjectionYear) => CellDrillProps | null) | undefined = clientData
+    ? (key) => (row) => buildYearCellDrill(key, row, clientData)
+    : () => undefined;
 
   return [
     {
