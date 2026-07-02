@@ -177,7 +177,7 @@ export async function renderPresentationPdf(
   // Conditionally load the investments bundle — only when the deck includes
   // at least one investment page, to avoid unnecessary DB queries.
   const needsInvestments = body.pages.some(
-    (p) => p.pageId === "assetAllocation" || p.pageId === "portfolioAnalysis",
+    (p) => p.pageId === "assetAllocation" || p.pageId === "portfolioAnalysis" || p.pageId === "assumptions",
   );
   const investments = needsInvestments
     ? (await loadInvestmentsBundle(clientId, firmId)) ?? undefined

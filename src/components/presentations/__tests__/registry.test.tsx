@@ -28,6 +28,7 @@ describe("registry — Cash Flow page", () => {
     expect(Object.keys(PRESENTATION_PAGES).sort()).toEqual(
       [
         "assetAllocation",
+        "assumptions",
         "balanceSheet",
         "blank",
         "cashFlow",
