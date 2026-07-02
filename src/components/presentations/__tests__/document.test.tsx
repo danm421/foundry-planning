@@ -25,7 +25,9 @@ describe("PresentationDocument", () => {
         accentColor="#b87f1f"
         clientName="Cooper Sample"
         reportDate="May 28, 2026"
-        spouseName="Susan Sample"
+        spouseName="Susan"
+        spouseLastName="Sample"
+        headerName="Cooper & Susan"
         bundles={{ base: { clientData, projection, scenarioLabel: "Base Case" } }}
         topScenarioKey="base"
       />,

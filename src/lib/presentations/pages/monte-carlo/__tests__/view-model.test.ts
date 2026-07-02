@@ -31,6 +31,7 @@ function ctx(extra: Partial<BuildDataContext>): BuildDataContext {
     scenarioLabel: "Base Case",
     clientName: "Jane Doe",
     spouseName: null,
+    spouseLastName: null,
     firmName: "Acme",
     firmTagline: null,
     firmLogoDataUrl: null,

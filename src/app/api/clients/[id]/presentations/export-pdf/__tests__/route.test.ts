@@ -42,6 +42,10 @@ vi.mock("@/lib/scenario/loader", () => ({
   }),
 }));
 
+vi.mock("@/lib/clients/get-client-with-contacts", () => ({
+  getClientWithContacts: vi.fn().mockResolvedValue({ spouseLastName: "Sample" }),
+}));
+
 vi.mock("@/engine/projection", () => ({
   runProjectionWithEvents: vi.fn().mockReturnValue({ years: [] }),
 }));

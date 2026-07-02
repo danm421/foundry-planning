@@ -47,10 +47,11 @@ export type TocPageOptions = Record<string, never>;
 
 export const TOC_PAGE_OPTIONS_DEFAULT: TocPageOptions = {};
 
-// TOC data is computed by the document composer (it needs cross-page page
-// counts), not by buildData; renderPdf reads sections off the renderPdf input
-// instead. The data slot stays empty.
-export type TocPageData = Record<string, never>;
+// TOC sections are computed by the document composer (they need cross-page page
+// counts) and read off the renderPdf input. `buildData` supplies the formal
+// household name for the disclaimer, since the renderPdf `clientName` prop now
+// carries the compact running-header name (both first names).
+export type TocPageData = { clientName: string };
 
 // ── Cash-flow page ─────────────────────────────────────────────────────────
 

@@ -56,15 +56,22 @@ function isChildMember(m: { role?: string | null; relationship?: string | null }
 }
 
 export function buildClientProfileData(input: BuildClientProfileInput): ClientProfilePageData {
-  const { years, clientData, scenarioLabel, clientName, spouseName } = input;
+  const { years, clientData, scenarioLabel, clientName, spouseName, spouseLastName } = input;
   const ci = clientData.client;
   const firstYear = years[0]?.year ?? new Date().getUTCFullYear();
   const lastYear = years[years.length - 1]?.year ?? firstYear;
 
+  // Spouse card shows first + last so a different surname isn't dropped. The
+  // engine client only carries the spouse's first name, so the last name is
+  // threaded in separately from the CRM contact.
+  const spouseFullName = spouseName
+    ? `${spouseName}${spouseLastName ? ` ${spouseLastName}` : ""}`.trim()
+    : null;
+
   return {
     title: "Client Profile",
     subtitle: scenarioLabel,
-    persons: buildPersons(ci, years, clientName, spouseName),
+    persons: buildPersons(ci, years, clientName, spouseFullName),
     children: buildChildren(clientData, firstYear),
     income: buildIncome(clientData, years, firstYear, lastYear),
     expenses: buildExpenses(ci, years),

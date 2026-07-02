@@ -37,6 +37,13 @@ interface PresentationDocumentProps {
   clientName: string;
   reportDate: string;
   spouseName: string | null;
+  /** Spouse surname (from the CRM contact) — null when solo or unknown. Lets
+   *  the cover + Client Profile page show the spouse's real last name. */
+  spouseLastName: string | null;
+  /** Compact household name for the running page header ("Alan & Teresa").
+   *  Distinct from `clientName`, which stays the formal primary/household name
+   *  used on the cover and disclaimer. */
+  headerName: string;
   /** One bundle per distinct scenario in the deck, keyed by `keyForRef`. */
   bundles: Record<string, PageScenarioBundle>;
   /** Key of the top-level scenario; fallback for any unmatched page. */
@@ -97,6 +104,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             scenarioLabel: bundle.scenarioLabel,
             clientName: props.clientName,
             spouseName: props.spouseName,
+            spouseLastName: props.spouseLastName,
             firmName: props.firmName,
             firmTagline: props.firmTagline,
             firmLogoDataUrl: props.firmLogoDataUrl,
@@ -118,7 +126,11 @@ export function PresentationDocument(props: PresentationDocumentProps) {
               // `as never` escape hatch already used for buildData/estimatePageCount.
               data: data as never,
               firmName: props.firmName,
-              clientName: props.clientName,
+              // The running page header shows the compact household name (both
+              // first names for a couple). The formal `clientName` is still
+              // available to pages via `buildData` (cover, disclaimer, Client
+              // Profile primary card).
+              clientName: props.headerName,
               reportDate: props.reportDate,
               pageIndex: startPages[idx],
               totalPages,

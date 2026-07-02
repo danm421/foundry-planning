@@ -35,6 +35,8 @@ describe("PresentationDocument — multi-scenario bundle selection", () => {
         clientName="Cooper Sample"
         reportDate="January 1, 2026"
         spouseName={null}
+        spouseLastName={null}
+        headerName="Cooper Sample"
         bundles={{ base, "scenario:alt": alt }}
         topScenarioKey="base"
       />,
@@ -58,6 +60,8 @@ describe("PresentationDocument — multi-scenario bundle selection", () => {
         clientName="Cooper Sample"
         reportDate="January 1, 2026"
         spouseName={null}
+        spouseLastName={null}
+        headerName="Cooper Sample"
         bundles={{ base }}
         topScenarioKey="base"
       />,

@@ -43,6 +43,7 @@ const base: Omit<BuildClientProfileInput, "clientData"> = {
   scenarioLabel: "Base Case",
   clientName: "John Smith",
   spouseName: "Jane Smith",
+  spouseLastName: null,
 };
 
 describe("buildClientProfileData — persons", () => {
@@ -63,6 +64,19 @@ describe("buildClientProfileData — persons", () => {
       name: "Jane Smith", age: 56, retirementAge: 63,
       retirementYear: 2033, lifeExpectancyAge: 94, lifeExpectancyYear: 2064,
     });
+  });
+
+  it("appends the spouse's surname when it differs from the primary's", () => {
+    const data = buildClientProfileData({
+      ...base,
+      spouseName: "Teresa",
+      spouseLastName: "Cox",
+      clientData: clientData({
+        spouseName: "Teresa", spouseDob: "1970-07-04",
+        spouseRetirementAge: 63, spouseLifeExpectancy: 94,
+      }),
+    });
+    expect(data.persons[1]).toMatchObject({ name: "Teresa Cox" });
   });
 
   it("builds one card for a single client and falls back to planEndAge", () => {

@@ -25,6 +25,7 @@ import {
 import { dateLong } from "@/lib/presentations/format";
 import { loadInvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
@@ -380,6 +381,20 @@ export async function renderPresentationPdf(
   const spouseFirstName = ci.spouseName ?? null;
   const clientFullName = `${ci.firstName} ${clientLastName}`.trim();
 
+  // The spouse's surname lives only on the CRM contact (the engine client
+  // carries just `spouseName` = first name). Load it so the cover + Client
+  // Profile page can show the spouse's real last name when it differs from
+  // the primary's. One extra query, only when there's a spouse.
+  const spouseLastName = spouseFirstName
+    ? (await getClientWithContacts(clientId, firmId))?.spouseLastName ?? null
+    : null;
+  // Compact running-header name: both first names for a couple ("Alan &
+  // Teresa"), full primary name for a solo client. Distinct from the formal
+  // household name used on the cover/disclaimer.
+  const headerName = spouseFirstName
+    ? `${ci.firstName} & ${spouseFirstName}`.trim()
+    : clientFullName;
+
   // Conditionally load the life insurance inventory — only when the deck
   // includes the Life Insurance Summary page.
   const needsLifeInsurance = body.pages.some(
@@ -479,6 +494,8 @@ export async function renderPresentationPdf(
     clientName: clientFullName,
     reportDate: dateLong(new Date()),
     spouseName: spouseFirstName,
+    spouseLastName,
+    headerName,
     bundles,
     topScenarioKey: plan.topKey,
     investments,

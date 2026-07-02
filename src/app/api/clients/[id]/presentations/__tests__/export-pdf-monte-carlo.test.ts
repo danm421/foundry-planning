@@ -16,7 +16,7 @@ describe("monte carlo page registration", () => {
     const data = page.buildData(
       {
         years: [], projection: {} as never, clientData: { client: { retirementAge: 65 } } as never,
-        scenarioLabel: "Base Case", clientName: "X", spouseName: null, firmName: "F",
+        scenarioLabel: "Base Case", clientName: "X", spouseName: null, spouseLastName: null, firmName: "F",
         firmTagline: null, firmLogoDataUrl: null, accentColor: "#b87f1f",
         reportDate: "May 29, 2026", monteCarlo: null,
       },
