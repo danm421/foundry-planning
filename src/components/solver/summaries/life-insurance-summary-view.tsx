@@ -14,8 +14,9 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { ChartDataset } from "chart.js";
-import type { LifeInsuranceSummaryPageData, DecedentGap, LiChart } from "@/lib/presentations/pages/life-insurance-summary/view-model";
+import type { LifeInsuranceSummaryPageData, DecedentGap, DecedentRange, LiChart } from "@/lib/presentations/pages/life-insurance-summary/view-model";
 import { fmtUsd, POLICY_TYPE_LABEL, termExpiryLabel } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
+import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { chartChrome, dataPalette, statusColors, useThemeName } from "@/lib/chart-colors";
 import {
   SummaryLayout,
@@ -28,6 +29,93 @@ import {
 } from "./primitives";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
+
+// Solver cap — display detection only; the engine saturates at this bound.
+const CAP_LABEL = "exceeds $20M";
+
+// ── Need-range card ───────────────────────────────────────────────────────────
+// Static twin of the solver LI tab's RangeCard (li-need-range.tsx): additional
+// need as straight-line → Monte Carlo range, itemized in-force coverage, total
+// recommended. MC is always present here (the summary only solves once).
+function RangeCard({ r }: { r: DecedentRange }) {
+  const slValue =
+    r.straightLine == null
+      ? null
+      : r.straightLine.exceedsCap
+        ? CAP_LABEL
+        : formatCurrency(r.straightLine.need);
+  const mcValue = r.mc.exceedsCap ? CAP_LABEL : formatCurrency(r.mc.need);
+  const totalDisplay =
+    r.totalRecommended == null
+      ? null
+      : r.totalRecommended.low === r.totalRecommended.high
+        ? formatCurrency(r.totalRecommended.high)
+        : `${formatCurrency(r.totalRecommended.low)} – ${formatCurrency(r.totalRecommended.high)}`;
+
+  return (
+    <div className="flex-1 rounded-lg border border-hair bg-card-2 p-4">
+      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
+        If {r.decedentLabel} dies in {r.deathYear}
+      </div>
+
+      <div className="mt-2 flex items-start gap-3">
+        {slValue != null ? (
+          <>
+            <RangeFigure label="Straight-line" value={slValue} warn={r.straightLine!.exceedsCap} />
+            <svg viewBox="0 0 24 12" className="mt-1.5 h-3 w-6 shrink-0 text-ink-3" fill="none" aria-hidden="true">
+              <path d="M1 6h21m0 0-5-4m5 4-5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </>
+        ) : null}
+        <RangeFigure label={`Monte Carlo · ${r.mc.achievedScorePct}%`} value={mcValue} warn={r.mc.exceedsCap} />
+      </div>
+      <div className="mt-2.5 text-[11px] text-ink-2">Additional life insurance needed</div>
+
+      <div className="mt-3 border-t border-hair pt-2.5">
+        {r.estateTaxAddend != null ? (
+          <div className="mb-2 flex items-center justify-between text-[11px]">
+            <span className="text-ink-2">Estate taxes</span>
+            <span className="tabular text-ink-2">{formatCurrency(r.estateTaxAddend)}</span>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="text-ink-2">Existing coverage in force</span>
+          <span className="tabular text-ink-2">{formatCurrency(r.existingTotal)}</span>
+        </div>
+        {r.existingPolicies.length === 0 ? (
+          <p className="mt-1 text-[11px] text-ink-3">None in force in {r.deathYear}.</p>
+        ) : (
+          <ul className="mt-1.5 space-y-1">
+            {r.existingPolicies.map((p, i) => (
+              <li key={`${p.name}-${i}`} className="flex items-center justify-between text-[11px] text-ink-2">
+                <span>{p.name}</span>
+                <span className="tabular">{formatCurrency(p.faceValue)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {totalDisplay != null ? (
+        <div className="mt-2.5 flex items-center justify-between border-t border-hair pt-2.5 text-[12px]">
+          <span className="font-medium text-ink-2">Total recommended coverage</span>
+          <span className="tabular font-semibold text-ink">{totalDisplay}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RangeFigure({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div>
+      <div className={`text-[22px] font-semibold leading-none tabular tracking-tight ${warn ? "text-warn" : "text-ink"}`}>
+        {value}
+      </div>
+      <div className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">{label}</div>
+    </div>
+  );
+}
 
 // ── Gap helpers ───────────────────────────────────────────────────────────────
 function gapLabel(g: DecedentGap): string {
@@ -70,7 +158,7 @@ function GapCard({ g, markYear }: { g: DecedentGap; markYear: number | null }) {
 
       {/* Need bar */}
       <div>
-        <p className="mb-1 text-[11px] text-ink-3">{`Need  ${fmtUsd(g.need)}`}</p>
+        <p className="mb-1 text-[11px] text-ink-3">{`Recommended  ${fmtUsd(g.need)}`}</p>
         <div className="h-2 overflow-hidden rounded-full bg-card">
           <div className="h-full w-full rounded-full bg-accent opacity-40" />
         </div>
@@ -299,18 +387,22 @@ export function LifeInsuranceSummaryView({ data }: { data: LifeInsuranceSummaryP
           </div>
         </SummarySection>
       ) : (
-        /* notSolved = false: gap cards + optional need-over-time chart */
+        /* notSolved = false: range cards + gap cards + optional need-over-time chart */
         <>
-          {hasGap ? (
+          {data.clientRange || data.spouseRange || hasGap ? (
             <SummarySection heading="Coverage vs. need">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                {data.clientGap ? (
-                  <GapCard g={data.clientGap} markYear={data.chart.markYear} />
-                ) : null}
-                {data.spouseGap ? (
-                  <GapCard g={data.spouseGap} markYear={data.chart.markYear} />
-                ) : null}
-              </div>
+              {data.clientRange || data.spouseRange ? (
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {data.clientRange ? <RangeCard r={data.clientRange} /> : null}
+                  {data.spouseRange ? <RangeCard r={data.spouseRange} /> : null}
+                </div>
+              ) : null}
+              {hasGap ? (
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  {data.clientGap ? <GapCard g={data.clientGap} markYear={data.chart.markYear} /> : null}
+                  {data.spouseGap ? <GapCard g={data.spouseGap} markYear={data.chart.markYear} /> : null}
+                </div>
+              ) : null}
             </SummarySection>
           ) : null}
 
