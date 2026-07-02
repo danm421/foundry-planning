@@ -109,7 +109,12 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
     db
-      .select({ id: familyMembers.id, role: familyMembers.role, firstName: familyMembers.firstName })
+      .select({
+        id: familyMembers.id,
+        role: familyMembers.role,
+        firstName: familyMembers.firstName,
+        lastName: familyMembers.lastName,
+      })
       .from(familyMembers)
       .where(eq(familyMembers.clientId, id))
       .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
@@ -197,6 +202,23 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     return "joint";
   }
 
+  // 529 / education_savings display name for the Out-of-Estate grouping:
+  // the designated beneficiary's family-member first+last name when set,
+  // else the free-text beneficiaryName. Returns null for every other
+  // category (education529 is undefined) and for a 529 with neither field
+  // set (shouldn't happen — the API requires one — but the UI falls back to
+  // "Unnamed beneficiary" for display).
+  function beneficiaryDisplayNameFor(
+    edu: { beneficiaryFamilyMemberId?: string | null; beneficiaryName?: string | null } | undefined,
+  ): string | null {
+    if (!edu) return null;
+    if (edu.beneficiaryFamilyMemberId) {
+      const fm = familyMemberRows.find((m) => m.id === edu.beneficiaryFamilyMemberId);
+      if (fm) return `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`;
+    }
+    return edu.beneficiaryName ?? null;
+  }
+
   const accountProps: AccountRow[] = effectiveTree.accounts.map((a) => {
     const meta = accountMetaById.get(a.id);
     return {
@@ -230,6 +252,14 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       owners: a.owners,
       titlingType: a.titlingType,
       parentAccountId: a.parentAccountId ?? null,
+      grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
+      grantorName: a.education529?.grantorName ?? null,
+      beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
+      beneficiaryName: a.education529?.beneficiaryName ?? null,
+      rothRolloverEnabled: a.education529?.rothRolloverEnabled ?? false,
+      rothRolloverStartYear: a.education529?.rothRolloverStartYear ?? null,
+      rothRolloverAccountId: a.education529?.rothRolloverAccountId ?? null,
+      beneficiaryDisplayName: beneficiaryDisplayNameFor(a.education529),
     };
   });
 
