@@ -41,12 +41,12 @@ const REPORT_TABS: {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }[] = [
   { id: "portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
-  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
   { id: "cashflow", label: "Cash Flow", short: "Cash Flow", icon: CashFlowIcon },
   { id: "taxBracket", label: "Tax Bracket", short: "Taxes", icon: TaxBracketIcon },
   { id: "lifeInsurance", label: "Life Insurance Need", short: "Insurance", icon: LifeInsuranceIcon },
   { id: "estate", label: "Estate", short: "Estate", icon: EstatePlanningIcon },
   { id: "monteCarlo", label: "Monte Carlo", short: "Monte Carlo", icon: MonteCarloIcon },
+  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
 
