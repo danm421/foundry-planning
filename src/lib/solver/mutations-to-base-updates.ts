@@ -77,6 +77,10 @@ export interface BaseUpdates {
   expenseUpdates: { id: string; set: ColumnPatch }[];
   /** Full new expense rows (e.g. a synthesized retirement living expense). */
   expenseInserts: Expense[];
+  /** Full-row updates from an `expense-upsert` against an existing base expense. */
+  expenseFullUpdates: Expense[];
+  /** Base expense ids removed by an `expense-upsert` with a null value. */
+  expenseRemoves: string[];
 }
 
 /**
@@ -91,6 +95,7 @@ export interface BaseUpdates {
 export interface BaseMembership {
   accountIds: ReadonlySet<string>;
   ruleIds: ReadonlySet<string>;
+  expenseIds?: ReadonlySet<string>;
 }
 
 /** number → DB decimal string; null/undefined → null. */
@@ -116,6 +121,8 @@ export function mutationsToBaseUpdates(
     incomeUpdates: [],
     expenseUpdates: [],
     expenseInserts: [],
+    expenseFullUpdates: [],
+    expenseRemoves: [],
   };
 
   // Classify account / savings-rule upserts against BASE membership when the
@@ -125,6 +132,8 @@ export function mutationsToBaseUpdates(
     baseMembership?.accountIds ?? new Set((source.accounts ?? []).map((a) => a.id));
   const existingRules =
     baseMembership?.ruleIds ?? new Set((source.savingsRules ?? []).map((r) => r.id));
+  const existingExpenses =
+    baseMembership?.expenseIds ?? new Set((source.expenses ?? []).map((e) => e.id));
 
   // Coalesce field edits per target so multiple levers on one row produce a
   // single partial update.
@@ -316,6 +325,14 @@ export function mutationsToBaseUpdates(
           if (existingRules.has(m.id)) out.savingsRemoves.push(m.id);
         } else {
           (existingRules.has(m.id) ? out.savingsUpdates : out.savingsInserts).push(m.value);
+        }
+        break;
+      }
+      case "expense-upsert": {
+        if (m.value === null) {
+          if (existingExpenses.has(m.id)) out.expenseRemoves.push(m.id);
+        } else {
+          (existingExpenses.has(m.id) ? out.expenseFullUpdates : out.expenseInserts).push(m.value);
         }
         break;
       }
