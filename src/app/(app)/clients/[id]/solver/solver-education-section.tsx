@@ -77,7 +77,7 @@ export function SolverEducationSection({
     return contributionRuleFor(accountId)?.annualAmount ?? 0;
   }
 
-  function setContribution(accountId: string, amount: number) {
+  function setContribution(accountId: string, amount: number, lastDrawYear: number) {
     const existing = contributionRuleFor(accountId);
     if (existing) {
       onChange({
@@ -86,13 +86,15 @@ export function SolverEducationSection({
         value: { ...existing, annualAmount: amount },
       });
     } else {
+      // Match the solve/Apply path (withAdditionalContribution): a freshly
+      // created rule funds now → the goal's last draw year, not a single year.
       const rule: SavingsRule = {
         id: `edu-solve-${accountId}`,
         accountId,
         annualAmount: amount,
         isDeductible: false,
         startYear: currentYear,
-        endYear: currentYear,
+        endYear: lastDrawYear,
       };
       onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
     }
@@ -193,7 +195,7 @@ export function SolverEducationSection({
                           max={100_000}
                           step={500}
                           prefix="$"
-                          onCommit={(n) => setContribution(accountId, n)}
+                          onCommit={(n) => setContribution(accountId, n, goal.endYear)}
                         />
                         {result ? (
                           result.fundsFully ? (
