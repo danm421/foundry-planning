@@ -17,4 +17,9 @@ describe("assumptions registration", () => {
     expect(typeof page.renderPdf).toBe("function");
     expect(typeof page.OptionsControl).toBe("function");
   });
+
+  it("estimatePageCount is data-independent", () => {
+    const page = PRESENTATION_PAGES.assumptions;
+    expect(page.estimatePageCount(undefined as never, page.defaultOptions)).toBe(3);
+  });
 });

@@ -33,7 +33,9 @@ const FULL: AssumptionsPageData = {
 
 const MINIMAL: AssumptionsPageData = {
   ...FULL,
+  overviewSections: [],
   categoryGrowth: [],
+  withdrawalOrder: [],
   stressTests: [],
   accounts: null,
   referencedPortfolios: null,
