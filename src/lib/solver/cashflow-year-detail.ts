@@ -44,7 +44,7 @@ function sum(items: CashFlowLineItem[]): number {
 }
 
 /** Build id→name maps from the working client data (mirrors cashflow-report.tsx). */
-function buildNameMaps(clientData: ClientData) {
+export function buildNameMaps(clientData: ClientData) {
   const incomeNames: Record<string, string> = {};
   for (const inc of clientData.incomes ?? []) {
     if (inc.type === "business" && inc.ownerEntityId != null) continue;
