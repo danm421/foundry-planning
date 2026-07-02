@@ -103,7 +103,7 @@ describe("IncomeDialog survivor benefit %", () => {
     expect(screen.getByLabelText(/survivor benefit/i)).toBeInTheDocument();
   });
 
-  it("sends survivorshipPct as a fraction string and omits it for non-deferred types", async () => {
+  it("sends survivorshipPct as a fraction string for a deferred single-owner income", async () => {
     render(
       <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
         <IncomeExpensesView {...BASE_PROPS} />
@@ -126,6 +126,65 @@ describe("IncomeDialog survivor benefit %", () => {
     expect(call).toBeTruthy();
     const sentBody = JSON.parse((call![1] as RequestInit).body as string);
     expect(sentBody.survivorshipPct).toBe("0.5");
+  });
+
+  it("nulls out survivorshipPct when the owner is switched to Joint after typing a value", async () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} />
+      </ClientAccessProvider>,
+    );
+
+    const addButtons = screen.getAllByRole("button", { name: /^\+ Add$/ });
+    fireEvent.click(addButtons[0]);
+
+    fireEvent.change(screen.getByLabelText(/type/i), { target: { value: "deferred" } });
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Pension" } });
+    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "10000" } });
+    // Enter a survivor benefit while owner is a single person…
+    fireEvent.change(screen.getByLabelText(/survivor benefit/i), { target: { value: "50" } });
+    // …then switch to Joint, which hides the field. The stale input must NOT
+    // leak into the payload.
+    fireEvent.click(screen.getByText("Joint 50/50"));
+    expect(screen.queryByLabelText(/survivor benefit/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /add income/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes("/incomes"));
+    expect(call).toBeTruthy();
+    const sentBody = JSON.parse((call![1] as RequestInit).body as string);
+    expect(sentBody.survivorshipPct).toBeNull();
+  });
+
+  it("omits survivorshipPct (null) for a non-deferred income even if a value was typed", async () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} />
+      </ClientAccessProvider>,
+    );
+
+    const addButtons = screen.getAllByRole("button", { name: /^\+ Add$/ });
+    fireEvent.click(addButtons[0]);
+
+    // Type deferred first to expose + fill the field, then switch to salary,
+    // which hides it — the payload must send null for the non-deferred type.
+    fireEvent.change(screen.getByLabelText(/type/i), { target: { value: "deferred" } });
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Salary" } });
+    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "10000" } });
+    fireEvent.change(screen.getByLabelText(/survivor benefit/i), { target: { value: "50" } });
+    fireEvent.change(screen.getByLabelText(/type/i), { target: { value: "salary" } });
+    expect(screen.queryByLabelText(/survivor benefit/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /add income/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes("/incomes"));
+    expect(call).toBeTruthy();
+    const sentBody = JSON.parse((call![1] as RequestInit).body as string);
+    expect(sentBody.survivorshipPct).toBeNull();
   });
 
   it("pre-fills the field as a whole-number percent when editing an existing deferred income", () => {

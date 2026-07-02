@@ -598,8 +598,13 @@ function IncomeDialog({
       endYearRef,
       taxType,
       linkedPropertyId: type === "other" ? (linkedPropertyId || null) : null,
+      // Re-guard MUST match the field's render condition exactly (deferred +
+      // single owner) — otherwise switching owner to Joint after typing a value
+      // hides the field but still leaks the stale fraction into the payload.
       survivorshipPct:
-        type === "deferred" && survivorshipPctInput.trim() !== ""
+        type === "deferred" &&
+        (owner === "client" || owner === "spouse") &&
+        survivorshipPctInput.trim() !== ""
           ? String(Number(survivorshipPctInput) / 100)
           : null,
     };
