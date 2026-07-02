@@ -914,7 +914,7 @@ export interface Income {
 
 export interface Expense {
   id: string;
-  type: "living" | "other" | "insurance";
+  type: "living" | "other" | "insurance" | "education";
   name: string;
   annualAmount: number;
   startYear: number;
@@ -946,6 +946,16 @@ export interface Expense {
    *  expenses so they auto-end when projected Medicare premiums kick in,
    *  preventing double-counting alongside the modeled Medicare cost. */
   endsAtMedicareEligibilityOwner?: "client" | "spouse";
+  /** Education-goal: ordered dedicated funding accounts (drawn first, in order). */
+  dedicatedAccountIds?: string[];
+  /** Education-goal: pay the uncovered goal cost from household cash when true;
+   *  otherwise it's an unfunded shortfall. Ignored for non-education rows. */
+  payShortfallOutOfPocket?: boolean;
+  /** Education-goal free-text labels (no cost-lookup DB in v1). */
+  institutionState?: string | null;
+  institutionName?: string | null;
+  /** Education-goal "For" (student/beneficiary). Attribution only. */
+  forFamilyMemberId?: string | null;
   // ── View-only metadata ─────────────────────────────────────────────
   // Carried through from the DB row so page-level adapters can render
   // milestone-relative editing UI. Engine math ignores these fields.
@@ -1268,6 +1278,24 @@ export interface PlanSettings {
 
 // ── Output Types ─────────────────────────────────────────────────────────────
 
+export interface EducationGoalYear {
+  goalId: string;
+  /** Dedicated-account balances at the start of the year (before growth). */
+  dedicatedAssetsBOY: number;
+  /** Growth + savings contributions into the dedicated accounts this year. */
+  growthAndSavings: number;
+  /** Indexed goal cost for the year. */
+  goalExpense: number;
+  /** Non-goal changes to the dedicated accounts this year (e.g. a general draw). */
+  otherExpenseFlows: number;
+  /** Amount drawn from the dedicated accounts for the goal. */
+  dedicatedWithdrawal: number;
+  /** Dedicated-account balances at year end. */
+  dedicatedAssetsEOY: number;
+  /** max(0, goalExpense − dedicatedWithdrawal). */
+  shortfall: number;
+}
+
 export interface ProjectionYear {
   year: number;
   ages: { client: number; spouse?: number };
@@ -1376,6 +1404,9 @@ export interface ProjectionYear {
     byLiability: Record<string, number>;
     interestByLiability: Record<string, number>;
   };
+
+  /** Present only when the plan has education goals with dedicated funding. */
+  educationGoals?: EducationGoalYear[];
 
   savings: {
     byAccount: Record<string, number>;
