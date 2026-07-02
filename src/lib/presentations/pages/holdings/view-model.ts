@@ -11,17 +11,18 @@ import type {
 } from "./types";
 
 // Formatting parity with the app's Holdings tab (holdings-tab.tsx), pinned to
-// en-US so server-side PDF rendering is deterministic.
-const usd2 = (n: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+// en-US so server-side PDF rendering is deterministic. Formatters are hoisted —
+// they run once per holding row per deck render.
+const USD2 = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const SHARES = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 });
+const usd2 = (n: number) => USD2.format(n);
 const pct1 = (n: number) => `${(n * 100).toFixed(1)}%`;
-const sharesFmt = (n: number) =>
-  n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+const sharesFmt = (n: number) => SHARES.format(n);
 
 function rowVm(h: HoldingLite): HoldingRowVm {
   let gainLoss: HoldingRowVm["gainLoss"] = null;

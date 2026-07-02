@@ -214,6 +214,15 @@ export async function loadInvestmentsBundle(
   // loader in load-client-data.ts.
   const accountIdList = acctRows.map((a) => a.id);
   const portfolioIdList = portfolioRows.map((p) => p.id);
+
+  // Holdings only need acctRows — start the query now so it overlaps the
+  // allocation/owner/group loads below instead of serializing after them.
+  const enrichedHoldingsPromise = opts?.includeHoldings
+    ? loadEnrichedHoldings(accountIdList)
+    : null;
+  // If a later query throws before we await, don't let this become an
+  // unhandled rejection. Awaiting the original promise below still throws.
+  enrichedHoldingsPromise?.catch(() => {});
   const [mixRows, portfolioAllocRows] = await Promise.all([
     accountIdList.length > 0
       ? db.select().from(accountAssetAllocations)
@@ -329,10 +338,9 @@ export async function loadInvestmentsBundle(
     }
   });
 
-  if (opts?.includeHoldings) {
-    const enrichedByAccount = await loadEnrichedHoldings(acctRows.map((a) => a.id));
+  if (enrichedHoldingsPromise) {
     bundle.holdings = buildHoldingsInventory(
-      enrichedByAccount,
+      await enrichedHoldingsPromise,
       new Map(acctRows.map((a) => [a.id, { name: a.name, category: a.category }])),
     );
   }
