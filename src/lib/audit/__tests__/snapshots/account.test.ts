@@ -56,6 +56,13 @@ const baseRow: typeof accounts.$inferSelect = {
   externalProvider: null,
   externalId: null,
   lastSyncedAt: null,
+  grantorFamilyMemberId: null,
+  grantorName: null,
+  beneficiaryFamilyMemberId: null,
+  beneficiaryName: null,
+  rothRolloverEnabled: false,
+  rothRolloverStartYear: null,
+  rothRolloverAccountId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -5,7 +5,13 @@ import type { MatchAnnotation } from "../types";
 export interface AccountCandidate {
   id: string;
   name: string;
-  category: AccountCategory;
+  // Wider than the extraction AccountCategory: existing DB accounts can be
+  // education_savings, but extraction never emits that category (v1 classifies
+  // 529s as taxable + subType "529"). Keeping 529s in the candidate set lets
+  // the exact accountNumberLast4+custodian branch below recognize a re-imported
+  // 529 as an update instead of duplicating it; the fuzzy branch requires
+  // category equality, so a 529 candidate can never fuzzy-match.
+  category: AccountCategory | "education_savings";
   accountNumberLast4: string | null;
   custodian: string | null;
   value: number;

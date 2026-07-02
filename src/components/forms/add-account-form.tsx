@@ -43,11 +43,12 @@ import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+import { FieldTooltip } from "./field-tooltip";
 
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
 export interface AccountFormInitial {
   id: string;
@@ -94,6 +95,15 @@ export interface AccountFormInitial {
   /** Future-activation year (null ⇒ active today). */
   activationYear?: number | null;
   activationYearRef?: YearRef | null;
+  /** 529 / education_savings only — grantor/beneficiary/Roth-rollover fields.
+   *  Undefined/null for every other category. */
+  grantorFamilyMemberId?: string | null;
+  grantorName?: string | null;
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
+  rothRolloverEnabled?: boolean;
+  rothRolloverStartYear?: number | null;
+  rothRolloverAccountId?: string | null;
 }
 
 export interface BusinessOption {
@@ -130,6 +140,7 @@ export interface CategoryDefaults {
   life_insurance: string;
   notes_receivable: string;
   stock_options?: string;
+  education_savings?: string;
 }
 
 export interface AccountFormAutoSaveHandle {
@@ -145,6 +156,8 @@ interface AddAccountFormProps {
   /** Top-level business accounts that may own this account. Source:
    *  accounts.filter(a => a.category === "business" && a.parentAccountId == null). */
   businesses?: BusinessOption[];
+  /** Household Roth IRA accounts offered as a 529→Roth SECURE 2.0 rollover destination. */
+  rothIraAccounts?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
@@ -184,7 +197,9 @@ interface AddAccountFormProps {
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa", "other"],
+  // "529" moved to its own education_savings category (Task 9+). Pre-migration
+  // rows still carry retirement/529 until Task 12's backfill runs.
+  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "hsa", "other"],
   annuity: ["other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
@@ -194,6 +209,7 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   // exhaustive without offering a stale subType option.
   notes_receivable: [],
   stock_options: ["other"],
+  education_savings: ["529"],
 };
 
 const SUB_TYPE_LABELS: Record<string, string> = {
@@ -232,6 +248,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
   stock_options: "Stock Options",
+  education_savings: "529 / Education",
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
@@ -254,6 +271,7 @@ const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   // Record<AccountCategory, string> exhaustiveness.
   notes_receivable: "Promissory Note",
   stock_options: "Stock Options",
+  education_savings: "529 Plan",
 };
 
 function uniqueAccountName(base: string, existing: string[]): string {
@@ -273,6 +291,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   initial,
   entities,
   businesses,
+  rothIraAccounts = [],
   familyMembers = [],
   categoryDefaults,
   ownerNames,
@@ -338,14 +357,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   const [loading, setLoading] = useState(false);
 
-  // Lift submit-button state into the parent dialog so DialogShell can drive
-  // the footer primary button's disabled/loading visuals.
-  useEffect(() => {
-    onSubmitStateChange?.({
-      canSubmit: !loading,
-      loading,
-    });
-  }, [loading, onSubmitStateChange]);
+  // NOTE: the onSubmitStateChange effect that lifts submit-button state into
+  // the parent dialog lives below `canSave` (it now depends on it).
 
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<AccountCategory>(
@@ -427,6 +440,36 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // with individual owners.
   const [parentBusinessId, setParentBusinessId] = useState<string | null>(
     initial?.parentAccountId ?? initialParentAccountId ?? null,
+  );
+
+  // ── 529 (education_savings) grantor/beneficiary/Roth-rollover state ────────
+  // OwnershipEditor is hidden for this category (no account_owners rows are
+  // written); these fields are authoritative instead. Each pair is a radio
+  // toggle over two mutually-exclusive columns — only the active side is sent
+  // on save (see accountBody below), so switching modes never needs to clear
+  // the other field.
+  const [grantorMode, setGrantorMode] = useState<"household" | "outside">(
+    initial?.grantorFamilyMemberId ? "household" : initial?.grantorName ? "outside" : "household",
+  );
+  const [grantorFamilyMemberId, setGrantorFamilyMemberId] = useState<string>(
+    initial?.grantorFamilyMemberId ?? "",
+  );
+  const [grantorName, setGrantorName] = useState<string>(initial?.grantorName ?? "");
+  const [beneficiaryMode, setBeneficiaryMode] = useState<"family" | "named">(
+    initial?.beneficiaryFamilyMemberId ? "family" : initial?.beneficiaryName ? "named" : "family",
+  );
+  const [beneficiaryFamilyMemberId, setBeneficiaryFamilyMemberId] = useState<string>(
+    initial?.beneficiaryFamilyMemberId ?? "",
+  );
+  const [beneficiaryName, setBeneficiaryName] = useState<string>(initial?.beneficiaryName ?? "");
+  const [rothRolloverEnabled, setRothRolloverEnabled] = useState<boolean>(
+    initial?.rothRolloverEnabled ?? false,
+  );
+  const [rothRolloverStartYear, setRothRolloverStartYear] = useState<string>(
+    initial?.rothRolloverStartYear != null ? String(initial.rothRolloverStartYear) : "",
+  );
+  const [rothRolloverAccountId, setRothRolloverAccountId] = useState<string>(
+    initial?.rothRolloverAccountId ?? "",
   );
 
   // The auto-provisioned household cash account is system-managed: category,
@@ -625,6 +668,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     activationEnabled,
     activationYear,
     activationYearRef,
+    grantorMode,
+    grantorFamilyMemberId,
+    grantorName,
+    beneficiaryMode,
+    beneficiaryFamilyMemberId,
+    beneficiaryName,
+    rothRolloverEnabled,
+    rothRolloverStartYear,
+    rothRolloverAccountId,
   }), [
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
@@ -636,6 +688,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     withholdingRate, defaultExerciseTiming, defaultExerciseYear, defaultSellTiming,
     defaultSellYear, defaultSellPercentPerYear, defaultSellStartYear,
     activationEnabled, activationYear, activationYearRef,
+    grantorMode, grantorFamilyMemberId, grantorName, beneficiaryMode,
+    beneficiaryFamilyMemberId, beneficiaryName, rothRolloverEnabled,
+    rothRolloverStartYear, rothRolloverAccountId,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -645,7 +700,26 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }, []);
 
   const isDirty = currentSerialized !== baselineRef.current;
-  const canSave = name.trim().length > 0;
+  // A 529 must be attributed to a designated beneficiary — either a household
+  // family member or a named outside person (mirrors the API's create/update
+  // guard in accounts-writes.ts).
+  const educationBeneficiaryMissing =
+    category === "education_savings" &&
+    !beneficiaryFamilyMemberId &&
+    beneficiaryName.trim() === "";
+  const canSave = name.trim().length > 0 && !educationBeneficiaryMissing;
+
+  // Lift submit-button state into the parent dialog so DialogShell can drive
+  // the footer primary button's disabled/loading visuals. Gated on the same
+  // `canSave` validity as the autosave path, so an invalid form (e.g. a 529
+  // with no beneficiary) disables the button instead of firing a request the
+  // server would 400.
+  useEffect(() => {
+    onSubmitStateChange?.({
+      canSubmit: !loading && canSave,
+      loading,
+    });
+  }, [loading, canSave, onSubmitStateChange]);
 
   useEffect(() => {
     onAutoSaveStateChange?.({ isDirty, canSave });
@@ -910,15 +984,17 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
     const isMixedDeferral =
       category === "retirement" && (subType === "401k" || subType === "403b");
+    const isEducationSavings = category === "education_savings";
 
-    // When the account is parented to a business, omit owners[] from the
-    // payload entirely — the API rejects owners[] when parentAccountId is
-    // set, and inheritance happens through the parent.
+    // When the account is parented to a business, or is a 529, omit owners[]
+    // from the payload entirely — the API rejects owners[] when
+    // parentAccountId is set, and 529s carry no account_owners rows at all
+    // (the beneficiary fields below are authoritative instead).
     const accountBody = {
       name,
       category,
       subType,
-      ...(parentBusinessId ? {} : { owners }),
+      ...(parentBusinessId || isEducationSavings ? {} : { owners }),
       titlingType,
       parentAccountId: parentBusinessId,
       value: accountValue,
@@ -939,6 +1015,23 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       overridePctOi: toPctOrNull(overridePctOi),
       overridePctLtCg: toPctOrNull(overridePctLtCg),
       overridePctQdiv: toPctOrNull(overridePctQdiv),
+      grantorFamilyMemberId:
+        isEducationSavings && grantorMode === "household" ? (grantorFamilyMemberId || null) : null,
+      grantorName:
+        isEducationSavings && grantorMode === "outside" ? (grantorName.trim() || null) : null,
+      beneficiaryFamilyMemberId:
+        isEducationSavings && beneficiaryMode === "family" ? (beneficiaryFamilyMemberId || null) : null,
+      beneficiaryName:
+        isEducationSavings && beneficiaryMode === "named" ? (beneficiaryName.trim() || null) : null,
+      rothRolloverEnabled: isEducationSavings ? rothRolloverEnabled : false,
+      rothRolloverStartYear:
+        isEducationSavings && rothRolloverEnabled && rothRolloverStartYear !== ""
+          ? Number(rothRolloverStartYear)
+          : null,
+      rothRolloverAccountId:
+        isEducationSavings && rothRolloverEnabled && rothRolloverAccountId !== ""
+          ? rothRolloverAccountId
+          : null,
       overridePctTaxExempt: toPctOrNull(overridePctTaxExempt),
       annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
       propertyTaxGrowthRate:
@@ -1043,6 +1136,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
     saveEquityAccount, activationEnabled, activationYear, activationYearRef,
+    grantorMode, grantorFamilyMemberId, grantorName, beneficiaryMode,
+    beneficiaryFamilyMemberId, beneficiaryName, rothRolloverEnabled,
+    rothRolloverStartYear, rothRolloverAccountId,
   ]);
 
   useImperativeHandle(ref, () => ({ saveAsync: saveAsyncImpl }), [saveAsyncImpl]);
@@ -1050,6 +1146,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (lockTab) return;
+    // Validity gate — belt-and-suspenders with the dialog button's disabled
+    // state (canSubmit), since Enter-key submits reach here without the
+    // button. The inline field errors (e.g. missing 529 beneficiary) explain
+    // what's blocking.
+    if (!canSave) return;
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
@@ -1102,12 +1203,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       (data.get("category") as string) === "retirement" &&
       ((data.get("subType") as string) === "401k" ||
         (data.get("subType") as string) === "403b");
+    const isEducationSavingsForBody = (data.get("category") as string) === "education_savings";
     const currentValue = data.get("value") as string;
     const accountBody = {
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
-      ...(parentBusinessId ? {} : { owners }),
+      ...(parentBusinessId || isEducationSavingsForBody ? {} : { owners }),
       titlingType,
       parentAccountId: parentBusinessId,
       value: currentValue,
@@ -1133,6 +1235,23 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       overridePctOi: toPctOrNull("overridePctOi"),
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
+      grantorFamilyMemberId:
+        isEducationSavingsForBody && grantorMode === "household" ? (grantorFamilyMemberId || null) : null,
+      grantorName:
+        isEducationSavingsForBody && grantorMode === "outside" ? (grantorName.trim() || null) : null,
+      beneficiaryFamilyMemberId:
+        isEducationSavingsForBody && beneficiaryMode === "family" ? (beneficiaryFamilyMemberId || null) : null,
+      beneficiaryName:
+        isEducationSavingsForBody && beneficiaryMode === "named" ? (beneficiaryName.trim() || null) : null,
+      rothRolloverEnabled: isEducationSavingsForBody ? rothRolloverEnabled : false,
+      rothRolloverStartYear:
+        isEducationSavingsForBody && rothRolloverEnabled && rothRolloverStartYear !== ""
+          ? Number(rothRolloverStartYear)
+          : null,
+      rothRolloverAccountId:
+        isEducationSavingsForBody && rothRolloverEnabled && rothRolloverAccountId !== ""
+          ? rothRolloverAccountId
+          : null,
       overridePctTaxExempt: toPctOrNull("overridePctTaxExempt"),
       annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
       // Always persist the user's last custom rate, even when source=inflation
@@ -1533,34 +1652,201 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               </div>
             )}
 
-            <div className="col-span-2">
-              <OwnershipEditor
-                familyMembers={familyMembers}
-                entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
-                value={owners}
-                onChange={setOwners}
-                titlingType={titlingType}
-                onTitlingTypeChange={setTitlingType}
-                retirementMode={isRetirementSubType(subType) || category === "stock_options"}
-                locked={isSystemManagedCash}
-                lockedReason={
-                  isSystemManagedCash
-                    ? "This is a system-managed cash account — its ownership is fixed and can't be changed."
-                    : undefined
-                }
-                businesses={isSystemManagedCash ? undefined : businesses}
-                parentBusinessId={parentBusinessId}
-                onParentBusinessIdChange={(next) => {
-                  setParentBusinessId(next);
-                  if (!next && owners.length === 0 && clientFm) {
-                    setOwners([
-                      { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
-                    ]);
+            {category === "education_savings" ? (
+              <div className="col-span-2 space-y-4 rounded-[var(--radius-sm)] border border-hair p-4">
+                {/* Grantor */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className={fieldLabelClassName}>Grantor</span>
+                    <FieldTooltip text="A household grantor funds contributions from plan cash flow and may earn a state tax deduction. An outside grantor funds the account without touching household cash flow." />
+                  </div>
+                  <div role="radiogroup" aria-label="Grantor" className="flex gap-2">
+                    {(
+                      [
+                        ["household", "Household member"],
+                        ["outside", "Someone outside the household"],
+                      ] as const
+                    ).map(([val, label]) => {
+                      const active = grantorMode === val;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setGrantorMode(val)}
+                          className={
+                            "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                            (active
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                          }
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {grantorMode === "household" ? (
+                    <select
+                      aria-label="Grantor household member"
+                      value={grantorFamilyMemberId}
+                      onChange={(e) => setGrantorFamilyMemberId(e.target.value)}
+                      className={selectClassName}
+                    >
+                      <option value="">Select a household member…</option>
+                      {familyMembers
+                        .filter((fm) => fm.role === "client" || fm.role === "spouse")
+                        .map((fm) => (
+                          <option key={fm.id} value={fm.id}>{fm.firstName}</option>
+                        ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      aria-label="Outside grantor name"
+                      value={grantorName}
+                      onChange={(e) => setGrantorName(e.target.value)}
+                      placeholder="e.g., Grandparent's name"
+                      className={inputClassName}
+                    />
+                  )}
+                </div>
+
+                {/* Beneficiary */}
+                <div className="space-y-1.5">
+                  <span className={fieldLabelClassName}>
+                    Beneficiary <span className="text-red-500">*</span>
+                  </span>
+                  <div role="radiogroup" aria-label="Beneficiary" className="flex gap-2">
+                    {(
+                      [
+                        ["family", "Family member"],
+                        ["named", "Named person"],
+                      ] as const
+                    ).map(([val, label]) => {
+                      const active = beneficiaryMode === val;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setBeneficiaryMode(val)}
+                          className={
+                            "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                            (active
+                              ? "border-accent bg-accent/15 text-accent"
+                              : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                          }
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {beneficiaryMode === "family" ? (
+                    <select
+                      aria-label="Beneficiary family member"
+                      value={beneficiaryFamilyMemberId}
+                      onChange={(e) => setBeneficiaryFamilyMemberId(e.target.value)}
+                      className={selectClassName}
+                    >
+                      <option value="">Select a family member…</option>
+                      {familyMembers.map((fm) => (
+                        <option key={fm.id} value={fm.id}>{fm.firstName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      aria-label="Named beneficiary"
+                      value={beneficiaryName}
+                      onChange={(e) => setBeneficiaryName(e.target.value)}
+                      placeholder="e.g., Grandchild's name"
+                      className={inputClassName}
+                    />
+                  )}
+                  {educationBeneficiaryMissing && (
+                    <p className="text-xs text-red-400">A 529 requires a designated beneficiary.</p>
+                  )}
+                </div>
+
+                {/* Roth rollover (SECURE 2.0) */}
+                <div className="space-y-2 border-t border-hair pt-3">
+                  <label className="flex items-center gap-2 text-sm text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={rothRolloverEnabled}
+                      onChange={(e) => setRothRolloverEnabled(e.target.checked)}
+                    />
+                    <span>Roll leftover funds to a Roth IRA (SECURE 2.0)</span>
+                    <FieldTooltip text="$35,000 lifetime cap; annual IRA limit per year." />
+                  </label>
+                  {rothRolloverEnabled && (
+                    <div className="grid grid-cols-2 gap-3 pl-6">
+                      <div>
+                        <label className={fieldLabelClassName} htmlFor="roth-rollover-start-year">
+                          Start year
+                        </label>
+                        <input
+                          id="roth-rollover-start-year"
+                          type="number"
+                          value={rothRolloverStartYear}
+                          onChange={(e) => setRothRolloverStartYear(e.target.value)}
+                          className={inputClassName}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabelClassName} htmlFor="roth-rollover-account">
+                          Destination Roth IRA
+                        </label>
+                        <select
+                          id="roth-rollover-account"
+                          value={rothRolloverAccountId}
+                          onChange={(e) => setRothRolloverAccountId(e.target.value)}
+                          className={selectClassName}
+                        >
+                          <option value="">Beneficiary&rsquo;s own Roth (outside this plan)</option>
+                          {rothIraAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="col-span-2">
+                <OwnershipEditor
+                  familyMembers={familyMembers}
+                  entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+                  value={owners}
+                  onChange={setOwners}
+                  titlingType={titlingType}
+                  onTitlingTypeChange={setTitlingType}
+                  retirementMode={isRetirementSubType(subType) || category === "stock_options"}
+                  locked={isSystemManagedCash}
+                  lockedReason={
+                    isSystemManagedCash
+                      ? "This is a system-managed cash account — its ownership is fixed and can't be changed."
+                      : undefined
                   }
-                }}
-                childNoun="sub-asset"
-              />
-            </div>
+                  businesses={isSystemManagedCash ? undefined : businesses}
+                  parentBusinessId={parentBusinessId}
+                  onParentBusinessIdChange={(next) => {
+                    setParentBusinessId(next);
+                    if (!next && owners.length === 0 && clientFm) {
+                      setOwners([
+                        { kind: "family_member", familyMemberId: clientFm.id, percent: 1 },
+                      ]);
+                    }
+                  }}
+                  childNoun="sub-asset"
+                />
+              </div>
+            )}
 
             {!isSystemManagedCash && category !== "stock_options" && milestones && (
               <div className="col-span-2">

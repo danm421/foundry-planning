@@ -27,7 +27,7 @@ import { useToast } from "@/components/toast";
 import { refreshClientHoldingPrices } from "@/lib/investments/holdings-client";
 import { useClientAccess } from "./client-access-provider";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
 export interface AccountRow {
   id: string;
@@ -66,6 +66,20 @@ export interface AccountRow {
   /** Parent business account id when this account is a sub-asset of a
    *  top-level business. Null for top-level accounts. */
   parentAccountId?: string | null;
+  /** 529 / education_savings only — grantor/beneficiary/Roth-rollover fields.
+   *  Null/undefined for every other category. No account_owners rows are
+   *  written for this category; these fields are authoritative instead. */
+  grantorFamilyMemberId?: string | null;
+  grantorName?: string | null;
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
+  rothRolloverEnabled?: boolean;
+  rothRolloverStartYear?: number | null;
+  rothRolloverAccountId?: string | null;
+  /** Server-resolved display name for the Out-of-Estate 529 grouping —
+   *  the family member's first+last name when beneficiaryFamilyMemberId is
+   *  set, else beneficiaryName. */
+  beneficiaryDisplayName?: string | null;
 }
 
 export interface LiabilityRow {
@@ -152,6 +166,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   stock_options: "Stock Options",
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
+  education_savings: "529 / Education",
 };
 
 const CATEGORY_ORDER: AccountCategory[] = [
@@ -162,6 +177,7 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "real_estate",
   "business",
   "stock_options",
+  "education_savings",
   "life_insurance",
   "notes_receivable",
 ];
@@ -176,6 +192,7 @@ const ADDABLE_CATEGORIES: AccountCategory[] = [
   "real_estate",
   "business",
   "stock_options",
+  "education_savings",
   "notes_receivable",
 ];
 
@@ -254,6 +271,13 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     owners: a.owners,
     titlingType: a.titlingType,
     parentAccountId: a.parentAccountId ?? null,
+    grantorFamilyMemberId: a.grantorFamilyMemberId ?? null,
+    grantorName: a.grantorName ?? null,
+    beneficiaryFamilyMemberId: a.beneficiaryFamilyMemberId ?? null,
+    beneficiaryName: a.beneficiaryName ?? null,
+    rothRolloverEnabled: a.rothRolloverEnabled ?? false,
+    rothRolloverStartYear: a.rothRolloverStartYear ?? null,
+    rothRolloverAccountId: a.rothRolloverAccountId ?? null,
   };
 }
 
@@ -549,9 +573,16 @@ export default function BalanceSheetView({
   };
 
   // An account belongs in-estate when it has no entity owner, or when the
-  // owning entity is a family-owned business interest.
-  const accountInEstate = (a: AccountRow): boolean =>
-    !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
+  // owning entity is a family-owned business interest. 529s are always
+  // out-of-estate — a completed gift under §529, never household property —
+  // so this check runs BEFORE the no-entity-owner fallback below, which would
+  // otherwise default an ownerless 529 (they carry no account_owners rows) to
+  // in-estate the same way it does for household-owned Plaid imports (see
+  // memory: balance-sheet-ownerless-account-drop-fix).
+  const accountInEstate = (a: AccountRow): boolean => {
+    if (a.category === "education_savings") return false;
+    return !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
+  };
 
   // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
   const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
@@ -603,6 +634,7 @@ export default function BalanceSheetView({
     stock_options: [],
     life_insurance: [],
     notes_receivable: [],
+    education_savings: [],
   };
   // Top-level accounts only — children render under their parent's expanded view.
   for (const a of inEstate) {
@@ -624,10 +656,22 @@ export default function BalanceSheetView({
 
   const outByEntity = new Map<string, AccountRow[]>();
   for (const a of outOfEstate) {
+    if (a.category === "education_savings") continue; // grouped separately, by beneficiary, below
     const key = a.ownerEntityId!;
     const arr = outByEntity.get(key) ?? [];
     arr.push(a);
     outByEntity.set(key, arr);
+  }
+
+  // 529s group by designated beneficiary rather than owning entity — they
+  // have no ownerEntityId at all. beneficiaryDisplayName is resolved
+  // server-side (page adapter): family-member first+last name when
+  // beneficiaryFamilyMemberId is set, else the free-text beneficiaryName.
+  const education529s = outOfEstate.filter((a) => a.category === "education_savings");
+  const by529Beneficiary = new Map<string, AccountRow[]>();
+  for (const a of education529s) {
+    const key = a.beneficiaryDisplayName ?? "Unnamed beneficiary";
+    by529Beneficiary.set(key, [...(by529Beneficiary.get(key) ?? []), a]);
   }
 
   // Business-entity flat valuations split into in-estate (family-owned) and
@@ -669,6 +713,11 @@ export default function BalanceSheetView({
   // doesn't currently support business-under-business).
   const businessOptions = accounts
     .filter((a) => a.category === "business" && a.parentAccountId == null)
+    .map((a) => ({ id: a.id, name: a.name }));
+  // Household Roth IRA accounts offered as a 529→Roth SECURE 2.0 rollover
+  // destination on the education_savings form.
+  const rothIraAccounts = accounts
+    .filter((a) => a.category === "retirement" && a.subType === "roth_ira")
     .map((a) => ({ id: a.id, name: a.name }));
 
   async function performAccountDelete(id: string) {
@@ -1025,6 +1074,52 @@ export default function BalanceSheetView({
               );
             })}
 
+            {Array.from(by529Beneficiary.entries()).map(([beneficiaryName, rows]) => {
+              const subtotal = rows.reduce((s, a) => s + Number(a.value), 0);
+              const toggleKey = `529:${beneficiaryName}`;
+              const expanded = expandedOutOfEstate.has(toggleKey);
+              const heading = `${beneficiaryName} — 529 Plan${rows.length > 1 ? "s" : ""}`;
+              return (
+                <div key={toggleKey} className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
+                  <button
+                    type="button"
+                    onClick={() => toggleOutOfEstate(toggleKey)}
+                    aria-expanded={expanded}
+                    className={`flex w-full items-center justify-between bg-amber-900/15 px-3 py-2 text-left hover:bg-amber-900/25 ${expanded ? "border-b border-amber-900/40" : ""}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-amber-200/70">
+                        {expanded ? <ChevronDown /> : <ChevronRight />}
+                      </span>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
+                        {heading}
+                      </span>
+                    </span>
+                    <span className="text-xs font-medium text-amber-200/80">{fmt(subtotal)}</span>
+                  </button>
+                  {expanded && (
+                    <div className="divide-y divide-gray-800">
+                      {rows.map((a) => (
+                        <div
+                          key={a.id}
+                          onClick={canEdit ? () => handleAccountClick(a) : undefined}
+                          className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
+                        >
+                          <div>
+                            <div className="text-sm font-medium text-gray-100">{a.name}</div>
+                            <div className="text-xs text-gray-400">
+                              {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
+                            </div>
+                          </div>
+                          <span className="text-sm font-medium text-gray-100">{fmt(a.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
             {outOfEstateBusinessEntityRows.length > 0 && (() => {
               const expanded = expandedOutOfEstate.has("__business_interests__");
               return (
@@ -1126,6 +1221,7 @@ export default function BalanceSheetView({
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
         businesses={businessOptions}
+        rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
@@ -1154,6 +1250,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         entities={entities}
         businesses={businessOptions}
+        rothIraAccounts={rothIraAccounts}
         familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}

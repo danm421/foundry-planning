@@ -9,7 +9,7 @@ import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-no
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
-type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
+type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
 interface AddAccountDialogProps {
   clientId: string;
@@ -26,6 +26,8 @@ interface AddAccountDialogProps {
   entities?: EntityOption[];
   /** Top-level business accounts available as parents for the new account. */
   businesses?: BusinessOption[];
+  /** Household Roth IRA accounts offered as a 529→Roth SECURE 2.0 rollover destination. */
+  rothIraAccounts?: BusinessOption[];
   familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
@@ -63,6 +65,7 @@ export default function AddAccountDialog({
   onRequestDelete,
   entities,
   businesses,
+  rothIraAccounts,
   familyMembers,
   categoryDefaults,
   modelPortfolios,
@@ -171,6 +174,7 @@ export default function AddAccountDialog({
               initial={editing}
               entities={entities}
               businesses={businesses}
+              rothIraAccounts={rothIraAccounts}
               familyMembers={familyMembers}
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}

@@ -45,6 +45,7 @@ export const ENUM_LABELS = {
   accountCategory: {
     taxable: "Taxable", cash: "Cash", retirement: "Retirement", real_estate: "Real estate",
     business: "Business", life_insurance: "Life insurance", notes_receivable: "Notes receivable",
+    education_savings: "529 / Education",
   } as Record<string, string>,
   bequestCondition: {
     if_spouse_survives: "if spouse survives", if_spouse_predeceased: "if spouse predeceased", always: "always",

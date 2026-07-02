@@ -78,6 +78,21 @@ export interface RecaptureRule {
   }) => { adjustment: number; note: string };
 }
 
+export interface Plan529Rule {
+  /** none = state offers no 529 tax benefit (or has no income tax). */
+  kind: "none" | "deduction" | "credit";
+  /** Cap basis. per_taxpayer: caps apply to the filer's total contributions.
+   *  per_beneficiary: caps apply per designated beneficiary.
+   *  unlimited: fully deductible, no cap. */
+  basis?: "per_taxpayer" | "per_beneficiary" | "unlimited";
+  capSingle?: number;      // annual deduction cap, single filer
+  capJoint?: number;       // annual deduction cap, MFJ
+  creditRate?: number;     // credit kind: rate applied to capped contributions
+  creditMaxSingle?: number; // credit kind: max credit dollars, single
+  creditMaxJoint?: number;  // credit kind: max credit dollars, MFJ
+  notes: string;
+}
+
 export interface StateIncomeTaxRule {
   state: USPSStateCode;
   hasIncomeTax: boolean;

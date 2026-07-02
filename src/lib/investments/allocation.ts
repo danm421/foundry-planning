@@ -31,7 +31,8 @@ export type AccountCategory =
   | "business"
   | "life_insurance"
   | "notes_receivable"
-  | "stock_options";
+  | "stock_options"
+  | "education_savings";
 
 export interface AccountLite {
   id: string;

@@ -13,7 +13,8 @@ export type AssetCategory =
   | "real_estate"
   | "business"
   | "life_insurance"
-  | "notes_receivable";
+  | "notes_receivable"
+  | "education_savings";
 
 export type AssetAccount = {
   id: string;

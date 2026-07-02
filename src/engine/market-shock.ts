@@ -9,10 +9,11 @@
 import type { Account, AccountLedger } from "./types";
 
 /** Account categories treated as market-exposed for a crash drawdown.
- *  Excludes cash, real_estate, business, life_insurance, annuity,
- *  notes_receivable, and stock_options (illiquid / non-market). */
+ *  Includes education_savings (529s are invested accounts). Excludes cash,
+ *  real_estate, business, life_insurance, annuity, notes_receivable, and
+ *  stock_options (illiquid / non-market). */
 export const MARKET_EXPOSED_CATEGORIES: ReadonlySet<Account["category"]> =
-  new Set<Account["category"]>(["taxable", "retirement"]);
+  new Set<Account["category"]>(["taxable", "retirement", "education_savings"]);
 
 export interface MarketShock {
   year: number;

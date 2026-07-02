@@ -5,7 +5,7 @@ import type {
   Expense,
   SavingsRule,
 } from "@/engine/types";
-import type { AccountOwner } from "@/engine/ownership";
+import { EDUCATION_529_SENTINEL_OWNER_ID, type AccountOwner } from "@/engine/ownership";
 import type { createGrowthSourceResolver } from "./resolve-growth-source";
 
 export type GrowthSourceResolver = ReturnType<typeof createGrowthSourceResolver>;
@@ -100,6 +100,16 @@ type RawAccount = {
   businessTaxTreatment?: Account["businessTaxTreatment"];
   /** For business-owned child accounts: id of the parent business account. */
   parentAccountId?: string | null;
+  /** education_savings (529) grantor/beneficiary/Roth-rollover fields. Present
+   *  only when `category === "education_savings"`; the loader synthesizes the
+   *  sentinel owner from these instead of reading `account_owners` rows. */
+  grantorFamilyMemberId?: string | null;
+  grantorName?: string | null;
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
+  rothRolloverEnabled?: boolean;
+  rothRolloverStartYear?: number | null;
+  rothRolloverAccountId?: string | null;
 };
 
 export function resolveAccountFromRaw(
@@ -109,12 +119,16 @@ export function resolveAccountFromRaw(
   const { resolver, resolvedInflationRate } = ctx;
   const gs = raw.growthSource ?? "default";
 
+  // education_savings: tax-free wrapper — no annual realization; growth-source
+  // defaults alias the retirement category (no dedicated plan_settings column).
+  const growthCategory = raw.category === "education_savings" ? "retirement" : raw.category;
+
   let growthRate: number;
   let realization: Account["realization"];
 
   let effectiveSource = gs;
   if (effectiveSource === "default") {
-    const catSource = resolver.getCategoryGrowthSource(raw.category);
+    const catSource = resolver.getCategoryGrowthSource(growthCategory);
     if (catSource === "asset_mix") effectiveSource = "asset_mix";
   }
 
@@ -165,7 +179,7 @@ export function resolveAccountFromRaw(
   } else if (effectiveSource === "custom" && raw.growthRate != null) {
     growthRate = n(raw.growthRate);
   } else {
-    const catDefault = resolver.resolveCategoryDefault(raw.category);
+    const catDefault = resolver.resolveCategoryDefault(growthCategory);
     growthRate = catDefault.rate;
     realization = catDefault.realization;
   }
@@ -180,7 +194,7 @@ export function resolveAccountFromRaw(
     };
   }
 
-  if (raw.category === "retirement") {
+  if (raw.category === "retirement" || raw.category === "education_savings") {
     realization = undefined;
   }
 
@@ -228,7 +242,22 @@ export function resolveAccountFromRaw(
       ctx.resolver,
     ),
     titlingType: raw.titlingType,
-    owners: raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? [],
+    owners:
+      raw.category === "education_savings"
+        ? [{ kind: "external_beneficiary", externalBeneficiaryId: EDUCATION_529_SENTINEL_OWNER_ID, percent: 1 }]
+        : (raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? []),
+    education529:
+      raw.category === "education_savings"
+        ? {
+            grantorFamilyMemberId: raw.grantorFamilyMemberId ?? null,
+            grantorName: raw.grantorName ?? null,
+            beneficiaryFamilyMemberId: raw.beneficiaryFamilyMemberId ?? null,
+            beneficiaryName: raw.beneficiaryName ?? null,
+            rothRolloverEnabled: raw.rothRolloverEnabled ?? false,
+            rothRolloverStartYear: raw.rothRolloverStartYear ?? null,
+            rothRolloverAccountId: raw.rothRolloverAccountId ?? null,
+          }
+        : undefined,
     businessType: raw.businessType ?? null,
     distributionPolicyPercent:
       raw.distributionPolicyPercent != null ? n(raw.distributionPolicyPercent) : null,

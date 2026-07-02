@@ -754,7 +754,7 @@ export interface LifeInsurancePayout {
 export interface Account {
   id: string;
   name: string;
-  category: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options";
+  category: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
   subType: string;
   value: number;
   basis: number;
@@ -772,6 +772,23 @@ export interface Account {
    * (the conservative lower cap) by the engine.
    */
   hsaCoverage?: "self" | "family";
+  /**
+   * Present only for `category === "education_savings"` (529) accounts.
+   * These accounts carry no `account_owners` rows — the loader synthesizes a
+   * single `external_beneficiary` sentinel owner (see
+   * `EDUCATION_529_SENTINEL_OWNER_ID` in engine/ownership.ts) that weighs 0 in
+   * every ownership-driven aggregation. This block is the authoritative
+   * grantor/beneficiary/Roth-rollover data instead.
+   */
+  education529?: {
+    grantorFamilyMemberId?: string | null;
+    grantorName?: string | null;
+    beneficiaryFamilyMemberId?: string | null;
+    beneficiaryName?: string | null;
+    rothRolloverEnabled?: boolean;
+    rothRolloverStartYear?: number | null;
+    rothRolloverAccountId?: string | null;
+  };
   growthRate: number;
   rmdEnabled: boolean;
   /**

@@ -42,6 +42,7 @@ export interface ComputeAtYearArgs {
 function sumAccountsWhere(
   args: ComputeAtYearArgs,
   ownerWeight: (owner: AccountOwner) => number,
+  education529Weight: 0 | 1,
 ): number {
   const {
     tree,
@@ -64,6 +65,14 @@ function sumAccountsWhere(
     // value isn't counted twice (once via the parent's consolidated tree
     // and once on its own row).
     if (account.parentAccountId != null) continue;
+
+    // 529s: no household/entity owners (sentinel external_beneficiary only).
+    // They are categorically OUT of the estate — count fully in the
+    // out-of-estate sum, never in the in-estate sum.
+    if (account.category === "education_savings") {
+      total += (accountBalances.get(account.id) ?? account.value) * education529Weight;
+      continue;
+    }
 
     const owners = ownersForYearOrHousehold(
       account,
@@ -106,9 +115,9 @@ function sumAccountsWhere(
 // data is FK-validated so this shouldn't trip; if loaders ever produce
 // orphans, fix at the loader rather than papering over here.
 export function computeInEstateAtYear(args: ComputeAtYearArgs): number {
-  return sumAccountsWhere(args, (o) => inEstateWeight(args.tree, o));
+  return sumAccountsWhere(args, (o) => inEstateWeight(args.tree, o), 0);
 }
 
 export function computeOutOfEstateAtYear(args: ComputeAtYearArgs): number {
-  return sumAccountsWhere(args, (o) => outOfEstateWeight(args.tree, o));
+  return sumAccountsWhere(args, (o) => outOfEstateWeight(args.tree, o), 1);
 }

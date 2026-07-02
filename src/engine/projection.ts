@@ -63,7 +63,8 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
-import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
+import { applyContributionLimits, computeIraLimit, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
+import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
@@ -601,6 +602,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     accountBalances[acct.id] = acct.value;
   }
+
+  // Cumulative 529 → Roth rollovers per source account, across all years.
+  // SECURE 2.0 §126 caps lifetime rollovers per beneficiary/account at
+  // $35,000; this tracker persists across projection years so the pass can
+  // enforce that cap over the whole horizon.
+  const rolled529ByAccount: Record<string, number> = {};
 
   // Per-year end-of-year balance snapshots. Keyed by year so death-event
   // accountValueAtYear callbacks can return the gift-year balance instead of
@@ -3065,6 +3072,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
     const cappedByRuleId = capResult.cappedByRuleId;
 
+    // Household-grantor 529 contributions → state 529 deduction/credit input.
+    // Derived from post-cap rule amounts (cappedByRuleId) prorated by the
+    // partial-year gate factor, mirroring how applySavingsRules applies them.
+    // NB: this is built BEFORE the savings pass runs (savings.byAccount at
+    // ~4174), so we cannot use the applied-amount map here — we re-derive from
+    // the same capped/prorated rule amounts the savings pass will use. External
+    // grantors (no grantorFamilyMemberId) earn no household deduction. Keyed per
+    // beneficiary (family-member id, else name, else account id) for
+    // per_beneficiary-cap states.
+    const contrib529: { total: number; byBeneficiary: number[] } | undefined =
+      (() => {
+        const byBeneficiary = new Map<string, number>();
+        for (const rule of data.savingsRules) {
+          const acct = accountById.get(rule.accountId);
+          if (acct?.category !== "education_savings") continue;
+          if (!acct.education529?.grantorFamilyMemberId) continue; // external grantor
+          const gate = itemProrationGate(rule, year, data.client);
+          if (!gate.include) continue;
+          const amount =
+            (cappedByRuleId[rule.id] ?? resolvedByRuleId[rule.id] ?? 0) * gate.factor;
+          if (amount <= 0) continue;
+          const key =
+            acct.education529.beneficiaryFamilyMemberId ??
+            acct.education529.beneficiaryName ??
+            acct.id;
+          byBeneficiary.set(key, (byBeneficiary.get(key) ?? 0) + amount);
+        }
+        if (byBeneficiary.size === 0) return undefined;
+        const values = [...byBeneficiary.values()];
+        return { total: values.reduce((s, v) => s + v, 0), byBeneficiary: values };
+      })();
+
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
@@ -3584,6 +3623,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // (seededTaxInput, supplementalTaxInput) — the rebuilt input becomes the
       // stored taxResult, so omitting them silently drops the senior deductions.
       retirementBreakdown,
+      contrib529,
       primaryAge: ages.client,
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
@@ -4192,28 +4232,42 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         );
 
     // Credit employee contributions to destination accounts and debit household checking.
+    // A 529 funded by an OUTSIDE grantor (education_savings account whose
+    // education529.grantorFamilyMemberId is null/undefined — e.g. a grandparent)
+    // still receives its contribution as an account credit, but the money is a
+    // gift arriving from outside the plan: household checking is NOT debited
+    // (same shape as an employer match). Household-grantor 529s keep the
+    // existing behavior — checking is debited.
+    let householdFundedTotal = savings.total;
     for (const [acctId, amount] of Object.entries(savings.byAccount)) {
       if (notYetActive.has(acctId)) continue; // pre-activation account: no contributions yet
       if (amount === 0) continue;
+      const dest = accountById.get(acctId);
+      const externallyFunded =
+        dest?.category === "education_savings" &&
+        !dest.education529?.grantorFamilyMemberId;
+      if (externallyFunded) householdFundedTotal -= amount;
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + amount;
       if (accountLedgers[acctId]) {
         accountLedgers[acctId].contributions += amount;
         accountLedgers[acctId].endingValue += amount;
-        const destName = data.accounts.find((a) => a.id === acctId)?.name ?? "account";
+        const destName = dest?.name ?? "account";
         accountLedgers[acctId].entries.push({
           category: "savings_contribution",
           label: `Contribution to ${destName}`,
           amount,
           sourceId: acctId,
           basis: 0, // pre-tax 401k/403b contribution carries no cost basis
-          counterpartyId: defaultChecking?.id, // money came from household cash
+          // Externally-funded 529: money came from outside the plan, so there is
+          // no household-cash counterparty to reconcile against.
+          counterpartyId: externallyFunded ? undefined : defaultChecking?.id,
         });
       }
     }
-    creditCash(defaultChecking?.id, -savings.total, {
+    creditCash(defaultChecking?.id, -householdFundedTotal, {
       category: "savings_contribution",
       label: "Savings contributions",
-      basis: -savings.total, // cash outflow: basis conserves 1:1 with amount
+      basis: -householdFundedTotal, // cash outflow: basis conserves 1:1 with amount
     });
 
     // ── Education goals: dedicated funding pass ──────────────────────────────
@@ -4334,6 +4388,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         dedicatedAssetsEOY: eoy,
         shortfall,
       });
+    }
+
+    // ── 529 → Roth rollovers (SECURE 2.0 §126) ───────────────────────────────
+    // Leftover 529 balances roll to the beneficiary's Roth IRA, capped at the
+    // annual IRA limit and a $35,000 lifetime allowance (tracked cross-year in
+    // rolled529ByAccount). Tax-free: the transfer books no ordinary income. The
+    // 15-year account-age gate and earned-income limit are out of scope (v1).
+    if (taxYearParams) {
+      for (const acct of data.accounts) {
+        const cfg = acct.category === "education_savings" ? acct.education529 : undefined;
+        if (!cfg?.rothRolloverEnabled) continue;
+        if (cfg.rothRolloverStartYear != null && year < cfg.rothRolloverStartYear) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        if (balance <= 0) continue;
+        // Beneficiary age drives the IRA limit; an unknown DOB falls back to
+        // age 30 (catch-up-free base limit).
+        const benefDob = data.familyMembers?.find(
+          (fm) => fm.id === cfg.beneficiaryFamilyMemberId,
+        )?.dateOfBirth;
+        const benefAge = benefDob ? resolveAgeInYear(benefDob, year) : 30;
+        const { amount } = computeRoth529Rollover({
+          balance,
+          lifetimeRolledSoFar: rolled529ByAccount[acct.id] ?? 0,
+          annualIraLimit: computeIraLimit(taxYearParams, benefAge),
+        });
+        if (amount <= 0) continue;
+        rolled529ByAccount[acct.id] = (rolled529ByAccount[acct.id] ?? 0) + amount;
+        accountBalances[acct.id] = balance - amount;
+        // 529 basis (contributions) shrinks 1:1 with the withdrawal; book the
+        // clamped delta so basisEoY − basisBoY = Σ entry.basis still holds.
+        const srcBasisBefore = basisMap[acct.id] ?? 0;
+        const srcBasisDelta = -Math.min(amount, srcBasisBefore);
+        basisMap[acct.id] = Math.max(0, srcBasisBefore + srcBasisDelta);
+        const srcLed = accountLedgers[acct.id];
+        if (srcLed) {
+          srcLed.distributions += amount;
+          srcLed.endingValue -= amount;
+          srcLed.entries.push({
+            category: "withdrawal",
+            label: "529 → Roth IRA rollover",
+            amount: -amount,
+            sourceId: acct.id,
+            basis: srcBasisDelta,
+            counterpartyId: cfg.rothRolloverAccountId ?? undefined,
+          });
+        }
+        // Destination: a household Roth IRA receives the funds as Roth basis.
+        // No destination (external beneficiary) → funds exit the plan; the
+        // source-leg ledger entry is the only record.
+        const dest = cfg.rothRolloverAccountId
+          ? accountById.get(cfg.rothRolloverAccountId)
+          : undefined;
+        if (dest && dest.subType === "roth_ira") {
+          accountBalances[dest.id] = (accountBalances[dest.id] ?? 0) + amount;
+          basisMap[dest.id] = (basisMap[dest.id] ?? 0) + amount; // lands as Roth basis
+          const destLed = accountLedgers[dest.id];
+          if (destLed) {
+            destLed.contributions += amount;
+            destLed.endingValue += amount;
+            destLed.entries.push({
+              category: "savings_contribution",
+              label: "Rollover from 529",
+              amount,
+              sourceId: acct.id,
+              basis: amount,
+              counterpartyId: acct.id,
+            });
+          }
+        }
+      }
     }
 
     // ── Education goals: pre-expense accumulation pass ───────────────────────
@@ -4688,6 +4812,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown,
+          contrib529,
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
@@ -4849,6 +4974,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown: supplementalRetirementBreakdown,
+          contrib529,
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
@@ -4982,6 +5108,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             interestIncomeForTax,
             deductionBreakdownIn: deductionBreakdownResult ?? null,
             retirementBreakdown: supplementalRetirementBreakdown,
+            contrib529,
             primaryAge: ages.client,
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,

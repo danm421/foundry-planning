@@ -66,6 +66,19 @@ const shared = {
   isDefaultChecking: z.boolean().optional(),
   // Loose — validateOwnersShape / validateAccountOwnershipRules own the real shape.
   owners: z.array(z.unknown()).optional(),
+  // 529 / education_savings fields. Grantor: exactly one of the two may be set
+  // (household family member vs. a named outside funder, e.g. a grandparent).
+  // Beneficiary: exactly one of the two must be set — enforced by the core's
+  // education_savings pre-branch, not here (the schema stays category-agnostic
+  // like the rest of `shared`). Roth-rollover fields drive the SECURE 2.0
+  // 529→Roth drip; all null/false for every non-529 category.
+  grantorFamilyMemberId: z.string().uuid().nullish(),
+  grantorName: z.string().max(200).nullish(),
+  beneficiaryFamilyMemberId: z.string().uuid().nullish(),
+  beneficiaryName: z.string().max(200).nullish(),
+  rothRolloverEnabled: z.boolean().optional(),
+  rothRolloverStartYear: z.number().int().min(1900).max(2200).nullish(),
+  rothRolloverAccountId: z.string().uuid().nullish(),
 };
 
 // Nullable FK / null-default fields: default to null on CREATE (route: `?? null`),

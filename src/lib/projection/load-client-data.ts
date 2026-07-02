@@ -806,6 +806,13 @@ export const loadClientDataWithContext = cache(
           flowMode: a.flowMode,
           businessTaxTreatment: a.businessTaxTreatment,
           parentAccountId: a.parentAccountId,
+          grantorFamilyMemberId: a.grantorFamilyMemberId,
+          grantorName: a.grantorName,
+          beneficiaryFamilyMemberId: a.beneficiaryFamilyMemberId,
+          beneficiaryName: a.beneficiaryName,
+          rothRolloverEnabled: a.rothRolloverEnabled,
+          rothRolloverStartYear: a.rothRolloverStartYear,
+          rothRolloverAccountId: a.rothRolloverAccountId,
         },
         resolutionCtx,
       );

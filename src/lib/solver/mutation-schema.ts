@@ -107,6 +107,7 @@ const ACCOUNT_VALUE = z
     category: z.enum([
       "taxable", "cash", "retirement", "annuity", "real_estate",
       "business", "life_insurance", "notes_receivable", "stock_options",
+      "education_savings",
     ]),
     subType: z.string().min(1),
     value: MONEY,

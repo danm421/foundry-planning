@@ -168,9 +168,16 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
     value: a.value,
     isDefaultChecking: a.isDefaultChecking ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
-    ownerFamilyMemberIds: a.owners
-      .filter((o) => o.kind === "family_member")
-      .map((o) => o.familyMemberId),
+    // 529s carry no family_member owners — the loader synthesizes a sentinel
+    // external_beneficiary owner instead (see engine/ownership.ts). Fall back
+    // to the account's actual beneficiary so the dedicated-funding picker's
+    // ownership filter doesn't silently exclude them.
+    ownerFamilyMemberIds:
+      a.category === "education_savings"
+        ? a.education529?.beneficiaryFamilyMemberId
+          ? [a.education529.beneficiaryFamilyMemberId]
+          : []
+        : a.owners.filter((o) => o.kind === "family_member").map((o) => o.familyMemberId),
   }));
 
   return (
