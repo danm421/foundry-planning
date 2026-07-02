@@ -19,6 +19,7 @@ import {
   entityOwners,
   trustSplitInterestDetails,
   expenses,
+  expenseDedicatedAccounts,
   expenseScheduleOverrides,
   externalBeneficiaries,
   extraPayments,
@@ -255,7 +256,7 @@ export const loadClientDataWithContext = cache(
     const expenseIds = expenseRows.map((e) => e.id);
     const savingsRuleIds = savingsRuleRows.map((s) => s.id);
 
-    const [incomeOverrideRows, expenseOverrideRows, savingsOverrideRows] = await Promise.all([
+    const [incomeOverrideRows, expenseOverrideRows, savingsOverrideRows, dedicatedAccountRows] = await Promise.all([
       incomeIds.length > 0
         ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
         : Promise.resolve([]),
@@ -265,7 +266,21 @@ export const loadClientDataWithContext = cache(
       savingsRuleIds.length > 0
         ? db.select().from(savingsScheduleOverrides).where(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds))
         : Promise.resolve([]),
+      expenseIds.length > 0
+        ? db
+            .select()
+            .from(expenseDedicatedAccounts)
+            .where(inArray(expenseDedicatedAccounts.expenseId, expenseIds))
+            .orderBy(asc(expenseDedicatedAccounts.expenseId), asc(expenseDedicatedAccounts.sortOrder))
+        : Promise.resolve([]),
     ]);
+
+    const dedicatedByExpenseId = new Map<string, string[]>();
+    for (const r of dedicatedAccountRows) {
+      const arr = dedicatedByExpenseId.get(r.expenseId) ?? [];
+      arr.push(r.accountId);
+      dedicatedByExpenseId.set(r.expenseId, arr);
+    }
 
     // Build lookup maps: entityId → Record<year, amount>. Plain objects (not
     // Maps) so the tree round-trips cleanly through JSON — Maps serialize to
@@ -856,6 +871,11 @@ export const loadClientDataWithContext = cache(
           endYearRef: e.endYearRef,
           scheduleOverrides: expenseOverrideMap.get(e.id),
           isDefault: e.isDefault,
+          payShortfallOutOfPocket: e.payShortfallOutOfPocket,
+          institutionState: e.institutionState,
+          institutionName: e.institutionName,
+          forFamilyMemberId: e.forFamilyMemberId,
+          dedicatedAccountIds: dedicatedByExpenseId.get(e.id) ?? [],
         },
         resolutionCtx,
       ),

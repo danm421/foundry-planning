@@ -346,6 +346,11 @@ type RawExpense = {
   scheduleOverrides?: Record<number, number>;
   isDefault?: boolean | null;
   endsAtMedicareEligibilityOwner?: "client" | "spouse" | "joint" | null;
+  payShortfallOutOfPocket?: boolean | null;
+  institutionState?: string | null;
+  institutionName?: string | null;
+  forFamilyMemberId?: string | null;
+  dedicatedAccountIds?: string[];
 };
 
 function mapEndsAtMedicareEligibilityOwner(
@@ -385,6 +390,11 @@ export function resolveExpenseFromRaw(
     growthSource: raw.growthSource ?? null,
     isDefault: raw.isDefault ?? false,
     endsAtMedicareEligibilityOwner: mapEndsAtMedicareEligibilityOwner(raw.endsAtMedicareEligibilityOwner),
+    payShortfallOutOfPocket: raw.payShortfallOutOfPocket ?? false,
+    institutionState: raw.institutionState ?? null,
+    institutionName: raw.institutionName ?? null,
+    forFamilyMemberId: raw.forFamilyMemberId ?? null,
+    dedicatedAccountIds: raw.dedicatedAccountIds ?? [],
   };
 }
 
