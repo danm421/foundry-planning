@@ -68,7 +68,7 @@ export type IncomeType =
   | "trust"
   | "other";
 
-export type ExpenseType = "living" | "other" | "insurance";
+export type ExpenseType = "living" | "other" | "insurance" | "education";
 
 export type EntityType =
   | "trust"
