@@ -63,7 +63,8 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
-import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
+import { applyContributionLimits, computeIraLimit, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
+import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
@@ -601,6 +602,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     accountBalances[acct.id] = acct.value;
   }
+
+  // Cumulative 529 → Roth rollovers per source account, across all years.
+  // SECURE 2.0 §126 caps lifetime rollovers per beneficiary/account at
+  // $35,000; this tracker persists across projection years so the pass can
+  // enforce that cap over the whole horizon.
+  const rolled529ByAccount: Record<string, number> = {};
 
   // Per-year end-of-year balance snapshots. Keyed by year so death-event
   // accountValueAtYear callbacks can return the gift-year balance instead of
@@ -4381,6 +4388,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         dedicatedAssetsEOY: eoy,
         shortfall,
       });
+    }
+
+    // ── 529 → Roth rollovers (SECURE 2.0 §126) ───────────────────────────────
+    // Leftover 529 balances roll to the beneficiary's Roth IRA, capped at the
+    // annual IRA limit and a $35,000 lifetime allowance (tracked cross-year in
+    // rolled529ByAccount). Tax-free: the transfer books no ordinary income. The
+    // 15-year account-age gate and earned-income limit are out of scope (v1).
+    if (taxYearParams) {
+      for (const acct of data.accounts) {
+        const cfg = acct.category === "education_savings" ? acct.education529 : undefined;
+        if (!cfg?.rothRolloverEnabled) continue;
+        if (cfg.rothRolloverStartYear != null && year < cfg.rothRolloverStartYear) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        if (balance <= 0) continue;
+        // Beneficiary age drives the IRA limit; an unknown DOB falls back to
+        // age 30 (catch-up-free base limit).
+        const benefDob = data.familyMembers?.find(
+          (fm) => fm.id === cfg.beneficiaryFamilyMemberId,
+        )?.dateOfBirth;
+        const benefAge = benefDob ? resolveAgeInYear(benefDob, year) : 30;
+        const { amount } = computeRoth529Rollover({
+          balance,
+          lifetimeRolledSoFar: rolled529ByAccount[acct.id] ?? 0,
+          annualIraLimit: computeIraLimit(taxYearParams, benefAge),
+        });
+        if (amount <= 0) continue;
+        rolled529ByAccount[acct.id] = (rolled529ByAccount[acct.id] ?? 0) + amount;
+        accountBalances[acct.id] = balance - amount;
+        // 529 basis (contributions) shrinks 1:1 with the withdrawal; book the
+        // clamped delta so basisEoY − basisBoY = Σ entry.basis still holds.
+        const srcBasisBefore = basisMap[acct.id] ?? 0;
+        const srcBasisDelta = -Math.min(amount, srcBasisBefore);
+        basisMap[acct.id] = Math.max(0, srcBasisBefore + srcBasisDelta);
+        const srcLed = accountLedgers[acct.id];
+        if (srcLed) {
+          srcLed.distributions += amount;
+          srcLed.endingValue -= amount;
+          srcLed.entries.push({
+            category: "withdrawal",
+            label: "529 → Roth IRA rollover",
+            amount: -amount,
+            sourceId: acct.id,
+            basis: srcBasisDelta,
+            counterpartyId: cfg.rothRolloverAccountId ?? undefined,
+          });
+        }
+        // Destination: a household Roth IRA receives the funds as Roth basis.
+        // No destination (external beneficiary) → funds exit the plan; the
+        // source-leg ledger entry is the only record.
+        const dest = cfg.rothRolloverAccountId
+          ? accountById.get(cfg.rothRolloverAccountId)
+          : undefined;
+        if (dest && dest.subType === "roth_ira") {
+          accountBalances[dest.id] = (accountBalances[dest.id] ?? 0) + amount;
+          basisMap[dest.id] = (basisMap[dest.id] ?? 0) + amount; // lands as Roth basis
+          const destLed = accountLedgers[dest.id];
+          if (destLed) {
+            destLed.contributions += amount;
+            destLed.endingValue += amount;
+            destLed.entries.push({
+              category: "savings_contribution",
+              label: "Rollover from 529",
+              amount,
+              sourceId: acct.id,
+              basis: amount,
+              counterpartyId: acct.id,
+            });
+          }
+        }
+      }
     }
 
     // ── Education goals: pre-expense accumulation pass ───────────────────────
