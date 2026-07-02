@@ -54,6 +54,8 @@ const NOT_SOLVED: LifeInsuranceSummaryPageData = {
   ],
   clientGap: null,
   spouseGap: null,
+  clientRange: null,
+  spouseRange: null,
   chart: { rows: [], markYear: null, clientCoverageLine: 1_500_000, spouseCoverageLine: null },
   jointFootnote: false,
   narrative: [
@@ -121,6 +123,8 @@ const SOLVED: LifeInsuranceSummaryPageData = {
     exceedsCap: false,
     hasJoint: false,
   },
+  clientRange: null,
+  spouseRange: null,
   chart: {
     rows: [
       { year: 2027, clientNeed: 1_800_000, spouseNeed: 400_000 },

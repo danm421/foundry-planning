@@ -64,11 +64,13 @@ describe("buildLifeInsuranceSummaryData", () => {
     // The client's only policy is a term that expires in 2041; the solved death
     // year is 2048, so it's out of force → $0 in-force coverage, full-need shortfall.
     expect(data.clientGap?.have).toBe(0);
-    expect(data.clientGap?.need).toBe(2_000_000);
+    // Re-based gap: need = rounded MC additional need + existing coverage.
+    expect(data.clientGap?.need).toBe(2_000_000);   // 2M + $0 in force
     expect(data.clientGap?.gap).toEqual({ kind: "shortfall", amount: 2_000_000 });
     // The spouse holds a permanent (whole) policy → still in force at 2048.
     expect(data.spouseGap?.have).toBe(500_000);
-    expect(data.spouseGap?.need).toBe(1_300_000);
+    expect(data.spouseGap?.need).toBe(1_800_000);   // 1.3M + 500k WL in force
+    expect(data.spouseGap?.gap).toEqual({ kind: "shortfall", amount: 1_300_000 });
     expect(data.chart.rows).toHaveLength(2);
     expect(data.married).toBe(true);
   });
@@ -123,5 +125,72 @@ describe("buildLifeInsuranceSummaryData", () => {
     };
     const data = buildLifeInsuranceSummaryData(ctx(), { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: capSolved });
     expect(data.clientGap?.exceedsCap).toBe(true);
+  });
+});
+
+describe("need ranges", () => {
+  // Distinct bounds: curve (straight-line) 1.62M @2048 vs MC 2.0M.
+  const rangeSolved: LiSolved = {
+    ...solved,
+    curveRows: [
+      { year: 2044, clientNeed: 1_800_000, spouseNeed: 1_100_000 },
+      { year: 2048, clientNeed: 1_620_000, spouseNeed: 1_050_000 },
+    ],
+  };
+
+  it("builds per-decedent ranges: curve lower bound, MC upper, inventory breakdown", () => {
+    const data = buildLifeInsuranceSummaryData(ctx(), {
+      ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: rangeSolved,
+    });
+    // Straight-line rounds UP to $50k: 1.62M → 1.65M.
+    expect(data.clientRange?.straightLine).toEqual({ need: 1_650_000, exceedsCap: false });
+    expect(data.clientRange?.mc).toEqual({ need: 2_000_000, exceedsCap: false, achievedScorePct: 90 });
+    // Client's term expired 2041 < deathYear 2048 → nothing in force.
+    expect(data.clientRange?.existingPolicies).toEqual([]);
+    expect(data.clientRange?.existingTotal).toBe(0);
+    expect(data.clientRange?.totalRecommended).toEqual({ low: 1_650_000, high: 2_000_000 });
+    // Spouse: WL permanent → in force; 1.05M is already a $50k boundary so the
+    // straight-line bound rounds to itself (1.05M), not up a full step.
+    expect(data.spouseRange?.existingPolicies).toEqual([{ name: "WL", faceValue: 500_000 }]);
+    expect(data.spouseRange?.totalRecommended).toEqual({ low: 1_550_000, high: 1_800_000 });
+    expect(data.spouseRange?.deathYear).toBe(2048);
+  });
+
+  it("omits the straight-line bound when the curve has no row at the death year", () => {
+    const noRow: LiSolved = { ...solved, curveRows: [{ year: 2044, clientNeed: 1_800_000, spouseNeed: 1_100_000 }] };
+    const data = buildLifeInsuranceSummaryData(ctx(), { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: noRow });
+    expect(data.clientRange?.straightLine).toBeNull();
+    // MC-only range: low === high.
+    expect(data.clientRange?.totalRecommended).toEqual({ low: 2_000_000, high: 2_000_000 });
+  });
+
+  it("passes estate-tax addends through per decedent", () => {
+    const withAddend: LiSolved = { ...solved, estateTaxAddendClient: 350_000, estateTaxAddendSpouse: 120_000 };
+    const data = buildLifeInsuranceSummaryData(ctx(), { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: withAddend });
+    expect(data.clientRange?.estateTaxAddend).toBe(350_000);
+    expect(data.spouseRange?.estateTaxAddend).toBe(120_000);
+  });
+
+  it("suppresses totalRecommended and flags cap when the MC bound exceeds it", () => {
+    const capSolved: LiSolved = {
+      ...solved,
+      mcClient: { status: "exceeds-cap", faceValue: 20_000_000, achievedScore: 0.7 },
+    };
+    const data = buildLifeInsuranceSummaryData(ctx(), { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: capSolved });
+    expect(data.clientRange?.mc.exceedsCap).toBe(true);
+    expect(data.clientRange?.totalRecommended).toBeNull();
+  });
+
+  it("is null when not solved, and spouseRange is null when single", () => {
+    const unsolved = buildLifeInsuranceSummaryData(ctx(), LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT);
+    expect(unsolved.clientRange).toBeNull();
+    const single = ctx({
+      clientData: { client: { filingStatus: "single" } } as unknown as ClientData,
+      spouseName: null,
+    });
+    const soloSolved: LiSolved = { ...solved, mcSpouse: null };
+    const data = buildLifeInsuranceSummaryData(single, { ...LIFE_INSURANCE_SUMMARY_OPTIONS_DEFAULT, solved: soloSolved });
+    expect(data.clientRange).not.toBeNull();
+    expect(data.spouseRange).toBeNull();
   });
 });
