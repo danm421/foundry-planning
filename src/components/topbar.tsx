@@ -8,6 +8,7 @@ import Breadcrumb from "./breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { ChevronRightIcon } from "./icons";
+import { QuickNoteButton } from "./quick-note-button";
 
 /** A `view` is the third tier: an alternate presentation within one sub-report. */
 type View = { label: string; path: string };
@@ -327,6 +328,7 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
               );
             })()
           : null}
+        {clientId ? <QuickNoteButton clientId={clientId} /> : null}
         <ThemeToggle />
       </div>
     </header>
