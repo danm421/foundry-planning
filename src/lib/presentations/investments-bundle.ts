@@ -9,6 +9,7 @@ import {
 } from "@/lib/investments/allocation";
 import type { AssetClassWeight, ModelPortfolioLite } from "@/lib/investments/benchmarks";
 import type { ResolverDeps, ResolvedGroup } from "@/lib/account-groups/resolver";
+import type { AccountHoldingsGroup } from "@/lib/investments/holdings-inventory";
 
 /** One investable account, carrying everything both view-models need. */
 export interface BundleAccount {
@@ -114,6 +115,11 @@ export interface InvestmentsBundle {
   resolvedGroups: Record<string, ResolvedGroup>;
   /** Selectable groups for the builder UI dropdown, in display order. */
   groupOptions: { key: string; name: string }[];
+  /** Per-account holdings inventory (Assets → Investments → Holdings parity).
+   *  Loaded only when the deck includes the Holdings page — see the
+   *  `includeHoldings` loader flag. Optional so bundle-shaped test fixtures
+   *  keep compiling. */
+  holdings?: AccountHoldingsGroup[];
 }
 
 /** Re-create the allocation resolver closure over the bundle's indexes. */
@@ -163,6 +169,8 @@ import { resolveGroup, DEFAULT_GROUP_KEYS, type GroupKey } from "@/lib/account-g
 import { listAccountGroups } from "@/lib/account-groups/queries";
 import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import type { AssetTypeId } from "@/lib/investments/asset-types";
+import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
+import { buildHoldingsInventory } from "@/lib/investments/holdings-inventory";
 
 /**
  * Load the full investments bundle for a client (base-case scenario). Pre-resolves
@@ -172,6 +180,7 @@ import type { AssetTypeId } from "@/lib/investments/asset-types";
 export async function loadInvestmentsBundle(
   clientId: string,
   firmId: string,
+  opts?: { includeHoldings?: boolean },
 ): Promise<InvestmentsBundle | null> {
   const [scenario] = await db.select().from(scenarios)
     .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
@@ -319,5 +328,14 @@ export async function loadInvestmentsBundle(
       bundle.groupOptions.push({ key, name: resolved.groupName });
     }
   });
+
+  if (opts?.includeHoldings) {
+    const enrichedByAccount = await loadEnrichedHoldings(acctRows.map((a) => a.id));
+    bundle.holdings = buildHoldingsInventory(
+      enrichedByAccount,
+      new Map(acctRows.map((a) => [a.id, { name: a.name, category: a.category }])),
+    );
+  }
+
   return bundle;
 }
