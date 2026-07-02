@@ -8,7 +8,7 @@ import {
   type TaxDetailTabId,
 } from "./tax-detail-view";
 import DialogShell from "@/components/dialog-shell";
-import { TaxCellDrillDownModal } from "./tax-cell-drill-down-modal";
+import { CellDrillDownModal } from "@/components/cell-drill-down-modal";
 import { buildIncomeCellDrill } from "@/lib/tax/cell-drill/income-breakdown";
 import { buildConversionCellDrill } from "@/lib/tax/cell-drill/bracket-conversions";
 import { buildBracketStackCellDrill } from "@/lib/tax/cell-drill/bracket-stacking";
@@ -141,7 +141,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
       </DialogShell>
 
       {drillProps && (
-        <TaxCellDrillDownModal {...drillProps} onClose={() => setCellDrill(null)} />
+        <CellDrillDownModal {...drillProps} onClose={() => setCellDrill(null)} />
       )}
     </>
   );

@@ -15,7 +15,7 @@ import {
   type TaxDetailTabId,
 } from "@/components/cashflow/tax-detail-view";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
-import { TaxCellDrillDownModal } from "@/components/cashflow/tax-cell-drill-down-modal";
+import { CellDrillDownModal } from "@/components/cell-drill-down-modal";
 import { StateTaxDrillDownModal } from "@/components/cashflow/state-tax-drill-down-modal";
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
@@ -385,7 +385,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
       )}
 
       {drillProps && (
-        <TaxCellDrillDownModal
+        <CellDrillDownModal
           {...drillProps}
           onClose={() => setCellDrill(null)}
         />

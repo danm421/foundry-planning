@@ -1,13 +1,13 @@
 "use client";
 
-import type { CellDrillProps } from "@/lib/tax/cell-drill/types";
+import type { CellDrillProps } from "@/lib/cell-drill/types";
 import { formatCurrency } from "@/lib/tax/cell-drill/_shared";
 
 interface Props extends CellDrillProps {
   onClose: () => void;
 }
 
-export function TaxCellDrillDownModal({
+export function CellDrillDownModal({
   title,
   subtitle,
   total,
