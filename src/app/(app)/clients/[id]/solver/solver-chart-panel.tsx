@@ -22,12 +22,14 @@ import {
   LifeInsuranceIcon,
   EstatePlanningIcon,
   MonteCarloIcon,
+  EducationIcon,
   SummariesIcon,
 } from "./report-tab-icons";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
+import { EducationReportPanel } from "@/components/solver/education/education-report-panel";
 
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
@@ -39,6 +41,7 @@ const REPORT_TABS: {
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 }[] = [
   { id: "portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
+  { id: "education", label: "Education", short: "Education", icon: EducationIcon },
   { id: "cashflow", label: "Cash Flow", short: "Cash Flow", icon: CashFlowIcon },
   { id: "taxBracket", label: "Tax Bracket", short: "Taxes", icon: TaxBracketIcon },
   { id: "lifeInsurance", label: "Life Insurance Need", short: "Insurance", icon: LifeInsuranceIcon },
@@ -301,6 +304,16 @@ export function SolverChartPanel({
           activeSummary={activeSummary}
           onSummaryChange={onSummaryChange}
         />
+        {recalculating}
+      </div>
+    );
+  }
+
+  if (tab === "education") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <EducationReportPanel years={currentProjection} expenses={workingTree.expenses} />
         {recalculating}
       </div>
     );
