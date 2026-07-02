@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import GrowthSourceRadio from "./forms/growth-source-radio";
+import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
 import SavingsRulesList from "./forms/savings-rules-list";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
@@ -21,7 +22,7 @@ import { useClientAccess } from "./client-access-provider";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type IncomeType = "salary" | "social_security" | "business" | "deferred" | "capital_gains" | "trust" | "other";
-type ExpenseType = "living" | "other" | "insurance";
+type ExpenseType = "living" | "other" | "insurance" | "education";
 type Owner = "client" | "spouse" | "joint";
 
 interface Income {
@@ -90,6 +91,11 @@ interface Expense {
   deductionType?: string | null;
   endsAtMedicareEligibilityOwner?: "client" | "spouse" | null;
   isDefault?: boolean;
+  payShortfallOutOfPocket?: boolean;
+  institutionState?: string | null;
+  institutionName?: string | null;
+  forFamilyMemberId?: string | null;
+  dedicatedAccountIds?: string[];
 }
 
 interface SavingsRule {
@@ -126,6 +132,13 @@ interface Entity {
   name: string;
 }
 
+interface FamilyMember {
+  id: string;
+  firstName: string;
+  lastName?: string | null;
+  role: string;
+}
+
 interface ClientInfo {
   clientRetirementYear: number;
   clientEndYear: number;
@@ -147,6 +160,7 @@ interface IncomeExpensesViewProps {
   initialSavingsRules: SavingsRule[];
   accounts: Account[];
   entities?: Entity[];
+  familyMembers?: FamilyMember[];
   clientInfo?: ClientInfo;
   ownerNames: OwnerNames;
   incomeSchedules: ScheduleMap;
@@ -207,6 +221,7 @@ const INCOME_GROUPS: { label: string; types: IncomeType[] }[] = [
 const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Living Expenses", types: ["living"] },
   { label: "Insurance", types: ["insurance"] },
+  { label: "Education", types: ["education"] },
   { label: "Other Expenses", types: ["other"] },
 ];
 
@@ -971,6 +986,7 @@ interface ExpenseDialogProps {
   defaultType?: ExpenseType;
   accounts: Account[];
   entities?: Entity[];
+  familyMembers?: FamilyMember[];
   clientInfo?: ClientInfo;
   ownerNames: OwnerNames;
   open: boolean;
@@ -986,6 +1002,7 @@ function ExpenseDialog({
   clientId,
   defaultType = "living",
   accounts,
+  familyMembers,
   clientInfo,
   ownerNames,
   open,
@@ -1009,6 +1026,11 @@ function ExpenseDialog({
   const [endsAtMedicareEligibilityOwner, setEndsAtMedicareEligibilityOwner] = useState<"client" | "spouse" | null>(
     editing?.endsAtMedicareEligibilityOwner ?? null
   );
+  const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(editing?.payShortfallOutOfPocket ?? false);
+  const [institutionState, setInstitutionState] = useState<string>(editing?.institutionState ?? "");
+  const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
+  const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
+  const [dedicatedAccountIds, setDedicatedAccountIds] = useState<string[]>(editing?.dedicatedAccountIds ?? []);
   const hasSpouse = Boolean(clientInfo?.spouseDob);
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
@@ -1070,6 +1092,11 @@ function ExpenseDialog({
       // for them, so force it null rather than carrying a stale selection.
       deductionType: type === "living" ? null : deductionType || null,
       endsAtMedicareEligibilityOwner,
+      payShortfallOutOfPocket: type === "education" ? payOutOfPocket : false,
+      institutionState: type === "education" ? (institutionState || null) : null,
+      institutionName: type === "education" ? (institutionName || null) : null,
+      forFamilyMemberId: type === "education" ? (forFamilyMemberId || null) : null,
+      dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
     };
 
     try {
@@ -1160,6 +1187,7 @@ function ExpenseDialog({
             >
               <option value="living">Living Expense</option>
               <option value="insurance">Insurance</option>
+              <option value="education">Education</option>
               <option value="other">Other</option>
             </select>
             {editing?.isDefault && (
@@ -1168,6 +1196,62 @@ function ExpenseDialog({
               </p>
             )}
           </div>
+
+          {type === "education" && (
+            <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/40 p-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-for">For</label>
+                <select
+                  id="exp-for"
+                  value={forFamilyMemberId}
+                  onChange={(e) => setForFamilyMemberId(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="">— Select —</option>
+                  {(familyMembers ?? []).map((fm) => (
+                    <option key={fm.id} value={fm.id}>
+                      {fm.firstName}{fm.lastName ? ` ${fm.lastName}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-inst-state">Institution State</label>
+                  <input
+                    id="exp-inst-state"
+                    type="text"
+                    value={institutionState}
+                    onChange={(e) => setInstitutionState(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-inst-name">Institution Name</label>
+                  <input
+                    id="exp-inst-name"
+                    type="text"
+                    value={institutionName}
+                    onChange={(e) => setInstitutionName(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+              </div>
+              <DedicatedFundingPicker
+                accounts={accounts}
+                value={dedicatedAccountIds}
+                onChange={setDedicatedAccountIds}
+              />
+              <label className="flex items-center gap-2 text-sm text-gray-100">
+                <input
+                  type="checkbox"
+                  checked={payOutOfPocket}
+                  onChange={(e) => setPayOutOfPocket(e.target.checked)}
+                />
+                Pay shortfall out of pocket
+              </label>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="exp-name">
@@ -1422,6 +1506,7 @@ export default function IncomeExpensesView({
   initialSavingsRules,
   accounts,
   entities,
+  familyMembers,
   clientInfo,
   ownerNames,
   incomeSchedules,
@@ -1944,6 +2029,7 @@ export default function IncomeExpensesView({
           clientId={clientId}
           accounts={accounts}
           entities={entities}
+          familyMembers={familyMembers}
           clientInfo={clientInfo}
           ownerNames={ownerNames}
           open={expenseDialog.open}

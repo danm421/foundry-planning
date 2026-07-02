@@ -11,6 +11,7 @@ import {
   clientCmaOverrides,
   planSettings,
   entities,
+  familyMembers,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -86,7 +87,7 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
   const expenseIds = expenses.map((e) => e.id);
   const savingsRuleIds = savingsRulesView.map((s) => s.id);
 
-  const [incOverrides, expOverrides, savOverrides, planSettingsRows, entityRows] = await Promise.all([
+  const [incOverrides, expOverrides, savOverrides, planSettingsRows, entityRows, familyMemberRows] = await Promise.all([
     incomeIds.length > 0
       ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
       : Promise.resolve([]),
@@ -98,6 +99,7 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
       : Promise.resolve([]),
     db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+    db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.firstName)),
   ]);
 
   const incomeScheduleMap: Record<string, { year: number; amount: number }[]> = {};
@@ -176,6 +178,12 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
       initialSavingsRules={savingsRulesView}
       accounts={accountsForView}
       entities={entityRows.map((e) => ({ id: e.id, name: e.name }))}
+      familyMembers={familyMemberRows.map((fm) => ({
+        id: fm.id,
+        firstName: fm.firstName,
+        lastName: fm.lastName,
+        role: fm.role,
+      }))}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,
         spouseName: client.spouseName

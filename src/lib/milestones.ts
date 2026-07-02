@@ -188,7 +188,7 @@ export function availableRefs(
 
 type Owner = "client" | "spouse" | "joint";
 type IncomeType = "salary" | "social_security" | "business" | "deferred" | "capital_gains" | "trust" | "other";
-type ExpenseType = "living" | "other" | "insurance";
+type ExpenseType = "living" | "other" | "insurance" | "education";
 
 /** Get default year refs for a new income record */
 export function defaultIncomeRefs(type: IncomeType, owner: Owner): { startYearRef: YearRef | null; endYearRef: YearRef | null } {
