@@ -52,4 +52,26 @@ describe("computeSurvivorAnnuityInclusion", () => {
     });
     expect(none.lines).toHaveLength(0);
   });
+
+  it("returns a marital deduction equal to the summed inclusion PV by default", () => {
+    const r = computeSurvivorAnnuityInclusion({
+      incomes: [pension], deceased: "spouse", deathYear: 2050,
+      survivorBirthYear: 1965, survivorLifeExpectancy: 90,
+      planSettings: { pvDiscountRate: 0.024, inflationRate: 0.024 },
+    });
+    expect(r.maritalDeduction).toBeGreaterThan(0);
+    expect(r.maritalDeduction).toBeCloseTo(r.lines[0].amount, 6);
+  });
+
+  it("emits the gross line but zero marital deduction when QTIP is elected out", () => {
+    const r = computeSurvivorAnnuityInclusion({
+      incomes: [{ ...pension, survivorAnnuityQtipElectOut: true }],
+      deceased: "spouse", deathYear: 2050,
+      survivorBirthYear: 1965, survivorLifeExpectancy: 90,
+      planSettings: { pvDiscountRate: 0.024, inflationRate: 0.024 },
+    });
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].amount).toBeGreaterThan(0);
+    expect(r.maritalDeduction).toBe(0);
+  });
 });

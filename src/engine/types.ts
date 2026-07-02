@@ -893,6 +893,11 @@ export interface Income {
    *  receive after the owner's death. null/0 = income simply ends at owner death.
    *  Only honored for type === "deferred" with a single owner. */
   survivorshipPct?: number | null;
+  /** §2056(b)(7)(C): a survivor annuity whose only continuing beneficiary is
+   *  the surviving spouse is deemed QTIP and offsets its own §2039 inclusion
+   *  with a marital deduction at first death by default. Set true to elect OUT —
+   *  the PV is then taxed in the first decedent's estate with no offset. */
+  survivorAnnuityQtipElectOut?: boolean | null;
   /** Additional months beyond `claimingAge` (0-11). Absent = 0. */
   claimingAgeMonths?: number;
   /** SS-specific. Resolves effective claim age at projection time.

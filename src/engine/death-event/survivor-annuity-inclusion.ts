@@ -12,14 +12,15 @@ export function computeSurvivorAnnuityInclusion(input: {
   survivorBirthYear: number | null;
   survivorLifeExpectancy: number | null;
   planSettings: Pick<PlanSettings, "pvDiscountRate" | "inflationRate">;
-}): { lines: GrossEstateLine[] } {
+}): { lines: GrossEstateLine[]; maritalDeduction: number } {
   const { incomes, deceased, deathYear, survivorBirthYear, survivorLifeExpectancy, planSettings } = input;
-  if (survivorBirthYear == null || survivorLifeExpectancy == null) return { lines: [] };
+  if (survivorBirthYear == null || survivorLifeExpectancy == null) return { lines: [], maritalDeduction: 0 };
 
   const survivorDeathYear = survivorBirthYear + survivorLifeExpectancy;
   const survivorAgeAtDeath = deathYear - survivorBirthYear;
   const discountRate = resolvePvDiscountRate(planSettings);
   const lines: GrossEstateLine[] = [];
+  let maritalDeduction = 0;
 
   for (const inc of incomes) {
     if (inc.type !== "deferred") continue;
@@ -55,6 +56,13 @@ export function computeSurvivorAnnuityInclusion(input: {
       // A survivor-annuity inclusion is a valuation add-back, not a probate asset.
       isProbate: false,
     });
+
+    // §2056(b)(7)(C): the surviving spouse is (by construction of survivorshipPct)
+    // the only continuing beneficiary, so the annuity is deemed QTIP and its PV is
+    // offset by a marital deduction — unless the executor affirmatively elects out.
+    if (inc.survivorAnnuityQtipElectOut !== true) {
+      maritalDeduction += pv;
+    }
   }
-  return { lines };
+  return { lines, maritalDeduction };
 }
