@@ -121,6 +121,9 @@ interface Props {
   clientId: string;
   /** Lifted LI assumptions — POSTed verbatim by the over-time solve. */
   liAssumptions: LiAssumptions;
+  /** Display label for the resolved LI-proceeds portfolio — for the summary
+   *  Life Insurance tab's Run-button solve. */
+  liModelPortfolioLabel: string;
   clientName: string;
   spouseName: string;
   /** Controlled active report tab; linked to the left input tab in the workspace. */
@@ -157,6 +160,7 @@ export function SolverChartPanel({
   computeStatus,
   clientId,
   liAssumptions,
+  liModelPortfolioLabel,
   clientName,
   spouseName,
   activeReport,
@@ -314,6 +318,8 @@ export function SolverChartPanel({
           baseClientData={baseTree}
           baseProjection={baseProjection}
           extraAccountMixes={extraAccountMixes}
+          liAssumptions={liAssumptions}
+          liModelPortfolioLabel={liModelPortfolioLabel}
           activeSummary={activeSummary}
           onSummaryChange={onSummaryChange}
         />

@@ -178,6 +178,8 @@ const ALLOWLIST: Record<string, string> = {
     "life-insurance MC solver (SSE) — read-only on DB, no mutation; parity with solver/solve",
   "src/app/api/clients/[id]/life-insurance/over-time/route.ts":
     "life-insurance need-over-time compute (SSE) — read-only on DB, no mutation; parity with solver/solve",
+  "src/app/api/clients/[id]/solver/life-insurance-summary/route.ts":
+    "live LI-summary solve (working tree → LiSolved) — read-only on DB, no mutation; parity with solver/solve",
   "src/app/api/clients/[id]/life-insurance/settings/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/snapshots/[snapId]/route.ts":
