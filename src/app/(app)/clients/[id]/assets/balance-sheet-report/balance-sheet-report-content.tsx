@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
+import { buildTrustDetails } from "@/lib/balance-sheet/trust-details";
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import BalanceSheetReport, { type BalanceSheetReportProps, type BalanceSheetProjYear } from "@/components/balance-sheet-report/balance-sheet-report";
 
@@ -76,11 +77,14 @@ export async function BalanceSheetReportContent({ clientId: id, scenarioParam }:
     ? (spouseContact?.firstName ?? tree.client.spouseName ?? "Spouse")
     : null;
 
+  const trustDetails = buildTrustDetails(tree, { clientLabel, spouseLabel });
+
   return (
     <BalanceSheetReport
       accounts={accounts}
       liabilities={inputs.liabilities}
       entities={inputs.entities}
+      trustDetails={trustDetails}
       notesReceivable={inputs.notesReceivable}
       familyMembers={inputs.familyMembers}
       projectionYears={projectionYears}
