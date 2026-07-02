@@ -24,7 +24,7 @@ vi.mock("@/components/rich-text-editor", () => ({
 }));
 
 import { QuickNoteDialog } from "../quick-note-dialog";
-import { quickNoteDraftKey, writeQuickNoteDraft, readQuickNoteDraft } from "@/lib/quick-note-draft";
+import { writeQuickNoteDraft, readQuickNoteDraft } from "@/lib/quick-note-draft";
 
 const CLIENT = "client-1";
 const USER = "user_1";
@@ -84,6 +84,20 @@ describe("QuickNoteDialog", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(readQuickNoteDraft(CLIENT, USER)).toBe("keep me");
+  });
+
+  it("keeps typed text when userId resolves late (Clerk arrives after open)", () => {
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <QuickNoteDialog open clientId={CLIENT} userId="" onOpenChange={onOpenChange} />,
+    );
+    fireEvent.change(screen.getByLabelText("Note body"), {
+      target: { value: "typed before auth resolved" },
+    });
+    rerender(
+      <QuickNoteDialog open clientId={CLIENT} userId={USER} onOpenChange={onOpenChange} />,
+    );
+    expect(screen.getByLabelText("Note body")).toHaveValue("typed before auth resolved");
   });
 
   it("discards the draft after confirmation", () => {

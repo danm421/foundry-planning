@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import DialogShell from "@/components/dialog-shell";
 import { AlertCircleIcon } from "@/components/icons";
@@ -32,11 +32,18 @@ export function QuickNoteDialog({ open, onOpenChange, clientId, userId }: Props)
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Re-seed from the stored draft each time the dialog opens.
+  // Re-seed from the stored draft only on the false→true open transition, not
+  // on every clientId/userId change while already open — otherwise a
+  // late-arriving Clerk userId (resolves after the dialog is already open)
+  // would wipe text the advisor is mid-typing. Initialized to `false` so a
+  // mount with `open` already true still counts as a transition and seeds.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setError(null);
-    setBody(userId ? (readQuickNoteDraft(clientId, userId) ?? "") : "");
+    if (open && !wasOpenRef.current) {
+      setError(null);
+      setBody(userId ? (readQuickNoteDraft(clientId, userId) ?? "") : "");
+    }
+    wasOpenRef.current = open;
   }, [open, clientId, userId]);
 
   function onBodyChange(next: string) {

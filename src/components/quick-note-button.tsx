@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useUser } from "@clerk/nextjs";
 
 import { QuickNoteDialog } from "@/components/quick-note-dialog";
 import { hasQuickNoteDraft } from "@/lib/quick-note-draft";
+
+// useSyncExternalStore requires a subscribe function, but the draft dot only
+// needs to re-read on rerender (dialog open/close, client switch already
+// trigger one) — no external event source to subscribe to.
+const emptySubscribe = () => () => {};
 
 // Inline Lucide-style pencil-line icon — matches ThemeToggle's inline-icon
 // convention (strokeWidth 1.5, currentColor, 16px).
@@ -33,13 +38,13 @@ export function QuickNoteButton({ clientId }: { clientId: string }) {
   const { user } = useUser();
   const userId = user?.id ?? "";
   const [open, setOpen] = useState(false);
-  const [hasDraft, setHasDraft] = useState(false);
-
-  // Re-check on mount, client switch, and every dialog close (post-mount only,
-  // so SSR markup stays stable).
-  useEffect(() => {
-    setHasDraft(userId ? hasQuickNoteDraft(clientId, userId) : false);
-  }, [clientId, userId, open]);
+  // Re-reads on every rerender, so the dot stays in sync after save/discard/
+  // close and on client switch without a setState-in-effect.
+  const hasDraft = useSyncExternalStore(
+    emptySubscribe,
+    () => (userId ? hasQuickNoteDraft(clientId, userId) : false),
+    () => false,
+  );
 
   return (
     <>
@@ -58,7 +63,13 @@ export function QuickNoteButton({ clientId }: { clientId: string }) {
           />
         ) : null}
       </button>
-      <QuickNoteDialog open={open} onOpenChange={setOpen} clientId={clientId} userId={userId} />
+      <QuickNoteDialog
+        key={clientId}
+        open={open}
+        onOpenChange={setOpen}
+        clientId={clientId}
+        userId={userId}
+      />
     </>
   );
 }
