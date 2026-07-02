@@ -29,11 +29,13 @@ import { db } from "@/db";
 import {
   accounts,
   accountOwners,
+  entities,
   scenarios,
   scenarioToggleGroups,
   notesReceivable,
   noteReceivableOwners,
 } from "@/db/schema";
+import { assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { requireOrgAndUser } from "@/lib/db-helpers";
@@ -129,6 +131,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           error:
             "Cannot sell an account with entity owners — clear entity ownership before selling to trust.",
         },
+        { status: 400 },
+      );
+    }
+
+    // The trust entity is written verbatim into scenario_change owners and
+    // notes_receivable.linkedTrustEntityId — verify it belongs to this client
+    // and actually is a trust before it lands anywhere.
+    const entCheck = await assertEntitiesInClient(clientId, [body.trustEntityId]);
+    if (!entCheck.ok) {
+      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
+    }
+    const [trustEntity] = await db
+      .select({ entityType: entities.entityType })
+      .from(entities)
+      .where(eq(entities.id, body.trustEntityId));
+    if (trustEntity?.entityType !== "trust") {
+      return NextResponse.json(
+        { error: "trustEntityId must reference a trust entity" },
         { status: 400 },
       );
     }

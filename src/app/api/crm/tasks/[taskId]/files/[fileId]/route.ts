@@ -5,6 +5,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmTaskAccess } from "@/lib/crm/authz";
 import { deleteCrmTaskFile, getCrmTaskFileRow } from "@/lib/crm-tasks/files";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,9 @@ export async function GET(
       metadata: { fileId, filename: row.filename },
     });
 
-    const safeFilename = row.filename.replace(/[\r\n"]/g, "_");
+    // Legacy rows may still carry path segments in `filename` — flatten
+    // in addition to the quoted-string strip.
+    const safeFilename = toSafeDisplayFilename(row.filename);
     return new Response(result.stream, {
       headers: {
         "Content-Type": result.blob.contentType ?? row.mimeType ?? "application/octet-stream",

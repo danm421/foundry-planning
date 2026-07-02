@@ -9,6 +9,7 @@ import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
 import { validateDocumentUpload } from "@/lib/files/content-type";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 
 /**
  * CRM household document storage. Mirrors `src/lib/imports/blob.ts` but
@@ -55,6 +56,9 @@ export async function uploadCrmDocument(
   const { mimeType } = validateDocumentUpload(file, buffer);
 
   const safe = sanitizeFilename(file.name || "document");
+  // The stored display filename is reused downstream as a zip entry name
+  // and Content-Disposition value — flatten path segments at the source.
+  const displayName = toSafeDisplayFilename(file.name || "document");
   // Include a random UUID segment so two uploads of the same filename
   // landing in the same millisecond can't collide with `addRandomSuffix: false`.
   const storageKey = `crm/${householdId}/${Date.now()}-${randomUUID()}-${safe}`;
@@ -68,7 +72,7 @@ export async function uploadCrmDocument(
     .insert(crmHouseholdDocuments)
     .values({
       householdId,
-      filename: file.name,
+      filename: displayName,
       storageProvider: STORAGE_PROVIDER,
       // Persist the pathname (not the public-looking URL) so all reads
       // go back through the SDK — never embed the blob URL.

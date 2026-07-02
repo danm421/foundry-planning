@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
@@ -39,6 +40,13 @@ export async function PUT(
       employerMatchCap,
       employerMatchAmount,
     } = body;
+
+    if (accountId !== undefined) {
+      const acctCheck = await assertAccountsInClient(id, [accountId]);
+      if (!acctCheck.ok) {
+        return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+      }
+    }
 
     const [updated] = await db
       .update(savingsRules)

@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { crmTaskActivity, crmTaskFiles } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { validateDocumentUpload } from "@/lib/files/content-type";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 
 /**
  * Blob upload + record module for CRM task attachments. Mirrors the
@@ -63,6 +64,9 @@ export async function uploadCrmTaskFile(args: {
   const { mimeType } = validateDocumentUpload(args.file, buffer);
 
   const safe = sanitizeFilename(args.file.name || "attachment");
+  // The stored display filename is reused downstream in download headers —
+  // flatten path segments at the source.
+  const displayName = toSafeDisplayFilename(args.file.name || "attachment");
   // Include a random UUID segment so two uploads of the same filename
   // landing in the same millisecond can't collide with
   // `addRandomSuffix: false`.
@@ -79,7 +83,7 @@ export async function uploadCrmTaskFile(args: {
       .values({
         taskId: args.taskId,
         uploadedByUserId: args.uploadedByUserId,
-        filename: args.file.name,
+        filename: displayName,
         storageProvider: STORAGE_PROVIDER,
         // Persist the PRIVATE blob pathname (not a public URL). The file
         // is fetched through an authenticated proxy GET that re-checks
