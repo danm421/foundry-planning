@@ -51,6 +51,17 @@ import {
   type ClientProfilePageOptions,
 } from "@/lib/presentations/pages/client-profile/types";
 import { ClientProfilePagePdf } from "./pages/client-profile/page-pdf";
+import { buildAssumptionsData } from "@/lib/presentations/pages/assumptions/view-model";
+import { estimateAssumptionsPageCount } from "@/lib/presentations/pages/assumptions/estimate-page-count";
+import { summarizeAssumptionsOptions } from "@/lib/presentations/pages/assumptions/summarize-options";
+import {
+  assumptionsOptionsSchema,
+  ASSUMPTIONS_OPTIONS_DEFAULT,
+  type AssumptionsPageOptions,
+} from "@/lib/presentations/pages/assumptions/options-schema";
+import type { AssumptionsPageData } from "@/lib/presentations/pages/assumptions/types";
+import { AssumptionsPagePdf } from "./pages/assumptions/page-pdf";
+import { AssumptionsOptionsControl } from "./pages/assumptions/options-control";
 // Shared drill-down infrastructure used by every Cash Flow > * drill page.
 import { DrillPagePdf } from "./shared/drill-page-pdf";
 import { DrillOptionsControl } from "./shared/drill-options-control";
@@ -460,6 +471,28 @@ export const clientProfilePage: PresentationPage<ClientProfilePageData, ClientPr
       spouseLastName: ctx.spouseLastName,
     }),
   renderPdf: (input) => <ClientProfilePagePdf {...input} />,
+};
+
+export const assumptionsPage: PresentationPage<AssumptionsPageData, AssumptionsPageOptions> = {
+  id: "assumptions",
+  title: "Assumptions",
+  description: "Tax, growth & inflation, per-account growth rates, and capital market assumptions.",
+  category: "Framing",
+  defaultOptions: ASSUMPTIONS_OPTIONS_DEFAULT,
+  optionsSchema: assumptionsOptionsSchema,
+  summarizeOptions: summarizeAssumptionsOptions,
+  estimatePageCount: estimateAssumptionsPageCount,
+  OptionsControl: AssumptionsOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildAssumptionsData({
+      clientData: ctx.clientData,
+      years: ctx.years,
+      investments: ctx.investments,
+      scenarioLabel: ctx.scenarioLabel,
+      options,
+    }),
+  renderPdf: (input) => <AssumptionsPagePdf {...input} />,
 };
 
 export const blankPage: PresentationPage<BlankPageData, BlankPageOptions> = {
@@ -986,6 +1019,7 @@ export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
   clientProfile: clientProfilePage,
+  assumptions: assumptionsPage,
   blank: blankPage,
   cashFlow: cashFlowPage,
   cashFlowIncome: cashFlowIncomePage,
