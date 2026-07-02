@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
 });
 
 // Column widths shared by both modes (flat mode prepends Account).
-const W = { ticker: 38, shares: 52, price: 52, value: 62, pct: 40, basis: 58, gain: 92 } as const;
+const W = { ticker: 48, shares: 52, price: 52, value: 62, pct: 40, basis: 58, gain: 92 } as const;
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -121,10 +121,24 @@ const TONE_COLOR = {
   neutral: PRESENTATION_THEME.ink2,
 } as const;
 
+// Option symbols and CUSIPs are single unbreakable tokens that overflow the
+// fixed ticker column and bleed into the Name cell \u2014 react-pdf gives them no
+// break or clip point (zero-width spaces are not treated as break
+// opportunities, and maxLines can't clip a token that never wraps). Truncate
+// to what the column fits; the Name cell still identifies the position.
+const TICKER_MAX_CHARS = 9;
+function clipTicker(ticker: string): string {
+  return ticker.length > TICKER_MAX_CHARS
+    ? `${ticker.slice(0, TICKER_MAX_CHARS - 1)}\u2026`
+    : ticker;
+}
+
 function RowCells({ row, withBasis }: { row: HoldingRowVm; withBasis: boolean }) {
   return (
     <>
-      <Text style={[styles.tickerCell, { width: W.ticker }]}>{row.ticker || "—"}</Text>
+      <Text style={[styles.tickerCell, { width: W.ticker }]}>
+        {clipTicker(row.ticker) || "—"}
+      </Text>
       <Text style={[styles.td, { flex: 2 }]}>{row.name || "—"}</Text>
       <Text style={[styles.num, { width: W.shares }, styles.right]}>{row.shares}</Text>
       <Text style={[styles.num, { width: W.price }, styles.right]}>{row.price}</Text>
