@@ -62,6 +62,13 @@ export type ResolvedCategoryDefault = {
   };
 };
 
+/** 529s have no dedicated plan_settings growth columns — their category-level
+ *  growth defaults follow the retirement category. Normalize before any
+ *  category-keyed plan-settings lookup. */
+export function growthDefaultCategory<T extends string>(category: T): T | "retirement" {
+  return category === "education_savings" ? "retirement" : category;
+}
+
 export function createGrowthSourceResolver(ctx: {
   planSettings: PlanSettingsShape;
   assetClasses: readonly AssetClassRow[];
@@ -201,7 +208,7 @@ export function createGrowthSourceResolver(ctx: {
         customRate: String(s.defaultGrowthLifeInsurance),
       },
     };
-    const entry = sourceLookup[category];
+    const entry = sourceLookup[growthDefaultCategory(category)];
     if (!entry) {
       return { rate: 0.05 };
     }
@@ -247,14 +254,14 @@ export function createGrowthSourceResolver(ctx: {
       business: s.growthSourceBusiness,
       life_insurance: s.growthSourceLifeInsurance,
     };
-    return lookup[category] ?? "custom";
+    return lookup[growthDefaultCategory(category)] ?? "custom";
   }
 
   /** Category-default model portfolio id, or null when the category default
    *  is not a model-portfolio source. */
   function categoryDefaultPortfolioId(category: string): string | null {
     const s = ctx.planSettings;
-    switch (category) {
+    switch (growthDefaultCategory(category)) {
       case "taxable":
         return s.modelPortfolioIdTaxable;
       case "cash":
