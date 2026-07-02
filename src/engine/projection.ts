@@ -19,6 +19,7 @@ import type {
   MedicareYearDetail,
   IrmaaTier,
   RothConversion,
+  EducationGoalYear,
 } from "./types";
 import { computeMedicareYear } from "./medicare";
 import { resolveResidenceState } from "./relocation";
@@ -62,7 +63,8 @@ import {
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals, planSupplementalWithdrawal, isHsaWithdrawalLocked } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, isHsaWithdrawalLocked, categorizeDraw } from "./withdrawal";
+import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
@@ -930,8 +932,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Exclude business-owned (ownerAccountId) rows: those are netted against
       // business income inside the Phase 3 distribution sweep, not paid from
       // household cash. Including them here would inflate household
-      // non-savings outflows and depress the cashflow surplus.
-      (exp) => exp.ownerEntityId == null && exp.ownerAccountId == null
+      // non-savings outflows and depress the cashflow surplus. Education goals
+      // are funded via applyEducationFunding (dedicated draw + optional
+      // out-of-pocket spill), never as a plain household expense.
+      (exp) =>
+        exp.ownerEntityId == null &&
+        exp.ownerAccountId == null &&
+        exp.type !== "education"
     );
 
     // Initialize per-account ledgers with the year-start balances. Ledgers are
@@ -1438,6 +1445,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
       });
     }
+
+    // Start-of-year balances for education dedicated accounts (before growth /
+    // savings), so the report's "Dedicated Assets (BOY)" is a true
+    // beginning-of-year figure. The funding pass itself runs after savings.
+    const educationGoalsThisYear = data.expenses.filter(
+      (e) => e.type === "education" && itemProrationGate(e, year, data.client).include,
+    );
+    const eduDedicatedIds = new Set<string>(
+      educationGoalsThisYear.flatMap((e) => e.dedicatedAccountIds ?? []),
+    );
+    const eduBoyBalances: Record<string, number> = {};
+    for (const id of eduDedicatedIds) eduBoyBalances[id] = accountBalances[id] ?? 0;
 
     // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
     // accounts are included). When the account has a realization model, split
@@ -3701,6 +3720,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // debited twice: once from defaultChecking via resolveCashAccount, and
       // again implicitly when the Phase 3 sweep nets it against gross income.
       if (exp.ownerAccountId != null) continue;
+      // Education goals are routed by applyEducationFunding (dedicated draw +
+      // optional out-of-pocket spill), not as a plain cash outflow here.
+      if (exp.type === "education") continue;
       // Medicare-preempted expenses (e.g. ACA/COBRA flagged
       // endsAtMedicareEligibilityOwner) are replaced by the modeled Medicare
       // premium debit below. Skip both the cash debit AND the snapshot line
@@ -4040,6 +4062,116 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       label: "Savings contributions",
       basis: -savings.total, // cash outflow: basis conserves 1:1 with amount
     });
+
+    // ── Education goals: dedicated funding pass ──────────────────────────────
+    // Dedicated accounts already have this year's growth (step 4) and savings
+    // contributions applied. Draw each active goal's indexed cost from its
+    // dedicated accounts in order; 529 draws are tax-free (categorizeDraw).
+    // Uncovered cost is a shortfall, paid from household cash only when
+    // payShortfallOutOfPocket is set. This runs BEFORE `baselineTaxDetail` is
+    // snapshotted (below) so any taxable draw components (non-529 dedicated
+    // accounts) reach the year's tax convergence; and BEFORE the step-11
+    // cashDelta flush so an out-of-pocket spill lands on checking this year.
+    const educationGoalYears: EducationGoalYear[] = [];
+    for (const goal of educationGoalsThisYear) {
+      const gate = itemProrationGate(goal, year, data.client);
+      const inflateFrom = goal.inflationStartYear ?? goal.startYear;
+      const rawCost = goal.scheduleOverrides
+        ? (goal.scheduleOverrides[year] ?? 0)
+        : goal.annualAmount * Math.pow(1 + goal.growthRate, year - inflateFrom);
+      const goalCost = rawCost * gate.factor;
+
+      const ids = goal.dedicatedAccountIds ?? [];
+      const boy = ids.reduce((s, id) => s + (eduBoyBalances[id] ?? 0), 0);
+
+      const drawResult = computeEducationDraw({
+        goalCost,
+        dedicatedAccountIds: ids,
+        balances: accountBalances,
+        categorize: (id, amount) => {
+          const acct = accountById.get(id);
+          if (!acct) {
+            return { ordinaryIncome: 0, capitalGains: 0, basisReturn: amount, earlyWithdrawalPenalty: 0 };
+          }
+          const ownerAge =
+            isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
+          const { ordinaryIncome, capitalGains, basisReturn, earlyWithdrawalPenalty } =
+            categorizeDraw({
+              account: acct,
+              amount,
+              balance: accountBalances[id] ?? 0,
+              basisMap,
+              rothValueMap,
+              ownerAge,
+            });
+          return { ordinaryIncome, capitalGains, basisReturn, earlyWithdrawalPenalty };
+        },
+      });
+
+      // Apply the draws to balances + ledgers. Money leaves the plan to the
+      // school — it does NOT credit household checking.
+      for (const d of drawResult.draws) {
+        accountBalances[d.accountId] = (accountBalances[d.accountId] ?? 0) - d.amount;
+        // A taxable draw returns basis; reduce the source's basisMap so a later
+        // sale doesn't re-tax the same dollars.
+        if (d.basisReturn > 0) {
+          basisMap[d.accountId] = Math.max(0, (basisMap[d.accountId] ?? 0) - d.basisReturn);
+        }
+        const led = accountLedgers[d.accountId];
+        if (led) {
+          led.distributions += d.amount;
+          led.endingValue -= d.amount;
+          led.entries.push({
+            category: "withdrawal",
+            label: `Education: ${goal.name}`,
+            amount: -d.amount,
+            sourceId: goal.id,
+            basis: -d.basisReturn,
+          });
+        }
+      }
+
+      // Taxable components feed the year's tax (mostly zero — 529 is tax-free).
+      if (drawResult.ordinaryIncome > 0) taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
+      if (drawResult.capitalGains > 0) taxDetail.capitalGains += drawResult.capitalGains;
+      if (drawResult.ordinaryIncome > 0 || drawResult.capitalGains > 0) {
+        taxDetail.bySource[`education:${goal.id}`] = {
+          type: drawResult.capitalGains > 0 ? "capital_gains" : "ordinary_income",
+          amount: drawResult.capitalGains > 0 ? drawResult.capitalGains : drawResult.ordinaryIncome,
+        };
+      }
+
+      // Out-of-pocket: spill the shortfall to household cash (→ normal
+      // waterfall via the step-11 cashDelta flush + phase-12 gap-fill).
+      if (goal.payShortfallOutOfPocket && drawResult.shortfall > 0) {
+        creditCash(resolveCashAccount(goal.ownerEntityId, goal.cashAccountId), -drawResult.shortfall, {
+          category: "expense",
+          label: `Education (out of pocket): ${goal.name}`,
+          sourceId: goal.id,
+          basis: -drawResult.shortfall, // cash outflow: basis == amount (signed)
+        });
+      }
+
+      const eoy = ids.reduce((s, id) => s + (accountBalances[id] ?? 0), 0);
+      const growthAndSavings = ids.reduce((s, id) => {
+        const led = accountLedgers[id];
+        return s + (led ? led.growth + led.contributions : 0);
+      }, 0);
+      // otherExpenseFlows = residual (any non-goal balance change), keeping the
+      // invariant BOY + G&S − dedicatedWithdrawal − otherExpenseFlows = EOY.
+      const otherExpenseFlows = boy + growthAndSavings - drawResult.dedicatedWithdrawal - eoy;
+
+      educationGoalYears.push({
+        goalId: goal.id,
+        dedicatedAssetsBOY: boy,
+        growthAndSavings,
+        goalExpense: goalCost,
+        otherExpenseFlows,
+        dedicatedWithdrawal: drawResult.dedicatedWithdrawal,
+        dedicatedAssetsEOY: eoy,
+        shortfall: drawResult.shortfall,
+      });
+    }
 
     // Self-funding hypothetical savings (Retirement Analysis "Minimum Additional
     // Savings"). For each self-funding rule, deposit the FULL prorated annual
@@ -5497,6 +5629,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       withdrawals,
       entityWithdrawals,
       expenses,
+      ...(educationGoalYears.length > 0 ? { educationGoals: educationGoalYears } : {}),
       savings,
       ...(hypoContribution > 0
         ? {

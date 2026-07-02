@@ -31,6 +31,10 @@ export function computeExpenses(
     const gate = itemProrationGate(exp, year, client);
     if (!gate.include) continue;
     if (filter && !filter(exp)) continue;
+    // Education goals are funded via applyEducationFunding, never as a household
+    // expense. Skipping here also narrows `exp.type` off "education" so the
+    // `result[exp.type]` index below is well-typed against ExpenseBreakdown.
+    if (exp.type === "education") continue;
 
     let amount: number;
     if (exp.scheduleOverrides) {
