@@ -96,6 +96,12 @@ const survivorshipPctOptional = z
     return String(n);
   });
 
+// survivorAnnuityQtipElectOut: boolean elect-out from deemed §2056(b)(7)(C) QTIP.
+// undefined → passes through (UPDATE no-op); null/false → deduction applies; true → elect out.
+const survivorAnnuityQtipElectOutOptional = z
+  .union([z.boolean(), z.null()])
+  .optional();
+
 // Fields shared verbatim by both create and update (no defaults attached).
 const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
@@ -150,6 +156,7 @@ export const incomeCreateSchema = z
     claimingAgeMonths: claimingAgeMonthsOptional.default(0),
     piaMonthly: piaMonthlyOptional.default(null),
     survivorshipPct: survivorshipPctOptional,
+    survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
     ...shared,
     ...nullableStringCreate,
   })
@@ -180,6 +187,7 @@ export const incomeUpdateSchema = z
     claimingAgeMonths: claimingAgeMonthsOptional,
     piaMonthly: piaMonthlyOptional,
     survivorshipPct: survivorshipPctOptional,
+    survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
     ...shared,
     ...nullableStringUpdate,
   })
