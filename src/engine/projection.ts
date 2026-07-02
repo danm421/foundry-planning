@@ -63,7 +63,7 @@ import {
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals, planSupplementalWithdrawal, isHsaWithdrawalLocked } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
@@ -4394,7 +4394,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // negative: any deficit after income/expenses/taxes/savings (and the BoY
     // purchase equity) is refilled from the withdrawal strategy (grossed up
     // for tax).
-    let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
+    const withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     const entityWithdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
@@ -4447,6 +4447,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // equity tax counterfactual (below) re-runs from the same baseline.
     let finalTaxInput: YearTaxInput = baseTaxInput;
     let convergenceWarning: TrustWarning | null = null;
+    // Converged draw target for the legacy no-checking branch (base deficit +
+    // recomputed tax + penalty). Sized in phase 12 below; the application
+    // block posts any (target − funded) remainder as an overdraft (M14).
+    let legacyShortfallTarget = 0;
 
     // If bracket-fillers exist, recompute `taxOutForIter` with the seeded
     // fill-bracket taxable layered in. This runs whether or not we enter the
@@ -4685,6 +4689,128 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             };
           }
         }
+      }
+    } else {
+      // Legacy path: no default checking → a deficit triggers a direct draw.
+      // H7/M13 (audit 2026-07-01): the draw recognizes income via
+      // categorizeDraw, recomputes the year's tax, and charges the pre-59½
+      // penalty — mirroring the hasChecking convergence loop above. The
+      // deficit also folds in the fill-bracket conversion tax delta (seeded
+      // `taxOutForIter` vs the base `taxes` already inside
+      // householdNonSavingsOutflows) so a conversion's tax bill is funded even
+      // when base flows are balanced. Purchase equity is folded into outflows
+      // so a purchase-driven deficit still triggers a withdrawal. Runs here in
+      // phase 12 (not the application block below) so `finalTaxResult` /
+      // `finalTaxes` capture the recomputed tax; the balance mutations happen
+      // in the application block, mirroring the hasChecking split.
+      const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
+      const seededTaxes = taxOutForIter.taxes;
+      const legacyNetFlow =
+        householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity
+        - (seededTaxes - taxes);
+      if (legacyNetFlow < 0) {
+        const baseDeficit = -legacyNetFlow;
+        let target = baseDeficit;
+        for (let iter = 0; iter < MAX_ITER; iter++) {
+          // planSupplementalWithdrawal enforces the pre-65 HSA lock per owner
+          // age internally, so no strategy pre-filter is needed here.
+          supplementalPlan = planSupplementalWithdrawal({
+            shortfall: target,
+            strategy: effectiveWithdrawalStrategy,
+            householdBalances: householdWithdrawBalances,
+            basisMap,
+            freshBasisMap,
+            rothValueMap,
+            accounts: workingAccounts,
+            ages: { client: ages.client, spouse: ages.spouse ?? null },
+            isSpouseAccount,
+            year,
+          });
+
+          // Recompute the year's tax with the draw's recognized income layered
+          // on top of the (fill-bracket-seeded) baseline — same input shape as
+          // the hasChecking loop's step (c), minus bracket re-sizing (the
+          // seeded fill-bracket targets stay fixed on this path).
+          const totalFillBracketTaxable = Object.values(pendingFillBracketTargets)
+            .reduce((s, v) => s + v, 0);
+          const taxDetailWithDraws: typeof taxDetail = {
+            ...baselineTaxDetail,
+            ordinaryIncome:
+              baselineTaxDetail.ordinaryIncome
+              + totalFillBracketTaxable
+              + supplementalPlan.recognizedIncome.ordinaryIncome,
+            capitalGains:
+              baselineTaxDetail.capitalGains
+              + supplementalPlan.recognizedIncome.capitalGains,
+            bySource: { ...baselineTaxDetail.bySource },
+          };
+
+          // Fold supplemental IRA/401(k) draws into the per-source retirement
+          // breakdown so state retirement-income exclusions (PA, IL, MS, and
+          // capped states) apply to spending-driven distributions — mirrors
+          // the hasChecking loop.
+          const supplementalRetirementBreakdown = { ...retirementBreakdown };
+          for (const draw of supplementalPlan.draws) {
+            if (draw.ordinaryIncome <= 0) continue;
+            const sub = accountById.get(draw.accountId)?.subType ?? "";
+            if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
+            else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
+          }
+
+          const legacyTaxInput: YearTaxInput = {
+            taxDetail: taxDetailWithDraws,
+            socialSecurityGross: income.socialSecurity,
+            totalIncome: income.total,
+            taxableIncome:
+              taxableIncome
+              + totalFillBracketTaxable
+              + supplementalPlan.recognizedIncome.ordinaryIncome
+              + supplementalPlan.recognizedIncome.capitalGains,
+            filingStatus,
+            year,
+            planSettings: planSettingsForYear,
+            resolved: resolved ?? null,
+            useBracket,
+            aboveLineDeductions,
+            itemizedDeductions,
+            charityCarryforwardIn: charityCarryforward,
+            charityGiftsThisYear,
+            secaResult,
+            transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+            interestIncomeForTax,
+            deductionBreakdownIn: deductionBreakdownResult ?? null,
+            retirementBreakdown: supplementalRetirementBreakdown,
+            primaryAge: ages.client,
+            spouseAge: ages.spouse,
+            isoSpread: equityIsoSpread,
+          };
+          taxOutForIter = computeTaxForYear(legacyTaxInput);
+          finalTaxInput = legacyTaxInput;
+
+          const desiredTotal =
+            baseDeficit
+            + (taxOutForIter.taxes - seededTaxes)
+            + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+
+          // Pool exhausted: draws can't grow further and the recomputed tax
+          // already reflects the actual draws. The remainder becomes the
+          // overdraft posted in the application block below.
+          if (supplementalPlan.total < target - TOLERANCE) {
+            target = desiredTotal;
+            break;
+          }
+
+          const residual = desiredTotal - target;
+          if (Math.abs(residual) <= TOLERANCE) break;
+
+          // Newton step, same shape as the hasChecking loop: gross up by the
+          // draw's effective tax+penalty rate to accelerate convergence.
+          const legacyCost = desiredTotal - baseDeficit;
+          const effectiveRate =
+            supplementalPlan.total > 0 ? legacyCost / supplementalPlan.total : 0;
+          target += residual / Math.max(0.01, 1 - effectiveRate);
+        }
+        legacyShortfallTarget = target;
       }
     }
 
@@ -4969,45 +5095,96 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     } else {
-      // TODO(F5-followup): unify with the iterative convergence path. This branch
-      // doesn't gross up or model withdrawal tax — see future-work/engine.md
-      // "Unify legacy no-checking path with iterative tax convergence".
-      // Legacy path: no default checking → deficit triggers withdrawal directly
-      // (no gross-up because the legacy path doesn't model the withdrawal tax
-      // separately). Purchase equity is folded into outflows so a purchase-driven
-      // deficit still triggers a withdrawal.
-      const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
-      const legacyNetFlow = householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity;
-      if (legacyNetFlow < 0) {
-        // Filter pre-65 HSA entries: the legacy no-checking path is age-blind,
-        // so we must enforce the 65-gate here before handing it the strategy.
-        const legacyStrategy = effectiveWithdrawalStrategy.filter((s) => {
-          const acct = workingAccounts.find((a) => a.id === s.accountId);
-          if (!acct) return true;
-          const ownerAge = isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
-          return !isHsaWithdrawalLocked(acct, ownerAge);
-        });
-        withdrawals = executeWithdrawals(
-          -legacyNetFlow,
-          legacyStrategy,
-          householdWithdrawBalances,
-          year
-        );
-        for (const [acctId, amount] of Object.entries(withdrawals.byAccount)) {
-          accountBalances[acctId] -= amount;
-          if (accountLedgers[acctId]) {
-            accountLedgers[acctId].distributions += amount;
-            accountLedgers[acctId].endingValue -= amount;
-            accountLedgers[acctId].entries.push({
+      // Legacy path (no default checking): apply the draws planned by the
+      // phase-12 legacy convergence above. Same balance/basis/Roth
+      // bookkeeping as the hasChecking application block, minus the checking
+      // refill leg (proceeds pay expenses directly in the legacy model).
+      {
+        for (const draw of supplementalPlan.draws) {
+          if (draw.amount <= 0) continue;
+          const preBalance = accountBalances[draw.accountId] ?? 0;
+          accountBalances[draw.accountId] -= draw.amount;
+          withdrawals.byAccount[draw.accountId] =
+            (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
+          withdrawals.total += draw.amount;
+
+          const drawAccount = accountById.get(draw.accountId);
+          const gatesBasis =
+            (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+          const basisBefore = basisMap[draw.accountId] ?? 0;
+          const entryBasisDelta = gatesBasis
+            ? -Math.min(draw.basisReturn, basisBefore)
+            : 0;
+
+          if (accountLedgers[draw.accountId]) {
+            accountLedgers[draw.accountId].distributions += draw.amount;
+            accountLedgers[draw.accountId].endingValue -= draw.amount;
+            accountLedgers[draw.accountId].entries.push({
               category: "withdrawal",
               label: "Withdrawal to cover shortfall",
-              amount: -amount,
-              // Legacy no-checking path does NOT touch basisMap (it drains a
-              // separate householdWithdrawBalances pool), so the basisMap delta
-              // is 0 here. Carrying basis 0 keeps reconciliation consistent —
-              // no basis moved on either side. See future-work/engine.md.
-              basis: 0,
+              amount: -draw.amount,
+              basis: entryBasisDelta, // == basisMap delta applied by the gate below
             });
+          }
+
+          if (gatesBasis) {
+            basisMap[draw.accountId] = Math.max(0, basisBefore - draw.basisReturn);
+            const freshBefore = freshBasisMap[draw.accountId] ?? 0;
+            const consumed = Math.min(freshBefore, draw.amount);
+            freshBasisMap[draw.accountId] = Math.max(0, freshBefore - consumed);
+
+            if (accountLedgers[draw.accountId]) {
+              const existing = accountLedgers[draw.accountId].withdrawalDetail ?? { realizedLtcg: 0, basisReturn: 0 };
+              accountLedgers[draw.accountId].withdrawalDetail = {
+                realizedLtcg: existing.realizedLtcg + draw.capitalGains,
+                basisReturn: existing.basisReturn + draw.basisReturn,
+              };
+            }
+          }
+
+          if (
+            (drawAccount?.subType === "401k" || drawAccount?.subType === "403b") &&
+            preBalance > 0
+          ) {
+            const fraction = Math.min(1, draw.amount / preBalance);
+            rothValueMap[draw.accountId] = Math.max(
+              0,
+              (rothValueMap[draw.accountId] ?? 0) * (1 - fraction),
+            );
+          }
+        }
+
+        // M14: any unfunded remainder overdraws the last-drawn (or first
+        // eligible strategy) account, mirroring a hasChecking plan whose
+        // checking goes negative when broke. Without this, a depleted
+        // no-checking plan silently absorbs the deficit, its liquid total
+        // never dips below zero, and Monte-Carlo can never classify failure.
+        // No income is recognized on the overdraft — it's an unfunded
+        // shortfall, not a real distribution.
+        const unfunded = legacyShortfallTarget - supplementalPlan.total;
+        if (unfunded > TOLERANCE) {
+          const overdraftId =
+            supplementalPlan.draws.length > 0
+              ? supplementalPlan.draws[supplementalPlan.draws.length - 1].accountId
+              : effectiveWithdrawalStrategy
+                  .filter((s) => year >= s.startYear && year <= s.endYear)
+                  .sort((a, b) => a.priorityOrder - b.priorityOrder)
+                  .find((s) => accountBalances[s.accountId] !== undefined)?.accountId;
+          if (overdraftId) {
+            accountBalances[overdraftId] -= unfunded;
+            withdrawals.byAccount[overdraftId] =
+              (withdrawals.byAccount[overdraftId] ?? 0) + unfunded;
+            withdrawals.total += unfunded;
+            if (accountLedgers[overdraftId]) {
+              accountLedgers[overdraftId].distributions += unfunded;
+              accountLedgers[overdraftId].endingValue -= unfunded;
+              accountLedgers[overdraftId].entries.push({
+                category: "withdrawal",
+                label: "Unfunded shortfall (accounts depleted)",
+                amount: -unfunded,
+                basis: 0,
+              });
+            }
           }
         }
       }
@@ -5245,7 +5422,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // the income-tax report "Total Tax" (taxResult.flow.totalTax) read the same
     // number. `finalTaxes`/`taxAndPenalty` above captured the pre-fold totalTax,
     // so the actual checking debit is unaffected.
-    if (hasChecking && supplementalEarlyPenalty > 0) {
+    // Applies on BOTH funding paths: the hasChecking convergence loop and the
+    // legacy no-checking branch (H7) populate `supplementalPlan` the same way.
+    if (supplementalEarlyPenalty > 0) {
       finalTaxResult.flow.earlyWithdrawalPenalty += supplementalEarlyPenalty;
       finalTaxResult.flow.totalTax += supplementalEarlyPenalty;
       finalTaxResult.flow.totalFederalTax += supplementalEarlyPenalty;

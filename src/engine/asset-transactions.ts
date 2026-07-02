@@ -784,8 +784,13 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
       removedBusinessAccountIds.push(business.id);
       removedAccountIds.push(business.id);
       business.value = 0;
+      business.basis = 0;
     } else {
       business.value = operatingValue * (1 - f);
+      // The sold tranche consumed f of the basis; the residual keeps (1 − f)
+      // or a later tranche would compute its gain against the full original
+      // basis and recognize $0.
+      business.basis = operatingBasis * (1 - f);
     }
 
     breakdown.push({

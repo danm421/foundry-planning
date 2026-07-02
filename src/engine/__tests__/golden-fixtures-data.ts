@@ -18,14 +18,14 @@
  *   bracket mode confirms Roth basis grows at 30% of contribution and the
  *   above-the-line deduction counts only the 70% pre-tax slice.
  *
- * NOTE on PR2 (audit F5): the underlying `sampleAccounts` fixture has no
- * `isDefaultChecking: true` account, so all three goldens currently
- * exercise the legacy no-checking branch (`projection.ts:else { ... }`).
- * The new iterative convergence loop covers the with-checking path only and
- * is regression-tested by `projection-gap-fill-iterative.test.ts` (cases
- * a-h). Updating these goldens to add a default-checking account would
- * change every captured number wholesale — deferred (see future-work/engine.md
- * "Default-checking variant of golden fixtures G2/G3").
+ * NOTE (audit F5 → H7 2026-07-01): the underlying `sampleAccounts` fixture has
+ * no `isDefaultChecking: true` account, so all three goldens exercise the
+ * legacy no-checking branch (`projection.ts:else { ... }`). Since the H7 fix,
+ * that branch runs its own convergence loop — deficit draws recognize income
+ * via categorizeDraw, the year's tax is recomputed, and the draw grosses up to
+ * fund it — so G2/G3 numbers below were re-captured from that behavior. The
+ * with-checking path is regression-tested by
+ * `projection-gap-fill-iterative.test.ts` (cases a-h).
  */
 
 import type { ClientData, PlanSettings } from "../types";
@@ -292,8 +292,9 @@ export const g4ClientData: ClientData = {
   ],
 };
 
-// ─── Expected-year tables (captured from runProjection, 2026-04-29) ──────────
-// These are the locked baselines. PR2 will update G2/G3 numbers.
+// ─── Expected-year tables (captured from runProjection) ─────────────────────
+// Locked baselines. G1/G4 captured 2026-04-29; G2/G3 re-captured 2026-07-01
+// after the H7 no-checking tax-convergence fix.
 
 export interface GoldenExpectedYear {
   year: number;
@@ -329,28 +330,29 @@ export const g1ExpectedYears: GoldenExpectedYear[] = [
   { year: 2030, expensesTaxes: 75971.844675,   withdrawalsTotal: 0, taxDetailEarned: 281377.2025, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
 ];
 
-// G2: brokerage + Roth basis pulls cover deficit. Legacy no-checking branch:
-// `executeWithdrawals` runs without categorization, so cap gains aren't recognized
-// and expensesTaxes stays 0. The new iterative convergence loop (audit F5) does
-// recognize gains, but it's gated on `hasChecking` and this fixture has no
-// default-checking account.
+// G2: brokerage + Roth basis pulls cover deficit. Since H7, the legacy
+// no-checking branch categorizes draws: brokerage pulls realize cap gains
+// (rising as basis is consumed) and the draw grosses up to fund the tax.
+// 2030: brokerage nearly exhausted → Roth-basis pulls (tax- and penalty-free
+// within basis, even pre-59.5), so recognized gains and tax collapse.
 export const g2ExpectedYears: GoldenExpectedYear[] = [
-  { year: 2026, expensesTaxes: 0, withdrawalsTotal: 85000,            taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
-  { year: 2027, expensesTaxes: 0, withdrawalsTotal: 87500,            taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
-  { year: 2028, expensesTaxes: 0, withdrawalsTotal: 90074,            taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
-  { year: 2029, expensesTaxes: 0, withdrawalsTotal: 92724.20000000001, taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
-  { year: 2030, expensesTaxes: 0, withdrawalsTotal: 95452.8656,       taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
+  { year: 2026, expensesTaxes: 3674.266783960431,  withdrawalsTotal: 88673.47260826796, taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 13608.395496149746 },
+  { year: 2027, expensesTaxes: 10792.589289641961, withdrawalsTotal: 98292.58928964195, taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 39972.552924599855 },
+  { year: 2028, expensesTaxes: 12151.380627154054, withdrawalsTotal: 102225.38062715407, taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 45005.113433903905 },
+  { year: 2029, expensesTaxes: 13540.593757631834, withdrawalsTotal: 106264.79375763185, taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 50150.347250488274 },
+  { year: 2030, expensesTaxes: 1436.108579623543,  withdrawalsTotal: 96888.644214684,   taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 5318.9206652723815 },
 ];
 
 // G3: RMDs + deficit draws from Trad 401k produce ordinary income; SS partial
-// tax. Legacy no-checking branch: same caveat as G2 — the new convergence loop
-// is gated on hasChecking and isn't exercised by this fixture.
+// tax. 2026 is unchanged from the pre-H7 baseline (the deficit is funded from
+// cash savings — no recognized income); from 2027 the savings are gone and the
+// 401k deficit draws are recognized as ordinary income and grossed up.
 export const g3ExpectedYears: GoldenExpectedYear[] = [
-  { year: 2026, expensesTaxes: 5487.80487804878,    withdrawalsTotal: 34162.60162601626,  taxDetailEarned: 0, taxDetailOrdinary: 20325.20325203252,  taxDetailCapGains: 0 },
-  { year: 2027, expensesTaxes: 5863.3837604198825,  withdrawalsTotal: 34927.14761071661,  taxDetailEarned: 0, taxDetailOrdinary: 21716.23614970327,  taxDetailCapGains: 0 },
-  { year: 2028, expensesTaxes: 6043.8679750475585,  withdrawalsTotal: 36278.77177116771,  taxDetailEarned: 0, taxDetailOrdinary: 22384.696203879845, taxDetailCapGains: 0 },
-  { year: 2029, expensesTaxes: 6011.534574514884,   withdrawalsTotal: 38267.303705941245, taxDetailEarned: 0, taxDetailOrdinary: 22264.942868573646, taxDetailCapGains: 0 },
-  { year: 2030, expensesTaxes: 5932.1240430787375,  withdrawalsTotal: 40446.60209389824,  taxDetailEarned: 0, taxDetailOrdinary: 21970.82978918051,  taxDetailCapGains: 0 },
+  { year: 2026, expensesTaxes: 5487.80487804878,   withdrawalsTotal: 34162.60162601626, taxDetailEarned: 0, taxDetailOrdinary: 20325.20325203252, taxDetailCapGains: 0 },
+  { year: 2027, expensesTaxes: 11919.542634860427, withdrawalsTotal: 40983.68695684056, taxDetailEarned: 0, taxDetailOrdinary: 44146.45420318677, taxDetailCapGains: 0 },
+  { year: 2028, expensesTaxes: 19462.043835616438, withdrawalsTotal: 49961.42533244069, taxDetailEarned: 0, taxDetailOrdinary: 72081.64383561643, taxDetailCapGains: 0 },
+  { year: 2029, expensesTaxes: 20165.194849315074, withdrawalsTotal: 53325.44911532879, taxDetailEarned: 0, taxDetailOrdinary: 74685.90684931508, taxDetailCapGains: 0 },
+  { year: 2030, expensesTaxes: 20891.826187397262, withdrawalsTotal: 57086.173448784844, taxDetailEarned: 0, taxDetailOrdinary: 77377.13402739727, taxDetailCapGains: 0 },
 ];
 
 // G4: Bracket-mode, single filer, salary $80k, 401(k) $10k/yr at rothPercent=0.3.

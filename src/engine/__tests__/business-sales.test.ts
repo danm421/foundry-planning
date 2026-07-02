@@ -261,6 +261,45 @@ describe("applyBusinessSales — partial sale", () => {
     // Child cash account drained by f via sellAccountFraction.
     expect(accountBalances["child-cash"]).toBeLessThan(50_000);
   });
+
+  it("scales basis with value so a later tranche recognizes the remaining gain", () => {
+    const checking = makeChecking("acct-cash", 0);
+    const business = makeBusiness({ value: 1_000_000, basis: 600_000 });
+    const accountBalances: Record<string, number> = { "acct-cash": 0 };
+    const basisMap: Record<string, number> = { "acct-cash": 0 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      "acct-cash": makeLedger(0),
+    };
+
+    // Tranche 1: sell 50% in 2030 → gain = 0.5 × (1M − 600k) = 200k.
+    const first = applyBusinessSales({
+      sales: [makeSale({ id: "tx-t1", fractionSold: 0.5, year: 2030 })],
+      accounts: [checking, business],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "acct-cash",
+    });
+    expect(first.capitalGains).toBeCloseTo(200_000, 0);
+    expect(business.value).toBeCloseTo(500_000, 0);
+    // Residual keeps the unsold half of the basis, not all of it.
+    expect(business.basis).toBeCloseTo(300_000, 0);
+
+    // Tranche 2: sell the residual in 2031 → gain = 500k − 300k = 200k.
+    const second = applyBusinessSales({
+      sales: [makeSale({ id: "tx-t2", fractionSold: 1, year: 2031 })],
+      accounts: [checking, business],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2031,
+      defaultCheckingId: "acct-cash",
+    });
+    expect(second.capitalGains).toBeCloseTo(200_000, 0);
+  });
 });
 
 describe("applyBusinessSales — diagnostics", () => {
