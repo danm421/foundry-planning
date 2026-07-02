@@ -33,7 +33,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses } from "@/db/schema";
+import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
@@ -212,6 +212,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       savingsRemoves,
       savingsFieldUpdates,
       clientUpdate,
+      planSettingsUpdate,
       incomeUpdates,
       expenseUpdates,
       expenseInserts,
@@ -434,6 +435,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           .set({ ...(clientUpdate as Partial<typeof clients.$inferInsert>), updatedAt: new Date() })
           .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
       }
+
+      // Horizon follow-through: a life-expectancy edit re-derives planEndYear,
+      // pushed to ALL the client's plan_settings rows so the engine's year loop
+      // extends with the new LE — mirrors the base-facts PUT route.
+      if (planSettingsUpdate) {
+        await tx
+          .update(planSettings)
+          .set({
+            ...(planSettingsUpdate as Partial<typeof planSettings.$inferInsert>),
+            updatedAt: new Date(),
+          })
+          .where(eq(planSettings.clientId, clientId));
+      }
     });
 
     await recordAudit({
@@ -453,6 +467,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         savingsRemoves: savingsRemoves.length,
         savingsFieldUpdates: savingsFieldUpdates.length,
         clientUpdate: clientUpdate ? 1 : 0,
+        planSettingsUpdate: planSettingsUpdate ? 1 : 0,
         incomeUpdates: incomeUpdates.length,
         expenseUpdates: expenseUpdates.length,
         expenseInserts: expenseInserts.length,

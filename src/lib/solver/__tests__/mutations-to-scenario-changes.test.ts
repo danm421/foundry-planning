@@ -74,7 +74,11 @@ function makeSource(): ClientData {
     ],
     withdrawalStrategy: [],
     giftEvents: [],
-    planSettings: { planStartYear: 2026 } as ClientData["planSettings"],
+    planSettings: {
+      planStartYear: 2026,
+      // Matches the derived horizon (client born 1965, LE 95, no spouse DOB).
+      planEndYear: 2060,
+    } as ClientData["planSettings"],
   } as ClientData;
 }
 
@@ -103,10 +107,34 @@ describe("mutationsToScenarioChanges", () => {
         { kind: "life-expectancy", person: "client", age: 100 },
       ],
     );
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0].payload).toEqual({
+    // The LE change moves the plan horizon, so a plan_settings row rides along.
+    expect(drafts).toHaveLength(2);
+    const clientDraft = drafts.find((d) => d.targetKind === "client")!;
+    expect(clientDraft.payload).toEqual({
       retirementAge: { from: 65, to: 67 },
       lifeExpectancy: { from: 95, to: 100 },
+      planEndAge: { from: 95, to: 100 },
+    });
+    const settingsDraft = drafts.find((d) => d.targetKind === "plan_settings")!;
+    expect(settingsDraft.payload).toEqual({
+      planEndYear: { from: 2060, to: 2065 },
+    });
+  });
+
+  it("lowering life expectancy shrinks the horizon diff", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [{ kind: "life-expectancy", person: "client", age: 85 }],
+    );
+    const clientDraft = drafts.find((d) => d.targetKind === "client")!;
+    expect(clientDraft.payload).toEqual({
+      lifeExpectancy: { from: 95, to: 85 },
+      planEndAge: { from: 95, to: 85 },
+    });
+    const settingsDraft = drafts.find((d) => d.targetKind === "plan_settings")!;
+    expect(settingsDraft.payload).toEqual({
+      planEndYear: { from: 2060, to: 2050 },
     });
   });
 

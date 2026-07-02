@@ -776,3 +776,62 @@ describe("applyMutations — technique upserts", () => {
     expect(base.rothConversions ?? []).toEqual([]);
   });
 });
+
+// ── Life-expectancy → plan-horizon recompute ─────────────────────────────────
+//
+// The engine's year loop is bounded by planSettings.planEndYear, not by life
+// expectancy. The base-facts PUT route re-derives planEndAge/planEndYear when
+// LE changes; applyMutations must do the same for a solver LE lever, or
+// raising LE past the stored horizon adds no chart years (while lowering it
+// still visibly shortens the chart via earlier death events).
+
+describe("applyMutations — life-expectancy horizon recompute", () => {
+  // makeRefsBase: client born 1965 (LE 95 → 2060), spouse born 1967 (LE 93 →
+  // 2060), stored planEndAge 95, stored planEndYear 2065.
+
+  it("raising client LE past the stored horizon extends planEndAge + planEndYear", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "life-expectancy", person: "client", age: 105 },
+    ]);
+    // Last death now 1965 + 105 = 2070.
+    expect(out.client.planEndAge).toBe(105);
+    expect(out.planSettings.planEndYear).toBe(2070);
+  });
+
+  it("reshifts client_end-anchored rows to the new horizon", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "life-expectancy", person: "client", age: 105 },
+    ]);
+    const pension = out.incomes.find((i) => i.id === "income-deferred-cooper")!;
+    // endYearRef "client_end" is a transition ref (end position → year - 1):
+    // 1965 + 105 - 1 = 2069 (was 2059).
+    expect(pension.endYear).toBe(2069);
+  });
+
+  it("lowering client LE anchors the horizon to the surviving spouse's death year", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "life-expectancy", person: "client", age: 85 },
+    ]);
+    // Client dies 2050 but spouse (1967 + 93) lives to 2060 — horizon is the
+    // LAST death, so planEndYear shrinks from 2065 to 2060, not 2050.
+    expect(out.client.planEndAge).toBe(95);
+    expect(out.planSettings.planEndYear).toBe(2060);
+  });
+
+  it("raising spouse LE extends the horizon", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "life-expectancy", person: "spouse", age: 105 },
+    ]);
+    // Spouse death 1967 + 105 = 2072 → planEndAge in client years = 107.
+    expect(out.client.planEndAge).toBe(107);
+    expect(out.planSettings.planEndYear).toBe(2072);
+  });
+
+  it("non-LE mutations leave the stored horizon untouched", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    expect(out.client.planEndAge).toBe(95);
+    expect(out.planSettings.planEndYear).toBe(2065);
+  });
+});

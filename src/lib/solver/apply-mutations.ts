@@ -8,6 +8,7 @@
 // deduplicated list (see mutationKey() in ./types).
 
 import type { ClientData } from "@/engine/types";
+import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftsToClientData, giftEventBelongsTo, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
@@ -372,6 +373,23 @@ export function applyMutations(
   // which minimal non-estate solver fixtures omit; no policy → no premium gift).
   if (result.accounts.some((a) => a.category === "life_insurance")) {
     result.giftEvents = withSynthesizedPremiumGifts(result).giftEvents;
+  }
+
+  // A life-expectancy lever moves the plan horizon: the engine's year loop is
+  // bounded by planSettings.planEndYear (not by LE), so without this recompute
+  // raising LE past the stored horizon adds no chart years. Mirrors the
+  // base-facts PUT route, which re-derives planEndAge and pushes planEndYear
+  // into plan_settings whenever a horizon input changes. Skipped when the DOB
+  // is missing (minimal fixtures) — no horizon can be derived.
+  if (mutations.some((m) => m.kind === "life-expectancy")) {
+    const horizon = planHorizonFromLifeExpectancy(result.client);
+    if (horizon) {
+      result.client.planEndAge = horizon.planEndAge;
+      result.planSettings = {
+        ...result.planSettings,
+        planEndYear: horizon.planEndYear,
+      };
+    }
   }
 
   // Reshift every milestone-anchored startYear/endYear so a retirement-age
