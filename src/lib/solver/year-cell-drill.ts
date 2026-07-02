@@ -189,8 +189,90 @@ export function buildYearCellDrill(
       );
     }
 
-    // Expense/portfolio arms land in the next task.
-    default:
-      return null;
+    case "livingExpenses": {
+      const rows: CellDrillRow[] = Object.entries(year.expenses.bySource)
+        .filter(([id]) => m.expenseTypeById[id] === "living")
+        .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
+      return drillResult("livingExpenses", "Living Expenses", year, year.expenses.living, rows);
+    }
+
+    case "taxes": {
+      const rows: CellDrillRow[] = year.taxResult
+        ? [
+            { id: "tax-federal", label: "Federal", amount: year.taxResult.flow.totalFederalTax ?? 0 },
+            { id: "tax-state", label: "State", amount: year.taxResult.flow.stateTax ?? 0 },
+          ]
+        : [];
+      return drillResult("taxes", "Taxes", year, year.expenses.taxes, rows);
+    }
+
+    case "totalExpenses": {
+      // Category subtotals. cashGifts is already rolled into expenses.other
+      // (see ProjectionYear.expenses doc) so it is deliberately NOT its own
+      // row; savings IS part of the column's totalExpenses.
+      const e = year.expenses;
+      const rows: CellDrillRow[] = [
+        { id: "living", label: "Living Expenses", amount: e.living },
+        { id: "liabilities", label: "Liabilities", amount: e.liabilities },
+        { id: "other", label: "Other Expenses", amount: e.other },
+        { id: "insurance", label: "Insurance Premiums", amount: e.insurance },
+        { id: "realEstate", label: "Real Estate", amount: e.realEstate },
+        { id: "taxes", label: "Taxes", amount: e.taxes },
+        { id: "discretionary", label: "Surplus Spent", amount: e.discretionary },
+        { id: "savings", label: "Savings", amount: year.savings.total },
+      ];
+      return drillResult("totalExpenses", "Total Expenses", year, year.totalExpenses, rows);
+    }
+
+    case "shortfall": {
+      const s = inflows.shortfall;
+      if (s < EPSILON) return null;
+      const rows: CellDrillRow[] = [
+        { id: "expenses", label: "Total Expenses", amount: year.totalExpenses },
+        { id: "inflows", label: "Less: Total Income & Withdrawals", amount: -inflows.total },
+      ];
+      return drillResult("shortfall", "Shortfall", year, s, rows, {
+        totalLabel: "Shortfall",
+        skipBalance: true,
+        footnote:
+          "Expenses not covered by income, RMDs, or portfolio withdrawals this year.",
+      });
+    }
+
+    case "portfolioAssets": {
+      const pa = year.portfolioAssets;
+      const group = (
+        label: string,
+        map: Record<string, number>,
+        groupTotal: number,
+        key: string,
+      ): CellDrillGroup => ({
+        label,
+        rows: balanced(
+          key,
+          groupTotal,
+          Object.entries(map).map(([id, amount]) => ({
+            id,
+            label: m.accountNames[id] ?? id,
+            amount,
+          })),
+        ),
+      });
+      const groups = [
+        group("Taxable", pa.taxable, pa.taxableTotal, "pa-taxable"),
+        group("Cash", pa.cash, pa.cashTotal, "pa-cash"),
+        group("Retirement", pa.retirement, pa.retirementTotal, "pa-retirement"),
+      ].filter((g) => g.rows.length > 0);
+      const total = liquidPortfolioTotal(year);
+      if (Math.abs(total) < EPSILON && groups.length === 0) return null;
+      return {
+        title: `Total Portfolio Assets — ${year.year}`,
+        subtitle: ageSubtitle(year),
+        total,
+        groups,
+        footnote:
+          "End-of-year balances. Excludes real estate, business interests, life insurance, and locked trust assets.",
+      };
+    }
   }
 }

@@ -168,3 +168,56 @@ describe("buildYearCellDrill — income side", () => {
     expect(buildYearCellDrill("withdrawals", y, makeClientData())).toBeNull();
   });
 });
+
+describe("buildYearCellDrill — expenses & portfolio", () => {
+  it("livingExpenses: one row per living-typed expense", () => {
+    const d = buildYearCellDrill("livingExpenses", makeYear(), makeClientData())!;
+    expect(d.total).toBe(60_000);
+    expect(rowsOf(d).map((r) => r.label)).toEqual(["Groceries", "Travel"]);
+  });
+
+  it("taxes: Federal / State from taxResult.flow", () => {
+    const d = buildYearCellDrill("taxes", makeYear(), makeClientData())!;
+    expect(d.total).toBe(9_000);
+    expect(rowsOf(d)).toEqual([
+      { id: "tax-federal", label: "Federal", amount: 7_000 },
+      { id: "tax-state", label: "State", amount: 2_000 },
+    ]);
+  });
+
+  it("taxes: degrades to a balancing Other row when taxResult is absent", () => {
+    const d = buildYearCellDrill("taxes", makeYear({ taxResult: undefined }), makeClientData())!;
+    expect(rowsOf(d)).toEqual([{ id: "taxes-other", label: "Other", amount: 9_000 }]);
+  });
+
+  it("totalExpenses: category subtotals tying to totalExpenses (savings included, cashGifts not double-counted)", () => {
+    const d = buildYearCellDrill("totalExpenses", makeYear(), makeClientData())!;
+    expect(d.total).toBe(103_000);
+    const rows = rowsOf(d);
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(103_000);
+    expect(rows.map((r) => r.label)).toContain("Savings");
+    expect(rows.map((r) => r.label)).not.toContain("Cash Gifts"); // inside Other Expenses already
+  });
+
+  it("shortfall: shows the expenses-minus-inflows math when positive", () => {
+    // totalExpenses 103k − inflows 169k → no shortfall in the base fixture.
+    expect(buildYearCellDrill("shortfall", makeYear(), makeClientData())).toBeNull();
+    const y = makeYear({ totalExpenses: 200_000 });
+    const d = buildYearCellDrill("shortfall", y, makeClientData())!;
+    expect(d.total).toBe(31_000); // 200k − 169k
+    expect(d.totalLabel).toBe("Shortfall");
+    expect(rowsOf(d)).toEqual([
+      { id: "expenses", label: "Total Expenses", amount: 200_000 },
+      { id: "inflows", label: "Less: Total Income & Withdrawals", amount: -169_000 },
+    ]);
+  });
+
+  it("portfolioAssets: per-account EoY balances grouped Taxable/Cash/Retirement, tying to liquidPortfolioTotal", () => {
+    const d = buildYearCellDrill("portfolioAssets", makeYear(), makeClientData())!;
+    expect(d.total).toBe(1_000_000);
+    expect(d.groups.map((g) => g.label)).toEqual(["Taxable", "Cash", "Retirement"]);
+    const retirement = d.groups[2].rows;
+    expect(retirement.map((r) => r.label)).toEqual(["Traditional IRA", "401(k)"]); // desc by amount
+    expect(d.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0)).toBe(1_000_000);
+  });
+});
