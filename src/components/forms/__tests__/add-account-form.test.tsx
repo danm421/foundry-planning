@@ -427,3 +427,62 @@ describe("AddAccountForm — HSA subtype + coverage selector", () => {
     expect(body.hsaCoverage).toBeNull();
   });
 });
+
+// ── Test 8: 529 (education_savings) beneficiary requirement gates submit ──────
+
+describe("AddAccountForm — 529 beneficiary submit gate", () => {
+  it("blocks submit with inline error while beneficiary is empty; lifts canSubmit=false; allows submit once set", async () => {
+    const submitStates: { canSubmit: boolean; loading: boolean }[] = [];
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="education_savings"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        onSubmitStateChange={(s) => submitStates.push(s)}
+      />,
+    );
+
+    // Inline required-beneficiary error is visible (beneficiaryMode defaults
+    // to "family" with no member selected).
+    expect(screen.getByText(/requires a designated beneficiary/i)).toBeDefined();
+
+    // The lifted submit state must disable the dialog's primary button.
+    expect(submitStates.at(-1)?.canSubmit).toBe(false);
+
+    // Enter-key / programmatic submit must be a no-op — no POST fires.
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      fetchMock.mock.calls.some(
+        (args) =>
+          String(args[0]) === "/api/clients/client-123/accounts" &&
+          args[1]?.method === "POST",
+      ),
+    ).toBe(false);
+
+    // Pick a family-member beneficiary → gate lifts.
+    fireEvent.change(screen.getByRole("combobox", { name: "Beneficiary family member" }), {
+      target: { value: "fm-spouse" },
+    });
+    expect(screen.queryByText(/requires a designated beneficiary/i)).toBeNull();
+    expect(submitStates.at(-1)?.canSubmit).toBe(true);
+
+    // Submit now fires and carries the 529 fields with no owners[].
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts",
+    );
+    const body = JSON.parse(call![1].body as string);
+    expect(body.category).toBe("education_savings");
+    expect(body.beneficiaryFamilyMemberId).toBe("fm-spouse");
+    expect(body).not.toHaveProperty("owners");
+  });
+});

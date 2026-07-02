@@ -357,14 +357,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   const [loading, setLoading] = useState(false);
 
-  // Lift submit-button state into the parent dialog so DialogShell can drive
-  // the footer primary button's disabled/loading visuals.
-  useEffect(() => {
-    onSubmitStateChange?.({
-      canSubmit: !loading,
-      loading,
-    });
-  }, [loading, onSubmitStateChange]);
+  // NOTE: the onSubmitStateChange effect that lifts submit-button state into
+  // the parent dialog lives below `canSave` (it now depends on it).
 
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<AccountCategory>(
@@ -714,6 +708,18 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     !beneficiaryFamilyMemberId &&
     beneficiaryName.trim() === "";
   const canSave = name.trim().length > 0 && !educationBeneficiaryMissing;
+
+  // Lift submit-button state into the parent dialog so DialogShell can drive
+  // the footer primary button's disabled/loading visuals. Gated on the same
+  // `canSave` validity as the autosave path, so an invalid form (e.g. a 529
+  // with no beneficiary) disables the button instead of firing a request the
+  // server would 400.
+  useEffect(() => {
+    onSubmitStateChange?.({
+      canSubmit: !loading && canSave,
+      loading,
+    });
+  }, [loading, canSave, onSubmitStateChange]);
 
   useEffect(() => {
     onAutoSaveStateChange?.({ isDirty, canSave });
@@ -1140,6 +1146,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (lockTab) return;
+    // Validity gate — belt-and-suspenders with the dialog button's disabled
+    // state (canSubmit), since Enter-key submits reach here without the
+    // button. The inline field errors (e.g. missing 529 beneficiary) explain
+    // what's blocking.
+    if (!canSave) return;
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
