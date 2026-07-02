@@ -39,7 +39,12 @@ vi.mock("../use-solver-mc", () => ({
 // mount; stub it so it doesn't consume the shared fetchMock queue the solve /
 // project tests rely on. Its own behavior is covered by net-to-heirs.test.ts.
 vi.mock("../use-solver-net-to-heirs", () => ({
-  useSolverNetToHeirs: () => ({ netToHeirs: null, netToHeirsDelta: null, loading: false }),
+  useSolverNetToHeirs: () => ({
+    netToHeirs: null,
+    netToHeirsDelta: null,
+    firstDeathYear: null,
+    loading: false,
+  }),
 }));
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({

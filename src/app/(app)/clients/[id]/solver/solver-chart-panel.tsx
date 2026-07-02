@@ -108,6 +108,10 @@ function setChartHeightStore(height: number, persist: boolean): void {
 
 interface Props {
   currentProjection: ProjectionYear[];
+  /** Real first-death year from the with-events working projection (sourced by
+   *  the KPI hook). Drives the estate chart's death-order toggle: at/after this
+   *  year the toggle is hidden and ordering is forced to primaryFirst. */
+  firstDeathYear: number | null;
   baseProjection: ProjectionYear[];
   workingTree: ClientData;
   computeStatus: "fresh" | "stale" | "computing" | "error";
@@ -138,6 +142,7 @@ interface Props {
 
 export function SolverChartPanel({
   currentProjection,
+  firstDeathYear,
   baseProjection,
   workingTree,
   computeStatus,
@@ -376,8 +381,7 @@ export function SolverChartPanel({
                 baseTree={baseTree}
                 proposedTree={workingTree}
                 isMarried={isMarried}
-                // TODO(Task 7): wire real firstDeathEvent.year
-                firstDeathYear={null}
+                firstDeathYear={firstDeathYear}
               />
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-2">

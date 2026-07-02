@@ -490,7 +490,7 @@ export function LiveSolverWorkspace({
   // is visible (any report except the Summaries/Monte Carlo decks).
   const netToHeirsEnabled =
     activeReport !== "summaries" && activeReport !== "monteCarlo";
-  const { netToHeirs, netToHeirsDelta, loading: netToHeirsLoading } =
+  const { netToHeirs, netToHeirsDelta, firstDeathYear, loading: netToHeirsLoading } =
     useSolverNetToHeirs({
       clientId,
       source: initialSource,
@@ -1218,6 +1218,7 @@ export function LiveSolverWorkspace({
             ) : null}
             <SolverChartPanel
               currentProjection={currentProjection}
+              firstDeathYear={firstDeathYear}
               baseProjection={baseProjection}
               workingTree={workingTree}
               computeStatus={computeStatus}
