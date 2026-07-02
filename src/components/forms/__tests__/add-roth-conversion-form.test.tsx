@@ -235,13 +235,24 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     { id: "trad-client", name: "Client Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-client" },
     { id: "trad-spouse", name: "Spouse Trad IRA", category: "retirement", subType: "traditional_ira", ownerFamilyMemberId: "fm-spouse" },
   ];
+  // MC asset mixes: the chosen model portfolio's, and the retirement category
+  // default's. onCreate must report the mix matching the selected growth source.
+  const MP1_MIX = [
+    { assetClassId: "ac-eq", weight: 0.7 },
+    { assetClassId: "ac-bond", weight: 0.3 },
+  ];
+  const RET_DEFAULT_MIX = [
+    { assetClassId: "ac-eq", weight: 0.6 },
+    { assetClassId: "ac-bond", weight: 0.4 },
+  ];
   const creation = (onCreate = vi.fn()) => ({
     owners: [
       { familyMemberId: "fm-client", label: "John" },
       { familyMemberId: "fm-spouse", label: "Jane" },
     ],
-    modelPortfolios: [{ id: "mp-1", name: "Growth 70/30", growthRate: 0.065 }],
+    modelPortfolios: [{ id: "mp-1", name: "Growth 70/30", growthRate: 0.065, mix: MP1_MIX }],
     retirementGrowthDefault: 0.06,
+    retirementDefaultMix: RET_DEFAULT_MIX,
     resolvedInflationRate: 0.025,
     onCreate,
   });
@@ -288,6 +299,9 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     expect(acct.name).toBe("Roth IRA - John");
     expect(acct.value).toBe(0);
     expect(acct.growthRate).toBeCloseTo(0.06);
+    // "Plan default" growth reports the retirement default's mix so the draft
+    // Roth's converted dollars are randomized in Monte Carlo.
+    expect(onCreate.mock.calls[0][1]).toEqual(RET_DEFAULT_MIX);
     expect(acct.owners).toEqual([{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }]);
 
     // Destination now offers + selects the new account; submit is enabled.
@@ -317,6 +331,8 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     expect(acct.name).toBe("Roth IRA - Jane");
     expect(acct.owners[0].familyMemberId).toBe("fm-spouse");
     expect(acct.growthRate).toBeCloseTo(0.065);
+    // The chosen model portfolio's mix rides along with the account.
+    expect(onCreate.mock.calls[0][1]).toEqual(MP1_MIX);
   });
 
   it("resolves a custom growth percent to a decimal", () => {
@@ -336,6 +352,8 @@ describe("AddRothConversionForm — inline Roth IRA creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Roth IRA" }));
 
     expect(onCreate.mock.calls[0][0].growthRate).toBeCloseTo(0.08);
+    // Custom growth is deterministic — no mix, so MC uses the fixed rate.
+    expect(onCreate.mock.calls[0][1]).toEqual([]);
   });
 
   it("restricts conversion sources to the new Roth's owner", () => {

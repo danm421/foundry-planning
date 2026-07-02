@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sectionKeyForPath } from "@/lib/back-nav";
 import { useForge } from "./forge-provider";
+import { useWalkthrough } from "./walkthrough-context";
 import { useScenarioDrawerOptional } from "@/components/scenario/scenario-drawer-provider";
 import { useForgeStream, type PendingApproval } from "./use-forge-stream";
 import { ApprovalCard } from "./approval-card";
@@ -87,6 +88,7 @@ export function ForgePanel({
 }: ForgePanelProps) {
   const { scenarioId, pathname, isOpen, close } = useForge();
   const drawer = useScenarioDrawerOptional();
+  const walkthrough = useWalkthrough();
   const open = forceOpenForTest || isOpen;
 
   const {
@@ -102,6 +104,8 @@ export function ForgePanel({
     setConversationId,
     pendingNavigate,
     setPendingNavigate,
+    pendingWalkthrough,
+    setPendingWalkthrough,
     send,
     cancel,
     resume,
@@ -205,6 +209,15 @@ export function ForgePanel({
     if (ok) router.push(pendingNavigate);
     setPendingNavigate(null);
   }, [pendingNavigate, router, setPendingNavigate]);
+
+  // Custom-streaming seam: hand a requested walkthrough to the overlay provider,
+  // then close the panel so the spotlight is unobstructed.
+  useEffect(() => {
+    if (!pendingWalkthrough) return;
+    walkthrough.start(pendingWalkthrough);
+    setPendingWalkthrough(null);
+    close();
+  }, [pendingWalkthrough, walkthrough, setPendingWalkthrough, close]);
 
   // Click handler for a page-citation chip. Re-check the allowlist client-side
   // (defence in depth — the server already gated the emit) before routing.

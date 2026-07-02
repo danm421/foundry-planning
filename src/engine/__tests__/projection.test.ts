@@ -1305,6 +1305,70 @@ describe("techniques integration", () => {
     expect(year2026.expenses.liabilities).toBeGreaterThan(28000);
     expect(year2026.expenses.liabilities).toBeLessThan(29000);
   });
+
+  it("BoY: a purchase-created mortgage payment is debited from cash, not just expensed (C1 reconciliation)", () => {
+    // Same scenario as above, but reconcile the CASH side. The mortgage is
+    // created synthetically by the purchase (data.liabilities is empty), so the
+    // household-share payment reported in expenses.liabilities MUST also leave
+    // the household checking account. Regression guard for C1: the cash-debit
+    // loop iterating the static data.liabilities never fired for synthetic
+    // technique-liab-* mortgages, overstating checking by a full year's payment.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          titlingType: "jtwros",
+          value: 200000, basis: 200000, growthRate: 0, rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [
+        {
+          id: "salary", type: "salary", name: "Salary",
+          annualAmount: 500000,
+          startYear: 2026, endYear: 2030,
+          growthRate: 0,
+          owner: "client",
+        },
+      ],
+      expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "buy-home", name: "Buy Home", type: "buy" as const,
+          year: 2026,
+          assetName: "Primary Residence",
+          assetCategory: "real_estate" as const,
+          assetSubType: "primary_residence",
+          purchasePrice: 500000,
+          growthRate: 0.03,
+          mortgageAmount: 400000,
+          mortgageRate: 0.06,
+          mortgageTermMonths: 360,
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const year2026 = result[0];
+
+    // Cash side: the checking ledger must carry a liability outflow equal to the
+    // household-share payment reported in the P&L. The synthetic mortgage is
+    // 100% client-owned, so the whole payment leaves household checking.
+    const checkingLedger = year2026.accountLedgers["acct-checking"];
+    expect(checkingLedger).toBeDefined();
+    const liabilityCashOut = checkingLedger.entries
+      .filter((e) => e.category === "liability")
+      .reduce((s, e) => s + e.amount, 0);
+    expect(liabilityCashOut).toBeCloseTo(-year2026.expenses.liabilities, 2);
+  });
 });
 
 describe("runProjection — liability amortization alignment", () => {
@@ -3799,5 +3863,53 @@ describe("cash gift cashflow routing (Task 10 — Phase 3)", () => {
     const yrs = runProjection(data);
     const yr2028 = yrs.find((y) => y.year === 2028)!;
     expect(yr2028.expenses.cashGifts).toBeCloseTo(0, 0);
+  });
+});
+
+describe("runProjection — tax base honors scheduleOverrides (H2)", () => {
+  it("taxes the override amount actually deposited, not the growth-derived amount", () => {
+    // Income row whose scheduleOverride ($200K) diverges from its
+    // annualAmount×growth ($80K). computeIncome + the cash-routing loop deposit
+    // $200K; the taxDetail loop must tax the same $200K, not $80K. Regression
+    // guard for H2: the household 1040 loop re-derived income from
+    // annualAmount×(1+growth)^n and ignored scheduleOverrides.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          titlingType: "jtwros",
+          value: 50000, basis: 50000, growthRate: 0, rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [
+        {
+          id: "ovr",
+          type: "other",
+          name: "Consulting",
+          annualAmount: 80000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+          taxType: "ordinary_income",
+          scheduleOverrides: { 2026: 200000 },
+        },
+      ],
+      expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const y0 = runProjection(data)[0];
+
+    // Cash side already honors the override (sanity).
+    expect(y0.income.bySource["ovr"]).toBeCloseTo(200000, 2);
+    // Tax side must match the cash side — the taxed amount equals what was deposited.
+    expect(y0.taxDetail?.bySource["ovr"]?.amount).toBeCloseTo(200000, 2);
+    expect(y0.taxDetail?.bySource["ovr"]?.amount).toBeCloseTo(y0.income.bySource["ovr"], 2);
   });
 });

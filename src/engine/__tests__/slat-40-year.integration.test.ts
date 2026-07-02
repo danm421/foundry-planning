@@ -243,17 +243,27 @@ describe("SLAT 40-year projection", () => {
     expect(years).toHaveLength(40);
     const year40 = years[39];
 
-    // 100% pct_income carries all DNI out → trust retains nothing taxable.
-    // Floating-point + small state-tax cross-effects could leave a few-dollar
-    // residue; tolerate < $100 over the full 40-year horizon.
-    expect(year40.trustTaxByEntity?.get("slat-1")?.total ?? 0).toBeLessThan(100);
+    // 100% pct_income carries all ORDINARY + DIVIDEND income out to the spouse,
+    // so the trust retains no ordinary income and owes no federal ordinary tax.
+    const tax40 = year40.trustTaxByEntity?.get("slat-1");
+    expect(tax40?.retainedOrdinary ?? 0).toBeCloseTo(0, 2);
+    expect(tax40?.retainedDividends ?? 0).toBeCloseTo(0, 2);
+    expect(tax40?.federalOrdinaryTax ?? 0).toBeCloseTo(0, 2);
+    // The distribution is funded partly by liquidating the appreciated trust
+    // brokerage (H8/H9: the cash actually moves to the household and the
+    // brokerage is actually drained). That forced liquidation realizes the
+    // embedded LTCG, which a pct_income policy does NOT distribute — so the
+    // trust correctly retains and pays cap-gains tax on it. This is a small,
+    // legitimate tax on realized gains, not retained ordinary income.
+    expect(tax40?.recognizedCapGains ?? 0).toBeGreaterThan(0);
+    expect(tax40?.total ?? 0).toBeCloseTo((tax40?.federalCapGainsTax ?? 0) + (tax40?.niit ?? 0) + (tax40?.stateTax ?? 0), 2);
 
     // Household-classified beneficiary (FamilyMember "other") → no out-of-household
     // beneficiary tax line.
     expect(year40.estimatedBeneficiaryTax ?? 0).toBe(0);
 
-    // Sanity: corpus actually grew over 40 years (LTCG is unrealized, so the
-    // brokerage value compounds even with full DNI distribution).
+    // Sanity: corpus still grew over 40 years — even though distributions drain
+    // the brokerage each year, 6% growth outpaces the ~income-sized distributions.
     const brokerageEnd = year40.accountLedgers["slat-1-brokerage"]?.endingValue ?? 0;
     expect(brokerageEnd).toBeGreaterThan(2_000_000);
   });

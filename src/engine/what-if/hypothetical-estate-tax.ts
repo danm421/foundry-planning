@@ -1,6 +1,7 @@
 import { applyFirstDeath, applyFinalDeath } from "../death-event";
 import type {
   Account,
+  DeathTransfer,
   EntitySummary,
   EstateTaxResult,
   FamilyMember,
@@ -11,6 +12,7 @@ import type {
   Income,
   Liability,
   PlanSettings,
+  Relocation,
   Will,
 } from "../types";
 import type { ExternalBeneficiarySummary } from "../death-event";
@@ -164,4 +166,97 @@ export function computeHypotheticalEstateTax(
     primaryFirst,
     spouseFirst,
   };
+}
+
+/**
+ * Input for the *anchored* hypothetical: a single ordering that pairs the real
+ * projected first death (frozen at year F) with a freshly-computed
+ * survivor-dies-at-N pass. Unlike {@link HypotheticalEstateTaxInput}, this does
+ * not re-run the first death per viewing year — it reuses the frozen
+ * `realFirstDeath` so the first-death numbers stay stable across every N ≥ F.
+ */
+export interface AnchoredHypotheticalInput {
+  /** N — the survivor's hypothetical death year. */
+  year: number;
+  /** Who is left alive after the real first death (the sole remaining decedent). */
+  survivor: "client" | "spouse";
+  /** The real projected first death at F, frozen and reused for every N ≥ F. */
+  realFirstDeath: {
+    decedent: "client" | "spouse";
+    estateTax: EstateTaxResult;
+    transfers: DeathTransfer[];
+    dsueGenerated: number;
+  };
+  // Survivor-only state at year N (post-real-first-death), same fields the loop
+  // passes to applyFinalDeath in the real projection.
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  incomes: Income[];
+  liabilities: Liability[];
+  familyMembers: FamilyMember[];
+  externalBeneficiaries: ExternalBeneficiarySummary[];
+  entities: EntitySummary[];
+  wills: Will[];
+  planSettings: PlanSettings;
+  gifts: Gift[];
+  giftEvents?: GiftEvent[];
+  /** Relocation techniques — resolves the survivor's death-year residence
+   *  state. Matches `DeathEventInput.relocations`. */
+  relocations?: Relocation[];
+  yearEndAccountBalances?: Map<number, Record<string, number>>;
+  annualExclusionsByYear: Record<number, number>;
+  priorTaxableGifts: { client: number; spouse: number };
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
+}
+
+/**
+ * Assembles a `HypotheticalEstateTax` from a *frozen* real first death plus a
+ * freshly-computed survivor-dies-at-N pass. Only `primaryFirst` is populated:
+ * `firstDeath`/`firstDeathTransfers` are the frozen real event, and
+ * `finalDeath`/`finalDeathTransfers` are the survivor's death at `input.year`.
+ * The survivor state is `structuredClone`'d before the death pass so the
+ * caller's state is never mutated (mirrors the real projection's call).
+ */
+export function computeAnchoredHypotheticalEstateTax(
+  input: AnchoredHypotheticalInput,
+): HypotheticalEstateTax {
+  const survivorWill = input.wills.find((w) => w.grantor === input.survivor) ?? null;
+
+  const survivorDeath = applyFinalDeath({
+    year: input.year,
+    deceased: input.survivor,
+    survivor: input.survivor, // unused internally at final death; mirrors the real call
+    will: survivorWill,
+    accounts: structuredClone(input.accounts),
+    accountBalances: structuredClone(input.accountBalances),
+    basisMap: structuredClone(input.basisMap),
+    incomes: structuredClone(input.incomes),
+    liabilities: structuredClone(input.liabilities),
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    entities: structuredClone(input.entities),
+    relocations: input.relocations,
+    planSettings: input.planSettings,
+    gifts: input.gifts,
+    giftEvents: input.giftEvents ?? [],
+    yearEndAccountBalances: input.yearEndAccountBalances,
+    annualExclusionsByYear: input.annualExclusionsByYear,
+    dsueReceived: input.realFirstDeath.dsueGenerated,
+    priorTaxableGifts: input.priorTaxableGifts,
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    familyAccountSharesEoY: input.familyAccountSharesEoY,
+  });
+
+  const primaryFirst: HypotheticalEstateTaxOrdering = {
+    firstDecedent: input.realFirstDeath.decedent,
+    firstDeath: input.realFirstDeath.estateTax,
+    finalDeath: survivorDeath.estateTax,
+    firstDeathTransfers: input.realFirstDeath.transfers,
+    finalDeathTransfers: survivorDeath.transfers,
+    totals: sumTotals([input.realFirstDeath.estateTax, survivorDeath.estateTax]),
+  };
+
+  return { year: input.year, primaryFirst };
 }

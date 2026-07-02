@@ -13,6 +13,11 @@ vi.mock("../actions", () => ({
   listMyConversations: vi.fn(async () => []),
   loadConversationMessages: vi.fn(async () => ({ messages: [], approval: null })),
 }));
+// ForgePanel imports useWalkthrough (Task 9 handoff); mock so it renders outside
+// a real WalkthroughProvider.
+vi.mock("../walkthrough-context", () => ({
+  useWalkthrough: () => ({ active: null, stepIndex: 0, currentStep: null, start: vi.fn(), next: vi.fn(), exit: vi.fn() }),
+}));
 
 function tree(enabled: boolean) {
   return (

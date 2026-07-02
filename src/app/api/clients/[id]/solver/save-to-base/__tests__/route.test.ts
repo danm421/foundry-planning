@@ -7,6 +7,9 @@ vi.mock("@/lib/db-helpers", async (importOriginal) => {
 vi.mock("@/lib/db-scoping", () => ({
   findClientInFirm: vi.fn(),
   assertAccountsInClient: vi.fn(),
+  assertEntitiesInClient: vi.fn(),
+  assertFamilyMembersInClient: vi.fn(),
+  assertExternalBeneficiariesInClient: vi.fn(),
 }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
@@ -34,8 +37,10 @@ vi.mock("@/lib/clients/authz", () => ({
 // so tests can assert the rows written and that updates are base-scenario scoped.
 type Insert = { table: unknown; values: unknown };
 type Update = { table: unknown; set: unknown };
+type Delete = { table: unknown };
 const inserts: Insert[] = [];
 const updates: Update[] = [];
+const deletes: Delete[] = [];
 
 vi.mock("@/db", () => {
   // db.select(...).from(...).where(...) resolves to the base-scenario lookup.
@@ -56,6 +61,7 @@ vi.mock("@/db", () => {
           update: (table: unknown) => ({
             set: (set: unknown) => ({ where: async () => { updates.push({ table, set }); } }),
           }),
+          delete: (table: unknown) => ({ where: async () => { deletes.push({ table }); } }),
         };
         return await fn(tx);
       }),
@@ -65,7 +71,13 @@ vi.mock("@/db", () => {
 
 import { POST } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
-import { findClientInFirm, assertAccountsInClient } from "@/lib/db-scoping";
+import {
+  findClientInFirm,
+  assertAccountsInClient,
+  assertEntitiesInClient,
+  assertFamilyMembersInClient,
+  assertExternalBeneficiariesInClient,
+} from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { recordAudit } from "@/lib/audit";
 
@@ -101,9 +113,13 @@ const ctx = { params: Promise.resolve({ id: CLIENT_ID }) };
 beforeEach(() => {
   inserts.length = 0;
   updates.length = 0;
+  deletes.length = 0;
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
   vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
   vi.mocked(assertAccountsInClient).mockResolvedValue({ ok: true } as never);
+  vi.mocked(assertEntitiesInClient).mockResolvedValue({ ok: true } as never);
+  vi.mocked(assertFamilyMembersInClient).mockResolvedValue({ ok: true } as never);
+  vi.mocked(assertExternalBeneficiariesInClient).mockResolvedValue({ ok: true } as never);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
     effectiveTree: { accounts: [], savingsRules: [] },
     warnings: [],
@@ -156,7 +172,7 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     );
   });
 
-  it("classifies an account already in the source tree as an update", async () => {
+  it("classifies an account already in the source tree as an update and re-materializes its owners", async () => {
     vi.mocked(loadEffectiveTree).mockResolvedValue({
       effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
       warnings: [],
@@ -171,10 +187,83 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ accountInserts: 0, accountUpdates: 1 });
-    // No INSERT (it's an update); one UPDATE recorded.
-    expect(inserts).toHaveLength(0);
+    // One UPDATE to the account columns …
     expect(updates).toHaveLength(1);
     expect(updates[0].set).toMatchObject({ name: "Renamed" });
+    // … plus the owners satellite re-materialized (delete-then-reinsert) so a
+    // retitle is never lost (#a).
+    expect(deletes).toHaveLength(1);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].values).toMatchObject({ familyMemberId: "fm-1", percent: "100" });
+  });
+
+  it("persists a retitle-into-trust on update by rewriting account_owners (#a)", async () => {
+    // Source has the account (→ UPDATE); the upsert retitles it to an entity owner.
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
+      warnings: [],
+    } as never);
+    const retitled = {
+      ...ACCT,
+      owners: [{ kind: "entity", entityId: "trust-1", percent: 100 }],
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "synthetic-new", value: retitled }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // Old owners cleared, new entity owner written.
+    expect(deletes).toHaveLength(1);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].values).toMatchObject({ entityId: "trust-1", familyMemberId: null, percent: "100" });
+  });
+
+  it("returns 400 when an owner references a family member not in the client (#b)", async () => {
+    vi.mocked(assertFamilyMembersInClient).mockResolvedValue({
+      ok: false,
+      reason: "Family member fm-1 not owned by this client",
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "synthetic-new", value: ACCT }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("inserts an overlay-added account into base rather than 0-row updating it (#c)", async () => {
+    const SCENARIO = "11111111-1111-4111-8111-111111111111";
+    // 1st load = source (overlay) that CONTAINS the account.
+    // 2nd load = base tree, which does NOT — so it must classify as an insert.
+    vi.mocked(loadEffectiveTree)
+      .mockResolvedValueOnce({
+        effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
+        warnings: [],
+      } as never)
+      .mockResolvedValueOnce({
+        effectiveTree: { accounts: [], savingsRules: [] },
+        warnings: [],
+      } as never);
+    const res = await POST(
+      makeRequest({
+        source: SCENARIO,
+        mutations: [{ kind: "account-upsert", id: "synthetic-new", value: ACCT }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ accountInserts: 1, accountUpdates: 0 });
+    // Account row + its owner row inserted into base.
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0].values).toMatchObject({ scenarioId: "base-scenario-id", name: "John — Taxable" });
   });
 
   it("applies a client-singleton update for a retirement-age lever", async () => {

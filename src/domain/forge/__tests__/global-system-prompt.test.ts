@@ -30,4 +30,10 @@ describe("buildGlobalSystemPrompt", () => {
     expect(p).toMatch(/ask/i); // gather-then-ask rule
     expect(p).toMatch(/approv/i); // confirmation framing
   });
+
+  it("advertises start_walkthrough and lists the walkthrough index", () => {
+    const p = buildGlobalSystemPrompt({ firmName: "Acme" });
+    expect(p).toContain("start_walkthrough");
+    expect(p).toContain("add-household — Add a new household");
+  });
 });

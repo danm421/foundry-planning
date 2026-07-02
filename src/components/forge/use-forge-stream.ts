@@ -56,6 +56,7 @@ export type ForgeSseEvent =
   | { type: "tool_render"; name: string; status: "inProgress" | "complete"; data: unknown }
   | { type: "navigate"; href: string }
   | { type: "page_link"; href: string; section: string; label: string }
+  | { type: "walkthrough"; walkthroughId: string }
   | { type: "activity"; label: string }
   | { type: "approval_required"; previews: WritePreview[]; calls: ApprovalCall[] }
   | { type: "meeting_review"; summaryTitle: string; summary: string; meetingDate: string | null; proposedTasks: ProposedTaskView[] }
@@ -139,6 +140,9 @@ export interface UseForgeStreamResult {
   /** Pending in-app navigation the panel may consume + clear. */
   pendingNavigate: string | null;
   setPendingNavigate: React.Dispatch<React.SetStateAction<string | null>>;
+  /** Pending guided walkthrough id the panel may consume + clear. */
+  pendingWalkthrough: string | null;
+  setPendingWalkthrough: (v: string | null) => void;
   isVerifying: boolean;
   pendingApproval: PendingApproval | null;
   setPendingApproval: React.Dispatch<React.SetStateAction<PendingApproval | null>>;
@@ -179,6 +183,7 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
     Extract<ForgeSseEvent, { type: "tool_render" }> | null
   >(null);
   const [pendingNavigate, setPendingNavigate] = useState<string | null>(null);
+  const [pendingWalkthrough, setPendingWalkthrough] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [pendingMeetingReview, setPendingMeetingReview] = useState<MeetingReviewPayload | null>(null);
@@ -262,6 +267,9 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
         break;
       case "navigate":
         setPendingNavigate(ev.href);
+        break;
+      case "walkthrough":
+        setPendingWalkthrough(ev.walkthroughId);
         break;
       case "page_link":
         // Attach the link to the trailing assistant bubble (de-duped by
@@ -517,6 +525,8 @@ export function useForgeStream(clientId: string | null): UseForgeStreamResult {
     lastToolRender,
     pendingNavigate,
     setPendingNavigate,
+    pendingWalkthrough,
+    setPendingWalkthrough,
     isVerifying,
     pendingApproval,
     setPendingApproval,

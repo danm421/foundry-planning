@@ -2,58 +2,99 @@ import { describe, it, expect } from "vitest";
 import { solveMaxSpending, type SolveMaxSpendingArgs } from "./solve-max-spending";
 import type { ClientData } from "@/engine/types";
 
-// Tree whose retirement living spend (today's $) totals 100_000.
+// Tree whose retirement living spend (today's $) totals 100_000, with no other
+// income/assets so the resource-aware ceiling collapses to 3× the stated spend.
 const tree = {
   planSettings: { planStartYear: 2026, inflationRate: 0.025 },
+  incomes: [],
+  accounts: [],
   expenses: [
     { id: "ret", type: "living", name: "Retirement Living", annualAmount: 100_000,
       startYear: 2040, endYear: 2070, growthRate: 0.025 },
   ],
 } as unknown as ClientData;
 
-// PoS decreases linearly with scale: PoS(0)=1.0, PoS(2.0)=0.0. Crosses 0.85 at scale 0.30.
-const linearPoS = async (scale: number) => Math.max(0, Math.min(1, 1 - scale / 2));
+// PoS decreases linearly with spend: PoS(0)=1.0, PoS(200_000)=0.0. Crosses 0.85
+// at $30,000. The solver now searches in dollar space, so the evaluator takes
+// dollars (not a scale factor).
+const linearPoS = async (dollars: number) => Math.max(0, Math.min(1, 1 - dollars / 200_000));
 
 function args(over: Partial<SolveMaxSpendingArgs> = {}): SolveMaxSpendingArgs {
   return {
     tree,
-    // mcPayload is unused when evaluateScale is injected.
+    // mcPayload is unused when evaluateSpend is injected.
     mcPayload: {} as never,
     targetPoS: 0.85,
-    evaluateScale: linearPoS,
+    evaluateSpend: linearPoS,
     ...over,
   };
 }
 
 describe("solveMaxSpending", () => {
-  it("solves the scale closest to target, in $5k-rounded today's dollars", async () => {
+  it("solves the spend closest to target, in $5k-rounded today's dollars", async () => {
     const r = await solveMaxSpending(args());
-    // scale 0.30 → 0.30 * 100_000 = 30_000 (already a multiple of 5k).
+    // PoS crosses 0.85 at $30,000 (already a multiple of $5k).
     expect(r.status).toBe("converged");
     expect(r.realAnnualSpend).toBe(30_000);
     expect(r.achievedPoS).toBeGreaterThanOrEqual(0.85 - 0.02);
   });
 
   it("returns $0 / unreachable when even zero spend misses the target", async () => {
-    const r = await solveMaxSpending(args({ evaluateScale: async () => 0.5 }));
+    const r = await solveMaxSpending(args({ evaluateSpend: async () => 0.5 }));
     expect(r.status).toBe("unreachable");
     expect(r.realAnnualSpend).toBe(0);
   });
 
-  it("clamps to the bracket cap when the plan always beats the target", async () => {
-    const r = await solveMaxSpending(args({ evaluateScale: async () => 0.99 }));
-    expect(r.realAnnualSpend).toBe(roundCap()); // 3.0 * 100_000 = 300_000
-    function roundCap() { return 300_000; }
+  it("widens the ceiling to the resource-aware bound, not 3× the stated expense", async () => {
+    // Modest $60k stated retirement spend but an $8M portfolio. The resource-aware
+    // ceiling is max(3×60k=180k, income+10%·assets=800k) = $800k, so the search can
+    // reach a sustainable spend well above the old 3× ($180k) cap.
+    const richTree = {
+      planSettings: { planStartYear: 2026, inflationRate: 0.025 },
+      incomes: [],
+      accounts: [{ id: "a", value: 8_000_000 }],
+      expenses: [
+        { id: "ret", type: "living", name: "Retirement Living", annualAmount: 60_000,
+          startYear: 2040, endYear: 2070, growthRate: 0.025 },
+      ],
+    } as unknown as ClientData;
+    // Linear PoS crossing 0.85 at exactly $500,000 (1 − 500k/3,333,333 = 0.85).
+    const evaluateSpend = async (dollars: number) =>
+      Math.max(0, Math.min(1, 1 - dollars / 3_333_333));
+    const r = await solveMaxSpending(args({ tree: richTree, evaluateSpend }));
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBeGreaterThan(180_000); // old resource-blind cap
+    expect(Math.abs(r.realAnnualSpend - 500_000)).toBeLessThanOrEqual(10_000);
+  });
+
+  it("synthesizes a spend when the plan states $0 retirement living expense", async () => {
+    // No retirement living-expense row at all (baseSpend === 0), but a $5M portfolio.
+    // The old scale-space solver returned $0 unconditionally; the dollar-space search
+    // finds the real sustainable spend.
+    const zeroBaseTree = {
+      planSettings: { planStartYear: 2026, inflationRate: 0.025 },
+      incomes: [],
+      accounts: [{ id: "a", value: 5_000_000 }],
+      expenses: [],
+    } as unknown as ClientData;
+    // Linear PoS crossing 0.85 at exactly $100,000 (1 − 100k/666,666 = 0.85).
+    const evaluateSpend = async (dollars: number) =>
+      Math.max(0, Math.min(1, 1 - dollars / 666_666));
+    const r = await solveMaxSpending(args({ tree: zeroBaseTree, evaluateSpend }));
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBeGreaterThan(0);
+    expect(Math.abs(r.realAnnualSpend - 100_000)).toBeLessThanOrEqual(10_000);
+    expect(r.scaleFactor).toBe(0); // no stated base to scale from
   });
 
   it("re-selects at higher trials, correcting a pessimistic 250-trial prefix", async () => {
-    // baseSpend = 100_000. 500-trial PoS is the truth (0.85 at scale 0.30 → $30k);
-    // the 250-trial prefix reads 0.03 low, so phase 1 alone would undershoot.
-    const evaluateScale = async (scale: number, trials: number) => {
-      const truth = Math.max(0, Math.min(1, 1 - scale / 2));
+    // 500-trial PoS is the truth (0.85 at $30k); the 250-trial prefix reads 0.03 low,
+    // so phase 1 alone would undershoot.
+    const evaluateSpend = async (dollars: number, trials: number) => {
+      const truth = Math.max(0, Math.min(1, 1 - dollars / 200_000));
       return trials >= 500 ? truth : Math.max(0, truth - 0.03);
     };
-    const r = await solveMaxSpending(args({ evaluateScale }));
+    const r = await solveMaxSpending(args({ evaluateSpend }));
     expect(r.status).toBe("converged");
     expect(r.realAnnualSpend).toBe(30_000); // corrected up from the ~25k a 250-only solve gives
     expect(Math.abs(r.achievedPoS - 0.85)).toBeLessThanOrEqual(0.01);

@@ -140,7 +140,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       {/* Client contact */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-forge-anchor="crm-primary-contact-fields">
         <div>
           <label className={fieldLabelClassName} htmlFor="firstName">
             First name
@@ -246,7 +246,9 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         <label className={fieldLabelClassName} htmlFor="state">
           State of residence
         </label>
-        <StateSelect id="state" name="state" value={state} onChange={setState} required />
+        <div data-forge-anchor="crm-household-state-input">
+          <StateSelect id="state" name="state" value={state} onChange={setState} required />
+        </div>
         <p className="mt-1 text-[12px] text-ink-4">
           Drives state income &amp; estate tax when this household gets a plan.
         </p>
@@ -260,6 +262,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         <input
           id="name"
           name="name"
+          data-forge-anchor="crm-household-name-input"
           required
           maxLength={200}
           value={name}
@@ -290,6 +293,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         </Link>
         <button
           type="submit"
+          data-forge-anchor="crm-household-save-button"
           disabled={submitting || !isLoaded}
           className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
         >

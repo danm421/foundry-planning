@@ -5,6 +5,7 @@ import {
   fmtPct,
   inventoryTotals,
   coverageForDecedent,
+  isInForce,
   gapFor,
   termExpiryLabel,
 } from "../aggregate";
@@ -42,13 +43,41 @@ describe("aggregate", () => {
 
   it("sums per-decedent coverage and excludes joint policies", () => {
     const rows = [
-      policy({ insuredPerson: "client", deathBenefit: 1_000_000 }),
-      policy({ insuredPerson: "spouse", deathBenefit: 500_000 }),
-      policy({ insuredPerson: "joint", deathBenefit: 2_000_000 }),
+      policy({ insuredPerson: "client", deathBenefit: 1_000_000, policyType: "whole", termExpiryYear: null }),
+      policy({ insuredPerson: "spouse", deathBenefit: 500_000, policyType: "whole", termExpiryYear: null }),
+      policy({ insuredPerson: "joint", deathBenefit: 2_000_000, policyType: "whole", termExpiryYear: null }),
     ];
-    expect(coverageForDecedent(rows, "client").total).toBe(1_000_000);
-    expect(coverageForDecedent(rows, "spouse").total).toBe(500_000);
-    expect(coverageForDecedent(rows, "client").hasJoint).toBe(true);
+    expect(coverageForDecedent(rows, "client", 2030).total).toBe(1_000_000);
+    expect(coverageForDecedent(rows, "spouse", 2030).total).toBe(500_000);
+    expect(coverageForDecedent(rows, "client", 2030).hasJoint).toBe(true);
+  });
+
+  it("reports in-force status: permanent always, term through its expiry year inclusive", () => {
+    const term = policy({ policyType: "term", termExpiryYear: 2041 });
+    expect(isInForce(term, 2041)).toBe(true);  // in force through expiry year
+    expect(isInForce(term, 2042)).toBe(false); // dropped the year after
+    const whole = policy({ policyType: "whole", termExpiryYear: null });
+    expect(isInForce(whole, 2099)).toBe(true);
+  });
+
+  it("excludes expired term coverage as of the death year, matching the solved need", () => {
+    const rows = [
+      // A term policy that lapses in 2041 and a permanent policy.
+      policy({ insuredPerson: "client", deathBenefit: 1_000_000, policyType: "term", termExpiryYear: 2041 }),
+      policy({ insuredPerson: "client", deathBenefit: 250_000, policyType: "whole", termExpiryYear: null }),
+    ];
+    // At a 2048 death the term is gone → only the $250k permanent policy counts.
+    expect(coverageForDecedent(rows, "client", 2048).total).toBe(250_000);
+    // At a 2035 death both are in force.
+    expect(coverageForDecedent(rows, "client", 2035).total).toBe(1_250_000);
+  });
+
+  it("does not footnote a joint policy that has already expired", () => {
+    const rows = [
+      policy({ insuredPerson: "joint", deathBenefit: 2_000_000, policyType: "term", termExpiryYear: 2040 }),
+    ];
+    expect(coverageForDecedent(rows, "client", 2050).hasJoint).toBe(false);
+    expect(coverageForDecedent(rows, "client", 2035).hasJoint).toBe(true);
   });
 
   it("computes surplus and shortfall gaps", () => {

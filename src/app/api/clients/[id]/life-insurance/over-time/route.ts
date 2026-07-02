@@ -110,8 +110,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           payoffLiabilityIds: assumptions.payoffLiabilityIds,
         };
 
-        const rows = computeNeedOverTime(effectiveTree, overTimeAssumptions, (done, total) =>
-          emit("progress", { done, total }),
+        const rows = computeNeedOverTime(
+          effectiveTree,
+          overTimeAssumptions,
+          assumptions.coverEstateTaxes,
+          (done, total) => emit("progress", { done, total }),
         );
 
         emit("result", { rows });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runTrial, liquidPortfolioTotal, segmentMixForYear, type MixSegment } from "../trial";
 import { createReturnEngine } from "../returns";
-import { buildClientData } from "../../__tests__/fixtures";
+import { buildClientData, basePlanSettings } from "../../__tests__/fixtures";
 import type { ClientData } from "../../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
@@ -234,6 +234,63 @@ describe("runTrial — accounts without a mix keep their fixed growth rate", () 
     // (We don't assert equality on result.byYearLiquidAssets because the
     // real-estate account doesn't contribute to the liquid total.)
     expect(expected).toBeGreaterThan(0); // basic sanity
+  });
+});
+
+describe("runTrial — unclassified mix residual earns inflation (H10)", () => {
+  it("a mix summing to <1 grows the residual at the inflation rate, matching the deterministic engine", () => {
+    // Single taxable account, no flows → pure growth. One asset class with
+    // stdDev 0 makes the draw deterministic and identical across trials, so we
+    // can isolate the residual term by comparing a fully-classified mix
+    // (weight 1.0) against a partial mix (weight 0.6, 40% unclassified).
+    // Deterministic foldWeighted grows the residual at inflationRate; MC must
+    // do the same. Regression guard for H10: MC applied 0% to the residual.
+    const INFLATION = 0.03;
+    const engine = () =>
+      createReturnEngine({
+        indices: [{ id: "eq", arithMean: 0.08, stdDev: 0 }],
+        correlation: [[1]],
+        seed: 5,
+      });
+    const plan = (): ClientData =>
+      buildClientData({
+        accounts: [
+          {
+            id: "acct-brokerage",
+            name: "Brokerage",
+            category: "taxable",
+            subType: "brokerage",
+            titlingType: "jtwros",
+            value: 100_000, basis: 100_000, growthRate: 0, rmdEnabled: false,
+            owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+          },
+        ],
+        incomes: [], expenses: [], liabilities: [], savingsRules: [],
+        withdrawalStrategy: [],
+        planSettings: { ...basePlanSettings, inflationRate: INFLATION, planStartYear: 2026, planEndYear: 2046 },
+      });
+    const mix = (w: number): Map<string, MixSegment[]> =>
+      new Map([["acct-brokerage", [{ fromYear: 0, mix: [{ assetClassId: "eq", weight: w }] }]]]);
+
+    const growthOf = (weight: number): number => {
+      const r = runTrial({
+        data: plan(), returnEngine: engine(), trialIndex: 0,
+        accountMixes: mix(weight), requiredMinimumAssetLevel: 0,
+      });
+      const s = r.byYearLiquidAssets;
+      return Math.pow(s[s.length - 1] / s[0], 1 / (s.length - 1)) - 1;
+    };
+
+    // Fully-classified draw rate (weight 1.0 → residual 0).
+    const rFull = growthOf(1.0);
+    // Partial mix per-year growth.
+    const gPartial = growthOf(0.6);
+
+    // After the fix: gPartial == 0.6*rFull + 0.4*inflation (residual earns
+    // inflation). Before: gPartial == 0.6*rFull (residual earns 0%) — RED.
+    expect(gPartial).toBeCloseTo(0.6 * rFull + 0.4 * INFLATION, 5);
+    // And it must exceed the residual-earns-0% value by ~0.4*inflation.
+    expect(gPartial).toBeGreaterThan(0.6 * rFull + 0.001);
   });
 });
 

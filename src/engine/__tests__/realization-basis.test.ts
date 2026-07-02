@@ -61,9 +61,13 @@ describe("F1: realized growth feeds cost basis", () => {
       const detail = yearN.accountLedgers[acctId].growthDetail;
       expect(detail).toBeDefined();
       const basisIncrease = detail!.basisIncrease;
+      // Since H7, the no-checking branch funds the realization-driven tax
+      // deficit with a categorized draw, which returns basis — same identity
+      // as the fresh-basis test below.
+      const basisReturn = yearN.accountLedgers[acctId].withdrawalDetail?.basisReturn ?? 0;
 
       expect(basisIncrease).toBeGreaterThan(0); // sanity — realization is firing
-      expect(basisNplus1).toBeCloseTo(basisN + basisIncrease, 2); // cent precision
+      expect(basisNplus1).toBeCloseTo(basisN + basisIncrease - basisReturn, 2); // cent precision
 
     }
   });

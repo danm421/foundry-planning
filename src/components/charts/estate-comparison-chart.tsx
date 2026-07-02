@@ -41,6 +41,12 @@ export interface EstateComparisonChartProps {
   baseTree: ClientData;
   proposedTree: ClientData;
   isMarried: boolean;
+  /** Year of the first spouse's death in the with-events projection, or null
+   *  if unknown/unmarried. Once the viewing year reaches this year, the estate
+   *  distribution is anchored to the actual death order, so the death-order
+   *  toggle is hidden and the comparison is forced to "primaryFirst" (the
+   *  anchored model ignores ordering, but this keeps the UI honest). */
+  firstDeathYear: number | null;
 }
 
 export function EstateComparisonChart({
@@ -49,6 +55,7 @@ export function EstateComparisonChart({
   baseTree,
   proposedTree,
   isMarried,
+  firstDeathYear,
 }: EstateComparisonChartProps) {
   const theme = useThemeName();
 
@@ -67,6 +74,11 @@ export function EstateComparisonChart({
 
   const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
 
+  // Once the viewing year reaches the first death, the estate distribution is
+  // anchored to the actual death order — the toggle no longer applies.
+  const toggleVisible =
+    isMarried && (firstDeathYear == null || selectedYear < firstDeathYear);
+
   const c = proposedTree.client;
 
   const comparison = useMemo(
@@ -76,7 +88,7 @@ export function EstateComparisonChart({
         proposedProjection,
         baseTree,
         proposedTree,
-        ordering: isMarried ? ordering : "primaryFirst",
+        ordering: toggleVisible ? ordering : "primaryFirst",
         year: selectedYear,
         ownerNames: {
           clientName: `${c.firstName} ${c.lastName}`.trim(),
@@ -93,7 +105,7 @@ export function EstateComparisonChart({
       baseTree,
       proposedTree,
       ordering,
-      isMarried,
+      toggleVisible,
       selectedYear,
       c.firstName,
       c.lastName,
@@ -214,7 +226,7 @@ export function EstateComparisonChart({
         </div>
       </div>
 
-      {isMarried ? (
+      {toggleVisible ? (
         <div className="flex items-center gap-2 text-[11px]">
           <span className="text-ink-3">Death order:</span>
           {(["primaryFirst", "spouseFirst"] as const).map((o) => (

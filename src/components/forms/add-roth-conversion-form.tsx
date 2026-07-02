@@ -9,6 +9,7 @@ import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { RothConversionType, RothConversion, Account } from "@/engine/types";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import { GrowthRateField, parseGrowthSourceSelection } from "./growth-rate-field";
 
@@ -50,10 +51,17 @@ export interface RothConversionInitialData {
 
 export interface RothAccountCreation {
   owners: { familyMemberId: string; label: string }[];
-  modelPortfolios: { id: string; name: string; growthRate: number }[];
+  modelPortfolios: { id: string; name: string; growthRate: number; mix: AccountAssetMix[] }[];
   retirementGrowthDefault: number;
+  /** MC asset mix of the retirement category default (the "Plan default" growth
+   *  option). Empty when that default is a custom/inflation rate, not a model
+   *  portfolio — in which case the draft account stays deterministic in MC. */
+  retirementDefaultMix: AccountAssetMix[];
   resolvedInflationRate: number;
-  onCreate: (account: Account) => void;
+  /** `mix` is the account's resolved MC allocation, or [] for custom/inflation
+   *  growth (deterministic). Callers register it so the draft account's dollars
+   *  are randomized in Monte Carlo rather than growing at a fixed rate. */
+  onCreate: (account: Account, mix: AccountAssetMix[]) => void;
 }
 
 interface Props {
@@ -171,23 +179,32 @@ export default function AddRothConversionForm({
   const showRothPanel = canCreateRoth && (addingRoth || rothAccounts.length === 0);
   const showNewRothButton = canCreateRoth && rothAccounts.length > 0 && !addingRoth;
 
-  function resolveNewGrowthRate(): number {
-    if (!rothAccountCreation) return 0;
+  // Resolve the new account's growth rate AND its MC asset mix from the chosen
+  // source in a single lookup, so the two can never drift on which source counts
+  // as "randomized". model_portfolio and the "default" fall-through both carry
+  // the chosen/retirement-default mix — mirroring what load-monte-carlo-data does
+  // for a DB account on that source. custom and inflation carry no mix, so those
+  // dollars grow deterministically in MC.
+  function resolveNewGrowthSelection(): { growthRate: number; mix: AccountAssetMix[] } {
+    if (!rothAccountCreation) return { growthRate: 0, mix: [] };
+    const { retirementGrowthDefault, retirementDefaultMix, resolvedInflationRate } = rothAccountCreation;
     if (newGrowthSource === "model_portfolio") {
-      return (
-        rothAccountCreation.modelPortfolios.find((p) => p.id === newModelPortfolioId)?.growthRate ??
-        rothAccountCreation.retirementGrowthDefault
-      );
+      const portfolio = rothAccountCreation.modelPortfolios.find((p) => p.id === newModelPortfolioId);
+      return {
+        growthRate: portfolio?.growthRate ?? retirementGrowthDefault,
+        mix: portfolio?.mix ?? retirementDefaultMix,
+      };
     }
-    if (newGrowthSource === "inflation") return rothAccountCreation.resolvedInflationRate;
-    if (newGrowthSource === "custom") return (parseFloat(newGrowthPct) || 0) / 100;
-    return rothAccountCreation.retirementGrowthDefault;
+    if (newGrowthSource === "inflation") return { growthRate: resolvedInflationRate, mix: [] };
+    if (newGrowthSource === "custom") return { growthRate: (parseFloat(newGrowthPct) || 0) / 100, mix: [] };
+    return { growthRate: retirementGrowthDefault, mix: retirementDefaultMix };
   }
 
   function handleCreateRoth() {
     if (!rothAccountCreation || !newOwnerId) return;
     const ownerLabel =
       rothAccountCreation.owners.find((o) => o.familyMemberId === newOwnerId)?.label ?? "";
+    const { growthRate, mix } = resolveNewGrowthSelection();
     const account: Account = {
       id: crypto.randomUUID(),
       name: `Roth IRA - ${ownerLabel}`,
@@ -195,12 +212,12 @@ export default function AddRothConversionForm({
       subType: "roth_ira",
       value: 0,
       basis: 0,
-      growthRate: resolveNewGrowthRate(),
+      growthRate,
       rmdEnabled: false,
       titlingType: "jtwros",
       owners: [{ kind: "family_member", familyMemberId: newOwnerId, percent: 1 }],
     };
-    rothAccountCreation.onCreate(account);
+    rothAccountCreation.onCreate(account, mix);
     setNewRothAccounts((prev) => [...prev, account]);
     setDestinationAccountId(account.id);
     setAddingRoth(false);

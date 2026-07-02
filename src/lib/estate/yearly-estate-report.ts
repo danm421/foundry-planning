@@ -13,6 +13,8 @@ import {
   computeInEstateAtYear,
   computeOutOfEstateAtYear,
 } from "@/lib/estate/in-estate-at-year";
+import { collectCharityExternalBeneficiaryIds } from "./charity-recipients";
+import { estateDistributionAtYear } from "./estate-distribution-at-year";
 import { isPolicyInForce } from "./insurance-in-force";
 
 export type Ordering = "primaryFirst" | "spouseFirst";
@@ -106,6 +108,8 @@ export function buildYearlyEstateReport(
     rows.push(
       buildYearlyRow({
         yearRow,
+        projection,
+        resolvedOrdering,
         clientData,
         giftEvents,
         projectionStartYear,
@@ -145,6 +149,15 @@ export function buildYearlyEstateReport(
 
 interface RowBuilderArgs {
   yearRow: ProjectionYear;
+  /** Full projection (narrowed to `years`, matching YearlyEstateReportInput) —
+   *  fed to `estateDistributionAtYear` for the anchored heirs/tax buckets. In
+   *  `asOf: { kind: "year" }` mode the transfer report reads only
+   *  `projection.years[].hypotheticalEstateTax`, so the narrowed shape is
+   *  runtime-sufficient. */
+  projection: Pick<ProjectionResult, "years">;
+  /** Ordering already resolved against availability — kept in sync with
+   *  `branch` (also picked with it) so years < first death match the report. */
+  resolvedOrdering: Ordering;
   clientData: ClientData;
   giftEvents: NonNullable<ClientData["giftEvents"]>;
   projectionStartYear: number;
@@ -161,6 +174,8 @@ interface RowBuilderArgs {
 function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
   const {
     yearRow,
+    projection,
+    resolvedOrdering,
     clientData,
     giftEvents,
     projectionStartYear,
@@ -202,13 +217,26 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
   const firstDeath = branch.firstDeath;
   const finalDeath = branch.finalDeath;
 
-  const taxesAndExpenses =
-    totalTaxAtDeath(firstDeath) + (finalDeath ? totalTaxAtDeath(finalDeath) : 0);
   const charitableBequests =
     firstDeath.charitableDeduction + (finalDeath?.charitableDeduction ?? 0);
 
-  const netToHeirs = grossEstate - charitableBequests - taxesAndExpenses;
-  const totalToHeirs = netToHeirs + heirsAssets;
+  // Route the heirs/tax buckets through the single source of truth. Threading
+  // `resolvedOrdering` (the same value used to pick `branch`) keeps years before
+  // the first death consistent with the report; years at/after the first death
+  // are anchored and ignore ordering. The bottom-up transfer ledger already
+  // nets out-of-estate/OOE value into `toHeirs`, so `totalToHeirs === toHeirs`
+  // (no separate `+ heirsAssets`). The ledger also only diminishes heirs by the
+  // admin/tax that actually leaves the terminal recipient's pocket, whereas the
+  // old top-down `grossEstate − taxes` double-subtracted the first-death admin.
+  const dist = estateDistributionAtYear({
+    projection: projection as ProjectionResult,
+    year: yearRow.year,
+    clientData,
+    ownerNames,
+    ordering: resolvedOrdering,
+  });
+  const netToHeirs = dist.toHeirs;
+  const totalToHeirs = dist.toHeirs;
 
   const charity =
     cumulativeCharityGifts(
@@ -228,7 +256,7 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
     ageClient,
     ageSpouse,
     grossEstate,
-    taxesAndExpenses,
+    taxesAndExpenses: dist.taxesAndExpenses,
     charitableBequests,
     netToHeirs,
     heirsAssets,
@@ -265,15 +293,6 @@ function buildDeathRow(
       tax.probateCost +
       irdTax,
   };
-}
-
-/** Matches the per-decedent "Total Taxes & Expenses" headline in the existing
- *  Estate Tax sub-report: engine's totalTaxesAndExpenses (estate tax + admin)
- *  plus IRD income tax (which the engine tracks as a drain attribution). */
-function totalTaxAtDeath(tax: EstateTaxResult): number {
-  return (
-    tax.totalTaxesAndExpenses + sumDrainKind(tax.drainAttributions, "ird_tax")
-  );
 }
 
 function sumDrainKind(
@@ -340,14 +359,6 @@ function resolveInsuredRetirementYear(
     default:
       return null;
   }
-}
-
-function collectCharityExternalBeneficiaryIds(tree: ClientData): Set<string> {
-  const ids = new Set<string>();
-  for (const eb of tree.externalBeneficiaries ?? []) {
-    if (eb.kind === "charity") ids.add(eb.id);
-  }
-  return ids;
 }
 
 /** Sum lifetime cash gifts to charity external beneficiaries given in years

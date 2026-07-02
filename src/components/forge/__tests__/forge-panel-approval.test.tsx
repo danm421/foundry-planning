@@ -50,6 +50,13 @@ vi.mock("@/components/scenario/scenario-drawer-provider", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock walkthrough context (panel imports useWalkthrough — Task 9 handoff)
+// ---------------------------------------------------------------------------
+vi.mock("../walkthrough-context", () => ({
+  useWalkthrough: () => ({ active: null, stepIndex: 0, currentStep: null, start: vi.fn(), next: vi.fn(), exit: vi.fn() }),
+}));
+
+// ---------------------------------------------------------------------------
 // Controlled stream state — reassigned per test
 // ---------------------------------------------------------------------------
 let mockStreamState: UseForgeStreamResult;
@@ -74,6 +81,8 @@ function makeStreamState(overrides: Partial<UseForgeStreamResult> = {}): UseForg
     lastToolRender: null,
     pendingNavigate: null,
     setPendingNavigate: vi.fn(),
+    pendingWalkthrough: null,
+    setPendingWalkthrough: vi.fn(),
     isVerifying: false,
     pendingApproval: null,
     setPendingApproval: vi.fn(),

@@ -67,6 +67,7 @@ function ControlledPanel({
   return (
     <SolverChartPanel
       currentProjection={[] as ProjectionYear[]}
+      firstDeathYear={null}
       baseProjection={[] as ProjectionYear[]}
       workingTree={workingTree}
       baseTree={workingTree}
@@ -193,6 +194,7 @@ describe("SolverChartPanel", () => {
     render(
       <SolverChartPanel
         currentProjection={[] as ProjectionYear[]}
+        firstDeathYear={null}
         baseProjection={[] as ProjectionYear[]}
         workingTree={workingTree}
         baseTree={workingTree}

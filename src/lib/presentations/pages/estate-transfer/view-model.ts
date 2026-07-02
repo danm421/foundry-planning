@@ -31,9 +31,7 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
   const columns: DrillColumn[] = [
     { key: "grossEstate",      header: "Gross\nEstate",       width: 60 },
     { key: "taxesAndExpenses", header: "Taxes &\nExpenses",   width: 56 },
-    { key: "netToHeirs",       header: "Net to\nHeirs",       width: 56 },
-    { key: "heirsAssets",      header: "Heirs\nAssets",       width: 56 },
-    { key: "totalToHeirs",     header: "Total to\nHeirs",     width: 64, strong: true },
+    { key: "totalToHeirs",     header: "To\nHeirs",           width: 64, strong: true },
   ];
 
   const rows: DrillRow[] = reportRows.map((r) => ({
@@ -43,8 +41,6 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
     cells: {
       grossEstate: r.grossEstate,
       taxesAndExpenses: r.taxesAndExpenses,
-      netToHeirs: r.netToHeirs,
-      heirsAssets: r.heirsAssets,
       totalToHeirs: r.totalToHeirs,
     },
   }));
@@ -53,7 +49,7 @@ export function buildEstateTransferDrillData(input: EstateDrillInput): DrillPage
   const chartSpec = buildDrillChartSpec({
     years: reportRows.map((r) => r.year),
     stacks: [
-      { seriesId: "netToHeirs",         label: "Net to Heirs",        color: dataLight.green, values: reportRows.map((r) => r.netToHeirs) },
+      { seriesId: "netToHeirs",         label: "To Heirs",            color: dataLight.green, values: reportRows.map((r) => r.netToHeirs) },
       { seriesId: "taxesAndExpenses",   label: "Taxes & Expenses",    color: dataLight.red, values: reportRows.map((r) => r.taxesAndExpenses) },
       { seriesId: "charitableBequests", label: "Charitable Bequests", color: dataLight.yellow, values: reportRows.map((r) => r.charitableBequests) },
     ],

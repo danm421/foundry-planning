@@ -3,6 +3,8 @@ import {
   accounts,
   clients,
   entities,
+  externalBeneficiaries,
+  familyMembers,
   liabilities,
   modelPortfolios,
   assetClasses,
@@ -98,6 +100,42 @@ export async function assertEntitiesInClient(
   const missing = ids.find((v) => !found.has(v));
   return missing
     ? { ok: false, reason: `Entity ${missing} not owned by this client` }
+    : { ok: true };
+}
+
+/** Verify every family-member id belongs to `clientId`. */
+export async function assertFamilyMembersInClient(
+  clientId: string,
+  familyMemberIds: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const ids = familyMemberIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: familyMembers.id })
+    .from(familyMembers)
+    .where(and(eq(familyMembers.clientId, clientId), inArray(familyMembers.id, ids)));
+  const found = new Set(rows.map((r) => r.id));
+  const missing = ids.find((v) => !found.has(v));
+  return missing
+    ? { ok: false, reason: `Family member ${missing} not owned by this client` }
+    : { ok: true };
+}
+
+/** Verify every external-beneficiary id belongs to `clientId`. */
+export async function assertExternalBeneficiariesInClient(
+  clientId: string,
+  externalBeneficiaryIds: (string | null | undefined)[]
+): Promise<FkCheck> {
+  const ids = externalBeneficiaryIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length === 0) return { ok: true };
+  const rows = await db
+    .select({ id: externalBeneficiaries.id })
+    .from(externalBeneficiaries)
+    .where(and(eq(externalBeneficiaries.clientId, clientId), inArray(externalBeneficiaries.id, ids)));
+  const found = new Set(rows.map((r) => r.id));
+  const missing = ids.find((v) => !found.has(v));
+  return missing
+    ? { ok: false, reason: `External beneficiary ${missing} not owned by this client` }
     : { ok: true };
 }
 

@@ -657,6 +657,119 @@ describe("Phase 3 (entity model): EntitySummary business distributes to househol
   });
 });
 
+describe("Phase 3 (entity model): EntitySummary business tax incidence (H1)", () => {
+  // H1 regression. Non-trust EntitySummary businesses (llc/s_corp/partnership)
+  // distribute cash to the household (the sweep tested above), but their
+  // pass-through income was never taxed: the household-1040 loop skips every
+  // ownerEntityId row (projection.ts:1834-1840) on the promise that the Phase-3
+  // K-1 block taxes them, yet that block only iterated account-model businesses.
+  // No entity K-1 incidence existed, so $100k of LLC income was reported as
+  // household income (via the distribution) yet cost $0 in tax.
+  const CLIENT = LEGACY_FM_CLIENT;
+
+  function bizEntity(
+    taxTreatment: "qbi" | "ordinary" | "non_taxable",
+    over: Partial<EntitySummary> = {},
+  ): EntitySummary {
+    return {
+      id: "llc1",
+      name: "Tax LLC",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "llc",
+      distributionPolicyPercent: 1,
+      distributionMode: null,
+      flowMode: "annual",
+      value: 0,
+      basis: 0,
+      valueGrowthRate: 0,
+      taxTreatment,
+      owners: [{ kind: "family_member", familyMemberId: CLIENT, percent: 1 }],
+      ...over,
+    };
+  }
+
+  const entChecking: Account = {
+    id: "llc1-checking",
+    name: "LLC1 Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 0,
+    basis: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "llc1", percent: 1 }],
+    isDefaultChecking: true,
+  } as Account;
+
+  const entIncome: Income = {
+    id: "ei1",
+    type: "business",
+    name: "LLC1 Revenue",
+    annualAmount: 100_000,
+    startYear: 2026,
+    endYear: 2050,
+    growthRate: 0,
+    owner: "client",
+    ownerEntityId: "llc1",
+  };
+
+  function mkTaxData(
+    taxTreatment: "qbi" | "ordinary" | "non_taxable",
+    opts: { incomes?: Income[]; entityOver?: Partial<EntitySummary> } = {},
+  ): ClientData {
+    return {
+      client,
+      accounts: [hhChecking, entChecking],
+      incomes: opts.incomes ?? [entIncome],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [bizEntity(taxTreatment, opts.entityOver)],
+      giftEvents: [],
+    };
+  }
+
+  it("qbi treatment: net income flows to household QBI bucket (no ordinary double-count)", () => {
+    const y0 = runProjection(mkTaxData("qbi"))[0];
+    expect(y0.taxDetail!.qbi).toBeCloseTo(100_000, 0);
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(0, 0);
+    expect(y0.taxDetail!.bySource["business_passthrough:llc1"]).toEqual({
+      type: "qbi",
+      amount: 100_000,
+    });
+  });
+
+  it("ordinary treatment: raises household tax vs a no-entity-income baseline", () => {
+    const withIncome = runProjection(mkTaxData("ordinary"))[0];
+    const without = runProjection(mkTaxData("ordinary", { incomes: [] }))[0];
+    expect(withIncome.taxDetail!.ordinaryIncome).toBeCloseTo(100_000, 0);
+    // Real P&L effect: the pass-through income now costs tax (~$29k at the
+    // test flat rates). Pre-fix the delta was ~$0 — cash with no tax.
+    expect(withIncome.expenses.taxes - without.expenses.taxes).toBeGreaterThan(20_000);
+  });
+
+  it("non_taxable treatment: raises taxExempt but never taxExemptInterest (not muni interest)", () => {
+    const y0 = runProjection(mkTaxData("non_taxable"))[0];
+    expect(y0.taxDetail!.taxExempt).toBeCloseTo(100_000, 0);
+    expect(y0.taxDetail!.taxExemptInterest).toBeCloseTo(0, 0);
+    expect(y0.taxDetail!.bySource["business_passthrough:llc1"]).toEqual({
+      type: "tax_exempt",
+      amount: 100_000,
+    });
+  });
+
+  it("grantor non-trust entity is taxed too (the distribution sweep ignores grantor status)", () => {
+    const y0 = runProjection(mkTaxData("qbi", { entityOver: { isGrantor: true } }))[0];
+    expect(y0.taxDetail!.qbi).toBeCloseTo(100_000, 0);
+    expect(y0.taxDetail!.bySource["business_passthrough:llc1"]).toBeDefined();
+  });
+});
+
 describe("Phase 3: business loss-year cash handling (step 12c gap-fill)", () => {
   // $100k income, $150k expense → -$50k loss.
   const lossExpense: Expense = {

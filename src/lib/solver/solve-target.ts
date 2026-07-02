@@ -78,7 +78,12 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   const realCompute = async (value: number, t: number): Promise<EvalEntry> => {
     const allMutations = [
       ...args.baselineMutations,
-      buildLeverMutation(args.target, value, args.effectiveTree),
+      // Resolve the lever mutation against searchTree (baseline applied), not the
+      // pre-baseline effectiveTree: a roth-conversion-amount lever whose conversion
+      // was created inline in the workspace exists only as a baseline mutation, and
+      // buildLeverMutation throws if it can't find it. Mirrors leverSearchConfig's
+      // lookup (line above) and the client's workingTree key derivation (F4).
+      buildLeverMutation(args.target, value, searchTree),
     ];
     let tree = applyMutations(args.effectiveTree, allMutations);
     if (args.resolutionContext) {

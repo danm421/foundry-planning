@@ -13,6 +13,7 @@ import type {
   Income,
   Expense,
   EstateTaxResult,
+  DeathTransfer,
   HypotheticalEstateTax,
   LifeInsurancePayout,
   MedicareCoverage,
@@ -63,7 +64,7 @@ import {
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals, planSupplementalWithdrawal, isHsaWithdrawalLocked, categorizeDraw } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
@@ -91,7 +92,10 @@ import {
   applyFirstDeath,
   applyFinalDeath,
 } from "./death-event";
-import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
+import {
+  computeHypotheticalEstateTax,
+  computeAnchoredHypotheticalEstateTax,
+} from "./what-if/hypothetical-estate-tax";
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
@@ -723,6 +727,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // can claim it via §2010(c)(4) portability. Stays 0 for the single-filer path
   // (no first-death event fires, so no DSUE is ever generated).
   let stashedDSUE = 0;
+
+  // The real projected first death, frozen at year F. Populated in the
+  // first-death block below; null until then. Once set, every subsequent year's
+  // hypothetical anchors to this frozen event (survivor-dies-at-N) instead of
+  // re-running the first death against post-death (drained) state.
+  let realFirstDeath:
+    | { decedent: "client" | "spouse"; estateTax: EstateTaxResult; transfers: DeathTransfer[]; dsueGenerated: number }
+    | null = null;
 
   let currentIncomes: Income[] = expandLinkedIncomes(data.incomes, {
     accountById,
@@ -1851,8 +1863,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
       }
       if (inc.type === "social_security") continue;
-      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * incGate.factor;
+      // H2: honor scheduleOverrides so the taxed amount matches the cash
+      // deposited by computeIncome (income.ts:133-142) and the cash-routing
+      // loop (which read income.bySource). Re-deriving from annualAmount×growth
+      // here taxed a different number than was received whenever an override
+      // cell diverged from the growth curve.
+      let amount: number;
+      if (inc.scheduleOverrides) {
+        amount = inc.scheduleOverrides[year] ?? 0;
+      } else {
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      }
+      amount *= incGate.factor;
       const tt = inc.taxType ?? legacyTaxType(inc.type);
       switch (tt) {
         case "earned_income": taxDetail.earnedIncome += amount; break;
@@ -2091,6 +2114,71 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── Phase 3 (entity model): EntitySummary business K-1 tax incidence ─────
+    // H1: account-model counterpart of the loop above, for businesses modeled
+    // as EntitySummary rows (entityType llc|s_corp|c_corp|partnership|
+    // foundation|other). Their income is skipped by the household-1040 loop
+    // (ownerEntityId rows, lines 1834-1840) on the promise it's taxed here —
+    // but that block only ever iterated account-model businesses, so entity
+    // pass-through income was distributed as cash (the sweep further below) yet
+    // taxed $0. Tax exactly the set that sweep distributes: all non-trust
+    // currentEntities with family owners and positive net income (the sweep
+    // ignores grantor status, so we do too). Trusts keep the 1041/grantor
+    // passes and are excluded. Keyed off ownerEntityId (via
+    // computeBusinessEntityNetIncome) vs the account-model block's ownerAccountId
+    // (via computeBusinessYearFlow), so the two never double-tax the same row.
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+        data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
+        data.client,
+      );
+      if (netIncome <= 0) continue;
+      const treatment = entity.taxTreatment ?? "ordinary";
+      const familyOwners = (entity.owners ?? []).filter(
+        (o) => o.kind === "family_member",
+      );
+      let entityFamilyTaxable = 0;
+      for (const owner of familyOwners) {
+        const taxableShare = netIncome * owner.percent;
+        if (taxableShare === 0) continue;
+        entityFamilyTaxable += taxableShare;
+        switch (treatment) {
+          case "qbi":
+            taxDetail.qbi += taxableShare;
+            break;
+          case "ordinary":
+            taxDetail.ordinaryIncome += taxableShare;
+            break;
+          case "non_taxable":
+            taxDetail.taxExempt += taxableShare;
+            break;
+        }
+      }
+      // Flat-rate mode reads taxableIncome, not taxDetail buckets — mirror the
+      // account-model block (non_taxable stays out of taxableIncome).
+      if (treatment !== "non_taxable") {
+        taxableIncome += entityFamilyTaxable;
+      }
+      const totalTaxable =
+        netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
+      if (totalTaxable !== 0) {
+        const bySourceType =
+          treatment === "qbi" ? "qbi"
+          : treatment === "non_taxable" ? "tax_exempt"
+          : "ordinary_income";
+        taxDetail.bySource[`business_passthrough:${entity.id}`] = {
+          type: bySourceType,
+          amount: totalTaxable,
+        };
+      }
+    }
+
     // Add RMDs to ordinary income
     if (householdRmdIncome > 0) {
       taxDetail.ordinaryIncome += householdRmdIncome;
@@ -2317,21 +2405,58 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // counts toward IRMAA MAGI.
       taxDetail.taxExemptInterest += trustPassResult.householdIncomeDelta.taxExempt;
 
-      // Apply trust cash debits (distributions drawn from cash + trust tax paid).
+      // Apply trust cash debits (full distribution + trust tax paid) and credit
+      // the household beneficiary's share. Mirrors the grantor pass below.
+      //
       // We deliberately allow checking to go negative here — step 12c (entity
       // gap-fill) runs later in the year and will liquidate the trust's other
       // liquid assets to cover the deficit, emitting `entity_overdraft` if the
-      // remaining liquid pool is insufficient. The previous force-zero behavior
-      // here would mask deficits that gap-fill could legitimately recover from.
+      // remaining liquid pool is insufficient.
+      //
+      // H8/H9/M10: debit the FULL `actualAmount` (not just `drawFromCash`) via
+      // creditCash — so (a) the `drawFromTaxable` slice actually drives checking
+      // negative and gap-fill drains the trust's own brokerage to fund it
+      // (realizing the gain), rather than the distribution being recognized-but-
+      // never-drained (H9 value creation); and (b) the trust-checking ledger
+      // records the outflow so I1 holds (M10). Then credit the household its
+      // share of the distributed cash (H8): previously the DNI was taxed to the
+      // household via householdIncomeDelta above but the cash never arrived.
+      // Non-household beneficiary shares (family members / external) exit the
+      // projection scope, same as the grantor pass's non-household case.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
         if (!checkingId) continue;
         const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
         const tax = trustPassResult.taxByEntity.get(trust.entityId);
-        const debit = (dist?.drawFromCash ?? 0) + (tax?.total ?? 0);
-        if (debit <= 0) continue;
-        const currentCash = accountBalances[checkingId] ?? 0;
-        accountBalances[checkingId] = currentCash - debit;
+        const distAmount = dist?.actualAmount ?? 0;
+        const taxAmount = tax?.total ?? 0;
+        if (distAmount > 0) {
+          creditCash(checkingId, -distAmount, {
+            category: "expense",
+            label: `Non-grantor trust distribution out`,
+            sourceId: trust.entityId,
+          });
+        }
+        if (taxAmount > 0) {
+          creditCash(checkingId, -taxAmount, {
+            category: "tax",
+            label: `Trust income tax`,
+            sourceId: trust.entityId,
+          });
+        }
+        // Household beneficiary share of the distributed cash (client/spouse
+        // income beneficiaries). Matches the householdIncomeDelta share taxed
+        // above, so the household is taxed on and receives the same proportion.
+        const householdSharePct = (trust.incomeBeneficiaries ?? [])
+          .filter((b) => b.householdRole === "client" || b.householdRole === "spouse")
+          .reduce((sum, b) => sum + b.percentage, 0);
+        if (distAmount > 0 && householdSharePct > 0) {
+          creditCash(defaultChecking?.id, (distAmount * householdSharePct) / 100, {
+            category: "income",
+            label: `Non-grantor trust distribution`,
+            sourceId: trust.entityId,
+          });
+        }
       }
     }
 
@@ -3979,7 +4104,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // T9: use year-aware liabilityOwnersForYear so gift events that transferred
     // liability ownership to an entity route debt service to the entity's checking
     // starting the year the gift fires.
-    for (const liab of data.liabilities) {
+    // C1: iterate currentLiabilities (not the static data.liabilities) so
+    // purchase-created synthetic mortgages (technique-liab-*) — which are absent
+    // from data.liabilities but present in liabResult.byLiability / the P&L total
+    // — actually have their payment debited from cash. Removed liabilities are
+    // harmless: byLiability lacks them, so payment is 0 and the loop continues.
+    for (const liab of currentLiabilities) {
       const payment = liabResult.byLiability[liab.id] ?? 0;
       if (payment === 0) continue;
       const liabYearOwners = liabilityOwnersForYear(liab, data.giftEvents, year, planSettings.planStartYear);
@@ -4404,7 +4534,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // negative: any deficit after income/expenses/taxes/savings (and the BoY
     // purchase equity) is refilled from the withdrawal strategy (grossed up
     // for tax).
-    let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
+    const withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     const entityWithdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
@@ -4457,6 +4587,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // equity tax counterfactual (below) re-runs from the same baseline.
     let finalTaxInput: YearTaxInput = baseTaxInput;
     let convergenceWarning: TrustWarning | null = null;
+    // Converged draw target for the legacy no-checking branch (base deficit +
+    // recomputed tax + penalty). Sized in phase 12 below; the application
+    // block posts any (target − funded) remainder as an overdraft (M14).
+    let legacyShortfallTarget = 0;
 
     // If bracket-fillers exist, recompute `taxOutForIter` with the seeded
     // fill-bracket taxable layered in. This runs whether or not we enter the
@@ -4695,6 +4829,128 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             };
           }
         }
+      }
+    } else {
+      // Legacy path: no default checking → a deficit triggers a direct draw.
+      // H7/M13 (audit 2026-07-01): the draw recognizes income via
+      // categorizeDraw, recomputes the year's tax, and charges the pre-59½
+      // penalty — mirroring the hasChecking convergence loop above. The
+      // deficit also folds in the fill-bracket conversion tax delta (seeded
+      // `taxOutForIter` vs the base `taxes` already inside
+      // householdNonSavingsOutflows) so a conversion's tax bill is funded even
+      // when base flows are balanced. Purchase equity is folded into outflows
+      // so a purchase-driven deficit still triggers a withdrawal. Runs here in
+      // phase 12 (not the application block below) so `finalTaxResult` /
+      // `finalTaxes` capture the recomputed tax; the balance mutations happen
+      // in the application block, mirroring the hasChecking split.
+      const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
+      const seededTaxes = taxOutForIter.taxes;
+      const legacyNetFlow =
+        householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity
+        - (seededTaxes - taxes);
+      if (legacyNetFlow < 0) {
+        const baseDeficit = -legacyNetFlow;
+        let target = baseDeficit;
+        for (let iter = 0; iter < MAX_ITER; iter++) {
+          // planSupplementalWithdrawal enforces the pre-65 HSA lock per owner
+          // age internally, so no strategy pre-filter is needed here.
+          supplementalPlan = planSupplementalWithdrawal({
+            shortfall: target,
+            strategy: effectiveWithdrawalStrategy,
+            householdBalances: householdWithdrawBalances,
+            basisMap,
+            freshBasisMap,
+            rothValueMap,
+            accounts: workingAccounts,
+            ages: { client: ages.client, spouse: ages.spouse ?? null },
+            isSpouseAccount,
+            year,
+          });
+
+          // Recompute the year's tax with the draw's recognized income layered
+          // on top of the (fill-bracket-seeded) baseline — same input shape as
+          // the hasChecking loop's step (c), minus bracket re-sizing (the
+          // seeded fill-bracket targets stay fixed on this path).
+          const totalFillBracketTaxable = Object.values(pendingFillBracketTargets)
+            .reduce((s, v) => s + v, 0);
+          const taxDetailWithDraws: typeof taxDetail = {
+            ...baselineTaxDetail,
+            ordinaryIncome:
+              baselineTaxDetail.ordinaryIncome
+              + totalFillBracketTaxable
+              + supplementalPlan.recognizedIncome.ordinaryIncome,
+            capitalGains:
+              baselineTaxDetail.capitalGains
+              + supplementalPlan.recognizedIncome.capitalGains,
+            bySource: { ...baselineTaxDetail.bySource },
+          };
+
+          // Fold supplemental IRA/401(k) draws into the per-source retirement
+          // breakdown so state retirement-income exclusions (PA, IL, MS, and
+          // capped states) apply to spending-driven distributions — mirrors
+          // the hasChecking loop.
+          const supplementalRetirementBreakdown = { ...retirementBreakdown };
+          for (const draw of supplementalPlan.draws) {
+            if (draw.ordinaryIncome <= 0) continue;
+            const sub = accountById.get(draw.accountId)?.subType ?? "";
+            if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
+            else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
+          }
+
+          const legacyTaxInput: YearTaxInput = {
+            taxDetail: taxDetailWithDraws,
+            socialSecurityGross: income.socialSecurity,
+            totalIncome: income.total,
+            taxableIncome:
+              taxableIncome
+              + totalFillBracketTaxable
+              + supplementalPlan.recognizedIncome.ordinaryIncome
+              + supplementalPlan.recognizedIncome.capitalGains,
+            filingStatus,
+            year,
+            planSettings: planSettingsForYear,
+            resolved: resolved ?? null,
+            useBracket,
+            aboveLineDeductions,
+            itemizedDeductions,
+            charityCarryforwardIn: charityCarryforward,
+            charityGiftsThisYear,
+            secaResult,
+            transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+            interestIncomeForTax,
+            deductionBreakdownIn: deductionBreakdownResult ?? null,
+            retirementBreakdown: supplementalRetirementBreakdown,
+            primaryAge: ages.client,
+            spouseAge: ages.spouse,
+            isoSpread: equityIsoSpread,
+          };
+          taxOutForIter = computeTaxForYear(legacyTaxInput);
+          finalTaxInput = legacyTaxInput;
+
+          const desiredTotal =
+            baseDeficit
+            + (taxOutForIter.taxes - seededTaxes)
+            + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+
+          // Pool exhausted: draws can't grow further and the recomputed tax
+          // already reflects the actual draws. The remainder becomes the
+          // overdraft posted in the application block below.
+          if (supplementalPlan.total < target - TOLERANCE) {
+            target = desiredTotal;
+            break;
+          }
+
+          const residual = desiredTotal - target;
+          if (Math.abs(residual) <= TOLERANCE) break;
+
+          // Newton step, same shape as the hasChecking loop: gross up by the
+          // draw's effective tax+penalty rate to accelerate convergence.
+          const legacyCost = desiredTotal - baseDeficit;
+          const effectiveRate =
+            supplementalPlan.total > 0 ? legacyCost / supplementalPlan.total : 0;
+          target += residual / Math.max(0.01, 1 - effectiveRate);
+        }
+        legacyShortfallTarget = target;
       }
     }
 
@@ -4979,45 +5235,96 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     } else {
-      // TODO(F5-followup): unify with the iterative convergence path. This branch
-      // doesn't gross up or model withdrawal tax — see future-work/engine.md
-      // "Unify legacy no-checking path with iterative tax convergence".
-      // Legacy path: no default checking → deficit triggers withdrawal directly
-      // (no gross-up because the legacy path doesn't model the withdrawal tax
-      // separately). Purchase equity is folded into outflows so a purchase-driven
-      // deficit still triggers a withdrawal.
-      const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
-      const legacyNetFlow = householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity;
-      if (legacyNetFlow < 0) {
-        // Filter pre-65 HSA entries: the legacy no-checking path is age-blind,
-        // so we must enforce the 65-gate here before handing it the strategy.
-        const legacyStrategy = effectiveWithdrawalStrategy.filter((s) => {
-          const acct = workingAccounts.find((a) => a.id === s.accountId);
-          if (!acct) return true;
-          const ownerAge = isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
-          return !isHsaWithdrawalLocked(acct, ownerAge);
-        });
-        withdrawals = executeWithdrawals(
-          -legacyNetFlow,
-          legacyStrategy,
-          householdWithdrawBalances,
-          year
-        );
-        for (const [acctId, amount] of Object.entries(withdrawals.byAccount)) {
-          accountBalances[acctId] -= amount;
-          if (accountLedgers[acctId]) {
-            accountLedgers[acctId].distributions += amount;
-            accountLedgers[acctId].endingValue -= amount;
-            accountLedgers[acctId].entries.push({
+      // Legacy path (no default checking): apply the draws planned by the
+      // phase-12 legacy convergence above. Same balance/basis/Roth
+      // bookkeeping as the hasChecking application block, minus the checking
+      // refill leg (proceeds pay expenses directly in the legacy model).
+      {
+        for (const draw of supplementalPlan.draws) {
+          if (draw.amount <= 0) continue;
+          const preBalance = accountBalances[draw.accountId] ?? 0;
+          accountBalances[draw.accountId] -= draw.amount;
+          withdrawals.byAccount[draw.accountId] =
+            (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
+          withdrawals.total += draw.amount;
+
+          const drawAccount = accountById.get(draw.accountId);
+          const gatesBasis =
+            (drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0;
+          const basisBefore = basisMap[draw.accountId] ?? 0;
+          const entryBasisDelta = gatesBasis
+            ? -Math.min(draw.basisReturn, basisBefore)
+            : 0;
+
+          if (accountLedgers[draw.accountId]) {
+            accountLedgers[draw.accountId].distributions += draw.amount;
+            accountLedgers[draw.accountId].endingValue -= draw.amount;
+            accountLedgers[draw.accountId].entries.push({
               category: "withdrawal",
               label: "Withdrawal to cover shortfall",
-              amount: -amount,
-              // Legacy no-checking path does NOT touch basisMap (it drains a
-              // separate householdWithdrawBalances pool), so the basisMap delta
-              // is 0 here. Carrying basis 0 keeps reconciliation consistent —
-              // no basis moved on either side. See future-work/engine.md.
-              basis: 0,
+              amount: -draw.amount,
+              basis: entryBasisDelta, // == basisMap delta applied by the gate below
             });
+          }
+
+          if (gatesBasis) {
+            basisMap[draw.accountId] = Math.max(0, basisBefore - draw.basisReturn);
+            const freshBefore = freshBasisMap[draw.accountId] ?? 0;
+            const consumed = Math.min(freshBefore, draw.amount);
+            freshBasisMap[draw.accountId] = Math.max(0, freshBefore - consumed);
+
+            if (accountLedgers[draw.accountId]) {
+              const existing = accountLedgers[draw.accountId].withdrawalDetail ?? { realizedLtcg: 0, basisReturn: 0 };
+              accountLedgers[draw.accountId].withdrawalDetail = {
+                realizedLtcg: existing.realizedLtcg + draw.capitalGains,
+                basisReturn: existing.basisReturn + draw.basisReturn,
+              };
+            }
+          }
+
+          if (
+            (drawAccount?.subType === "401k" || drawAccount?.subType === "403b") &&
+            preBalance > 0
+          ) {
+            const fraction = Math.min(1, draw.amount / preBalance);
+            rothValueMap[draw.accountId] = Math.max(
+              0,
+              (rothValueMap[draw.accountId] ?? 0) * (1 - fraction),
+            );
+          }
+        }
+
+        // M14: any unfunded remainder overdraws the last-drawn (or first
+        // eligible strategy) account, mirroring a hasChecking plan whose
+        // checking goes negative when broke. Without this, a depleted
+        // no-checking plan silently absorbs the deficit, its liquid total
+        // never dips below zero, and Monte-Carlo can never classify failure.
+        // No income is recognized on the overdraft — it's an unfunded
+        // shortfall, not a real distribution.
+        const unfunded = legacyShortfallTarget - supplementalPlan.total;
+        if (unfunded > TOLERANCE) {
+          const overdraftId =
+            supplementalPlan.draws.length > 0
+              ? supplementalPlan.draws[supplementalPlan.draws.length - 1].accountId
+              : effectiveWithdrawalStrategy
+                  .filter((s) => year >= s.startYear && year <= s.endYear)
+                  .sort((a, b) => a.priorityOrder - b.priorityOrder)
+                  .find((s) => accountBalances[s.accountId] !== undefined)?.accountId;
+          if (overdraftId) {
+            accountBalances[overdraftId] -= unfunded;
+            withdrawals.byAccount[overdraftId] =
+              (withdrawals.byAccount[overdraftId] ?? 0) + unfunded;
+            withdrawals.total += unfunded;
+            if (accountLedgers[overdraftId]) {
+              accountLedgers[overdraftId].distributions += unfunded;
+              accountLedgers[overdraftId].endingValue -= unfunded;
+              accountLedgers[overdraftId].entries.push({
+                category: "withdrawal",
+                label: "Unfunded shortfall (accounts depleted)",
+                amount: -unfunded,
+                basis: 0,
+              });
+            }
           }
         }
       }
@@ -5255,7 +5562,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // the income-tax report "Total Tax" (taxResult.flow.totalTax) read the same
     // number. `finalTaxes`/`taxAndPenalty` above captured the pre-fold totalTax,
     // so the actual checking debit is unaffected.
-    if (hasChecking && supplementalEarlyPenalty > 0) {
+    // Applies on BOTH funding paths: the hasChecking convergence loop and the
+    // legacy no-checking branch (H7) populate `supplementalPlan` the same way.
+    if (supplementalEarlyPenalty > 0) {
       finalTaxResult.flow.earlyWithdrawalPenalty += supplementalEarlyPenalty;
       finalTaxResult.flow.totalTax += supplementalEarlyPenalty;
       finalTaxResult.flow.totalFederalTax += supplementalEarlyPenalty;
@@ -5457,6 +5766,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             basis: -saveAmount, // cash outflow: basis == amount (signed)
           });
           accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
+          // H5: the saved surplus is after-tax cash, so it raises the
+          // destination's cost basis 1:1 — otherwise a later sale re-recognizes
+          // it as capital gain (basisMap persists across years and feeds the
+          // withdrawal cap-gain gate at draw time). Only taxable destinations
+          // track a basisMap-backed basis: the EoY stamp reads basisMap for
+          // non-cash, cash stamps endingValue, and pre-tax carries no cost
+          // basis. Gate the ledger entry's basis to match so I2 holds for the
+          // destination in every case. Mirrors the hypo-savings path.
+          const destCategory = accountById.get(saveDestId!)?.category;
+          const destTaxable = destCategory === "taxable";
+          if (destTaxable) {
+            basisMap[saveDestId!] = (basisMap[saveDestId!] ?? 0) + saveAmount;
+          }
           const destLedger = accountLedgers[saveDestId!];
           if (destLedger) {
             destLedger.endingValue += saveAmount;
@@ -5466,7 +5788,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               label: "Surplus transferred in",
               amount: saveAmount,
               sourceId: checkingId,
-              basis: saveAmount, // post-tax surplus deposit: basis == amount
+              // Taxable & cash carry basis == amount (after-tax / cash
+              // convention); pre-tax got no basisMap bump, so its entry basis is
+              // 0 to keep basisBoY + Σ entry.basis == basisEoY.
+              basis: destTaxable || destCategory === "cash" ? saveAmount : 0,
             });
           }
         } else if (saveAmount > 0 && checkingLedger) {
@@ -5537,37 +5862,76 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 4d-2: hypothetical estate tax — computed on the pre-real-death snapshot
-    // of year-N state, so the report always displays consistent "both die in
-    // year N" numbers regardless of where real deaths land. Attached to the
-    // ProjectionYear at push time so the required field is always populated.
-    // "Married" for the hypothetical means "a spouse exists to die second" —
-    // the same signal the real projection uses to schedule the second death
-    // (see computeFinalDeathYear, which keys off `client.spouseDob`). Deriving
-    // this from filingStatus would model only one death for a spouse'd
-    // household that files single/separately, routing everything to the
-    // surviving spouse under the marital deduction and showing $0 to heirs.
+    // 4d-2: hypothetical estate tax — anchored to the real projected first death.
+    //
+    // For years N ≤ F (the real first death, or before it): both spouses are
+    // still assumed alive, so we run the "both die in year N" hypothetical
+    // (both orderings) on the pre-real-death snapshot of year-N state. This is
+    // the `computeHypotheticalEstateTax` else-branch below, byte-identical to
+    // the legacy behavior.
+    //
+    // For years N strictly after F (once `realFirstDeath` is populated — this
+    // block runs before the current year's death block, so it is null in year F
+    // itself and only non-null from F+1 onward): we FREEZE the real first death
+    // and model only the survivor dying at N. Re-running the first death here
+    // would recompute it against the drained post-death state (assets already
+    // passed to the survivor), producing a bogus $0 first-death estate; the
+    // anchored path reuses the frozen year-F event instead.
+    //
+    // Attached to the ProjectionYear at push time so the required field is
+    // always populated. "Married" for the (pre-F) hypothetical means "a spouse
+    // exists to die second" — the same signal the real projection uses to
+    // schedule the second death (see computeFinalDeathYear, which keys off
+    // `client.spouseDob`). Deriving this from filingStatus would model only one
+    // death for a spouse'd household that files single/separately, routing
+    // everything to the surviving spouse under the marital deduction and
+    // showing $0 to heirs.
     const hypotheticalIsMarried = client.spouseDob != null;
-    const hypotheticalEstateTax = computeHypotheticalEstateTax({
-      year,
-      isMarried: hypotheticalIsMarried,
-      accounts: workingAccounts,
-      accountBalances,
-      basisMap,
-      incomes: currentIncomes,
-      liabilities: currentLiabilities,
-      familyMembers: data.familyMembers ?? [],
-      externalBeneficiaries: data.externalBeneficiaries ?? [],
-      entities: currentEntities,
-      wills: data.wills ?? [],
-      planSettings,
-      gifts: data.gifts ?? [],
-      giftEvents: data.giftEvents,
-      yearEndAccountBalances,
-      annualExclusionsByYear,
-      entityAccountSharesEoY: lockedEntityShareCarry,
-      familyAccountSharesEoY: lockedFamilyShareCarry,
-    });
+    const hypotheticalEstateTax =
+      realFirstDeath != null
+        ? computeAnchoredHypotheticalEstateTax({
+            year,
+            survivor: realFirstDeath.decedent === "client" ? "spouse" : "client",
+            realFirstDeath,
+            accounts: workingAccounts,
+            accountBalances,
+            basisMap,
+            incomes: currentIncomes,
+            liabilities: currentLiabilities,
+            familyMembers: data.familyMembers ?? [],
+            externalBeneficiaries: data.externalBeneficiaries ?? [],
+            entities: currentEntities,
+            wills: data.wills ?? [],
+            planSettings,
+            gifts: data.gifts ?? [],
+            giftEvents: data.giftEvents,
+            relocations: data.relocations,
+            yearEndAccountBalances,
+            annualExclusionsByYear,
+            priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+            entityAccountSharesEoY: lockedEntityShareCarry,
+            familyAccountSharesEoY: lockedFamilyShareCarry,
+          })
+        : computeHypotheticalEstateTax({
+            year,
+            isMarried: hypotheticalIsMarried,
+            accounts: workingAccounts,
+            accountBalances,
+            basisMap,
+            incomes: currentIncomes,
+            liabilities: currentLiabilities,
+            familyMembers: data.familyMembers ?? [],
+            externalBeneficiaries: data.externalBeneficiaries ?? [],
+            entities: currentEntities,
+            wills: data.wills ?? [],
+            planSettings,
+            gifts: data.gifts ?? [],
+            giftEvents: data.giftEvents,
+            yearEndAccountBalances,
+            annualExclusionsByYear,
+            entityAccountSharesEoY: lockedEntityShareCarry,
+            familyAccountSharesEoY: lockedFamilyShareCarry,
+          });
 
     // Stamp end-of-year basis onto each ledger now that all sales, growth
     // realization, contributions, and Roth conversions have settled. Death-
@@ -5829,6 +6193,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Stash DSUE for the final-death call (portability per §2010(c)(4)).
       stashedDSUE = deathResult.dsueGenerated;
+
+      // Freeze the real first death so every subsequent year's hypothetical
+      // anchors to it (survivor-dies-at-N) rather than re-running the first
+      // death against the now-drained post-death state. `firstDeathDeceased` is
+      // narrowed to "client" | "spouse" by this block's guard.
+      realFirstDeath = {
+        decedent: firstDeathDeceased,
+        estateTax: deathResult.estateTax,
+        transfers: deathResult.transfers,
+        dsueGenerated: deathResult.dsueGenerated,
+      };
     }
 
     // Final-death event (spec 4c) — fires at the final death year. For

@@ -37,6 +37,18 @@ export function SolverYearDetailPanel({ year, clientData }: Props) {
         <Column heading="Outflows" categories={detail.outflows} />
       </div>
 
+      {detail.withdrawals ? (
+        <div className="mt-3 border-t border-hair pt-2">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-4">
+            Portfolio Drawdown
+          </div>
+          <CategoryRow category={detail.withdrawals} />
+          <p className="mt-0.5 text-[11px] text-ink-4">
+            Funds the cash-flow gap; not counted in Total Inflows.
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 border-t border-hair pt-2 text-[12px] sm:grid-cols-2">
         <TotalRow label="Total Inflows" amount={detail.totals.inflows} />
         <TotalRow label="Total Outflows" amount={detail.totals.outflows} />

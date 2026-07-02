@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectionResult, ClientData } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
-import { netToHeirsEol } from "@/lib/solver/solver-summary-metrics";
+import { estateDistributionAtYear } from "@/lib/estate/estate-distribution-at-year";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 
 interface Args {
@@ -22,7 +22,7 @@ interface Args {
 }
 
 /**
- * Sources the KPI strip's "Net to Heirs" tile. Unlike the other KPIs, the
+ * Sources the KPI strip's "Total to Heirs" tile. Unlike the other KPIs, the
  * estate transfer report needs a full projection *with death events*, which
  * only comes from the server (`includeEvents: true`). Mirrors the debounced
  * fetch pattern in `useSolverSummaryData`:
@@ -37,9 +37,13 @@ export function useSolverNetToHeirs(args: Args) {
 
   const [working, setWorking] = useState<number | null>(null);
   const [base, setBase] = useState<number | null>(null);
+  // Sourced from the same with-events working fetch that feeds the KPI. The
+  // events-less `currentProjection` in the workspace has no death events, so
+  // this hook is the only place `firstDeathEvent.year` is available to thread
+  // down to the estate chart's death-order toggle.
+  const [firstDeathYear, setFirstDeathYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const baseFetched = useRef(false);
 
   // Working scenario — debounced, re-runs whenever mutations change.
   useEffect(() => {
@@ -61,9 +65,29 @@ export function useSolverNetToHeirs(args: Args) {
         const data = parseProjectionResponse<{ projectionResult?: ProjectionResult }>(
           await res.text(),
         );
-        setWorking(netToHeirsEol(data.projectionResult, workingTree, ownerNames));
+        // Anchor the KPI to the estate distribution at the second death (or the
+        // final projected year if unmarried/single-death), routed through the
+        // shared builder so the KPI equals the estate chart at its max slider
+        // year by construction.
+        const Y =
+          data.projectionResult?.secondDeathEvent?.year ??
+          data.projectionResult?.years.at(-1)?.year;
+        setWorking(
+          data.projectionResult && Y != null
+            ? estateDistributionAtYear({
+                projection: data.projectionResult,
+                year: Y,
+                clientData: workingTree,
+                ownerNames,
+              }).toHeirs
+            : null,
+        );
+        setFirstDeathYear(data.projectionResult?.firstDeathEvent?.year ?? null);
       } catch {
-        if (!controller.signal.aborted) setWorking(null);
+        if (!controller.signal.aborted) {
+          setWorking(null);
+          setFirstDeathYear(null);
+        }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -75,9 +99,12 @@ export function useSolverNetToHeirs(args: Args) {
   }, [enabled, clientId, source, mutations, workingTree, ownerNames]);
 
   // Base plan — fetched once, then cached (the base tree doesn't change).
+  // Guarded on `base == null` rather than a "started" ref: a ref guard strands
+  // the base (and the vs-Base delta) forever when the first attempt is aborted
+  // by effect cleanup — StrictMode's dev double-invoke, or switching to a
+  // KPI-less report mid-flight. State-guarding retries until a value lands.
   useEffect(() => {
-    if (!enabled || baseFetched.current) return;
-    baseFetched.current = true;
+    if (!enabled || base != null) return;
     const controller = new AbortController();
     (async () => {
       try {
@@ -91,18 +118,26 @@ export function useSolverNetToHeirs(args: Args) {
         const data = parseProjectionResponse<{ projectionResult?: ProjectionResult }>(
           await res.text(),
         );
-        setBase(netToHeirsEol(data.projectionResult, baseClientData, ownerNames));
+        const Y =
+          data.projectionResult?.secondDeathEvent?.year ??
+          data.projectionResult?.years.at(-1)?.year;
+        setBase(
+          data.projectionResult && Y != null
+            ? estateDistributionAtYear({
+                projection: data.projectionResult,
+                year: Y,
+                clientData: baseClientData,
+                ownerNames,
+              }).toHeirs
+            : null,
+        );
       } catch {
-        if (!controller.signal.aborted) {
-          // Allow a retry on the next enable if the one-shot fetch failed.
-          baseFetched.current = false;
-          setBase(null);
-        }
+        if (!controller.signal.aborted) setBase(null);
       }
     })();
     return () => { controller.abort(); };
-  }, [enabled, clientId, baseClientData, ownerNames]);
+  }, [enabled, clientId, baseClientData, ownerNames, base]);
 
   const delta = working != null && base != null ? working - base : null;
-  return { netToHeirs: working, netToHeirsDelta: delta, loading };
+  return { netToHeirs: working, netToHeirsDelta: delta, firstDeathYear, loading };
 }

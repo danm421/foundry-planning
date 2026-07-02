@@ -27,7 +27,7 @@ export function buildLifeInsuranceNarrative(input: NarrativeInput): string[] {
 
   const policyWord = input.policyCount === 1 ? "policy" : "policies";
   lines.push(
-    `${input.policyCount} in-force ${policyWord} totaling ${fmtUsd(input.totalDeathBenefit)} of death benefit.`,
+    `${input.policyCount} ${policyWord} totaling ${fmtUsd(input.totalDeathBenefit)} of death benefit.`,
   );
 
   if (input.notSolved) {

@@ -73,9 +73,7 @@ export function YearlyEstateTable({
         label: "Charitable Bequests",
         total: totals.charitableBequests,
       },
-      { key: "netToHeirs", label: "Net To Heirs", total: totals.netToHeirs },
-      { key: "heirsAssets", label: "Heirs Assets" },
-      { key: "totalToHeirs", label: "Total To Heirs", bold: true },
+      { key: "totalToHeirs", label: "To Heirs", bold: true },
       { key: "charity", label: "Charity" },
     ];
     return cols.filter((c) => {

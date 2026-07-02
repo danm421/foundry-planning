@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { buildCashFlowYearDetail } from "../cashflow-year-detail";
 import type { ClientData, ProjectionYear } from "@/engine";
 
-// Minimal ProjectionYear factory — only the fields the helper reads.
+// Minimal ProjectionYear factory — only the fields the helper reads. Engine-
+// consistent: totalIncome = displayIncome.total (70k) + household RMD (15k) = 85k
+// and EXCLUDES the 20k portfolio withdrawal and the 8k entity-owned RMD.
 function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
   return {
     year: 2034,
@@ -14,7 +16,8 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     },
     withdrawals: { byAccount: { "acc-brokerage": 20_000 }, total: 20_000 },
     accountLedgers: {
-      "acc-ira": { rmdAmount: 15_000 } as never,
+      "acc-ira": { rmdAmount: 15_000 } as never,       // household-owned
+      "acc-trust-ira": { rmdAmount: 8_000 } as never,  // entity-owned → excluded
       "acc-brokerage": { rmdAmount: 0 } as never,
     },
     expenses: {
@@ -26,9 +29,9 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
       interestByLiability: { "liab-mortgage": 7_000 },
     },
     savings: { byAccount: { "acc-401k": 10_000 }, total: 10_000, employerTotal: 0 },
-    totalIncome: 120_000,
+    totalIncome: 85_000,
     totalExpenses: 103_000,
-    netCashFlow: 17_000,
+    netCashFlow: -18_000,
     portfolioAssets: {
       taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {},
       lifeInsurance: {}, stockOptions: {}, taxableTotal: 0, cashTotal: 0,
@@ -41,6 +44,9 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
   } as ProjectionYear;
 }
 
+const fmOwner = [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }];
+const entityOwner = [{ kind: "entity", entityId: "ent-trust", percent: 1 }];
+
 function makeClientData(): ClientData {
   return {
     client: { firstName: "A", lastName: "B" },
@@ -50,9 +56,10 @@ function makeClientData(): ClientData {
     ],
     entities: [],
     accounts: [
-      { id: "acc-ira", name: "Traditional IRA", category: "retirement" },
-      { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable" },
-      { id: "acc-401k", name: "401(k)", category: "retirement" },
+      { id: "acc-ira", name: "Traditional IRA", category: "retirement", owners: fmOwner },
+      { id: "acc-trust-ira", name: "Trust IRA", category: "retirement", owners: entityOwner },
+      { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable", owners: fmOwner },
+      { id: "acc-401k", name: "401(k)", category: "retirement", owners: fmOwner },
     ],
     liabilities: [{ id: "liab-mortgage", name: "Home Mortgage" }],
     expenses: [
@@ -71,11 +78,13 @@ describe("buildCashFlowYearDetail", () => {
     const d = buildCashFlowYearDetail(makeYear(), makeClientData());
     const inflowSum = d.inflows.reduce((s, c) => s + c.total, 0);
     const outflowSum = d.outflows.reduce((s, c) => s + c.total, 0);
-    expect(Math.round(inflowSum)).toBe(120_000);
+    // Inflow categories (income 70k + household RMD 15k) tie to totalIncome (85k);
+    // withdrawals are NOT part of the reconciled inflows.
+    expect(Math.round(inflowSum)).toBe(85_000);
     expect(Math.round(outflowSum)).toBe(103_000);
-    expect(d.totals.inflows).toBe(120_000);
+    expect(d.totals.inflows).toBe(85_000);
     expect(d.totals.outflows).toBe(103_000);
-    expect(d.totals.net).toBe(17_000);
+    expect(d.totals.net).toBe(-18_000);
   });
 
   it("resolves income source names and drops $0 sources", () => {
@@ -85,10 +94,10 @@ describe("buildCashFlowYearDetail", () => {
     expect(income.items.every((i) => i.amount > 0)).toBe(true);
   });
 
-  it("lists RMDs by source account name, omitting zero-RMD accounts", () => {
+  it("lists RMDs only for household-owned accounts, excluding entity-owned RMDs", () => {
     const d = buildCashFlowYearDetail(makeYear(), makeClientData());
     const rmds = d.inflows.find((c) => c.key === "rmds")!;
-    expect(rmds.total).toBe(15_000);
+    expect(rmds.total).toBe(15_000); // entity-owned acc-trust-ira (8k) excluded
     expect(rmds.items).toEqual([
       { id: "acc-ira", label: "Traditional IRA", amount: 15_000 },
     ]);
@@ -106,11 +115,25 @@ describe("buildCashFlowYearDetail", () => {
     ]);
   });
 
-  it("surfaces an Other-inflows residual when totalIncome exceeds enumerated inflows", () => {
-    // income(70k via bySource) + rmds(15k) + withdrawals(20k) = 105k; totalIncome 120k ⇒ 15k residual
+  it("surfaces portfolio withdrawals as a separate line, not a negative Other inflow", () => {
     const d = buildCashFlowYearDetail(makeYear(), makeClientData());
+    // Withdrawals are their own field...
+    expect(d.withdrawals?.total).toBe(20_000);
+    expect(d.withdrawals?.items).toEqual([
+      { id: "acc-brokerage", label: "Joint Brokerage", amount: 20_000 },
+    ]);
+    // ...not a category in the reconciled inflow list...
+    expect(d.inflows.find((c) => c.key === "withdrawals")).toBeUndefined();
+    // ...and no spurious balancing residual (the old −withdrawals "Other" bug).
+    expect(d.inflows.find((c) => c.key === "residual")).toBeUndefined();
+  });
+
+  it("still surfaces a genuine positive Other-inflow residual when totalIncome exceeds enumerated inflows", () => {
+    // totalIncome 92k vs enumerated income(70k)+householdRmd(15k)=85k ⇒ 7k residual
+    // (e.g. a household note/equity cash-in folded into totalIncome but not itemized).
+    const d = buildCashFlowYearDetail(makeYear({ totalIncome: 92_000 }), makeClientData());
     const residual = d.inflows.find((c) => c.key === "residual");
-    expect(residual?.total).toBe(15_000);
+    expect(residual?.total).toBe(7_000);
   });
 
   it("builds an age label with the spouse age only when married", () => {
@@ -156,6 +179,7 @@ describe("buildCashFlowYearDetail", () => {
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
       totalIncome: 0, totalExpenses: 0, netCashFlow: 0,
     });
-    expect(() => buildCashFlowYearDetail(empty, makeClientData())).not.toThrow();
+    const d = buildCashFlowYearDetail(empty, makeClientData());
+    expect(d.withdrawals).toBeNull();
   });
 });

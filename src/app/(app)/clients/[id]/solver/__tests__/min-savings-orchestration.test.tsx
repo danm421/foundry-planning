@@ -114,6 +114,7 @@ const baseProps = {
   clientName: "Cooper",
   spouseName: "Spouse",
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
+  retirementDefaultMix: [],
   baseGifts: [],
 };
 

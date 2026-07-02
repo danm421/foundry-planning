@@ -176,6 +176,27 @@ describe("POST /api/clients/[id]/solver/solve", () => {
     expect(res.status).toBe(400);
   });
 
+  it("seeds Monte Carlo from the request's scenario source, not a hardcoded base (F8)", async () => {
+    // Each scenario row carries its own MC seed; passing "base" here would make the
+    // solved PoS disagree with the gauge (which seeds off `source`) for any non-base
+    // scenario. The 3rd positional arg of loadMonteCarloData is the seed source.
+    vi.mocked(solveTarget).mockResolvedValueOnce({
+      status: "converged", solvedValue: 100, achievedPoS: 0.85, iterations: 1, finalProjection: [],
+    } as never);
+    const source = "11111111-1111-4111-8111-111111111111";
+    const res = await POST(
+      makeRequest({
+        source,
+        mutations: [],
+        target: { kind: "retirement-age", person: "client" },
+        targetPoS: 0.85,
+      }),
+      ctx,
+    );
+    await readBody(res); // drain the SSE stream so the async start() runs to completion
+    expect(vi.mocked(loadMonteCarloData).mock.calls[0][2]).toBe(source);
+  });
+
   it("threads extraAccountMixes into loadMonteCarloData", async () => {
     vi.mocked(solveTarget).mockResolvedValueOnce({
       status: "converged",

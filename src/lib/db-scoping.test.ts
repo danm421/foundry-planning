@@ -79,6 +79,8 @@ import {
   accounts,
   liabilities,
   entities,
+  externalBeneficiaries,
+  familyMembers,
   modelPortfolios,
   assetClasses,
   clients,
@@ -89,13 +91,15 @@ import {
   assertBusinessAccountsInClient,
   assertLiabilitiesInClient,
   assertEntitiesInClient,
+  assertFamilyMembersInClient,
+  assertExternalBeneficiariesInClient,
   assertModelPortfoliosInFirm,
   assertTickerPortfoliosInFirm,
   assertAssetClassesInFirm,
   findClientInFirm,
 } from "@/lib/db-scoping";
 
-function setTable(table: any, rows: Record<string, unknown>[]) {
+function setTable(table: Parameters<typeof getTableName>[0], rows: Record<string, unknown>[]) {
   h.tables[getTableName(table)] = rows;
 }
 
@@ -180,6 +184,39 @@ describe("assertEntitiesInClient", () => {
   it("rejects an entity owned by another client (clientId filter guard)", async () => {
     setTable(entities, [{ id: A, client_id: "cB" }]);
     expect((await assertEntitiesInClient("cA", [A])).ok).toBe(false);
+  });
+});
+
+describe("assertFamilyMembersInClient", () => {
+  it("is ok (no query) when ids are empty / null / undefined", async () => {
+    expect((await assertFamilyMembersInClient("cA", [])).ok).toBe(true);
+    expect((await assertFamilyMembersInClient("cA", [null, undefined, ""])).ok).toBe(true);
+  });
+
+  it("is ok when the family member belongs to the client", async () => {
+    setTable(familyMembers, [{ id: A, client_id: "cA" }]);
+    expect((await assertFamilyMembersInClient("cA", [A])).ok).toBe(true);
+  });
+
+  it("rejects a family member owned by another client (clientId filter guard)", async () => {
+    setTable(familyMembers, [{ id: A, client_id: "cB" }]);
+    const res = await assertFamilyMembersInClient("cA", [A]);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toContain(A);
+  });
+});
+
+describe("assertExternalBeneficiariesInClient", () => {
+  it("is ok when the external beneficiary belongs to the client", async () => {
+    setTable(externalBeneficiaries, [{ id: A, client_id: "cA" }]);
+    expect((await assertExternalBeneficiariesInClient("cA", [A])).ok).toBe(true);
+  });
+
+  it("rejects an external beneficiary owned by another client (clientId filter guard)", async () => {
+    setTable(externalBeneficiaries, [{ id: A, client_id: "cB" }]);
+    const res = await assertExternalBeneficiariesInClient("cA", [A]);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toContain(A);
   });
 });
 

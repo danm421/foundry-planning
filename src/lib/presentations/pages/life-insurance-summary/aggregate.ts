@@ -31,20 +31,35 @@ export function inventoryTotals(rows: LiPolicyRow[]): InventoryTotals {
   );
 }
 
+/** Whether a policy still pays out in `year`. Permanent policies always do; a
+ *  term policy is in force through its expiry year inclusive — mirroring the
+ *  engine, which drops a term policy only once `year > endYear`
+ *  (projection.ts term-retirement filter). A term row with no known expiry is
+ *  treated as in force. Comparing coverage against the solved need REQUIRES this
+ *  filter: the engine excludes expired term from the need, so summing expired
+ *  term into `have` inverts the presented shortfall. */
+export function isInForce(row: LiPolicyRow, year: number): boolean {
+  if (row.policyType !== "term") return true;
+  if (row.termExpiryYear == null) return true;
+  return year <= row.termExpiryYear;
+}
+
 // ── Per-decedent current coverage (joint excluded — see spec) ────────────────
 export interface DecedentCoverage {
   total: number;
-  /** True when a joint-life policy exists; surfaced as a footnote because the
-   *  data model can't distinguish first-to-die from survivorship. */
+  /** True when an in-force joint-life policy exists; surfaced as a footnote
+   *  because the data model can't distinguish first-to-die from survivorship. */
   hasJoint: boolean;
 }
 export function coverageForDecedent(
   rows: LiPolicyRow[],
   decedent: "client" | "spouse",
+  asOfYear: number,
 ): DecedentCoverage {
   let total = 0;
   let hasJoint = false;
   for (const r of rows) {
+    if (!isInForce(r, asOfYear)) continue; // expired term pays nothing at death
     if (r.insuredPerson === "joint") hasJoint = true;
     else if (r.insuredPerson === decedent) total += r.deathBenefit;
   }

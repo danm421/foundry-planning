@@ -146,12 +146,14 @@ describe("custom-streaming frames", () => {
     const events = drain([
       `data: {"type":"tool_render","name":"run_projection","status":"complete","data":{"median":1}}\n\n` +
         `data: {"type":"navigate","href":"/clients/c1/scenarios/s1"}\n\n` +
-        `data: {"type":"activity","label":"Loading"}\n\n`,
+        `data: {"type":"activity","label":"Loading"}\n\n` +
+        `data: {"type":"walkthrough","walkthroughId":"add-household"}\n\n`,
     ]);
     expect(events).toEqual([
       { type: "tool_render", name: "run_projection", status: "complete", data: { median: 1 } },
       { type: "navigate", href: "/clients/c1/scenarios/s1" },
       { type: "activity", label: "Loading" },
+      { type: "walkthrough", walkthroughId: "add-household" },
     ]);
   });
 
@@ -225,6 +227,7 @@ describe("custom-streaming frames", () => {
           encoder.encode(
             `data: {"type":"tool_render","name":"run_projection","status":"complete","data":{"median":2}}\n\n` +
               `data: {"type":"navigate","href":"/clients/c1/scenarios/s2"}\n\n` +
+              `data: {"type":"walkthrough","walkthroughId":"add-household"}\n\n` +
               `data: {"type":"done"}\n\n`,
           ),
         );
@@ -245,6 +248,7 @@ describe("custom-streaming frames", () => {
 
     expect(result.current.lastToolRender).toMatchObject({ type: "tool_render", name: "run_projection" });
     expect(result.current.pendingNavigate).toBe("/clients/c1/scenarios/s2");
+    expect(result.current.pendingWalkthrough).toBe("add-household");
     expect(result.current.status).toBe("done");
   });
 });
