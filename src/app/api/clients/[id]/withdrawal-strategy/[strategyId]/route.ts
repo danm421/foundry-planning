@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,13 @@ export async function PUT(
 
     const body = await request.json();
     const { accountId, priorityOrder, startYear, endYear } = body;
+
+    if (accountId !== undefined) {
+      const acctCheck = await assertAccountsInClient(id, [accountId]);
+      if (!acctCheck.ok) {
+        return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+      }
+    }
 
     const [updated] = await db
       .update(withdrawalStrategies)

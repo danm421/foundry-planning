@@ -7,6 +7,7 @@ import { crmHouseholdDocuments, crmDocumentFolders } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { requireVaultAccess } from "@/lib/crm/authz";
 import { resolveDocumentBlobPathname } from "@/lib/crm/documents";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { collectFolderSubtreeIds } from "@/lib/crm/folder-tree";
 import { authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
@@ -95,13 +96,16 @@ export async function GET(
         if (!pathname) { skipped++; continue; }
         const blob = await get(pathname, { access: "private" });
         if (!blob || blob.statusCode !== 200 || !blob.stream) { skipped++; continue; }
+        // Zip-Slip guard: entry names come from user-supplied filenames, so
+        // flatten any path segments before they become archive paths.
+        const entryBase = toSafeDisplayFilename(doc.filename);
         // De-dup entry names so two files with the same name don't collide.
-        let name = doc.filename;
+        let name = entryBase;
         for (let i = 2; usedNames.has(name); i++) {
-          const dot = doc.filename.lastIndexOf(".");
+          const dot = entryBase.lastIndexOf(".");
           name = dot > 0
-            ? `${doc.filename.slice(0, dot)} (${i})${doc.filename.slice(dot)}`
-            : `${doc.filename} (${i})`;
+            ? `${entryBase.slice(0, dot)} (${i})${entryBase.slice(dot)}`
+            : `${entryBase} (${i})`;
         }
         usedNames.add(name);
         archive.append(Readable.fromWeb(blob.stream as never), { name });

@@ -84,7 +84,7 @@ describe("CRM bulk import — e2e", () => {
       "Zellweger Holdings,Renée,Zellweger,renee@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
     ];
     const buf = Buffer.from([header, ...rows].join("\n"), "utf8");
-    const parsed = parseCsv(buf);
+    const parsed = await parseCsv(buf);
     expect(parsed.errors).toEqual([]);
     expect(parsed.proposed).toHaveLength(5);
 

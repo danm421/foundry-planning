@@ -60,7 +60,7 @@ export default async function RootLayout({
         },
       }}
       appearance={{
-        baseTheme: theme === "dark" ? dark : undefined,
+        theme: theme === "dark" ? dark : undefined,
         variables: {
           colorBackground: "var(--color-card)",
           colorForeground: "var(--color-ink)",

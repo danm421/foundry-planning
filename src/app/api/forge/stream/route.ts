@@ -16,7 +16,11 @@ import { categorizeForgeError, logForgeError } from "@/domain/forge/safe-error";
 import { maybeLangfuseHandler, flushLangfuse } from "@/domain/forge/observability";
 import { parseApprovalInterrupt } from "@/domain/forge/interrupts";
 import { isForgeEnabled, hasForgeEntitlement } from "@/domain/forge/flag";
-import type { ForgeAuthContext, ForgeGlobalAuthContext } from "@/domain/forge/state";
+import type {
+  ForgeAnyAuthContext,
+  ForgeAuthContext,
+  ForgeGlobalAuthContext,
+} from "@/domain/forge/state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -101,6 +105,18 @@ export async function POST(req: Request): Promise<Response> {
       // IDOR guard: a conversation the caller does not own returns 404.
       if (!(await userOwnsConversation(conversationId, userId))) {
         return new Response("Not found", { status: 404 });
+      }
+      // Checkpoint pin (mirrors resume/route.ts): if this thread has persisted
+      // graph state, it must be a GLOBAL thread (no clientId) owned by this
+      // user — a client thread must stream via the client route. Unlike
+      // resume, a null tuple is ALLOWED: a new conversation has no
+      // checkpoint until its first run completes.
+      const tuple = await getCheckpointer().getTuple({ configurable: { thread_id: conversationId } });
+      if (tuple) {
+        const persisted = tuple.checkpoint?.channel_values?.authContext as ForgeAnyAuthContext | undefined;
+        if (!persisted || "clientId" in persisted || persisted.userId !== userId) {
+          return new Response("Not found", { status: 404 });
+        }
       }
     } else {
       conversationId = await createConversation({

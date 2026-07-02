@@ -8,6 +8,7 @@ import {
   resolveDocumentBlobPathname,
 } from "@/lib/crm/documents";
 import { ForbiddenError } from "@/lib/authz";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 
@@ -46,9 +47,9 @@ export async function GET(
     }
 
     // Sanitize filename for the Content-Disposition header — quoted-string
-    // grammar can't contain bare `"` or control chars. Strip the same way
-    // we sanitize storage keys so the download name stays predictable.
-    const safeFilename = doc.filename.replace(/[\r\n"]/g, "_");
+    // grammar can't contain bare `"` or control chars, and legacy rows may
+    // still carry path segments in `filename`.
+    const safeFilename = toSafeDisplayFilename(doc.filename);
 
     const firmId = await requireOrgId();
     await recordAudit({

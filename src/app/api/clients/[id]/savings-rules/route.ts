@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +88,11 @@ export async function POST(
 
     if (!accountId || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const acctCheck = await assertAccountsInClient(id, [accountId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
     const [rule] = await db

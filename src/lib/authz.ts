@@ -3,6 +3,7 @@ import { UnauthorizedError } from "./db-helpers";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
+import { PAST_DUE_GRACE_DAYS } from "@/lib/billing/access-policy";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -63,10 +64,24 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
   "past_due",
 ]);
 
+const PAST_DUE_GRACE_MS = PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
 function metaIsActive(meta: Record<string, unknown>): boolean {
   if (meta.is_founder === true) return true;
   const status = typeof meta.subscription_status === "string" ? meta.subscription_status : null;
-  return !!status && ACTIVE_SUBSCRIPTION_STATUSES.has(status);
+  if (!status || !ACTIVE_SUBSCRIPTION_STATUSES.has(status)) return false;
+  if (status === "past_due") {
+    // Aligned with decideAccess: past_due keeps mutation access only inside
+    // the dunning grace window, keyed off current_period_end (the same field
+    // stateFromMeta uses for pastDueSince). No parseable timestamp → allow,
+    // matching decideAccess's pastDueSince === null branch.
+    const raw = meta.current_period_end;
+    const since = typeof raw === "string" ? new Date(raw) : null;
+    if (since && !Number.isNaN(since.getTime())) {
+      return Date.now() - since.getTime() < PAST_DUE_GRACE_MS;
+    }
+  }
+  return true;
 }
 
 /**
@@ -75,7 +90,7 @@ function metaIsActive(meta: Record<string, unknown>): boolean {
  *
  * Founder bypass: returns void if is_founder=true regardless of status.
  * Otherwise throws ForbiddenError if status is not in the active set
- * (trialing, active, past_due).
+ * (trialing, active, past_due within the PAST_DUE_GRACE_DAYS window).
  *
  * NOT WIRED to any route in Phase 2 — exists for tests + Phase 3 wiring.
  * Read-only-during-grace logic for canceled lives in <SubscriptionGuard>

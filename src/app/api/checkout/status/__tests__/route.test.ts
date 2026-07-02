@@ -65,7 +65,7 @@ describe("GET /api/checkout/status", () => {
     expect(await res.json()).toEqual({ ready: false });
   });
 
-  it("returns ready=true with firmName + buyerEmail once the row exists", async () => {
+  it("returns ready=true with firmName + masked buyerEmail once the row exists", async () => {
     vi.mocked(getStripe).mockReturnValue({
       checkout: {
         sessions: {
@@ -84,7 +84,9 @@ describe("GET /api/checkout/status", () => {
     expect(await res.json()).toEqual({
       ready: true,
       firmName: "Acme Wealth",
-      buyerEmail: "buyer@example.com",
+      // Masked — the endpoint is unauthenticated (session-id only), so the
+      // full purchase email must not be disclosed.
+      buyerEmail: "b***@example.com",
     });
   });
 

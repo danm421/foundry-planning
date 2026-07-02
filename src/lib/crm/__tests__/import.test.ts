@@ -35,11 +35,11 @@ function csv(...rows: string[]): Buffer {
 }
 
 describe("parseCsv", () => {
-  it("parses a single valid row into a proposed household", () => {
+  it("parses a single valid row into a proposed household", async () => {
     const buf = csv(
       "Smith Family,Jane,Smith,jane@example.com,,1980-01-01,John,Smith,john@example.com,1979-05-12,advisor_1,active,Notes here,123 Main,Austin,TX,73301",
     );
-    const { proposed, errors } = parseCsv(buf);
+    const { proposed, errors } = await parseCsv(buf);
     expect(errors).toEqual([]);
     expect(proposed).toHaveLength(1);
     expect(proposed[0].household.name).toBe("Smith Family");
@@ -51,33 +51,33 @@ describe("parseCsv", () => {
     expect(proposed[0].spouse?.email).toBe("john@example.com");
   });
 
-  it("omits the spouse when spouse columns are blank", () => {
+  it("omits the spouse when spouse columns are blank", async () => {
     const buf = csv(
       "Solo Household,Solo,Person,solo@example.com,,1990-02-02,,,,,advisor_1,prospect,,,,,",
     );
-    const { proposed, errors } = parseCsv(buf);
+    const { proposed, errors } = await parseCsv(buf);
     expect(errors).toEqual([]);
     expect(proposed).toHaveLength(1);
     expect(proposed[0].spouse).toBeUndefined();
   });
 
-  it("pushes validation failures to errors not proposed", () => {
+  it("pushes validation failures to errors not proposed", async () => {
     // missing household_name + missing primary_first
     const buf = csv(
       ",, ,bad-email,,,,,,,advisor_1,prospect,,,,,",
     );
-    const { proposed, errors } = parseCsv(buf);
+    const { proposed, errors } = await parseCsv(buf);
     expect(proposed).toHaveLength(0);
     expect(errors).toHaveLength(1);
     expect(errors[0].rowIndex).toBe(0);
     expect(errors[0].messages.length).toBeGreaterThan(0);
   });
 
-  it("handles addresses on the primary contact", () => {
+  it("handles addresses on the primary contact", async () => {
     const buf = csv(
       "Addr Family,Anne,Addr,anne@example.com,,,,,,,advisor_2,prospect,,1 Main St,Boston,MA,02110",
     );
-    const { proposed, errors } = parseCsv(buf);
+    const { proposed, errors } = await parseCsv(buf);
     expect(errors).toEqual([]);
     expect(proposed[0].primary.addressLine1).toBe("1 Main St");
     expect(proposed[0].primary.city).toBe("Boston");
@@ -85,12 +85,12 @@ describe("parseCsv", () => {
     expect(proposed[0].primary.postalCode).toBe("02110");
   });
 
-  it("requires the header row to match exactly", () => {
+  it("requires the header row to match exactly", async () => {
     const wrong = Buffer.from(
       "household_name,primary_first\nFoo,Bar",
       "utf8",
     );
-    expect(() => parseCsv(wrong)).toThrow(/header/i);
+    await expect(parseCsv(wrong)).rejects.toThrow(/header/i);
   });
 });
 
@@ -105,15 +105,15 @@ describe("dryRun dedup matcher", () => {
     { id: "h4", name: "Patel Family Trust" },
   ];
 
-  function row(name: string, first = "Anne", last = "X") {
+  async function row(name: string, first = "Anne", last = "X") {
     const buf = csv(
       `${name},${first},${last},anne@example.com,,,,,,,advisor_1,prospect,,,,,`,
     );
-    return parseCsv(buf).proposed[0];
+    return (await parseCsv(buf)).proposed[0];
   }
 
   it("flags an exact match as duplicate (score 100)", async () => {
-    const proposed = [row("Smith Family")];
+    const proposed = [await row("Smith Family")];
     const result = await dryRun(proposed, { existingHouseholds: existing });
     expect(result.rowsToCreate).toHaveLength(0);
     expect(result.duplicates).toHaveLength(1);
@@ -125,7 +125,7 @@ describe("dryRun dedup matcher", () => {
   });
 
   it("flags a close typo (Smith Famly) as duplicate above threshold", async () => {
-    const proposed = [row("Smith Famly")];
+    const proposed = [await row("Smith Famly")];
     const result = await dryRun(proposed, { existingHouseholds: existing });
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0].matches[0].id).toBe("h1");
@@ -133,14 +133,14 @@ describe("dryRun dedup matcher", () => {
   });
 
   it("falls into rowsToCreate when no candidate clears the 75 threshold", async () => {
-    const proposed = [row("Zzzz Quux Corp")];
+    const proposed = [await row("Zzzz Quux Corp")];
     const result = await dryRun(proposed, { existingHouseholds: existing });
     expect(result.rowsToCreate).toHaveLength(1);
     expect(result.duplicates).toHaveLength(0);
   });
 
   it("is case insensitive", async () => {
-    const proposed = [row("smith family")];
+    const proposed = [await row("smith family")];
     const result = await dryRun(proposed, { existingHouseholds: existing });
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0].matches[0].id).toBe("h1");
@@ -154,7 +154,7 @@ describe("dryRun dedup matcher", () => {
       { id: "d", name: "Acme Famly" },
       { id: "e", name: "Acme Famili" },
     ];
-    const proposed = [row("Acme Family")];
+    const proposed = [await row("Acme Family")];
     const result = await dryRun(proposed, { existingHouseholds: many });
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0].matches.length).toBeLessThanOrEqual(3);
@@ -168,7 +168,7 @@ describe("dryRun dedup matcher", () => {
   });
 
   it("normalizes accents so García matches Garcia", async () => {
-    const proposed = [row("Garcia Estate")];
+    const proposed = [await row("Garcia Estate")];
     const result = await dryRun(proposed, { existingHouseholds: existing });
     expect(result.duplicates).toHaveLength(1);
     expect(result.duplicates[0].matches[0].id).toBe("h3");

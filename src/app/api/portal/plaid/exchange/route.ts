@@ -5,6 +5,10 @@ import { authErrorResponse } from "@/lib/authz";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
+import {
+  checkPortalPlaidLinkRateLimit,
+  rateLimitErrorResponse,
+} from "@/lib/rate-limit";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { encrypt } from "@/lib/plaid/crypto";
 import { mapPlaidAccount, loadLinkCandidates } from "@/lib/plaid/portal-link-helpers";
@@ -21,6 +25,14 @@ export async function POST(req: Request): Promise<Response> {
     const { clientId } = await resolvePortalClient();
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
+
+    const limit = await checkPortalPlaidLinkRateLimit(clientId);
+    if (!limit.allowed) {
+      return rateLimitErrorResponse(
+        limit,
+        "Too many link attempts. Try again in a bit.",
+      );
+    }
 
     const body = (await req.json().catch(() => ({}))) as Body;
     if (!body.publicToken) {

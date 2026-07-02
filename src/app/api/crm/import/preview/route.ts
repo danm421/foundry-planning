@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     let parsed;
     try {
-      parsed = parseCsv(buffer);
+      parsed = await parseCsv(buffer);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to parse file";
       return NextResponse.json({ error: msg }, { status: 400 });
