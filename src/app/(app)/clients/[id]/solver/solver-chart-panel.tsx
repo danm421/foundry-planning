@@ -137,6 +137,12 @@ interface Props {
   selectedYear: number | null;
   /** Fired when a cash-flow chart bar is clicked. */
   onYearClick: (year: number) => void;
+  /** Blended dedicated-pool return stats per education goalId, for the Education
+   *  report's per-goal POS gauge. Sourced from the plan MC data. Optional — the
+   *  panel falls back to a neutral per-goal default when absent. */
+  educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
+  /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
+  educationSeed?: number;
 }
 
 export function SolverChartPanel({
@@ -161,6 +167,8 @@ export function SolverChartPanel({
   onSummaryChange,
   selectedYear,
   onYearClick,
+  educationReturnStats,
+  educationSeed,
 }: Props) {
   const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
@@ -313,7 +321,12 @@ export function SolverChartPanel({
     return (
       <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
         <div className="mb-3">{reportTabs}</div>
-        <EducationReportPanel years={currentProjection} expenses={workingTree.expenses} />
+        <EducationReportPanel
+          years={currentProjection}
+          expenses={workingTree.expenses}
+          returnStats={educationReturnStats}
+          seed={educationSeed}
+        />
         {recalculating}
       </div>
     );

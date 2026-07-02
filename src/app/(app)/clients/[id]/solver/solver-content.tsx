@@ -7,7 +7,16 @@ import { and, eq } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
+import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import {
+  buildEducationReturnStats,
+  type EducationReturnStat,
+} from "@/lib/reports/education-mc-inputs";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
+
+// Deterministic fallback seed when the plan MC data can't be loaded (never
+// Math.random/Date — the per-goal gauges must reproduce across renders).
+const FALLBACK_EDUCATION_SEED = 1;
 
 interface Props {
   clientId: string;
@@ -90,6 +99,42 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   const clientName = baseClient.firstName?.trim() || "Client";
   const spouseName = baseClient.spouseName?.trim() || "Spouse";
 
+  // Per-goal education POS gauge inputs. The gauge simulates each goal's
+  // dedicated pool client-side; the blended return stats + scenario seed come
+  // from the plan Monte Carlo data (same asset-class stats + account mixes).
+  // Gated on there being at least one funded education goal, so the common
+  // no-education case skips the extra MC-data load entirely.
+  const solverTree = sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree;
+  const hasEducationGoals = solverTree.expenses.some(
+    (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
+  );
+  let educationReturnStats: Record<string, EducationReturnStat> = {};
+  let educationSeed = FALLBACK_EDUCATION_SEED;
+  if (hasEducationGoals) {
+    try {
+      const mc = await loadMonteCarloData(clientId, firmId, source);
+      educationSeed = mc.seed;
+      const assetClassStats = new Map<string, EducationReturnStat>(
+        mc.indices.map((i) => [i.id, { arithMean: i.arithMean, stdDev: i.stdDev }]),
+      );
+      // Segments are sorted ascending by fromYear, so [0] is the base mix —
+      // the right allocation for near-term education goals.
+      const accountMixes = mc.accountMixes.map((m) => ({
+        accountId: m.accountId,
+        mix: m.segments[0]?.mix ?? [],
+      }));
+      educationReturnStats = buildEducationReturnStats({
+        expenses: solverTree.expenses,
+        accounts: solverTree.accounts,
+        accountMixes,
+        assetClassStats,
+      });
+    } catch {
+      // MC data unavailable (e.g. no asset-class stats seeded) — the panel
+      // falls back to its neutral per-goal default for every goal.
+    }
+  }
+
   return (
     <LiveSolverWorkspace
       // Remount when the right-column source changes. The workspace stashes
@@ -112,6 +157,8 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       categoryGrowthDefaults={categoryGrowthDefaults}
       scenarioName={scenarioName}
       baseGifts={baseGifts}
+      educationReturnStats={educationReturnStats}
+      educationSeed={educationSeed}
     />
   );
 }

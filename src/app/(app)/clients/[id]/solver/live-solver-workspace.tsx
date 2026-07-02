@@ -82,6 +82,12 @@ interface Props {
   scenarioName?: string | null;
   /** Base-plan gifts loaded from DB, seeded into the estate planning tab. */
   baseGifts: EstateFlowGift[];
+  /** Blended dedicated-pool return stats per education goalId (from the plan MC
+   *  data), driving the Education report's per-goal POS gauge. Optional — the
+   *  panel falls back to a neutral per-goal default when absent. */
+  educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
+  /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
+  educationSeed?: number;
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
@@ -119,6 +125,8 @@ export function LiveSolverWorkspace({
   categoryGrowthDefaults,
   scenarioName,
   baseGifts,
+  educationReturnStats,
+  educationSeed,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -1238,6 +1246,8 @@ export function LiveSolverWorkspace({
               onSummaryChange={setActiveSummary}
               selectedYear={selectedYear}
               onYearClick={setSelectedYear}
+              educationReturnStats={educationReturnStats}
+              educationSeed={educationSeed}
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults
