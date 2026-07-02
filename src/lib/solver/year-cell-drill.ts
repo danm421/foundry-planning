@@ -26,6 +26,20 @@ const EPSILON = 1; // sub-dollar reconciliation noise we don't surface
 
 type NameMaps = ReturnType<typeof buildNameMaps>;
 
+// The year table calls a drill fn for every cell on every render (11 money
+// columns x 30-60 rows, no virtualization), so name maps are cached per
+// ClientData reference to avoid rebuilding them hundreds of times per render.
+const nameMapsCache = new WeakMap<ClientData, NameMaps>();
+
+function cachedNameMaps(clientData: ClientData): NameMaps {
+  let m = nameMapsCache.get(clientData);
+  if (!m) {
+    m = buildNameMaps(clientData);
+    nameMapsCache.set(clientData, m);
+  }
+  return m;
+}
+
 /** Drop sub-dollar rows, sort descending, and append a balancing "Other" row
  *  when the survivors don't sum to `total`. */
 function balanced(key: string, total: number, rows: CellDrillRow[]): CellDrillRow[] {
@@ -87,7 +101,7 @@ export function buildYearCellDrill(
   year: ProjectionYear,
   clientData: ClientData,
 ): CellDrillProps | null {
-  const m = buildNameMaps(clientData);
+  const m = cachedNameMaps(clientData);
   const inflows = retirementInflows(year);
 
   switch (columnKey) {
