@@ -56,8 +56,11 @@ vi.mock("@/db", () => {
     return { returning: insertReturning };
   });
   const insert = vi.fn(() => ({ values: insertValues }));
+  // The expense write-core wraps its inserts in db.transaction; the tx object
+  // only needs the same insert surface here.
+  const transaction = vi.fn(async (cb: (tx: unknown) => unknown) => cb({ select, insert }));
   return {
-    db: { select, insert },
+    db: { select, insert, transaction },
   };
 });
 
