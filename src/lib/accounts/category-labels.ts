@@ -12,6 +12,7 @@ export const ACCOUNT_CATEGORY_LABELS: Record<string, string> = {
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
   stock_options: "Stock Options",
+  education_savings: "529 / Education",
 };
 
 /**

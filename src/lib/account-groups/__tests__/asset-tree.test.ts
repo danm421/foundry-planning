@@ -15,7 +15,7 @@ describe("buildAssetTree", () => {
     expect(root.label).toBe("All Assets");
     expect(root.count).toBe(0);
     expect(root.value).toBe(0);
-    // children: all-liquid + 5 illiquid leaves
+    // children: all-liquid + 6 illiquid leaves
     expect(root.children?.map((c) => c.key)).toEqual([
       "all-liquid",
       "annuity",
@@ -23,6 +23,7 @@ describe("buildAssetTree", () => {
       "business",
       "life_insurance",
       "notes_receivable",
+      "education_savings",
     ]);
     const liquid = root.children!.find((c) => c.key === "all-liquid")!;
     expect(liquid.children?.map((c) => c.key)).toEqual([

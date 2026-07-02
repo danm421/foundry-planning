@@ -197,6 +197,7 @@ const TAX_YEAR_2026: TaxYearParameters = {
     simpleCatchup50: 4000,
     hsaLimitSelf: 4400,
     hsaLimitFamily: 8750,
+    hsaCatchup55: 1000,
   },
 };
 

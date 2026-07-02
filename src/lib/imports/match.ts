@@ -203,14 +203,23 @@ async function loadCandidates(
   ]);
 
   return {
-    accounts: accountsRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      accountNumberLast4: r.accountNumberLast4,
-      custodian: r.custodian,
-      value: Number(r.value),
-    })),
+    // education_savings accounts are excluded: imports don't classify 529s by
+    // that category yet (they stay "taxable" + subType "529" — future-work),
+    // so an incoming row can never present category "education_savings" and
+    // an existing 529 account could never match by category anyway.
+    accounts: accountsRows
+      .filter(
+        (r): r is typeof r & { category: Exclude<typeof r.category, "education_savings"> } =>
+          r.category !== "education_savings",
+      )
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        accountNumberLast4: r.accountNumberLast4,
+        custodian: r.custodian,
+        value: Number(r.value),
+      })),
     incomes: incomesRows.map((r) => ({
       id: r.id,
       type: r.type,

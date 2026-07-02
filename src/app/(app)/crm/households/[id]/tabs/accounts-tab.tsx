@@ -41,6 +41,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   business: "Business",
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
+  education_savings: "529 / Education",
 };
 
 type SectionKey = "accounts" | "real_estate" | "other";
@@ -54,7 +55,12 @@ const SECTION_TITLES: Record<SectionKey, string> = {
 const SECTION_ORDER: SectionKey[] = ["accounts", "real_estate", "other"];
 
 function sectionForCategory(category: AccountCategory): SectionKey {
-  if (category === "taxable" || category === "cash" || category === "retirement") {
+  if (
+    category === "taxable" ||
+    category === "cash" ||
+    category === "retirement" ||
+    category === "education_savings"
+  ) {
     return "accounts";
   }
   if (category === "real_estate") return "real_estate";

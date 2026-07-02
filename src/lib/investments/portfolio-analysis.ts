@@ -139,6 +139,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   taxable: "Taxable", cash: "Cash", retirement: "Retirement",
   real_estate: "Real Estate", business: "Business",
   life_insurance: "Life Insurance", notes_receivable: "Notes Receivable",
+  education_savings: "529 / Education",
 };
 export function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;

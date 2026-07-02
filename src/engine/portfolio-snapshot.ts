@@ -89,7 +89,7 @@ export function computePortfolioSnapshot(args: {
       // wealth. They appear under "Notes Receivable" on the balance sheet UI and
       // are tracked in accountLedgers, but they don't belong in any
       // portfolioAssets bucket.
-      if (acct.category === "notes_receivable") continue;
+      if (acct.category === "notes_receivable" || acct.category === "education_savings") continue;
       // Use an explicit null-guard so future unknown categories fail loud rather
       // than silently bucketing into taxable.
       const key = categoryToKey[acct.category];

@@ -21,6 +21,7 @@ const LEAF_LABELS: Record<AssetCategory, string> = {
   business: "Business",
   life_insurance: "Life Insurance",
   notes_receivable: "Notes Receivable",
+  education_savings: "529 / Education",
 };
 
 const LIQUID_CATEGORIES: AssetCategory[] = ["taxable", "retirement", "cash"];
@@ -30,6 +31,7 @@ const ILLIQUID_CATEGORIES: AssetCategory[] = [
   "business",
   "life_insurance",
   "notes_receivable",
+  "education_savings",
 ];
 
 function leafNode(category: AssetCategory, accounts: AssetAccount[]): TreeNode {
