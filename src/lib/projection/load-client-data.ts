@@ -961,6 +961,7 @@ export const loadClientDataWithContext = cache(
       residenceState: (settings.residenceState ?? null) as import("@/lib/usps-states").USPSStateCode | null,
       irdTaxRate: settings.irdTaxRate != null ? parseFloat(settings.irdTaxRate) : 0,
       probateCostRate: settings.probateCostRate != null ? parseFloat(settings.probateCostRate) : 0,
+      pvDiscountRate: settings.pvDiscountRate != null ? parseFloat(settings.pvDiscountRate) : undefined,
       // Engine reads `inflationRate` as the plan's effective general inflation —
       // the fallback for tax-bracket indexing, SS wage-base growth, gift
       // annual-exclusion, and estate-exemption inflation. Feed the RESOLVED rate

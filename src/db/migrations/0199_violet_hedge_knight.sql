@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "pv_discount_rate" numeric(5, 4);

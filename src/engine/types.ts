@@ -1259,6 +1259,9 @@ export interface PlanSettings {
   /** Probate cost rate (decimal). Applied to the probate estate at each death
    *  event; additive to estateAdminExpenses. 0 disables. */
   probateCostRate?: number;
+  /** General PV discount rate for actuarial valuations (e.g. survivor annuities).
+   *  Falls back to inflationRate when unset. */
+  pvDiscountRate?: number;
   /** 0–1 fraction of unaccounted-for surplus cash flow to spend each year.
    *  Surplus = max(0, surplusBeforeSavings − savings.total − cashGifts).
    *  The spent portion is recorded as a discretionary expense; the remainder

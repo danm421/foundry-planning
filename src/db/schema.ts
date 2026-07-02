@@ -918,6 +918,7 @@ export const planSettings = pgTable("plan_settings", {
   probateCostRate: decimal("probate_cost_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.0200"),
+  pvDiscountRate: decimal("pv_discount_rate", { precision: 5, scale: 4 }),
   priorTaxableGiftsClient: decimal("prior_taxable_gifts_client", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
