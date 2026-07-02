@@ -1,3 +1,6 @@
+// @ts-nocheck -- the `xlsx` package was removed from the repo (npm-audit HIGH,
+// 2026-07-02 security fixes); this script needs a temporary `npm i --no-save xlsx`
+// or a port to exceljs before its next yearly run.
 // scripts/extract-state-tax-data.local.ts
 // One-off: read the workbook, emit TS data modules for brackets.
 // Output is checked into src/lib/tax/state-income/data/. Re-run yearly.
