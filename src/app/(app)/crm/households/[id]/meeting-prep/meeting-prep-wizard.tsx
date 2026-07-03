@@ -18,6 +18,7 @@ import {
   type AgendaDraft,
 } from "@/lib/crm/meeting-prep/schemas";
 import type { MeetingPrepBattery } from "@/lib/crm/meeting-prep/battery";
+import { MeetingPrepRecentRuns } from "./meeting-prep-recent-runs";
 
 type WizardStep = "setup" | "generating" | "review";
 type Draft = { brief: PrepBriefDraft | null; agenda: AgendaDraft | null };
@@ -88,6 +89,7 @@ export function MeetingPrepWizard({
   const [exported, setExported] = useState<MeetingPrepDocKind[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
   const [restoredBanner, setRestoredBanner] = useState(false);
+  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
 
   // Restore any unsaved draft AFTER mount (never during render/SSR — no
   // localStorage on the server, and a synchronous read would hydration-mismatch).
@@ -165,6 +167,37 @@ export function MeetingPrepWizard({
     setStep("review");
   }
 
+  // A run replaces whatever draft is in progress — confirm when one exists
+  // (in state on the review step, or parked in localStorage from the restore
+  // effect on the setup step).
+  function confirmReplace(): boolean {
+    let hasStored = false;
+    try {
+      hasStored = window.localStorage.getItem(draftStorageKey(householdId)) !== null;
+    } catch {
+      // storage blocked — nothing restorable to protect
+    }
+    if (!draft && !hasStored) return true;
+    return window.confirm(
+      "Opening this run will replace your current draft edits. Continue?",
+    );
+  }
+
+  function openRun(
+    payload: { draft: Draft; data: MeetingPrepBattery | null },
+    runSetup: MeetingPrepSetup | null,
+  ) {
+    if (runSetup) {
+      setFocus(runSetup.focus ?? "");
+      setContext(runSetup.context ?? "");
+      setMeetingDate(runSetup.meetingDate ?? today());
+      setWindowStart(runSetup.windowStart ?? null);
+      if (Array.isArray(runSetup.docs) && runSetup.docs.length > 0) setDocs(runSetup.docs);
+    }
+    setRestoredBanner(false);
+    applyRunResult(payload);
+  }
+
   async function handleGenerate() {
     if (!canGenerate) return;
     setStep("generating");
@@ -183,6 +216,7 @@ export function MeetingPrepWizard({
       }
       const { runId } = (await res.json()) as { runId: string };
       setActiveRunId(runId); // polling effect takes over
+      setRunsRefreshKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStep("setup");
@@ -448,6 +482,13 @@ export function MeetingPrepWizard({
             </button>
           </div>
         </div>
+
+        <MeetingPrepRecentRuns
+          householdId={householdId}
+          refreshKey={runsRefreshKey}
+          onOpenRun={openRun}
+          confirmReplace={confirmReplace}
+        />
       </div>
     );
   }
@@ -575,6 +616,13 @@ export function MeetingPrepWizard({
           })}
         </div>
       </div>
+
+      <MeetingPrepRecentRuns
+        householdId={householdId}
+        refreshKey={runsRefreshKey}
+        onOpenRun={openRun}
+        confirmReplace={confirmReplace}
+      />
     </div>
   );
 }

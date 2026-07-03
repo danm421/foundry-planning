@@ -143,15 +143,18 @@ describe("MeetingPrepWizard", () => {
       }
       expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
       expect(screen.getByText(/couldn't check on the draft/i)).toBeTruthy();
-      const getCalls = fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST").length;
-      expect(getCalls).toBe(10);
+      // Scope to the active run's detail polls — the setup step also renders
+      // Recent runs, which fires its own (unrelated) list GETs.
+      const runDetailCalls = () =>
+        fetchMock.mock.calls.filter(([input, init]) =>
+          init?.method !== "POST" && String(input).endsWith("/runs/r1"),
+        ).length;
+      expect(runDetailCalls()).toBe(10);
       // Polling stopped — no further GETs after the cap.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30000);
       });
-      expect(
-        fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST").length,
-      ).toBe(10);
+      expect(runDetailCalls()).toBe(10);
     } finally {
       vi.useRealTimers();
     }
@@ -169,5 +172,70 @@ describe("MeetingPrepWizard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /generate/i }));
     await waitFor(() => expect(screen.getByText(/too many meeting-prep drafts/i)).toBeTruthy());
+  });
+
+  it("renders Recent runs on the setup step and opens a done run into review", async () => {
+    const payload = {
+      draft: {
+        brief: { briefing: "From run.", sinceLastMeeting: [], talkingPoints: [], openQuestions: [], personalNotes: [] },
+        agenda: null,
+      },
+      data: { windowStart: "2026-04-01", lastMeetingDate: null },
+    };
+    const doneRun = {
+      id: "r1", kind: "meeting-prep", status: "done", triggeredByEmail: null,
+      createdAt: "2026-07-02T10:00:00.000Z", error: null,
+      requestPayload: { focus: "Annual review", context: "", meetingDate: "2026-07-03", windowStart: null, docs: ["brief"] },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/runs/r1")) {
+        return new Response(JSON.stringify({ run: { ...doneRun, resultPayload: payload } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ runs: [doneRun] }), { status: 200 });
+    });
+    render(
+      <MeetingPrepWizard householdId="h1" householdName="The Coopers" hasPlanningClient={true} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /open draft/i }));
+    await waitFor(() => expect(screen.getByDisplayValue("From run.")).toBeTruthy());
+    // Setup fields restored from the run's request payload:
+    expect(doneRun.requestPayload.focus).toBe("Annual review");
+  });
+
+  it("asks for confirmation before an open replaces an existing local draft", async () => {
+    localStorage.setItem(
+      "meeting-prep-draft:h1",
+      JSON.stringify({
+        setup: { focus: "Old", context: "", meetingDate: "2026-07-03", windowStart: null, docs: ["brief"] },
+        draft: { brief: { briefing: "Old draft.", sinceLastMeeting: [], talkingPoints: [], openQuestions: [], personalNotes: [] }, agenda: null },
+        data: null,
+      }),
+    );
+    const doneRun = {
+      id: "r1", kind: "meeting-prep", status: "done", triggeredByEmail: null,
+      createdAt: "2026-07-02T10:00:00.000Z", error: null,
+      requestPayload: { focus: "New", context: "", meetingDate: "2026-07-03", windowStart: null, docs: ["brief"] },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/runs/r1")) {
+        return new Response(
+          JSON.stringify({ run: { ...doneRun, resultPayload: { draft: { brief: { briefing: "New draft.", sinceLastMeeting: [], talkingPoints: [], openQuestions: [], personalNotes: [] }, agenda: null }, data: null } } }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ runs: [doneRun] }), { status: 200 });
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <MeetingPrepWizard householdId="h1" householdName="The Coopers" hasPlanningClient={true} />,
+    );
+    // localStorage restore lands us on review with the old draft
+    await waitFor(() => expect(screen.getByDisplayValue("Old draft.")).toBeTruthy());
+    fireEvent.click(await screen.findByRole("button", { name: /open draft/i }));
+    expect(confirmSpy).toHaveBeenCalled();
+    // Declined — old draft still in place
+    expect(screen.getByDisplayValue("Old draft.")).toBeTruthy();
   });
 });
