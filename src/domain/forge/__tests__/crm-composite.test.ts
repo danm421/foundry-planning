@@ -34,6 +34,8 @@ vi.mock("@/lib/crm/notes", () => ({
 vi.mock("@/lib/crm-tasks/queries", () => ({
   listTasks: (...a: unknown[]) => listTasks(...a),
   getTaskById: vi.fn(),
+  listTaskComments: vi.fn(),
+  listTaskActivity: vi.fn(),
 }));
 vi.mock("@/lib/crm/activity", () => ({
   listActivity: (...a: unknown[]) => listActivity(...a),

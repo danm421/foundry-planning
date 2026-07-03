@@ -44,6 +44,8 @@ vi.mock("@/lib/crm-tasks/mutations", () => ({
 vi.mock("@/lib/crm-tasks/queries", () => ({
   getTaskById: (t: string, f: string) => getTaskById(t, f),
   listTasks: vi.fn(),
+  listTaskComments: vi.fn(),
+  listTaskActivity: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAudit(a) }));
 

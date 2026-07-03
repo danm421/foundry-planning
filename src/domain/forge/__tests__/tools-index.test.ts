@@ -47,7 +47,8 @@ vi.mock("@/lib/clients/accounts-writes", () => ({
 vi.mock("@/lib/crm/notes", () => ({ createNote: vi.fn(), listHouseholdNotes: vi.fn(), deleteNote: vi.fn() }));
 vi.mock("@/lib/crm/schemas", () => ({ createCrmNoteSchema: { parse: vi.fn() } }));
 vi.mock("@/lib/crm/activity", () => ({ recordActivity: vi.fn(), listActivity: vi.fn() }));
-vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.fn() }));
+vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: vi.fn(), getTaskById: vi.fn(), listTaskComments: vi.fn(), listTaskActivity: vi.fn(), listTaskFiles: vi.fn() }));
+vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: vi.fn() }));
 vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
 vi.mock("@/lib/crm-tasks/schemas", () => ({ createCrmTaskSchema: { parse: vi.fn() } }));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
@@ -152,11 +153,12 @@ const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
   "crm_delete_task",
 ];
 
-const EXPECTED_CRM_ALL_19 = [
-  // read (4)
+const EXPECTED_CRM_ALL_20 = [
+  // read (5)
   "crm_client_card",
   "crm_recent_notes",
   "crm_list_tasks",
+  "crm_task_detail",
   "crm_activity_feed",
   // Tier-A writes (6)
   "crm_add_note",
@@ -185,7 +187,7 @@ const EXPECTED_BOOK = ["scan_book"];
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 62 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 62, + 1 meeting save)", () => {
+  it("returns exactly the 63 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 63, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
@@ -201,7 +203,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(62);
+    expect(tools).toHaveLength(63);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -219,9 +221,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     }
   });
 
-  it("buildTools includes all 19 CRM tools by name", () => {
+  it("buildTools includes all 20 CRM tools by name", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
-    for (const n of EXPECTED_CRM_ALL_19) {
+    for (const n of EXPECTED_CRM_ALL_20) {
       expect(names.has(n), `expected CRM tool ${n} in buildTools output`).toBe(true);
     }
   });
@@ -231,9 +233,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (24 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 3 global writes)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (25 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(24);
+    expect(WRITE_TOOL_NAMES.size).toBe(25);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -284,6 +286,14 @@ describe("buildTools + WRITE_TOOL_NAMES (Phase 2 scenario writes)", () => {
 it("Tier-B CRM writes are in WRITE_TOOL_NAMES; Tier-A writes are NOT", () => {
   for (const n of ["crm_delete_note", "crm_delete_task", "crm_create_tasks"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(true);
   for (const n of ["crm_add_note","crm_log_activity","crm_create_task","crm_update_task","crm_complete_task","crm_post_task_comment"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(false);
+});
+
+it("global task HITL split: create/delete gated, update/status/comment Tier-A", () => {
+  for (const n of ["tasks_create", "tasks_delete"]) expect(WRITE_TOOL_NAMES.has(n)).toBe(true);
+  for (const n of ["tasks_list", "tasks_detail", "firm_members", "tasks_update", "tasks_set_status", "tasks_comment"]) {
+    expect(WRITE_TOOL_NAMES.has(n)).toBe(false);
+  }
+  expect(WRITE_TOOL_NAMES.has("create_task_for_client")).toBe(false); // retired
 });
 
 describe("buildTools (Phase 4 report tool)", () => {
@@ -344,8 +354,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 62)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(62);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 63)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(63);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
@@ -366,8 +376,13 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the help + navigation + global-action + walkthrough set (10 tools)", () => {
-    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough"]);
+  it("is exactly the help + navigation + global-action + walkthrough + global-task set (17 tools)", () => {
+    expect(names).toEqual([
+      "cite_page", "create_household", "find_client", "firm_members", "get_help",
+      "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
+      "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
+      "tasks_set_status", "tasks_update",
+    ]);
   });
 });
 

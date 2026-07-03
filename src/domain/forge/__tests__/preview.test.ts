@@ -80,12 +80,19 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     expect(out.summary).toMatch(/married_joint/);
   });
 
-  it("previews create_task_for_client without a ctx (global mode)", async () => {
+  it("previews tasks_create without a ctx (global mode)", async () => {
     const out = await describeProposedWrite({
-      name: "create_task_for_client",
-      args: { householdId: "hh_1", title: "Call Jane", priority: "high" },
+      name: "tasks_create",
+      args: { title: "Call Jane", priority: "high", dueDate: "2026-07-15" },
     });
-    expect(out.name).toBe("create_task_for_client");
+    expect(out.name).toBe("tasks_create");
     expect(out.summary).toMatch(/Call Jane/);
+    expect(out.summary).toMatch(/firm-level/); // no householdId supplied
+  });
+
+  it("previews tasks_delete without a ctx (global mode)", async () => {
+    const out = await describeProposedWrite({ name: "tasks_delete", args: { taskId: "task_1" } });
+    expect(out.name).toBe("tasks_delete");
+    expect(out.summary).toMatch(/permanent/i);
   });
 });

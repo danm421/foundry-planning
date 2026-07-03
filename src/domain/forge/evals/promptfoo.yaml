@@ -130,7 +130,7 @@ tests:
   - vars:
       message: "Add a task to call the Doe household next week."
       mode: global
-      expectTool: create_task_for_client
+      expectTool: tasks_create
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
@@ -161,6 +161,63 @@ tests:
       message: "Can you walk me through adding a new household, step by step on screen?"
       mode: global
       expectTool: start_walkthrough
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "What are my open tasks right now?"
+      mode: global
+      expectTool: tasks_list
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Show me everything on the ADV delivery task, including the comments."
+      mode: global
+      expectTool: tasks_detail
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Who on my team can I assign tasks to?"
+      mode: global
+      expectTool: firm_members
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Reassign the Roth conversion task to Sue."
+      mode: global
+      expectTool: tasks_update
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Mark the 401(k) beneficiary task as done."
+      mode: global
+      expectTool: tasks_set_status
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Add a comment to the term life task: left a voicemail with the underwriter."
+      mode: global
+      expectTool: tasks_comment
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+  - vars:
+      message: "Delete the duplicate Q2 check-in task."
+      mode: global
+      expectTool: tasks_delete
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "Show me the comments on this client's insurance task."
+      expectTool: crm_task_detail
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool

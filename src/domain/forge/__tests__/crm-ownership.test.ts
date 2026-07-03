@@ -4,6 +4,8 @@ const getTaskById = vi.fn();
 vi.mock("@/lib/crm-tasks/queries", () => ({
   getTaskById: (t: string, f: string) => getTaskById(t, f),
   listTasks: vi.fn(),
+  listTaskComments: vi.fn(),
+  listTaskActivity: vi.fn(),
 }));
 
 import { __testing } from "../tools/crm";
