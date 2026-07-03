@@ -4,7 +4,7 @@
 // predicate, binary-success localization, and secant MC bracketing.
 import { describe, it, expect } from "vitest";
 import type { ProjectionYear } from "@/engine/types";
-import { deterministicLocalize, straightlineSucceeds } from "../warm-start";
+import { bracketFromSeed, deterministicLocalize, straightlineSucceeds } from "../warm-start";
 
 // Minimal ProjectionYear shape for the liquid-assets classifier. Matches the
 // same cast convention as solver-summary-metrics.test.ts: straightlineSucceeds
@@ -63,5 +63,107 @@ describe("deterministicLocalize", () => {
     expect(
       await deterministicLocalize({ lo: 0, hi: 100, step: 1, succeeds: async () => false }),
     ).toBeNull();
+  });
+});
+
+describe("bracketFromSeed", () => {
+  // PoS falls linearly with spend: 1.0 at $0 → 0.0 at $200k; crosses 0.85 at $30k.
+  const posCurve = (v: number) => Math.max(0, Math.min(1, 1 - v / 200_000));
+
+  it("brackets the target within the probe budget on a spending-shaped curve", async () => {
+    const calls: number[] = [];
+    const out = await bracketFromSeed({
+      seed: 100_000,
+      lo: 0,
+      hi: 300_000,
+      step: 5_000,
+      direction: -1,
+      target: 0.85,
+      evaluate: async (v) => {
+        calls.push(v);
+        return posCurve(v);
+      },
+    });
+    expect(out.kind).toBe("bracket");
+    if (out.kind !== "bracket") return;
+    expect(out.lo).toBeLessThanOrEqual(30_000);
+    expect(out.hi).toBeGreaterThanOrEqual(30_000);
+    expect(out.posLo).toBe(posCurve(out.lo));
+    expect(out.posHi).toBe(posCurve(out.hi));
+    expect(calls.length).toBeLessThanOrEqual(4);
+  });
+
+  it("brackets on a rising (direction +1) savings-shaped curve", async () => {
+    // PoS rises with contribution: 0.5 at $0 → 1.0 at $40k; crosses 0.85 at $28k.
+    const rising = (v: number) => Math.min(1, 0.5 + (v / 40_000) * 0.5);
+    const out = await bracketFromSeed({
+      seed: 20_000,
+      lo: 0,
+      hi: 40_000,
+      step: 1_000,
+      direction: 1,
+      target: 0.85,
+      evaluate: async (v) => rising(v),
+    });
+    expect(out.kind).toBe("bracket");
+    if (out.kind !== "bracket") return;
+    expect(out.lo).toBeLessThanOrEqual(28_000);
+    expect(out.hi).toBeGreaterThanOrEqual(28_000);
+  });
+
+  it("resolves unreachable when the PoS-maximizing endpoint still misses the target", async () => {
+    // Flat 0.5 curve: even $0 spend can't reach 0.85.
+    const out = await bracketFromSeed({
+      seed: 120_000,
+      lo: 0,
+      hi: 300_000,
+      step: 5_000,
+      direction: -1,
+      target: 0.85,
+      evaluate: async () => 0.5,
+    });
+    expect(out).toEqual({
+      kind: "result",
+      status: "unreachable",
+      solvedValue: 0,
+      achievedPoS: 0.5,
+    });
+  });
+
+  it("resolves both-beat converged at the cheap endpoint when PoS beats target everywhere", async () => {
+    // Flat 0.9 curve on a spending lever: max spend still succeeds.
+    const out = await bracketFromSeed({
+      seed: 100_000,
+      lo: 0,
+      hi: 300_000,
+      step: 5_000,
+      direction: -1,
+      target: 0.85,
+      evaluate: async () => 0.9,
+    });
+    expect(out).toEqual({
+      kind: "result",
+      status: "converged",
+      solvedValue: 300_000,
+      achievedPoS: 0.9,
+    });
+  });
+
+  it("falls back when the probe budget is exhausted without a bracket", async () => {
+    // Adversarial: PoS creeps toward the target but never crosses, and never
+    // sends the secant to an endpoint (finite positive slope throughout).
+    const byCall = [0.5, 0.6, 0.7, 0.75];
+    let i = 0;
+    const out = await bracketFromSeed({
+      seed: 150_000,
+      lo: 0,
+      hi: 300_000,
+      step: 5_000,
+      direction: -1,
+      target: 0.85,
+      maxProbes: 4,
+      evaluate: async () => byCall[Math.min(i++, byCall.length - 1)],
+    });
+    expect(out).toEqual({ kind: "fallback" });
   });
 });
