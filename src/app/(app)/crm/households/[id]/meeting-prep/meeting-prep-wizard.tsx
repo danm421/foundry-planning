@@ -243,7 +243,7 @@ export function MeetingPrepWizard({
   if (step === "setup") {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <Header householdName={householdName} />
+        <Header householdId={householdId} householdName={householdName} />
 
         {error && (
           <div
@@ -372,7 +372,7 @@ export function MeetingPrepWizard({
   if (step === "generating") {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <Header householdName={householdName} />
+        <Header householdId={householdId} householdName={householdName} />
         <div className="flex flex-col items-center gap-3 py-16 text-center">
           <div
             className="h-8 w-8 animate-spin rounded-full border-2 border-hair border-t-accent"
@@ -408,7 +408,7 @@ export function MeetingPrepWizard({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <Header householdName={householdName} />
+      <Header householdId={householdId} householdName={householdName} />
 
       {restoredBanner && (
         <div className="mb-5 flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-hair bg-card px-3 py-2 text-[13px] text-ink-2">
@@ -495,11 +495,17 @@ export function MeetingPrepWizard({
   );
 }
 
-function Header({ householdName }: { householdName: string }) {
+function Header({
+  householdId,
+  householdName,
+}: {
+  householdId: string;
+  householdName: string;
+}) {
   return (
     <div className="mb-6">
       <Link
-        href="../"
+        href={`/crm/households/${householdId}`}
         className="text-[12px] text-ink-3 underline underline-offset-2 hover:text-ink-2"
       >
         Back to household
