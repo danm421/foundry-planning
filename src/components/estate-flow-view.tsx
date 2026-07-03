@@ -20,6 +20,7 @@ import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
+import { useOnboardingDirty } from "@/components/onboarding-dirty-context";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
@@ -229,6 +230,17 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [props.initialGifts, workingGifts],
   );
   const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
+
+  // Wizard-mode only: report unsaved-edit state up to OnboardingShell so
+  // Next/Back/Skip can confirm before discarding the sandbox. `dirtyCtx` is
+  // null everywhere outside the wizard shell.
+  const dirtyCtx = useOnboardingDirty();
+  const setStepDirty = dirtyCtx?.setDirty;
+  useEffect(() => {
+    if (!isWizard || !setStepDirty) return;
+    setStepDirty(isDirty);
+    return () => setStepDirty(false);
+  }, [isWizard, setStepDirty, isDirty]);
 
   // Stabilise ownerNames by keying on the actual string values so child memos
   // that depend on this object don't re-run on every parent render.

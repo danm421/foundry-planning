@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useClientAccess } from "@/components/client-access-provider";
+import { OnboardingDirtyContext } from "@/components/onboarding-dirty-context";
 import { STEPS, nextStep, prevStep, stepIndex } from "@/lib/onboarding/steps";
 import type { StepIconKey } from "@/lib/onboarding/steps";
 import type { StepSlug, StepStatus, StepStatusKind } from "@/lib/onboarding/types";
@@ -51,6 +52,8 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
   const canEdit = permission === "edit";
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [stepDirty, setStepDirty] = useState(false);
+  const dirtyValue = useMemo(() => ({ dirty: stepDirty, setDirty: setStepDirty }), [stepDirty]);
   const def = STEPS.find((s) => s.slug === activeStep)!;
   const activeStatus = statuses.find((s) => s.slug === activeStep)!;
   const prev = prevStep(activeStep);
@@ -79,8 +82,20 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
     }
   }
 
+  /** True when it is safe to leave the step. Confirms (and clears the flag)
+   *  when the body has reported unsaved edits. */
+  function confirmLeave(): boolean {
+    if (!stepDirty) return true;
+    const ok = window.confirm(
+      "You have unsaved changes on this step that will be lost. Leave without saving?",
+    );
+    if (ok) setStepDirty(false);
+    return ok;
+  }
+
   async function onSkip() {
     if (!def.skippable) return;
+    if (!confirmLeave()) return;
     setBusy(true);
     try {
       const existing = statuses.filter((s) => s.kind === "skipped").map((s) => s.slug);
@@ -97,11 +112,13 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
   }
 
   function navTo(slug: StepSlug) {
+    if (!confirmLeave()) return;
     patchLastVisited(slug);
     router.push(`/clients/${clientId}/onboarding/${slug}`);
   }
 
   return (
+    <OnboardingDirtyContext.Provider value={dirtyValue}>
     <div className="space-y-6">
       {/* Top bar — eyebrow + progress */}
       <div className="flex items-center justify-between gap-4">
@@ -199,6 +216,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
         </div>
       </footer>
     </div>
+    </OnboardingDirtyContext.Provider>
   );
 }
 
