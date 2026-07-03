@@ -81,4 +81,30 @@ describe("MeetingPrepRecentRuns", () => {
       ),
     );
   });
+
+  it("surfaces the server error when a retry POST is rejected", async () => {
+    const failed = { ...doneRun, id: "r2", status: "failed", error: "boom" };
+    const listCalls = { count: 0 };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ error: "Too many meeting-prep drafts. Please wait a moment and try again." }),
+          { status: 429 },
+        );
+      }
+      listCalls.count += 1;
+      return mockList([failed]);
+    });
+    render(
+      <MeetingPrepRecentRuns householdId="h1" refreshKey={0} onOpenRun={vi.fn()} confirmReplace={() => true} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/too many meeting-prep drafts\. please wait a moment and try again\./i),
+      ).toBeTruthy(),
+    );
+    // A rejected retry is not success — no poll restart / list refetch fires.
+    expect(listCalls.count).toBe(1);
+  });
 });

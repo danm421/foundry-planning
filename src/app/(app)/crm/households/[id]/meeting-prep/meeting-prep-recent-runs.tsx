@@ -55,6 +55,8 @@ export function MeetingPrepRecentRuns({
 }: RecentRunsProps) {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,22 +104,38 @@ export function MeetingPrepRecentRuns({
   const handleRetry = useCallback(
     async (run: Run) => {
       if (!run.requestPayload) return;
+      setRetrying(run.id);
+      setRetryError(null);
       try {
-        await fetch(`/api/crm/households/${householdId}/meeting-prep/runs`, {
+        const res = await fetch(`/api/crm/households/${householdId}/meeting-prep/runs`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(run.requestPayload),
         });
+        if (!res.ok) {
+          // Rate limit / unconfigured AI / server error — surface the server's
+          // message instead of pretending a new run was queued.
+          const j = await res.json().catch(() => ({}));
+          setRetryError(
+            typeof j?.error === "string" ? j.error : `Retry failed (${res.status})`,
+          );
+          return;
+        }
         setPollNonce((n) => n + 1); // restart the poll cycle to track the new run
       } catch {
-        // best-effort — next poll/refresh will reflect state
+        setRetryError("Retry failed. Please try again.");
+      } finally {
+        setRetrying(null);
       }
     },
     [householdId],
   );
 
-  // Poll while anything is in flight; stop when all settled.
+  // Poll while anything is in flight; stop when all settled. Also clears any
+  // stale retry error — this effect re-runs exactly when a retry succeeded
+  // (pollNonce) or the parent queued a fresh run (refreshKey).
   useEffect(() => {
+    setRetryError(null);
     let cancelled = false;
     const tick = async () => {
       const latest = await fetchRuns();
@@ -137,6 +155,11 @@ export function MeetingPrepRecentRuns({
   return (
     <aside className="mt-8 w-full">
       <h2 className="mb-2 text-sm font-semibold text-ink">Recent runs</h2>
+      {retryError && (
+        <p role="alert" className="mb-2 text-[13px] text-crit">
+          {retryError}
+        </p>
+      )}
       <div className="rounded border border-hair bg-card">
         {runs === null && <p className="px-3 py-4 text-sm text-ink-3">Loading…</p>}
         {runs !== null && runs.length === 0 && (
@@ -184,10 +207,11 @@ export function MeetingPrepRecentRuns({
                           {r.requestPayload != null && (
                             <button
                               type="button"
-                              className="text-accent underline"
+                              className="text-accent underline disabled:opacity-50"
+                              disabled={retrying === r.id}
                               onClick={() => handleRetry(r)}
                             >
-                              Retry
+                              {retrying === r.id ? "Retrying…" : "Retry"}
                             </button>
                           )}
                         </span>
