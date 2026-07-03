@@ -36,4 +36,13 @@ describe("buildGlobalSystemPrompt", () => {
     expect(p).toContain("start_walkthrough");
     expect(p).toContain("add-household — Add a new household");
   });
+
+  it("advertises firm-wide task management (list, read with comments, create, update, complete)", () => {
+    const p = buildGlobalSystemPrompt({ firmName: "Acme" });
+    expect(p).toContain("tasks_list");
+    expect(p).toContain("tasks_detail");
+    expect(p).toContain("tasks_create");
+    expect(p).toContain("firm_members");
+    expect(p).not.toContain("create_task_for_client");
+  });
 });
