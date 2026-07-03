@@ -260,6 +260,7 @@ export type AuditAction =
   | "crm.import.commit"
   | "crm.document.create"
   | "crm.document.delete"
+  | "crm.meeting_prep.export"
   // CRM Tasks
   | "crm.task.create"
   | "crm.task.update"
