@@ -133,7 +133,11 @@ export async function GET(
     const rows = await listRecentRuns(id, orgId, LIST_LIMIT, { kind: "meeting-prep" });
     // Strip the heavy result payload — the panel needs status only; the detail
     // route serves the payload when a draft is actually opened.
-    const runs = rows.map(({ resultPayload: _resultPayload, ...run }) => run);
+    const runs = rows.map((row) => {
+      const { resultPayload: _resultPayload, ...run } = row;
+      void _resultPayload;
+      return run;
+    });
     return NextResponse.json(
       { runs },
       { headers: { "Cache-Control": "no-store" } },

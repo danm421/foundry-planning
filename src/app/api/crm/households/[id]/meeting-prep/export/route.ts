@@ -123,7 +123,7 @@ export async function POST(
       },
     });
   } catch (err) {
-    // Mirrors the sibling meeting-prep/draft route: requireCrmHouseholdAccess
+    // Mirrors the sibling meeting-prep/runs route: requireCrmHouseholdAccess
     // throws a plain Error for a missing/inaccessible household, which
     // authErrorResponse does NOT recognize — explicit 404 branch ahead of it.
     if (

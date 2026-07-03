@@ -253,7 +253,6 @@ export function MeetingPrepWizard({
         );
         if (cancelled) return;
         if (res.ok) {
-          failures = 0;
           const { run } = (await res.json()) as {
             run: {
               status: string;
@@ -261,6 +260,7 @@ export function MeetingPrepWizard({
               resultPayload: { draft: Draft; data: MeetingPrepBattery | null } | null;
             };
           };
+          failures = 0;
           if (run.status === "done") {
             setActiveRunId(null);
             if (run.resultPayload) {
