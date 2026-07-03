@@ -14,6 +14,13 @@ describe("mentionToken", () => {
   it("sanitizes brackets and newlines out of the name", () => {
     expect(mentionToken("Ja]ne\n[S", "u1")).toBe("@[Ja ne S](user:u1)");
   });
+  it("caps the name at 80 chars so the token always round-trips", () => {
+    const long = "x".repeat(100);
+    const token = mentionToken(long, "u1");
+    expect(splitMentionSegments(token)).toEqual([
+      { kind: "mention", displayName: "x".repeat(80), userId: "u1" },
+    ]);
+  });
 });
 
 describe("splitMentionSegments", () => {

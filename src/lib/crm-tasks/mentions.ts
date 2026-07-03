@@ -22,7 +22,12 @@ const MENTION_TOKEN_RE = /@\[([^\]\n]{1,80})\]\(user:([A-Za-z0-9_-]+)\)/g;
 
 export function mentionToken(displayName: string, userId: string): string {
   const safeName =
-    displayName.replace(/[\[\]\n]/g, " ").replace(/\s+/g, " ").trim() || "member";
+    displayName
+      .replace(/[\[\]\n]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 80)
+      .trim() || "member";
   return `@[${safeName}](user:${userId})`;
 }
 
