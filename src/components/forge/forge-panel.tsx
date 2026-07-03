@@ -690,8 +690,9 @@ export function ForgePanel({
           )}
         </div>
 
-        {/* Composer */}
-        <div className="border-t border-hair px-4 py-3">
+        {/* Composer — extra bottom padding keeps the input off the viewport
+            edge so it doesn't sit flush with the app footer behind the panel. */}
+        <div className="border-t border-hair px-4 pt-3 pb-6">
           {/* Ask-first prompt: shown when a pasted transcript is detected */}
           {transcriptCandidate && (
             <div className="mb-2 rounded-[var(--radius)] border border-hair bg-card-2 px-3 py-2.5">
