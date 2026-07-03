@@ -30,9 +30,11 @@ export const dynamic = "force-dynamic";
 // Compute keeps the instance alive through after() up to maxDuration. A
 // Foundation Plan deck runs a full retirement-comparison projection + LI
 // solve before rendering — 60s wasn't enough on prod and the instance was
-// hard-killed mid-render. Must stay below STALE_RUN_MS (generation-runs.ts)
+// hard-killed mid-render; the first successful run then used 292s of a 300s
+// budget. 800 is the Pro-plan Fluid ceiling; headroom is free (billing is
+// active CPU, not the cap). Must stay below STALE_RUN_MS (generation-runs.ts)
 // or the reaper marks still-running jobs "timed out".
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(
   request: NextRequest,
