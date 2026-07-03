@@ -58,6 +58,30 @@ export async function ensureTranscriptsFolder(
   return folder.id;
 }
 
+export const MEETING_PREP_FOLDER_NAME = "Meeting Prep";
+
+/** Find-or-create the household's "Meeting Prep" system folder. Mirrors
+ *  ensureTranscriptsFolder (idempotent on this specific folder, unlike
+ *  ensureSystemFolders which bails if ANY system folder exists). */
+export async function ensureMeetingPrepFolder(
+  householdId: string,
+  firmId: string,
+): Promise<string> {
+  const existing = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.householdId, householdId),
+      eq(crmDocumentFolders.name, MEETING_PREP_FOLDER_NAME),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+  const [folder] = await db
+    .insert(crmDocumentFolders)
+    .values({ householdId, firmId, name: MEETING_PREP_FOLDER_NAME, isSystem: true })
+    .returning({ id: crmDocumentFolders.id });
+  return folder.id;
+}
+
 export async function listFolders(
   householdId: string,
 ): Promise<CrmDocumentFolderRow[]> {
