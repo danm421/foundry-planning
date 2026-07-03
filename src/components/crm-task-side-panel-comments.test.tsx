@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@clerk/nextjs", () => ({
   useUser: () => ({ user: { id: "u_me" } }),
@@ -70,5 +70,75 @@ describe("mention chips", () => {
       />,
     );
     expect(other.getByText("@Jane Smith").className).not.toContain("text-accent-ink");
+  });
+});
+
+function setup(initialComments: Parameters<typeof CrmTaskSidePanelComments>[0]["initialComments"] = []) {
+  render(
+    <CrmTaskSidePanelComments taskId="t1" initialComments={initialComments} members={MEMBERS} />,
+  );
+  return screen.getByPlaceholderText(/write a comment/i) as HTMLTextAreaElement;
+}
+
+/** Type into the textarea with the caret at the end (fireEvent.change leaves selectionStart at value.length). */
+function type(ta: HTMLTextAreaElement, value: string) {
+  fireEvent.change(ta, { target: { value } });
+}
+
+describe("mention composer", () => {
+  it("opens the popover on @query and inserts the name on click", () => {
+    const ta = setup();
+    type(ta, "cc @ja");
+    const option = screen.getByRole("option", { name: /jane smith/i });
+    fireEvent.click(option);
+    expect(ta.value).toBe("cc @Jane Smith ");
+    expect(screen.queryByRole("listbox")).toBeNull(); // popover closed
+  });
+
+  it("navigates with arrows and picks with Enter", () => {
+    const ta = setup();
+    type(ta, "@"); // both members match
+    fireEvent.keyDown(ta, { key: "ArrowDown" });
+    fireEvent.keyDown(ta, { key: "Enter" });
+    // Second member (Jane Smith) picked.
+    expect(ta.value).toBe("@Jane Smith ");
+  });
+
+  it("closes on Escape without inserting", () => {
+    const ta = setup();
+    type(ta, "@ja");
+    fireEvent.keyDown(ta, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(ta.value).toBe("@ja");
+  });
+
+  it("does not open for an email-like @", () => {
+    const ta = setup();
+    type(ta, "dan@gmail");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("posts the tokenized body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        comment: {
+          id: "c9",
+          authorUserId: "u_me",
+          bodyMarkdown: "cc @[Jane Smith](user:u_jane) done",
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ta = setup();
+    type(ta, "cc @ja");
+    fireEvent.click(screen.getByRole("option", { name: /jane smith/i }));
+    type(ta, "cc @Jane Smith done");
+    fireEvent.click(screen.getByRole("button", { name: /post/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sent.bodyMarkdown).toBe("cc @[Jane Smith](user:u_jane) done");
+    vi.unstubAllGlobals();
   });
 });
