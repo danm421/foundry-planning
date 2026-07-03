@@ -2,16 +2,15 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
-import type { TaskQuickFilter } from "@/lib/crm-tasks/filters";
+import { coerceQuickFilter, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
 
 interface ChipDef {
-  /** URL value. `null` means "no `quick` param" (i.e. default). */
-  value: TaskQuickFilter | null;
+  value: TaskQuickFilter;
   label: string;
 }
 
 const CHIPS: ChipDef[] = [
-  { value: null, label: "All" },
+  { value: "all", label: "All" },
   { value: "mine", label: "My tasks" },
   { value: "open", label: "Open" },
   { value: "overdue", label: "Overdue" },
@@ -20,10 +19,11 @@ const CHIPS: ChipDef[] = [
 
 /**
  * Scope-anchor params that must survive a chip click so nested views
- * (a specific household's tasks tab, a tag-scoped list) don't lose their
- * scope when the user toggles a quick filter.
+ * (a specific household's tasks tab, a tag-scoped list, an explicit
+ * assignee filter) don't lose their scope when the user toggles a quick
+ * filter.
  */
-const PRESERVED_PARAMS = ["householdId", "tagId", "priority", "task"] as const;
+const PRESERVED_PARAMS = ["householdId", "tagId", "priority", "task", "tab", "assignee"] as const;
 
 /**
  * Renders the quick-filter chips above the task table. Client component —
@@ -34,20 +34,21 @@ export function CrmTaskFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentQuick = searchParams.get("quick");
+  // No `quick` param renders the same list as the "Open" preset (done
+  // hidden), so highlight the Open chip on the default landing.
+  const currentQuick = coerceQuickFilter(searchParams.get("quick")) ?? "open";
 
-  function chipHref(value: TaskQuickFilter | null): string {
+  function chipHref(value: TaskQuickFilter): string {
     const next = new URLSearchParams();
     for (const k of PRESERVED_PARAMS) {
       const v = searchParams.get(k);
       if (v) next.set(k, v);
     }
-    if (value) next.set("quick", value);
-    const qs = next.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
+    next.set("quick", value);
+    return `${pathname}?${next.toString()}`;
   }
 
-  function onClick(e: React.MouseEvent<HTMLButtonElement>, value: TaskQuickFilter | null) {
+  function onClick(e: React.MouseEvent<HTMLButtonElement>, value: TaskQuickFilter) {
     e.preventDefault();
     router.replace(chipHref(value), { scroll: false });
   }
@@ -55,7 +56,7 @@ export function CrmTaskFilters() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {CHIPS.map((chip) => {
-        const isActive = (chip.value ?? null) === (currentQuick ?? null);
+        const isActive = chip.value === currentQuick;
         return (
           <button
             key={chip.label}

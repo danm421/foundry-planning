@@ -48,6 +48,9 @@ interface CrmTaskSidePanelDetailsProps {
   firmTags: CrmTagOption[];
   /** Tags currently attached to this task. */
   initialTags: CrmTagOption[];
+  /** Notifies the owner when status/priority change so chrome outside this
+   *  tab (the panel header pill/dot) can stay in sync. */
+  onMetaChange?: (patch: { status?: CrmTaskStatus; priority?: CrmTaskPriority }) => void;
 }
 
 const STATUS_LABEL: Record<CrmTaskStatus, string> = {
@@ -104,6 +107,7 @@ export function CrmTaskSidePanelDetails({
   households,
   firmTags,
   initialTags,
+  onMetaChange,
 }: CrmTaskSidePanelDetailsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<CrmTaskStatus>(initial.status);
@@ -197,6 +201,7 @@ export function CrmTaskSidePanelDetails({
         onSave={async (next) => {
           await patchStatus(taskId, next);
           setStatus(next);
+          onMetaChange?.({ status: next });
           refresh();
         }}
         editor={({ value, setValue, commit }) => (
@@ -222,6 +227,7 @@ export function CrmTaskSidePanelDetails({
         onSave={async (next) => {
           await patchField(taskId, { field: "priority", value: next });
           setPriority(next);
+          onMetaChange?.({ priority: next });
           refresh();
         }}
         editor={({ value, setValue, commit }) => (

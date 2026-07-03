@@ -195,7 +195,7 @@ export function TasksPage({
         </button>
       </div>
 
-      <CrmTaskTable rows={initialRows} hrefBase={hrefBase} />
+      <CrmTaskTable rows={initialRows} hrefBase={hrefBase} members={members} />
 
       {detailError && activeTaskId && (
         <div
@@ -241,6 +241,11 @@ export function TasksPage({
                 households={households}
                 firmTags={firmTags}
                 initialTags={detail!.tags}
+                onMetaChange={(patch) =>
+                  setDetail((prev) =>
+                    prev ? { ...prev, task: { ...prev.task, ...patch } } : prev,
+                  )
+                }
               />
             ) : (
               <PanelBodySkeleton variant="details" />
@@ -251,6 +256,7 @@ export function TasksPage({
               <CrmTaskSidePanelComments
                 taskId={detail!.task.id}
                 initialComments={detail!.comments}
+                members={members}
               />
             ) : (
               <PanelBodySkeleton variant="list" />

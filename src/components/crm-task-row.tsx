@@ -8,6 +8,8 @@ interface CrmTaskRowProps {
   /** Path prefix that the side-panel deep-link appends `?task=<id>` onto.
    *  Lets the same row work from `/crm/tasks` or `/crm/households/[id]`. */
   hrefBase: string;
+  /** Resolved assignee display name; null when the task is unassigned. */
+  assigneeName: string | null;
 }
 
 const PRIORITY_DOT_CLASS: Record<TaskListRow["priority"], string> = {
@@ -37,10 +39,10 @@ const STATUS_PILL_CLASS: Record<TaskListRow["status"], string> = {
 };
 
 /**
- * Single row in `<CrmTaskTable>`. Server component — purely presentational.
- * The entire row is a single deep-link to the side panel via `?task=<id>`.
+ * Single row in `<CrmTaskTable>`. Purely presentational — the entire row
+ * is a single deep-link to the side panel via `?task=<id>`.
  */
-export function CrmTaskRow({ task, hrefBase }: CrmTaskRowProps) {
+export function CrmTaskRow({ task, hrefBase, assigneeName }: CrmTaskRowProps) {
   const sep = hrefBase.includes("?") ? "&" : "?";
   const href = `${hrefBase}${sep}task=${task.id}`;
   const due = formatDueDate(task.dueDate);
@@ -72,7 +74,7 @@ export function CrmTaskRow({ task, hrefBase }: CrmTaskRowProps) {
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-2">
         <Link href={href} className="block">
-          {task.assigneeUserId ?? "Unassigned"}
+          {assigneeName ?? "Unassigned"}
         </Link>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm">

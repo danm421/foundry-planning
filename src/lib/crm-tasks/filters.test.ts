@@ -1,5 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { normalizeQuickFilters } from "./filters";
+import { coerceQuickFilter, normalizeQuickFilters } from "./filters";
+
+describe("coerceQuickFilter", () => {
+  it("passes through every known preset", () => {
+    for (const v of ["all", "mine", "open", "overdue", "done"] as const) {
+      expect(coerceQuickFilter(v)).toBe(v);
+    }
+  });
+
+  it("returns null for absent values", () => {
+    expect(coerceQuickFilter(undefined)).toBeNull();
+    expect(coerceQuickFilter(null)).toBeNull();
+    expect(coerceQuickFilter("")).toBeNull();
+  });
+
+  it("returns null for unknown values", () => {
+    expect(coerceQuickFilter("bogus")).toBeNull();
+    expect(coerceQuickFilter("OPEN")).toBeNull();
+  });
+});
 
 describe("normalizeQuickFilters", () => {
   const currentUserId = "user_abc";

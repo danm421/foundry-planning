@@ -1,18 +1,22 @@
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
+import type { FirmMember } from "@/lib/crm-tasks/members";
 import { CrmTaskRow } from "./crm-task-row";
 
 interface CrmTaskTableProps {
   rows: TaskListRow[];
   /** Path prefix used by each row's deep-link. */
   hrefBase: string;
+  /** Firm members used to resolve assignee ids to display names. */
+  members: FirmMember[];
 }
 
 /**
- * Server component. Renders the task list as a table with consistent
- * density relative to `<CrmHouseholdTable>`. Empty state lives inline so
- * the surrounding page chrome (filters, "New task" button) remains.
+ * Renders the task list as a table with consistent density relative to
+ * `<CrmHouseholdTable>`. Empty state lives inline so the surrounding page
+ * chrome (filters, "New task" button) remains.
  */
-export function CrmTaskTable({ rows, hrefBase }: CrmTaskTableProps) {
+export function CrmTaskTable({ rows, hrefBase, members }: CrmTaskTableProps) {
+  const nameByUserId = new Map(members.map((m) => [m.userId, m.displayName]));
   if (rows.length === 0) {
     return (
       <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
@@ -53,7 +57,16 @@ export function CrmTaskTable({ rows, hrefBase }: CrmTaskTableProps) {
         </thead>
         <tbody className="divide-y divide-hair">
           {rows.map((row) => (
-            <CrmTaskRow key={row.id} task={row} hrefBase={hrefBase} />
+            <CrmTaskRow
+              key={row.id}
+              task={row}
+              hrefBase={hrefBase}
+              assigneeName={
+                row.assigneeUserId
+                  ? nameByUserId.get(row.assigneeUserId) ?? row.assigneeUserId
+                  : null
+              }
+            />
           ))}
         </tbody>
       </table>
