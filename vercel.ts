@@ -7,21 +7,18 @@ import { type VercelConfig } from "@vercel/config/v1";
  */
 export const config: VercelConfig = {
   framework: "nextjs",
-  // CPU-bound Monte Carlo / solver routes: 3009MB provisions the Performance
-  // machine (~2 vCPU vs Standard's 1) — the max Vercel Functions offer. The
-  // engine is single-threaded, so the second core's win is concurrency: the
-  // PoS gauge and an active solve stop halving each other on a shared vCPU.
+  // Every route handler runs on the Performance machine (3009MB, ~2 vCPU —
+  // the max Vercel Functions offer; Standard's 2048MB is 1 vCPU). Originally
+  // scoped to the CPU-bound solver/MC routes, but the scoping itself became
+  // the bug: presentation generation runs solver-grade compute (projection +
+  // MC + LI solve) and was left on the small machine, so prod decks crawled
+  // and died. App-wide costs ~2¢/month more at current volume (memory-time is
+  // pennies; active-CPU billing is unaffected by machine size) and removes
+  // the "forgot to scope a heavy route" failure mode for good.
   functions: {
-    "src/app/api/clients/**/solver/**/route.ts": { memory: 3009 },
-    "src/app/api/clients/**/monte-carlo/route.ts": { memory: 3009 },
-    "src/app/api/clients/**/life-insurance/solve/route.ts": { memory: 3009 },
-    "src/app/api/clients/**/life-insurance/solve-mc/route.ts": { memory: 3009 },
-    // Presentation generation (Foundation Plan decks) runs the same
-    // solver-grade compute inline: retirement-comparison projection + MC and
-    // the LI-summary solve, then a multi-page react-pdf render. Both glob
-    // variants are needed: export-pdf is a route.tsx.
-    "src/app/api/clients/**/presentations/**/route.ts": { memory: 3009 },
-    "src/app/api/clients/**/presentations/**/route.tsx": { memory: 3009 },
+    "src/app/**/route.ts": { memory: 3009 },
+    "src/app/**/route.tsx": { memory: 3009 },
+    "src/app/**/page.tsx": { memory: 3009 },
   },
   crons: [
     {
