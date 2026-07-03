@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MeetingPrepWizard } from "../meeting-prep-wizard";
 
 beforeEach(() => {
@@ -72,8 +72,7 @@ describe("MeetingPrepWizard", () => {
   });
 
   it("returns to setup with the error when the run fails (setup preserved)", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const url = String(input);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
       if (init?.method === "POST") {
         return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
       }
@@ -92,6 +91,70 @@ describe("MeetingPrepWizard", () => {
     await waitFor(() => expect(screen.getByText(/try again/i)).toBeTruthy());
     expect(screen.getByText(/boom/i)).toBeTruthy();
     expect((screen.getByLabelText(/meeting focus/i) as HTMLTextAreaElement).value).toBe("Annual review");
+  });
+
+  it("treats done without a result payload as a failure and returns to setup", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
+      }
+      return new Response(
+        JSON.stringify({ run: { id: "r1", status: "done", error: null, resultPayload: null } }),
+        { status: 200 },
+      );
+    });
+    render(
+      <MeetingPrepWizard householdId="h1" householdName="The Coopers" hasPlanningClient={true} />,
+    );
+    fireEvent.change(screen.getByLabelText(/meeting focus/i), {
+      target: { value: "Annual review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+    await waitFor(() => expect(screen.getByText(/try again/i)).toBeTruthy());
+    expect(screen.getByText(/something went wrong/i)).toBeTruthy();
+    expect((screen.getByLabelText(/meeting focus/i) as HTMLTextAreaElement).value).toBe("Annual review");
+  });
+
+  it("stops polling and surfaces an error after repeated failed status checks", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+        if (init?.method === "POST") {
+          return new Response(JSON.stringify({ runId: "r1" }), { status: 202 });
+        }
+        return new Response("nope", { status: 500 });
+      });
+      render(
+        <MeetingPrepWizard householdId="h1" householdName="The Coopers" hasPlanningClient={true} />,
+      );
+      fireEvent.change(screen.getByLabelText(/meeting focus/i), {
+        target: { value: "Annual review" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+      // Flush the POST + the immediate first (failing) tick, then walk through
+      // the remaining retries at the 3s cadence until the cap trips.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      for (let i = 0; i < 9; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000);
+        });
+      }
+      expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
+      expect(screen.getByText(/couldn't check on the draft/i)).toBeTruthy();
+      const getCalls = fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST").length;
+      expect(getCalls).toBe(10);
+      // Polling stopped — no further GETs after the cap.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000);
+      });
+      expect(
+        fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST").length,
+      ).toBe(10);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("surfaces the POST error and stays on setup when queueing itself fails", async () => {

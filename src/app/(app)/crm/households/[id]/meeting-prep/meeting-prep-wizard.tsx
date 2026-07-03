@@ -34,6 +34,9 @@ const DOC_LABELS: Record<MeetingPrepDocKind, string> = {
 };
 
 const RUN_POLL_MS = 3000;
+// Consecutive failed status checks (non-2xx or network error) before we stop
+// polling and surface an error — ~30s of a dead endpoint.
+const RUN_POLL_MAX_FAILURES = 10;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -192,6 +195,22 @@ export function MeetingPrepWizard({
     if (!activeRunId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
+    const bail = (message: string) => {
+      setActiveRunId(null);
+      setError(message);
+      setStep("setup");
+    };
+    // Non-ok response or network error — retry until the cap, then give up
+    // (session expiry / 404 / outage would otherwise spin forever).
+    const retryOrBail = () => {
+      failures += 1;
+      if (failures >= RUN_POLL_MAX_FAILURES) {
+        bail("Couldn't check on the draft. Please try again.");
+        return;
+      }
+      timer = setTimeout(tick, RUN_POLL_MS);
+    };
     const tick = async () => {
       try {
         const res = await fetch(
@@ -200,6 +219,7 @@ export function MeetingPrepWizard({
         );
         if (cancelled) return;
         if (res.ok) {
+          failures = 0;
           const { run } = (await res.json()) as {
             run: {
               status: string;
@@ -207,9 +227,16 @@ export function MeetingPrepWizard({
               resultPayload: { draft: Draft; data: MeetingPrepBattery | null } | null;
             };
           };
-          if (run.status === "done" && run.resultPayload) {
+          if (run.status === "done") {
             setActiveRunId(null);
-            applyRunResult(run.resultPayload);
+            if (run.resultPayload) {
+              applyRunResult(run.resultPayload);
+            } else {
+              // Terminal but empty — the stale sweep never rescues done rows,
+              // so polling on would never end.
+              setError("Something went wrong.");
+              setStep("setup");
+            }
             return;
           }
           if (run.status === "failed") {
@@ -218,12 +245,14 @@ export function MeetingPrepWizard({
             setStep("setup");
             return;
           }
+          // still in flight — poll again (stale sweep server-side guarantees
+          // in-flight runs terminate)
+          timer = setTimeout(tick, RUN_POLL_MS);
+          return;
         }
-        // non-ok or still in flight — poll again (stale sweep server-side
-        // guarantees this terminates)
-        timer = setTimeout(tick, RUN_POLL_MS);
+        retryOrBail();
       } catch {
-        if (!cancelled) timer = setTimeout(tick, RUN_POLL_MS); // transient network blip
+        if (!cancelled) retryOrBail(); // transient network blip
       }
     };
     tick();
