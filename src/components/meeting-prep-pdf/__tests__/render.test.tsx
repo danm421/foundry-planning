@@ -67,4 +67,26 @@ describe("meeting-prep PDF documents", () => {
     const buffer = await renderToBuffer(doc);
     expect(buffer.length).toBeGreaterThan(1_000);
   }, 30_000);
+
+  it("omits the portfolio-at-a-glance panel when the household has no tracked accounts", async () => {
+    const emptyPortfolioModel = buildMeetingPrepPdfModel({
+      battery: { ...battery, portfolio: { source: "planning", accounts: [], total: 0 } },
+      setup: { focus: "Roth conversion", context: "", meetingDate: "2026-07-10", windowStart: null, docs: ["agenda"] },
+      preparedBy: "Dan Mueller",
+      generatedAt: "Jul 2, 2026, 9:00 AM",
+    });
+
+    // Pin the omission: byCategory must be empty even though totalDisplay
+    // ("$0") is a truthy string — that's the exact bug the gate must avoid.
+    expect(emptyPortfolioModel.portfolio.byCategory).toHaveLength(0);
+    expect(emptyPortfolioModel.portfolio.totalDisplay).toBe("$0");
+
+    const doc = React.createElement(AgendaDocument, {
+      model: emptyPortfolioModel,
+      draft: { agendaItems: [{ title: "Portfolio review", description: "How your accounts have grown." }] },
+      logoDataUrl: null,
+    }) as React.ReactElement<DocumentProps>;
+    const buffer = await renderToBuffer(doc);
+    expect(buffer.length).toBeGreaterThan(1_000);
+  }, 30_000);
 });

@@ -389,6 +389,23 @@ export function MeetingPrepWizard({
   const brief = draft?.brief ?? null;
   const agenda = draft?.agenda ?? null;
 
+  // Export 400s on a required field the advisor blanked out post-generation
+  // (an emptied briefing, or an agenda item title). Catch it client-side with
+  // a clearer hint instead of surfacing the API's generic error.
+  function exportDisabledReason(kind: MeetingPrepDocKind): string | null {
+    if (kind === "brief") {
+      if (!brief || brief.briefing.trim().length === 0) {
+        return "Add a briefing before exporting";
+      }
+    }
+    if (kind === "agenda") {
+      if (!agenda || agenda.agendaItems.some((item) => item.title.trim().length === 0)) {
+        return "Every agenda item needs a title";
+      }
+    }
+    return null;
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <Header householdName={householdName} />
@@ -448,23 +465,30 @@ export function MeetingPrepWizard({
         <button type="button" onClick={() => setStep("setup")} className="btn-ghost">
           Regenerate
         </button>
-        <div className="flex flex-wrap gap-2">
-          {generatedDocs.map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => handleExport(kind)}
-              disabled={exporting !== null}
-              className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {exporting === kind
-                ? "Exporting…"
-                : `Export ${kind === "brief" ? "Brief" : "Agenda"} PDF`}
-              {exported.includes(kind) && exporting !== kind && (
-                <span className="ml-1.5">✓</span>
-              )}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-end gap-2">
+          {generatedDocs.map((kind) => {
+            const disabledReason = exportDisabledReason(kind);
+            return (
+              <div key={kind} className="flex flex-col items-end gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleExport(kind)}
+                  disabled={exporting !== null || disabledReason !== null}
+                  className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exporting === kind
+                    ? "Exporting…"
+                    : `Export ${kind === "brief" ? "Brief" : "Agenda"} PDF`}
+                  {exported.includes(kind) && exporting !== kind && (
+                    <span className="ml-1.5">✓</span>
+                  )}
+                </button>
+                {disabledReason && (
+                  <p className="text-[12px] text-ink-4">{disabledReason}</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

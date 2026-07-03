@@ -170,8 +170,11 @@ export function AgendaDocument({
           </View>
         ))}
 
-        {/* Portfolio at a glance — category totals + grand total ONLY */}
-        {(model.portfolio.byCategory.length > 0 || model.portfolio.totalDisplay) && (
+        {/* Portfolio at a glance — category totals + grand total ONLY.
+            Gate on byCategory alone: totalDisplay is a formatted money string
+            (money(0) === "$0") and is therefore always truthy, so it must
+            never be used to decide whether the panel renders. */}
+        {model.portfolio.byCategory.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Your portfolio at a glance</Text>
             <View style={styles.glancePanel}>
