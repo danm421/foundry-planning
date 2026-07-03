@@ -18,6 +18,7 @@ import {
   type AgendaDraft,
 } from "@/lib/crm/meeting-prep/schemas";
 import type { MeetingPrepBattery } from "@/lib/crm/meeting-prep/battery";
+import { MeetingPrepRecentRuns } from "./meeting-prep-recent-runs";
 
 type WizardStep = "setup" | "generating" | "review";
 type Draft = { brief: PrepBriefDraft | null; agenda: AgendaDraft | null };
@@ -32,6 +33,11 @@ const DOC_LABELS: Record<MeetingPrepDocKind, string> = {
   brief: "Prep Brief (internal)",
   agenda: "Client Agenda (client-facing)",
 };
+
+const RUN_POLL_MS = 3000;
+// Consecutive failed status checks (non-2xx or network error) before we stop
+// polling and surface an error — ~30s of a dead endpoint.
+const RUN_POLL_MAX_FAILURES = 10;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -76,12 +82,14 @@ export function MeetingPrepWizard({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [data, setData] = useState<MeetingPrepBattery | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<MeetingPrepDocKind>("brief");
   const [exporting, setExporting] = useState<MeetingPrepDocKind | null>(null);
   const [exported, setExported] = useState<MeetingPrepDocKind[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
   const [restoredBanner, setRestoredBanner] = useState(false);
+  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
 
   // Restore any unsaved draft AFTER mount (never during render/SSR — no
   // localStorage on the server, and a synchronous read would hydration-mismatch).
@@ -148,36 +156,146 @@ export function MeetingPrepWizard({
 
   const canGenerate = focus.trim().length > 0 && docs.length > 0;
 
+  function applyRunResult(payload: { draft: Draft; data: MeetingPrepBattery | null }) {
+    setDraft(payload.draft);
+    setData(payload.data ?? null);
+    setExported([]);
+    setExportError(null);
+    setActiveTab(
+      docs.find((d) => payload.draft[d]) ?? (payload.draft.brief ? "brief" : "agenda"),
+    );
+    setStep("review");
+  }
+
+  // A run replaces whatever draft is in progress — confirm when one exists
+  // (in state on the review step, or parked in localStorage from the restore
+  // effect on the setup step).
+  function confirmReplace(): boolean {
+    let hasStored = false;
+    try {
+      hasStored = window.localStorage.getItem(draftStorageKey(householdId)) !== null;
+    } catch {
+      // storage blocked — nothing restorable to protect
+    }
+    if (!draft && !hasStored) return true;
+    return window.confirm(
+      "Opening this run will replace your current draft edits. Continue?",
+    );
+  }
+
+  function openRun(
+    payload: { draft: Draft; data: MeetingPrepBattery | null },
+    runSetup: MeetingPrepSetup | null,
+  ) {
+    if (runSetup) {
+      setFocus(runSetup.focus ?? "");
+      setContext(runSetup.context ?? "");
+      setMeetingDate(runSetup.meetingDate ?? today());
+      setWindowStart(runSetup.windowStart ?? null);
+      if (Array.isArray(runSetup.docs) && runSetup.docs.length > 0) setDocs(runSetup.docs);
+    }
+    setRestoredBanner(false);
+    applyRunResult(payload);
+  }
+
   async function handleGenerate() {
     if (!canGenerate) return;
     setStep("generating");
     setError(null);
     try {
-      const res = await fetch(`/api/crm/households/${householdId}/meeting-prep/draft`, {
+      const res = await fetch(`/api/crm/households/${householdId}/meeting-prep/runs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(setup),
       });
-      if (!res.ok) {
+      if (res.status !== 202) {
         const j = await res.json().catch(() => ({}));
         throw new Error(
           typeof j?.error === "string" ? j.error : `Draft failed (${res.status})`,
         );
       }
-      const json = (await res.json()) as { draft: Draft; data: MeetingPrepBattery };
-      setDraft(json.draft);
-      setData(json.data);
-      setExported([]);
-      setExportError(null);
-      setActiveTab(
-        docs.find((d) => json.draft[d]) ?? (json.draft.brief ? "brief" : "agenda"),
-      );
-      setStep("review");
+      const { runId } = (await res.json()) as { runId: string };
+      setActiveRunId(runId); // polling effect takes over
+      setRunsRefreshKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStep("setup");
     }
   }
+
+  // Poll the active run until it settles. The run lives server-side — leaving
+  // this page doesn't kill it; Recent runs picks it up on return.
+  useEffect(() => {
+    if (!activeRunId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
+    const bail = (message: string) => {
+      setActiveRunId(null);
+      setError(message);
+      setStep("setup");
+    };
+    // Non-ok response or network error — retry until the cap, then give up
+    // (session expiry / 404 / outage would otherwise spin forever).
+    const retryOrBail = () => {
+      failures += 1;
+      if (failures >= RUN_POLL_MAX_FAILURES) {
+        bail("Couldn't check on the draft. Please try again.");
+        return;
+      }
+      timer = setTimeout(tick, RUN_POLL_MS);
+    };
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/crm/households/${householdId}/meeting-prep/runs/${activeRunId}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          const { run } = (await res.json()) as {
+            run: {
+              status: string;
+              error: string | null;
+              resultPayload: { draft: Draft; data: MeetingPrepBattery | null } | null;
+            };
+          };
+          failures = 0;
+          if (run.status === "done") {
+            setActiveRunId(null);
+            if (run.resultPayload) {
+              applyRunResult(run.resultPayload);
+            } else {
+              // Terminal but empty — the stale sweep never rescues done rows,
+              // so polling on would never end.
+              setError("Something went wrong.");
+              setStep("setup");
+            }
+            return;
+          }
+          if (run.status === "failed") {
+            setActiveRunId(null);
+            setError(run.error ?? "Something went wrong.");
+            setStep("setup");
+            return;
+          }
+          // still in flight — poll again (stale sweep server-side guarantees
+          // in-flight runs terminate)
+          timer = setTimeout(tick, RUN_POLL_MS);
+          return;
+        }
+        retryOrBail();
+      } catch {
+        if (!cancelled) retryOrBail(); // transient network blip
+      }
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRunId, householdId]);
 
   function updateBrief(patch: Partial<PrepBriefDraft>) {
     setDraft((prev) =>
@@ -364,6 +482,13 @@ export function MeetingPrepWizard({
             </button>
           </div>
         </div>
+
+        <MeetingPrepRecentRuns
+          householdId={householdId}
+          refreshKey={runsRefreshKey}
+          onOpenRun={openRun}
+          confirmReplace={confirmReplace}
+        />
       </div>
     );
   }
@@ -491,6 +616,13 @@ export function MeetingPrepWizard({
           })}
         </div>
       </div>
+
+      <MeetingPrepRecentRuns
+        householdId={householdId}
+        refreshKey={runsRefreshKey}
+        onOpenRun={openRun}
+        confirmReplace={confirmReplace}
+      />
     </div>
   );
 }

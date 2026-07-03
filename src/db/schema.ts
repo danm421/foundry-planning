@@ -702,9 +702,8 @@ export const generationRuns = pgTable("generation_runs", {
   householdId: uuid("household_id")
     .notNull()
     .references(() => crmHouseholds.id, { onDelete: "cascade" }),
-  clientId: uuid("client_id")
-    .notNull()
-    .references(() => clients.id, { onDelete: "cascade" }),
+  // was: .notNull() — meeting-prep runs exist for households with no planning client
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
   firmId: text("firm_id").notNull(),
 
   kind: text("kind").notNull(),
@@ -717,6 +716,9 @@ export const generationRuns = pgTable("generation_runs", {
     onDelete: "set null",
   }),
   requestPayload: jsonb("request_payload"),
+  // Meeting-prep runs park their finished {draft, data} here (no vault doc).
+  // Null for presentation runs, whose result is resultDocumentId.
+  resultPayload: jsonb("result_payload"),
   resultDocumentId: uuid("result_document_id").references(
     () => crmHouseholdDocuments.id,
     { onDelete: "set null" },

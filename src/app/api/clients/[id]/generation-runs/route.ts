@@ -26,7 +26,10 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const runs = await listRecentRuns(householdId, firmId, LIMIT);
+    // Meeting-prep runs have their own panel on the meeting-prep page.
+    const runs = await listRecentRuns(householdId, firmId, LIMIT, {
+      excludeKinds: ["meeting-prep"],
+    });
     return NextResponse.json(
       { householdId, runs },
       { headers: { "Cache-Control": "no-store" } },

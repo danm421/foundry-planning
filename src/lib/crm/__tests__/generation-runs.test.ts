@@ -21,6 +21,7 @@ import {
   markFailed,
   recordCompletedRun,
   listRecentRuns,
+  getRunForHousehold,
   STALE_RUN_MS,
 } from "../generation-runs";
 
@@ -159,5 +160,73 @@ describe("listRecentRuns stale sweep", () => {
     });
     const rows = await listRecentRuns(householdId, ORG, 25);
     expect(rows.every((r) => r.firmId === ORG)).toBe(true);
+  });
+});
+
+describe("generation-runs lib", () => {
+  const ORG2 = "org_genruns_lib";
+  let householdId2: string;
+
+  const base = () => ({
+    clientId: null,
+    householdId: householdId2,
+    firmId: ORG2,
+    scenarioId: null,
+    triggeredBy: null,
+    triggeredByEmail: null,
+    requestPayload: { focus: "x" },
+  });
+
+  beforeEach(async () => {
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, ORG2)); // cascades to runs
+    const [h] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: ORG2, advisorId: "u", name: "HH" })
+      .returning();
+    householdId2 = h.id;
+  });
+
+  it("createQueuedRun accepts a null clientId", async () => {
+    const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    expect(id).toBeTruthy();
+  });
+
+  it("markDone persists a result payload", async () => {
+    const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    await markDone(id, null, { draft: { brief: null, agenda: null }, data: { ok: true } });
+    const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, id!));
+    expect(row.status).toBe("done");
+    expect(row.resultPayload).toEqual({ draft: { brief: null, agenda: null }, data: { ok: true } });
+  });
+
+  it("listRecentRuns filters by kind and excludeKinds", async () => {
+    await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    await createQueuedRun({ ...base(), kind: "presentation" });
+    const only = await listRecentRuns(householdId2, ORG2, 25, { kind: "meeting-prep" });
+    expect(only).toHaveLength(1);
+    expect(only[0].kind).toBe("meeting-prep");
+    const excluded = await listRecentRuns(householdId2, ORG2, 25, { excludeKinds: ["meeting-prep"] });
+    expect(excluded).toHaveLength(1);
+    expect(excluded[0].kind).toBe("presentation");
+    const all = await listRecentRuns(householdId2, ORG2, 25);
+    expect(all).toHaveLength(2);
+  });
+
+  it("getRunForHousehold returns the run, and null on household mismatch", async () => {
+    const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    const run = await getRunForHousehold(id!, householdId2, ORG2);
+    expect(run?.id).toBe(id);
+    expect(await getRunForHousehold(id!, "00000000-0000-0000-0000-000000000000", ORG2)).toBeNull();
+  });
+
+  it("getRunForHousehold sweeps an in-flight run past STALE_RUN_MS to failed", async () => {
+    const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
+    await db
+      .update(generationRuns)
+      .set({ createdAt: new Date(Date.now() - 4 * 60 * 1000), status: "running" })
+      .where(eq(generationRuns.id, id!));
+    const run = await getRunForHousehold(id!, householdId2, ORG2);
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toBe("timed out");
   });
 });
