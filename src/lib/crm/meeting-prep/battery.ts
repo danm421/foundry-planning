@@ -12,6 +12,7 @@ import { computeAlerts, type Alert } from "@/lib/alerts";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import {
   deriveLastMeetingDate,
+  filterNotesInWindow,
   portfolioFromCrmAccounts,
   portfolioFromPlanningAccounts,
   resolveWindowStart,
@@ -78,7 +79,6 @@ export async function loadMeetingPrepBattery(
 
   const lastMeeting = deriveLastMeetingDate(activity);
   const windowStart = resolveWindowStart(lastMeeting, opts.windowStartOverride ?? null, new Date());
-  const windowStartMs = new Date(`${windowStart}T00:00:00.000Z`).getTime();
 
   const { outstanding, completedInWindow } = splitTasks(taskRows, windowStart);
 
@@ -113,7 +113,8 @@ export async function loadMeetingPrepBattery(
         scenarioId: "base",
       });
       mcSuccessRate = mc.payload.summary.successRate;
-    } catch {
+    } catch (err) {
+      console.error("[meeting-prep] monte carlo compute failed (non-fatal):", err);
       mcSuccessRate = null;
     }
     vitals = {
@@ -156,7 +157,7 @@ export async function loadMeetingPrepBattery(
     })),
     windowStart,
     lastMeetingDate: lastMeeting ? lastMeeting.toISOString().slice(0, 10) : null,
-    notesInWindow: notes.filter((n) => new Date(n.occurredAt).getTime() >= windowStartMs),
+    notesInWindow: filterNotesInWindow(notes, windowStart),
     recentNotes: notes.slice(0, 25),
     outstandingTasks: outstanding,
     completedTasks: completedInWindow,

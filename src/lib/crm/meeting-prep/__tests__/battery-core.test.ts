@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveWindowStart,
   deriveLastMeetingDate,
+  filterNotesInWindow,
   splitTasks,
   portfolioFromCrmAccounts,
   portfolioFromPlanningAccounts,
@@ -50,6 +51,28 @@ describe("splitTasks", () => {
   it("serializes completedAt to YYYY-MM-DD", () => {
     const { completedInWindow } = splitTasks(rows, "2026-05-01");
     expect(completedInWindow[0].completedAt).toBe("2026-06-15");
+  });
+});
+
+describe("filterNotesInWindow", () => {
+  const notes = [
+    { id: "in", occurredAt: "2026-06-15T12:00:00.000Z" },
+    { id: "before", occurredAt: "2026-04-30T23:59:59.999Z" },
+    { id: "boundary", occurredAt: "2026-05-01T00:00:00.000Z" },
+  ];
+  it("keeps notes on or after windowStart and drops earlier ones", () => {
+    const kept = filterNotesInWindow(notes, "2026-05-01");
+    expect(kept.map((n) => n.id)).toEqual(["in", "boundary"]);
+  });
+  it("keeps a note exactly at windowStart midnight UTC", () => {
+    expect(
+      filterNotesInWindow([{ occurredAt: "2026-05-01T00:00:00.000Z" }], "2026-05-01"),
+    ).toHaveLength(1);
+  });
+  it("drops a note just before windowStart", () => {
+    expect(
+      filterNotesInWindow([{ occurredAt: "2026-04-30T23:59:59.999Z" }], "2026-05-01"),
+    ).toHaveLength(0);
   });
 });
 

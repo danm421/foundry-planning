@@ -55,6 +55,10 @@ function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function windowStartToMs(windowStartIso: string): number {
+  return new Date(`${windowStartIso}T00:00:00.000Z`).getTime();
+}
+
 export function resolveWindowStart(
   lastMeetingDate: Date | null,
   override: string | null,
@@ -81,7 +85,7 @@ export function splitTasks(
   rows: TaskRowIn[],
   windowStartIso: string,
 ): { outstanding: MeetingPrepTask[]; completedInWindow: MeetingPrepTask[] } {
-  const windowStartMs = new Date(`${windowStartIso}T00:00:00.000Z`).getTime();
+  const windowStartMs = windowStartToMs(windowStartIso);
   const outstanding: MeetingPrepTask[] = [];
   const completedInWindow: MeetingPrepTask[] = [];
   for (const r of rows) {
@@ -100,6 +104,16 @@ export function splitTasks(
     }
   }
   return { outstanding, completedInWindow };
+}
+
+// Generic over the row type so battery-core stays free of NoteRow imports —
+// anything with an ISO `occurredAt` filters the same way.
+export function filterNotesInWindow<T extends { occurredAt: string }>(
+  notes: T[],
+  windowStartIso: string,
+): T[] {
+  const windowStartMs = windowStartToMs(windowStartIso);
+  return notes.filter((n) => new Date(n.occurredAt).getTime() >= windowStartMs);
 }
 
 export function portfolioFromCrmAccounts(rows: CrmAccountRowIn[]): MeetingPrepPortfolio {
