@@ -588,8 +588,16 @@ export default function BalanceSheetView({
   const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
 
   const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
+  // 529s render as their own category group in the Assets card — that's where
+  // advisors add and look for them — but stay excluded from the in-estate
+  // totals / Net Worth. The Out of Estate box below is only for trust/entity-
+  // held assets, so they're excluded there too.
+  const education529s = nonNoteAccounts.filter(
+    (a) => a.category === "education_savings" && isVisibleInNetWorth(a),
+  );
   const outOfEstate = nonNoteAccounts.filter(
-    (a) => !accountInEstate(a) && isVisibleInNetWorth(a),
+    (a) =>
+      !accountInEstate(a) && a.category !== "education_savings" && isVisibleInNetWorth(a),
   );
 
   // Build child indexes for the new business-as-account model. Top-level
@@ -656,22 +664,10 @@ export default function BalanceSheetView({
 
   const outByEntity = new Map<string, AccountRow[]>();
   for (const a of outOfEstate) {
-    if (a.category === "education_savings") continue; // grouped separately, by beneficiary, below
     const key = a.ownerEntityId!;
     const arr = outByEntity.get(key) ?? [];
     arr.push(a);
     outByEntity.set(key, arr);
-  }
-
-  // 529s group by designated beneficiary rather than owning entity — they
-  // have no ownerEntityId at all. beneficiaryDisplayName is resolved
-  // server-side (page adapter): family-member first+last name when
-  // beneficiaryFamilyMemberId is set, else the free-text beneficiaryName.
-  const education529s = outOfEstate.filter((a) => a.category === "education_savings");
-  const by529Beneficiary = new Map<string, AccountRow[]>();
-  for (const a of education529s) {
-    const key = a.beneficiaryDisplayName ?? "Unnamed beneficiary";
-    by529Beneficiary.set(key, [...(by529Beneficiary.get(key) ?? []), a]);
   }
 
   // Business-entity flat valuations split into in-estate (family-owned) and
@@ -855,12 +851,16 @@ export default function BalanceSheetView({
           }
         >
           {inEstate.length === 0 &&
+          education529s.length === 0 &&
           inEstateBusinessEntityRows.length === 0 &&
           noteRows.length === 0 ? (
             <EmptyRow message="No assets yet. Click Add Asset to get started." />
           ) : (
             CATEGORY_ORDER.map((cat) => {
-              const items = inEstateByCategory[cat];
+              // 529s live in this card for visibility but are out-of-estate,
+              // so they come from their own list, not inEstateByCategory.
+              const items =
+                cat === "education_savings" ? education529s : inEstateByCategory[cat];
               const flatBusinessRows = cat === "business" ? inEstateBusinessEntityRows : [];
               const noteCatRows = cat === "notes_receivable" ? noteRows : [];
               if (
@@ -884,6 +884,7 @@ export default function BalanceSheetView({
                 <CategoryGroup
                   key={cat}
                   label={CATEGORY_LABELS[cat]}
+                  tag={cat === "education_savings" ? "Out of estate" : undefined}
                   total={fmt(subtotal)}
                   expanded={expandedCategories.has(cat)}
                   onToggle={() => toggleCategory(cat)}
@@ -921,7 +922,11 @@ export default function BalanceSheetView({
                         onDelete={canEdit ? () => setDeletingAccount(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
-                        subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
+                        subLabel={
+                          cat === "education_savings"
+                            ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary) · ${growthDisplay(a)}`
+                            : `${ownerDisplay(a)} · ${growthDisplay(a)}`
+                        }
                         value={fmt(a.value)}
                       />
                     ),
@@ -1047,52 +1052,6 @@ export default function BalanceSheetView({
                       </span>
                       <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
                         {entityName}
-                      </span>
-                    </span>
-                    <span className="text-xs font-medium text-amber-200/80">{fmt(subtotal)}</span>
-                  </button>
-                  {expanded && (
-                    <div className="divide-y divide-gray-800">
-                      {rows.map((a) => (
-                        <div
-                          key={a.id}
-                          onClick={canEdit ? () => handleAccountClick(a) : undefined}
-                          className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
-                        >
-                          <div>
-                            <div className="text-sm font-medium text-gray-100">{a.name}</div>
-                            <div className="text-xs text-gray-400">
-                              {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
-                            </div>
-                          </div>
-                          <span className="text-sm font-medium text-gray-100">{fmt(a.value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {Array.from(by529Beneficiary.entries()).map(([beneficiaryName, rows]) => {
-              const subtotal = rows.reduce((s, a) => s + Number(a.value), 0);
-              const toggleKey = `529:${beneficiaryName}`;
-              const expanded = expandedOutOfEstate.has(toggleKey);
-              const heading = `${beneficiaryName} — 529 Plan${rows.length > 1 ? "s" : ""}`;
-              return (
-                <div key={toggleKey} className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
-                  <button
-                    type="button"
-                    onClick={() => toggleOutOfEstate(toggleKey)}
-                    aria-expanded={expanded}
-                    className={`flex w-full items-center justify-between bg-amber-900/15 px-3 py-2 text-left hover:bg-amber-900/25 ${expanded ? "border-b border-amber-900/40" : ""}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-amber-200/70">
-                        {expanded ? <ChevronDown /> : <ChevronRight />}
-                      </span>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
-                        {heading}
                       </span>
                     </span>
                     <span className="text-xs font-medium text-amber-200/80">{fmt(subtotal)}</span>
@@ -1429,12 +1388,16 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 function CategoryGroup({
   label,
+  tag,
   total,
   expanded,
   onToggle,
   children,
 }: {
   label: string;
+  /** Optional amber annotation next to the label (e.g. "Out of estate" on
+   *  the 529 group — listed here for visibility but not in the card total). */
+  tag?: string;
   total: string;
   expanded: boolean;
   onToggle: () => void;
@@ -1453,6 +1416,11 @@ function CategoryGroup({
             {expanded ? <ChevronDown /> : <ChevronRight />}
           </span>
           <span className="text-xs font-semibold uppercase tracking-wider text-gray-200">{label}</span>
+          {tag && (
+            <span className="rounded border border-amber-900/40 bg-amber-900/20 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-300">
+              {tag}
+            </span>
+          )}
         </span>
         <span className="text-xs font-medium text-gray-300">{total}</span>
       </button>

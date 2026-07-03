@@ -202,7 +202,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     return "joint";
   }
 
-  // 529 / education_savings display name for the Out-of-Estate grouping:
+  // 529 / education_savings display name for the Assets-card 529 group:
   // the designated beneficiary's family-member first+last name when set,
   // else the free-text beneficiaryName. Returns null for every other
   // category (education529 is undefined) and for a 529 with neither field
