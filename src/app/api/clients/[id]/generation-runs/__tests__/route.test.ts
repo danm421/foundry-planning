@@ -56,4 +56,15 @@ describe("GET generation-runs", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("excludes meeting-prep runs from the presentations feed", async () => {
+    await db.insert(generationRuns).values([
+      { householdId, clientId, firmId: ORG, kind: "presentation", status: "done" },
+      { householdId, clientId: null, firmId: ORG, kind: "meeting-prep", status: "done" },
+    ]);
+    const res = await GET(get(), { params: Promise.resolve({ id: clientId }) });
+    const json = await res.json();
+    expect(json.runs).toHaveLength(1);
+    expect(json.runs[0].kind).toBe("presentation");
+  });
 });
