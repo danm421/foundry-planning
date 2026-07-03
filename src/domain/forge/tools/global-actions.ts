@@ -2,7 +2,7 @@
 //
 // GLOBAL (clientless) AGENTIC tools — Plan 2. Firm-scoped via requireOrgId();
 // the model never supplies scope. Reads reuse firm-scoped lib queries; writes
-// (create_household / set_up_plan / create_task_for_client) are in
+// (create_household / set_up_plan) are in
 // WRITE_TOOL_NAMES → held by the approval node, run only on the resume pass, and
 // emit forge.write_approved themselves on real success (mirroring Tier-B CRM tools).
 import { tool } from "@langchain/core/tools";
@@ -13,8 +13,6 @@ import { recordAudit } from "@/lib/audit";
 import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
-import { createTask } from "@/lib/crm-tasks/mutations";
-import type { CreateCrmTaskInput } from "@/lib/crm-tasks/schemas";
 import { emitNavigate } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
@@ -39,7 +37,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
       description:
         "Search this advisor's households/clients by name (case-insensitive). Read-only, firm-scoped. " +
         "Returns up to 10 matches with householdId, clientId (null if no plan yet), and status. " +
-        "Use to resolve a name the advisor mentions before open_client or create_task_for_client.",
+        "Use to resolve a name the advisor mentions before open_client or tasks_create.",
       schema: z.object({ query: z.string().min(1).describe("a client or household name to search for") }),
     },
   );
@@ -177,48 +175,5 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  const createTaskForClient = tool(
-    async (args: {
-      householdId: string; title: string; description?: string;
-      priority?: "low" | "med" | "high"; dueDate?: string | null;
-    }) => {
-      try {
-        const firmId = await requireOrgId();
-        const hh = await getCrmHousehold(args.householdId); // firm-scoped IDOR (createTask re-checks too)
-        if (!hh) return "Household not found.";
-        const taskInput: CreateCrmTaskInput = {
-          title: args.title,
-          description: args.description ?? "",
-          priority: args.priority ?? "med",
-          status: "open",
-          recurrence: "none",
-          dueDate: args.dueDate ?? null,
-          householdId: hh.id,
-        };
-        const task = await createTask(firmId, ctx.userId, taskInput);
-        await recordAudit({
-          action: "forge.write_approved", resourceType: "crm_task", resourceId: task.id,
-          firmId, actorId: ctx.userId, metadata: { tool: "create_task_for_client", conversationId, householdId: hh.id },
-        });
-        return JSON.stringify({ taskId: task.id, title: task.title });
-      } catch (e) {
-        return e instanceof Error ? e.message : "Failed to create the task.";
-      }
-    },
-    {
-      name: "create_task_for_client",
-      description:
-        "Create a CRM task for a named client's household. Requires human approval. " +
-        "Resolve the household with find_client first, then pass its householdId (never a raw name). Firm-scoped.",
-      schema: z.object({
-        householdId: z.string().min(1),
-        title: z.string().min(1).max(200),
-        description: z.string().max(10_000).optional(),
-        priority: z.enum(["low", "med", "high"]).optional(),
-        dueDate: z.string().nullable().optional().describe("due date, YYYY-MM-DD"),
-      }),
-    },
-  );
-
-  return [findClient, openClient, createHousehold, setUpPlan, createTaskForClient];
+  return [findClient, openClient, createHousehold, setUpPlan];
 }

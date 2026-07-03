@@ -10,6 +10,7 @@ import { buildHelpTools } from "./help";
 import { buildGlobalNavigateTools } from "./navigate-global";
 import { buildGlobalActionTools } from "./global-actions";
 import { buildWalkthroughTools } from "./walkthrough";
+import { buildGlobalTaskTools } from "./global-tasks";
 
 export function buildGlobalTools(toolCtx: ForgeGlobalToolContext): StructuredToolInterface[] {
   return [
@@ -17,5 +18,6 @@ export function buildGlobalTools(toolCtx: ForgeGlobalToolContext): StructuredToo
     ...buildGlobalNavigateTools(toolCtx),
     ...buildGlobalActionTools(toolCtx),
     ...buildWalkthroughTools(toolCtx),
+    ...buildGlobalTaskTools(toolCtx),
   ];
 }

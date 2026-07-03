@@ -8,17 +8,28 @@ vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.
 vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds: vi.fn(), getCrmHousehold: vi.fn(), createCrmHousehold: vi.fn() }));
 // global-actions (set_up_plan) imports create-client which imports @/db.
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
-// global-actions (create_task_for_client) imports crm-tasks/mutations which imports @/db.
+// global-tasks imports crm-tasks/mutations which imports @/db.
 vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn(), updateTaskField: vi.fn(), setTaskStatus: vi.fn(), postComment: vi.fn(), deleteTask: vi.fn() }));
+// global-tasks imports crm-tasks/queries (@/db) and members (server-only + Clerk).
+vi.mock("@/lib/crm-tasks/queries", () => ({
+  listTasks: vi.fn(), getTaskById: vi.fn(), listTaskComments: vi.fn(),
+  listTaskActivity: vi.fn(), listTaskFiles: vi.fn(),
+}));
+vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: vi.fn() }));
 
 import { buildGlobalTools } from "../global-index";
 
 const toolCtx = { ctx: { userId: "u1", firmId: "f1" }, conversationId: "c1" };
 
 describe("buildGlobalTools", () => {
-  it("contains ONLY help + global-navigate + global-action + walkthrough tools", () => {
+  it("contains ONLY help + global-navigate + global-action + walkthrough + global-task tools", () => {
     const names = buildGlobalTools(toolCtx).map((t) => t.name).sort();
-    expect(names).toEqual(["cite_page", "create_household", "create_task_for_client", "find_client", "get_help", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough"]);
+    expect(names).toEqual([
+      "cite_page", "create_household", "find_client", "firm_members", "get_help",
+      "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
+      "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
+      "tasks_set_status", "tasks_update",
+    ]);
   });
 
   it("contains NO client-scoped tool", () => {

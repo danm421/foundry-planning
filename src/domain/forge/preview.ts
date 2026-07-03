@@ -190,8 +190,20 @@ function previewSetUpPlan(a: Record<string, unknown>): WritePreview {
   return { name: "set_up_plan", summary: `Set up a financial plan${bits ? ` (${bits})` : ""}.` };
 }
 
-function previewCreateTaskForClient(a: Record<string, unknown>): WritePreview {
-  return { name: "create_task_for_client", summary: `Create task "${str(a.title) ?? ""}" for a client.`.trim() };
+function previewTasksCreate(a: Record<string, unknown>): WritePreview {
+  const title = str(a.title) ?? "(untitled)";
+  const due = str(a.dueDate);
+  const bits = [str(a.priority), due && `due ${due}`, a.householdId ? "for a client household" : "firm-level"]
+    .filter(Boolean)
+    .join(", ");
+  return { name: "tasks_create", summary: `Create task "${title}"${bits ? ` (${bits})` : ""}.` };
+}
+
+function previewTasksDelete(a: Record<string, unknown>): WritePreview {
+  return {
+    name: "tasks_delete",
+    summary: `Delete task ${str(a.taskId) ?? ""} — permanent, removes its comments and history.`.trim(),
+  };
 }
 
 function previewAddExpense(a: Record<string, unknown>): WritePreview {
@@ -335,8 +347,10 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCreateHousehold(call.args);
     case "set_up_plan":
       return previewSetUpPlan(call.args);
-    case "create_task_for_client":
-      return previewCreateTaskForClient(call.args);
+    case "tasks_create":
+      return previewTasksCreate(call.args);
+    case "tasks_delete":
+      return previewTasksDelete(call.args);
     default:
       return { name: call.name, summary: `Proposed ${call.name}.` };
   }

@@ -9,14 +9,12 @@ vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") })
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
-vi.mock("@/lib/crm-tasks/mutations", () => ({ createTask: vi.fn() }));
 
 import { buildGlobalActionTools } from "../global-actions";
 import { getCrmHousehold } from "@/lib/crm/households";
 import { emitNavigate } from "../../custom-events";
 import { recordAudit } from "@/lib/audit";
 import { createClientForHousehold } from "@/lib/clients/create-client";
-import { createTask } from "@/lib/crm-tasks/mutations";
 
 const toolCtx = { ctx: { userId: "user_1", firmId: "org_A" }, conversationId: "conv_1" };
 function getTool(name: string) {
@@ -125,28 +123,5 @@ describe("set_up_plan (HITL)", () => {
     }));
     expect(out).toMatch(/not found/i);
     expect(createClientForHousehold).not.toHaveBeenCalled();
-  });
-});
-
-describe("create_task_for_client (HITL)", () => {
-  it("creates a household-scoped task after an IDOR check", async () => {
-    vi.mocked(getCrmHousehold).mockResolvedValue({ id: "hh_1", planningClient: null, contacts: [] } as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
-    vi.mocked(createTask).mockResolvedValue({ id: "task_5", title: "Call Jane" } as unknown as Awaited<ReturnType<typeof createTask>>);
-    const out = JSON.parse(String(await getTool("create_task_for_client").invoke({
-      householdId: "hh_1", title: "Call Jane", priority: "high", dueDate: "2026-07-15",
-    })));
-    expect(createTask).toHaveBeenCalledWith("org_A", "user_1", expect.objectContaining({
-      title: "Call Jane", priority: "high", dueDate: "2026-07-15", householdId: "hh_1",
-    }));
-    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
-      action: "forge.write_approved", resourceType: "crm_task", resourceId: "task_5",
-    }));
-    expect(out).toEqual({ taskId: "task_5", title: "Call Jane" });
-  });
-  it("rejects a wrong-firm household (IDOR) before createTask", async () => {
-    vi.mocked(getCrmHousehold).mockResolvedValue(undefined);
-    const out = String(await getTool("create_task_for_client").invoke({ householdId: "hh_evil", title: "x" }));
-    expect(out).toMatch(/not found/i);
-    expect(createTask).not.toHaveBeenCalled();
   });
 });
