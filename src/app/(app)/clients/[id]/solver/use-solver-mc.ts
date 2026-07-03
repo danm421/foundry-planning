@@ -66,10 +66,15 @@ export function useSolverMc({
     workingSuccessRate: null,
   });
 
-  // Read mutations at launch time, not as an effect dependency — edits between
-  // runs must not refetch; only a `nonce` bump launches a run.
+  // Read mutations and mixes at launch time, not as effect dependencies —
+  // edits between runs must not refetch; only a `nonce` bump launches a run.
+  // Mixes especially: a solve minting a draft account (Roth, min-savings)
+  // changes them mid-solve, and a dependency here would relaunch the gauge MC
+  // to contend with the solve for the function instance's CPU.
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
+  const extraAccountMixesRef = useRef(extraAccountMixes);
+  extraAccountMixesRef.current = extraAccountMixes;
 
   useEffect(() => {
     if (!enabled) {
@@ -83,7 +88,7 @@ export function useSolverMc({
       try {
         const m = mutationsRef.current;
         const [workingSuccessRate, baseSuccessRate] = await Promise.all([
-          fetchSuccessRate(clientId, source, m, extraAccountMixes, ac.signal),
+          fetchSuccessRate(clientId, source, m, extraAccountMixesRef.current, ac.signal),
           includeBase
             ? fetchSuccessRate(clientId, "base", [], [], ac.signal)
             : Promise.resolve(null),
@@ -105,8 +110,7 @@ export function useSolverMc({
       }
     })();
     return () => ac.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, source, includeBase, enabled, nonce, JSON.stringify(extraAccountMixes)]);
+  }, [clientId, source, includeBase, enabled, nonce]);
 
   return state;
 }

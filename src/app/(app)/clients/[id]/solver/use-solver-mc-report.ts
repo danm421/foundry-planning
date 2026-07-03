@@ -24,8 +24,13 @@ export function useSolverMcReport({
   clientId, source, mutations, extraAccountMixes = [], enabled, nonce,
 }: Args): SolverMcReportState {
   const [state, setState] = useState<SolverMcReportState>({ status: "idle", result: null });
+  // Read mutations and mixes at launch time, not as effect dependencies —
+  // only an `enabled` flip or `nonce` bump launches a run. A mixes dependency
+  // would relaunch this full MC mid-solve when a solve mints a draft account.
   const mutationsRef = useRef(mutations);
   mutationsRef.current = mutations;
+  const extraAccountMixesRef = useRef(extraAccountMixes);
+  extraAccountMixesRef.current = extraAccountMixes;
 
   useEffect(() => {
     if (!enabled) {
@@ -41,7 +46,9 @@ export function useSolverMcReport({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             source, mutations: mutationsRef.current, full: true,
-            ...(extraAccountMixes.length ? { extraAccountMixes } : {}),
+            ...(extraAccountMixesRef.current.length
+              ? { extraAccountMixes: extraAccountMixesRef.current }
+              : {}),
           }),
           signal: ac.signal,
         });
@@ -58,8 +65,7 @@ export function useSolverMcReport({
       }
     })();
     return () => ac.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, source, enabled, nonce, JSON.stringify(extraAccountMixes)]);
+  }, [clientId, source, enabled, nonce]);
 
   return state;
 }

@@ -7,6 +7,16 @@ import { type VercelConfig } from "@vercel/config/v1";
  */
 export const config: VercelConfig = {
   framework: "nextjs",
+  // CPU-bound Monte Carlo / solver routes: 3009MB provisions the Performance
+  // machine (~2 vCPU vs Standard's 1) — the max Vercel Functions offer. The
+  // engine is single-threaded, so the second core's win is concurrency: the
+  // PoS gauge and an active solve stop halving each other on a shared vCPU.
+  functions: {
+    "src/app/api/clients/**/solver/**/route.ts": { memory: 3009 },
+    "src/app/api/clients/**/monte-carlo/route.ts": { memory: 3009 },
+    "src/app/api/clients/**/life-insurance/solve/route.ts": { memory: 3009 },
+    "src/app/api/clients/**/life-insurance/solve-mc/route.ts": { memory: 3009 },
+  },
   crons: [
     {
       path: "/api/cron/reconcile-billing",
