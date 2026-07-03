@@ -176,6 +176,26 @@ export async function checkExportPdfRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Meeting-prep AI draft (two mini-model calls per invocation). Separate
+// limiter so prep drafting can't starve (or be starved by) PDF exports.
+// 6/min/firm.
+const getMeetingPrepLimiter = buildLimiter(6, "1 m", "rl:meeting-prep");
+
+/**
+ * Check whether `key` (firm id) may invoke the meeting-prep draft endpoint.
+ * Budget: 6 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkMeetingPrepRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getMeetingPrepLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // PDF preview (in-builder, interactive). Looser than export (advisors iterate
 // on options/scenarios), but still bounded — each preview is a real projection
 // render. Separate bucket so preview bursts never drain the export budget and

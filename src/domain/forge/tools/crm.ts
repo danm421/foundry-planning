@@ -21,6 +21,7 @@ import { listOpenItems } from "@/lib/overview/list-open-items";
 import { getCrmHousehold } from "@/lib/crm/households";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
 import { computeAlerts } from "@/lib/alerts";
+import { loadMeetingPrepBattery } from "@/lib/crm/meeting-prep/battery";
 import { recordAudit } from "@/lib/audit";
 import { clientToHousehold } from "../guards";
 import { maskSsnLast4 } from "../account-mask";
@@ -484,43 +485,20 @@ export function buildCrmTools({ ctx, conversationId }: ForgeToolContext): Struct
   // None of these tools mutate. None fire forge.tool_call or write_approved.
   // Grounding contract: payloads contain ONLY figures present in tool inputs.
 
-  /** Shared gather implementation for meeting_prep and generate_agenda (DRY). */
+  /** Shared gather implementation for meeting_prep and generate_agenda (DRY).
+   *  Thin wrapper over the CRM meeting-prep battery so chat and the Meeting
+   *  Prep PDF can never drift; forge keeps its historical output shape. */
   async function gatherMeetingBattery(gate: { firmId: string; householdId: string }) {
-    const [notes, tasks, activity, overview] = await Promise.all([
-      listHouseholdNotes(gate.householdId, gate.firmId),
-      listTasks(gate.firmId, { householdId: gate.householdId }, { status: ["open", "in_progress"], overdueOnly: false, assigneeUserId: null }),
-      listActivity(gate.householdId, { limit: 5 }),
-      getOverviewData(ctx.clientId, gate.firmId, ctx.scenarioId),
-    ]);
-
-    // Derive lastMeetingDate from most-recent meeting or call activity
-    const meetingOrCall = activity.filter(
-      (a) => a.kind === "meeting" || a.kind === "call",
-    );
-    const lastMeetingDate =
-      meetingOrCall.length > 0
-        ? meetingOrCall.reduce(
-            (latest, a) =>
-              a.occurredAt > latest ? a.occurredAt : latest,
-            meetingOrCall[0].occurredAt,
-          )
-        : null;
-
-    // Derive alerts from alertInputs (the real alert pipeline)
-    const alerts = computeAlerts(overview.client, {
-      monteCarloSuccess: null,
-      liquidPortfolio: overview.alertInputs.liquidPortfolio,
-      currentYearNetOutflow: overview.alertInputs.currentYearNetOutflow,
-      minNetWorth: overview.alertInputs.minNetWorth,
-    });
-
+    const battery = await loadMeetingPrepBattery(gate.householdId, gate.firmId);
     return {
-      recentNotes: notes,
-      openTasks: tasks,
-      alerts,
-      lastMeetingDate,
-      portfolioTotal: overview.kpi.liquidPortfolio,
-      yearsToRetirement: overview.kpi.yearsToRetirement,
+      recentNotes: battery.recentNotes.slice(0, 10),
+      openTasks: battery.outstandingTasks,
+      alerts: battery.alerts,
+      lastMeetingDate: battery.lastMeetingDate
+        ? new Date(`${battery.lastMeetingDate}T12:00:00.000Z`)
+        : null,
+      portfolioTotal: battery.vitals?.liquidPortfolio ?? battery.portfolio.total,
+      yearsToRetirement: battery.vitals?.yearsToRetirement ?? null,
     };
   }
 

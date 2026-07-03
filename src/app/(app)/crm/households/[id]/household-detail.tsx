@@ -68,6 +68,14 @@ export function HouseholdDetail({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {!household.deletedAt && (
+            <Link
+              href={`/crm/households/${household.id}/meeting-prep`}
+              className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card px-3.5 py-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-card-2"
+            >
+              Meeting Prep
+            </Link>
+          )}
           <Link
             href={planningHref}
             className="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius-sm)] bg-accent px-3.5 py-2 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"

@@ -16,6 +16,7 @@ const listTasks = vi.fn();
 const listActivity = vi.fn();
 const getOverviewData = vi.fn();
 const recordAudit = vi.fn();
+const loadMeetingPrepBattery = vi.fn();
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 vi.mock("@/lib/clients/authz", () => ({
@@ -42,6 +43,12 @@ vi.mock("@/lib/overview/get-overview-data", () => ({
   getOverviewData: (...a: unknown[]) => getOverviewData(...a),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAudit(a) }));
+// gatherMeetingBattery (meeting_prep, suggest_tasks, generate_agenda) is a thin
+// wrapper over the shared CRM meeting-prep battery — mock it directly rather
+// than the DB-level pieces it now delegates to (Task 11).
+vi.mock("@/lib/crm/meeting-prep/battery", () => ({
+  loadMeetingPrepBattery: (...a: unknown[]) => loadMeetingPrepBattery(...a),
+}));
 // Stub out other crm.ts imports that aren't needed for composite tests
 vi.mock("@/lib/crm/households", () => ({ getCrmHousehold: vi.fn() }));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: vi.fn() }));
@@ -101,6 +108,22 @@ const MOCK_ACTIVITY = [
   { id: "a2", kind: "call", title: "Quick check-in", occurredAt: new Date("2026-04-15T10:00:00Z") },
 ];
 
+// Realistic battery mock matching MeetingPrepBattery (src/lib/crm/meeting-prep/battery.ts).
+// gatherMeetingBattery (meeting_prep, suggest_tasks, generate_agenda) is a thin wrapper
+// over loadMeetingPrepBattery as of Task 11 — lastMeetingDate is a YYYY-MM-DD date-only
+// string here (battery.ts truncates activity timestamps to a date), so the wrapper's
+// reconstructed Date always lands on T12:00:00.000Z, not the original activity time-of-day.
+const MOCK_BATTERY = {
+  recentNotes: MOCK_NOTES,
+  outstandingTasks: [
+    { id: "t1", title: "Send IPS", status: "open", priority: "med", dueDate: "2026-06-20", completedAt: null },
+  ],
+  alerts: [] as unknown[],
+  lastMeetingDate: "2026-04-15",
+  portfolio: { source: "crm", accounts: [], total: 0 },
+  vitals: { netWorth: 1_500_000, liquidPortfolio: 1_250_000, yearsToRetirement: 5, mcSuccessRate: null },
+};
+
 beforeEach(() => {
   requireOrgId.mockResolvedValue("org_A");
   verifyClientAccess.mockResolvedValue({ ok: true, permission: "edit", firmId: "org_A", access: "own" });
@@ -109,6 +132,7 @@ beforeEach(() => {
   listTasks.mockResolvedValue(MOCK_TASKS);
   listActivity.mockResolvedValue(MOCK_ACTIVITY);
   getOverviewData.mockResolvedValue(MOCK_OVERVIEW);
+  loadMeetingPrepBattery.mockResolvedValue(MOCK_BATTERY);
   recordAudit.mockReset();
 });
 
@@ -120,16 +144,16 @@ describe("meeting_prep", () => {
     expect(out.recentNotes).toHaveLength(2);
     expect(out.openTasks).toHaveLength(1);
     expect(Array.isArray(out.alerts)).toBe(true);
-    // lastMeetingDate = most recent meeting or call activity
-    expect(out.lastMeetingDate).toBe("2026-04-15T10:00:00.000Z");
-    // portfolioTotal maps to kpi.liquidPortfolio
+    // lastMeetingDate = battery's date-only lastMeetingDate, reconstructed at noon UTC
+    expect(out.lastMeetingDate).toBe("2026-04-15T12:00:00.000Z");
+    // portfolioTotal maps to vitals.liquidPortfolio
     expect(out.portfolioTotal).toBe(1_250_000);
   });
 
   it("introduces NO figures absent from its tool inputs (grounding)", async () => {
     const out = JSON.parse(await byName("meeting_prep").invoke({}));
-    // The only large number present should be portfolioTotal (from kpi.liquidPortfolio)
-    expect(out.portfolioTotal).toBe(MOCK_OVERVIEW.kpi.liquidPortfolio);
+    // The only large number present should be portfolioTotal (from vitals.liquidPortfolio)
+    expect(out.portfolioTotal).toBe(MOCK_BATTERY.vitals.liquidPortfolio);
     // observations is an array (may be empty or contain disclaimer)
     expect(Array.isArray(out.observations)).toBe(true);
   });
@@ -146,9 +170,9 @@ describe("meeting_prep", () => {
     expect(out).toMatch(/not found or access denied/i);
   });
 
-  it("calls getOverviewData with (clientId, firmId, scenarioId)", async () => {
+  it("calls loadMeetingPrepBattery with (householdId, firmId)", async () => {
     await byName("meeting_prep").invoke({});
-    expect(getOverviewData).toHaveBeenCalledWith("c1", "org_A", "base");
+    expect(loadMeetingPrepBattery).toHaveBeenCalledWith("hh-1", "org_A");
   });
 });
 
@@ -225,10 +249,10 @@ describe("suggest_tasks", () => {
     expect(out.signals.rmdAge).toBe(73);
   });
 
-  it("signals.lastMeetingDate comes from activity tool inputs", async () => {
+  it("signals.lastMeetingDate comes from the battery's lastMeetingDate", async () => {
     const out = JSON.parse(await byName("suggest_tasks").invoke({}));
-    // Most recent meeting/call is 2026-04-15
-    expect(out.signals.lastMeetingDate).toBe("2026-04-15T10:00:00.000Z");
+    // Battery's date-only lastMeetingDate (2026-04-15), reconstructed at noon UTC
+    expect(out.signals.lastMeetingDate).toBe("2026-04-15T12:00:00.000Z");
   });
 
   it("proposedTasks carry no dollar figures (descriptors only)", async () => {
@@ -274,30 +298,18 @@ describe("generate_agenda", () => {
 
   it("gatherMeetingBattery is shared: generate_agenda calls the same sources as meeting_prep (once each)", async () => {
     // Clear counts before the isolated measurement
-    listHouseholdNotes.mockClear();
-    listTasks.mockClear();
-    listActivity.mockClear();
-    getOverviewData.mockClear();
+    loadMeetingPrepBattery.mockClear();
 
     // Count calls for meeting_prep
     await byName("meeting_prep").invoke({});
-    const mpNotes = listHouseholdNotes.mock.calls.length;
-    const mpTasks = listTasks.mock.calls.length;
-    const mpActivity = listActivity.mock.calls.length;
-    const mpOverview = getOverviewData.mock.calls.length;
+    const mpBattery = loadMeetingPrepBattery.mock.calls.length;
 
     // Clear and count calls for generate_agenda
-    listHouseholdNotes.mockClear();
-    listTasks.mockClear();
-    listActivity.mockClear();
-    getOverviewData.mockClear();
+    loadMeetingPrepBattery.mockClear();
 
     await byName("generate_agenda").invoke({});
-    // generate_agenda must hit the same sources the same number of times as meeting_prep
-    expect(listHouseholdNotes.mock.calls.length).toBe(mpNotes);
-    expect(listTasks.mock.calls.length).toBe(mpTasks);
-    expect(listActivity.mock.calls.length).toBe(mpActivity);
-    expect(getOverviewData.mock.calls.length).toBe(mpOverview);
+    // generate_agenda must hit the shared battery loader the same number of times as meeting_prep
+    expect(loadMeetingPrepBattery.mock.calls.length).toBe(mpBattery);
   });
 });
 
