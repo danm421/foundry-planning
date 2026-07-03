@@ -299,3 +299,53 @@ describe("bisect", () => {
     expect(result.achievedPoS).toBeGreaterThanOrEqual(1.3);
   });
 });
+
+describe("pre-known endpoint PoS (posLo/posHi)", () => {
+  // Monotone-decreasing curve crossing 0.85 at exactly 30_000.
+  const curve = (v: number) => Math.max(0, Math.min(1, 1 - v / 200_000));
+
+  it("skips endpoint probes and converges to the same grid value", async () => {
+    const calls: number[] = [];
+    const r = await bisect({
+      lo: 25_000,
+      hi: 45_000,
+      step: 5_000,
+      direction: -1,
+      target: 0.85,
+      tolerance: 0,
+      selection: "closest",
+      maxIterations: 24,
+      posLo: curve(25_000),
+      posHi: curve(45_000),
+      evaluate: async (v) => {
+        calls.push(v);
+        return curve(v);
+      },
+    });
+    expect(r.status).toBe("converged");
+    expect(r.solvedValue).toBe(30_000);
+    expect(calls).not.toContain(25_000);
+    expect(calls).not.toContain(45_000);
+    // Narrow bracket + known endpoints: at most a couple of interior probes.
+    expect(calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("applies the both-beat shortcut from provided PoS without evaluating", async () => {
+    const r = await bisect({
+      lo: 10,
+      hi: 20,
+      step: 1,
+      direction: 1,
+      target: 0.5,
+      posLo: 0.6,
+      posHi: 0.9,
+      evaluate: async () => {
+        throw new Error("must not evaluate");
+      },
+    });
+    expect(r.status).toBe("converged");
+    expect(r.solvedValue).toBe(10);
+    expect(r.achievedPoS).toBe(0.6);
+    expect(r.iterations).toBe(0); // no real evaluations happened
+  });
+});
