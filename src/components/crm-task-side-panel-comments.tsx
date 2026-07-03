@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, memo, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 
 import { textareaBaseClassName } from "@/components/forms/input-styles";
@@ -10,6 +10,7 @@ import {
   insertMentionTokens,
   splitMentionSegments,
   type MentionPick,
+  type MentionQuery,
 } from "@/lib/crm-tasks/mentions";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 
@@ -47,9 +48,18 @@ function relativeTime(iso: string): string {
 /**
  * Plain-text safe rendering with mention chips: split on mention tokens,
  * then split text runs on newlines. No markdown, no HTML — the surface
- * stays tiny so we don't pull in a sanitizer.
+ * stays tiny so we don't pull in a sanitizer. Memoized so composer
+ * keystrokes (which re-render the panel) don't re-segment every comment.
  */
-function renderBody(body: string, members: FirmMember[], currentUserId: string | null) {
+const CommentBody = memo(function CommentBody({
+  body,
+  members,
+  currentUserId,
+}: {
+  body: string;
+  members: FirmMember[];
+  currentUserId: string | null;
+}) {
   return (
     <>
       {splitMentionSegments(body).map((seg, i) => {
@@ -85,7 +95,7 @@ function renderBody(body: string, members: FirmMember[], currentUserId: string |
       })}
     </>
   );
-}
+});
 
 export function CrmTaskSidePanelComments({
   taskId,
@@ -103,7 +113,7 @@ export function CrmTaskSidePanelComments({
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [picks, setPicks] = useState<MentionPick[]>([]);
-  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [mention, setMention] = useState<MentionQuery | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dismissedStart, setDismissedStart] = useState<number | null>(null);
 
@@ -137,7 +147,7 @@ export function CrmTaskSidePanelComments({
     const inserted = `@${m.displayName} `;
     setDraft(before + inserted + draft.slice(caret));
     setPicks((prev) =>
-      prev.some((p) => p.userId === m.userId && p.displayName === m.displayName)
+      prev.some((p) => p.userId === m.userId)
         ? prev
         : [...prev, { displayName: m.displayName, userId: m.userId }],
     );
@@ -229,7 +239,7 @@ export function CrmTaskSidePanelComments({
                   </time>
                 </div>
                 <div className="mt-1.5 text-[13px] text-ink whitespace-normal break-words">
-                  {renderBody(c.bodyMarkdown, members, currentUserId)}
+                  <CommentBody body={c.bodyMarkdown} members={members} currentUserId={currentUserId} />
                 </div>
               </li>
             ))}

@@ -2813,6 +2813,7 @@ export const crmTasksRelations = relations(crmTasks, ({ one, many }) => ({
   }),
   tags:       many(crmTaskTags),
   comments:   many(crmTaskComments),
+  mentions:   many(crmTaskCommentMentions),
   activity:   many(crmTaskActivity),
   files:      many(crmTaskFiles),
 }));

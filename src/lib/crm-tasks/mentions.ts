@@ -75,19 +75,19 @@ export function insertMentionTokens(body: string, picks: MentionPick[]): string 
   return out;
 }
 
+export type MentionQuery = { start: number; query: string };
+
 /**
  * Composer helper: the active mention query at the caret, or null.
  * An `@` opens a query only at the start of the text or after whitespace;
- * the query ends at the caret and dies on newline, a second `@`, or >40 chars.
+ * the query ends at the caret and dies on newline or >40 chars. (It can
+ * never contain another `@` — the anchor is the last `@` before the caret.)
  */
-export function findMentionQuery(
-  value: string,
-  caret: number,
-): { start: number; query: string } | null {
+export function findMentionQuery(value: string, caret: number): MentionQuery | null {
   const at = value.lastIndexOf("@", caret - 1);
   if (at === -1) return null;
   if (at > 0 && !/\s/.test(value[at - 1])) return null;
   const query = value.slice(at + 1, caret);
-  if (query.length > 40 || query.includes("\n") || query.includes("@")) return null;
+  if (query.length > 40 || query.includes("\n")) return null;
   return { start: at, query };
 }
