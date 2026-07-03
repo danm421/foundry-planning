@@ -157,5 +157,183 @@ export function buildGlobalTaskTools({ ctx, conversationId }: ForgeGlobalToolCon
     },
   );
 
-  return [tasksList, tasksDetail, firmMembersTool];
+  /** Fire the forge.tool_call audit for a Tier-A auto-applied task write. */
+  async function auditTierA(firmId: string, taskId: string, toolName: string) {
+    await recordAudit({
+      action: "forge.tool_call",
+      resourceType: "crm_task",
+      resourceId: taskId,
+      firmId,
+      actorId: ctx.userId,
+      metadata: { tool: toolName, conversationId },
+    });
+  }
+
+  const tasksCreate = tool(
+    async (args) => {
+      try {
+        const firmId = await requireOrgId();
+        let assigneeUserId: string | null = null;
+        if (args.assignee) {
+          const resolved = await resolveAssignee(args.assignee, firmId, ctx.userId);
+          if ("error" in resolved) return resolved.error;
+          assigneeUserId = resolved.userId;
+        }
+        // householdId firm-ownership is asserted inside createTask (assertHouseholdInFirm).
+        const input = createCrmTaskSchema.parse({
+          title: args.title,
+          description: args.description ?? "",
+          priority: args.priority ?? "med",
+          status: args.status ?? "open",
+          dueDate: args.dueDate ?? null,
+          startDate: args.startDate ?? null,
+          recurrence: args.recurrence ?? "none",
+          householdId: args.householdId ?? null,
+          assigneeUserId,
+        });
+        const task = await createTask(firmId, ctx.userId, input);
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "crm_task",
+          resourceId: task.id,
+          firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "tasks_create", conversationId, householdId: task.householdId },
+        });
+        return JSON.stringify({ taskId: task.id, title: task.title });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to create the task.";
+      }
+    },
+    {
+      name: "tasks_create",
+      description:
+        "Create a CRM task for this firm. Requires human approval. The task can be firm-level (no " +
+        "household) or attached to a household — resolve the household with find_client first and pass " +
+        "its householdId, never a raw name. assignee is 'me' or a userId from firm_members.",
+      schema: z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(10_000).optional(),
+        priority: priorityEnum.optional(),
+        status: statusEnum.optional(),
+        dueDate: z.string().nullable().optional().describe("due date, YYYY-MM-DD"),
+        startDate: z.string().nullable().optional().describe("start date, YYYY-MM-DD"),
+        recurrence: z.enum(["none", "weekly", "monthly", "quarterly"]).optional(),
+        householdId: z.string().nullable().optional().describe("a householdId from find_client"),
+        assignee: z.string().optional().describe("'me' or a userId from firm_members"),
+      }),
+    },
+  );
+
+  const tasksUpdate = tool(
+    async ({ taskId, field, value }) => {
+      try {
+        const firmId = await requireOrgId();
+        const existing = await getTaskById(taskId, firmId);
+        if (!existing) return `Task ${taskId} not found.`;
+        let resolvedValue = value;
+        if (field === "assigneeUserId" && value !== null) {
+          const resolved = await resolveAssignee(value, firmId, ctx.userId);
+          if ("error" in resolved) return resolved.error;
+          resolvedValue = resolved.userId;
+        }
+        // householdId firm-ownership is asserted inside updateTaskField; enum/date
+        // values are validated by the discriminated union before any write.
+        const update = updateCrmTaskFieldSchema.parse({ field, value: resolvedValue });
+        const task = await updateTaskField(taskId, firmId, ctx.userId, update);
+        await auditTierA(firmId, taskId, "tasks_update");
+        return JSON.stringify({ task });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to update the task.";
+      }
+    },
+    {
+      name: "tasks_update",
+      description:
+        "Update a single field on an existing CRM task. Applies immediately (reversible). Fields: title, " +
+        "description, priority, dueDate, startDate, recurrence, assigneeUserId ('me' or a userId from " +
+        "firm_members; null to unassign), householdId (from find_client; null to detach). " +
+        "Status changes must use tasks_set_status instead.",
+      schema: z.object({
+        taskId: z.string().min(1),
+        field: z.enum(["title", "description", "priority", "dueDate", "startDate", "recurrence", "assigneeUserId", "householdId"]),
+        value: z.union([z.string(), z.null()]),
+      }),
+    },
+  );
+
+  const tasksSetStatus = tool(
+    async ({ taskId, status }) => {
+      try {
+        const firmId = await requireOrgId();
+        const existing = await getTaskById(taskId, firmId);
+        if (!existing) return `Task ${taskId} not found.`;
+        const result = await setTaskStatus(taskId, firmId, ctx.userId, status);
+        await auditTierA(firmId, taskId, "tasks_set_status");
+        return JSON.stringify({ task: result.task, followOnId: result.followOnId });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to update task status.";
+      }
+    },
+    {
+      name: "tasks_set_status",
+      description:
+        "Set a CRM task's status (open, in_progress, blocked, done). Applies immediately (reversible — " +
+        "reopen by setting it back). Completing a recurring task returns followOnId for the spawned follow-on.",
+      schema: z.object({ taskId: z.string().min(1), status: statusEnum }),
+    },
+  );
+
+  const tasksComment = tool(
+    async ({ taskId, body }) => {
+      try {
+        const firmId = await requireOrgId();
+        const existing = await getTaskById(taskId, firmId);
+        if (!existing) return `Task ${taskId} not found.`;
+        const comment = await postComment(taskId, firmId, ctx.userId, body);
+        await auditTierA(firmId, taskId, "tasks_comment");
+        return JSON.stringify({ commentId: comment.id });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to post the comment.";
+      }
+    },
+    {
+      name: "tasks_comment",
+      description:
+        "Post a comment on an existing CRM task. Applies immediately. The comment body is recorded " +
+        "verbatim under the advisor's name.",
+      schema: z.object({ taskId: z.string().min(1), body: z.string().min(1).max(20_000) }),
+    },
+  );
+
+  const tasksDelete = tool(
+    async ({ taskId }) => {
+      try {
+        const firmId = await requireOrgId();
+        const existing = await getTaskById(taskId, firmId);
+        if (!existing) return `Task ${taskId} not found.`;
+        await deleteTask(taskId, firmId);
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "crm_task",
+          resourceId: taskId,
+          firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "tasks_delete", conversationId },
+        });
+        return JSON.stringify({ ok: true });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to delete the task.";
+      }
+    },
+    {
+      name: "tasks_delete",
+      description:
+        "Permanently delete a CRM task (its comments, activity, and file links go with it). " +
+        "Requires human approval.",
+      schema: z.object({ taskId: z.string().min(1) }),
+    },
+  );
+
+  return [tasksList, tasksDetail, firmMembersTool, tasksCreate, tasksUpdate, tasksSetStatus, tasksComment, tasksDelete];
 }
