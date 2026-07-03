@@ -137,22 +137,27 @@ export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxS
   // target. Every failure mode degrades to the pre-warm-start full-range path.
   let warm: WarmStartOutcome = { kind: "fallback" };
   if (evaluateStraightline) {
-    const seed = await deterministicLocalize({
-      lo: 0,
-      hi: ceilingDollars,
-      step: GRID_STEP,
-      succeeds: evaluateStraightline,
-    });
-    if (seed !== null) {
-      warm = await bracketFromSeed({
-        seed,
+    // Any warm-start exception degrades to the pre-feature full-range path.
+    try {
+      const seed = await deterministicLocalize({
         lo: 0,
         hi: ceilingDollars,
         step: GRID_STEP,
-        direction: -1,
-        target: targetPoS,
-        evaluate: (dollars) => evaluateSpend(dollars, searchTrials),
+        succeeds: evaluateStraightline,
       });
+      if (seed !== null) {
+        warm = await bracketFromSeed({
+          seed,
+          lo: 0,
+          hi: ceilingDollars,
+          step: GRID_STEP,
+          direction: -1,
+          target: targetPoS,
+          evaluate: (dollars) => evaluateSpend(dollars, searchTrials),
+        });
+      }
+    } catch {
+      warm = { kind: "fallback" };
     }
   }
 

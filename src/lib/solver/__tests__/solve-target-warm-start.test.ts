@@ -106,4 +106,29 @@ describe("solveTarget warm start", () => {
     // Warm start probed exactly the two endpoints, found them agreeing, bailed.
     expect(straightlineCalls).toEqual([0, 200_000]);
   });
+
+  it("living-expense (straightline throws): falls back to the full-range bisect", async () => {
+    // Phase-0 warm start raises instead of resolving — the exception must not
+    // propagate and kill the solve; the full-range bisect lands the same
+    // answer as the warm-started first test above.
+    const evaluate = async (value: number, trials: number) => {
+      const truth = Math.max(0, Math.min(1, 1 - value / 1_000_000));
+      const pos = trials >= 500 ? truth : Math.max(0, truth - 0.019);
+      return { pos, projection: [] as never };
+    };
+    const result = (await solveTarget({
+      effectiveTree: tree,
+      mcPayload,
+      baselineMutations: [],
+      target: { kind: "living-expense-scale" },
+      targetPoS: 0.85,
+      evaluate,
+      evaluateStraightline: async () => {
+        throw new Error("projection blew up");
+      },
+    })) as PoSSolveResult;
+
+    expect(result.status).toBe("converged");
+    expect(result.solvedValue).toBe(150_000);
+  });
 });

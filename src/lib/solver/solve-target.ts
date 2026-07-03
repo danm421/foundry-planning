@@ -163,22 +163,28 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
 
   let warm: WarmStartOutcome = { kind: "fallback" };
   if (evaluateStraightline) {
-    const seed = await deterministicLocalize({
-      lo: config.lo,
-      hi: config.hi,
-      step: config.step,
-      succeeds: evaluateStraightline,
-    });
-    if (seed !== null) {
-      warm = await bracketFromSeed({
-        seed,
+    // Any warm-start exception degrades to the pre-feature full-range path.
+    try {
+      const seed = await deterministicLocalize({
         lo: config.lo,
         hi: config.hi,
         step: config.step,
-        direction: config.direction,
-        target: args.targetPoS,
-        evaluate: makeEvaluate(searchMemo, "search"),
+        succeeds: evaluateStraightline,
       });
+      if (seed !== null) {
+        warm = await bracketFromSeed({
+          seed,
+          lo: config.lo,
+          hi: config.hi,
+          step: config.step,
+          direction: config.direction,
+          target: args.targetPoS,
+          evaluate: makeEvaluate(searchMemo, "search"),
+        });
+      }
+    } catch (err) {
+      if (args.signal?.aborted) throw err;
+      warm = { kind: "fallback" };
     }
   }
 

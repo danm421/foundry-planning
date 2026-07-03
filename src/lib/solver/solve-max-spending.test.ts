@@ -140,4 +140,19 @@ describe("solveMaxSpending warm start", () => {
     expect(r.status).toBe("converged");
     expect(r.realAnnualSpend).toBe(30_000);
   });
+
+  it("falls back to the full-range bisect when the straightline evaluator throws", async () => {
+    // Phase-0 warm start raises instead of resolving — the exception must not
+    // propagate and kill the solve; it degrades to the same full-range answer
+    // as the "uninformative straightline" fallback case above.
+    const r = await solveMaxSpending(
+      args({
+        evaluateStraightline: async () => {
+          throw new Error("projection blew up");
+        },
+      }),
+    );
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBe(30_000);
+  });
 });
