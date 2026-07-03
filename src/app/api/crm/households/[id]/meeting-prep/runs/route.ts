@@ -11,6 +11,7 @@ import { loadMeetingPrepBattery } from "@/lib/crm/meeting-prep/battery";
 import { generateMeetingPrepDraft } from "@/lib/crm/meeting-prep/generate";
 import {
   createQueuedRun,
+  listRecentRuns,
   markAnalyzing,
   markDone,
   markFailed,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/crm/generation-runs";
 
 export const dynamic = "force-dynamic";
+const LIST_LIMIT = 25;
 // after() needs budget to finish generation past the 202: battery load (with a
 // possible Monte Carlo compute-cache miss) + two mini-model calls — same budget
 // as the sync draft route this replaces. Fluid Compute keeps the instance alive
@@ -117,6 +119,35 @@ export async function POST(
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST meeting-prep/runs error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const { orgId } = await requireCrmHouseholdAccess(id);
+    const rows = await listRecentRuns(id, orgId, LIST_LIMIT, { kind: "meeting-prep" });
+    // Strip the heavy result payload — the panel needs status only; the detail
+    // route serves the payload when a draft is actually opened.
+    const runs = rows.map(({ resultPayload: _resultPayload, ...run }) => run);
+    return NextResponse.json(
+      { runs },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.startsWith("CRM household not found or access denied")
+    ) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    console.error("GET meeting-prep/runs error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -63,7 +63,7 @@ vi.mock("@/lib/crm/meeting-prep/generate", () => ({
   }),
 }));
 
-import { POST } from "../route";
+import { GET, POST } from "../route";
 
 const ORG = "org_mp_runs";
 let householdId: string;
@@ -143,6 +143,36 @@ describe("POST meeting-prep/runs", () => {
 
   it("404s for a household outside the firm", async () => {
     const res = await POST(req(validBody), {
+      params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET meeting-prep/runs", () => {
+  function getReq() {
+    return new Request("http://t/runs") as unknown as import("next/server").NextRequest;
+  }
+
+  it("lists only meeting-prep runs, newest first, without result payloads", async () => {
+    await db.insert(generationRuns).values([
+      { householdId, clientId: null, firmId: ORG, kind: "presentation", status: "done" },
+      {
+        householdId, clientId: null, firmId: ORG, kind: "meeting-prep", status: "done",
+        requestPayload: { focus: "x" }, resultPayload: { draft: {}, data: {} },
+      },
+    ]);
+    const res = await GET(getReq(), { params: Promise.resolve({ id: householdId }) });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.runs).toHaveLength(1);
+    expect(json.runs[0].kind).toBe("meeting-prep");
+    expect(json.runs[0].requestPayload).toMatchObject({ focus: "x" });
+    expect("resultPayload" in json.runs[0]).toBe(false);
+  });
+
+  it("404s for a household outside the firm", async () => {
+    const res = await GET(getReq(), {
       params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
     });
     expect(res.status).toBe(404);
