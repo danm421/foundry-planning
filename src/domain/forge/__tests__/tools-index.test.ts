@@ -153,11 +153,12 @@ const EXPECTED_CRM_TIER_B_TOOL_NAMES = [
   "crm_delete_task",
 ];
 
-const EXPECTED_CRM_ALL_19 = [
-  // read (4)
+const EXPECTED_CRM_ALL_20 = [
+  // read (5)
   "crm_client_card",
   "crm_recent_notes",
   "crm_list_tasks",
+  "crm_task_detail",
   "crm_activity_feed",
   // Tier-A writes (6)
   "crm_add_note",
@@ -186,7 +187,7 @@ const EXPECTED_BOOK = ["scan_book"];
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 62 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 19 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 62, + 1 meeting save)", () => {
+  it("returns exactly the 63 named tools (18 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 63, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
@@ -202,7 +203,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(62);
+    expect(tools).toHaveLength(63);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -220,9 +221,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     }
   });
 
-  it("buildTools includes all 19 CRM tools by name", () => {
+  it("buildTools includes all 20 CRM tools by name", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
-    for (const n of EXPECTED_CRM_ALL_19) {
+    for (const n of EXPECTED_CRM_ALL_20) {
       expect(names.has(n), `expected CRM tool ${n} in buildTools output`).toBe(true);
     }
   });
@@ -353,8 +354,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 62)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(62);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 63)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(63);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {

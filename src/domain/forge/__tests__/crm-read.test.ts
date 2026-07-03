@@ -13,7 +13,15 @@ vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: (c: string) => verif
 vi.mock("../guards", async (orig) => ({ ...(await orig()), clientToHousehold: (c: string, f: string) => clientToHousehold(c, f) }));
 vi.mock("@/lib/crm/notes", () => ({ listHouseholdNotes: (h: string, f: string) => listHouseholdNotes(h, f) }));
 vi.mock("@/lib/crm/activity", () => ({ listActivity: (h: string, o: unknown) => listActivity(h, o) }));
-vi.mock("@/lib/crm-tasks/queries", () => ({ listTasks: (f: string, s: unknown, fl: unknown) => listTasks(f, s, fl), getTaskById: vi.fn() }));
+const getTaskById = vi.fn();
+const listTaskComments = vi.fn();
+const listTaskActivity = vi.fn();
+vi.mock("@/lib/crm-tasks/queries", () => ({
+  listTasks: (f: string, s: unknown, fl: unknown) => listTasks(f, s, fl),
+  getTaskById: (t: string, f: string) => getTaskById(t, f),
+  listTaskComments: (t: string) => listTaskComments(t),
+  listTaskActivity: (t: string) => listTaskActivity(t),
+}));
 vi.mock("@/lib/overview/list-open-items", () => ({ listOpenItems: (c: string, f: string) => listOpenItemsForClient(c, f) }));
 vi.mock("@/lib/crm/households", async (orig) => ({ ...(await orig()), getCrmHousehold: (h: string) => getHouseholdCard(h) }));
 
@@ -33,6 +41,9 @@ beforeEach(() => {
   listTasks.mockReset();
   listOpenItemsForClient.mockReset();
   getHouseholdCard.mockReset();
+  getTaskById.mockReset();
+  listTaskComments.mockReset();
+  listTaskActivity.mockReset();
 });
 
 describe("crm_recent_notes", () => {
@@ -80,5 +91,35 @@ describe("crm_client_card", () => {
     expect(out.contacts[0].ssn).toBe("•••-••-1234");
     expect(out.contacts[0]).not.toHaveProperty("ssnLast4");
     expect(out.contacts[0]).not.toHaveProperty("metadata");
+  });
+});
+
+describe("crm_task_detail", () => {
+  it("returns task + tags + comments + activity for a task in this client's household", async () => {
+    getTaskById.mockResolvedValue({
+      task: { id: "t1", title: "Update beneficiaries", householdId: "hh-1", assigneeUserId: "u9" },
+      tags: [{ id: "tag1", label: "insurance", color: "blue" }],
+    });
+    listTaskComments.mockResolvedValue([{ id: "cm1", authorUserId: "u9", bodyMarkdown: "Waiting on the form.", createdAt: "2026-06-28" }]);
+    listTaskActivity.mockResolvedValue([{ id: "ac1", userId: "u9", kind: "created", payload: {}, createdAt: "2026-06-20" }]);
+    const out = JSON.parse(await byName("crm_task_detail").invoke({ taskId: "t1" }));
+    expect(getTaskById).toHaveBeenCalledWith("t1", "org_A");
+    expect(out.task.title).toBe("Update beneficiaries");
+    expect(out.tags[0].label).toBe("insurance");
+    expect(out.comments[0].bodyMarkdown).toBe("Waiting on the form.");
+    expect(out.activity[0].kind).toBe("created");
+  });
+
+  it("rejects a same-firm task from ANOTHER household (ownership guard)", async () => {
+    getTaskById.mockResolvedValue({ task: { id: "t2", householdId: "hh-OTHER" }, tags: [] });
+    const out = await byName("crm_task_detail").invoke({ taskId: "t2" });
+    expect(out).toMatch(/does not belong to this client/i);
+    expect(listTaskComments).not.toHaveBeenCalled();
+  });
+
+  it("returns not-found for a wrong-firm/missing task", async () => {
+    getTaskById.mockResolvedValue(null);
+    const out = await byName("crm_task_detail").invoke({ taskId: "t3" });
+    expect(out).toMatch(/not found/i);
   });
 });
