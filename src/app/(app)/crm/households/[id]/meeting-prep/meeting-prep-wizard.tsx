@@ -33,6 +33,8 @@ const DOC_LABELS: Record<MeetingPrepDocKind, string> = {
   agenda: "Client Agenda (client-facing)",
 };
 
+const RUN_POLL_MS = 3000;
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -76,6 +78,7 @@ export function MeetingPrepWizard({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [data, setData] = useState<MeetingPrepBattery | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<MeetingPrepDocKind>("brief");
   const [exporting, setExporting] = useState<MeetingPrepDocKind | null>(null);
@@ -148,36 +151,88 @@ export function MeetingPrepWizard({
 
   const canGenerate = focus.trim().length > 0 && docs.length > 0;
 
+  function applyRunResult(payload: { draft: Draft; data: MeetingPrepBattery | null }) {
+    setDraft(payload.draft);
+    setData(payload.data ?? null);
+    setExported([]);
+    setExportError(null);
+    setActiveTab(
+      docs.find((d) => payload.draft[d]) ?? (payload.draft.brief ? "brief" : "agenda"),
+    );
+    setStep("review");
+  }
+
   async function handleGenerate() {
     if (!canGenerate) return;
     setStep("generating");
     setError(null);
     try {
-      const res = await fetch(`/api/crm/households/${householdId}/meeting-prep/draft`, {
+      const res = await fetch(`/api/crm/households/${householdId}/meeting-prep/runs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(setup),
       });
-      if (!res.ok) {
+      if (res.status !== 202) {
         const j = await res.json().catch(() => ({}));
         throw new Error(
           typeof j?.error === "string" ? j.error : `Draft failed (${res.status})`,
         );
       }
-      const json = (await res.json()) as { draft: Draft; data: MeetingPrepBattery };
-      setDraft(json.draft);
-      setData(json.data);
-      setExported([]);
-      setExportError(null);
-      setActiveTab(
-        docs.find((d) => json.draft[d]) ?? (json.draft.brief ? "brief" : "agenda"),
-      );
-      setStep("review");
+      const { runId } = (await res.json()) as { runId: string };
+      setActiveRunId(runId); // polling effect takes over
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStep("setup");
     }
   }
+
+  // Poll the active run until it settles. The run lives server-side — leaving
+  // this page doesn't kill it; Recent runs picks it up on return.
+  useEffect(() => {
+    if (!activeRunId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/crm/households/${householdId}/meeting-prep/runs/${activeRunId}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          const { run } = (await res.json()) as {
+            run: {
+              status: string;
+              error: string | null;
+              resultPayload: { draft: Draft; data: MeetingPrepBattery | null } | null;
+            };
+          };
+          if (run.status === "done" && run.resultPayload) {
+            setActiveRunId(null);
+            applyRunResult(run.resultPayload);
+            return;
+          }
+          if (run.status === "failed") {
+            setActiveRunId(null);
+            setError(run.error ?? "Something went wrong.");
+            setStep("setup");
+            return;
+          }
+        }
+        // non-ok or still in flight — poll again (stale sweep server-side
+        // guarantees this terminates)
+        timer = setTimeout(tick, RUN_POLL_MS);
+      } catch {
+        if (!cancelled) timer = setTimeout(tick, RUN_POLL_MS); // transient network blip
+      }
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRunId, householdId]);
 
   function updateBrief(patch: Partial<PrepBriefDraft>) {
     setDraft((prev) =>
