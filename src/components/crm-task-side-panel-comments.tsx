@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 
 import { textareaBaseClassName } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
+import type { FirmMember } from "@/lib/crm-tasks/members";
 
 export interface CrmTaskComment {
   id: string;
@@ -15,6 +16,8 @@ export interface CrmTaskComment {
 interface CrmTaskSidePanelCommentsProps {
   taskId: string;
   initialComments: CrmTaskComment[];
+  /** Firm members used to resolve comment author ids to display names. */
+  members: FirmMember[];
 }
 
 function relativeTime(iso: string): string {
@@ -56,7 +59,10 @@ function renderBody(body: string) {
 export function CrmTaskSidePanelComments({
   taskId,
   initialComments,
+  members,
 }: CrmTaskSidePanelCommentsProps) {
+  const authorName = (userId: string) =>
+    members.find((m) => m.userId === userId)?.displayName ?? userId;
   const [comments, setComments] = useState<CrmTaskComment[]>(initialComments);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
@@ -111,7 +117,7 @@ export function CrmTaskSidePanelComments({
                 className="rounded-[var(--radius)] border border-hair bg-card p-3"
               >
                 <div className="flex items-baseline justify-between gap-3 text-[11px] text-ink-3">
-                  <span className="font-medium text-ink-2">{c.authorUserId}</span>
+                  <span className="font-medium text-ink-2">{authorName(c.authorUserId)}</span>
                   <time dateTime={c.createdAt} title={new Date(c.createdAt).toLocaleString()}>
                     {relativeTime(c.createdAt)}
                   </time>

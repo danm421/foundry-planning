@@ -12,18 +12,11 @@ import {
   listTaskFiles,
   listTasks,
 } from "@/lib/crm-tasks/queries";
-import { normalizeQuickFilters, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
+import { coerceQuickFilter, normalizeQuickFilters } from "@/lib/crm-tasks/filters";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgId } from "@/lib/db-helpers";
 
 import { TasksPage, type TaskDetailBundle } from "./_components/tasks-page";
-
-const QUICK_VALUES: ReadonlyArray<TaskQuickFilter> = ["all", "mine", "open", "overdue", "done"];
-
-function coerceQuick(value: string | undefined): TaskQuickFilter | null {
-  if (!value) return null;
-  return QUICK_VALUES.includes(value as TaskQuickFilter) ? (value as TaskQuickFilter) : null;
-}
 
 function coercePriority(value: string | undefined): "low" | "med" | "high" | undefined {
   if (value === "low" || value === "med" || value === "high") return value;
@@ -41,7 +34,7 @@ export default async function TasksRoute({
   if (!userId) throw new Error("Unauthorized");
 
   const filters = normalizeQuickFilters({
-    quick: coerceQuick(sp.quick),
+    quick: coerceQuickFilter(sp.quick),
     explicitAssignee: sp.assignee ?? null,
     currentUserId: userId,
   });

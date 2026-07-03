@@ -1,5 +1,21 @@
 export type TaskQuickFilter = "all" | "mine" | "open" | "overdue" | "done";
 
+const QUICK_FILTER_VALUES: ReadonlyArray<TaskQuickFilter> = [
+  "all",
+  "mine",
+  "open",
+  "overdue",
+  "done",
+];
+
+/** Parse a raw `?quick=` URL param; unknown or absent values become null (default preset). */
+export function coerceQuickFilter(value: string | null | undefined): TaskQuickFilter | null {
+  if (!value) return null;
+  return QUICK_FILTER_VALUES.includes(value as TaskQuickFilter)
+    ? (value as TaskQuickFilter)
+    : null;
+}
+
 export type NormalizedTaskFilters = {
   status: ("open" | "in_progress" | "blocked" | "done")[] | null;
   overdueOnly: boolean;

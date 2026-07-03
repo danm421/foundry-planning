@@ -14,7 +14,7 @@ import {
   listTaskFiles,
   listTasks,
 } from "@/lib/crm-tasks/queries";
-import { normalizeQuickFilters } from "@/lib/crm-tasks/filters";
+import { coerceQuickFilter, normalizeQuickFilters } from "@/lib/crm-tasks/filters";
 import { listFirmMembers } from "@/lib/crm-tasks/members";
 import { requireOrgId } from "@/lib/db-helpers";
 
@@ -26,10 +26,10 @@ export default async function CrmHouseholdPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; task?: string }>;
+  searchParams: Promise<{ tab?: string; task?: string; quick?: string; assignee?: string }>;
 }) {
   const { id } = await params;
-  const { tab, task } = await searchParams;
+  const { tab, task, quick, assignee } = await searchParams;
   const household = await getCrmHousehold(id);
   if (!household) notFound();
 
@@ -41,8 +41,8 @@ export default async function CrmHouseholdPage({
   const canManage = orgRole === "org:admin";
 
   const filters = normalizeQuickFilters({
-    quick: null,
-    explicitAssignee: null,
+    quick: coerceQuickFilter(quick),
+    explicitAssignee: assignee ?? null,
     currentUserId: userId,
   });
 
