@@ -4,8 +4,12 @@ import { generationRuns } from "@/db/schema";
 
 export type GenerationRunRow = typeof generationRuns.$inferSelect;
 
-/** Runs still queued/running past this age are treated as orphaned and failed. */
-export const STALE_RUN_MS = 3 * 60 * 1000;
+/**
+ * Runs still queued/running past this age are treated as orphaned and failed.
+ * Must exceed the presentations/runs route's maxDuration (300s) — a legitimate
+ * long render would otherwise be reaped as "timed out" while still running.
+ */
+export const STALE_RUN_MS = 6 * 60 * 1000;
 
 const ERROR_MAX = 1000;
 

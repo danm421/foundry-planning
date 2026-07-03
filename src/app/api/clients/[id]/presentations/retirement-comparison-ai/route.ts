@@ -15,7 +15,9 @@ import { recordAudit } from "@/lib/audit";
 import { generateRetirementComparisonAi } from "@/lib/presentations/pages/retirement-comparison/generate-ai";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Runs the retirement-comparison projection + MC behind the AI commentary —
+// same compute class as the solver routes, so 60s starves it on prod.
+export const maxDuration = 300;
 
 const Body = z.object({
   scenarioId: z.string().min(1),

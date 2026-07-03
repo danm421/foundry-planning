@@ -55,6 +55,22 @@ const nextConfig: NextConfig = {
   // out of bundling so it loads via native Node require. sharp is already
   // externalized by Next's default list; @napi-rs/canvas is not.
   serverExternalPackages: ["@napi-rs/canvas"],
+  // @react-pdf font registration (src/components/pdf/fonts.ts) reads the TTFs
+  // from public/fonts at runtime via `${process.cwd()}/…`, which output file
+  // tracing can't statically follow — deployed functions ENOENT'd on
+  // /var/task/public/fonts/Inter-Regular.ttf. Explicitly trace the fonts into
+  // every route that renders a PDF server-side (~2.7MB per bundle). Keys are
+  // picomatch route globs; `*` matches the literal `[id]` segment.
+  outputFileTracingIncludes: {
+    "/api/clients/*/exports/pdf": ["public/fonts/*.ttf"],
+    "/api/clients/*/presentations/*": ["public/fonts/*.ttf"],
+    "/api/clients/*/liquidity-report/export-pdf": ["public/fonts/*.ttf"],
+    "/api/clients/*/balance-sheet-report/export-pdf": ["public/fonts/*.ttf"],
+    "/api/crm/households/*/meeting-prep/export": ["public/fonts/*.ttf"],
+    // Forge's report tool renders artifact PDFs inside the chat routes.
+    "/api/forge/stream": ["public/fonts/*.ttf"],
+    "/api/forge/resume": ["public/fonts/*.ttf"],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "20mb",

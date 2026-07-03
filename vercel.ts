@@ -16,6 +16,12 @@ export const config: VercelConfig = {
     "src/app/api/clients/**/monte-carlo/route.ts": { memory: 3009 },
     "src/app/api/clients/**/life-insurance/solve/route.ts": { memory: 3009 },
     "src/app/api/clients/**/life-insurance/solve-mc/route.ts": { memory: 3009 },
+    // Presentation generation (Foundation Plan decks) runs the same
+    // solver-grade compute inline: retirement-comparison projection + MC and
+    // the LI-summary solve, then a multi-page react-pdf render. Both glob
+    // variants are needed: export-pdf is a route.tsx.
+    "src/app/api/clients/**/presentations/**/route.ts": { memory: 3009 },
+    "src/app/api/clients/**/presentations/**/route.tsx": { memory: 3009 },
   },
   crons: [
     {

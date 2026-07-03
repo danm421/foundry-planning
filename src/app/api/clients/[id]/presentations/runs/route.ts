@@ -27,8 +27,12 @@ import {
 
 export const dynamic = "force-dynamic";
 // after() needs budget to finish the render after the 202 response. Fluid
-// Compute keeps the instance alive through after() up to maxDuration.
-export const maxDuration = 60;
+// Compute keeps the instance alive through after() up to maxDuration. A
+// Foundation Plan deck runs a full retirement-comparison projection + LI
+// solve before rendering — 60s wasn't enough on prod and the instance was
+// hard-killed mid-render. Must stay below STALE_RUN_MS (generation-runs.ts)
+// or the reaper marks still-running jobs "timed out".
+export const maxDuration = 300;
 
 export async function POST(
   request: NextRequest,

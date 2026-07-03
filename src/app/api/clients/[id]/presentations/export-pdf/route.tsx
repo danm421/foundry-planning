@@ -15,10 +15,11 @@ import { renderPresentationPdf, BodySchema } from "@/components/presentations/re
 import { ensureRetirementComparisonAiSummaries } from "@/lib/presentations/ensure-ai-summaries";
 
 export const dynamic = "force-dynamic";
-// Defense-in-depth on top of the 25 s render-timeout race below: cap the
-// whole route well below Vercel's default (300 s) so a pathological
-// projection can't pin a function instance for minutes.
-export const maxDuration = 60;
+// The per-render 25 s timeout race below stays the render-phase guard, but
+// the AI-summary phase ahead of it (retirement-comparison projection + MC)
+// is legitimate solver-grade compute that starved at 60 s on prod — give the
+// route the same budget as its presentations siblings.
+export const maxDuration = 300;
 
 export async function POST(
   request: NextRequest,
