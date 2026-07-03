@@ -1,9 +1,11 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 
 import { textareaBaseClassName } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
+import { splitMentionSegments } from "@/lib/crm-tasks/mentions";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 
 export interface CrmTaskComment {
@@ -38,20 +40,44 @@ function relativeTime(iso: string): string {
 }
 
 /**
- * Plain-text safe rendering: split on newlines and join with `<br />`
- * fragments. No markdown, no HTML — v1 keeps the surface tiny so we
- * don't pull in a sanitizer.
+ * Plain-text safe rendering with mention chips: split on mention tokens,
+ * then split text runs on newlines. No markdown, no HTML — the surface
+ * stays tiny so we don't pull in a sanitizer.
  */
-function renderBody(body: string) {
-  const lines = body.split("\n");
+function renderBody(body: string, members: FirmMember[], currentUserId: string | null) {
   return (
     <>
-      {lines.map((line, i) => (
-        <Fragment key={i}>
-          {line}
-          {i < lines.length - 1 ? <br /> : null}
-        </Fragment>
-      ))}
+      {splitMentionSegments(body).map((seg, i) => {
+        if (seg.kind === "mention") {
+          const liveName =
+            members.find((m) => m.userId === seg.userId)?.displayName ?? seg.displayName;
+          const isSelf = currentUserId !== null && seg.userId === currentUserId;
+          return (
+            <span
+              key={i}
+              className={
+                "rounded-[var(--radius-sm)] border px-1 py-px text-[12px] font-medium " +
+                (isSelf
+                  ? "border-accent/30 bg-accent/15 text-accent-ink"
+                  : "border-hair bg-card-2 text-ink-2")
+              }
+            >
+              @{liveName}
+            </span>
+          );
+        }
+        const lines = seg.text.split("\n");
+        return (
+          <Fragment key={i}>
+            {lines.map((line, j) => (
+              <Fragment key={j}>
+                {line}
+                {j < lines.length - 1 ? <br /> : null}
+              </Fragment>
+            ))}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -63,6 +89,8 @@ export function CrmTaskSidePanelComments({
 }: CrmTaskSidePanelCommentsProps) {
   const authorName = (userId: string) =>
     members.find((m) => m.userId === userId)?.displayName ?? userId;
+  const { user } = useUser();
+  const currentUserId = user?.id ?? null;
   const [comments, setComments] = useState<CrmTaskComment[]>(initialComments);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
@@ -123,7 +151,7 @@ export function CrmTaskSidePanelComments({
                   </time>
                 </div>
                 <div className="mt-1.5 text-[13px] text-ink whitespace-normal break-words">
-                  {renderBody(c.bodyMarkdown)}
+                  {renderBody(c.bodyMarkdown, members, currentUserId)}
                 </div>
               </li>
             ))}
