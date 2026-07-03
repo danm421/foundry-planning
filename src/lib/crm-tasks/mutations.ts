@@ -5,6 +5,7 @@ import {
   crmHouseholds,
   crmTags,
   crmTaskActivity,
+  crmTaskCommentMentions,
   crmTaskComments,
   crmTaskTags,
   crmTasks,
@@ -347,6 +348,8 @@ export async function postComment(
   firmId: string,
   authorUserId: string,
   body: string,
+  /** Firm-validated Clerk user ids mentioned in `body` (route resolves these). */
+  mentionedUserIds: string[] = [],
 ) {
   await loadTaskOrThrow(taskId, firmId);
 
@@ -366,6 +369,18 @@ export async function postComment(
       kind: "comment_posted",
       payload: { commentId: comment.id },
     });
+
+    const mentions = [...new Set(mentionedUserIds)];
+    if (mentions.length > 0) {
+      await tx.insert(crmTaskCommentMentions).values(
+        mentions.map((mentionedUserId) => ({
+          commentId: comment.id,
+          taskId,
+          firmId,
+          mentionedUserId,
+        })),
+      );
+    }
 
     // Bump the parent task's updatedAt so list views surface recent
     // discussion without forcing a separate query.

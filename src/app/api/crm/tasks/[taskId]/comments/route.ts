@@ -6,6 +6,8 @@ import { listTaskComments } from "@/lib/crm-tasks/queries";
 import { postComment } from "@/lib/crm-tasks/mutations";
 import { postCrmTaskCommentSchema } from "@/lib/crm-tasks/schemas";
 import { mapCrmTaskError } from "@/lib/crm-tasks/route-errors";
+import { listFirmMembers } from "@/lib/crm-tasks/members";
+import { extractMentionUserIds } from "@/lib/crm-tasks/mentions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,18 @@ export async function POST(
 
     const { taskId } = await params;
     const body = postCrmTaskCommentSchema.parse(await req.json());
-    const comment = await postComment(taskId, firmId, userId, body.bodyMarkdown);
+
+    // Tokens naming non-members stay in the text but get no mention row —
+    // junk or cross-org ids must never reach the mentions table.
+    const requested = extractMentionUserIds(body.bodyMarkdown);
+    let mentionedUserIds: string[] = [];
+    if (requested.length > 0) {
+      const members = await listFirmMembers(firmId);
+      const memberIds = new Set(members.map((m) => m.userId));
+      mentionedUserIds = requested.filter((id) => memberIds.has(id));
+    }
+
+    const comment = await postComment(taskId, firmId, userId, body.bodyMarkdown, mentionedUserIds);
     return NextResponse.json({ comment }, { status: 201 });
   } catch (err) {
     return mapCrmTaskError(err);

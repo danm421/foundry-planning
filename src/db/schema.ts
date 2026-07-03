@@ -2766,6 +2766,20 @@ export const crmTaskComments = pgTable("crm_task_comments", {
   index("crm_task_comments_task_created_idx").on(t.taskId, t.createdAt),
 ]);
 
+export const crmTaskCommentMentions = pgTable("crm_task_comment_mentions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  commentId: uuid("comment_id").notNull().references(() => crmTaskComments.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
+  firmId: text("firm_id").notNull(),
+  mentionedUserId: text("mentioned_user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  // The future feed's "mentions of me" query: equality on firm + user,
+  // ordered by recency (btree scans backwards fine — no desc needed).
+  index("crm_task_comment_mentions_feed_idx").on(t.firmId, t.mentionedUserId, t.createdAt),
+  index("crm_task_comment_mentions_comment_idx").on(t.commentId),
+]);
+
 export const crmTaskActivity = pgTable("crm_task_activity", {
   id: uuid("id").defaultRandom().primaryKey(),
   taskId: uuid("task_id").notNull().references(() => crmTasks.id, { onDelete: "cascade" }),
@@ -2799,6 +2813,7 @@ export const crmTasksRelations = relations(crmTasks, ({ one, many }) => ({
   }),
   tags:       many(crmTaskTags),
   comments:   many(crmTaskComments),
+  mentions:   many(crmTaskCommentMentions),
   activity:   many(crmTaskActivity),
   files:      many(crmTaskFiles),
 }));

@@ -1429,6 +1429,13 @@
       "when": 1783026182817,
       "tag": "0203_529_reclassify",
       "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1783043144998,
+      "tag": "0204_crm_task_comment_mentions",
+      "breakpoints": true
     }
   ]
 }
