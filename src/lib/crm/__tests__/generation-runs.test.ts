@@ -223,7 +223,7 @@ describe("generation-runs lib", () => {
     const id = await createQueuedRun({ ...base(), kind: "meeting-prep" });
     await db
       .update(generationRuns)
-      .set({ createdAt: new Date(Date.now() - 4 * 60 * 1000), status: "running" })
+      .set({ createdAt: new Date(Date.now() - STALE_RUN_MS - 60_000), status: "running" })
       .where(eq(generationRuns.id, id!));
     const run = await getRunForHousehold(id!, householdId2, ORG2);
     expect(run?.status).toBe("failed");
