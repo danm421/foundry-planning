@@ -21,11 +21,13 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
   const innerH = H - M.top - M.bottom;
 
   const years = chart.rows.map((r) => r.year);
+  const spouseNeedOf = (r: LiChart["rows"][number]) => (married ? (r.spouseNeed ?? 0) : 0);
+  // Bars stack client + spouse need, so the coverage line compares combined coverage.
+  const coverageLine = chart.clientCoverageLine + (married ? (chart.spouseCoverageLine ?? 0) : 0);
   const maxNeed = Math.max(
     1,
-    ...chart.rows.flatMap((r) => [r.clientNeed, r.spouseNeed ?? 0]),
-    chart.clientCoverageLine,
-    chart.spouseCoverageLine ?? 0,
+    ...chart.rows.map((r) => r.clientNeed + spouseNeedOf(r)),
+    coverageLine,
   );
   // Round the domain up to a tidy $250k tick.
   const top = Math.ceil(maxNeed / 250_000) * 250_000;
@@ -33,7 +35,6 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
   const x = scaleBand<number>().domain(years).range([0, innerW]).padding(0.25);
   const y = scaleLinear().domain([0, top]).range([innerH, 0]);
   const band = x.bandwidth();
-  const barW = married ? band / 2 : band;
 
   const ticks = [0, top * 0.25, top * 0.5, top * 0.75, top];
   // Show at most ~8 x labels.
@@ -47,31 +48,37 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
             <Line key={`g${t}`} x1={0} x2={innerW} y1={y(t)} y2={y(t)} stroke={T.hair} strokeWidth={0.5} />
           ))}
           {ticks.map((t) => (
-            <SvgText key={`yl${t}`} x={-6} y={y(t) + 3} style={{ fontFamily: "Inter", fontSize: 6.5, fill: T.ink3 }}>
+            <SvgText key={`yl${t}`} x={-6} y={y(t) + 3} textAnchor="end" style={{ fontFamily: "Inter", fontSize: 6.5, fill: T.ink3 }}>
               {fmtUsd(t)}
             </SvgText>
           ))}
 
-          {/* Need bars (client + optional spouse, grouped) */}
+          {/* Need bars (client + optional spouse, stacked) */}
           {chart.rows.map((r) => {
             const cx = x(r.year);
             if (cx == null) return null;
             const isMark = r.year === chart.markYear;
+            const spouseNeed = spouseNeedOf(r);
+            const clientTop = y(r.clientNeed);
+            const stackTop = y(r.clientNeed + spouseNeed);
+            // Hairline gap at the segment junction so the two needs read separately.
+            const junctionGap = spouseNeed > 0 && r.clientNeed > 0 ? 0.75 : 0;
+            const spouseH = Math.max(0, clientTop - stackTop - junctionGap);
             return (
               <G key={`b${r.year}`}>
                 <Rect
                   x={cx}
-                  y={y(r.clientNeed)}
-                  width={barW}
-                  height={innerH - y(r.clientNeed)}
+                  y={clientTop}
+                  width={band}
+                  height={innerH - clientTop}
                   fill={isMark ? T.accent : T.steel}
                 />
-                {married && r.spouseNeed != null ? (
+                {spouseH > 0 ? (
                   <Rect
-                    x={cx + barW}
-                    y={y(r.spouseNeed)}
-                    width={barW}
-                    height={innerH - y(r.spouseNeed)}
+                    x={cx}
+                    y={stackTop}
+                    width={band}
+                    height={spouseH}
                     fill={isMark ? T.accentMuted : T.ink3}
                   />
                 ) : null}
@@ -79,12 +86,12 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
             );
           })}
 
-          {/* Current-coverage reference line (client) */}
+          {/* Current-coverage reference line (combined when married) */}
           <Line
             x1={0}
             x2={innerW}
-            y1={y(chart.clientCoverageLine)}
-            y2={y(chart.clientCoverageLine)}
+            y1={y(coverageLine)}
+            y2={y(coverageLine)}
             stroke={T.crit}
             strokeWidth={1}
             strokeDasharray="3 3"
@@ -95,9 +102,9 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
             ? (() => {
                 const row = chart.rows.find((r) => r.year === chart.markYear);
                 if (!row) return null;
-                const cx = (x(chart.markYear) ?? 0) + barW / 2;
+                const cx = (x(chart.markYear) ?? 0) + band / 2;
                 return (
-                  <Circle cx={cx} cy={y(row.clientNeed)} r={3.5} fill={T.accent} stroke="#ffffff" strokeWidth={1.2} />
+                  <Circle cx={cx} cy={y(row.clientNeed + spouseNeedOf(row))} r={3.5} fill={T.accent} stroke="#ffffff" strokeWidth={1.2} />
                 );
               })()
             : null}

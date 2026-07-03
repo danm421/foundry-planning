@@ -257,7 +257,7 @@ export function LifeInsuranceSummaryPagePdf(
                 <View style={s.legendItem}><View style={[s.swatch, { backgroundColor: T.steel }]} /><Text style={s.legendTxt}>Client need</Text></View>
                 {data.married ? <View style={s.legendItem}><View style={[s.swatch, { backgroundColor: T.ink3 }]} /><Text style={s.legendTxt}>Spouse need</Text></View> : null}
                 <View style={s.legendItem}><View style={[s.swatch, { backgroundColor: T.accent }]} /><Text style={s.legendTxt}>MC solve year</Text></View>
-                <View style={s.legendItem}><View style={[s.swatch, { backgroundColor: T.crit }]} /><Text style={s.legendTxt}>Current coverage</Text></View>
+                <View style={s.legendItem}><View style={[s.swatch, { backgroundColor: T.crit }]} /><Text style={s.legendTxt}>{data.married ? "Combined current coverage" : "Current coverage"}</Text></View>
               </View>
             </View>
           </>
