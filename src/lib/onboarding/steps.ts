@@ -79,7 +79,7 @@ export const STEPS: readonly StepDef[] = [
   {
     slug: "estate",
     label: "Estate",
-    description: "Wills, trusts, and the wishes that drive the estate spine.",
+    description: "Ownership, beneficiaries, and where assets flow at each death.",
     icon: "estate",
     skippable: true,
   },

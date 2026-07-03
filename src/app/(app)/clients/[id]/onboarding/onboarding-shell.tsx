@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useClientAccess } from "@/components/client-access-provider";
+import { OnboardingDirtyContext } from "@/components/onboarding-dirty-context";
 import { STEPS, nextStep, prevStep, stepIndex } from "@/lib/onboarding/steps";
 import type { StepIconKey } from "@/lib/onboarding/steps";
 import type { StepSlug, StepStatus, StepStatusKind } from "@/lib/onboarding/types";
@@ -51,6 +52,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
   const canEdit = permission === "edit";
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [stepDirty, setStepDirty] = useState(false);
   const def = STEPS.find((s) => s.slug === activeStep)!;
   const activeStatus = statuses.find((s) => s.slug === activeStep)!;
   const prev = prevStep(activeStep);
@@ -79,8 +81,20 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
     }
   }
 
+  /** True when it is safe to leave the step. Confirms (and clears the flag)
+   *  when the body has reported unsaved edits. */
+  function confirmLeave(): boolean {
+    if (!stepDirty) return true;
+    const ok = window.confirm(
+      "You have unsaved changes on this step that will be lost. Leave without saving?",
+    );
+    if (ok) setStepDirty(false);
+    return ok;
+  }
+
   async function onSkip() {
     if (!def.skippable) return;
+    if (!confirmLeave()) return;
     setBusy(true);
     try {
       const existing = statuses.filter((s) => s.kind === "skipped").map((s) => s.slug);
@@ -97,6 +111,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
   }
 
   function navTo(slug: StepSlug) {
+    if (!confirmLeave()) return;
     patchLastVisited(slug);
     router.push(`/clients/${clientId}/onboarding/${slug}`);
   }
@@ -153,14 +168,25 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
           </div>
         )}
 
-        {/* Step body */}
-        <div className="px-6 py-6">{children}</div>
+        {/* Step body — the provider lets the body flag unsaved edits so the
+            shell's soft navigations (Next/Back/Skip/stepper/exit) confirm
+            before discarding them. */}
+        <div className="px-6 py-6">
+          <OnboardingDirtyContext.Provider value={setStepDirty}>
+            {children}
+          </OnboardingDirtyContext.Provider>
+        </div>
       </section>
 
       {/* Footer */}
       <footer className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href={`/clients/${clientId}`}
+          onClick={(e) => {
+            // Soft navigation — beforeunload can't intercept it, so the
+            // dirty guard has to.
+            if (!confirmLeave()) e.preventDefault();
+          }}
           className="text-[13px] text-ink-3 transition-colors hover:text-ink-2 sm:py-2"
         >
           Save &amp; exit

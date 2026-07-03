@@ -20,13 +20,23 @@ import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
+import { useSetOnboardingDirty } from "@/components/onboarding-dirty-context";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
+import dynamic from "next/dynamic";
 import { EstateFlowReportTab } from "@/components/estate-flow-report-tab";
-import { EstateFlowChartTab } from "@/components/estate-flow-chart-tab";
-import { EstateFlowComparisonTab } from "@/components/estate-flow-comparison-tab";
 import type { ProjectionResult } from "@/engine/projection";
+
+// The chart/comparison tabs pull heavy presentation subtrees (ProjectionPanel,
+// strategy attribution). Load them on demand so routes that only ever show the
+// report tab — the onboarding wizard embed in particular — don't bundle them.
+const EstateFlowChartTab = dynamic(() =>
+  import("@/components/estate-flow-chart-tab").then((m) => m.EstateFlowChartTab),
+);
+const EstateFlowComparisonTab = dynamic(() =>
+  import("@/components/estate-flow-comparison-tab").then((m) => m.EstateFlowComparisonTab),
+);
 
 export interface EstateFlowViewProps {
   clientId: string;
@@ -39,10 +49,16 @@ export interface EstateFlowViewProps {
   cpi: number;
   scenarios?: ScenarioOption[];
   snapshots?: SnapshotOption[];
-  /** Do-nothing baseline tree+projection, used by the Comparison tab. */
-  doNothingTree: ClientData;
-  doNothingResult: ProjectionResult;
-  doNothingScenarioName: string;
+  /** "wizard" renders the Report tab only — no tab strip, no page h1, save bar
+   *  offers base-plan save only and skips the destructive-write confirm. Used
+   *  by the onboarding Estate step. Matches the embed prop on the sibling
+   *  wizard panels (Insurance/Assumptions/Family/Balance Sheet). */
+  embed?: "page" | "wizard";
+  /** Do-nothing baseline tree+projection, used by the Comparison tab.
+   *  Optional — the wizard variant never renders Comparison. */
+  doNothingTree?: ClientData;
+  doNothingResult?: ProjectionResult;
+  doNothingScenarioName?: string;
 }
 
 // ── Gift persistence ─────────────────────────────────────────────────────────
@@ -150,6 +166,7 @@ async function persistGiftChange(
 export default function EstateFlowView(props: EstateFlowViewProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
+  const isWizard = props.embed === "wizard";
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
   // Gift sandbox. New gifts are added via the change-owner dialog.
@@ -163,6 +180,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     ["report", "chart", "comparison"],
     "report",
   );
+  // Wizard mode pins the report tab regardless of any ?view= param.
+  const effectiveTab = isWizard ? "report" : activeTab;
   // Residuary ("remainder estate") clause dialog.
   const [remainderDialogOpen, setRemainderDialogOpen] = useState(false);
 
@@ -221,6 +240,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [props.initialGifts, workingGifts],
   );
   const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
+
+  // Wizard-mode only: report unsaved-edit state up to OnboardingShell so
+  // Next/Back/Skip can confirm before discarding the sandbox. The setter is
+  // null everywhere outside the wizard shell.
+  const setStepDirty = useSetOnboardingDirty();
+  useEffect(() => {
+    if (!isWizard || !setStepDirty) return;
+    setStepDirty(isDirty);
+    return () => setStepDirty(false);
+  }, [isWizard, setStepDirty, isDirty]);
 
   // Stabilise ownerNames by keying on the actual string values so child memos
   // that depend on this object don't re-run on every parent render.
@@ -285,7 +314,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     // The base-case overlay channel writes directly to the client's real
     // account/will data — confirm first. Gift-only edits never touch that
     // data, so the confirm is gated on there being base-mode overlay writes.
-    if (!isNamedScenario && pendingChanges.length > 0) {
+    if (!isNamedScenario && pendingChanges.length > 0 && !isWizard) {
       const confirmed = window.confirm(
         "This will update the client's actual account ownership, beneficiary, " +
           "and will data. Continue?",
@@ -386,7 +415,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, submit, props.clientId, router]);
+  }, [canEdit, pendingChanges, giftChanges, isNamedScenario, isWizard, submit, props.clientId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
     if (!canEdit) return;
@@ -501,8 +530,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Control bar */}
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold">Estate Flow</h1>
+      <div className={`flex items-center gap-4 ${isWizard ? "justify-end" : "justify-between"}`}>
+        {!isWizard && <h1 className="text-lg font-semibold">Estate Flow</h1>}
         <div className="flex items-center gap-3">
           {canEdit && (
             <button
@@ -513,7 +542,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
               Remainder estate
             </button>
           )}
-          {props.isMarried && activeTab === "report" && (
+          {props.isMarried && effectiveTab === "report" && (
             <DeathOrderToggle
               value={ordering}
               onChange={setOrdering}
@@ -523,21 +552,23 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         </div>
       </div>
 
-      <DialogTabs
-        tabs={[
-          { id: "report", label: "Report" },
-          { id: "chart", label: "Flow Chart" },
-          { id: "comparison", label: "Comparison" },
-        ]}
-        activeTab={activeTab}
-        onTabChange={(id) => {
-          if (id === "report" || id === "chart" || id === "comparison") {
-            setActiveTab(id);
-          }
-        }}
-      />
+      {!isWizard && (
+        <DialogTabs
+          tabs={[
+            { id: "report", label: "Report" },
+            { id: "chart", label: "Flow Chart" },
+            { id: "comparison", label: "Comparison" },
+          ]}
+          activeTab={activeTab}
+          onTabChange={(id) => {
+            if (id === "report" || id === "chart" || id === "comparison") {
+              setActiveTab(id);
+            }
+          }}
+        />
+      )}
 
-      {activeTab === "report" && (
+      {effectiveTab === "report" && (
         <EstateFlowReportTab
           working={working}
           workingGifts={workingGifts}
@@ -554,7 +585,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         />
       )}
 
-      {activeTab === "chart" && (
+      {effectiveTab === "chart" && (
         <EstateFlowChartTab
           working={working}
           engineData={engineData}
@@ -565,7 +596,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         />
       )}
 
-      {activeTab === "comparison" && (
+      {effectiveTab === "comparison" && props.doNothingTree && props.doNothingResult && (
         <EstateFlowComparisonTab
           clientId={props.clientId}
           rightScenarioId={props.scenarioId}
@@ -574,7 +605,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           projection={projection}
           leftTree={props.doNothingTree}
           leftResult={props.doNothingResult}
-          leftScenarioName={props.doNothingScenarioName}
+          leftScenarioName={props.doNothingScenarioName ?? "Do nothing"}
           scenarios={props.scenarios ?? []}
           snapshots={props.snapshots ?? []}
         />
@@ -635,14 +666,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
                       ? "Save to this scenario"
                       : "Save to base plan"}
                 </button>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={handleSaveAsNew}
-                  className="rounded border border-amber-600 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? "Saving…" : "Save as new scenario"}
-                </button>
+                {!isWizard && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={handleSaveAsNew}
+                    className="rounded border border-amber-600 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSaving ? "Saving…" : "Save as new scenario"}
+                  </button>
+                )}
               </div>
             )}
           </div>
