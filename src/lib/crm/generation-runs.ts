@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, notInArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import { generationRuns } from "@/db/schema";
 
@@ -10,7 +10,7 @@ export const STALE_RUN_MS = 3 * 60 * 1000;
 const ERROR_MAX = 1000;
 
 type NewRunBase = {
-  clientId: string;
+  clientId: string | null;
   householdId: string;
   firmId: string;
   kind: string;
@@ -83,12 +83,18 @@ export async function markRunning(runId: string | null): Promise<void> {
 export async function markDone(
   runId: string | null,
   resultDocumentId: string | null,
+  resultPayload?: unknown,
 ): Promise<void> {
   if (!runId) return;
   try {
     await db
       .update(generationRuns)
-      .set({ status: "done", resultDocumentId, finishedAt: new Date() })
+      .set({
+        status: "done",
+        resultDocumentId,
+        ...(resultPayload !== undefined ? { resultPayload } : {}),
+        finishedAt: new Date(),
+      })
       .where(eq(generationRuns.id, runId));
   } catch (err) {
     logFail("markDone", err);
@@ -149,7 +155,14 @@ export async function listRecentRuns(
   householdId: string,
   firmId: string,
   limit: number,
+  opts: { kind?: string; excludeKinds?: string[] } = {},
 ): Promise<GenerationRunRow[]> {
+  const kindWhere = [
+    ...(opts.kind ? [eq(generationRuns.kind, opts.kind)] : []),
+    ...(opts.excludeKinds?.length
+      ? [notInArray(generationRuns.kind, opts.excludeKinds)]
+      : []),
+  ];
   try {
     const cutoff = new Date(Date.now() - STALE_RUN_MS);
     const stale = await db
@@ -159,6 +172,7 @@ export async function listRecentRuns(
         and(
           eq(generationRuns.householdId, householdId),
           eq(generationRuns.firmId, firmId),
+          ...kindWhere,
           or(
             eq(generationRuns.status, "queued"),
             eq(generationRuns.status, "analyzing"),
@@ -181,6 +195,7 @@ export async function listRecentRuns(
         and(
           eq(generationRuns.householdId, householdId),
           eq(generationRuns.firmId, firmId),
+          ...kindWhere,
         ),
       )
       .orderBy(desc(generationRuns.createdAt))
@@ -188,5 +203,44 @@ export async function listRecentRuns(
   } catch (err) {
     logFail("listRecentRuns", err);
     return [];
+  }
+}
+
+/**
+ * Single-run fetch for the wizard's status poll, scoped to household + firm.
+ * Applies the same lazy stale sweep as listRecentRuns so a poller never spins
+ * forever on a run orphaned by a deploy or an over-budget after() job.
+ */
+export async function getRunForHousehold(
+  runId: string,
+  householdId: string,
+  firmId: string,
+): Promise<GenerationRunRow | null> {
+  try {
+    const [run] = await db
+      .select()
+      .from(generationRuns)
+      .where(
+        and(
+          eq(generationRuns.id, runId),
+          eq(generationRuns.householdId, householdId),
+          eq(generationRuns.firmId, firmId),
+        ),
+      )
+      .limit(1);
+    if (!run) return null;
+    const inFlight =
+      run.status === "queued" || run.status === "analyzing" || run.status === "running";
+    if (inFlight && run.createdAt.getTime() < Date.now() - STALE_RUN_MS) {
+      await db
+        .update(generationRuns)
+        .set({ status: "failed", error: "timed out", finishedAt: new Date() })
+        .where(eq(generationRuns.id, runId));
+      return { ...run, status: "failed", error: "timed out", finishedAt: new Date() };
+    }
+    return run;
+  } catch (err) {
+    logFail("getRunForHousehold", err);
+    return null;
   }
 }
