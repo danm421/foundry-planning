@@ -21,10 +21,17 @@ import {
 import type { ClientData } from "@/engine/types";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { applyMutations } from "./apply-mutations";
+import type { BisectResult } from "./bisect";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
 import { livingExpenseSearchCeiling } from "./lever-search-config";
 import { roundToNearest5k, retirementLivingExpenseTotal } from "./max-spending-math";
 import { refineOnGrid } from "./refine-on-grid";
+import {
+  bracketFromSeed,
+  deterministicLocalize,
+  straightlineSucceeds,
+  type WarmStartOutcome,
+} from "./warm-start";
 
 /** Floor multiple on the stated retirement spend used when the resource-aware
  *  ceiling would otherwise clamp below it (e.g. a $1M+/yr stated spend). */
@@ -54,6 +61,10 @@ export interface SolveMaxSpendingArgs {
   /** PoS for a candidate annual spend (today's dollars). Defaults to the real MC
    *  evaluator. Injectable for tests. */
   evaluateSpend?: (dollars: number, trials: number) => Promise<number>;
+  /** Straightline success for a candidate annual spend. Defaults to the real
+   *  deterministic projection ONLY when evaluateSpend is not injected (tests
+   *  inject both or opt out of the warm start entirely). */
+  evaluateStraightline?: (dollars: number) => Promise<boolean>;
 }
 
 /** Build the real Monte-Carlo evaluator: annual spend (dollars) → PoS, fixed seed
@@ -85,6 +96,20 @@ export function makeMcSpendEvaluator(
   };
 }
 
+/** Build the real straightline evaluator: annual spend (dollars) → does the
+ *  deterministic projection succeed under the MC success definition. */
+export function makeDeterministicSpendEvaluator(
+  tree: ClientData,
+  requiredMinimumAssetLevel: number,
+): (dollars: number) => Promise<boolean> {
+  return async (dollars) => {
+    const mutated = applyMutations(tree, [
+      { kind: "living-expense-amount", amount: dollars },
+    ]);
+    return straightlineSucceeds(runProjection(mutated), requiredMinimumAssetLevel);
+  };
+}
+
 export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxSpendResult> {
   const targetPoS = args.targetPoS ?? 0.85;
   const searchTrials = args.searchTrials ?? 250;
@@ -101,18 +126,64 @@ export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxS
     Math.max(MAX_SPEND_SCALE_HI * baseSpend, livingExpenseSearchCeiling(args.tree)),
   );
 
-  // Phase 1 — localize the crossing cheaply at 250 trials, in dollar space.
-  const bisectResult = await bisect({
-    lo: 0,
-    hi: ceilingDollars,
-    step: GRID_STEP,
-    direction: -1, // higher spend → lower PoS
-    target: targetPoS,
-    tolerance: 0,
-    selection: "closest",
-    maxIterations: WIDE_LEVER_MAX_ITERATIONS,
-    evaluate: (dollars) => evaluateSpend(dollars, searchTrials),
-  });
+  const evaluateStraightline =
+    args.evaluateStraightline ??
+    (args.evaluateSpend
+      ? null
+      : makeDeterministicSpendEvaluator(args.tree, args.mcPayload.requiredMinimumAssetLevel));
+
+  // Phase 0 — deterministic warm start: localize with straightline projections
+  // (~1/250th of one MC probe each), then secant MC probes to bracket the
+  // target. Every failure mode degrades to the pre-warm-start full-range path.
+  let warm: WarmStartOutcome = { kind: "fallback" };
+  if (evaluateStraightline) {
+    // Any warm-start exception degrades to the pre-feature full-range path.
+    try {
+      const seed = await deterministicLocalize({
+        lo: 0,
+        hi: ceilingDollars,
+        step: GRID_STEP,
+        succeeds: evaluateStraightline,
+      });
+      if (seed !== null) {
+        warm = await bracketFromSeed({
+          seed,
+          lo: 0,
+          hi: ceilingDollars,
+          step: GRID_STEP,
+          direction: -1,
+          target: targetPoS,
+          evaluate: (dollars) => evaluateSpend(dollars, searchTrials),
+        });
+      }
+    } catch {
+      warm = { kind: "fallback" };
+    }
+  }
+
+  // Phase 1 — localize the crossing at 250 trials: on the warm bracket when
+  // available (endpoint PoS pre-known), else the full range as before.
+  const bisectResult: BisectResult =
+    warm.kind === "result"
+      ? {
+          status: warm.status,
+          solvedValue: warm.solvedValue,
+          achievedPoS: warm.achievedPoS,
+          iterations: 0,
+        }
+      : await bisect({
+          lo: warm.kind === "bracket" ? warm.lo : 0,
+          hi: warm.kind === "bracket" ? warm.hi : ceilingDollars,
+          posLo: warm.kind === "bracket" ? warm.posLo : undefined,
+          posHi: warm.kind === "bracket" ? warm.posHi : undefined,
+          step: GRID_STEP,
+          direction: -1, // higher spend → lower PoS
+          target: targetPoS,
+          tolerance: 0,
+          selection: "closest",
+          maxIterations: WIDE_LEVER_MAX_ITERATIONS,
+          evaluate: (dollars) => evaluateSpend(dollars, searchTrials),
+        });
 
   const startDollars = bisectResult.solvedValue; // already on the $5k grid
 

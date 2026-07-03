@@ -35,6 +35,11 @@ export interface BisectInput {
    *    max-iterations result — the both-beat and unreachable shortcuts are
    *    unchanged (so an unreachable plan never jumps to max spend). */
   selection?: "beat-target" | "closest";
+  /** Pre-known PoS at `lo` / `hi` (e.g. from a warm-start bracket). When
+   *  provided, that endpoint is not re-evaluated. `iterations` counts only
+   *  real evaluations, so it starts below 2 when these are supplied. */
+  posLo?: number;
+  posHi?: number;
   evaluate: (value: number) => Promise<number>;
 }
 
@@ -53,7 +58,7 @@ export interface BisectResult {
   iterations: number;
 }
 
-function snapToStep(value: number, lo: number, step: number, hi: number): number {
+export function snapToStep(value: number, lo: number, step: number, hi: number): number {
   const n = Math.round((value - lo) / step);
   const snapped = lo + n * step;
   // Avoid floating-point drift on small steps (e.g. 0.01).
@@ -68,9 +73,21 @@ export async function bisect(input: BisectInput): Promise<BisectResult> {
   const maxIterations = input.maxIterations ?? 8;
   const selection = input.selection ?? "beat-target";
 
-  const posLo = await evaluate(lo);
-  const posHi = await evaluate(hi);
-  let iterations = 2;
+  let iterations = 0;
+  let posLo: number;
+  if (input.posLo !== undefined) {
+    posLo = input.posLo;
+  } else {
+    posLo = await evaluate(lo);
+    iterations += 1;
+  }
+  let posHi: number;
+  if (input.posHi !== undefined) {
+    posHi = input.posHi;
+  } else {
+    posHi = await evaluate(hi);
+    iterations += 1;
+  }
 
   if (posLo >= target && posHi >= target) {
     // Both beat target — return the cheaper endpoint.
