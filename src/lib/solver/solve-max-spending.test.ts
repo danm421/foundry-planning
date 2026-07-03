@@ -100,3 +100,44 @@ describe("solveMaxSpending", () => {
     expect(Math.abs(r.achievedPoS - 0.85)).toBeLessThanOrEqual(0.01);
   });
 });
+
+describe("solveMaxSpending warm start", () => {
+  // Deterministic straightline succeeds up to $100k spend (≈ PoS 0.5 on the
+  // linear curve) — an informative seed.
+  const straightline = async (dollars: number) => dollars <= 100_000;
+
+  it("solves the same answer with far fewer MC evaluations", async () => {
+    const searchCalls: number[] = [];
+    const refineCalls: number[] = [];
+    const counting = async (dollars: number, trials: number) => {
+      (trials >= 500 ? refineCalls : searchCalls).push(dollars);
+      return linearPoS(dollars);
+    };
+    const r = await solveMaxSpending(
+      args({ evaluateSpend: counting, evaluateStraightline: straightline }),
+    );
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBe(30_000);
+    // Warm path: ~3 secant probes + collapsed bisect. Old path used ~9-11.
+    expect(searchCalls.length).toBeLessThanOrEqual(5);
+    expect(refineCalls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("reports unreachable from a warm-start endpoint resolution", async () => {
+    const r = await solveMaxSpending(
+      args({ evaluateSpend: async () => 0.5, evaluateStraightline: straightline }),
+    );
+    expect(r.status).toBe("unreachable");
+    expect(r.realAnnualSpend).toBe(0);
+    expect(r.achievedPoS).toBe(0.5);
+  });
+
+  it("falls back to the full-range bisect when the straightline is uninformative", async () => {
+    // Straightline succeeds everywhere (both endpoints agree) → no seed.
+    const r = await solveMaxSpending(
+      args({ evaluateStraightline: async () => true }),
+    );
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBe(30_000);
+  });
+});
