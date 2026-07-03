@@ -20,14 +20,23 @@ import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { buildAnnualExclusionMap } from "@/lib/gifts/resolve-annual-exclusion";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "@/components/client-access-provider";
-import { useOnboardingDirty } from "@/components/onboarding-dirty-context";
+import { useSetOnboardingDirty } from "@/components/onboarding-dirty-context";
 import type { ClientData } from "@/engine/types";
 import { DeathOrderToggle } from "@/components/report-controls/death-order-toggle";
 import DialogTabs from "@/components/dialog-tabs";
+import dynamic from "next/dynamic";
 import { EstateFlowReportTab } from "@/components/estate-flow-report-tab";
-import { EstateFlowChartTab } from "@/components/estate-flow-chart-tab";
-import { EstateFlowComparisonTab } from "@/components/estate-flow-comparison-tab";
 import type { ProjectionResult } from "@/engine/projection";
+
+// The chart/comparison tabs pull heavy presentation subtrees (ProjectionPanel,
+// strategy attribution). Load them on demand so routes that only ever show the
+// report tab — the onboarding wizard embed in particular — don't bundle them.
+const EstateFlowChartTab = dynamic(() =>
+  import("@/components/estate-flow-chart-tab").then((m) => m.EstateFlowChartTab),
+);
+const EstateFlowComparisonTab = dynamic(() =>
+  import("@/components/estate-flow-comparison-tab").then((m) => m.EstateFlowComparisonTab),
+);
 
 export interface EstateFlowViewProps {
   clientId: string;
@@ -42,8 +51,9 @@ export interface EstateFlowViewProps {
   snapshots?: SnapshotOption[];
   /** "wizard" renders the Report tab only — no tab strip, no page h1, save bar
    *  offers base-plan save only and skips the destructive-write confirm. Used
-   *  by the onboarding Estate step. Default: "full". */
-  variant?: "full" | "wizard";
+   *  by the onboarding Estate step. Matches the embed prop on the sibling
+   *  wizard panels (Insurance/Assumptions/Family/Balance Sheet). */
+  embed?: "page" | "wizard";
   /** Do-nothing baseline tree+projection, used by the Comparison tab.
    *  Optional — the wizard variant never renders Comparison. */
   doNothingTree?: ClientData;
@@ -156,7 +166,7 @@ async function persistGiftChange(
 export default function EstateFlowView(props: EstateFlowViewProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
-  const isWizard = props.variant === "wizard";
+  const isWizard = props.embed === "wizard";
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
   // Gift sandbox. New gifts are added via the change-owner dialog.
@@ -232,10 +242,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
 
   // Wizard-mode only: report unsaved-edit state up to OnboardingShell so
-  // Next/Back/Skip can confirm before discarding the sandbox. `dirtyCtx` is
+  // Next/Back/Skip can confirm before discarding the sandbox. The setter is
   // null everywhere outside the wizard shell.
-  const dirtyCtx = useOnboardingDirty();
-  const setStepDirty = dirtyCtx?.setDirty;
+  const setStepDirty = useSetOnboardingDirty();
   useEffect(() => {
     if (!isWizard || !setStepDirty) return;
     setStepDirty(isDirty);

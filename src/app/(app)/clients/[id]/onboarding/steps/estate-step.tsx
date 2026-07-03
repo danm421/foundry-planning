@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
-import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
+import { prepareEstateFlowTree } from "@/lib/estate/estate-flow-tree";
 import EstateFlowView from "@/components/estate-flow-view";
 
 interface EstateStepProps {
@@ -35,17 +35,13 @@ export default async function EstateStep({ clientId, firmId }: EstateStepProps) 
     loadGiftDrafts(clientId, firmId, "base"),
   ]);
   if (!effectiveResult) return <NotFound />;
-  const { effectiveTree } = effectiveResult;
-
-  // Strip the loader's baked-in gifts — the view re-materialises from
-  // workingGifts (single source of truth). Mirrors estate-flow-content.tsx.
-  const giftFreeTree = { ...effectiveTree, gifts: [], giftEvents: [] };
-  const cpi = effectiveTree.planSettings.inflationRate;
-  const isMarried = hasSpouseForEstate(effectiveTree.client.spouseDob);
+  const { giftFreeTree, cpi, isMarried } = prepareEstateFlowTree(
+    effectiveResult.effectiveTree,
+  );
 
   return (
     <EstateFlowView
-      variant="wizard"
+      embed="wizard"
       clientId={clientId}
       scenarioId="base"
       scenarioName="Base case"

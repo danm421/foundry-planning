@@ -20,12 +20,12 @@ vi.mock("@/components/estate-flow-comparison-tab", () => ({
   EstateFlowComparisonTab: () => <div data-testid="comparison-tab" />,
 }));
 
-function renderView(variant?: "full" | "wizard") {
+function renderView(embed?: "page" | "wizard") {
   const data = buildClientData();
   return render(
     <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
       <EstateFlowView
-        variant={variant}
+        embed={embed}
         clientId="client-1"
         scenarioId="base"
         scenarioName="Base case"

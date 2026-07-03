@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import OnboardingShell from "@/app/(app)/clients/[id]/onboarding/onboarding-shell";
-import { useOnboardingDirty } from "@/components/onboarding-dirty-context";
+import { useSetOnboardingDirty } from "@/components/onboarding-dirty-context";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import { STEPS } from "@/lib/onboarding/steps";
 
@@ -24,10 +24,10 @@ vi.mock("next/link", () => ({
 
 /** Step-body stand-in that flags unsaved edits through the context. */
 function DirtyReporter() {
-  const ctx = useOnboardingDirty();
+  const setDirty = useSetOnboardingDirty();
   useEffect(() => {
-    ctx?.setDirty(true);
-  }, [ctx]);
+    setDirty?.(true);
+  }, [setDirty]);
   return <div data-testid="step-body" />;
 }
 

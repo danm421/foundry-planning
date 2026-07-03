@@ -8,7 +8,7 @@ import { notFound } from "next/navigation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { loadGiftDrafts } from "@/lib/estate/load-gift-drafts";
-import { hasSpouseForEstate } from "@/lib/estate/spousal-household";
+import { prepareEstateFlowTree } from "@/lib/estate/estate-flow-tree";
 import EstateFlowView from "@/components/estate-flow-view";
 
 interface Props {
@@ -57,20 +57,7 @@ export async function EstateFlowContent({
       : scenarioRows.find((s) => s.id === scenarioId);
   if (!resolvedScenario) notFound();
 
-  // Strip the loader's baked-in gifts — the view re-materialises from
-  // workingGifts (single source of truth).
-  const giftFreeTree = { ...effectiveTree, gifts: [], giftEvents: [] };
-
-  // CPI for series fan-out. resolvedInflationRate is not exposed on ClientData
-  // (it lives on the loader's ResolutionContext), so use the raw plan-settings
-  // inflation rate — the only inflation field reachable on effectiveTree.
-  const cpi = effectiveTree.planSettings.inflationRate;
-
-  // Gate the second-death column on spouse existence, matching the engine's
-  // second-death signal (client.spouseDob) — NOT filing status. A spouse'd
-  // household that files single/separately still gets a modeled second death.
-  // See hasSpouseForEstate.
-  const isMarried = hasSpouseForEstate(effectiveTree.client.spouseDob);
+  const { giftFreeTree, cpi, isMarried } = prepareEstateFlowTree(effectiveTree);
 
   return (
     <EstateFlowView
