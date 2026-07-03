@@ -20,6 +20,9 @@ interface HouseholdSummaryPanelProps {
   hasSpouse: boolean;
   clientLabel: string;
   spouseLabel: string | null;
+  /** "stacked" (default) suits a narrow side column; "row" lays the two
+   *  sections side by side for full-width placement above the table. */
+  layout?: "stacked" | "row";
 }
 
 export default function HouseholdSummaryPanel({
@@ -30,22 +33,24 @@ export default function HouseholdSummaryPanel({
   hasSpouse,
   clientLabel,
   spouseLabel,
+  layout = "stacked",
 }: HouseholdSummaryPanelProps) {
   const assetTotal = donut.reduce((sum, s) => sum + s.value, 0);
   const hasAssets = assetTotal > 0;
   const slices = hasAssets ? donut.map((s) => ({ ...s, pct: Math.round((s.value / assetTotal) * 100) })) : [];
   const showSplit = hasSpouse && spouseLabel != null;
+  const row = layout === "row";
 
   return (
-    <div className="rounded-lg border border-hair bg-card">
+    <div className={`rounded-lg border border-hair bg-card ${row ? "md:grid md:grid-cols-2" : ""}`}>
       {/* ── Asset allocation ─────────────────────────────────────────────── */}
-      <section className="border-b border-hair p-4">
+      <section className={`border-b border-hair p-4 ${row ? "md:border-b-0 md:border-r" : ""}`}>
         <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-ink-3">Assets by Type</h3>
         {!hasAssets ? (
           <p className="py-6 text-center text-sm text-ink-3">No assets</p>
         ) : (
-          <>
-            <div className="relative mx-auto h-40 w-40">
+          <div className={row ? "flex items-center gap-4" : ""}>
+            <div className={`relative h-40 w-40 shrink-0 ${row ? "" : "mx-auto"}`}>
               <Pie
                 data={{
                   labels: donut.map((s) => s.label),
@@ -72,7 +77,7 @@ export default function HouseholdSummaryPanel({
                 }}
               />
             </div>
-            <ul className="mt-3 space-y-1.5">
+            <ul className={row ? "min-w-0 flex-1 space-y-1.5" : "mt-3 space-y-1.5"}>
               {slices.map((s) => (
                 <li key={s.key} className="flex items-center gap-2 text-xs">
                   <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: s.hex }} aria-hidden />
@@ -81,7 +86,7 @@ export default function HouseholdSummaryPanel({
                 </li>
               ))}
             </ul>
-          </>
+          </div>
         )}
       </section>
 

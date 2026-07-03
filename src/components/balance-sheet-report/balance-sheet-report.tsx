@@ -40,6 +40,10 @@ export interface BalanceSheetReportProps {
   todayYear?: number;
   clientLabel: string;
   spouseLabel: string | null;
+  /** Where the pie/net-worth summary sits relative to the household table.
+   *  "side" (default) is a left column; "top" stacks it full-width above the
+   *  table — used in narrow hosts like the solver pane. */
+  summaryPlacement?: "side" | "top";
 }
 
 type Tab = "household" | "entities";
@@ -129,8 +133,8 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
 
       {tab === "household" ? (
         <>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-            <div className="lg:w-80 lg:shrink-0">
+          {props.summaryPlacement === "top" ? (
+            <>
               <HouseholdSummaryPanel
                 donut={consolidated.donut}
                 totalAssets={household.totalAssets}
@@ -139,12 +143,28 @@ export default function BalanceSheetReport(props: BalanceSheetReportProps) {
                 hasSpouse={household.hasSpouse}
                 clientLabel={props.clientLabel}
                 spouseLabel={props.spouseLabel}
+                layout="row"
               />
-            </div>
-            <div className="min-w-0 flex-1">
               <HouseholdTable model={household} clientLabel={props.clientLabel} spouseLabel={props.spouseLabel} />
+            </>
+          ) : (
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+              <div className="lg:w-80 lg:shrink-0">
+                <HouseholdSummaryPanel
+                  donut={consolidated.donut}
+                  totalAssets={household.totalAssets}
+                  totalLiabilities={household.totalLiabilities}
+                  netWorth={household.netWorth}
+                  hasSpouse={household.hasSpouse}
+                  clientLabel={props.clientLabel}
+                  spouseLabel={props.spouseLabel}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <HouseholdTable model={household} clientLabel={props.clientLabel} spouseLabel={props.spouseLabel} />
+              </div>
             </div>
-          </div>
+          )}
           <OutOfEstateTable vm={consolidated} />
         </>
       ) : (

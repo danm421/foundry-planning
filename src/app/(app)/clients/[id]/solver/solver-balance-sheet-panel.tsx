@@ -31,5 +31,5 @@ export function SolverBalanceSheetPanel({ workingTree, years, clientName, spouse
     return <p className="py-4 text-[12px] text-ink-3">No projection available yet.</p>;
   }
 
-  return <BalanceSheetReport {...report} todayYear={new Date().getFullYear()} />;
+  return <BalanceSheetReport {...report} todayYear={new Date().getFullYear()} summaryPlacement="top" />;
 }
