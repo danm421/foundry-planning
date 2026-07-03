@@ -17,6 +17,7 @@ import { LiabilityFormInitial } from "./forms/add-liability-form";
 import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import { isLiquid } from "@/lib/account-groups/liquid-filter";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 import {
@@ -701,6 +702,10 @@ export default function BalanceSheetView({
   const totalAssets = totalInEstate + totalOutOfEstate;
   const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
+  // Liquid (taxable/cash/retirement) in-estate holdings — the engine's
+  // "portfolio assets" bucket.
+  const liquidAccounts = inEstate.filter((a) => isLiquid(a.category));
+  const portfolioAssets = liquidAccounts.reduce((s, a) => s + Number(a.value), 0);
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
     .map((a) => ({ id: a.id, name: a.name }));
@@ -811,8 +816,14 @@ export default function BalanceSheetView({
     <div className="space-y-6">
       {/* KPI row */}
       {!isWizard && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <Kpi label="Assets (in estate)" value={fmt(totalInEstate)} accent="text-gray-100" />
+          <Kpi
+            label="Portfolio assets"
+            value={fmt(portfolioAssets)}
+            accent="text-gray-100"
+            subtitle={liquidAccounts.length ? `${liquidAccounts.length} liquid account${liquidAccounts.length > 1 ? "s" : ""}` : "—"}
+          />
           <Kpi label="Liabilities" value={`(${fmt(totalLiabilities)})`} accent="text-red-400" />
           <Kpi label="Net Worth" value={fmt(netWorth)} accent={netWorth >= 0 ? "text-green-500" : "text-red-500"} />
           <Kpi
