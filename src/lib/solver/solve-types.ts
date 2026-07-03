@@ -34,6 +34,10 @@ export interface SolveProgressEvent {
   iteration: number;
   candidateValue: number;
   achievedPoS: number;
+  /** Which solve phase produced this candidate: the 250-trial search
+   *  (including warm-start probes) or the 500-trial refine walk. Optional and
+   *  additive for SSE consumers. */
+  phase?: "search" | "refine";
 }
 
 /** PoS-bisection result (retirement-age, living-expense, savings, roth). */

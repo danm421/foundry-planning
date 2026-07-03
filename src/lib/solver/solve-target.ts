@@ -40,6 +40,12 @@ import { roundToNearest5k } from "./living-expense";
 import { resolveTechniqueMutations } from "./resolve-technique-mutations";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "./solve-types";
 import type { SolverMutation } from "./types";
+import {
+  bracketFromSeed,
+  deterministicLocalize,
+  straightlineSucceeds,
+  type WarmStartOutcome,
+} from "./warm-start";
 
 export interface SolveTargetArgs {
   effectiveTree: ClientData;
@@ -54,6 +60,10 @@ export interface SolveTargetArgs {
   /** Injectable evaluator (value, trials) → {pos, projection}. Defaults to the real
    *  MC compute. Used by tests and to keep the refine wiring unit-testable. */
   evaluate?: (value: number, trials: number) => Promise<{ pos: number; projection: ProjectionYear[] }>;
+  /** Straightline success for a candidate lever value. Defaults to the real
+   *  deterministic projection ONLY when `evaluate` is not injected (tests
+   *  inject both or opt out of the warm start entirely). */
+  evaluateStraightline?: (value: number) => Promise<boolean>;
   /** Called once per candidate evaluation. */
   onProgress?: (event: SolveProgressEvent) => void;
   /** Cancellation signal forwarded to runMonteCarlo. */
@@ -119,27 +129,82 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
   // and refine evaluators structurally identical so they can never drift.
   let iteration = 0;
   const makeEvaluate =
-    (memo: typeof searchMemo) =>
+    (memo: typeof searchMemo, phase: "search" | "refine") =>
     async (value: number): Promise<number> => {
       if (args.signal?.aborted) throw new Error("aborted");
       iteration += 1;
       const entry = await memo(value);
-      args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos });
+      args.onProgress?.({ iteration, candidateValue: value, achievedPoS: entry.pos, phase });
       return entry.pos;
     };
 
-  // Phase 1 — localize at `trials` (250).
-  const bisectResult = await bisect({
-    lo: config.lo,
-    hi: config.hi,
-    step: config.step,
-    direction: config.direction,
-    target: args.targetPoS,
-    tolerance: config.tolerance,
-    selection: config.selection,
-    maxIterations: WIDE_LEVER_MAX_ITERATIONS,
-    evaluate: makeEvaluate(searchMemo),
-  });
+  // Phase 0 — deterministic warm start. Straightline projections localize the
+  // answer, then ≤4 secant MC probes bracket the target PoS. Uninformative
+  // seed (e.g. roth) or exhausted budget → the full-range path below, which is
+  // the entire pre-warm-start behavior.
+  const evaluateStraightline =
+    args.evaluateStraightline ??
+    (args.evaluate
+      ? null
+      : async (value: number): Promise<boolean> => {
+          const allMutations = [
+            ...args.baselineMutations,
+            buildLeverMutation(args.target, value, searchTree),
+          ];
+          let tree = applyMutations(args.effectiveTree, allMutations);
+          if (args.resolutionContext) {
+            tree = resolveTechniqueMutations(tree, allMutations, args.resolutionContext);
+          }
+          return straightlineSucceeds(
+            runProjection(tree),
+            args.mcPayload.requiredMinimumAssetLevel ?? 0,
+          );
+        });
+
+  let warm: WarmStartOutcome = { kind: "fallback" };
+  if (evaluateStraightline) {
+    const seed = await deterministicLocalize({
+      lo: config.lo,
+      hi: config.hi,
+      step: config.step,
+      succeeds: evaluateStraightline,
+    });
+    if (seed !== null) {
+      warm = await bracketFromSeed({
+        seed,
+        lo: config.lo,
+        hi: config.hi,
+        step: config.step,
+        direction: config.direction,
+        target: args.targetPoS,
+        evaluate: makeEvaluate(searchMemo, "search"),
+      });
+    }
+  }
+
+  // Phase 1 — localize at `trials` (250): warm bracket when available
+  // (endpoint PoS pre-known via the shared memo), else the full range.
+  const bisectResult =
+    warm.kind === "result"
+      ? {
+          status: warm.status,
+          solvedValue: warm.solvedValue,
+          achievedPoS: warm.achievedPoS,
+          iterations: iteration,
+        }
+      : await bisect({
+          lo: warm.kind === "bracket" ? warm.lo : config.lo,
+          hi: warm.kind === "bracket" ? warm.hi : config.hi,
+          posLo: warm.kind === "bracket" ? warm.posLo : undefined,
+          posHi: warm.kind === "bracket" ? warm.posHi : undefined,
+          step: config.step,
+          direction: config.direction,
+          target: args.targetPoS,
+          tolerance: config.tolerance,
+          selection: config.selection,
+          maxIterations: WIDE_LEVER_MAX_ITERATIONS,
+          evaluate: makeEvaluate(searchMemo, "search"),
+        });
 
   let solvedValue = bisectResult.solvedValue;
 
@@ -154,7 +219,7 @@ export async function solveTarget(args: SolveTargetArgs): Promise<SolveResultEve
         target: args.targetPoS,
         min: 0,
         max: config.hi,
-        evaluate: makeEvaluate(refineMemo),
+        evaluate: makeEvaluate(refineMemo, "refine"),
       });
       solvedValue = refined.solvedValue;
     }
