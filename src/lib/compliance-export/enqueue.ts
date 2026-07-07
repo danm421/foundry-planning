@@ -1,0 +1,93 @@
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "@/db";
+import { crmHouseholds, scenarios, generationRuns } from "@/db/schema";
+import { createBatch, finalizeBatchIfComplete, type SkippedClient } from "./batches";
+import {
+  buildComplianceRequestPayload,
+  buildCompliancePages,
+  COMPLIANCE_RUN_KIND,
+} from "./deck";
+
+async function resolveBaseCaseScenarioId(clientId: string): Promise<string | null> {
+  // Household is already firm-scoped by the enumeration query, so a direct
+  // client-scoped lookup is safe (no visibility layer needed).
+  const [row] = await db
+    .select({ id: scenarios.id })
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+export async function enqueueFirmComplianceExport(args: {
+  firmId: string;
+  triggeredBy: string | null;
+  triggeredByEmail: string | null;
+  now: Date;
+}): Promise<{ batchId: string; total: number; skipped: number }> {
+  const households = await db.query.crmHouseholds.findMany({
+    where: and(
+      eq(crmHouseholds.firmId, args.firmId),
+      eq(crmHouseholds.status, "active"),
+      isNull(crmHouseholds.deletedAt),
+    ),
+    columns: { id: true, name: true },
+    with: { planningClient: { columns: { id: true } } },
+  });
+
+  const skipped: SkippedClient[] = [];
+  const renderable: Array<{ householdId: string; clientId: string; scenarioId: string }> = [];
+
+  for (const h of households) {
+    const clientId = h.planningClient?.id ?? null;
+    if (!clientId) {
+      skipped.push({ householdId: h.id, name: h.name, reason: "no planning client" });
+      continue;
+    }
+    const scenarioId = await resolveBaseCaseScenarioId(clientId);
+    if (!scenarioId) {
+      skipped.push({ householdId: h.id, name: h.name, reason: "no base-case scenario" });
+      continue;
+    }
+    renderable.push({ householdId: h.id, clientId, scenarioId });
+  }
+
+  const batchId = await createBatch({
+    firmId: args.firmId,
+    triggeredBy: args.triggeredBy,
+    triggeredByEmail: args.triggeredByEmail,
+    totalClients: renderable.length,
+    deckSpec: buildCompliancePages(args.now),
+    skippedClients: skipped,
+  });
+
+  // If every household was skipped, no child runs are ever inserted, so the
+  // cron drain (which only ever looks at queued/running/analyzing children)
+  // would never touch this batch — it would sit `queued` forever and the
+  // active-batch guard would block all future exports for the firm. Settle
+  // it immediately instead.
+  if (renderable.length === 0) {
+    await finalizeBatchIfComplete(batchId);
+    return { batchId, total: 0, skipped: skipped.length };
+  }
+
+  for (const r of renderable) {
+    await db
+      .insert(generationRuns)
+      .values({
+        householdId: r.householdId,
+        clientId: r.clientId,
+        firmId: args.firmId,
+        kind: COMPLIANCE_RUN_KIND,
+        status: "queued",
+        scenarioId: r.scenarioId,
+        triggeredBy: args.triggeredBy,
+        triggeredByEmail: args.triggeredByEmail,
+        requestPayload: buildComplianceRequestPayload(r.scenarioId, args.now),
+        batchId,
+      })
+      .returning({ id: generationRuns.id });
+  }
+
+  return { batchId, total: renderable.length, skipped: skipped.length };
+}
