@@ -103,4 +103,22 @@ describe("verifyPlaidWebhook", () => {
     const jwt = await signJwt(other.privateKey, { request_body_sha256: bodyHash(BODY) });
     expect((await verifyPlaidWebhook(BODY, jwt)).ok).toBe(false);
   });
+
+  it("rejects a token missing kid", async () => {
+    const { privateKey } = await makeKeys();
+    const jwt = await signJwt(
+      privateKey,
+      { request_body_sha256: bodyHash(BODY) },
+      { alg: "ES256" },
+    );
+    expect((await verifyPlaidWebhook(BODY, jwt)).ok).toBe(false);
+    expect(webhookVerificationKeyGet).not.toHaveBeenCalled();
+  });
+
+  it("rejects a token missing request_body_sha256 claim", async () => {
+    const { privateKey, jwk } = await makeKeys();
+    webhookVerificationKeyGet.mockResolvedValue({ data: { key: { ...jwk, expired_at: null } } });
+    const jwt = await signJwt(privateKey, {});
+    expect((await verifyPlaidWebhook(BODY, jwt)).ok).toBe(false);
+  });
 });
