@@ -29,7 +29,6 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
   "intake_email_settings",
   "ops_entitlement_overrides",
   "builtin_template_dismissals",
-  "comparison_templates", // no cascade parent at all — fully survived before
   // new — nullable client/household FK ⇒ firm-level rows survive the client cascade
   "client_shares", // share-all rows have client_id NULL
   "planning_kb_chunks", // firm-level chunks have client_id NULL
@@ -40,7 +39,6 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
  *  NOT-NULL cascade FK to a purged parent (clients / crm_households /
  *  crm_tasks / subscriptions). */
 export const CASCADE_COVERED_FIRM_TABLES: readonly string[] = [
-  "client_comparisons", // client_id NOT NULL → clients
   "crm_activity", // household_id NOT NULL → crm_households
   "crm_document_folders", // household_id NOT NULL → crm_households
   "crm_household_views", // household_id NOT NULL → crm_households
@@ -62,9 +60,21 @@ export const RETAIN_ALLOWLIST_FIRM_TABLES: readonly string[] = [
   "firms", // the purge record itself (PII nulled, row kept)
 ];
 
-/** Union of all three sets — the drift test checks every firm_id table is here. */
+/** Retired tables with NO Drizzle schema object — dropped by migration
+ *  0151_retire_comparison_tables (verified absent on prod). They linger on the
+ *  dev branch only (0151 unapplied there — a dev migration-ledger drift, tracked
+ *  in future-work/schema). Not purge targets: there is no schema object to
+ *  delete, and on prod the tables don't exist. Excluded here so the live-DB
+ *  drift guard stays honest on both dev (present) and prod (absent). */
+export const RETIRED_UNMANAGED_FIRM_TABLES: readonly string[] = [
+  "comparison_templates",
+  "client_comparisons",
+];
+
+/** Union of all four sets — the drift test checks every firm_id table is here. */
 export const ALL_CATEGORIZED_FIRM_TABLES: ReadonlySet<string> = new Set([
   ...PURGED_FIRM_TABLES,
   ...CASCADE_COVERED_FIRM_TABLES,
   ...RETAIN_ALLOWLIST_FIRM_TABLES,
+  ...RETIRED_UNMANAGED_FIRM_TABLES,
 ]);
