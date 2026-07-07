@@ -28,10 +28,19 @@ export default async function DataCollectionPage() {
         <p className="mt-1 text-[14px] text-ink-3">
           Review submitted intake forms and send new ones to prospects.
         </p>
-        <Link href="/data-collection/email-settings"
-          className="mt-3 inline-block text-[13px] font-medium text-accent hover:underline">
-          Customize invitation email →
-        </Link>
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+          <Link href="/data-collection/email-settings"
+            className="text-[13px] font-medium text-accent hover:underline">
+            Customize invitation email →
+          </Link>
+          <a
+            href="/data-collection/preview"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[13px] font-medium text-accent hover:underline">
+            Preview form ↗
+          </a>
+        </div>
       </div>
       <div className="space-y-8">
         <Queue groups={groups} />
