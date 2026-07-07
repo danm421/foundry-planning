@@ -186,13 +186,20 @@ export default function ClientIdentityMenu({
               </dl>
             </div>
           ))}
-          <div className="mt-3 border-t border-hair pt-2">
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-hair pt-2">
             <Link
               href={`/clients/${clientId}/details`}
               onClick={() => setOpen(false)}
               className="text-[12px] font-medium text-accent hover:underline"
             >
               View full profile →
+            </Link>
+            <Link
+              href={`/clients/${clientId}/activity`}
+              onClick={() => setOpen(false)}
+              className="text-[12px] font-medium text-accent hover:underline"
+            >
+              Activity log →
             </Link>
           </div>
         </div>

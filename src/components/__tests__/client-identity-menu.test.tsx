@@ -79,6 +79,13 @@ describe("ClientIdentityMenu", () => {
     expect(link).toHaveAttribute("href", "/clients/abc/details");
   });
 
+  it("links to the client's activity log", () => {
+    render(<ClientIdentityMenu clientId="abc" people={couple} />);
+    fireEvent.click(screen.getByRole("button"));
+    const link = screen.getByRole("link", { name: /activity log/i });
+    expect(link).toHaveAttribute("href", "/clients/abc/activity");
+  });
+
   it("closes on Escape", () => {
     render(<ClientIdentityMenu clientId="abc" people={couple} />);
     fireEvent.click(screen.getByRole("button"));
