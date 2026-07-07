@@ -2,22 +2,15 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import type { ActivityFilters as Filters } from "@/lib/activity/list-client-activity";
+import type { FilterOption } from "./activity-page";
 
 interface Props {
   filters: Filters;
+  entityOptions: FilterOption[];
+  actorOptions: FilterOption[];
 }
 
-const ENTITY_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "", label: "All entities" },
-  { value: "account", label: "Accounts" },
-  { value: "asset_transaction", label: "Asset transactions" },
-  { value: "liability", label: "Liabilities" },
-  { value: "extra_payment", label: "Extra payments" },
-  { value: "transfer", label: "Transfers" },
-  { value: "client", label: "Client" },
-];
-
-const KIND_OPTIONS: Array<{ value: string; label: string }> = [
+const KIND_OPTIONS: FilterOption[] = [
   { value: "", label: "All actions" },
   { value: "create", label: "Created" },
   { value: "update", label: "Edited" },
@@ -25,14 +18,21 @@ const KIND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "other", label: "Other" },
 ];
 
-const RANGE_OPTIONS: Array<{ value: string; label: string }> = [
+const RANGE_OPTIONS: FilterOption[] = [
   { value: "7d", label: "Last 7 days" },
   { value: "30d", label: "Last 30 days" },
   { value: "90d", label: "Last 90 days" },
   { value: "all", label: "All time" },
 ];
 
-export default function ActivityFiltersComponent({ filters }: Props) {
+const selectClass =
+  "rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink";
+
+export default function ActivityFiltersComponent({
+  filters,
+  entityOptions,
+  actorOptions,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -56,13 +56,30 @@ export default function ActivityFiltersComponent({ filters }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {actorOptions.length > 1 && (
+        <select
+          aria-label="Filter by person"
+          className={selectClass}
+          value={filters.actorId ?? ""}
+          onChange={(e) => setParam("actor", e.target.value || null)}
+        >
+          <option value="">Everyone</option>
+          {actorOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      )}
+
       <select
         aria-label="Filter by entity type"
-        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
+        className={selectClass}
         value={filters.resourceType ?? ""}
         onChange={(e) => setParam("entity", e.target.value || null)}
       >
-        {ENTITY_OPTIONS.map((o) => (
+        <option value="">All entities</option>
+        {entityOptions.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
@@ -71,7 +88,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
 
       <select
         aria-label="Filter by action kind"
-        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
+        className={selectClass}
         value={filters.actionKind ?? ""}
         onChange={(e) => setParam("kind", e.target.value || null)}
       >
@@ -84,7 +101,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
 
       <select
         aria-label="Filter by date range"
-        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
+        className={selectClass}
         value={filters.range}
         onChange={(e) => setParam("range", e.target.value)}
       >

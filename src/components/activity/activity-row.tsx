@@ -6,6 +6,7 @@ import UpdateRowBody from "./update-row-body";
 import DeleteRowBody from "./delete-row-body";
 import OtherRowBody from "./other-row-body";
 import { formatAuditRow } from "@/lib/overview/format-audit";
+import { deriveActionKind } from "@/lib/audit/action-kind";
 
 interface Props {
   row: HydratedActivityRow;
@@ -13,7 +14,10 @@ interface Props {
 
 export default function ActivityRow({ row }: Props): ReactElement {
   const meta = row.metadata as AuditMetadata | null;
-  const kind = meta?.kind ?? "other";
+  // Glyph reflects the action's verb (works for every row); the structured
+  // body below still keys on metadata.kind, which only exists when the row was
+  // written via the recordCreate/Update/Delete helpers.
+  const kind = deriveActionKind(row.action);
 
   const glyph =
     kind === "create" ? "+" : kind === "delete" ? "×" : kind === "update" ? "↻" : "•";

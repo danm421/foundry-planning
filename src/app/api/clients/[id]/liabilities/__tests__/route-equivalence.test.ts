@@ -19,6 +19,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { liabilities, liabilityOwners, auditLog } from "@/db/schema";
 import { createLiabilityForClient } from "@/lib/clients/liabilities-writes";
 import { POST } from "../route";
@@ -52,6 +53,7 @@ const TEST_BODY = {
 
 d("POST /liabilities route vs createLiabilityForClient core — equivalence", () => {
   const createdIds: string[] = [];
+  sweepLeakedAuditRows(COOPER_CLIENT_ID);
 
   afterEach(async () => {
     for (const id of createdIds.splice(0)) {

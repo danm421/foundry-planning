@@ -10,9 +10,13 @@ import ActivityFeed from "./activity-feed";
 
 export type HydratedActivityRow = ActivityRow & { actor: ActorDisplay };
 
+export type FilterOption = { value: string; label: string };
+
 interface Props {
   clientId: string;
   filters: Filters;
+  entityOptions: FilterOption[];
+  actorOptions: FilterOption[];
   initialRows: HydratedActivityRow[];
   initialNextCursor: ActivityCursor | null;
 }
@@ -20,6 +24,8 @@ interface Props {
 export default function ActivityPage({
   clientId,
   filters,
+  entityOptions,
+  actorOptions,
   initialRows,
   initialNextCursor,
 }: Props): ReactElement {
@@ -30,7 +36,11 @@ export default function ActivityPage({
         <p className="text-sm text-ink-3">All changes for this client.</p>
       </header>
 
-      <ActivityFilterBar filters={filters} />
+      <ActivityFilterBar
+        filters={filters}
+        entityOptions={entityOptions}
+        actorOptions={actorOptions}
+      />
 
       <ActivityFeed
         clientId={clientId}

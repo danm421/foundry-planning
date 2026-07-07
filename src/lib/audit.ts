@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { auditLog } from "@/db/schema";
+import { snapshotActorName } from "./audit/actor-name";
 
 /**
  * Write-side audit log. Every mutating handler that performs a
@@ -401,6 +402,10 @@ export async function recordAudit(args: Args): Promise<void> {
         actorId = userId ?? "system";
       }
     }
+    // Snapshot the actor's display name so the row keeps its author even after
+    // that user leaves the org. Best-effort — never blocks the insert.
+    const actorName = await snapshotActorName(actorId);
+    if (actorName) metadata = { ...(metadata ?? {}), actorName };
     await db.insert(auditLog).values({
       firmId: args.firmId,
       actorId,

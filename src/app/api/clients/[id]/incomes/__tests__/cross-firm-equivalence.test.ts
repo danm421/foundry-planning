@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { incomes, auditLog, clientShares } from "@/db/schema";
 
 // Mock Clerk auth — the test overrides this per-case via vi.mocked().
@@ -74,6 +75,7 @@ function setCrossFirmAuth(userId = RECIPIENT_USER) {
 
 d("POST /incomes — cross-firm equivalence (pilot batch)", () => {
   const createdIncomeIds: string[] = [];
+  sweepLeakedAuditRows(COOPER_CLIENT_ID);
 
   afterEach(async () => {
     for (const id of createdIncomeIds.splice(0)) {

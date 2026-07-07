@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
+import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { liabilities, liabilityOwners, entities, familyMembers } from "@/db/schema";
 import {
   createLiabilityForClient,
@@ -50,6 +51,7 @@ const FOREIGN_ACCOUNT_ID = "3d552610-0eff-47b4-a7bf-fe3a3805d876";
 
 d("liabilities-writes core", () => {
   const createdIds: string[] = [];
+  sweepLeakedAuditRows(COOPER_CLIENT_ID);
 
   afterEach(async () => {
     for (const id of createdIds.splice(0)) {

@@ -5,7 +5,7 @@ import {
   type ActionKind,
   type DateRange,
 } from "@/lib/activity/list-client-activity";
-import { resolveActors } from "@/lib/activity/resolve-actors";
+import { hydrateRowActors } from "@/lib/activity/resolve-actors";
 
 export const dynamic = "force-dynamic";
 
@@ -56,13 +56,12 @@ export async function GET(
     limit: 50,
   });
 
-  const actorMap = await resolveActors(rows.map((r) => r.actorId));
+  const hydrated = await hydrateRowActors(rows);
 
   return NextResponse.json({
-    rows: rows.map((r) => ({
+    rows: hydrated.map((r) => ({
       ...r,
       createdAt: r.createdAt.toISOString(),
-      actor: actorMap.get(r.actorId) ?? { name: "Unknown", isSystem: false },
     })),
     nextCursor: nextCursor
       ? {

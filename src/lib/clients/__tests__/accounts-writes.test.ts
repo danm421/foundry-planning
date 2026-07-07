@@ -9,6 +9,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
+import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { accounts, modelPortfolios } from "@/db/schema";
 
 // verifyClientAccess (via authz.ts → staffMaySeeAdvisor) calls Clerk's auth(),
@@ -65,6 +66,7 @@ d("accounts-writes core", () => {
   // id we mint and also sweep any account whose parent_account_id points at one of
   // ours, then delete ids in reverse order (children before parents).
   const createdIds: string[] = [];
+  sweepLeakedAuditRows(COOPER_CLIENT_ID);
 
   afterEach(async () => {
     const ids = createdIds.splice(0);

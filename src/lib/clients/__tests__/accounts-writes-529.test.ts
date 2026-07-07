@@ -8,6 +8,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { sweepLeakedAuditRows } from "@/lib/audit/test-helpers";
 import { accounts, accountOwners } from "@/db/schema";
 
 // verifyClientAccess (via authz.ts → staffMaySeeAdvisor) calls Clerk's auth(),
@@ -35,6 +36,7 @@ const COOPER_FM_ID = "7f875f15-50f6-4ef2-8f18-8a0b1f8b3997";
 
 d("accounts-writes core — 529 / education_savings", () => {
   const createdIds: string[] = [];
+  sweepLeakedAuditRows(COOPER_CLIENT_ID);
 
   afterEach(async () => {
     const ids = createdIds.splice(0);

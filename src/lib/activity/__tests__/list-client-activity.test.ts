@@ -20,19 +20,33 @@ describe("parseDateRange", () => {
 });
 
 describe("buildActivityWhere", () => {
+  const base = {
+    clientId: "cli1",
+    firmId: "firm1",
+    cursor: null,
+    now: new Date("2026-04-25T12:00:00Z"),
+  };
+
   it("includes resource-type filter when set", () => {
     const where = buildActivityWhere({
-      clientId: "cli1",
-      firmId: "firm1",
+      ...base,
       filters: {
         actorId: null,
         resourceType: "account",
         actionKind: null,
         range: "30d",
       },
-      cursor: null,
-      now: new Date("2026-04-25T12:00:00Z"),
     });
     expect(where).toBeTruthy();
+  });
+
+  it("builds an action-kind clause for every kind (create/update/delete/other)", () => {
+    for (const actionKind of ["create", "update", "delete", "other"] as const) {
+      const where = buildActivityWhere({
+        ...base,
+        filters: { actorId: null, resourceType: null, actionKind, range: "all" },
+      });
+      expect(where).toBeTruthy();
+    }
   });
 });
