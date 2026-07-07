@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   selectHouseholdDocs: vi.fn(),
   selectImportFiles: vi.fn(),
   selectTaskFiles: vi.fn(),
+  selectPlaidItems: vi.fn(),
+  plaidItemRemove: vi.fn(),
   purgeHousehold: vi.fn(),
   deleteSubs: vi.fn(),
   deleteInvoices: vi.fn(),
@@ -16,6 +18,21 @@ const mocks = vi.hoisted(() => ({
   deleteCmaSets: vi.fn(),
   deleteAssetClasses: vi.fn(),
   deleteModelPortfolios: vi.fn(),
+  // newly-covered firm-scoped tables (audit F2)
+  deleteCmaSettings: vi.fn(),
+  deleteTickerPortfolios: vi.fn(),
+  deleteStaffAdvisorVisibility: vi.fn(),
+  deleteOrionOauthStates: vi.fn(),
+  deleteOrionSyncRuns: vi.fn(),
+  deleteIntakeForms: vi.fn(),
+  deleteIntakeEmailSettings: vi.fn(),
+  deleteOpsEntitlementOverrides: vi.fn(),
+  deleteBuiltinTemplateDismissals: vi.fn(),
+  deleteClientShares: vi.fn(),
+  deletePlanningKbChunks: vi.fn(),
+  deleteForgeConversations: vi.fn(),
+  updateOrionConnection: vi.fn(),
+  deleteOrionConnection: vi.fn(),
   updateFirm: vi.fn(),
   selectCustomer: vi.fn(),
   stripeCustomersDel: vi.fn(),
@@ -44,6 +61,7 @@ vi.mock("@/db", async () => {
             if (tbl === s.crmHouseholdDocuments) return mocks.selectHouseholdDocs();
             if (tbl === s.clientImportFiles) return mocks.selectImportFiles();
             if (tbl === s.crmTaskFiles) return mocks.selectTaskFiles();
+            if (tbl === s.plaidItems) return mocks.selectPlaidItems();
             if (tbl === s.subscriptions) return mocks.selectCustomer();
             return [];
           },
@@ -59,10 +77,28 @@ vi.mock("@/db", async () => {
           if (tbl === s.cmaSets) return mocks.deleteCmaSets();
           if (tbl === s.assetClasses) return mocks.deleteAssetClasses();
           if (tbl === s.modelPortfolios) return mocks.deleteModelPortfolios();
+          if (tbl === s.cmaSettings) return mocks.deleteCmaSettings();
+          if (tbl === s.tickerPortfolios) return mocks.deleteTickerPortfolios();
+          if (tbl === s.staffAdvisorVisibility) return mocks.deleteStaffAdvisorVisibility();
+          if (tbl === s.orionOauthStates) return mocks.deleteOrionOauthStates();
+          if (tbl === s.orionSyncRuns) return mocks.deleteOrionSyncRuns();
+          if (tbl === s.intakeForms) return mocks.deleteIntakeForms();
+          if (tbl === s.intakeEmailSettings) return mocks.deleteIntakeEmailSettings();
+          if (tbl === s.opsEntitlementOverrides) return mocks.deleteOpsEntitlementOverrides();
+          if (tbl === s.builtinTemplateDismissals) return mocks.deleteBuiltinTemplateDismissals();
+          if (tbl === s.clientShares) return mocks.deleteClientShares();
+          if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
+          if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
+          if (tbl === s.orionConnections) return mocks.deleteOrionConnection();
           return undefined;
         },
       }),
-      update: () => ({ set: (v: unknown) => ({ where: () => mocks.updateFirm(v) }) }),
+      update: (tbl: unknown) => ({
+        set: (v: unknown) => ({
+          where: () =>
+            tbl === s.orionConnections ? mocks.updateOrionConnection(v) : mocks.updateFirm(v),
+        }),
+      }),
     },
   };
 });
@@ -74,11 +110,14 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({ organizations: { deleteOrganization: mocks.clerkDeleteOrg } }),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
+vi.mock("@/lib/plaid/client", () => ({ getPlaidClient: () => ({ itemRemove: mocks.plaidItemRemove }) }));
+vi.mock("@/lib/plaid/crypto", () => ({ decrypt: (v: string) => `decrypted-${v}` }));
 vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
+import { PURGED_FIRM_TABLES } from "../purge-coverage";
 
 beforeEach(() => {
   Object.values(mocks).forEach((m) => m.mockReset());
@@ -104,6 +143,11 @@ beforeEach(() => {
   mocks.selectTaskFiles.mockResolvedValue([
     { storageKey: "crm-tasks/firm1/task1/abc-task-file.pdf" },
   ]);
+  mocks.selectPlaidItems.mockResolvedValue([
+    { accessToken: "enc-1" },
+    { accessToken: "enc-2" },
+  ]);
+  mocks.plaidItemRemove.mockResolvedValue({ request_id: "rq" });
   mocks.purgeHousehold.mockResolvedValue(undefined);
   mocks.selectCustomer.mockResolvedValue([{ stripeCustomerId: "cus_1" }]);
   mocks.stripeCustomersDel.mockResolvedValue({ id: "cus_1", deleted: true });
@@ -195,6 +239,100 @@ describe("purgeFirmById", () => {
     expect(mocks.deleteCmaSets).toHaveBeenCalledTimes(1);
     expect(mocks.deleteAssetClasses).toHaveBeenCalledTimes(1);
     expect(mocks.deleteModelPortfolios).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes the previously-orphaned firm-scoped tables (audit F2)", async () => {
+    await purgeFirmById("org_1");
+    for (const spy of [
+      mocks.deleteCmaSettings,
+      mocks.deleteTickerPortfolios,
+      mocks.deleteStaffAdvisorVisibility,
+      mocks.deleteOrionOauthStates,
+      mocks.deleteOrionSyncRuns,
+      mocks.deleteIntakeForms,
+      mocks.deleteIntakeEmailSettings,
+      mocks.deleteOpsEntitlementOverrides,
+      mocks.deleteBuiltinTemplateDismissals,
+      mocks.deleteClientShares,
+      mocks.deletePlanningKbChunks,
+      mocks.deleteForgeConversations,
+    ]) {
+      expect(spy).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("scrubs then deletes the orion_connections row (audit F2)", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.updateOrionConnection).toHaveBeenCalledTimes(1); // token scrub
+    expect(mocks.updateOrionConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ accessTokenEnc: "", refreshTokenEnc: null }),
+    );
+    expect(mocks.deleteOrionConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows an Orion purge failure and still stamps purgedAt", async () => {
+    mocks.deleteOrionConnection.mockRejectedValueOnce(new Error("orion boom"));
+    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
+    expect(mocks.updateFirm).toHaveBeenCalledWith(
+      expect.objectContaining({ purgedAt: expect.any(Date) }),
+    );
+  });
+
+  it("revokes each Plaid item at the vendor (audit F2)", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.plaidItemRemove).toHaveBeenCalledTimes(2);
+    expect(mocks.plaidItemRemove).toHaveBeenCalledWith({ access_token: "decrypted-enc-1" });
+    expect(mocks.plaidItemRemove).toHaveBeenCalledWith({ access_token: "decrypted-enc-2" });
+  });
+
+  it("swallows a Plaid itemRemove failure and completes the purge", async () => {
+    mocks.plaidItemRemove.mockRejectedValueOnce(new Error("502"));
+    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
+    expect(mocks.updateFirm).toHaveBeenCalledWith(
+      expect.objectContaining({ purgedAt: expect.any(Date) }),
+    );
+  });
+
+  // Binds PURGED_FIRM_TABLES (the drift-guard source of truth) to the deletes
+  // purgeFirmById actually fires — so adding a table to the coverage list
+  // without wiring its delete is a test failure, and vice-versa. (audit F2)
+  it("every PURGED_FIRM_TABLES entry is wired to a delete the purge fires", async () => {
+    await purgeFirmById("org_1");
+    // table name → the spy proving it is erased. null = routed through
+    // purgeCrmHouseholdById's client/household cascade (asserted separately).
+    const wiring: Record<string, ReturnType<typeof vi.fn> | null> = {
+      clients: null,
+      crm_households: null,
+      invoices: mocks.deleteInvoices,
+      subscriptions: mocks.deleteSubs,
+      crm_tasks: mocks.deleteCrmTasks,
+      crm_tags: mocks.deleteCrmTags,
+      presentation_templates: mocks.deletePresentationTemplates,
+      cma_sets: mocks.deleteCmaSets,
+      asset_classes: mocks.deleteAssetClasses,
+      model_portfolios: mocks.deleteModelPortfolios,
+      cma_settings: mocks.deleteCmaSettings,
+      ticker_portfolios: mocks.deleteTickerPortfolios,
+      staff_advisor_visibility: mocks.deleteStaffAdvisorVisibility,
+      orion_connections: mocks.deleteOrionConnection,
+      orion_oauth_states: mocks.deleteOrionOauthStates,
+      orion_sync_runs: mocks.deleteOrionSyncRuns,
+      intake_forms: mocks.deleteIntakeForms,
+      intake_email_settings: mocks.deleteIntakeEmailSettings,
+      ops_entitlement_overrides: mocks.deleteOpsEntitlementOverrides,
+      builtin_template_dismissals: mocks.deleteBuiltinTemplateDismissals,
+      client_shares: mocks.deleteClientShares,
+      planning_kb_chunks: mocks.deletePlanningKbChunks,
+      forge_conversations: mocks.deleteForgeConversations,
+    };
+    // Both directions: the coverage list and the wiring map must be identical.
+    expect(new Set(Object.keys(wiring))).toEqual(new Set(PURGED_FIRM_TABLES));
+    // Client/household rows are erased via purgeCrmHouseholdById.
+    expect(mocks.purgeHousehold).toHaveBeenCalled();
+    // Every directly-deleted table's spy fired.
+    for (const [name, spy] of Object.entries(wiring)) {
+      if (spy) expect(spy, `${name} delete did not fire`).toHaveBeenCalled();
+    }
   });
 
   it("nulls the retained firms row's PII/branding columns", async () => {

@@ -20,8 +20,24 @@ import {
   subscriptions,
   invoices,
   firms,
+  cmaSettings,
+  tickerPortfolios,
+  staffAdvisorVisibility,
+  orionOauthStates,
+  orionSyncRuns,
+  intakeForms,
+  intakeEmailSettings,
+  opsEntitlementOverrides,
+  builtinTemplateDismissals,
+  clientShares,
+  planningKbChunks,
+  forgeConversations,
+  orionConnections,
+  plaidItems,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
+import { getPlaidClient } from "@/lib/plaid/client";
+import { decrypt } from "@/lib/plaid/crypto";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -177,6 +193,19 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     (u): u is string => !!u,
   );
 
+  // Plaid access tokens across the firm's clients — collected BEFORE the client
+  // cascade drops the plaid_items rows. The rows themselves cascade off clients;
+  // only the vendor-side itemRemove was missing (audit F2).
+  const plaidItemRows = await db
+    .select({ accessToken: plaidItems.accessToken })
+    .from(plaidItems)
+    .where(
+      inArray(
+        plaidItems.clientId,
+        db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId)),
+      ),
+    );
+
   // 1. Households → planning clients → CRM children (incl. document rows).
   const households = await db
     .select({ id: crmHouseholds.id })
@@ -211,6 +240,25 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(assetClasses).where(eq(assetClasses.firmId, firmId));
   await db.delete(modelPortfolios).where(eq(modelPortfolios.firmId, firmId));
 
+  // 3b. Firm-scoped tables that previously had no purge coverage (audit F2).
+  //     Deleting by firm_id catches firm-level rows a client-cascade would miss:
+  //     client_shares / planning_kb_chunks / forge_conversations have a NULLABLE
+  //     client FK, so their share-all / firm-level / global-conversation rows
+  //     survive the client cascade. orion_connections (encrypted tokens) is
+  //     handled separately below with a vendor-scrub step.
+  await db.delete(cmaSettings).where(eq(cmaSettings.firmId, firmId));
+  await db.delete(tickerPortfolios).where(eq(tickerPortfolios.firmId, firmId));
+  await db.delete(staffAdvisorVisibility).where(eq(staffAdvisorVisibility.firmId, firmId));
+  await db.delete(orionOauthStates).where(eq(orionOauthStates.firmId, firmId));
+  await db.delete(orionSyncRuns).where(eq(orionSyncRuns.firmId, firmId));
+  await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
+  await db.delete(intakeEmailSettings).where(eq(intakeEmailSettings.firmId, firmId));
+  await db.delete(opsEntitlementOverrides).where(eq(opsEntitlementOverrides.firmId, firmId));
+  await db.delete(builtinTemplateDismissals).where(eq(builtinTemplateDismissals.firmId, firmId));
+  await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
+  await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
+  await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+
   // 4. Stripe customer (best-effort).
   if (stripeCustomerId) {
     try {
@@ -226,6 +274,41 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     await cc.organizations.deleteOrganization(firmId);
   } catch (err) {
     console.error(`[purge-firm] clerk deleteOrganization failed for ${firmId}:`, err);
+  }
+
+  // Orion connection (best-effort). Scrub our encrypted token copy, then drop
+  // the row — otherwise a purged firm's Orion OAuth tokens linger in the DB.
+  // (No server-side Orion revoke primitive exists — documented gap, audit F2.)
+  try {
+    await db
+      .update(orionConnections)
+      .set({
+        accessTokenEnc: "",
+        refreshTokenEnc: null,
+        tokenExpiresAt: null,
+        status: "disconnected",
+        updatedAt: new Date(),
+      })
+      .where(eq(orionConnections.firmId, firmId));
+    await db.delete(orionConnections).where(eq(orionConnections.firmId, firmId));
+  } catch (err) {
+    console.error(`[purge-firm] orion connection purge failed for ${firmId}:`, err);
+  }
+
+  // Plaid items (best-effort). Revoke each access token at the vendor so a
+  // purged firm's bank connections are actually severed — the DB rows already
+  // cascaded off the client delete. Best-effort per item: a purge cron must
+  // complete even if Plaid 502s (contrast the portal unlink route, which is
+  // fatal-on-failure because a user is watching). Audit F2.
+  if (plaidItemRows.length) {
+    const plaid = getPlaidClient();
+    for (const row of plaidItemRows) {
+      try {
+        await plaid.itemRemove({ access_token: decrypt(row.accessToken) });
+      } catch (err) {
+        console.error(`[purge-firm] plaid itemRemove failed for ${firmId}:`, err);
+      }
+    }
   }
 
   // 5. Blob objects (best-effort — each wrapped so a 404/transport error
