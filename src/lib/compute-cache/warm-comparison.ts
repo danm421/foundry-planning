@@ -15,7 +15,7 @@ export async function warmComparisonCompute(args: {
   targetPoS: number;
 }): Promise<void> {
   const { clientId, firmId, scenarioId, targetPoS } = args;
-  const refs: Array<string | "base"> = ["base", scenarioId];
+  const refs: string[] = ["base", scenarioId];
   const swallow = (label: string) => (err: unknown) => {
     console.error(`[warm-comparison] ${label} failed (non-fatal):`, err);
   };

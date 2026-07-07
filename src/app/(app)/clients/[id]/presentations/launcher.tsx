@@ -147,16 +147,18 @@ export function PresentationsLauncher(props: Props) {
   // debounced, and de-duplicated per (scenarioId,target) for this session.
   const warmedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    const keyOf = (t: { scenarioId: string; targetPoS: number }) =>
+      `${t.scenarioId}:${t.targetPoS}`;
     const targets = state.pages
       .filter((p) => p.pageId === "retirementComparison")
-      .map((p) => p.options as { scenarioId?: string; maxSpend?: { targetConfidence?: number } })
-      .filter((o): o is { scenarioId: string; maxSpend?: { targetConfidence?: number } } => !!o.scenarioId)
+      .map((p) => p.options as RetirementComparisonOptions)
+      .filter((o) => !!o.scenarioId)
       .map((o) => ({ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }))
-      .filter((t) => !warmedRef.current.has(`${t.scenarioId}:${t.targetPoS}`));
+      .filter((t) => !warmedRef.current.has(keyOf(t)));
     if (targets.length === 0) return;
     const timer = setTimeout(() => {
       for (const t of targets) {
-        const key = `${t.scenarioId}:${t.targetPoS}`;
+        const key = keyOf(t);
         if (warmedRef.current.has(key)) continue;
         warmedRef.current.add(key);
         void fetch(`/api/clients/${props.clientId}/presentations/warm`, {

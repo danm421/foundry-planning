@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -37,9 +36,6 @@ export async function POST(
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-
-    // Prove the caller is authenticated (edit access already checked above).
-    await auth();
 
     // Fire-and-forget: the cross-client/-org scenario id is rejected inside
     // getOrCompute* (loadEffectiveTree throws on an alien id), and every compute
