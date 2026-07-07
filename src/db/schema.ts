@@ -1935,10 +1935,37 @@ export const plaidItems = pgTable("plaid_items", {
   // Incremental /transactions/sync cursor. NULL = never synced (first sync
   // passes cursor undefined + options.days_requested).
   transactionsCursor: text("transactions_cursor"),
+  // Stamped by the ITEM:NEW_ACCOUNTS_AVAILABLE webhook; cleared when the user
+  // dismisses the prompt or completes an account-selection Link flow.
+  newAccountsAvailableAt: timestamp("new_accounts_available_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   clientIdx: index("plaid_items_client_idx").on(t.clientId),
 }));
+
+// Delivery log for POST /api/webhooks/plaid. Plaid sends no event id, so
+// there is no unique-constraint dedup (unlike billing_events) — handlers are
+// idempotent instead. plaid_item_id is Plaid's string handle, NOT a DB FK,
+// so rows survive item unlink.
+export const plaidWebhookEvents = pgTable(
+  "plaid_webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    plaidItemId: text("plaid_item_id"),
+    webhookType: text("webhook_type").notNull(),
+    webhookCode: text("webhook_code").notNull(),
+    environment: text("environment"),
+    // 'ok' | 'ignored' | 'error' — null while processing.
+    result: text("result"),
+    errorMessage: text("error_message"),
+    processingDurationMs: integer("processing_duration_ms"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    itemIdx: index("plaid_webhook_events_item_idx").on(t.plaidItemId),
+  }),
+);
 
 export const accountOwners = pgTable(
   "account_owners",
