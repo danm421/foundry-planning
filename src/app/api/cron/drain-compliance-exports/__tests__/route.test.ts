@@ -26,7 +26,7 @@ describe("GET /api/cron/drain-compliance-exports", () => {
     delete process.env.CRON_SECRET;
     const res = await GET(
       new Request("http://t/api/cron/drain-compliance-exports", {
-        headers: { authorization: "Bearer secret_t" },
+        headers: { authorization: "Bearer undefined" },
       }) as never,
     );
     expect(res.status).toBe(401);
