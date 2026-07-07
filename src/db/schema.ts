@@ -723,6 +723,11 @@ export const generationRuns = pgTable("generation_runs", {
     () => crmHouseholdDocuments.id,
     { onDelete: "set null" },
   ),
+  // Set only for compliance-export batch children; links a per-client run to
+  // its parent batch. Null for single-client presentation / meeting-prep runs.
+  batchId: uuid("batch_id").references(() => complianceExportBatches.id, {
+    onDelete: "cascade",
+  }),
   error: text("error"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -731,6 +736,36 @@ export const generationRuns = pgTable("generation_runs", {
 }, (t) => [
   index("generation_runs_household_idx").on(t.householdId, t.createdAt),
   index("generation_runs_status_idx").on(t.status, t.createdAt),
+  index("generation_runs_batch_idx").on(t.batchId, t.status),
+]);
+
+// Parent aggregator for a firm-wide compliance presentation export. Per-client
+// work lives in generation_runs (kind='compliance_export', batchId FK below);
+// skips (no planning client / no base case) are recorded here, not as runs.
+export const complianceExportBatchStatusEnum = pgEnum(
+  "compliance_export_batch_status",
+  ["queued", "running", "done", "done_with_errors", "failed"],
+);
+
+export const complianceExportBatches = pgTable("compliance_export_batches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  status: complianceExportBatchStatusEnum("status").notNull().default("queued"),
+  triggeredBy: text("triggered_by"),
+  triggeredByEmail: text("triggered_by_email"),
+  // Count of renderable clients we enqueued a run for (excludes skips).
+  totalClients: integer("total_clients").notNull().default(0),
+  // The exact deck rendered, for audit + future deck variation.
+  deckSpec: jsonb("deck_spec"),
+  // [{ householdId, name, reason }] — clients we could not snapshot.
+  skippedClients: jsonb("skipped_clients"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+}, (t) => [
+  index("compliance_export_batches_firm_idx").on(t.firmId, t.createdAt),
+  index("compliance_export_batches_status_idx").on(t.status),
 ]);
 
 // Forge meeting-transcript staging. A pasted/attached transcript is stashed here
