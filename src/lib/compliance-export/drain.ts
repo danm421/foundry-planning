@@ -76,7 +76,7 @@ async function processRun(run: ClaimedRun): Promise<"done" | "failed"> {
       firmId: run.firmId,
       actorId: "system:compliance-export",
       actorKind: "system",
-      metadata: { via: "compliance-export", batchId: run.batchId, pages: ["clientProfile", "balanceSheet"] },
+      metadata: { via: "compliance-export", batchId: run.batchId, pages: body.pages.map((p) => p.pageId) },
     });
     await markDone(run.id, doc.id);
     return "done";

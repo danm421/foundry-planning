@@ -92,6 +92,7 @@ describe("drainComplianceExports", () => {
     await drainComplianceExports({ claimSize: 4 });
     expect(m.audit).toHaveBeenCalledWith(expect.objectContaining({
       actorId: "system:compliance-export", actorKind: "system", clientId: "c1", firmId: "f1",
+      metadata: expect.objectContaining({ pages: ["clientProfile"] }),
     }));
   });
 });
