@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
@@ -8,6 +9,11 @@ import { LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields"
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import type { PortalDebtRow } from "@/lib/portal/portal-networth";
+import {
+  DebtDetailPanel,
+  announceDetailOpen,
+  useCloseOnOtherDetail,
+} from "@/components/portal/account-detail-panel";
 
 interface FamilyMember {
   id: string;
@@ -79,6 +85,15 @@ export function ProfileDebtList({
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  // Drill-down into the shared #portal-detail rail (post-commit resolution).
+  const [detailRow, setDetailRow] = useState<PortalDebtRow | null>(null);
+  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDetailEl(document.getElementById("portal-detail"));
+  }, []);
+  const closeDetail = useCallback(() => setDetailRow(null), []);
+  useCloseOnOtherDetail("debts", closeDetail);
 
   if (rows.length === 0) return null;
 
@@ -184,7 +199,13 @@ export function ProfileDebtList({
       <ul className="divide-y divide-hair">
         {rows.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-            <div className="min-w-0">
+            <div
+              className="min-w-0 flex-1 cursor-pointer"
+              onClick={() => {
+                announceDetailOpen("debts");
+                setDetailRow(r);
+              }}
+            >
               <div className="font-medium text-ink">
                 {r.name}
                 {r.isPlaidLinked && (
@@ -233,6 +254,36 @@ export function ProfileDebtList({
           </li>
         ))}
       </ul>
+
+      {detailRow && detailEl &&
+        createPortal(
+          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
+            <button
+              type="button"
+              aria-label="Close debt details"
+              onClick={closeDetail}
+              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
+            />
+            <DebtDetailPanel
+              debt={{
+                id: detailRow.id,
+                name: detailRow.name,
+                balance: detailRow.balance,
+                typeLabel: detailRow.liabilityType
+                  ? TYPE_LABEL[detailRow.liabilityType] ?? "Loan"
+                  : "Loan",
+                aprPercentage: detailRow.aprPercentage,
+                statementBalance: detailRow.statementBalance,
+                minimumPayment: detailRow.minimumPayment,
+                nextPaymentDueDate: detailRow.nextPaymentDueDate,
+                isPlaidLinked: detailRow.isPlaidLinked,
+                ownerLabel: ownerLabels(detailRow),
+              }}
+              onClose={closeDetail}
+            />
+          </div>,
+          detailEl,
+        )}
     </section>
   );
 }

@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import {
+  AccountDetailPanel,
+  announceDetailOpen,
+  useCloseOnOtherDetail,
+} from "@/components/portal/account-detail-panel";
 
 interface Owner {
   familyMemberId: string | null;
@@ -152,6 +158,20 @@ export default function ProfileAccountsList({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm("cash", primaryFm?.id ?? null),
   );
+  // Drill-down into the shared #portal-detail rail (resolved post-commit — see
+  // budget-view for why a render-phase lookup breaks in the advisor preview).
+  const [detailRow, setDetailRow] = useState<AccountRow | null>(null);
+  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDetailEl(document.getElementById("portal-detail"));
+  }, []);
+  const closeDetail = useCallback(() => setDetailRow(null), []);
+  useCloseOnOtherDetail("accounts", closeDetail);
+  function openDetail(row: AccountRow): void {
+    announceDetailOpen("accounts");
+    setDetailRow(row);
+  }
 
   // True when the row open for edit is Plaid-linked, so we lock the fields the
   // PUT route rejects (the PLAID_LOCKED_FIELDS set — value/last4 in the form).
@@ -299,7 +319,10 @@ export default function ProfileAccountsList({
                 const isPlaid = row.plaidItemId != null;
                 return (
                   <li key={row.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-                    <div className="min-w-0">
+                    <div
+                      className="min-w-0 flex-1 cursor-pointer"
+                      onClick={() => openDetail(row)}
+                    >
                       <div className="font-medium text-ink">
                         {row.name}
                         {row.accountNumberLast4 ? (
@@ -350,6 +373,34 @@ export default function ProfileAccountsList({
       {rows.length === 0 && (
         <p className="text-[13px] text-ink-3">No accounts yet.</p>
       )}
+
+      {detailRow && detailEl &&
+        createPortal(
+          // Desktop: inline in the side rail. Below `lg`: bottom sheet with a
+          // tap-to-dismiss scrim (the transactions-list pattern).
+          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
+            <button
+              type="button"
+              aria-label="Close account details"
+              onClick={closeDetail}
+              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
+            />
+            <AccountDetailPanel
+              account={{
+                id: detailRow.id,
+                name: detailRow.name,
+                value: Number(detailRow.value || "0"),
+                categoryLabel: CATEGORY_LABELS[detailRow.category] ?? detailRow.category,
+                subTypeLabel: detailRow.subType.replace(/_/g, " "),
+                last4: detailRow.accountNumberLast4,
+                isPlaid: detailRow.plaidItemId != null,
+                ownerLabel: ownerLabels(detailRow),
+              }}
+              onClose={closeDetail}
+            />
+          </div>,
+          detailEl,
+        )}
     </div>
   );
 }

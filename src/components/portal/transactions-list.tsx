@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "next/navigation";
 import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
@@ -59,6 +60,7 @@ export default function TransactionsList({
 }): ReactElement {
   void clientId;
 
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<PortalTransactionDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -66,6 +68,10 @@ export default function TransactionsList({
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  // Deep link from an account drill-down ("View in Transactions").
+  const [accountId, setAccountId] = useState<string>(
+    () => searchParams?.get("accountId") ?? "",
+  );
   const [windowKey, setWindowKey] = useState<(typeof WINDOWS)[number]["key"]>("3M");
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -106,6 +112,7 @@ export default function TransactionsList({
       if (from) params.set("from", from);
       if (q.trim()) params.set("q", q.trim());
       if (categoryId) params.set("categoryId", categoryId);
+      if (accountId) params.set("accountId", accountId);
       if (unreviewedOnly) params.set("reviewed", "false");
       try {
         const res = await portalFetch(`/api/portal/transactions?${params.toString()}`, { signal });
@@ -120,7 +127,7 @@ export default function TransactionsList({
         setLoading(false);
       }
     },
-    [q, categoryId, windowKey, unreviewedOnly, portalFetch],
+    [q, categoryId, accountId, windowKey, unreviewedOnly, portalFetch],
   );
 
   useEffect(() => {
@@ -304,6 +311,16 @@ export default function TransactionsList({
         >
           Unreviewed
         </button>
+        {accountId && (
+          <button
+            type="button"
+            onClick={() => setAccountId("")}
+            aria-label="Clear account filter"
+            className="rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium text-accent"
+          >
+            {rows[0]?.accountName ?? "One account"} ✕
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {editEnabled && (
             <button
