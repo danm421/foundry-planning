@@ -32,6 +32,7 @@ export default function ComplianceExportPanel() {
   const [batch, setBatch] = useState<BatchStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pollStalled, setPollStalled] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load the latest batch id on mount so a refresh mid-run reattaches the poll.
@@ -65,7 +66,14 @@ export default function ComplianceExportPanel() {
       if (cancelled || !id) return;
       const latest = await fetchStatus(id);
       if (cancelled) return;
-      if (latest && isActive(latest.status)) timer.current = setTimeout(tick, POLL_MS);
+      if (latest === null) {
+        // Transient failure — keep retrying so one blip doesn't freeze the pill.
+        setPollStalled(true);
+        timer.current = setTimeout(tick, POLL_MS);
+      } else {
+        setPollStalled(false);
+        if (isActive(latest.status)) timer.current = setTimeout(tick, POLL_MS);
+      }
     };
     tick();
     return () => {
@@ -85,7 +93,21 @@ export default function ComplianceExportPanel() {
         setError("Could not start the export.");
       } else {
         const { batchId } = (await res.json()) as { batchId: string };
-        await fetchStatus(batchId); // seeds batch.id -> starts the poll effect
+        const seeded = await fetchStatus(batchId); // seeds batch.id -> starts the poll effect
+        if (!seeded) {
+          // The export IS running server-side; seed a placeholder so the poll
+          // effect engages and the retry loop recovers the real status.
+          setBatch({
+            id: batchId,
+            status: "queued",
+            totalClients: 0,
+            done: 0,
+            failed: 0,
+            remaining: 0,
+            skippedCount: 0,
+            skippedClients: [],
+          });
+        }
       }
     } catch {
       setError("Could not start the export.");
@@ -117,7 +139,10 @@ export default function ComplianceExportPanel() {
         </button>
       </div>
 
-      {error && <p className="text-xs text-crit">{error}</p>}
+      {error && <p className="text-xs text-crit" role="alert">{error}</p>}
+      {pollStalled && (
+        <p className="text-xs text-warn" role="status">Couldn&apos;t refresh export progress — retrying…</p>
+      )}
 
       {batch && pill && (
         <div className="flex flex-col gap-2 border-t border-hair pt-3">
@@ -125,7 +150,7 @@ export default function ComplianceExportPanel() {
             <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-medium ${pill.className}`}>
               {pill.label}
             </span>
-            <span className="text-xs text-ink-2">
+            <span className="text-xs text-ink-2" role="status" aria-live="polite">
               {batch.done}/{batch.totalClients} done
               {batch.failed > 0 && ` · ${batch.failed} failed`}
               {batch.remaining > 0 && ` · ${batch.remaining} remaining`}
