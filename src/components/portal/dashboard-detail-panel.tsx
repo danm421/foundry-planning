@@ -360,6 +360,9 @@ export function DashboardDetailPanel({
     if (!t) return <EmptyPanel onClose={onClose} />;
     return (
       <ReviewTransactionPanel
+        // Keyed so category state re-seeds when the user jumps straight from
+        // one to-review row to another (the panel doesn't unmount in between).
+        key={t.id}
         txn={t}
         editEnabled={editEnabled}
         onMarkReviewed={() => onMarkReviewed(t.id)}
