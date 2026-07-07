@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePortalFetch } from "./portal-mode-context";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
-import { PlaidLinkButton } from "./plaid-link-button";
+import { PlaidLinkButton } from "./plaid-link-button-dynamic";
 import {
   PlaidAccountDecisionRow,
   buildDecision,

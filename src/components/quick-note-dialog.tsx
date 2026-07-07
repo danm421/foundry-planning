@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import DialogShell from "@/components/dialog-shell";
 import { AlertCircleIcon } from "@/components/icons";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-dynamic";
 import { todayLocalDate } from "@/lib/crm/quick-note";
 import {
   readQuickNoteDraft,
