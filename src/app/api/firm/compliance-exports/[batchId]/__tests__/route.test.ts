@@ -30,21 +30,22 @@ describe("GET /api/firm/compliance-exports/[batchId]", () => {
     m.getBatch.mockResolvedValue(null);
     const res = await GET(new Request("http://t") as never, ctx("b1"));
     expect(res.status).toBe(404);
+    expect(m.counts).not.toHaveBeenCalled();
   });
 
   it("returns derived progress", async () => {
     m.getBatch.mockResolvedValue({
-      id: "b1", status: "running", totalClients: 5,
+      id: "b1", status: "running", totalClients: 6,
       skippedClients: [{ householdId: "h9", name: "X", reason: "no base-case scenario" }],
       startedAt: null, finishedAt: null, createdAt: new Date("2026-07-07T00:00:00Z"),
     });
-    m.counts.mockResolvedValue({ queued: 1, running: 1, analyzing: 0, done: 3, failed: 0 });
+    m.counts.mockResolvedValue({ queued: 1, running: 1, analyzing: 1, done: 3, failed: 0 });
     const res = await GET(new Request("http://t") as never, ctx("b1"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
-      id: "b1", status: "running", totalClients: 5,
-      done: 3, failed: 0, remaining: 2, skippedCount: 1,
+      id: "b1", status: "running", totalClients: 6,
+      done: 3, failed: 0, remaining: 3, skippedCount: 1,
     });
     expect(body.skippedClients).toHaveLength(1);
   });
