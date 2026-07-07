@@ -343,6 +343,10 @@ export type AuditAction =
   | "portal.plaid.unlink"
   | "portal.plaid.account_detach"
   | "portal.plaid.reauth"
+  // Plaid webhooks (background sync/refresh; actorKind "system", no advisor
+  // or client in the loop)
+  | "webhook.plaid.sync"
+  | "webhook.plaid.refresh"
   // Intake / data-collection forms
   | "intake.form.sent"
   | "intake.form.submitted"

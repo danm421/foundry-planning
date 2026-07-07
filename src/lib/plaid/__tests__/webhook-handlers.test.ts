@@ -14,11 +14,14 @@ vi.mock("@/db", () => ({
     update: (...a: unknown[]) => dbUpdate(...a),
   },
 }));
-// NOTE: data-handler deps (transactions-sync, refresh-item-data,
-// record-helpers) are NOT imported by webhook-handlers.ts until Task 7 —
-// their vi.mock lines are added in Task 7, not here.
+vi.mock("../transactions-sync", () => ({ syncTransactionsForItem: vi.fn() }));
+vi.mock("../refresh-item-data", () => ({ refreshPlaidItemData: vi.fn() }));
+vi.mock("@/lib/audit/record-helpers", () => ({ recordCreate: vi.fn() }));
 
 import { plaidWebhookHandlers } from "../webhook-handlers";
+import { syncTransactionsForItem } from "../transactions-sync";
+import { refreshPlaidItemData } from "../refresh-item-data";
+import { recordCreate } from "@/lib/audit/record-helpers";
 
 const ITEM_ROW = {
   id: "row-1",
@@ -34,6 +37,9 @@ beforeEach(() => {
   dbSelect.mockImplementation(() => ({
     from: () => ({ where: () => ({ limit: () => Promise.resolve([ITEM_ROW]) }) }),
   }));
+  vi.mocked(syncTransactionsForItem).mockReset();
+  vi.mocked(refreshPlaidItemData).mockReset();
+  vi.mocked(recordCreate).mockReset();
 });
 
 const base = { item_id: "plaid-item-1", environment: "production" };
@@ -99,5 +105,78 @@ describe("ITEM status handlers", () => {
 
   it("missing item_id is ignored", async () => {
     expect(await plaidWebhookHandlers["ITEM:PENDING_EXPIRATION"]({})).toBe("ignored");
+  });
+});
+
+describe("data handlers", () => {
+  // findItem resolves ITEM_ROW; a second select resolves firmId for audits.
+  // Arrange dbSelect per-test with a sequence, as in the reauth-complete tests.
+  // Alternates ITEM_ROW / firmId-row by call parity so it holds across
+  // multiple handler invocations in a single test (findItem, audit, findItem, audit, ...).
+  function withFirmSelect(firmId = "firm-1") {
+    let n = 0;
+    dbSelect.mockImplementation(() => {
+      const isFirmCall = n % 2 === 1;
+      n++;
+      return {
+        from: () => ({
+          where: () => ({ limit: () => Promise.resolve(isFirmCall ? [{ firmId }] : [ITEM_ROW]) }),
+        }),
+      };
+    });
+  }
+
+  it("SYNC_UPDATES_AVAILABLE runs the sync and audits as system", async () => {
+    withFirmSelect();
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({ ok: true, added: 3, modified: 1, removed: 0 });
+    const r = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"](base);
+    expect(r).toBe("ok");
+    expect(syncTransactionsForItem).toHaveBeenCalledWith(ITEM_ROW);
+    expect(recordCreate).toHaveBeenCalledWith(expect.objectContaining({
+      action: "webhook.plaid.sync",
+      actorKind: "system",
+      clientId: "client-1",
+    }));
+  });
+
+  it("sync failure with a re-auth code persists it and returns ok", async () => {
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({
+      ok: false, errorCode: "ITEM_LOGIN_REQUIRED", errorMessage: "login required",
+    });
+    const r = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"](base);
+    expect(r).toBe("ok");
+    expect(dbSetArgs).toContainEqual({ lastRefreshError: "ITEM_LOGIN_REQUIRED" });
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
+  it("sync failure with a transient code throws (Plaid should retry)", async () => {
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({
+      ok: false, errorCode: "INTERNAL_SERVER_ERROR", errorMessage: "oops",
+    });
+    await expect(plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"](base)).rejects.toThrow();
+  });
+
+  it("HOLDINGS/LIABILITIES DEFAULT_UPDATE run the shared item refresh", async () => {
+    withFirmSelect();
+    vi.mocked(refreshPlaidItemData).mockResolvedValue({
+      ok: true, accountsRefreshed: 2, beforeTotal: "10.00", afterTotal: "11.00",
+    });
+    expect(await plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).toBe("ok");
+    expect(await plaidWebhookHandlers["LIABILITIES:DEFAULT_UPDATE"](base)).toBe("ok");
+    expect(refreshPlaidItemData).toHaveBeenCalledTimes(2);
+    expect(recordCreate).toHaveBeenCalledWith(expect.objectContaining({ action: "webhook.plaid.refresh" }));
+  });
+
+  it("refresh needsReauth=true returns ok without audit; transient throws", async () => {
+    vi.mocked(refreshPlaidItemData).mockResolvedValue({ ok: false, errorCode: "ITEM_LOGIN_REQUIRED", needsReauth: true });
+    expect(await plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).toBe("ok");
+    vi.mocked(refreshPlaidItemData).mockResolvedValue({ ok: false, errorCode: "INTERNAL_SERVER_ERROR", needsReauth: false });
+    await expect(plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).rejects.toThrow();
+  });
+
+  it("legacy transactions codes are ignored", async () => {
+    for (const code of ["INITIAL_UPDATE", "HISTORICAL_UPDATE", "DEFAULT_UPDATE"]) {
+      expect(await plaidWebhookHandlers[`TRANSACTIONS:${code}`](base)).toBe("ignored");
+    }
   });
 });
