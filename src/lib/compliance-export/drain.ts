@@ -1,18 +1,24 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { generationRuns } from "@/db/schema";
+import { complianceExportBatches, generationRuns } from "@/db/schema";
 import {
   renderPresentationPdf,
   type ExportPdfBody,
 } from "@/components/presentations/render-presentation-pdf";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
-import { markDone, markFailed } from "@/lib/crm/generation-runs";
+import { markDone, markFailed, STALE_RUN_MS } from "@/lib/crm/generation-runs";
 import { recordAudit } from "@/lib/audit";
 import { finalizeBatchIfComplete, markBatchRunning } from "./batches";
 import { COMPLIANCE_RUN_KIND, COMPLIANCE_REPORT_TYPE } from "./deck";
 
 const DEFAULT_TIME_BUDGET_MS = 8 * 60 * 1000; // < 800s route ceiling, < STALE_RUN_MS
 const DEFAULT_CLAIM_SIZE = 4;
+
+// In-flight run statuses the claim loop can NOT re-grab (it only claims
+// `queued`). A run stuck in one of these past the stale cutoff was orphaned by a
+// crashed / over-budget invocation and must be swept, or its batch never
+// settles. `queued` is deliberately excluded — those are still claimable.
+const ORPHANABLE_STATUSES = ["running", "analyzing"] as const;
 
 type ClaimedRun = typeof generationRuns.$inferSelect;
 
@@ -87,6 +93,47 @@ async function processRun(run: ClaimedRun): Promise<"done" | "failed"> {
   }
 }
 
+/**
+ * Safety net for batches the claim loop can't advance on its own. A run left
+ * `running` by a crashed / over-budget invocation is never re-claimed (claim
+ * only grabs `queued`), so if it was a batch's LAST in-flight child the batch
+ * would sit `running` forever — and `hasActiveBatchForFirm` would 409-block
+ * every future export for that firm. Fail such orphaned runs past the stale
+ * cutoff, then settle any still-active batch left with no in-flight children.
+ *
+ * Runs once at the end of every drain pass (cheap, low-volume tables), so it
+ * fires even when there was nothing to claim — which is exactly the stuck case.
+ */
+async function reconcileStuckBatches(now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - STALE_RUN_MS);
+  const orphaned = await db
+    .select({ id: generationRuns.id })
+    .from(generationRuns)
+    .where(
+      and(
+        eq(generationRuns.kind, COMPLIANCE_RUN_KIND),
+        inArray(generationRuns.status, [...ORPHANABLE_STATUSES]),
+        lt(generationRuns.createdAt, cutoff),
+      ),
+    );
+  if (orphaned.length > 0) {
+    await db
+      .update(generationRuns)
+      .set({ status: "failed", error: "timed out", finishedAt: now })
+      .where(inArray(generationRuns.id, orphaned.map((r) => r.id)));
+  }
+
+  // Settle any active batch whose children are now all terminal. finalize
+  // re-reads the child counts, so it no-ops on batches with real in-flight work.
+  const active = await db
+    .select({ id: complianceExportBatches.id })
+    .from(complianceExportBatches)
+    .where(inArray(complianceExportBatches.status, ["queued", "running"]));
+  for (const b of active) {
+    await finalizeBatchIfComplete(b.id);
+  }
+}
+
 export async function drainComplianceExports(opts?: {
   timeBudgetMs?: number;
   claimSize?: number;
@@ -94,6 +141,7 @@ export async function drainComplianceExports(opts?: {
 }): Promise<{ processed: number; done: number; failed: number }> {
   const timeBudgetMs = opts?.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;
   const claimSize = opts?.claimSize ?? DEFAULT_CLAIM_SIZE;
+  const now = opts?.now ?? new Date();
   const deadline = Date.now() + timeBudgetMs;
   let processed = 0, done = 0, failed = 0;
 
@@ -121,5 +169,6 @@ export async function drainComplianceExports(opts?: {
     }
   }
 
+  await reconcileStuckBatches(now);
   return { processed, done, failed };
 }
