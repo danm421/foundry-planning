@@ -49,11 +49,26 @@ describe("POST /api/firm/compliance-exports", () => {
     expect(m.enqueue).not.toHaveBeenCalled();
   });
 
+  it("401 when caller has no session", async () => {
+    const { UnauthorizedError } = await import("@/lib/db-helpers");
+    m.requireAdmin.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(req());
+    expect(res.status).toBe(401);
+    expect(m.enqueue).not.toHaveBeenCalled();
+  });
+
   it("409 when a batch is already active", async () => {
     m.hasActive.mockResolvedValue(true);
     const res = await POST(req());
     expect(res.status).toBe(409);
     expect(m.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("500 when enqueue throws unexpectedly", async () => {
+    m.hasActive.mockResolvedValue(false);
+    m.enqueue.mockRejectedValue(new Error("boom"));
+    const res = await POST(req());
+    expect(res.status).toBe(500);
   });
 
   it("202 + kicks an immediate drain", async () => {
@@ -67,6 +82,14 @@ describe("POST /api/firm/compliance-exports", () => {
 });
 
 describe("GET /api/firm/compliance-exports", () => {
+  it("403 for non-admins", async () => {
+    const { ForbiddenError } = await import("@/lib/authz");
+    m.requireAdmin.mockRejectedValue(new ForbiddenError());
+    const res = await GET(new Request("http://t/api/firm/compliance-exports") as never);
+    expect(res.status).toBe(403);
+    expect(m.list).not.toHaveBeenCalled();
+  });
+
   it("lists the firm's batches", async () => {
     m.list.mockResolvedValue([{ id: "b1" }]);
     const res = await GET(new Request("http://t/api/firm/compliance-exports") as never);
