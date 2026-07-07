@@ -9,7 +9,7 @@ import {
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-dynamic";
 import type { NoteRow, NoteKind } from "@/lib/crm/notes";
 
 const TYPE_OPTIONS: { value: NoteKind; label: string }[] = [

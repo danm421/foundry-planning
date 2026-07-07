@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlaidLinkButton } from "./plaid-link-button";
+import { PlaidLinkButton } from "./plaid-link-button-dynamic";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { ManageAccountsDialog } from "./manage-accounts-dialog";
 

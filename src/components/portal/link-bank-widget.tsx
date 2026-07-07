@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { PlaidLinkButton, type LinkSuccessPayload } from "./plaid-link-button";
+import { PlaidLinkButton } from "./plaid-link-button-dynamic";
+import type { LinkSuccessPayload } from "./plaid-link-button";
 import { PlaidAccountPicker } from "./plaid-account-picker";
 
 export function LinkBankWidget() {

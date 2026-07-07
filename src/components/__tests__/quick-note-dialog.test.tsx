@@ -3,8 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/use-body-scroll-lock", () => ({ useBodyScrollLock: vi.fn() }));
-// Tiptap doesn't run in jsdom — stand in a textarea with the same contract.
-vi.mock("@/components/rich-text-editor", () => ({
+// The dialog imports the editor through its next/dynamic wrapper; tiptap
+// doesn't run in jsdom, so mock the wrapper with a textarea of the same
+// contract (mocking the wrapper keeps the render synchronous — a real
+// ssr:false dynamic would only paint the loading fallback on first render).
+vi.mock("@/components/rich-text-editor-dynamic", () => ({
   RichTextEditor: ({
     value,
     onChange,

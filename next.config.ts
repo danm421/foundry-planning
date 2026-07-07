@@ -10,7 +10,10 @@ const csp = [
   "default-src 'self'",
   // Next.js' React runtime still needs 'unsafe-inline' for style elements
    // and Clerk ships inline bootstrapping. Revisit once nonces are wired.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://cdn.plaid.com",
+  // browser.sentry-cdn.com: Session Replay is lazy-loaded from Sentry's CDN
+  // post-init (see src/instrumentation-client.ts) to keep the recorder out of
+  // the initial bundle.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://cdn.plaid.com https://browser.sentry-cdn.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.clerk.com https://*.public.blob.vercel-storage.com",
   "font-src 'self' data:",
