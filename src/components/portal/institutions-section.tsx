@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { plaidItems } from "@/db/schema";
-import { REAUTH_CODES } from "@/lib/plaid/errors";
+import { REAUTH_CODES, REVOKED_CODES } from "@/lib/plaid/errors";
 import { InstitutionRow } from "./institution-row";
 
 function formatRelative(d: Date | null): string {
@@ -26,6 +26,7 @@ export async function InstitutionsSection({
       lastRefreshedAt: plaidItems.lastRefreshedAt,
       lastRefreshError: plaidItems.lastRefreshError,
       transactionsCursor: plaidItems.transactionsCursor,
+      newAccountsAvailableAt: plaidItems.newAccountsAvailableAt,
     })
     .from(plaidItems)
     .where(eq(plaidItems.clientId, clientId))
@@ -48,7 +49,10 @@ export async function InstitutionsSection({
       </header>
       <ul className="divide-y divide-hair rounded-lg border border-hair">
         {items.map((it) => {
+          const revoked =
+            it.lastRefreshError != null && REVOKED_CODES.has(it.lastRefreshError);
           const needsReauth =
+            !revoked &&
             it.lastRefreshError != null &&
             REAUTH_CODES.has(it.lastRefreshError);
           return (
@@ -57,9 +61,15 @@ export async function InstitutionsSection({
               itemId={it.id}
               institutionName={it.institutionName ?? "Unknown institution"}
               statusLabel={
-                needsReauth ? "Re-auth required" : formatRelative(it.lastRefreshedAt)
+                revoked
+                  ? "Access revoked"
+                  : needsReauth
+                    ? "Re-auth required"
+                    : formatRelative(it.lastRefreshedAt)
               }
               needsReauth={needsReauth}
+              revoked={revoked}
+              newAccountsAvailable={it.newAccountsAvailableAt != null}
               editEnabled={editEnabled}
               needsTransactionsConsent={it.transactionsCursor == null}
             />
