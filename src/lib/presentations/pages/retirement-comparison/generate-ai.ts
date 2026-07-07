@@ -11,8 +11,8 @@ import { scenarios } from "@/db/schema";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { resolveScenarioRef } from "@/lib/scenario/presentation-refs";
 import { runProjectionWithEvents } from "@/engine/projection";
-import { runMonteCarlo, summarizeMonteCarlo, createReturnEngine } from "@/engine";
-import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
+import type { MonteCarloSummary } from "@/engine";
+import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { describeChangeUnit, type ChangeUnit } from "@/lib/scenario/scenario-change-describe";
@@ -44,42 +44,25 @@ export interface GeneratedRetirementComparisonAi {
   cached: boolean;
 }
 
-// Load the effective tree + deterministic projection for one ref, then run a
-// 1000-trial Monte Carlo for its success rate. MC failures are non-fatal —
-// successRate stays null and the page's KPI renders an em-dash. Mirrors the
-// export route's MC loading pattern verbatim.
+// Load the effective tree + deterministic projection for one ref, then read
+// its 1000-trial Monte Carlo success rate FROM THE COMPUTE CACHE. Routing MC
+// through getOrComputeMonteCarlo (instead of a raw, uncached runMonteCarlo)
+// means the PDF render step reuses this result instead of recomputing the
+// identical simulation — the double-MC that pushed comparison decks past the
+// 800s function timeout. payload.summary is the same serializable
+// MonteCarloSummary this used to compute inline, so the numbers are unchanged.
+// MC failures are non-fatal — successRate stays null and the KPI renders an
+// em-dash.
 async function projectAndMc(clientId: string, firmId: string, raw: string) {
   const ref = resolveScenarioRef(raw);
+  const scenarioId = ref.kind === "scenario" ? ref.id : "base";
   const { effectiveTree } = await loadEffectiveTreeForRef(clientId, firmId, ref);
   const projection = runProjectionWithEvents(effectiveTree);
   let successRate: number | null = null;
-  let summary: ReturnType<typeof summarizeMonteCarlo> | null = null;
+  let summary: MonteCarloSummary | null = null;
   try {
-    const mc = await loadMonteCarloData(
-      clientId,
-      firmId,
-      ref.kind === "scenario" ? ref.id : "base",
-      [],
-      effectiveTree,
-    );
-    const engine = createReturnEngine({
-      indices: mc.indices,
-      correlation: mc.correlation,
-      seed: mc.seed,
-    });
-    const accountMixes = new Map(mc.accountMixes.map((a) => [a.accountId, a.segments]));
-    const result = await runMonteCarlo({
-      data: effectiveTree,
-      returnEngine: engine,
-      accountMixes,
-      trials: 1000,
-      requiredMinimumAssetLevel: mc.requiredMinimumAssetLevel,
-    });
-    summary = summarizeMonteCarlo(result, {
-      client: effectiveTree.client,
-      planSettings: effectiveTree.planSettings,
-      startingLiquidBalance: mc.startingLiquidBalance,
-    });
+    const cached = await getOrComputeMonteCarlo({ clientId, firmId, scenarioId });
+    summary = cached.payload.summary;
     successRate = summary.successRate;
   } catch (err) {
     console.error("retirement-comparison-ai MC failed", err);
