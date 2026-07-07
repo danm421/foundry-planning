@@ -1,9 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextResponse } from "next/server";
 
-const fetchBalancesForItem = vi.fn();
-vi.mock("@/lib/plaid/refresh", () => ({
-  fetchBalancesForItem: (...a: unknown[]) => fetchBalancesForItem(...a),
+// The write path is extracted into refreshPlaidItemData; the route only wires
+// auth → tenant check → rate limit → lib → audit → respond. Mock the lib and
+// assert route behavior (passthrough, audit gating, tenant + rate-limit gates).
+const refreshPlaidItemData = vi.fn();
+vi.mock("@/lib/plaid/refresh-item-data", () => ({
+  refreshPlaidItemData: (...a: unknown[]) => refreshPlaidItemData(...a),
 }));
 
 const recordCreate = vi.fn();
@@ -34,21 +37,9 @@ vi.mock("@/lib/portal/require-edit-enabled", () => ({
 }));
 
 const dbSelect = vi.fn();
-const txUpdateWhere = vi.fn().mockResolvedValue(undefined);
-const tx = {
-  update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: txUpdateWhere }) }),
-};
-const dbTransaction = vi
-  .fn()
-  .mockImplementation(async (fn: (t: typeof tx) => Promise<void>) => fn(tx));
-const dbUpdate = vi.fn().mockReturnValue({
-  set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-});
 vi.mock("@/db", () => ({
   db: {
     select: (...a: unknown[]) => dbSelect(...a),
-    transaction: dbTransaction,
-    update: (...a: unknown[]) => dbUpdate(...a),
   },
 }));
 
@@ -59,15 +50,12 @@ function nextResponses(...responses: unknown[][]) {
 }
 
 beforeEach(() => {
-  fetchBalancesForItem.mockReset();
+  refreshPlaidItemData.mockReset();
   recordCreate.mockReset();
   checkRefresh.mockReset();
   resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
   dbSelect.mockReset();
-  dbUpdate.mockClear();
-  tx.update.mockClear();
-  txUpdateWhere.mockClear();
 
   resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
   requireEditEnabled.mockResolvedValue(undefined);
@@ -82,21 +70,16 @@ beforeEach(() => {
 });
 
 describe("POST /api/portal/plaid/items/[id]/refresh", () => {
-  it("happy path: updates balances + clears last_refresh_error + audits", async () => {
+  it("happy path: calls the lib, audits portal.plaid.refresh, passes the result through", async () => {
     nextResponses(
-      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x", plaidItemId: "plaid-x" }],
-      [
-        { id: "acct-1", plaidAccountId: "pa-1", value: "100.00" },
-        { id: "acct-2", plaidAccountId: "pa-2", value: "200.00" },
-      ],
+      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x" }],
       [{ firmId: "firm-1" }],
     );
-    fetchBalancesForItem.mockResolvedValue({
+    refreshPlaidItemData.mockResolvedValue({
       ok: true,
-      updates: [
-        { plaidAccountId: "pa-1", newValue: "150.00" },
-        { plaidAccountId: "pa-2", newValue: "250.00" },
-      ],
+      accountsRefreshed: 2,
+      beforeTotal: "300.00",
+      afterTotal: "400.00",
     });
 
     const { POST } = await import("../route");
@@ -105,24 +88,36 @@ describe("POST /api/portal/plaid/items/[id]/refresh", () => {
     });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.ok).toBe(true);
-    expect(json.accountsRefreshed).toBe(2);
-    expect(json.beforeTotal).toBe("300.00");
-    expect(json.afterTotal).toBe("400.00");
+    expect(json).toEqual({
+      ok: true,
+      accountsRefreshed: 2,
+      beforeTotal: "300.00",
+      afterTotal: "400.00",
+    });
+    expect(refreshPlaidItemData).toHaveBeenCalledWith({ id: "item-1", accessToken: "enc:x" });
     expect(recordCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "portal.plaid.refresh" }),
+      expect.objectContaining({
+        action: "portal.plaid.refresh",
+        resourceId: "item-1",
+        firmId: "firm-1",
+        snapshot: expect.objectContaining({
+          institutionName: "Chase",
+          accountsRefreshed: 2,
+          beforeTotal: "300.00",
+          afterTotal: "400.00",
+        }),
+      }),
     );
   });
 
-  it("ITEM_LOGIN_REQUIRED: writes last_refresh_error, returns ok:false, no audit", async () => {
+  it("ok:false passes the lib result through with no audit", async () => {
     nextResponses(
-      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x", plaidItemId: "plaid-x" }],
-      [{ id: "acct-1", plaidAccountId: "pa-1", value: "100.00" }],
+      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x" }],
     );
-    fetchBalancesForItem.mockResolvedValue({
+    refreshPlaidItemData.mockResolvedValue({
       ok: false,
       errorCode: "ITEM_LOGIN_REQUIRED",
-      errorMessage: "re-auth",
+      needsReauth: true,
     });
     const { POST } = await import("../route");
     const res = await POST(new Request("https://x/", { method: "POST" }), {
@@ -130,15 +125,17 @@ describe("POST /api/portal/plaid/items/[id]/refresh", () => {
     });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.ok).toBe(false);
-    expect(json.errorCode).toBe("ITEM_LOGIN_REQUIRED");
+    expect(json).toEqual({
+      ok: false,
+      errorCode: "ITEM_LOGIN_REQUIRED",
+      needsReauth: true,
+    });
     expect(recordCreate).not.toHaveBeenCalled();
-    expect(dbUpdate).toHaveBeenCalled();
   });
 
-  it("rate-limited returns 429", async () => {
+  it("rate-limited returns 429 without calling the lib", async () => {
     nextResponses(
-      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x", plaidItemId: "plaid-x" }],
+      [{ clientId: "client-1", institutionName: "Chase", accessToken: "enc:x" }],
     );
     checkRefresh.mockResolvedValue({ allowed: false, reason: "exceeded" });
     const { POST } = await import("../route");
@@ -146,14 +143,16 @@ describe("POST /api/portal/plaid/items/[id]/refresh", () => {
       params: Promise.resolve({ id: "item-1" }),
     });
     expect(res.status).toBe(429);
+    expect(refreshPlaidItemData).not.toHaveBeenCalled();
   });
 
-  it("foreign item returns 404", async () => {
-    nextResponses([{ clientId: "OTHER", institutionName: "X", accessToken: "enc:x", plaidItemId: "p" }]);
+  it("foreign item returns 404 without calling the lib", async () => {
+    nextResponses([{ clientId: "OTHER", institutionName: "X", accessToken: "enc:x" }]);
     const { POST } = await import("../route");
     const res = await POST(new Request("https://x/", { method: "POST" }), {
       params: Promise.resolve({ id: "item-1" }),
     });
     expect(res.status).toBe(404);
+    expect(refreshPlaidItemData).not.toHaveBeenCalled();
   });
 });
