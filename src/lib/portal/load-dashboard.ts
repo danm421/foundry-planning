@@ -6,7 +6,13 @@
 // API route: this is consumed by the <PortalDashboard> server component.
 import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { accounts, liabilities, plaidTransactions, scenarios } from "@/db/schema";
+import {
+  accounts,
+  liabilities,
+  plaidTransactions,
+  scenarios,
+  transactionCategories,
+} from "@/db/schema";
 import { loadBudgetSummary, currentMonthRange } from "@/lib/portal/load-budget-data";
 import { loadRecurringsData, type RecurringRowDTO } from "@/lib/portal/load-recurrings-data";
 import {
@@ -34,6 +40,9 @@ export interface ReviewTxn {
   merchantName: string | null;
   amount: number;
   accountName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryColor: string | null;
 }
 
 /** One row of the net-worth drill-down (visible asset account or debt). */
@@ -207,9 +216,16 @@ export async function loadPortalDashboard(
             merchantName: plaidTransactions.merchantName,
             amount: plaidTransactions.amount,
             accountName: accounts.name,
+            categoryId: plaidTransactions.categoryId,
+            categoryName: transactionCategories.name,
+            categoryColor: transactionCategories.color,
           })
           .from(plaidTransactions)
           .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
+          .leftJoin(
+            transactionCategories,
+            eq(transactionCategories.id, plaidTransactions.categoryId),
+          )
           .where(
             and(
               eq(plaidTransactions.clientId, clientId),
@@ -353,6 +369,9 @@ export async function loadPortalDashboard(
         merchantName: t.merchantName,
         amount: Number(t.amount),
         accountName: t.accountName,
+        categoryId: t.categoryId,
+        categoryName: t.categoryName,
+        categoryColor: t.categoryColor,
       })),
     },
     topCategories: topCategories(budget.groups, 5),

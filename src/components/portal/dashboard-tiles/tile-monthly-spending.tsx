@@ -30,20 +30,28 @@ function PaceSparkline({
 
 export function TileMonthlySpending({
   spending,
+  onOpen,
 }: {
   spending: PortalDashboardDTO["spending"];
+  onOpen: () => void;
 }): ReactElement {
   const under = spending.underBy >= 0;
   return (
     <TileFrame title="Monthly spending" href="/portal/transactions" linkLabel="Transactions">
       {spending.budgeted > 0 ? (
         <>
-          <div className="mb-1 tabular text-[28px] font-semibold text-ink">
-            {fmtUsd(spending.left)} <span className="text-[15px] font-normal text-ink-3">left</span>
-          </div>
-          <div className="mb-3 text-[12px] text-ink-3">
-            out of <span className="tabular">{fmtUsd(spending.budgeted)}</span> budgeted
-          </div>
+          <button
+            type="button"
+            onClick={onOpen}
+            className="-m-1 mb-2 block w-full rounded-md p-1 text-left hover:bg-card-2"
+          >
+            <div className="mb-1 tabular text-[28px] font-semibold text-ink">
+              {fmtUsd(spending.left)} <span className="text-[15px] font-normal text-ink-3">left</span>
+            </div>
+            <div className="text-[12px] text-ink-3">
+              out of <span className="tabular">{fmtUsd(spending.budgeted)}</span> budgeted
+            </div>
+          </button>
           <PaceSparkline pace={spending.pace} budgeted={spending.budgeted} />
           <div
             className={`mt-2 inline-block rounded-md px-2 py-0.5 text-[11px] tabular ${
