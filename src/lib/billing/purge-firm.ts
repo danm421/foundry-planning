@@ -33,8 +33,11 @@ import {
   planningKbChunks,
   forgeConversations,
   orionConnections,
+  plaidItems,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
+import { getPlaidClient } from "@/lib/plaid/client";
+import { decrypt } from "@/lib/plaid/crypto";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -190,6 +193,19 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     (u): u is string => !!u,
   );
 
+  // Plaid access tokens across the firm's clients — collected BEFORE the client
+  // cascade drops the plaid_items rows. The rows themselves cascade off clients;
+  // only the vendor-side itemRemove was missing (audit F2).
+  const plaidItemRows = await db
+    .select({ accessToken: plaidItems.accessToken })
+    .from(plaidItems)
+    .where(
+      inArray(
+        plaidItems.clientId,
+        db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId)),
+      ),
+    );
+
   // 1. Households → planning clients → CRM children (incl. document rows).
   const households = await db
     .select({ id: crmHouseholds.id })
@@ -277,6 +293,22 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     await db.delete(orionConnections).where(eq(orionConnections.firmId, firmId));
   } catch (err) {
     console.error(`[purge-firm] orion connection purge failed for ${firmId}:`, err);
+  }
+
+  // Plaid items (best-effort). Revoke each access token at the vendor so a
+  // purged firm's bank connections are actually severed — the DB rows already
+  // cascaded off the client delete. Best-effort per item: a purge cron must
+  // complete even if Plaid 502s (contrast the portal unlink route, which is
+  // fatal-on-failure because a user is watching). Audit F2.
+  if (plaidItemRows.length) {
+    const plaid = getPlaidClient();
+    for (const row of plaidItemRows) {
+      try {
+        await plaid.itemRemove({ access_token: decrypt(row.accessToken) });
+      } catch (err) {
+        console.error(`[purge-firm] plaid itemRemove failed for ${firmId}:`, err);
+      }
+    }
   }
 
   // 5. Blob objects (best-effort — each wrapped so a 404/transport error
