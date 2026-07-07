@@ -95,33 +95,39 @@ async function processRun(run: ClaimedRun): Promise<"done" | "failed"> {
 
 /**
  * Safety net for batches the claim loop can't advance on its own. A run left
- * `running` by a crashed / over-budget invocation is never re-claimed (claim
- * only grabs `queued`), so if it was a batch's LAST in-flight child the batch
- * would sit `running` forever — and `hasActiveBatchForFirm` would 409-block
- * every future export for that firm. Fail such orphaned runs past the stale
- * cutoff, then settle any still-active batch left with no in-flight children.
+ * `running`/`analyzing` by a crashed / over-budget invocation is never
+ * re-claimed (claim only grabs `queued`), so if it was a batch's LAST
+ * in-flight child the batch would sit `running` forever — and
+ * `hasActiveBatchForFirm` would 409-block every future export for that firm.
+ * Fail such orphaned runs past the stale cutoff, then settle any still-active
+ * batch left with no in-flight children.
+ *
+ * The fail-sweep is a single UPDATE whose WHERE carries every guard (kind,
+ * orphanable status, startedAt cutoff) — no preceding SELECT. Two things that
+ * buys: (1) the cutoff is keyed on startedAt, which claimQueuedRuns stamps
+ * the moment a run flips queued->running, so a run claimed just before this
+ * sweep runs has a fresh startedAt even if its createdAt (queue time, for a
+ * large batch) is already past the cutoff — createdAt would wrongly fail it
+ * mid-render; (2) the UPDATE's own WHERE re-checks status at write time, so a
+ * concurrent markDone that flips a run to `done` between when this sweep
+ * decides to run and when its UPDATE executes simply won't match anymore —
+ * no separate SELECT snapshot to go stale and clobber the completion.
  *
  * Runs once at the end of every drain pass (cheap, low-volume tables), so it
  * fires even when there was nothing to claim — which is exactly the stuck case.
  */
 async function reconcileStuckBatches(now: Date): Promise<void> {
   const cutoff = new Date(now.getTime() - STALE_RUN_MS);
-  const orphaned = await db
-    .select({ id: generationRuns.id })
-    .from(generationRuns)
+  await db
+    .update(generationRuns)
+    .set({ status: "failed", error: "timed out", finishedAt: now })
     .where(
       and(
         eq(generationRuns.kind, COMPLIANCE_RUN_KIND),
         inArray(generationRuns.status, [...ORPHANABLE_STATUSES]),
-        lt(generationRuns.createdAt, cutoff),
+        lt(generationRuns.startedAt, cutoff),
       ),
     );
-  if (orphaned.length > 0) {
-    await db
-      .update(generationRuns)
-      .set({ status: "failed", error: "timed out", finishedAt: now })
-      .where(inArray(generationRuns.id, orphaned.map((r) => r.id)));
-  }
 
   // Settle any active batch whose children are now all terminal. finalize
   // re-reads the child counts, so it no-ops on batches with real in-flight work.

@@ -52,39 +52,50 @@ export async function enqueueFirmComplianceExport(args: {
     renderable.push({ householdId: h.id, clientId, scenarioId });
   }
 
-  const batchId = await createBatch({
-    firmId: args.firmId,
-    triggeredBy: args.triggeredBy,
-    triggeredByEmail: args.triggeredByEmail,
-    totalClients: renderable.length,
-    deckSpec: buildCompliancePages(args.now),
-    skippedClients: skipped,
+  // One transaction for the whole write section: batch row + child runs
+  // commit together (or not at all), so a mid-loop insert failure can't leave
+  // a partial batch that a later drain would finalize `done` with fewer
+  // children than totalClients — a silently-short compliance export. It also
+  // closes the childless window where a concurrent reconcile could finalize
+  // the batch before its first run exists. The reads above stay outside.
+  return db.transaction(async (tx) => {
+    const batchId = await createBatch(
+      {
+        firmId: args.firmId,
+        triggeredBy: args.triggeredBy,
+        triggeredByEmail: args.triggeredByEmail,
+        totalClients: renderable.length,
+        deckSpec: buildCompliancePages(args.now),
+        skippedClients: skipped,
+      },
+      tx,
+    );
+
+    // If every household was skipped, no child runs are ever inserted, so the
+    // cron drain (which only ever looks at queued/running/analyzing children)
+    // would never touch this batch — it would sit `queued` forever and the
+    // active-batch guard would block all future exports for the firm. Settle
+    // it immediately instead.
+    if (renderable.length === 0) {
+      await finalizeBatchIfComplete(batchId, tx);
+      return { batchId, total: 0, skipped: skipped.length };
+    }
+
+    for (const r of renderable) {
+      await tx.insert(generationRuns).values({
+        householdId: r.householdId,
+        clientId: r.clientId,
+        firmId: args.firmId,
+        kind: COMPLIANCE_RUN_KIND,
+        status: "queued",
+        scenarioId: r.scenarioId,
+        triggeredBy: args.triggeredBy,
+        triggeredByEmail: args.triggeredByEmail,
+        requestPayload: buildComplianceRequestPayload(r.scenarioId, args.now),
+        batchId,
+      });
+    }
+
+    return { batchId, total: renderable.length, skipped: skipped.length };
   });
-
-  // If every household was skipped, no child runs are ever inserted, so the
-  // cron drain (which only ever looks at queued/running/analyzing children)
-  // would never touch this batch — it would sit `queued` forever and the
-  // active-batch guard would block all future exports for the firm. Settle
-  // it immediately instead.
-  if (renderable.length === 0) {
-    await finalizeBatchIfComplete(batchId);
-    return { batchId, total: 0, skipped: skipped.length };
-  }
-
-  for (const r of renderable) {
-    await db.insert(generationRuns).values({
-      householdId: r.householdId,
-      clientId: r.clientId,
-      firmId: args.firmId,
-      kind: COMPLIANCE_RUN_KIND,
-      status: "queued",
-      scenarioId: r.scenarioId,
-      triggeredBy: args.triggeredBy,
-      triggeredByEmail: args.triggeredByEmail,
-      requestPayload: buildComplianceRequestPayload(r.scenarioId, args.now),
-      batchId,
-    });
-  }
-
-  return { batchId, total: renderable.length, skipped: skipped.length };
 }

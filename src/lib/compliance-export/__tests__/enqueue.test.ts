@@ -6,17 +6,31 @@ const m = vi.hoisted(() => ({
   insertRun: vi.fn(),
   createBatch: vi.fn(),
   finalizeBatchIfComplete: vi.fn(),
+  transaction: vi.fn(),
+  tx: undefined as unknown,
 }));
 
-vi.mock("@/db", () => ({
-  db: {
-    query: { crmHouseholds: { findMany: (...a: unknown[]) => m.households(...a) } },
-    // scenarios base-case lookup: select().from().where().limit()
-    select: () => ({ from: () => ({ where: () => ({ limit: () => m.baseCase() }) }) }),
-    // run insert: insert().values()
-    insert: () => ({ values: (v: unknown) => m.insertRun(v) }),
-  },
-}));
+// Household enumeration + base-case lookups are reads and stay outside any
+// transaction (top-level db.query / db.select). The write section — createBatch,
+// the zero-renderable finalize, and the run-insert loop — must all go through
+// ONE db.transaction. `insert` deliberately lives ONLY on the tx object here
+// (not on the top-level db mock), so a write issued outside the transaction
+// (the pre-fix, non-atomic shape) fails loudly instead of silently passing.
+vi.mock("@/db", () => {
+  const tx = { insert: () => ({ values: (v: unknown) => m.insertRun(v) }) };
+  m.tx = tx;
+  return {
+    db: {
+      query: { crmHouseholds: { findMany: (...a: unknown[]) => m.households(...a) } },
+      // scenarios base-case lookup: select().from().where().limit()
+      select: () => ({ from: () => ({ where: () => ({ limit: () => m.baseCase() }) }) }),
+      transaction: async (cb: (t: typeof tx) => unknown) => {
+        m.transaction();
+        return cb(tx);
+      },
+    },
+  };
+});
 vi.mock("../batches", () => ({
   createBatch: (...a: unknown[]) => m.createBatch(...a),
   finalizeBatchIfComplete: (...a: unknown[]) => m.finalizeBatchIfComplete(...a),
@@ -27,7 +41,7 @@ import { enqueueFirmComplianceExport } from "../enqueue";
 const NOW = new Date("2026-07-07T12:00:00Z");
 
 beforeEach(() => {
-  Object.values(m).forEach((fn) => fn.mockReset());
+  Object.values(m).forEach((fn) => (fn as ReturnType<typeof vi.fn>).mockReset?.());
   m.insertRun.mockResolvedValue([{ id: "run-x" }]);
   m.createBatch.mockResolvedValue("batch-1");
   m.finalizeBatchIfComplete.mockResolvedValue(undefined);
@@ -71,6 +85,20 @@ describe("enqueueFirmComplianceExport", () => {
     ]);
   });
 
+  // F3: createBatch + the run-insert loop must share one db.transaction, so a
+  // mid-loop insert failure can't leave a partial batch for finalize to settle
+  // done with fewer children than totalClients.
+  it("wraps createBatch and the run-insert loop in one db.transaction", async () => {
+    m.households.mockResolvedValue([{ id: "h1", name: "Smith", planningClient: { id: "c1" } }]);
+    m.baseCase.mockResolvedValueOnce([{ id: "scn-1" }]);
+    await enqueueFirmComplianceExport({
+      firmId: "f1", triggeredBy: "user_1", triggeredByEmail: "a@b.co", now: NOW,
+    });
+    expect(m.transaction).toHaveBeenCalledTimes(1);
+    expect(m.createBatch.mock.calls[0][1]).toBe(m.tx);
+    expect(m.insertRun).toHaveBeenCalledTimes(1); // proves the insert went through tx.insert, not a bare db.insert
+  });
+
   it("stamps batchId onto each enqueued run", async () => {
     m.households.mockResolvedValue([{ id: "h1", name: "Smith", planningClient: { id: "c1" } }]);
     m.baseCase.mockResolvedValueOnce([{ id: "scn-1" }]);
@@ -96,7 +124,8 @@ describe("enqueueFirmComplianceExport", () => {
 
     expect(res).toEqual({ batchId: "batch-1", total: 0, skipped: 2 });
     expect(m.insertRun).not.toHaveBeenCalled();
+    expect(m.transaction).toHaveBeenCalledTimes(1);
     expect(m.finalizeBatchIfComplete).toHaveBeenCalledTimes(1);
-    expect(m.finalizeBatchIfComplete).toHaveBeenCalledWith("batch-1");
+    expect(m.finalizeBatchIfComplete).toHaveBeenCalledWith("batch-1", m.tx);
   });
 });
