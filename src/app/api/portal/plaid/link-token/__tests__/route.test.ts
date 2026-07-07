@@ -265,6 +265,41 @@ describe("POST /api/portal/plaid/link-token", () => {
     );
   });
 
+  it("new-link request carries webhook when PLAID_WEBHOOK_URL is set", async () => {
+    process.env.PLAID_WEBHOOK_URL = "https://x.example.com/api/webhooks/plaid";
+    const { POST } = await import("../route");
+    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(linkTokenCreate.mock.calls[0][0].webhook).toBe(
+      "https://x.example.com/api/webhooks/plaid",
+    );
+    delete process.env.PLAID_WEBHOOK_URL;
+  });
+
+  it("update-mode request does NOT carry webhook", async () => {
+    process.env.PLAID_WEBHOOK_URL = "https://x.example.com/api/webhooks/plaid";
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+    );
+    expect(linkTokenCreate.mock.calls[0][0].webhook).toBeUndefined();
+    delete process.env.PLAID_WEBHOOK_URL;
+  });
+
   it("accountSelection adds update.account_selection_enabled in update mode", async () => {
     const { db } = await import("@/db");
     (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
