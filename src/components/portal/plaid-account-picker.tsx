@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { LinkSuccessPayload } from "./plaid-link-button";
+import type { LinkSuccessPayload } from "@/lib/portal/plaid-link-complete";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { mapPlaidToFoundry, mapPlaidToLiability } from "@/lib/plaid/account-mapping";

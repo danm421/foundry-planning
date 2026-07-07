@@ -18,6 +18,21 @@ export const dynamic = "force-dynamic";
 
 type Body = { itemId?: string; enableProducts?: boolean; accountSelection?: boolean };
 
+/**
+ * OAuth banks redirect the whole browser tab out to the bank and back to a URL
+ * registered in the Plaid dashboard. Only the production deployment is served on
+ * that registered origin, so we send `redirect_uri` only there — on localhost /
+ * preview it is omitted and the inline (non-OAuth) flow is unaffected. Gating on
+ * the deployment env (not an inbound header) matches how the app URL is used
+ * everywhere else. Registered value: https://app.foundryplanning.com/portal/oauth
+ */
+function oauthRedirectUri(): string | undefined {
+  if (process.env.VERCEL_ENV !== "production") return undefined;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
+  return `${appUrl}/portal/oauth`;
+}
+
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId } = await resolvePortalClient();
@@ -34,11 +49,16 @@ export async function POST(req: Request): Promise<Response> {
 
     const body = (await req.json().catch(() => ({}))) as Body;
 
+    const redirectUri = oauthRedirectUri();
+
     const baseRequest = {
       user: { client_user_id: clientId },
       client_name: "Foundry Planning",
       country_codes: [CountryCode.Us],
       language: "en",
+      // Sent only from the registered prod origin (see oauthRedirectUri); needed
+      // for OAuth banks in both new-link and re-auth flows.
+      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       // No products for update mode; only for new links.
     };
 

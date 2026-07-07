@@ -38,6 +38,7 @@ vi.mock("@/lib/plaid/crypto", () => ({
 }));
 
 beforeEach(() => {
+  delete process.env.VERCEL_ENV;
   linkTokenCreate.mockReset();
   resolvePortalClient.mockReset();
   requireEditEnabled.mockReset();
@@ -217,6 +218,51 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(arg.access_token).toBeDefined();
     expect(arg.products).toBeUndefined();
     expect(arg.additional_consented_products).toBeUndefined();
+  });
+
+  it("sends redirect_uri on the production deployment", async () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.foundryplanning.com";
+    const { POST } = await import("../route");
+    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(linkTokenCreate.mock.calls[0][0].redirect_uri).toBe(
+      "https://app.foundryplanning.com/portal/oauth",
+    );
+  });
+
+  it("omits redirect_uri off production (localhost / preview)", async () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.foundryplanning.com";
+    const { POST } = await import("../route");
+    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(linkTokenCreate.mock.calls[0][0].redirect_uri).toBeUndefined();
+  });
+
+  it("re-auth (update mode) also carries redirect_uri in production", async () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.foundryplanning.com";
+    const { db } = await import("@/db");
+    (db.select as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              { accessToken: "enc:abc", clientId: "client-1" },
+            ]),
+        }),
+      }),
+    });
+
+    const { POST } = await import("../route");
+    await POST(
+      new Request("https://x/", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-1" }),
+      }),
+    );
+    expect(linkTokenCreate.mock.calls[0][0].redirect_uri).toBe(
+      "https://app.foundryplanning.com/portal/oauth",
+    );
   });
 
   it("accountSelection adds update.account_selection_enabled in update mode", async () => {
