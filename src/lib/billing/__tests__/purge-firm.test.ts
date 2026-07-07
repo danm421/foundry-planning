@@ -16,6 +16,19 @@ const mocks = vi.hoisted(() => ({
   deleteCmaSets: vi.fn(),
   deleteAssetClasses: vi.fn(),
   deleteModelPortfolios: vi.fn(),
+  // newly-covered firm-scoped tables (audit F2)
+  deleteCmaSettings: vi.fn(),
+  deleteTickerPortfolios: vi.fn(),
+  deleteStaffAdvisorVisibility: vi.fn(),
+  deleteOrionOauthStates: vi.fn(),
+  deleteOrionSyncRuns: vi.fn(),
+  deleteIntakeForms: vi.fn(),
+  deleteIntakeEmailSettings: vi.fn(),
+  deleteOpsEntitlementOverrides: vi.fn(),
+  deleteBuiltinTemplateDismissals: vi.fn(),
+  deleteClientShares: vi.fn(),
+  deletePlanningKbChunks: vi.fn(),
+  deleteForgeConversations: vi.fn(),
   updateFirm: vi.fn(),
   selectCustomer: vi.fn(),
   stripeCustomersDel: vi.fn(),
@@ -59,6 +72,18 @@ vi.mock("@/db", async () => {
           if (tbl === s.cmaSets) return mocks.deleteCmaSets();
           if (tbl === s.assetClasses) return mocks.deleteAssetClasses();
           if (tbl === s.modelPortfolios) return mocks.deleteModelPortfolios();
+          if (tbl === s.cmaSettings) return mocks.deleteCmaSettings();
+          if (tbl === s.tickerPortfolios) return mocks.deleteTickerPortfolios();
+          if (tbl === s.staffAdvisorVisibility) return mocks.deleteStaffAdvisorVisibility();
+          if (tbl === s.orionOauthStates) return mocks.deleteOrionOauthStates();
+          if (tbl === s.orionSyncRuns) return mocks.deleteOrionSyncRuns();
+          if (tbl === s.intakeForms) return mocks.deleteIntakeForms();
+          if (tbl === s.intakeEmailSettings) return mocks.deleteIntakeEmailSettings();
+          if (tbl === s.opsEntitlementOverrides) return mocks.deleteOpsEntitlementOverrides();
+          if (tbl === s.builtinTemplateDismissals) return mocks.deleteBuiltinTemplateDismissals();
+          if (tbl === s.clientShares) return mocks.deleteClientShares();
+          if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
+          if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
           return undefined;
         },
       }),
@@ -195,6 +220,26 @@ describe("purgeFirmById", () => {
     expect(mocks.deleteCmaSets).toHaveBeenCalledTimes(1);
     expect(mocks.deleteAssetClasses).toHaveBeenCalledTimes(1);
     expect(mocks.deleteModelPortfolios).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes the previously-orphaned firm-scoped tables (audit F2)", async () => {
+    await purgeFirmById("org_1");
+    for (const spy of [
+      mocks.deleteCmaSettings,
+      mocks.deleteTickerPortfolios,
+      mocks.deleteStaffAdvisorVisibility,
+      mocks.deleteOrionOauthStates,
+      mocks.deleteOrionSyncRuns,
+      mocks.deleteIntakeForms,
+      mocks.deleteIntakeEmailSettings,
+      mocks.deleteOpsEntitlementOverrides,
+      mocks.deleteBuiltinTemplateDismissals,
+      mocks.deleteClientShares,
+      mocks.deletePlanningKbChunks,
+      mocks.deleteForgeConversations,
+    ]) {
+      expect(spy).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("nulls the retained firms row's PII/branding columns", async () => {

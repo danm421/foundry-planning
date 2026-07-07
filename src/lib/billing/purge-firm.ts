@@ -20,6 +20,18 @@ import {
   subscriptions,
   invoices,
   firms,
+  cmaSettings,
+  tickerPortfolios,
+  staffAdvisorVisibility,
+  orionOauthStates,
+  orionSyncRuns,
+  intakeForms,
+  intakeEmailSettings,
+  opsEntitlementOverrides,
+  builtinTemplateDismissals,
+  clientShares,
+  planningKbChunks,
+  forgeConversations,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -210,6 +222,25 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(cmaSets).where(eq(cmaSets.firmId, firmId));
   await db.delete(assetClasses).where(eq(assetClasses.firmId, firmId));
   await db.delete(modelPortfolios).where(eq(modelPortfolios.firmId, firmId));
+
+  // 3b. Firm-scoped tables that previously had no purge coverage (audit F2).
+  //     Deleting by firm_id catches firm-level rows a client-cascade would miss:
+  //     client_shares / planning_kb_chunks / forge_conversations have a NULLABLE
+  //     client FK, so their share-all / firm-level / global-conversation rows
+  //     survive the client cascade. orion_connections (encrypted tokens) is
+  //     handled separately below with a vendor-scrub step.
+  await db.delete(cmaSettings).where(eq(cmaSettings.firmId, firmId));
+  await db.delete(tickerPortfolios).where(eq(tickerPortfolios.firmId, firmId));
+  await db.delete(staffAdvisorVisibility).where(eq(staffAdvisorVisibility.firmId, firmId));
+  await db.delete(orionOauthStates).where(eq(orionOauthStates.firmId, firmId));
+  await db.delete(orionSyncRuns).where(eq(orionSyncRuns.firmId, firmId));
+  await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
+  await db.delete(intakeEmailSettings).where(eq(intakeEmailSettings.firmId, firmId));
+  await db.delete(opsEntitlementOverrides).where(eq(opsEntitlementOverrides.firmId, firmId));
+  await db.delete(builtinTemplateDismissals).where(eq(builtinTemplateDismissals.firmId, firmId));
+  await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
+  await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
+  await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
 
   // 4. Stripe customer (best-effort).
   if (stripeCustomerId) {
