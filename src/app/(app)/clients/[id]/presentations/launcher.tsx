@@ -156,7 +156,9 @@ export function PresentationsLauncher(props: Props) {
     if (targets.length === 0) return;
     const timer = setTimeout(() => {
       for (const t of targets) {
-        warmedRef.current.add(`${t.scenarioId}:${t.targetPoS}`);
+        const key = `${t.scenarioId}:${t.targetPoS}`;
+        if (warmedRef.current.has(key)) continue;
+        warmedRef.current.add(key);
         void fetch(`/api/clients/${props.clientId}/presentations/warm`, {
           method: "POST",
           headers: { "content-type": "application/json" },
