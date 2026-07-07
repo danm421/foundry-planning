@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -140,6 +140,32 @@ export function PresentationsLauncher(props: Props) {
   // Restore/persist the in-progress deck per client+advisor so leaving and
   // returning to this tab brings it back exactly as they left it.
   useLauncherDraft(props.clientId, props.currentUserId, state, dispatch);
+
+  // Pre-warm the compute cache for configured Retirement Comparison pages so the
+  // eventual "Generate PDF" hits a warm MC + max-spend cache instead of running
+  // ~4 simulations + 2 solves inline (the 800s-timeout path). Fire-and-forget,
+  // debounced, and de-duplicated per (scenarioId,target) for this session.
+  const warmedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const targets = state.pages
+      .filter((p) => p.pageId === "retirementComparison")
+      .map((p) => p.options as { scenarioId?: string; maxSpend?: { targetConfidence?: number } })
+      .filter((o): o is { scenarioId: string; maxSpend?: { targetConfidence?: number } } => !!o.scenarioId)
+      .map((o) => ({ scenarioId: o.scenarioId, targetPoS: o.maxSpend?.targetConfidence ?? 0.85 }))
+      .filter((t) => !warmedRef.current.has(`${t.scenarioId}:${t.targetPoS}`));
+    if (targets.length === 0) return;
+    const timer = setTimeout(() => {
+      for (const t of targets) {
+        warmedRef.current.add(`${t.scenarioId}:${t.targetPoS}`);
+        void fetch(`/api/clients/${props.clientId}/presentations/warm`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(t),
+        }).catch(() => {});
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [state.pages, props.clientId]);
 
   const [templates, setTemplates] = useState(props.initialTemplates);
   const [showSaveModal, setShowSaveModal] = useState(false);
