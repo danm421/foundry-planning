@@ -134,7 +134,13 @@ export async function runPlaidLinkSuccess(args: {
   }
 
   if (mode === "account-selection") {
-    // Plaid persists the updated account selection itself; nothing to post.
+    // Plaid persists the updated account selection itself; clear the
+    // new-accounts prompt so it doesn't linger after the user acted.
+    if (itemId) {
+      await portalFetch(`/api/portal/plaid/items/${itemId}/dismiss-new-accounts`, {
+        method: "POST",
+      }).catch(() => undefined); // best-effort: selection already succeeded
+    }
     return { kind: "done" };
   }
 

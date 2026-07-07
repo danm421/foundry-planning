@@ -44,16 +44,30 @@ describe("runPlaidLinkSuccess", () => {
     expect(result.kind).toBe("error");
   });
 
-  it("account-selection mode: no network call, returns done", async () => {
+  it("account-selection mode: no network call when itemId is missing, returns done", async () => {
     const portalFetch = vi.fn();
     const result = await runPlaidLinkSuccess({
       mode: "account-selection",
-      itemId: "item-1",
       publicToken: "public-abc",
       portalFetch,
     });
     expect(portalFetch).not.toHaveBeenCalled();
     expect(result).toEqual({ kind: "done" });
+  });
+
+  it("account-selection posts the dismiss route to clear the new-accounts flag", async () => {
+    const portalFetch = vi.fn().mockResolvedValue({ ok: true });
+    const result = await runPlaidLinkSuccess({
+      mode: "account-selection",
+      itemId: "item-1",
+      publicToken: "pt",
+      portalFetch,
+    });
+    expect(result).toEqual({ kind: "done" });
+    expect(portalFetch).toHaveBeenCalledWith(
+      "/api/portal/plaid/items/item-1/dismiss-new-accounts",
+      { method: "POST" },
+    );
   });
 
   it("reauth mode: posts reauth-complete and returns done", async () => {
