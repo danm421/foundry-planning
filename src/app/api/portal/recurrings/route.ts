@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { recurringTransactions, transactionCategories, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -26,7 +27,8 @@ type Body = {
 
 export async function GET(): Promise<Response> {
   try {
-    const { clientId } = await resolvePortalClient();
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "recurrings");
     const data = await loadRecurringsData(clientId, new Date());
     return NextResponse.json(data);
   } catch (err) {
@@ -39,6 +41,7 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "recurrings");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const body = (await req.json().catch(() => ({}))) as Body;

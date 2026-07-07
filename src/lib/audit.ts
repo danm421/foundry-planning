@@ -363,7 +363,9 @@ export type AuditAction =
   | "portal.budget.update"
   | "portal.recurring.create"
   | "portal.recurring.update"
-  | "portal.recurring.delete";
+  | "portal.recurring.delete"
+  // Portal privacy (advisor-sharing switches)
+  | "portal.privacy.update";
 
 type Args = {
   action: AuditAction;

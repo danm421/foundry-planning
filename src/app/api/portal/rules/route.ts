@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { transactionRules, transactionCategories, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -16,7 +17,8 @@ type Body = { matchType?: string; pattern?: string; categoryId?: string; priorit
 export async function GET(): Promise<Response> {
   try {
     // Act-as aware so advisor "preview as client" reads the client's rules.
-    const { clientId } = await resolvePortalClient();
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "budgets");
     const rules = await db
       .select()
       .from(transactionRules)
@@ -33,6 +35,7 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const body = (await req.json().catch(() => ({}))) as Body;

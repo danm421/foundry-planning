@@ -15,9 +15,16 @@ vi.mock("@/lib/portal/transactions-query", () => ({
   loadPortalTransactions: (...a: unknown[]) => loadMock(...a),
   countPortalTransactions: (...a: unknown[]) => countMock(...a),
 }));
+const areaSharedMock = vi.fn();
+vi.mock("@/lib/portal/privacy", () => ({
+  requireAreaShared: (...a: unknown[]) => areaSharedMock(...a),
+}));
 import { GET } from "@/app/api/portal/transactions/route";
 
-beforeEach(() => { resolveMock.mockReset(); authErrMock.mockReset(); loadMock.mockReset(); countMock.mockReset(); });
+beforeEach(() => {
+  resolveMock.mockReset(); authErrMock.mockReset(); loadMock.mockReset(); countMock.mockReset();
+  areaSharedMock.mockReset(); areaSharedMock.mockResolvedValue(undefined);
+});
 
 const call = (qs = "") => GET(new Request(`http://localhost/api/portal/transactions${qs}`));
 
@@ -51,6 +58,23 @@ describe("GET /api/portal/transactions", () => {
     expect(res.status).toBe(200);
     // The query is scoped to the previewed client, not the advisor.
     expect(loadMock.mock.calls[0][0]).toBe("previewed-client");
+    // The privacy gate saw the advisor context for the transactions area.
+    expect(areaSharedMock).toHaveBeenCalledWith("advisor", "previewed-client", "transactions");
+  });
+  it("rejects the advisor when the client has not shared transactions", async () => {
+    resolveMock.mockResolvedValue({ clientId: "previewed-client", mode: "advisor", clerkUserId: "advisor-1" });
+    areaSharedMock.mockRejectedValue(new ForbiddenError("not shared"));
+    authErrMock.mockReturnValue({ status: 403, body: { error: "not shared" } });
+    const res = await call();
+    expect(res.status).toBe(403);
+    expect(loadMock).not.toHaveBeenCalled();
+  });
+  it("passes the accountId filter through", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    loadMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    await call("?accountId=acct-9");
+    expect(loadMock.mock.calls[0][1].accountId).toBe("acct-9");
   });
   it("propagates a portal 403", async () => {
     resolveMock.mockRejectedValue(new ForbiddenError("nope"));
