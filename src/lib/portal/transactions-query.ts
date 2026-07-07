@@ -6,6 +6,7 @@ export type TransactionFilters = {
   from?: string;
   to?: string;
   categoryId?: string;
+  accountId?: string;
   q?: string;
   includeExcluded?: boolean;
   reviewed?: boolean;
@@ -39,6 +40,7 @@ export function buildTransactionConditions(clientId: string, f: TransactionFilte
   if (f.from) conds.push(gte(plaidTransactions.date, f.from));
   if (f.to) conds.push(lte(plaidTransactions.date, f.to));
   if (f.categoryId) conds.push(eq(plaidTransactions.categoryId, f.categoryId));
+  if (f.accountId) conds.push(eq(plaidTransactions.accountId, f.accountId));
   if (f.reviewed === false) conds.push(isNull(plaidTransactions.reviewedAt));
   else if (f.reviewed === true) conds.push(isNotNull(plaidTransactions.reviewedAt));
   if (f.q && f.q.trim()) {

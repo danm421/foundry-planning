@@ -18,6 +18,8 @@ vi.mock("@/lib/authz", () => ({
 vi.mock("@/lib/portal/require-edit-enabled", () => ({ requireEditEnabled: (id: string) => editMock(id) }));
 vi.mock("@/lib/portal/require-portal-subscription", () => ({ requirePortalActiveSubscription: (id: string) => subMock(id) }));
 vi.mock("@/lib/audit/record-helpers", () => ({ recordUpdate: (a: unknown) => recordUpdateMock(a) }));
+const areaSharedMock = vi.fn();
+vi.mock("@/lib/portal/privacy", () => ({ requireAreaShared: (...a: unknown[]) => areaSharedMock(...a) }));
 vi.mock("@/db/schema", () => ({
   plaidTransactions: { _name: "plaid_transactions" },
   transactionCategories: { _name: "transaction_categories" },
@@ -43,6 +45,7 @@ const putReq = (body: unknown) => new Request("http://localhost/api/portal/trans
 beforeEach(() => {
   resolveMock.mockReset(); subMock.mockReset(); editMock.mockReset(); authErrMock.mockReset();
   recordUpdateMock.mockReset(); updateMock.mockReset();
+  areaSharedMock.mockReset(); areaSharedMock.mockResolvedValue(undefined);
   resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
   subMock.mockResolvedValue(undefined); editMock.mockResolvedValue(undefined);
   txnRow = { id: "t1", clientId: "c1", categoryId: null, categorizedBy: "plaid", excluded: false };

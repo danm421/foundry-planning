@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
@@ -8,6 +8,12 @@ import { LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields"
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import type { PortalDebtRow } from "@/lib/portal/portal-networth";
+import { DebtDetailPanel } from "@/components/portal/account-detail-panel";
+import {
+  PortalDetailPortal,
+  announceDetailOpen,
+  useCloseOnOtherDetail,
+} from "@/components/portal/portal-detail-rail";
 
 interface FamilyMember {
   id: string;
@@ -79,6 +85,10 @@ export function ProfileDebtList({
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  // Drill-down into the shared #portal-detail rail.
+  const [detailRow, setDetailRow] = useState<PortalDebtRow | null>(null);
+  const closeDetail = useCallback(() => setDetailRow(null), []);
+  useCloseOnOtherDetail("debts", closeDetail);
 
   if (rows.length === 0) return null;
 
@@ -184,7 +194,13 @@ export function ProfileDebtList({
       <ul className="divide-y divide-hair">
         {rows.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-            <div className="min-w-0">
+            <div
+              className="min-w-0 flex-1 cursor-pointer"
+              onClick={() => {
+                announceDetailOpen("debts");
+                setDetailRow(r);
+              }}
+            >
               <div className="font-medium text-ink">
                 {r.name}
                 {r.isPlaidLinked && (
@@ -233,6 +249,28 @@ export function ProfileDebtList({
           </li>
         ))}
       </ul>
+
+      {detailRow && (
+        <PortalDetailPortal closeLabel="Close debt details" onClose={closeDetail}>
+          <DebtDetailPanel
+            debt={{
+              id: detailRow.id,
+              name: detailRow.name,
+              balance: detailRow.balance,
+              typeLabel: detailRow.liabilityType
+                ? TYPE_LABEL[detailRow.liabilityType] ?? "Loan"
+                : "Loan",
+              aprPercentage: detailRow.aprPercentage,
+              statementBalance: detailRow.statementBalance,
+              minimumPayment: detailRow.minimumPayment,
+              nextPaymentDueDate: detailRow.nextPaymentDueDate,
+              isPlaidLinked: detailRow.isPlaidLinked,
+              ownerLabel: ownerLabels(detailRow),
+            }}
+            onClose={closeDetail}
+          />
+        </PortalDetailPortal>
+      )}
     </section>
   );
 }

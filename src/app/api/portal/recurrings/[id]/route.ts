@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { recurringTransactions, transactionCategories, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
@@ -46,6 +47,7 @@ async function loadOwned(clientId: string, id: string) {
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "recurrings");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;
@@ -126,6 +128,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "recurrings");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
     const { id } = await ctx.params;

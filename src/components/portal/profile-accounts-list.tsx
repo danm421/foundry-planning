@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { AccountDetailPanel } from "@/components/portal/account-detail-panel";
+import {
+  PortalDetailPortal,
+  announceDetailOpen,
+  useCloseOnOtherDetail,
+} from "@/components/portal/portal-detail-rail";
 
 interface Owner {
   familyMemberId: string | null;
@@ -152,6 +158,14 @@ export default function ProfileAccountsList({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm("cash", primaryFm?.id ?? null),
   );
+  // Drill-down into the shared #portal-detail rail.
+  const [detailRow, setDetailRow] = useState<AccountRow | null>(null);
+  const closeDetail = useCallback(() => setDetailRow(null), []);
+  useCloseOnOtherDetail("accounts", closeDetail);
+  function openDetail(row: AccountRow): void {
+    announceDetailOpen("accounts");
+    setDetailRow(row);
+  }
 
   // True when the row open for edit is Plaid-linked, so we lock the fields the
   // PUT route rejects (the PLAID_LOCKED_FIELDS set — value/last4 in the form).
@@ -299,7 +313,10 @@ export default function ProfileAccountsList({
                 const isPlaid = row.plaidItemId != null;
                 return (
                   <li key={row.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-                    <div className="min-w-0">
+                    <div
+                      className="min-w-0 flex-1 cursor-pointer"
+                      onClick={() => openDetail(row)}
+                    >
                       <div className="font-medium text-ink">
                         {row.name}
                         {row.accountNumberLast4 ? (
@@ -349,6 +366,24 @@ export default function ProfileAccountsList({
 
       {rows.length === 0 && (
         <p className="text-[13px] text-ink-3">No accounts yet.</p>
+      )}
+
+      {detailRow && (
+        <PortalDetailPortal closeLabel="Close account details" onClose={closeDetail}>
+          <AccountDetailPanel
+            account={{
+              id: detailRow.id,
+              name: detailRow.name,
+              value: Number(detailRow.value || "0"),
+              categoryLabel: CATEGORY_LABELS[detailRow.category] ?? detailRow.category,
+              subTypeLabel: detailRow.subType.replace(/_/g, " "),
+              last4: detailRow.accountNumberLast4,
+              isPlaid: detailRow.plaidItemId != null,
+              ownerLabel: ownerLabels(detailRow),
+            }}
+            onClose={closeDetail}
+          />
+        </PortalDetailPortal>
       )}
     </div>
   );

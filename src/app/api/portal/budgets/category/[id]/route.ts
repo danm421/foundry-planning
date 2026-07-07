@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { loadCategoryDetail } from "@/lib/portal/load-category-detail";
 
@@ -18,7 +19,8 @@ export async function GET(
 ): Promise<Response> {
   try {
     const { id } = await params;
-    const { clientId } = await resolvePortalClient();
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
 
     const detail = await loadCategoryDetail(clientId, id, new Date());

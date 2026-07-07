@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import { createPortal } from "react-dom";
+import { useSearchParams } from "next/navigation";
+import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
@@ -59,6 +60,7 @@ export default function TransactionsList({
 }): ReactElement {
   void clientId;
 
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<PortalTransactionDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -66,11 +68,14 @@ export default function TransactionsList({
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  // Deep link from an account drill-down ("View in Transactions").
+  const [accountId, setAccountId] = useState<string>(
+    () => searchParams?.get("accountId") ?? "",
+  );
   const [windowKey, setWindowKey] = useState<(typeof WINDOWS)[number]["key"]>("3M");
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   const [ruleSeed, setRuleSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurringSeed, setRecurringSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
@@ -95,8 +100,6 @@ export default function TransactionsList({
       .catch(() => setRecurrings([]));
   }, [portalFetch]);
 
-  useEffect(() => { setDetailEl(document.getElementById("portal-detail")); }, []);
-
   const load = useCallback(
     async (nextOffset: number, replace: boolean, signal?: AbortSignal) => {
       setLoading(true);
@@ -106,6 +109,7 @@ export default function TransactionsList({
       if (from) params.set("from", from);
       if (q.trim()) params.set("q", q.trim());
       if (categoryId) params.set("categoryId", categoryId);
+      if (accountId) params.set("accountId", accountId);
       if (unreviewedOnly) params.set("reviewed", "false");
       try {
         const res = await portalFetch(`/api/portal/transactions?${params.toString()}`, { signal });
@@ -120,7 +124,7 @@ export default function TransactionsList({
         setLoading(false);
       }
     },
-    [q, categoryId, windowKey, unreviewedOnly, portalFetch],
+    [q, categoryId, accountId, windowKey, unreviewedOnly, portalFetch],
   );
 
   useEffect(() => {
@@ -304,6 +308,16 @@ export default function TransactionsList({
         >
           Unreviewed
         </button>
+        {accountId && (
+          <button
+            type="button"
+            onClick={() => setAccountId("")}
+            aria-label="Clear account filter"
+            className="rounded-md bg-accent/20 px-2 py-1 text-[12px] font-medium text-accent"
+          >
+            {rows[0]?.accountName ?? "One account"} ✕
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {editEnabled && (
             <button
@@ -452,34 +466,23 @@ export default function TransactionsList({
         )}
       </div>
 
-      {selected && detailEl &&
-        createPortal(
-          // Desktop: renders inline in the side column. Below `lg`: a
-          // full-screen overlay anchoring the panel to the bottom as a sheet,
-          // with a tap-to-dismiss scrim behind it.
-          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <button
-              type="button"
-              aria-label="Close transaction details"
-              onClick={() => setSelected(null)}
-              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
-            />
-            <TransactionDetailPanel
-              txn={selected}
-              editEnabled={editEnabled}
-              onChangeType={(nt: TxnType) => { if (selected) void changeType(selected.id, nt); }}
-              onClose={() => setSelected(null)}
-              onCreateRule={() => setRuleSeed(selected)}
-              onCreateRecurring={() => setRecurringSeed(selected)}
-              recurrings={recurrings}
-              onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
-              onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
-              onEdit={selected.source === "manual" ? () => setEditTxn(selected) : undefined}
-              onDelete={selected.source === "manual" ? () => void deleteTransaction(selected.id) : undefined}
-            />
-          </div>,
-          detailEl,
-        )}
+      {selected && (
+        <PortalDetailPortal closeLabel="Close transaction details" onClose={() => setSelected(null)}>
+          <TransactionDetailPanel
+            txn={selected}
+            editEnabled={editEnabled}
+            onChangeType={(nt: TxnType) => { if (selected) void changeType(selected.id, nt); }}
+            onClose={() => setSelected(null)}
+            onCreateRule={() => setRuleSeed(selected)}
+            onCreateRecurring={() => setRecurringSeed(selected)}
+            recurrings={recurrings}
+            onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
+            onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
+            onEdit={selected.source === "manual" ? () => setEditTxn(selected) : undefined}
+            onDelete={selected.source === "manual" ? () => void deleteTransaction(selected.id) : undefined}
+          />
+        </PortalDetailPortal>
+      )}
       {ruleSeed && (
         <RuleCreateDialog
           seed={{ merchantName: ruleSeed.merchantName, name: ruleSeed.name, categoryId: ruleSeed.categoryId }}

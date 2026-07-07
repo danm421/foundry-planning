@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { previewRecurringMatches } from "@/lib/portal/claim-recurring";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    const { clientId } = await resolvePortalClient();
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "recurrings");
     const qp = new URL(req.url).searchParams;
     const matchType = qp.get("matchType");
     const pattern = qp.get("pattern") ?? "";

@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { budgets, transactionCategories, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
@@ -23,6 +24,7 @@ type Body = { categoryId?: string; monthlyAmount?: number | null };
 export async function PUT(req: Request): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 

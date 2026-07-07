@@ -49,6 +49,15 @@ export function PencilIcon(props: SVGProps<SVGSVGElement>): ReactElement {
   );
 }
 
+export function LockIcon(props: SVGProps<SVGSVGElement>): ReactElement {
+  return (
+    <svg {...base} aria-hidden="true" {...props}>
+      <rect width="18" height="11" x="3" y="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
 export function HistoryIcon(props: SVGProps<SVGSVGElement>): ReactElement {
   return (
     <svg {...base} aria-hidden="true" {...props}>

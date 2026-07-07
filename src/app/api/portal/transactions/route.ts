@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { plaidTransactions, transactionCategories, accounts, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -22,7 +23,8 @@ const DEFAULT_LIMIT = 50;
 export async function GET(req: Request): Promise<Response> {
   try {
     // Act-as aware so advisor "preview as client" reads the client's transactions.
-    const { clientId } = await resolvePortalClient();
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "transactions");
     const url = new URL(req.url);
     const qp = url.searchParams;
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number(qp.get("limit")) || DEFAULT_LIMIT));
@@ -31,6 +33,7 @@ export async function GET(req: Request): Promise<Response> {
       from: qp.get("from") ?? undefined,
       to: qp.get("to") ?? undefined,
       categoryId: qp.get("categoryId") ?? undefined,
+      accountId: qp.get("accountId") ?? undefined,
       q: qp.get("q") ?? undefined,
       includeExcluded: qp.get("includeExcluded") === "true",
       reviewed: qp.get("reviewed") === null ? undefined : qp.get("reviewed") === "true",
@@ -61,6 +64,7 @@ type CreateBody = {
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "transactions");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
 

@@ -1,40 +1,23 @@
-"use client";
-import { useState, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
-import { usePortalFetch } from "@/components/portal/portal-mode-context";
-import type { PortalDashboardDTO } from "@/lib/portal/load-dashboard";
+import type { ReviewTxn } from "@/lib/portal/load-dashboard";
 import { TileFrame } from "./tile-frame";
 
+// Presentational: DashboardGrid owns the queue state so the rail panel's
+// "Mark as reviewed" and these checkmarks stay in sync.
 export function TileToReview({
-  toReview,
+  items,
+  count,
+  error,
+  onMarkReviewed,
   onOpen,
 }: {
-  toReview: PortalDashboardDTO["toReview"];
+  items: ReviewTxn[];
+  count: number;
+  error: boolean;
+  onMarkReviewed: (id: string) => void;
   onOpen: (id: string) => void;
 }): ReactElement {
-  const [items, setItems] = useState(toReview.sample);
-  const [count, setCount] = useState(toReview.count);
-  const [error, setError] = useState(false);
-  const portalFetch = usePortalFetch();
-
-  async function markReviewed(id: string): Promise<void> {
-    setError(false);
-    const prevItems = items;
-    const prevCount = count;
-    setItems((xs) => xs.filter((t) => t.id !== id));
-    setCount((c) => Math.max(0, c - 1));
-    try {
-      const res = await portalFetch(`/api/portal/transactions/${id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reviewed: true }),
-      });
-      if (!res.ok) { setItems(prevItems); setCount(prevCount); setError(true); }
-    } catch {
-      setItems(prevItems); setCount(prevCount); setError(true);
-    }
-  }
-
   return (
     <TileFrame title="Transactions to review" href="/portal/transactions" linkLabel="View all">
       {count === 0 ? (
@@ -48,7 +31,7 @@ export function TileToReview({
                 <button
                   type="button"
                   aria-label="Mark as reviewed"
-                  onClick={() => void markReviewed(t.id)}
+                  onClick={() => onMarkReviewed(t.id)}
                   className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-hair text-ink-4 hover:border-accent hover:text-accent"
                 >
                   <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">

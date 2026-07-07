@@ -5,7 +5,9 @@ const resolvePortalClientMock = vi.fn();
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolvePortalClientMock(),
 }));
-const authErrorResponseMock = vi.fn((_e: unknown) => null);
+const authErrorResponseMock = vi.fn<
+  (e: unknown) => { status: number; body: { error: string } } | null
+>(() => null);
 vi.mock("@/lib/authz", () => ({ authErrorResponse: (e: unknown) => authErrorResponseMock(e) }));
 const requireEditEnabledMock = vi.fn();
 vi.mock("@/lib/portal/require-edit-enabled", () => ({
@@ -18,6 +20,10 @@ vi.mock("@/lib/portal/require-portal-subscription", () => ({
 const recordUpdateMock = vi.fn();
 vi.mock("@/lib/audit/record-helpers", () => ({
   recordUpdate: (a: unknown) => recordUpdateMock(a),
+}));
+const areaSharedMock = vi.fn();
+vi.mock("@/lib/portal/privacy", () => ({
+  requireAreaShared: (...a: unknown[]) => areaSharedMock(...a),
 }));
 vi.mock("@/db/schema", () => ({
   budgets: { _name: "budgets", categoryId: "category_id" },
@@ -65,6 +71,8 @@ beforeEach(() => {
   resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client" });
   requirePortalActiveSubscriptionMock.mockResolvedValue(undefined);
   requireEditEnabledMock.mockResolvedValue(undefined);
+  areaSharedMock.mockReset();
+  areaSharedMock.mockResolvedValue(undefined);
 });
 
 it("upserts a budget for an expense leaf", async () => {
@@ -129,4 +137,18 @@ it("attributes the audit to the advisor with viaPreview when mode is advisor", a
   expect(recordUpdateMock).toHaveBeenCalledWith(
     expect.objectContaining({ actorKind: "advisor", extraMetadata: { viaPreview: true } }),
   );
+  expect(areaSharedMock).toHaveBeenCalledWith("advisor", "c1", "budgets");
+});
+
+it("rejects the advisor when the client has not shared budgets (403)", async () => {
+  resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "advisor" });
+  const forbidden = new Error("not shared");
+  areaSharedMock.mockRejectedValue(forbidden);
+  authErrorResponseMock.mockImplementation((e: unknown) =>
+    e === forbidden ? { status: 403, body: { error: "not shared" } } : null,
+  );
+  const res = await PUT(req({ categoryId: "leaf-1", monthlyAmount: 250 }));
+  expect(res.status).toBe(403);
+  expect(insertValuesMock).not.toHaveBeenCalled();
+  authErrorResponseMock.mockImplementation(() => null);
 });

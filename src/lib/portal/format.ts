@@ -1,3 +1,12 @@
+/** "2026-06-12" → "Jun 12" (UTC-pinned so the day never shifts across timezones). */
+export function fmtDay(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function fmtUsd(n: number): string {
   return n.toLocaleString("en-US", {
     style: "currency",

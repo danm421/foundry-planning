@@ -9,6 +9,7 @@ import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
 const OVERVIEW_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "overview");
 const PROFILE_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "profile");
 const MONEY_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "money");
+const SETTINGS_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "settings");
 
 interface Props {
   displayName: string;
@@ -80,6 +81,21 @@ export default function PortalNav({
       <div className="mb-3">
         <ul className="space-y-0.5">
           {MONEY_ITEMS.map((item) => {
+            const href = `${basePath}${item.suffix}`;
+            return (
+              <li key={item.suffix}>
+                <Link href={href} className={itemCls(pathname === href)}>
+                  {item.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="mb-3">
+        <ul className="space-y-0.5">
+          {SETTINGS_ITEMS.map((item) => {
             const href = `${basePath}${item.suffix}`;
             return (
               <li key={item.suffix}>
