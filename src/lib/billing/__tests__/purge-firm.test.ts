@@ -117,6 +117,7 @@ vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile 
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
 
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
+import { PURGED_FIRM_TABLES } from "../purge-coverage";
 
 beforeEach(() => {
   Object.values(mocks).forEach((m) => m.mockReset());
@@ -290,6 +291,48 @@ describe("purgeFirmById", () => {
     expect(mocks.updateFirm).toHaveBeenCalledWith(
       expect.objectContaining({ purgedAt: expect.any(Date) }),
     );
+  });
+
+  // Binds PURGED_FIRM_TABLES (the drift-guard source of truth) to the deletes
+  // purgeFirmById actually fires — so adding a table to the coverage list
+  // without wiring its delete is a test failure, and vice-versa. (audit F2)
+  it("every PURGED_FIRM_TABLES entry is wired to a delete the purge fires", async () => {
+    await purgeFirmById("org_1");
+    // table name → the spy proving it is erased. null = routed through
+    // purgeCrmHouseholdById's client/household cascade (asserted separately).
+    const wiring: Record<string, ReturnType<typeof vi.fn> | null> = {
+      clients: null,
+      crm_households: null,
+      invoices: mocks.deleteInvoices,
+      subscriptions: mocks.deleteSubs,
+      crm_tasks: mocks.deleteCrmTasks,
+      crm_tags: mocks.deleteCrmTags,
+      presentation_templates: mocks.deletePresentationTemplates,
+      cma_sets: mocks.deleteCmaSets,
+      asset_classes: mocks.deleteAssetClasses,
+      model_portfolios: mocks.deleteModelPortfolios,
+      cma_settings: mocks.deleteCmaSettings,
+      ticker_portfolios: mocks.deleteTickerPortfolios,
+      staff_advisor_visibility: mocks.deleteStaffAdvisorVisibility,
+      orion_connections: mocks.deleteOrionConnection,
+      orion_oauth_states: mocks.deleteOrionOauthStates,
+      orion_sync_runs: mocks.deleteOrionSyncRuns,
+      intake_forms: mocks.deleteIntakeForms,
+      intake_email_settings: mocks.deleteIntakeEmailSettings,
+      ops_entitlement_overrides: mocks.deleteOpsEntitlementOverrides,
+      builtin_template_dismissals: mocks.deleteBuiltinTemplateDismissals,
+      client_shares: mocks.deleteClientShares,
+      planning_kb_chunks: mocks.deletePlanningKbChunks,
+      forge_conversations: mocks.deleteForgeConversations,
+    };
+    // Both directions: the coverage list and the wiring map must be identical.
+    expect(new Set(Object.keys(wiring))).toEqual(new Set(PURGED_FIRM_TABLES));
+    // Client/household rows are erased via purgeCrmHouseholdById.
+    expect(mocks.purgeHousehold).toHaveBeenCalled();
+    // Every directly-deleted table's spy fired.
+    for (const [name, spy] of Object.entries(wiring)) {
+      if (spy) expect(spy, `${name} delete did not fire`).toHaveBeenCalled();
+    }
   });
 
   it("nulls the retained firms row's PII/branding columns", async () => {
