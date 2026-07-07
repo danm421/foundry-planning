@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PlaidLinkButton } from "./plaid-link-button-dynamic";
-import type { LinkSuccessPayload } from "./plaid-link-button";
+import type { LinkSuccessPayload } from "@/lib/portal/plaid-link-complete";
 import { PlaidAccountPicker } from "./plaid-account-picker";
 
 export function LinkBankWidget() {

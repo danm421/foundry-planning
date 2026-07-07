@@ -4,30 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
-
-export type LinkSuccessPayload = {
-  itemId: string;
-  accounts: Array<{
-    plaidAccountId: string;
-    name: string;
-    mask: string | null;
-    type: string;
-    subtype: string | null;
-    balance: number | null;
-  }>;
-  existingCandidates: Array<{
-    id: string;
-    name: string;
-    category: string;
-    subType: string;
-  }>;
-  existingLiabilityCandidates: Array<{
-    id: string;
-    name: string;
-    liabilityType: string | null;
-    balance: string;
-  }>;
-};
+import {
+  runPlaidLinkSuccess,
+  setPlaidOAuthCtx,
+  clearPlaidOAuthCtx,
+  type LinkSuccessPayload,
+} from "@/lib/portal/plaid-link-complete";
 
 type Props =
   | {
@@ -53,69 +35,42 @@ export function PlaidLinkButton(props: Props) {
   const portalFetch = usePortalFetch();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const itemId = "itemId" in props ? props.itemId : undefined;
 
   const onSuccess = useCallback(
     async (
       publicToken: string,
-      metadata: {
+      metadata?: {
         institution: { institution_id?: string; name?: string } | null;
       },
     ) => {
-      if (props.mode === "link") {
-        const r = await portalFetch("/api/portal/plaid/exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicToken,
-            institution: metadata.institution
-              ? {
-                  id: metadata.institution.institution_id,
-                  name: metadata.institution.name,
-                }
-              : undefined,
-          }),
-        });
-        if (!r.ok) {
-          alert("Could not complete linking. Please try again.");
-          return;
-        }
-        const payload = (await r.json()) as LinkSuccessPayload;
-        props.onLinkSuccess(payload);
+      const result = await runPlaidLinkSuccess({
+        mode: props.mode,
+        itemId,
+        publicToken,
+        metadata,
+        portalFetch,
+      });
+
+      // Inline (non-OAuth) completion — drop the OAuth handoff context so a
+      // later visit to /portal/oauth can't resume a stale flow.
+      clearPlaidOAuthCtx();
+
+      if (result.kind === "error") {
+        alert(result.message);
+        return;
+      }
+      if (result.kind === "link" && props.mode === "link") {
+        props.onLinkSuccess(result.payload);
         return;
       }
       if (props.mode === "account-selection") {
         props.onSelectionComplete();
         return;
       }
-      if (props.mode === "enable-products") {
-        const syncRes = await portalFetch(
-          `/api/portal/plaid/items/${props.itemId}/sync`,
-          { method: "POST" },
-        );
-        if (!syncRes.ok) {
-          alert("Could not enable spending insights. Please try again.");
-          return;
-        }
-        await portalFetch(`/api/portal/plaid/items/${props.itemId}/refresh`, {
-          method: "POST",
-        });
-        router.refresh();
-        return;
-      }
-      // reauth mode: no exchange needed; just notify the server.
-      const r = await portalFetch(
-        `/api/portal/plaid/items/${props.itemId}/reauth-complete`,
-        { method: "POST" },
-      );
-      if (!r.ok) {
-        alert(
-          "Re-authentication failed to record. Please refresh and try again.",
-        );
-        return;
-      }
       router.refresh();
     },
-    [props, router, portalFetch],
+    [props, itemId, router, portalFetch],
   );
 
   const { open, ready } = usePlaidLink({
@@ -159,12 +114,17 @@ export function PlaidLinkButton(props: Props) {
   // usePlaidLink requires the token at hook construction time, not at click
   // time. The first click mints the token; the re-render with the token causes
   // `ready` to flip true; this effect opens the modal once after commit.
+  //
+  // Before opening, persist the link context to sessionStorage: an OAuth bank
+  // redirects the whole tab out and back to /portal/oauth, which reads this to
+  // resume the flow (see plaid-oauth-resume). Inline flows clear it in onSuccess.
   useEffect(() => {
     if (linkToken && ready) {
+      setPlaidOAuthCtx({ token: linkToken, mode: props.mode, itemId });
       open();
       setLinkToken(null);
     }
-  }, [linkToken, ready, open]);
+  }, [linkToken, ready, open, props.mode, itemId]);
 
   const label =
     props.mode === "link"
