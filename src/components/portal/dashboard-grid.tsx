@@ -30,6 +30,7 @@ export function DashboardGrid({
   // advisor preview).
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDetailEl(document.getElementById("portal-detail"));
   }, []);
   const closeDetail = useCallback(() => setDetail(null), []);

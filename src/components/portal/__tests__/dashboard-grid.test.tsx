@@ -126,7 +126,11 @@ describe("DashboardGrid rail drill-downs", () => {
   });
 
   it("marks a transaction reviewed from the panel when editing is enabled", async () => {
-    const fetchMock = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+    type FakeFetch = (
+      url: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+    const fetchMock = vi.fn<FakeFetch>((url) => {
       if (String(url).includes("/api/portal/categories")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ categories: [] }) });
       }
