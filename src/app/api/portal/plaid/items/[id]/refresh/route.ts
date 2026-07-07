@@ -15,10 +15,9 @@ import { fetchLiabilitiesForItem } from "@/lib/plaid/liabilities-refresh";
 import { fetchInvestmentHoldingsForItem } from "@/lib/plaid/holdings-refresh";
 import { ingestHoldingsForItem } from "@/lib/plaid/ingest-holdings";
 import { recordCreate } from "@/lib/audit/record-helpers";
+import { REAUTH_CODES } from "@/lib/plaid/errors";
 
 export const dynamic = "force-dynamic";
-
-const REAUTH_CODES = new Set(["ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION"]);
 
 export async function POST(
   _req: Request,

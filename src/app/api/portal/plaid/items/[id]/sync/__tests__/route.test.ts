@@ -120,6 +120,25 @@ describe("POST /api/portal/plaid/items/[id]/sync", () => {
     expect(dbUpdate).toHaveBeenCalled();
   });
 
+  it("persists the error CODE (not message) to last_refresh_error", async () => {
+    nextResponses([{ id: "item-1", clientId: "client-1", accessToken: "enc:x", transactionsCursor: null }]);
+    syncTransactionsForItem.mockResolvedValue({
+      ok: false,
+      errorCode: "ITEM_LOGIN_REQUIRED",
+      errorMessage: "the login details for this account have changed",
+    });
+
+    const setSpy = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    dbUpdate.mockReturnValueOnce({ set: setSpy });
+
+    const { POST } = await import("../route");
+    const res = await POST(new Request("https://x/", { method: "POST" }), {
+      params: Promise.resolve({ id: "item-1" }),
+    });
+    expect(res.status).toBe(409);
+    expect(setSpy).toHaveBeenCalledWith({ lastRefreshError: "ITEM_LOGIN_REQUIRED" });
+  });
+
   it("502 on other Plaid error + persists lastRefreshError", async () => {
     nextResponses([{ id: "item-1", clientId: "client-1", accessToken: "enc:x", transactionsCursor: null }]);
     syncTransactionsForItem.mockResolvedValue({

@@ -53,7 +53,7 @@ export async function POST(
       // Persist the error to the item row; surface re-auth status to the client.
       await db
         .update(plaidItems)
-        .set({ lastRefreshError: result.errorMessage })
+        .set({ lastRefreshError: result.errorCode })
         .where(eq(plaidItems.id, id));
       return NextResponse.json(
         { error: result.errorMessage, errorCode: result.errorCode },

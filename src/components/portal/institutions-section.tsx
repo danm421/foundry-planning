@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { plaidItems } from "@/db/schema";
+import { REAUTH_CODES } from "@/lib/plaid/errors";
 import { InstitutionRow } from "./institution-row";
-
-const REAUTH_CODES = new Set(["ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION"]);
 
 function formatRelative(d: Date | null): string {
   if (!d) return "never";

@@ -19,7 +19,23 @@ export function plaidErrorMessage(err: unknown): string {
   return e.response?.data?.error_message ?? e.message ?? "Plaid error";
 }
 
-export const REAUTH_CODES = new Set(["ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION"]);
+export const REAUTH_CODES = new Set([
+  "ITEM_LOGIN_REQUIRED",
+  "PENDING_EXPIRATION",
+  "PENDING_DISCONNECT",
+]);
+
+// Access revoked at the bank/Plaid — update mode cannot fix these; the UI
+// offers Unlink (re-linking creates a fresh item) instead of Re-authenticate.
+export const REVOKED_CODES = new Set([
+  "USER_PERMISSION_REVOKED",
+  "USER_ACCOUNT_REVOKED",
+]);
+
+/** True when the stored last_refresh_error requires the client to act. */
+export function needsUserAction(code: string | null): boolean {
+  return code != null && (REAUTH_CODES.has(code) || REVOKED_CODES.has(code));
+}
 
 export function isReauthError(err: unknown): boolean {
   return REAUTH_CODES.has(plaidErrorCode(err));
