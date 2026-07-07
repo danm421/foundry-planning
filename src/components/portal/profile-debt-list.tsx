@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { fmtUsd } from "@/lib/portal/format";
@@ -9,11 +8,12 @@ import { LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields"
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import type { PortalDebtRow } from "@/lib/portal/portal-networth";
+import { DebtDetailPanel } from "@/components/portal/account-detail-panel";
 import {
-  DebtDetailPanel,
+  PortalDetailPortal,
   announceDetailOpen,
   useCloseOnOtherDetail,
-} from "@/components/portal/account-detail-panel";
+} from "@/components/portal/portal-detail-rail";
 
 interface FamilyMember {
   id: string;
@@ -85,13 +85,8 @@ export function ProfileDebtList({
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
-  // Drill-down into the shared #portal-detail rail (post-commit resolution).
+  // Drill-down into the shared #portal-detail rail.
   const [detailRow, setDetailRow] = useState<PortalDebtRow | null>(null);
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDetailEl(document.getElementById("portal-detail"));
-  }, []);
   const closeDetail = useCallback(() => setDetailRow(null), []);
   useCloseOnOtherDetail("debts", closeDetail);
 
@@ -255,35 +250,27 @@ export function ProfileDebtList({
         ))}
       </ul>
 
-      {detailRow && detailEl &&
-        createPortal(
-          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <button
-              type="button"
-              aria-label="Close debt details"
-              onClick={closeDetail}
-              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
-            />
-            <DebtDetailPanel
-              debt={{
-                id: detailRow.id,
-                name: detailRow.name,
-                balance: detailRow.balance,
-                typeLabel: detailRow.liabilityType
-                  ? TYPE_LABEL[detailRow.liabilityType] ?? "Loan"
-                  : "Loan",
-                aprPercentage: detailRow.aprPercentage,
-                statementBalance: detailRow.statementBalance,
-                minimumPayment: detailRow.minimumPayment,
-                nextPaymentDueDate: detailRow.nextPaymentDueDate,
-                isPlaidLinked: detailRow.isPlaidLinked,
-                ownerLabel: ownerLabels(detailRow),
-              }}
-              onClose={closeDetail}
-            />
-          </div>,
-          detailEl,
-        )}
+      {detailRow && (
+        <PortalDetailPortal closeLabel="Close debt details" onClose={closeDetail}>
+          <DebtDetailPanel
+            debt={{
+              id: detailRow.id,
+              name: detailRow.name,
+              balance: detailRow.balance,
+              typeLabel: detailRow.liabilityType
+                ? TYPE_LABEL[detailRow.liabilityType] ?? "Loan"
+                : "Loan",
+              aprPercentage: detailRow.aprPercentage,
+              statementBalance: detailRow.statementBalance,
+              minimumPayment: detailRow.minimumPayment,
+              nextPaymentDueDate: detailRow.nextPaymentDueDate,
+              isPlaidLinked: detailRow.isPlaidLinked,
+              ownerLabel: ownerLabels(detailRow),
+            }}
+            onClose={closeDetail}
+          />
+        </PortalDetailPortal>
+      )}
     </section>
   );
 }

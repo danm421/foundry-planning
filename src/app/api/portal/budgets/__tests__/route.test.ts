@@ -5,9 +5,9 @@ const resolvePortalClientMock = vi.fn();
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolvePortalClientMock(),
 }));
-const authErrorResponseMock = vi.fn(
-  (_e: unknown): { status: number; body: { error: string } } | null => null,
-);
+const authErrorResponseMock = vi.fn<
+  (e: unknown) => { status: number; body: { error: string } } | null
+>(() => null);
 vi.mock("@/lib/authz", () => ({ authErrorResponse: (e: unknown) => authErrorResponseMock(e) }));
 const requireEditEnabledMock = vi.fn();
 vi.mock("@/lib/portal/require-edit-enabled", () => ({

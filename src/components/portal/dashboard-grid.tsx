@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState, type ReactElement } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useState, type ReactElement } from "react";
 import type { PortalDashboardDTO } from "@/lib/portal/load-dashboard";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { TileMonthlySpending } from "./dashboard-tiles/tile-monthly-spending";
 import { TileNetWorth } from "./dashboard-tiles/tile-net-worth";
 import { TileNetThisMonth } from "./dashboard-tiles/tile-net-this-month";
@@ -25,14 +25,6 @@ export function DashboardGrid({
   const { sharing } = dto;
   const portalFetch = usePortalFetch();
   const [detail, setDetail] = useState<DashboardDetailPayload | null>(null);
-  // Drill-downs render into the shared #portal-detail rail (resolved
-  // post-commit — see budget-view for why a render-phase lookup breaks in the
-  // advisor preview).
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDetailEl(document.getElementById("portal-detail"));
-  }, []);
   const closeDetail = useCallback(() => setDetail(null), []);
 
   // The to-review queue lives here (not in the tile) so the tile's checkmarks
@@ -114,33 +106,21 @@ export function DashboardGrid({
           <NotSharedNotice area="recurrings" variant="tile" />
         )}
       </div>
-      {detail && detailEl &&
-        createPortal(
-          // Desktop: inline in the side rail. Below `lg`: bottom sheet with a
-          // tap-to-dismiss scrim (the transactions-list pattern).
-          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <button
-              type="button"
-              aria-label="Close details"
-              onClick={closeDetail}
-              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
-            />
-            <div className="max-lg:max-h-[85vh] max-lg:overflow-y-auto">
-              <DashboardDetailPanel
-                payload={detail}
-                dto={dto}
-                reviewItems={reviewItems}
-                editEnabled={editEnabled}
-                onOpenCategory={(categoryId, name) =>
-                  setDetail({ kind: "category", categoryId, name })
-                }
-                onMarkReviewed={(id) => void markReviewed(id)}
-                onClose={closeDetail}
-              />
-            </div>
-          </div>,
-          detailEl,
-        )}
+      {detail && (
+        <PortalDetailPortal closeLabel="Close details" onClose={closeDetail}>
+          <DashboardDetailPanel
+            payload={detail}
+            dto={dto}
+            reviewItems={reviewItems}
+            editEnabled={editEnabled}
+            onOpenCategory={(categoryId, name) =>
+              setDetail({ kind: "category", categoryId, name })
+            }
+            onMarkReviewed={(id) => void markReviewed(id)}
+            onClose={closeDetail}
+          />
+        </PortalDetailPortal>
+      )}
     </>
   );
 }

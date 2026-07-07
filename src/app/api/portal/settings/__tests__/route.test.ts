@@ -5,7 +5,7 @@ const resolveMock = vi.fn();
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolveMock(),
 }));
-const authErrMock = vi.fn((_e: unknown) => null);
+const authErrMock = vi.fn<(e: unknown) => { status: number; body: { error: string } } | null>(() => null);
 vi.mock("@/lib/authz", () => ({ authErrorResponse: (e: unknown) => authErrMock(e) }));
 const subMock = vi.fn();
 vi.mock("@/lib/portal/require-portal-subscription", () => ({

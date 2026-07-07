@@ -4,19 +4,15 @@ import {
   AREA_BY_RESOURCE_TYPE,
   areaShared,
   loadPortalPrivacy,
+  type PortalArea,
 } from "@/lib/portal/privacy";
 import PortalCard from "@/components/portal/portal-card";
+import { PORTAL_AREA_LABELS } from "@/components/portal/not-shared-notice";
 import { HistoryIcon } from "@/components/portal/portal-icons";
 
 interface Props {
   clientId: string;
 }
-
-const HIDDEN_AREA_LABELS = {
-  transactions: "transactions",
-  budgets: "budget",
-  recurrings: "recurring bills",
-} as const;
 
 export default async function PortalActivityFeed({
   clientId,
@@ -31,9 +27,9 @@ export default async function PortalActivityFeed({
     const area = AREA_BY_RESOURCE_TYPE[r.resourceType];
     return !area || areaShared(privacy, area);
   });
-  const hidden = (Object.keys(HIDDEN_AREA_LABELS) as Array<keyof typeof HIDDEN_AREA_LABELS>)
+  const hidden = (Object.keys(PORTAL_AREA_LABELS) as PortalArea[])
     .filter((area) => !areaShared(privacy, area))
-    .map((area) => HIDDEN_AREA_LABELS[area]);
+    .map((area) => PORTAL_AREA_LABELS[area]);
 
   return (
     <PortalCard

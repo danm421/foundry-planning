@@ -64,14 +64,17 @@ export async function PUT(req: Request): Promise<Response> {
       return NextResponse.json({ error: "nothing to update" }, { status: 400 });
     }
 
-    const [{ firmId } = { firmId: null as string | null }] = await db
-      .select({ firmId: clients.firmId })
-      .from(clients)
-      .where(eq(clients.id, clientId))
-      .limit(1);
+    const [firmRows, before] = await Promise.all([
+      db
+        .select({ firmId: clients.firmId })
+        .from(clients)
+        .where(eq(clients.id, clientId))
+        .limit(1),
+      loadPortalPrivacy(clientId),
+    ]);
+    const firmId = firmRows[0]?.firmId ?? null;
     if (!firmId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const before = await loadPortalPrivacy(clientId);
     const next: PortalPrivacy = { ...before, ...patch };
 
     await db

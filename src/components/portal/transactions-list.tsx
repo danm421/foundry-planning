@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
+import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
@@ -76,7 +76,6 @@ export default function TransactionsList({
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [selected, setSelected] = useState<PortalTransactionDTO | null>(null);
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   const [ruleSeed, setRuleSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurringSeed, setRecurringSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
@@ -100,8 +99,6 @@ export default function TransactionsList({
       .then((d: { recurrings: { id: string; name: string }[] }) => setRecurrings(d.recurrings ?? []))
       .catch(() => setRecurrings([]));
   }, [portalFetch]);
-
-  useEffect(() => { setDetailEl(document.getElementById("portal-detail")); }, []);
 
   const load = useCallback(
     async (nextOffset: number, replace: boolean, signal?: AbortSignal) => {
@@ -469,34 +466,23 @@ export default function TransactionsList({
         )}
       </div>
 
-      {selected && detailEl &&
-        createPortal(
-          // Desktop: renders inline in the side column. Below `lg`: a
-          // full-screen overlay anchoring the panel to the bottom as a sheet,
-          // with a tap-to-dismiss scrim behind it.
-          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <button
-              type="button"
-              aria-label="Close transaction details"
-              onClick={() => setSelected(null)}
-              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
-            />
-            <TransactionDetailPanel
-              txn={selected}
-              editEnabled={editEnabled}
-              onChangeType={(nt: TxnType) => { if (selected) void changeType(selected.id, nt); }}
-              onClose={() => setSelected(null)}
-              onCreateRule={() => setRuleSeed(selected)}
-              onCreateRecurring={() => setRecurringSeed(selected)}
-              recurrings={recurrings}
-              onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
-              onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
-              onEdit={selected.source === "manual" ? () => setEditTxn(selected) : undefined}
-              onDelete={selected.source === "manual" ? () => void deleteTransaction(selected.id) : undefined}
-            />
-          </div>,
-          detailEl,
-        )}
+      {selected && (
+        <PortalDetailPortal closeLabel="Close transaction details" onClose={() => setSelected(null)}>
+          <TransactionDetailPanel
+            txn={selected}
+            editEnabled={editEnabled}
+            onChangeType={(nt: TxnType) => { if (selected) void changeType(selected.id, nt); }}
+            onClose={() => setSelected(null)}
+            onCreateRule={() => setRuleSeed(selected)}
+            onCreateRecurring={() => setRecurringSeed(selected)}
+            recurrings={recurrings}
+            onLinkRecurring={(rid) => { if (selected) void linkRecurring(selected.id, rid); }}
+            onMarkReviewed={(r) => { if (selected) void toggleReviewed(selected.id, r); }}
+            onEdit={selected.source === "manual" ? () => setEditTxn(selected) : undefined}
+            onDelete={selected.source === "manual" ? () => void deleteTransaction(selected.id) : undefined}
+          />
+        </PortalDetailPortal>
+      )}
       {ruleSeed && (
         <RuleCreateDialog
           seed={{ merchantName: ruleSeed.merchantName, name: ruleSeed.name, categoryId: ruleSeed.categoryId }}

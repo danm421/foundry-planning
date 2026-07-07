@@ -1,17 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactElement } from "react";
 import { PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { AccountDetailPanel } from "@/components/portal/account-detail-panel";
 import {
-  AccountDetailPanel,
+  PortalDetailPortal,
   announceDetailOpen,
   useCloseOnOtherDetail,
-} from "@/components/portal/account-detail-panel";
+} from "@/components/portal/portal-detail-rail";
 
 interface Owner {
   familyMemberId: string | null;
@@ -158,14 +158,8 @@ export default function ProfileAccountsList({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm("cash", primaryFm?.id ?? null),
   );
-  // Drill-down into the shared #portal-detail rail (resolved post-commit — see
-  // budget-view for why a render-phase lookup breaks in the advisor preview).
+  // Drill-down into the shared #portal-detail rail.
   const [detailRow, setDetailRow] = useState<AccountRow | null>(null);
-  const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDetailEl(document.getElementById("portal-detail"));
-  }, []);
   const closeDetail = useCallback(() => setDetailRow(null), []);
   useCloseOnOtherDetail("accounts", closeDetail);
   function openDetail(row: AccountRow): void {
@@ -374,33 +368,23 @@ export default function ProfileAccountsList({
         <p className="text-[13px] text-ink-3">No accounts yet.</p>
       )}
 
-      {detailRow && detailEl &&
-        createPortal(
-          // Desktop: inline in the side rail. Below `lg`: bottom sheet with a
-          // tap-to-dismiss scrim (the transactions-list pattern).
-          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:flex max-lg:flex-col max-lg:justify-end">
-            <button
-              type="button"
-              aria-label="Close account details"
-              onClick={closeDetail}
-              className="absolute inset-0 -z-10 bg-black/50 lg:hidden"
-            />
-            <AccountDetailPanel
-              account={{
-                id: detailRow.id,
-                name: detailRow.name,
-                value: Number(detailRow.value || "0"),
-                categoryLabel: CATEGORY_LABELS[detailRow.category] ?? detailRow.category,
-                subTypeLabel: detailRow.subType.replace(/_/g, " "),
-                last4: detailRow.accountNumberLast4,
-                isPlaid: detailRow.plaidItemId != null,
-                ownerLabel: ownerLabels(detailRow),
-              }}
-              onClose={closeDetail}
-            />
-          </div>,
-          detailEl,
-        )}
+      {detailRow && (
+        <PortalDetailPortal closeLabel="Close account details" onClose={closeDetail}>
+          <AccountDetailPanel
+            account={{
+              id: detailRow.id,
+              name: detailRow.name,
+              value: Number(detailRow.value || "0"),
+              categoryLabel: CATEGORY_LABELS[detailRow.category] ?? detailRow.category,
+              subTypeLabel: detailRow.subType.replace(/_/g, " "),
+              last4: detailRow.accountNumberLast4,
+              isPlaid: detailRow.plaidItemId != null,
+              ownerLabel: ownerLabels(detailRow),
+            }}
+            onClose={closeDetail}
+          />
+        </PortalDetailPortal>
+      )}
     </div>
   );
 }

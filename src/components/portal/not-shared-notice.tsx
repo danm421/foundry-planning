@@ -1,29 +1,16 @@
 import type { ReactElement } from "react";
 import type { PortalArea } from "@/lib/portal/privacy";
+import { LockIcon } from "@/components/portal/portal-icons";
 
-const AREA_LABELS: Record<PortalArea, string> = {
+/**
+ * User-facing names for the gated portal areas. Lives here (not in
+ * lib/portal/privacy.ts, which imports the db) so client components can use it.
+ */
+export const PORTAL_AREA_LABELS: Record<PortalArea, string> = {
   transactions: "transactions",
   budgets: "budget",
   recurrings: "recurring bills",
 };
-
-function LockIcon(): ReactElement {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
 
 /**
  * Advisor-preview placeholder for a portal area the client has switched off in
@@ -37,11 +24,11 @@ export function NotSharedNotice({
   area: PortalArea;
   variant?: "page" | "tile";
 }): ReactElement {
-  const label = AREA_LABELS[area];
+  const label = PORTAL_AREA_LABELS[area];
   const body = (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 shrink-0 text-ink-4">
-        <LockIcon />
+        <LockIcon className="h-5 w-5" />
       </span>
       <div className="space-y-1">
         <h2 className="text-[15px] font-semibold text-ink">Not shared</h2>

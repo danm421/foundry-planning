@@ -35,8 +35,19 @@ export default async function PortalPreviewPage({
 
   // The client's advisor-sharing switches gate the budgeting sections below.
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
-  // the client kept private may enter this page's payload.
-  const privacy = await loadPortalPrivacy(id);
+  // the client kept private may enter this page's payload. The client row
+  // (display name + editEnabled for nav + banner) is an independent lookup.
+  const [privacy, [row]] = await Promise.all([
+    loadPortalPrivacy(id),
+    db
+      .select({
+        crmHouseholdId: clients.crmHouseholdId,
+        portalEditEnabled: clients.portalEditEnabled,
+      })
+      .from(clients)
+      .where(eq(clients.id, id))
+      .limit(1),
+  ]);
 
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
@@ -76,16 +87,6 @@ export default async function PortalPreviewPage({
   } else {
     notFound();
   }
-
-  // Pull display name + email + editEnabled for nav + banner.
-  const [row] = await db
-    .select({
-      crmHouseholdId: clients.crmHouseholdId,
-      portalEditEnabled: clients.portalEditEnabled,
-    })
-    .from(clients)
-    .where(eq(clients.id, id))
-    .limit(1);
 
   const contacts = row?.crmHouseholdId
     ? await db

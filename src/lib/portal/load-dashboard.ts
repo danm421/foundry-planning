@@ -319,7 +319,7 @@ export async function loadPortalDashboard(
   });
 
   // ---- To-review count (cheap COUNT alongside the sample) ----
-  const [{ count } = { count: 0 }] = sharing.shareTransactions
+  const countRows = sharing.shareTransactions
     ? await db
         .select({ count: sql<number>`count(*)::int` })
         .from(plaidTransactions)
@@ -332,6 +332,7 @@ export async function loadPortalDashboard(
           ),
         )
     : [];
+  const count = countRows[0]?.count ?? 0;
 
   const recurringRows = recurringsData?.recurrings ?? [];
 

@@ -3,10 +3,14 @@
 // the shared #portal-detail aside (bottom sheet < lg) — the same surface the
 // Transactions / Recurrings / Budget / Accounts pages use.
 import Link from "next/link";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { fmtUsd } from "@/lib/portal/format";
+import { useEffect, useState, type ReactElement } from "react";
+import { fmtDay, fmtUsd } from "@/lib/portal/format";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
-import { usePortalBasePath } from "@/components/portal/account-detail-panel";
+import {
+  CloseButton,
+  Row,
+  usePortalBasePath,
+} from "@/components/portal/portal-detail-rail";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
 import { RecurringDetailPanel } from "@/components/portal/recurring-detail-panel";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
@@ -32,14 +36,6 @@ type CategoryRow = {
   color: string | null;
 };
 
-function txnDate(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 function monthLabel(month: string): string {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
     month: "long",
@@ -56,23 +52,6 @@ function FooterLink({ href, label }: { href: string; label: string }): ReactElem
     >
       {label} →
     </Link>
-  );
-}
-
-function CloseButton({ onClose }: { onClose: () => void }): ReactElement {
-  return (
-    <button type="button" onClick={onClose} className="text-[12px] text-ink-3 hover:text-ink">
-      Close
-    </button>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-ink-3">{label}</dt>
-      <dd className="max-w-[60%] truncate text-right text-ink-2">{children}</dd>
-    </div>
   );
 }
 
@@ -152,7 +131,7 @@ function ReviewTransactionPanel({
         {n < 0 ? `+${fmtUsd(-n)}` : fmtUsd(n)}
       </div>
       <dl className="space-y-2 text-[13px]">
-        <Row label="Date">{txnDate(txn.date)}</Row>
+        <Row label="Date">{fmtDay(txn.date)}</Row>
         <Row label="Account">{txn.accountName ?? "—"}</Row>
         <Row label="Description">{txn.name}</Row>
         <div className="flex items-center justify-between gap-4">
