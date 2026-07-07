@@ -55,6 +55,10 @@ vi.mock("@/db/schema", () => ({
   clients: {},
   crmHouseholdContacts: {},
 }));
+vi.mock("@/lib/portal/privacy", () => ({
+  loadPortalPrivacy: () =>
+    Promise.resolve({ shareTransactions: true, shareBudgets: true, shareRecurrings: true }),
+}));
 vi.mock("drizzle-orm", () => ({ eq: vi.fn() }));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {

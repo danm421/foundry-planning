@@ -25,8 +25,14 @@ const DTO: PortalDashboardDTO = {
   spending: { left: 1683, budgeted: 6650, spent: 4967, pace: [
     { day: 1, cumulative: 100, pace: 221 },
     { day: 2, cumulative: 250, pace: 443 },
-  ], underBy: 1176, month: "2026-06" },
-  netWorth: { assets: 90999, debt: 55022, netWorth: 35977, series: [], asOfDate: "2026-06-24" },
+  ], underBy: 1176, month: "2026-06", groups: [
+    { id: "cat1", name: "Food", color: "var(--data-blue)", spent: 382, budget: 1500 },
+  ] },
+  netWorth: {
+    assets: 90999, debt: 55022, netWorth: 35977, series: [], asOfDate: "2026-06-24",
+    accounts: [{ id: "acct1", name: "Checking", value: 90999 }],
+    debts: [{ id: "liab1", name: "Visa", value: 55022 }],
+  },
   toReview: {
     count: 1,
     sample: [
@@ -40,6 +46,8 @@ const DTO: PortalDashboardDTO = {
   recurrings: [
     { id: "rec1", name: "Phone", cadence: "monthly", predicted: 31.4, state: "overdue", dueDate: "2026-06-10", daysUntil: -14, postedThisMonth: 0 },
   ],
+  recurringRows: [],
+  sharing: { shareTransactions: true, shareBudgets: true, shareRecurrings: true },
 };
 
 describe("DashboardGrid chart tiles", () => {

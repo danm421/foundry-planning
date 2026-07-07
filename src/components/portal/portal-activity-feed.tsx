@@ -1,5 +1,10 @@
 import type { ReactElement } from "react";
 import { getPortalActivity } from "@/lib/audit/queries";
+import {
+  AREA_BY_RESOURCE_TYPE,
+  areaShared,
+  loadPortalPrivacy,
+} from "@/lib/portal/privacy";
 import PortalCard from "@/components/portal/portal-card";
 import { HistoryIcon } from "@/components/portal/portal-icons";
 
@@ -7,16 +12,38 @@ interface Props {
   clientId: string;
 }
 
+const HIDDEN_AREA_LABELS = {
+  transactions: "transactions",
+  budgets: "budget",
+  recurrings: "recurring bills",
+} as const;
+
 export default async function PortalActivityFeed({
   clientId,
 }: Props): Promise<ReactElement> {
-  const rows = await getPortalActivity({ clientId, limit: 30 });
+  const [allRows, privacy] = await Promise.all([
+    getPortalActivity({ clientId, limit: 30 }),
+    loadPortalPrivacy(clientId),
+  ]);
+  // Drop diffs from budgeting areas the client keeps private — the feed's
+  // formatted metadata (amounts, category names) would otherwise leak them.
+  const rows = allRows.filter((r) => {
+    const area = AREA_BY_RESOURCE_TYPE[r.resourceType];
+    return !area || areaShared(privacy, area);
+  });
+  const hidden = (Object.keys(HIDDEN_AREA_LABELS) as Array<keyof typeof HIDDEN_AREA_LABELS>)
+    .filter((area) => !areaShared(privacy, area))
+    .map((area) => HIDDEN_AREA_LABELS[area]);
 
   return (
     <PortalCard
       icon={<HistoryIcon />}
       title="Recent activity"
-      action={<span className="text-[12px] text-ink-3">Client edits only</span>}
+      action={
+        <span className="text-[12px] text-ink-3">
+          {hidden.length > 0 ? `Not shared: ${hidden.join(", ")}` : "Client edits only"}
+        </span>
+      }
     >
       {rows.length === 0 ? (
         <p className="text-[13px] text-ink-3">No client-side activity yet.</p>

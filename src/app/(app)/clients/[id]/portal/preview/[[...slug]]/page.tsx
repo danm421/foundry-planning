@@ -15,6 +15,9 @@ import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
+import { NotSharedNotice } from "@/components/portal/not-shared-notice";
+import { PortalSettingsView } from "@/components/portal/portal-settings-view";
+import { loadPortalPrivacy } from "@/lib/portal/privacy";
 
 interface Props {
   params: Promise<{ id: string; slug?: string[] }>;
@@ -30,11 +33,16 @@ export default async function PortalPreviewPage({
   // are safe ONLY because no ungated layout sits between that layout and this
   // page — do not add a portal/ or preview/ layout without re-asserting access.
 
+  // The client's advisor-sharing switches gate the budgeting sections below.
+  // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
+  // the client kept private may enter this page's payload.
+  const privacy = await loadPortalPrivacy(id);
+
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
   let section: ReactElement;
   if (path === "") {
-    section = <PortalDashboard clientId={id} />;
+    section = <PortalDashboard clientId={id} sharing={privacy} />;
   } else if (path === "profile") {
     section = <HouseholdSection clientId={id} />;
   } else if (path === "profile/family") {
@@ -44,13 +52,27 @@ export default async function PortalPreviewPage({
   } else if (path === "accounts") {
     section = <PortalAccountsScreen clientId={id} />;
   } else if (path === "transactions") {
-    section = <TransactionsSection clientId={id} />;
+    section = privacy.shareTransactions ? (
+      <TransactionsSection clientId={id} />
+    ) : (
+      <NotSharedNotice area="transactions" />
+    );
   } else if (path === "budget") {
-    section = <BudgetSection clientId={id} />;
+    section = privacy.shareBudgets ? (
+      <BudgetSection clientId={id} />
+    ) : (
+      <NotSharedNotice area="budgets" />
+    );
   } else if (path === "recurrings") {
-    section = <RecurringsSection clientId={id} />;
+    section = privacy.shareRecurrings ? (
+      <RecurringsSection clientId={id} />
+    ) : (
+      <NotSharedNotice area="recurrings" />
+    );
   } else if (path === "investments") {
     section = <PortalInvestmentsScreen clientId={id} />;
+  } else if (path === "settings") {
+    section = <PortalSettingsView privacy={privacy} readOnly />;
   } else {
     notFound();
   }

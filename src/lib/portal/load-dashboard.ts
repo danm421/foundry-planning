@@ -8,11 +8,12 @@ import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, liabilities, plaidTransactions, scenarios } from "@/db/schema";
 import { loadBudgetSummary, currentMonthRange } from "@/lib/portal/load-budget-data";
-import { loadRecurringsData } from "@/lib/portal/load-recurrings-data";
+import { loadRecurringsData, type RecurringRowDTO } from "@/lib/portal/load-recurrings-data";
 import {
   loadPortalDebt,
   loadPortalTrendTransactions,
 } from "@/lib/portal/load-portal-financials";
+import { DEFAULT_PORTAL_PRIVACY, type PortalPrivacy } from "@/lib/portal/privacy";
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
 import { reconstructDailyNetWorth, type TrendPoint } from "@/lib/portal/networth-trend";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
@@ -35,6 +36,22 @@ export interface ReviewTxn {
   accountName: string | null;
 }
 
+/** One row of the net-worth drill-down (visible asset account or debt). */
+export interface NetWorthLine {
+  id: string;
+  name: string;
+  value: number;
+}
+
+/** One budget group for the spending drill-down. */
+export interface SpendingGroupLine {
+  id: string;
+  name: string;
+  color: string;
+  spent: number;
+  budget: number | null;
+}
+
 export interface PortalDashboardDTO {
   spending: {
     left: number;
@@ -43,6 +60,7 @@ export interface PortalDashboardDTO {
     pace: PacePoint[];
     underBy: number;
     month: string;
+    groups: SpendingGroupLine[];
   };
   netWorth: {
     assets: number;
@@ -50,6 +68,8 @@ export interface PortalDashboardDTO {
     netWorth: number;
     series: TrendPoint[];
     asOfDate: string;
+    accounts: NetWorthLine[];
+    debts: NetWorthLine[];
   };
   toReview: { count: number; sample: ReviewTxn[] };
   topCategories: TopCategory[];
@@ -62,6 +82,14 @@ export interface PortalDashboardDTO {
     deltaPct: number | null;
   };
   recurrings: DueRecurring[];
+  /** Full recurring rows so the drill-down can reuse RecurringDetailPanel. */
+  recurringRows: RecurringRowDTO[];
+  /**
+   * The client's advisor-sharing switches. All-true on the client's own
+   * portal. In advisor preview, switched-off sections are never queried (they
+   * come back zeroed) and the grid shows a NotSharedNotice tile instead.
+   */
+  sharing: PortalPrivacy;
 }
 
 function priorMonthRange(now: Date): { from: string; to: string } {
@@ -72,13 +100,27 @@ function priorMonthRange(now: Date): { from: string; to: string } {
   return { from, to };
 }
 
+/** Zeroed budget summary for when the client doesn't share budgets. */
+function emptyBudget(month: string): Awaited<ReturnType<typeof loadBudgetSummary>> {
+  return {
+    month,
+    totalBudget: 0,
+    totalSpent: 0,
+    totalRemaining: 0,
+    incomeThisMonth: 0,
+    groups: [],
+  };
+}
+
 export async function loadPortalDashboard(
   clientId: string,
   now: Date,
+  sharing: PortalPrivacy = DEFAULT_PORTAL_PRIVACY,
 ): Promise<PortalDashboardDTO> {
   const today = now.toISOString().slice(0, 10);
   const { from, to } = currentMonthRange(now);
   const prior = priorMonthRange(now);
+  const month = from.slice(0, 7);
 
   const [scenario] = await db
     .select({ id: scenarios.id })
@@ -86,7 +128,9 @@ export async function loadPortalDashboard(
     .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
     .limit(1);
 
-  // Run the independent loaders/queries in parallel.
+  // Run the independent loaders/queries in parallel. Sections the client has
+  // switched off for the advisor are never queried — the data must not reach
+  // the RSC payload at all, not merely be hidden by the tile.
   const [
     budget,
     recurringsData,
@@ -96,80 +140,93 @@ export async function loadPortalDashboard(
     uncategorized,
     accountRows,
   ] = await Promise.all([
-    loadBudgetSummary(clientId, now),
-    loadRecurringsData(clientId, now),
+    sharing.shareBudgets
+      ? loadBudgetSummary(clientId, now)
+      : Promise.resolve(emptyBudget(month)),
+    sharing.shareRecurrings
+      ? loadRecurringsData(clientId, now)
+      : Promise.resolve(null),
     // This month's expense txns (signed) for the pace curve.
-    db
-      .select({ date: plaidTransactions.date, amount: plaidTransactions.amount })
-      .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          eq(plaidTransactions.type, "expense"),
-          gte(plaidTransactions.date, from),
-          lte(plaidTransactions.date, to),
-        ),
-      ),
+    sharing.shareTransactions
+      ? db
+          .select({ date: plaidTransactions.date, amount: plaidTransactions.amount })
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.clientId, clientId),
+              eq(plaidTransactions.excluded, false),
+              eq(plaidTransactions.type, "expense"),
+              gte(plaidTransactions.date, from),
+              lte(plaidTransactions.date, to),
+            ),
+          )
+      : Promise.resolve([]),
     // Current-month income/spend raw posted totals for the net-this-month tile (like-for-like with priorAgg).
-    db
-      .select({
-        type: plaidTransactions.type,
-        total: sql<string>`sum(${plaidTransactions.amount})`,
-      })
-      .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          gte(plaidTransactions.date, from),
-          lte(plaidTransactions.date, to),
-        ),
-      )
-      .groupBy(plaidTransactions.type),
+    sharing.shareTransactions
+      ? db
+          .select({
+            type: plaidTransactions.type,
+            total: sql<string>`sum(${plaidTransactions.amount})`,
+          })
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.clientId, clientId),
+              eq(plaidTransactions.excluded, false),
+              gte(plaidTransactions.date, from),
+              lte(plaidTransactions.date, to),
+            ),
+          )
+          .groupBy(plaidTransactions.type)
+      : Promise.resolve([]),
     // Prior-month income/spend totals for the net-this-month delta.
-    db
-      .select({
-        type: plaidTransactions.type,
-        total: sql<string>`sum(${plaidTransactions.amount})`,
-      })
-      .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          gte(plaidTransactions.date, prior.from),
-          lte(plaidTransactions.date, prior.to),
-        ),
-      )
-      .groupBy(plaidTransactions.type),
+    sharing.shareTransactions
+      ? db
+          .select({
+            type: plaidTransactions.type,
+            total: sql<string>`sum(${plaidTransactions.amount})`,
+          })
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.clientId, clientId),
+              eq(plaidTransactions.excluded, false),
+              gte(plaidTransactions.date, prior.from),
+              lte(plaidTransactions.date, prior.to),
+            ),
+          )
+          .groupBy(plaidTransactions.type)
+      : Promise.resolve([]),
     // Uncategorized expense count + sample ("to review").
-    db
-      .select({
-        id: plaidTransactions.id,
-        date: plaidTransactions.date,
-        name: plaidTransactions.name,
-        merchantName: plaidTransactions.merchantName,
-        amount: plaidTransactions.amount,
-        accountName: accounts.name,
-      })
-      .from(plaidTransactions)
-      .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          ne(plaidTransactions.type, "transfer"),
-          isNull(plaidTransactions.reviewedAt),
-        ),
-      )
-      .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
-      .limit(5),
+    sharing.shareTransactions
+      ? db
+          .select({
+            id: plaidTransactions.id,
+            date: plaidTransactions.date,
+            name: plaidTransactions.name,
+            merchantName: plaidTransactions.merchantName,
+            amount: plaidTransactions.amount,
+            accountName: accounts.name,
+          })
+          .from(plaidTransactions)
+          .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
+          .where(
+            and(
+              eq(plaidTransactions.clientId, clientId),
+              eq(plaidTransactions.excluded, false),
+              ne(plaidTransactions.type, "transfer"),
+              isNull(plaidTransactions.reviewedAt),
+            ),
+          )
+          .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
+          .limit(5)
+      : Promise.resolve([]),
     // Visible asset accounts for net worth (base-case scenario).
     scenario
       ? db
           .select({
             id: accounts.id,
+            name: accounts.name,
             category: accounts.category,
             value: accounts.value,
             isDefaultChecking: accounts.isDefaultChecking,
@@ -246,17 +303,21 @@ export async function loadPortalDashboard(
   });
 
   // ---- To-review count (cheap COUNT alongside the sample) ----
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(plaidTransactions)
-    .where(
-      and(
-        eq(plaidTransactions.clientId, clientId),
-        eq(plaidTransactions.excluded, false),
-        ne(plaidTransactions.type, "transfer"),
-        isNull(plaidTransactions.reviewedAt),
-      ),
-    );
+  const [{ count } = { count: 0 }] = sharing.shareTransactions
+    ? await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.clientId, clientId),
+            eq(plaidTransactions.excluded, false),
+            ne(plaidTransactions.type, "transfer"),
+            isNull(plaidTransactions.reviewedAt),
+          ),
+        )
+    : [];
+
+  const recurringRows = recurringsData?.recurrings ?? [];
 
   return {
     spending: {
@@ -266,6 +327,9 @@ export async function loadPortalDashboard(
       pace: pace.points,
       underBy: pace.underBy,
       month: budget.month,
+      groups: budget.groups
+        .filter((g) => g.actual > 0 || g.budget != null)
+        .map((g) => ({ id: g.id, name: g.name, color: g.color, spent: g.actual, budget: g.budget })),
     },
     netWorth: {
       assets: nw.assets,
@@ -273,6 +337,12 @@ export async function loadPortalDashboard(
       netWorth: nw.netWorth,
       series,
       asOfDate: today,
+      accounts: visible
+        .map((r) => ({ id: r.id, name: r.name, value: Number(r.value || "0") }))
+        .sort((a, b) => b.value - a.value),
+      debts: debtRows
+        .map((d) => ({ id: d.id, name: d.name, value: d.balance }))
+        .sort((a, b) => b.value - a.value),
     },
     toReview: {
       count: count ?? 0,
@@ -294,6 +364,8 @@ export async function loadPortalDashboard(
       deltaAbs: net.deltaAbs,
       deltaPct: net.deltaPct,
     },
-    recurrings: dueWithinDays(recurringsData.recurrings, now, 14),
+    recurrings: dueWithinDays(recurringRows, now, 14),
+    recurringRows,
+    sharing,
   };
 }
