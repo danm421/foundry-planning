@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
@@ -33,6 +33,10 @@ const baseProps = {
   editEnabled: true,
   needsTransactionsConsent: false,
 };
+
+afterEach(() => {
+  portalFetchMock.mockClear();
+});
 
 describe("InstitutionRow", () => {
   it("Manage button opens the dialog", async () => {
