@@ -22,6 +22,17 @@ describe("GET /api/cron/drain-compliance-exports", () => {
     expect(mocks.drain).not.toHaveBeenCalled();
   });
 
+  it("401s when CRON_SECRET is unset even with a Bearer header", async () => {
+    delete process.env.CRON_SECRET;
+    const res = await GET(
+      new Request("http://t/api/cron/drain-compliance-exports", {
+        headers: { authorization: "Bearer secret_t" },
+      }) as never,
+    );
+    expect(res.status).toBe(401);
+    expect(mocks.drain).not.toHaveBeenCalled();
+  });
+
   it("drains and reports the counts", async () => {
     mocks.drain.mockResolvedValue({ processed: 3, done: 2, failed: 1 });
     const res = await GET(authed());
