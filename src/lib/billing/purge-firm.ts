@@ -32,6 +32,7 @@ import {
   clientShares,
   planningKbChunks,
   forgeConversations,
+  orionConnections,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -257,6 +258,25 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     await cc.organizations.deleteOrganization(firmId);
   } catch (err) {
     console.error(`[purge-firm] clerk deleteOrganization failed for ${firmId}:`, err);
+  }
+
+  // Orion connection (best-effort). Scrub our encrypted token copy, then drop
+  // the row — otherwise a purged firm's Orion OAuth tokens linger in the DB.
+  // (No server-side Orion revoke primitive exists — documented gap, audit F2.)
+  try {
+    await db
+      .update(orionConnections)
+      .set({
+        accessTokenEnc: "",
+        refreshTokenEnc: null,
+        tokenExpiresAt: null,
+        status: "disconnected",
+        updatedAt: new Date(),
+      })
+      .where(eq(orionConnections.firmId, firmId));
+    await db.delete(orionConnections).where(eq(orionConnections.firmId, firmId));
+  } catch (err) {
+    console.error(`[purge-firm] orion connection purge failed for ${firmId}:`, err);
   }
 
   // 5. Blob objects (best-effort — each wrapped so a 404/transport error

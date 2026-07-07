@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
+  updateOrionConnection: vi.fn(),
+  deleteOrionConnection: vi.fn(),
   updateFirm: vi.fn(),
   selectCustomer: vi.fn(),
   stripeCustomersDel: vi.fn(),
@@ -84,10 +86,16 @@ vi.mock("@/db", async () => {
           if (tbl === s.clientShares) return mocks.deleteClientShares();
           if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
           if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
+          if (tbl === s.orionConnections) return mocks.deleteOrionConnection();
           return undefined;
         },
       }),
-      update: () => ({ set: (v: unknown) => ({ where: () => mocks.updateFirm(v) }) }),
+      update: (tbl: unknown) => ({
+        set: (v: unknown) => ({
+          where: () =>
+            tbl === s.orionConnections ? mocks.updateOrionConnection(v) : mocks.updateFirm(v),
+        }),
+      }),
     },
   };
 });
@@ -240,6 +248,23 @@ describe("purgeFirmById", () => {
     ]) {
       expect(spy).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("scrubs then deletes the orion_connections row (audit F2)", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.updateOrionConnection).toHaveBeenCalledTimes(1); // token scrub
+    expect(mocks.updateOrionConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ accessTokenEnc: "", refreshTokenEnc: null }),
+    );
+    expect(mocks.deleteOrionConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows an Orion purge failure and still stamps purgedAt", async () => {
+    mocks.deleteOrionConnection.mockRejectedValueOnce(new Error("orion boom"));
+    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
+    expect(mocks.updateFirm).toHaveBeenCalledWith(
+      expect.objectContaining({ purgedAt: expect.any(Date) }),
+    );
   });
 
   it("nulls the retained firms row's PII/branding columns", async () => {
