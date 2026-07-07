@@ -4857,3 +4857,20 @@ export const recurringTransactionsRelations = relations(
     }),
   }),
 );
+
+// Client-controlled switches for what budgeting data the advisor may see
+// (portal Settings → Privacy). Missing row = share everything (the
+// pre-feature behavior). Client-scoped with no firm_id column: firm purge
+// erases it via the clients cascade.
+export const portalPrivacySettings = pgTable("portal_privacy_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .unique()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  shareTransactions: boolean("share_transactions").notNull().default(true),
+  shareBudgets: boolean("share_budgets").notNull().default(true),
+  shareRecurrings: boolean("share_recurrings").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
