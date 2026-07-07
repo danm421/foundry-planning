@@ -72,21 +72,18 @@ export async function enqueueFirmComplianceExport(args: {
   }
 
   for (const r of renderable) {
-    await db
-      .insert(generationRuns)
-      .values({
-        householdId: r.householdId,
-        clientId: r.clientId,
-        firmId: args.firmId,
-        kind: COMPLIANCE_RUN_KIND,
-        status: "queued",
-        scenarioId: r.scenarioId,
-        triggeredBy: args.triggeredBy,
-        triggeredByEmail: args.triggeredByEmail,
-        requestPayload: buildComplianceRequestPayload(r.scenarioId, args.now),
-        batchId,
-      })
-      .returning({ id: generationRuns.id });
+    await db.insert(generationRuns).values({
+      householdId: r.householdId,
+      clientId: r.clientId,
+      firmId: args.firmId,
+      kind: COMPLIANCE_RUN_KIND,
+      status: "queued",
+      scenarioId: r.scenarioId,
+      triggeredBy: args.triggeredBy,
+      triggeredByEmail: args.triggeredByEmail,
+      requestPayload: buildComplianceRequestPayload(r.scenarioId, args.now),
+      batchId,
+    });
   }
 
   return { batchId, total: renderable.length, skipped: skipped.length };

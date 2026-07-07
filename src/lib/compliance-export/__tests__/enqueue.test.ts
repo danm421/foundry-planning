@@ -13,8 +13,8 @@ vi.mock("@/db", () => ({
     query: { crmHouseholds: { findMany: (...a: unknown[]) => m.households(...a) } },
     // scenarios base-case lookup: select().from().where().limit()
     select: () => ({ from: () => ({ where: () => ({ limit: () => m.baseCase() }) }) }),
-    // run insert: insert().values().returning()
-    insert: () => ({ values: (v: unknown) => ({ returning: () => m.insertRun(v) }) }),
+    // run insert: insert().values()
+    insert: () => ({ values: (v: unknown) => m.insertRun(v) }),
   },
 }));
 vi.mock("../batches", () => ({

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { requireOrgAdminOrOwner, ForbiddenError } from "@/lib/authz";
+import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import {
   getBatchForFirm,
   childStatusCounts,
@@ -38,8 +38,8 @@ export async function GET(
       createdAt: batch.createdAt,
     });
   } catch (err) {
-    if (err instanceof ForbiddenError) return NextResponse.json({ error: err.message }, { status: 403 });
-    if (err instanceof UnauthorizedError) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("GET /api/firm/compliance-exports/[batchId] failed", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

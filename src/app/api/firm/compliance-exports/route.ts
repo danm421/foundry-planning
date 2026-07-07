@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
-import { requireOrgAdminOrOwner, ForbiddenError } from "@/lib/authz";
+import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { enqueueFirmComplianceExport } from "@/lib/compliance-export/enqueue";
 import { hasActiveBatchForFirm, listBatchesForFirm } from "@/lib/compliance-export/batches";
 import { drainComplianceExports } from "@/lib/compliance-export/drain";
@@ -10,12 +10,6 @@ export const dynamic = "force-dynamic";
 // The immediate after() drain renders a chunk before the instance is released.
 // Same ceiling/reasoning as the single-client presentations route.
 export const maxDuration = 800;
-
-function authError(err: unknown): NextResponse | null {
-  if (err instanceof ForbiddenError) return NextResponse.json({ error: err.message }, { status: 403 });
-  if (err instanceof UnauthorizedError) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return null;
-}
 
 export async function POST(_request: Request): Promise<NextResponse> {
   try {
@@ -56,8 +50,8 @@ export async function POST(_request: Request): Promise<NextResponse> {
 
     return NextResponse.json(result, { status: 202 });
   } catch (err) {
-    const r = authError(err);
-    if (r) return r;
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("POST /api/firm/compliance-exports failed", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -70,8 +64,8 @@ export async function GET(_request: Request): Promise<NextResponse> {
     const batches = await listBatchesForFirm(firmId, 20);
     return NextResponse.json({ batches });
   } catch (err) {
-    const r = authError(err);
-    if (r) return r;
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("GET /api/firm/compliance-exports failed", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
