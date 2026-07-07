@@ -164,14 +164,48 @@ describe("data handlers", () => {
     expect(await plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).toBe("ok");
     expect(await plaidWebhookHandlers["LIABILITIES:DEFAULT_UPDATE"](base)).toBe("ok");
     expect(refreshPlaidItemData).toHaveBeenCalledTimes(2);
-    expect(recordCreate).toHaveBeenCalledWith(expect.objectContaining({ action: "webhook.plaid.refresh" }));
+    expect(recordCreate).toHaveBeenCalledWith(expect.objectContaining({
+      action: "webhook.plaid.refresh",
+      actorKind: "system",
+    }));
   });
 
   it("refresh needsReauth=true returns ok without audit; transient throws", async () => {
     vi.mocked(refreshPlaidItemData).mockResolvedValue({ ok: false, errorCode: "ITEM_LOGIN_REQUIRED", needsReauth: true });
     expect(await plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).toBe("ok");
+    expect(recordCreate).not.toHaveBeenCalled();
     vi.mocked(refreshPlaidItemData).mockResolvedValue({ ok: false, errorCode: "INTERNAL_SERVER_ERROR", needsReauth: false });
     await expect(plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).rejects.toThrow();
+  });
+
+  it("refresh with a REVOKED code (needsReauth=false) still returns ok without audit", async () => {
+    // needsReauth is explicitly false here — only needsUserAction(errorCode)'s
+    // REVOKED_CODES membership check keeps dataRefreshHandler from throwing.
+    // If that `|| needsUserAction(...)` clause were ever dropped, this would
+    // throw instead of resolving "ok", turning revoked-item HOLDINGS/LIABILITIES
+    // webhooks into a permanent 500 redelivery loop.
+    vi.mocked(refreshPlaidItemData).mockResolvedValue({
+      ok: false, errorCode: "USER_PERMISSION_REVOKED", needsReauth: false,
+    });
+    const r = await plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base);
+    expect(r).toBe("ok");
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
+  it("purged client (firmId lookup empty) skips the audit but still returns ok", async () => {
+    // First select (findItem) resolves ITEM_ROW; second select (auditSystem's
+    // clients.firmId lookup) resolves [] as if the client row was deleted
+    // between webhook delivery and processing. auditSystem must no-op, not throw.
+    let call = 0;
+    dbSelect.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({ limit: () => Promise.resolve(call++ === 0 ? [ITEM_ROW] : []) }),
+      }),
+    }));
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({ ok: true, added: 1, modified: 0, removed: 0 });
+    const r = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"](base);
+    expect(r).toBe("ok");
+    expect(recordCreate).not.toHaveBeenCalled();
   });
 
   it("legacy transactions codes are ignored", async () => {
