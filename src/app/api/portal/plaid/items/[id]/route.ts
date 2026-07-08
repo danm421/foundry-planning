@@ -8,6 +8,7 @@ import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
+import { redactPlaidError } from "@/lib/plaid/errors";
 import { recordDelete } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ export async function DELETE(
       const plaid = getPlaidClient();
       await plaid.itemRemove({ access_token: decrypt(item.accessToken) });
     } catch (err) {
-      console.error("Plaid itemRemove failed:", err);
+      console.error("Plaid itemRemove failed:", redactPlaidError(err));
       return NextResponse.json(
         { error: "Failed to revoke Plaid access. Try again." },
         { status: 502 },

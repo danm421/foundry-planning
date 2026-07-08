@@ -11,6 +11,7 @@ import {
 } from "@/lib/rate-limit";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { encrypt } from "@/lib/plaid/crypto";
+import { redactPlaidError } from "@/lib/plaid/errors";
 import { mapPlaidAccount, loadLinkCandidates } from "@/lib/plaid/portal-link-helpers";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    console.error("POST /api/portal/plaid/exchange error:", err);
+    console.error("POST /api/portal/plaid/exchange error:", redactPlaidError(err));
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

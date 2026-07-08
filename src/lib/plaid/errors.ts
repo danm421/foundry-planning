@@ -45,3 +45,27 @@ export function needsUserAction(code: string | null): boolean {
 export function isReauthError(err: unknown): boolean {
   return REAUTH_CODES.has(plaidErrorCode(err));
 }
+
+/**
+ * Redacts a (possibly Plaid) error into a log-safe value.
+ *
+ * Plaid SDK errors are Axios errors whose `config.data` is the serialized
+ * REQUEST body — which for most Plaid calls contains the plaintext
+ * `access_token` — and whose `config.headers` carry `PLAID-SECRET`. Passing the
+ * raw error to `console.error` / Sentry serializes those enumerable props and
+ * leaks live credentials into logs. Log the return of this instead of the raw
+ * error at any site that can catch a Plaid API failure.
+ *
+ * Non-Axios errors (a plain Error, a DB error) carry no Plaid secret, so they
+ * pass through untouched — preserving the stack trace for debugging.
+ */
+export function redactPlaidError(err: unknown): unknown {
+  const e = err as { isAxiosError?: boolean; config?: unknown } | null | undefined;
+  if (e && typeof e === "object" && (e.isAxiosError === true || e.config != null)) {
+    return {
+      plaidErrorCode: plaidErrorCode(err),
+      plaidErrorMessage: plaidErrorMessage(err),
+    };
+  }
+  return err;
+}

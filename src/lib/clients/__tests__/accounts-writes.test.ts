@@ -261,6 +261,53 @@ d("accounts-writes core", () => {
     expect(res.data.category).toBe("taxable");
   });
 
+  it("update ignores Plaid link columns → plaidItemId/plaidAccountId are never written from the update body", async () => {
+    // Security: the PUT route mass-assigns, but plaid_item_id / plaid_account_id
+    // are Plaid-managed link columns, not advisor-editable. A forged pair could
+    // point an account at another client's Plaid item (the whole lib/plaid layer
+    // scopes by plaidItemId alone), so the write-core must strip them.
+    const created = await createAccountForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "Plaid strip target", category: "taxable" },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    // Sanity: a fresh manual account has no Plaid link.
+    expect(created.data.plaidItemId).toBeNull();
+    expect(created.data.plaidAccountId).toBeNull();
+
+    const res = await updateAccountForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      accountId: created.data.id,
+      input: {
+        name: "Plaid strip target renamed",
+        // Attacker-supplied Plaid link — must be ignored.
+        plaidItemId: RANDOM_UUID,
+        plaidAccountId: "forged-plaid-account-id",
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // The legitimate field applied…
+    expect(res.data.name).toBe("Plaid strip target renamed");
+    // …but the Plaid link columns stayed null (stripped, not written).
+    expect(res.data.plaidItemId).toBeNull();
+    expect(res.data.plaidAccountId).toBeNull();
+
+    // Re-read from the DB to be certain it wasn't a return-shape artifact.
+    const [row] = await db
+      .select({ plaidItemId: accounts.plaidItemId, plaidAccountId: accounts.plaidAccountId })
+      .from(accounts)
+      .where(eq(accounts.id, created.data.id));
+    expect(row.plaidItemId).toBeNull();
+    expect(row.plaidAccountId).toBeNull();
+  });
+
   it("update of a system-managed default-checking child cash → {ok:false, status:400} matching /system-managed/i", async () => {
     // Create a business so its child cash (isDefaultChecking) exists.
     const biz = await createAccountForClient({

@@ -11,7 +11,7 @@ import {
 } from "@/lib/rate-limit";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
-import { isReauthError } from "@/lib/plaid/errors";
+import { isReauthError, redactPlaidError } from "@/lib/plaid/errors";
 import { mapPlaidAccount, loadLinkCandidates, type PlaidMappedAccount } from "@/lib/plaid/portal-link-helpers";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +122,7 @@ export async function GET(
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    console.error("GET /api/portal/plaid/items/[id]/accounts error:", err);
+    console.error("GET /api/portal/plaid/items/[id]/accounts error:", redactPlaidError(err));
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
