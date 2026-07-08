@@ -30,6 +30,8 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/webhooks/stripe/route.ts":
     "Stripe webhook — not a user mutation",
   "src/app/api/webhooks/clerk/route.ts": "Clerk webhook — not a user mutation",
+  "src/app/api/webhooks/plaid/route.ts":
+    "Plaid webhook — JWT-verified, system-driven; no session firm context and must process regardless of firm billing state",
   "src/app/api/cron/reconcile-billing/route.ts":
     "system cron — not a user mutation",
   "src/app/api/csp-report/route.ts": "CSP telemetry — public, pre-auth",
