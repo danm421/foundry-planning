@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
 import { PortalIntakeClient } from "./intake-client";
 
 export default async function PortalIntakePage(): Promise<ReactElement> {
@@ -23,11 +24,14 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
   const result = await loadOrSeedPortalIntakeForm(clientId, firmId);
   if (!result) redirect("/portal/profile");
 
+  const branding = await resolveIntakeBranding(firmId);
+
   return (
     <PortalIntakeClient
       initialPayload={result.payload}
       initialStatus={result.status}
       recipientName={result.recipientName}
+      branding={branding}
     />
   );
 }
