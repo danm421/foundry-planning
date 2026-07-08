@@ -49,5 +49,9 @@ export const config: VercelConfig = {
       path: "/api/cron/snapshot-portal-investments",
       schedule: "0 11 * * *",
     },
+    {
+      path: "/api/cron/drain-compliance-exports",
+      schedule: "* * * * *",
+    },
   ],
 };
