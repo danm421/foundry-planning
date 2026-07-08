@@ -1,7 +1,8 @@
-export interface IntakeHeaderBranding {
-  logoUrl: string;
-  firmName: string;
-}
+import type { IntakeBranding } from "@/lib/branding/branding";
+
+/** The slice of resolved firm branding the letterhead renders (type-only
+ *  import — the server-only resolver module is never bundled client-side). */
+export type IntakeHeaderBranding = Pick<IntakeBranding, "logoUrl" | "firmName">;
 
 /**
  * Letterhead shown at the top of every client-facing intake state (welcome,

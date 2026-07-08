@@ -6,6 +6,7 @@ import {
   type IntakeBranding,
 } from "@/lib/branding/branding";
 import { IntakeBrandingHeader } from "@/components/intake/branding-header";
+import { IntakeThankYou } from "@/components/intake/thank-you";
 import { IntakeClient } from "./intake-client";
 
 // ─── Public intake page ──────────────────────────────────────────────────────
@@ -59,37 +60,6 @@ function ExpiredLink({ branding }: { branding: IntakeBranding | null }) {
   );
 }
 
-// ─── Already-submitted state ──────────────────────────────────────────────────
-
-function ThankYou({
-  recipientName,
-  branding,
-}: {
-  recipientName: string | null;
-  branding: IntakeBranding | null;
-}) {
-  const greeting = recipientName ? `Thank you, ${recipientName}` : "Thank you";
-  return (
-    <div className="flex min-h-screen flex-col bg-paper">
-      <IntakeBrandingHeader branding={branding} />
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="max-w-md">
-          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
-            Submitted
-          </p>
-          <h1 className="mb-4 text-3xl font-semibold tracking-tight text-ink">
-            {greeting}<span className="text-accent">.</span>
-          </h1>
-          <p className="text-base leading-relaxed text-ink-2">
-            We&rsquo;ve received your information. Your advisor will be in touch
-            soon.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function IntakePage({
@@ -109,10 +79,14 @@ export default async function IntakePage({
     return <ExpiredLink branding={branding} />;
   }
 
-  // Already submitted or applied
+  // Already submitted or applied — same shared screen the client wrapper shows
+  // post-submit (no continueHref: the public flow has nowhere to send visitors).
   if (form.status === "submitted" || form.status === "applied") {
     return (
-      <ThankYou recipientName={form.recipientName ?? null} branding={branding} />
+      <IntakeThankYou
+        recipientName={form.recipientName ?? null}
+        branding={branding}
+      />
     );
   }
 

@@ -21,10 +21,13 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
   const firmId = clientRow?.firmId;
   if (!firmId) redirect("/portal/profile");
 
-  const result = await loadOrSeedPortalIntakeForm(clientId, firmId);
+  // Independent reads — the seed (snapshot + possible insert) and the branding
+  // lookup (DB read + Clerk name for branded firms) overlap instead of stacking.
+  const [result, branding] = await Promise.all([
+    loadOrSeedPortalIntakeForm(clientId, firmId),
+    resolveIntakeBranding(firmId),
+  ]);
   if (!result) redirect("/portal/profile");
-
-  const branding = await resolveIntakeBranding(firmId);
 
   return (
     <PortalIntakeClient
