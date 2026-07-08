@@ -53,14 +53,20 @@ export default async function PortalLayout({
   }
 
   return (
-    <div className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)_auto]">
+    <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">
       {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
+      {/*
+        On desktop each of the three columns is pinned to the viewport height
+        (`lg:h-dvh`) and scrolls independently (`lg:overflow-y-auto`), so
+        scrolling one panel leaves the tops of the other two in view. Below `lg`
+        the layout stacks and the page scrolls as one.
+      */}
       <PortalNav
         displayName={displayName}
         email={email}
-        className="hidden lg:flex"
+        className="hidden lg:flex lg:h-dvh lg:overflow-y-auto"
       />
-      <main className="min-w-0 lg:border-x lg:border-hair">
+      <main className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
         {/* Mobile-only swipeable top tab bar. */}
         <PortalMobileNav displayName={displayName} className="lg:hidden" />
         {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
@@ -76,7 +82,10 @@ export default async function PortalLayout({
         `lg` the slot is a zero-height block and the portaled content positions
         itself as a bottom sheet (see transactions-list).
       */}
-      <aside id="portal-detail" className="empty:hidden lg:w-[420px] lg:p-4" />
+      <aside
+        id="portal-detail"
+        className="empty:hidden lg:h-dvh lg:w-[420px] lg:overflow-y-auto lg:p-4"
+      />
     </div>
   );
 }
