@@ -1,8 +1,13 @@
 /**
- * Shared Plaid error-shape extractors. Plaid SDK errors carry the structured
- * Plaid error in `response.data` (error_code / error_message); fall back to the
- * generic Error message. Callers return `{ ok: false, errorCode, errorMessage }`
- * and map `ITEM_LOGIN_REQUIRED` / `PENDING_EXPIRATION` to the re-auth UI.
+ * Shared Plaid error-shape extractors and the code sets that drive the
+ * item-health UI. Plaid SDK errors carry the structured Plaid error in
+ * `response.data` (error_code / error_message); fall back to the generic Error
+ * message. Callers return `{ ok: false, errorCode, errorMessage }`.
+ *
+ * `REAUTH_CODES` (ITEM_LOGIN_REQUIRED / PENDING_EXPIRATION / PENDING_DISCONNECT)
+ * map to the Re-authenticate (update-mode) flow; `REVOKED_CODES` map to Unlink
+ * (access is gone, update mode can't fix it). `needsUserAction` is the union
+ * predicate over a stored last_refresh_error; `isReauthError` tests a raw error.
  */
 export function plaidErrorCode(err: unknown): string {
   const e = err as {

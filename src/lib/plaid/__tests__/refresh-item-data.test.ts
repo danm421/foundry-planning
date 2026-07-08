@@ -20,7 +20,9 @@ vi.mock("../holdings-refresh", () => ({
   fetchInvestmentHoldingsForItem: (...a: unknown[]) => fetchInvestmentHoldingsForItem(...a),
 }));
 
-const ingestHoldingsForItem = vi.fn(async (..._a: unknown[]) => ({ accountsUpdated: 1, holdingsWritten: 1 }));
+const ingestHoldingsForItem = vi.fn<(...a: unknown[]) => Promise<{ accountsUpdated: number; holdingsWritten: number }>>(
+  async () => ({ accountsUpdated: 1, holdingsWritten: 1 }),
+);
 vi.mock("../ingest-holdings", () => ({
   ingestHoldingsForItem: (...a: unknown[]) => ingestHoldingsForItem(...a),
 }));
