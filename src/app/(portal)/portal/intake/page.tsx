@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
 import { PortalIntakeClient } from "./intake-client";
 
 export default async function PortalIntakePage(): Promise<ReactElement> {
@@ -20,7 +21,12 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
   const firmId = clientRow?.firmId;
   if (!firmId) redirect("/portal/profile");
 
-  const result = await loadOrSeedPortalIntakeForm(clientId, firmId);
+  // Independent reads — the seed (snapshot + possible insert) and the branding
+  // lookup (DB read + Clerk name for branded firms) overlap instead of stacking.
+  const [result, branding] = await Promise.all([
+    loadOrSeedPortalIntakeForm(clientId, firmId),
+    resolveIntakeBranding(firmId),
+  ]);
   if (!result) redirect("/portal/profile");
 
   return (
@@ -28,6 +34,7 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
       initialPayload={result.payload}
       initialStatus={result.status}
       recipientName={result.recipientName}
+      branding={branding}
     />
   );
 }

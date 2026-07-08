@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
+import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
 
 /**
  * Advisor-facing preview of the client intake form.
@@ -17,7 +18,12 @@ import { IntakeThankYou } from "@/components/intake/thank-you";
  * Compare {@link file://src/app/intake/[token]/intake-client.tsx} — the live
  * wrapper this deliberately strips down.
  */
-export function IntakePreview() {
+export function IntakePreview({
+  branding,
+}: {
+  /** Firm letterhead; null renders the Foundry Planning lockup. */
+  branding?: IntakeHeaderBranding | null;
+}) {
   const [value, setValue] = useState<IntakeDraft>({});
   const [submitted, setSubmitted] = useState(false);
 
@@ -36,13 +42,14 @@ export function IntakePreview() {
         Preview — this is exactly what your client sees. Nothing is saved or sent.
       </div>
       {submitted ? (
-        <IntakeThankYou recipientName={null} />
+        <IntakeThankYou recipientName={null} branding={branding} />
       ) : (
         <IntakeWizard
           mode="blank"
           value={value}
           onChange={setValue}
           onSubmit={handleSubmit}
+          branding={branding}
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
+import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ interface PortalIntakeClientProps {
   initialPayload: unknown; // IntakePayload from DB, cast to IntakeDraft on mount
   initialStatus: string;   // "draft" | "submitted" | ...
   recipientName: string | null;
+  /** Firm letterhead; null renders the Foundry Planning lockup. */
+  branding?: IntakeHeaderBranding | null;
 }
 
 // ─── Portal client wrapper ────────────────────────────────────────────────────
@@ -21,6 +24,7 @@ export function PortalIntakeClient({
   initialPayload,
   initialStatus,
   recipientName,
+  branding,
 }: PortalIntakeClientProps) {
   // Seed local draft from the stored payload.
   const [value, setValue] = useState<IntakeDraft>(
@@ -132,7 +136,11 @@ export function PortalIntakeClient({
 
   if (submitted) {
     return (
-      <IntakeThankYou recipientName={recipientName} continueHref="/portal/profile" />
+      <IntakeThankYou
+        recipientName={recipientName}
+        continueHref="/portal/profile"
+        branding={branding}
+      />
     );
   }
 
@@ -144,6 +152,7 @@ export function PortalIntakeClient({
       onSubmit={handleSubmit}
       busy={busy}
       error={error}
+      branding={branding}
     />
   );
 }

@@ -18,13 +18,19 @@ vi.mock("@/components/intake/intake-wizard", () => ({
     onSubmit,
     onChange,
     mode,
+    branding,
   }: {
     onSubmit: () => Promise<void>;
     onChange: (d: unknown) => void;
     value: unknown;
     mode: string;
+    branding?: { firmName: string } | null;
   }) => (
-    <div data-testid="wizard" data-mode={mode}>
+    <div
+      data-testid="wizard"
+      data-mode={mode}
+      data-branding={branding?.firmName ?? "none"}
+    >
       <button onClick={() => onChange({ family: { primary: { firstName: "Test" } } })}>
         change
       </button>
@@ -80,5 +86,28 @@ describe("IntakePreview", () => {
 
     expect(await screen.findByRole("heading", { name: /thank you/i })).toBeInTheDocument();
     expect(screen.getByText(/nothing is saved or sent/i)).toBeInTheDocument();
+  });
+
+  it("forwards firm branding to the wizard and the thank-you letterhead", async () => {
+    const user = userEvent.setup();
+    render(
+      <IntakePreview
+        branding={{
+          logoUrl: "https://cdn.example/logo.png",
+          firmName: "Acme Wealth",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("wizard")).toHaveAttribute(
+      "data-branding",
+      "Acme Wealth",
+    );
+
+    // The real IntakeThankYou renders the letterhead with the firm logo
+    await user.click(screen.getByRole("button", { name: "submit" }));
+    expect(
+      await screen.findByRole("img", { name: "Acme Wealth" }),
+    ).toBeInTheDocument();
   });
 });
