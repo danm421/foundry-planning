@@ -25,6 +25,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/csp-report",
   "/api/webhooks/clerk",
   "/api/webhooks/stripe",
+  // Plaid webhook deliveries — authenticated by ES256 JWT verification inside
+  // the route (webhook-verify.ts), not by session.
+  "/api/webhooks/plaid",
   // Sentry tunnel route (configured in next.config.ts `tunnelRoute`).
   // Browser SDK POSTs error envelopes here without a session cookie.
   "/monitoring(.*)",

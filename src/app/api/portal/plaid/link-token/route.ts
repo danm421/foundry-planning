@@ -13,6 +13,7 @@ import {
 } from "@/lib/rate-limit";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
+import { plaidWebhookUrl } from "@/lib/plaid/webhook-url";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // New-link mode.
+    const webhookUrl = plaidWebhookUrl();
     const resp = await plaid.linkTokenCreate({
       ...baseRequest,
       products: [
@@ -100,6 +102,9 @@ export async function POST(req: Request): Promise<Response> {
         Products.Transactions,
         Products.Liabilities,
       ],
+      // New items deliver webhooks from birth; existing items are backfilled
+      // via scripts/backfill-plaid-webhooks.ts (itemWebhookUpdate).
+      ...(webhookUrl ? { webhook: webhookUrl } : {}),
     });
     return NextResponse.json({
       linkToken: resp.data.link_token,

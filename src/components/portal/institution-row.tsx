@@ -11,6 +11,8 @@ export function InstitutionRow({
   institutionName,
   statusLabel,
   needsReauth,
+  revoked,
+  newAccountsAvailable,
   editEnabled,
   needsTransactionsConsent,
 }: {
@@ -18,6 +20,8 @@ export function InstitutionRow({
   institutionName: string;
   statusLabel: string;
   needsReauth: boolean;
+  revoked: boolean;
+  newAccountsAvailable: boolean;
   editEnabled: boolean;
   needsTransactionsConsent: boolean;
 }) {
@@ -45,6 +49,14 @@ export function InstitutionRow({
       router.refresh();
     });
 
+  const dismissNewAccounts = () =>
+    startTransition(async () => {
+      await portalFetch(`/api/portal/plaid/items/${itemId}/dismiss-new-accounts`, {
+        method: "POST",
+      });
+      router.refresh();
+    });
+
   const unlink = () => {
     if (!window.confirm(`Unlink ${institutionName}?`)) return;
     startTransition(async () => {
@@ -68,17 +80,51 @@ export function InstitutionRow({
         </p>
         <p
           className={
-            needsReauth
-              ? "text-[12px] text-amber-600"
-              : "text-[12px] text-ink-3"
+            revoked
+              ? "text-[12px] text-red-600"
+              : needsReauth
+                ? "text-[12px] text-amber-600"
+                : "text-[12px] text-ink-3"
           }
         >
           {statusLabel}
         </p>
+        {newAccountsAvailable && !revoked && !needsReauth && editEnabled && (
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-[12px] text-accent">New accounts available</span>
+            <PlaidLinkButton
+              mode="account-selection"
+              itemId={itemId}
+              onSelectionComplete={() => router.refresh()}
+            />
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={dismissNewAccounts}
+              disabled={pending}
+              className="rounded p-1 text-ink-3 hover:bg-card-2 hover:text-ink focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-3.5"
+                aria-hidden="true"
+              >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
       {editEnabled && (
         <div className="flex shrink-0 items-center gap-2">
-          {needsReauth ? (
+          {revoked ? null : needsReauth ? (
             <PlaidLinkButton mode="reauth" itemId={itemId} />
           ) : (
             <>
@@ -110,7 +156,7 @@ export function InstitutionRow({
               </button>
             </>
           )}
-          {!needsReauth && (
+          {!needsReauth && !revoked && (
             <button
               type="button"
               onClick={() => setManaging(true)}
