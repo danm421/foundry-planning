@@ -110,20 +110,28 @@ export default async function PortalPreviewPage({
   const basePath = `/clients/${id}/portal/preview`;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-paper text-ink">
-      {/* Full-width sticky banner — spans nav + content + detail rail. */}
+    <div className="flex h-dvh flex-col overflow-hidden bg-paper text-ink">
+      {/* Full-width banner — spans nav + content + detail rail, stays pinned
+          above the scrolling columns. */}
       <PortalPreviewBanner
         clientId={id}
         clientName={displayName}
         editEnabled={access.client.portalEditEnabled}
       />
-      <div className="grid flex-1 grid-cols-[240px_minmax(0,1fr)_auto]">
+      {/*
+        The grid fills the height left below the banner (`flex-1 min-h-0`) and
+        each of the three columns scrolls independently (`min-h-0 overflow-y-auto`
+        against the `grid-rows-1` = minmax(0,1fr) track), so scrolling one panel
+        leaves the tops of the other two in view.
+      */}
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_auto] grid-rows-1">
         <PortalNav
           displayName={displayName}
           email={primary?.email ?? ""}
           basePath={basePath}
+          className="flex min-h-0 overflow-y-auto"
         />
-        <main className="border-x border-hair">
+        <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
             {section}
           </PortalModeProvider>
@@ -132,9 +140,12 @@ export default async function PortalPreviewPage({
           Detail rail (createPortal target). `empty:hidden` collapses the slot —
           and with the `auto` third track, the empty grid column too — so the main
           content fills the full width when nothing is selected. When populated it
-          reserves a fixed 420px panel.
+          reserves a fixed 420px panel that scrolls on its own.
         */}
-        <aside id="portal-detail" className="w-[420px] p-4 empty:hidden" />
+        <aside
+          id="portal-detail"
+          className="min-h-0 w-[420px] overflow-y-auto p-4 empty:hidden"
+        />
       </div>
     </div>
   );
