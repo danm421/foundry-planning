@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { clerkClient } from "@clerk/nextjs/server";
 import { getBranding } from "@/lib/branding/db";
 import { resolveAccentColor } from "@/components/pdf/theme";
@@ -19,6 +20,29 @@ export async function resolveBranding(firmId: string): Promise<BrandingResolved>
   const logoDataUrl = await loadLogo(row?.logoUrl ?? null);
   return { primaryColor, firmName, logoDataUrl };
 }
+
+export interface IntakeBranding {
+  logoUrl: string;
+  firmName: string;
+  faviconUrl: string | null;
+}
+
+/**
+ * Branding for client-facing intake surfaces. `null` means the firm has not
+ * uploaded a logo — callers render the Foundry Planning lockup instead. Unlike
+ * `resolveBranding` (PDF), the logo stays a public-blob URL (the browser loads
+ * it directly) and Clerk is only consulted for branded firms, keeping the
+ * default public-page path Clerk-free. React-cached so generateMetadata and
+ * the page render share one resolution per request.
+ */
+export const resolveIntakeBranding = cache(
+  async (firmId: string): Promise<IntakeBranding | null> => {
+    const row = await getBranding(firmId);
+    if (!row?.logoUrl) return null;
+    const firmName = await resolveFirmName(firmId, row.displayName ?? null);
+    return { logoUrl: row.logoUrl, firmName, faviconUrl: row.faviconUrl ?? null };
+  },
+);
 
 /**
  * The firm name printed on report chrome. Clerk's organization name is the
