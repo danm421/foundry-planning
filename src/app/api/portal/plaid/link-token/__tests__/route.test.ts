@@ -67,7 +67,8 @@ describe("POST /api/portal/plaid/link-token", () => {
       expect.objectContaining({
         user: { client_user_id: "client-1" },
         client_name: expect.any(String),
-        products: ["investments", "transactions", "liabilities"],
+        products: ["investments"],
+        required_if_supported_products: ["transactions", "liabilities"],
         country_codes: ["US"],
         language: "en",
       }),
@@ -142,14 +143,23 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(linkTokenCreate).not.toHaveBeenCalled();
   });
 
-  it("new link requests exactly Investments + Transactions + Liabilities — never Auth", async () => {
+  it("new link requires only Investments; Transactions/Liabilities are required-if-supported — never Auth", async () => {
     // Auth (account/routing numbers) is unused by the app and not in our Plaid
     // production approval; requesting it makes linkTokenCreate fail with
     // INVALID_PRODUCT in production.
+    //
+    // Only Investments is required — `products` is a hard institution filter, so
+    // requiring Transactions/Liabilities blocked brokerages (Fidelity) that
+    // don't support them ("Connectivity not supported"). Those move to
+    // required_if_supported_products: extracted where supported, non-blocking.
     const { POST } = await import("../route");
     await POST(new Request("https://x/", { method: "POST", body: "{}" }));
     const arg = linkTokenCreate.mock.calls[0][0];
-    expect(arg.products).toEqual(["investments", "transactions", "liabilities"]);
+    expect(arg.products).toEqual(["investments"]);
+    expect(arg.required_if_supported_products).toEqual([
+      "transactions",
+      "liabilities",
+    ]);
     expect(arg.additional_consented_products).toBeUndefined();
   });
 

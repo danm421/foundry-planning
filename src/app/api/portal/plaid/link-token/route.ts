@@ -100,8 +100,16 @@ export async function POST(req: Request): Promise<Response> {
       // Never request Auth: account/routing numbers are unused by the app and
       // Auth is not in our Plaid production approval — including it fails the
       // whole linkTokenCreate with INVALID_PRODUCT in production.
-      products: [
-        Products.Investments,
+      //
+      // Only Investments is *required*. Everything in `products` is a hard
+      // filter: Link only shows institutions that support *every* listed
+      // product, so requiring Transactions/Liabilities silently blocked
+      // brokerages (Fidelity, etc.) with a "Connectivity not supported" screen —
+      // they support Investments but not Transactions/Liabilities. Moving those
+      // to required_if_supported_products keeps such institutions selectable and
+      // still extracts (and bills) Transactions/Liabilities wherever supported.
+      products: [Products.Investments],
+      required_if_supported_products: [
         Products.Transactions,
         Products.Liabilities,
       ],
