@@ -363,18 +363,28 @@ export async function updateAccountForClient(args: {
   // identity/tenancy fields then spreads the rest. We do NOT zod-parse: a whitelist
   // would silently drop legitimately-updatable columns (deriveFromHoldings, notes,
   // …). See file header.
+  //
+  // plaidItemId / plaidAccountId are ALSO stripped: they are Plaid-managed link
+  // columns, never advisor-editable through this route. The whole lib/plaid layer
+  // scopes reads/writes by plaidItemId alone (refresh, sync, unlink), so a forged
+  // pair here could point an account at another client's Plaid item — a tenant-
+  // isolation break. They are only ever set by the Plaid link/exchange flows.
   const body = input as Record<string, unknown>;
   const {
     id: _stripId,
     clientId: _stripClientId,
     createdAt: _stripCreatedAt,
     updatedAt: _stripUpdatedAt,
+    plaidItemId: _stripPlaidItemId,
+    plaidAccountId: _stripPlaidAccountId,
     ...safeUpdate
   } = body;
   void _stripId;
   void _stripClientId;
   void _stripCreatedAt;
   void _stripUpdatedAt;
+  void _stripPlaidItemId;
+  void _stripPlaidAccountId;
 
   // Cross-tenant FK asserts on the present keys (port ~55-66).
   if ("ownerEntityId" in safeUpdate) {

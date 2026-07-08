@@ -38,6 +38,7 @@ import {
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
+import { redactPlaidError } from "@/lib/plaid/errors";
 import { deleteImportFile } from "@/lib/imports/blob";
 import { deleteBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -306,7 +307,7 @@ export async function purgeFirmById(firmId: string): Promise<void> {
       try {
         await plaid.itemRemove({ access_token: decrypt(row.accessToken) });
       } catch (err) {
-        console.error(`[purge-firm] plaid itemRemove failed for ${firmId}:`, err);
+        console.error(`[purge-firm] plaid itemRemove failed for ${firmId}:`, redactPlaidError(err));
       }
     }
   }
