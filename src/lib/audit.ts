@@ -358,6 +358,7 @@ export type AuditAction =
   // Phase 4 — spending transactions / categorization
   | "portal.transaction.create"
   | "portal.transaction.update"
+  | "portal.transaction.review_all"
   | "portal.transaction.delete"
   | "portal.rule.create"
   | "portal.rule.update"

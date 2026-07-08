@@ -151,10 +151,32 @@ describe("DashboardGrid rail drill-downs", () => {
 
   it("reverts the to-review row when the reviewed PUT fails", async () => {
     const user = userEvent.setup();
-    render(<LayoutLike />);
+    render(<LayoutLike editEnabled />);
     await user.click(screen.getAllByLabelText("Mark as reviewed")[0]);
     await waitFor(() => expect(screen.getByText(/Couldn.t save/)).toBeInTheDocument());
     expect(screen.getByText("Whole Foods")).toBeInTheDocument();
+  });
+
+  it("clears the whole queue from the tile's mark-all button", async () => {
+    type FakeFetch = (
+      url: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+    const fetchMock = vi.fn<FakeFetch>(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, count: 1 }) }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled />);
+    await user.click(screen.getByRole("button", { name: /mark all reviewed/i }));
+    // Optimistic: the queue empties to the caught-up state.
+    await waitFor(() => expect(screen.getByText(/caught up/)).toBeInTheDocument());
+    expect(screen.queryByText("Whole Foods")).not.toBeInTheDocument();
+    const post = fetchMock.mock.calls.find(([u]) =>
+      String(u).includes("/api/portal/transactions/review-all"),
+    );
+    expect(post).toBeTruthy();
+    expect(post![1]?.method).toBe("POST");
   });
 
   it("opens the net-worth breakdown from the net-worth tile", async () => {

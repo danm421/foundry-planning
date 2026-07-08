@@ -13,7 +13,7 @@ export function TileNetWorth({
   onOpen: () => void;
 }): ReactElement {
   return (
-    <TileFrame title="Net worth" href="/portal/accounts" linkLabel="Accounts">
+    <TileFrame title="Net worth" href="/accounts" linkLabel="Accounts">
       <button
         type="button"
         onClick={onOpen}

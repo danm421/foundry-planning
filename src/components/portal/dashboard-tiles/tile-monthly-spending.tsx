@@ -37,7 +37,7 @@ export function TileMonthlySpending({
 }): ReactElement {
   const under = spending.underBy >= 0;
   return (
-    <TileFrame title="Monthly spending" href="/portal/transactions" linkLabel="Transactions">
+    <TileFrame title="Monthly spending" href="/transactions" linkLabel="Transactions">
       {spending.budgeted > 0 ? (
         <>
           <button

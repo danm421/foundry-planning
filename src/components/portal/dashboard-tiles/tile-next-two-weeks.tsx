@@ -19,7 +19,7 @@ export function TileNextTwoWeeks({
   onOpen: (id: string) => void;
 }): ReactElement {
   return (
-    <TileFrame title="Next two weeks" href="/portal/recurrings" linkLabel="Recurrings">
+    <TileFrame title="Next two weeks" href="/recurrings" linkLabel="Recurrings">
       {recurrings.length === 0 ? (
         <p className="text-[13px] text-ink-3">Nothing due in the next two weeks.</p>
       ) : (

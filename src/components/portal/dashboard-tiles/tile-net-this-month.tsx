@@ -11,7 +11,7 @@ export function TileNetThisMonth({
   const positive = netThisMonth.net >= 0;
   const up = netThisMonth.deltaAbs >= 0;
   return (
-    <TileFrame title="Net this month" href="/portal/budget" linkLabel="Budget">
+    <TileFrame title="Net this month" href="/budget" linkLabel="Budget">
       <div className={`mb-1 tabular text-[28px] font-semibold ${positive ? "text-ink" : "text-crit"}`}>
         {fmtUsd(netThisMonth.net)}
       </div>

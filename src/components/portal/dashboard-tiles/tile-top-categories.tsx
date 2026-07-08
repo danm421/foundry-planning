@@ -11,7 +11,7 @@ export function TileTopCategories({
   onOpen: (categoryId: string, name: string) => void;
 }): ReactElement {
   return (
-    <TileFrame title="Top categories" href="/portal/budget" linkLabel="View all">
+    <TileFrame title="Top categories" href="/budget" linkLabel="View all">
       {topCategories.length === 0 ? (
         <p className="text-[13px] text-ink-3">No spending yet this month.</p>
       ) : (

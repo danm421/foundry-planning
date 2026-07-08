@@ -15,17 +15,36 @@ describe("TileToReview", () => {
   it("renders the count and reports checkmark clicks", () => {
     const onMark = vi.fn();
     render(
-      <TileToReview items={items} count={2} error={false} onMarkReviewed={onMark} onOpen={() => {}} />,
+      <TileToReview items={items} count={2} error={false} editEnabled onMarkReviewed={onMark} onMarkAll={() => {}} onOpen={() => {}} />,
     );
     expect(screen.getByText("2")).toBeInTheDocument();
     fireEvent.click(screen.getAllByLabelText("Mark as reviewed")[0]);
     expect(onMark).toHaveBeenCalledWith("t1");
   });
 
+  it("reports mark-all clicks", () => {
+    const onMarkAll = vi.fn();
+    render(
+      <TileToReview items={items} count={2} error={false} editEnabled onMarkReviewed={() => {}} onMarkAll={onMarkAll} onOpen={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /mark all reviewed/i }));
+    expect(onMarkAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides edit controls when editing is disabled", () => {
+    render(
+      <TileToReview items={items} count={2} error={false} editEnabled={false} onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={() => {}} />,
+    );
+    expect(screen.queryByLabelText("Mark as reviewed")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /mark all reviewed/i })).not.toBeInTheDocument();
+    // The rows themselves are still visible and openable.
+    expect(screen.getByText("Amazon")).toBeInTheDocument();
+  });
+
   it("reports row opens and surfaces the error line", () => {
     const onOpen = vi.fn();
     render(
-      <TileToReview items={items} count={2} error onMarkReviewed={() => {}} onOpen={onOpen} />,
+      <TileToReview items={items} count={2} error editEnabled onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={onOpen} />,
     );
     fireEvent.click(screen.getByText("Amazon"));
     expect(onOpen).toHaveBeenCalledWith("t1");
@@ -34,7 +53,7 @@ describe("TileToReview", () => {
 
   it("shows the caught-up state at zero", () => {
     render(
-      <TileToReview items={[]} count={0} error={false} onMarkReviewed={() => {}} onOpen={() => {}} />,
+      <TileToReview items={[]} count={0} error={false} editEnabled onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={() => {}} />,
     );
     expect(screen.getByText(/caught up/)).toBeInTheDocument();
   });
