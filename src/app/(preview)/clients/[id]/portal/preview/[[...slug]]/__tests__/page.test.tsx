@@ -5,6 +5,11 @@ import { render } from "@testing-library/react";
 // Mock the section components so their own DB queries don't run during
 // the catch-all dispatch test. Each renders a marker div that captures
 // the props the page passed in.
+vi.mock("@/components/portal/portal-dashboard", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-dashboard" data-client={clientId} />
+  ),
+}));
 vi.mock("@/components/portal/household-section", () => ({
   default: ({ clientId }: { clientId: string }) => (
     <div data-testid="section-household" data-client={clientId} />
@@ -36,23 +41,33 @@ vi.mock("@/components/portal/portal-preview-banner", () => ({
   ),
 }));
 
-// Page does two queries: clients (.limit chain) and crmHouseholdContacts (raw await).
-// Same thenable-with-.limit() pattern as the household-section test.
+// The page no longer inherits (app)/clients/[id]/layout.tsx — it must call
+// requireClientAccess itself. The mock's client row also feeds the banner
+// (portalEditEnabled) and the contacts lookup (crmHouseholdId).
+vi.mock("@/lib/clients/authz", () => ({
+  requireClientAccess: vi.fn(() =>
+    Promise.resolve({
+      client: { crmHouseholdId: "h1", portalEditEnabled: true },
+      firmId: "f1",
+      permission: "edit",
+      access: "own",
+    }),
+  ),
+}));
+
+// Single remaining db query: crmHouseholdContacts (raw await on the builder).
 function mkQuery(): unknown {
   const contactsRows = [
     { firstName: "Pat", lastName: "Client", email: "pat@example.com", role: "primary" },
   ];
-  const clientRow = { crmHouseholdId: "h1", portalEditEnabled: true };
   return {
     then: (resolve: (v: unknown) => unknown) => resolve(contactsRows),
-    limit: () => Promise.resolve([clientRow]),
   };
 }
 vi.mock("@/db", () => ({
   db: { select: () => ({ from: () => ({ where: () => mkQuery() }) }) },
 }));
 vi.mock("@/db/schema", () => ({
-  clients: {},
   crmHouseholdContacts: {},
 }));
 vi.mock("@/lib/portal/privacy", () => ({
@@ -68,6 +83,7 @@ vi.mock("next/navigation", () => ({
 
 import PreviewPage from "../page";
 import { notFound } from "next/navigation";
+import { requireClientAccess } from "@/lib/clients/authz";
 
 async function renderPreview(slug: string[] | undefined) {
   const ui = await PreviewPage({ params: Promise.resolve({ id: "c1", slug }) });
@@ -75,9 +91,10 @@ async function renderPreview(slug: string[] | undefined) {
 }
 
 describe("PortalPreview catch-all", () => {
-  it("renders HouseholdSection on empty slug", async () => {
+  it("asserts client access and renders the dashboard on empty slug", async () => {
     const { container } = await renderPreview(undefined);
-    const node = container.querySelector("[data-testid='section-household']");
+    expect(requireClientAccess).toHaveBeenCalledWith("c1");
+    const node = container.querySelector("[data-testid='section-dashboard']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
   });
@@ -85,6 +102,7 @@ describe("PortalPreview catch-all", () => {
   it("renders HouseholdSection on slug=['profile']", async () => {
     const { container } = await renderPreview(["profile"]);
     expect(container.querySelector("[data-testid='section-household']")).toBeTruthy();
+    expect(container.querySelector("[data-testid='section-dashboard']")).toBeNull();
   });
 
   it("renders FamilySection on slug=['profile','family']", async () => {
@@ -100,6 +118,12 @@ describe("PortalPreview catch-all", () => {
 
   it("calls notFound() for unknown slug", async () => {
     await expect(renderPreview(["does-not-exist"])).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("calls notFound() when client access is denied", async () => {
+    vi.mocked(requireClientAccess).mockRejectedValueOnce(new Error("denied"));
+    await expect(renderPreview(["profile"])).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalled();
   });
 
