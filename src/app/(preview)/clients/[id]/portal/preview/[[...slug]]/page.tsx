@@ -46,8 +46,22 @@ export default async function PortalPreviewPage({
 
   // The client's advisor-sharing switches gate the budgeting sections below.
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
-  // the client kept private may enter this page's payload.
-  const privacy = await loadPortalPrivacy(id);
+  // the client kept private may enter this page's payload. Both reads sit
+  // behind the access gate above; they are independent of each other.
+  const [privacy, contacts] = await Promise.all([
+    loadPortalPrivacy(id),
+    access.client.crmHouseholdId
+      ? db
+          .select({
+            firstName: crmHouseholdContacts.firstName,
+            lastName: crmHouseholdContacts.lastName,
+            email: crmHouseholdContacts.email,
+            role: crmHouseholdContacts.role,
+          })
+          .from(crmHouseholdContacts)
+          .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
+      : [],
+  ]);
 
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
@@ -88,17 +102,6 @@ export default async function PortalPreviewPage({
     notFound();
   }
 
-  const contacts = access.client.crmHouseholdId
-    ? await db
-        .select({
-          firstName: crmHouseholdContacts.firstName,
-          lastName: crmHouseholdContacts.lastName,
-          email: crmHouseholdContacts.email,
-          role: crmHouseholdContacts.role,
-        })
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
-    : [];
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
   const displayName = primary
     ? `${primary.firstName} ${primary.lastName ?? ""}`.trim()
@@ -112,7 +115,7 @@ export default async function PortalPreviewPage({
       <PortalPreviewBanner
         clientId={id}
         clientName={displayName}
-        editEnabled={access.client.portalEditEnabled ?? false}
+        editEnabled={access.client.portalEditEnabled}
       />
       <div className="grid flex-1 grid-cols-[240px_minmax(0,1fr)_auto]">
         <PortalNav
