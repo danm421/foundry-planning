@@ -11,6 +11,7 @@ import {
   gifts,
   trustSplitInterestDetails,
   crmHouseholdContacts,
+  plaidItems,
 } from "@/db/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { computePlanEndAge } from "@/lib/plan-horizon";
@@ -22,6 +23,7 @@ import { requireClientAccess, requireClientEditAccess } from "@/lib/clients/auth
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { revokePlaidTokens } from "@/lib/plaid/revoke";
 
 export const dynamic = "force-dynamic";
 
@@ -290,9 +292,22 @@ export async function DELETE(
 
     const snapshot = toClientSnapshot(existing);
 
+    // Plaid access tokens, collected BEFORE the cascade drops plaid_items —
+    // afterwards the encrypted tokens are gone and the vendor-side connection
+    // can never be severed (audit F3).
+    const plaidTokenRows = await db
+      .select({ accessToken: plaidItems.accessToken })
+      .from(plaidItems)
+      .where(eq(plaidItems.clientId, id));
+
     await db
       .delete(clients)
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+    await revokePlaidTokens(
+      plaidTokenRows.map((r) => r.accessToken),
+      `client-delete ${id}`,
+    );
 
     await recordDelete({
       action: "client.delete",

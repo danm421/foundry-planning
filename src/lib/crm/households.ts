@@ -5,6 +5,7 @@ import {
   crmHouseholds,
   crmHouseholdContacts,
   crmHouseholdViews,
+  plaidItems,
   scenarios,
 } from "@/db/schema";
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-orm";
@@ -17,6 +18,7 @@ import { recordDelete } from "@/lib/audit/record-helpers";
 import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
+import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import type { CreateCrmHouseholdInput } from "./schemas";
 
 type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
@@ -438,12 +440,29 @@ export async function purgeCrmHouseholdById(
   const snapshot = toHouseholdSnapshot(household);
   const planningClientId = household.planningClient?.id ?? null;
 
+  // Plaid access tokens, collected BEFORE the client cascade drops
+  // plaid_items — afterwards the encrypted tokens are gone and the
+  // vendor-side connection can never be severed (audit F3). Lives in this
+  // primitive so every deletion path (manual permanent-delete, trash-purge
+  // cron, firm purge) inherits the revoke.
+  const plaidTokenRows = planningClientId
+    ? await db
+        .select({ accessToken: plaidItems.accessToken })
+        .from(plaidItems)
+        .where(eq(plaidItems.clientId, planningClientId))
+    : [];
+
   await db.transaction(async (tx) => {
     if (planningClientId) {
       await tx.delete(clients).where(eq(clients.id, planningClientId));
     }
     await tx.delete(crmHouseholds).where(eq(crmHouseholds.id, id));
   });
+
+  await revokePlaidTokens(
+    plaidTokenRows.map((r) => r.accessToken),
+    `household-purge ${id}`,
+  );
 
   await recordDelete({
     action: "crm.household.delete",

@@ -7,8 +7,6 @@ const mocks = vi.hoisted(() => ({
   selectHouseholdDocs: vi.fn(),
   selectImportFiles: vi.fn(),
   selectTaskFiles: vi.fn(),
-  selectPlaidItems: vi.fn(),
-  plaidItemRemove: vi.fn(),
   purgeHousehold: vi.fn(),
   deleteSubs: vi.fn(),
   deleteInvoices: vi.fn(),
@@ -61,7 +59,6 @@ vi.mock("@/db", async () => {
             if (tbl === s.crmHouseholdDocuments) return mocks.selectHouseholdDocs();
             if (tbl === s.clientImportFiles) return mocks.selectImportFiles();
             if (tbl === s.crmTaskFiles) return mocks.selectTaskFiles();
-            if (tbl === s.plaidItems) return mocks.selectPlaidItems();
             if (tbl === s.subscriptions) return mocks.selectCustomer();
             return [];
           },
@@ -110,8 +107,6 @@ vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({ organizations: { deleteOrganization: mocks.clerkDeleteOrg } }),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
-vi.mock("@/lib/plaid/client", () => ({ getPlaidClient: () => ({ itemRemove: mocks.plaidItemRemove }) }));
-vi.mock("@/lib/plaid/crypto", () => ({ decrypt: (v: string) => `decrypted-${v}` }));
 vi.mock("@vercel/blob", () => ({ del: mocks.vercelDel }));
 vi.mock("@/lib/imports/blob", () => ({ deleteImportFile: mocks.deleteImportFile }));
 vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandingAsset }));
@@ -143,11 +138,6 @@ beforeEach(() => {
   mocks.selectTaskFiles.mockResolvedValue([
     { storageKey: "crm-tasks/firm1/task1/abc-task-file.pdf" },
   ]);
-  mocks.selectPlaidItems.mockResolvedValue([
-    { accessToken: "enc-1" },
-    { accessToken: "enc-2" },
-  ]);
-  mocks.plaidItemRemove.mockResolvedValue({ request_id: "rq" });
   mocks.purgeHousehold.mockResolvedValue(undefined);
   mocks.selectCustomer.mockResolvedValue([{ stripeCustomerId: "cus_1" }]);
   mocks.stripeCustomersDel.mockResolvedValue({ id: "cus_1", deleted: true });
@@ -278,20 +268,9 @@ describe("purgeFirmById", () => {
     );
   });
 
-  it("revokes each Plaid item at the vendor (audit F2)", async () => {
-    await purgeFirmById("org_1");
-    expect(mocks.plaidItemRemove).toHaveBeenCalledTimes(2);
-    expect(mocks.plaidItemRemove).toHaveBeenCalledWith({ access_token: "decrypted-enc-1" });
-    expect(mocks.plaidItemRemove).toHaveBeenCalledWith({ access_token: "decrypted-enc-2" });
-  });
-
-  it("swallows a Plaid itemRemove failure and completes the purge", async () => {
-    mocks.plaidItemRemove.mockRejectedValueOnce(new Error("502"));
-    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
-    expect(mocks.updateFirm).toHaveBeenCalledWith(
-      expect.objectContaining({ purgedAt: expect.any(Date) }),
-    );
-  });
+  // Plaid vendor-side revoke (audit F2/F3) moved into purgeCrmHouseholdById —
+  // every client belongs to exactly one household, so the household loop
+  // covers the firm. Asserted in crm/__tests__/household-purge-plaid-revoke.
 
   // Binds PURGED_FIRM_TABLES (the drift-guard source of truth) to the deletes
   // purgeFirmById actually fires — so adding a table to the coverage list

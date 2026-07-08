@@ -53,5 +53,9 @@ export const config: VercelConfig = {
       path: "/api/cron/drain-compliance-exports",
       schedule: "* * * * *",
     },
+    {
+      path: "/api/cron/prune-plaid-webhook-events",
+      schedule: "0 8 * * *",
+    },
   ],
 };
