@@ -67,7 +67,7 @@ describe("POST /api/portal/plaid/link-token", () => {
       expect.objectContaining({
         user: { client_user_id: "client-1" },
         client_name: expect.any(String),
-        products: ["auth", "investments", "transactions", "liabilities"],
+        products: ["investments", "transactions", "liabilities"],
         country_codes: ["US"],
         language: "en",
       }),
@@ -142,13 +142,14 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(linkTokenCreate).not.toHaveBeenCalled();
   });
 
-  it("new link requests Transactions + Liabilities", async () => {
+  it("new link requests exactly Investments + Transactions + Liabilities — never Auth", async () => {
+    // Auth (account/routing numbers) is unused by the app and not in our Plaid
+    // production approval; requesting it makes linkTokenCreate fail with
+    // INVALID_PRODUCT in production.
     const { POST } = await import("../route");
     await POST(new Request("https://x/", { method: "POST", body: "{}" }));
     const arg = linkTokenCreate.mock.calls[0][0];
-    expect(arg.products).toEqual(
-      expect.arrayContaining(["auth", "investments", "transactions", "liabilities"]),
-    );
+    expect(arg.products).toEqual(["investments", "transactions", "liabilities"]);
     expect(arg.additional_consented_products).toBeUndefined();
   });
 

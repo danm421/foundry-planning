@@ -97,8 +97,10 @@ export async function POST(req: Request): Promise<Response> {
     const webhookUrl = plaidWebhookUrl();
     const resp = await plaid.linkTokenCreate({
       ...baseRequest,
+      // Never request Auth: account/routing numbers are unused by the app and
+      // Auth is not in our Plaid production approval — including it fails the
+      // whole linkTokenCreate with INVALID_PRODUCT in production.
       products: [
-        Products.Auth,
         Products.Investments,
         Products.Transactions,
         Products.Liabilities,
