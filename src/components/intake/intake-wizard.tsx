@@ -3,6 +3,10 @@
 import { useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { WizardChrome } from "@/components/wizard-chrome";
+import {
+  IntakeBrandingHeader,
+  type IntakeHeaderBranding,
+} from "./branding-header";
 import { WelcomeScreen } from "./welcome-screen";
 import { FamilyStep } from "./steps/family-step";
 import { AccountsStep } from "./steps/accounts-step";
@@ -19,6 +23,8 @@ export interface IntakeWizardProps {
   mode: "blank" | "prefilled";
   busy?: boolean;
   error?: string | null;
+  /** Firm letterhead; null/undefined renders the Foundry Planning lockup. */
+  branding?: IntakeHeaderBranding | null;
 }
 
 // ─── Section / sub-step state machine ───────────────────────────────────────
@@ -85,6 +91,7 @@ export function IntakeWizard({
   mode,
   busy,
   error,
+  branding,
 }: IntakeWizardProps) {
   // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals; 6 = review
   const [flatIndex, setFlatIndex] = useState(0);
@@ -110,6 +117,7 @@ export function IntakeWizard({
   if (step.section === "welcome") {
     return (
       <div>
+        <IntakeBrandingHeader branding={branding} />
         {error && (
           <div
             role="alert"
@@ -165,6 +173,7 @@ export function IntakeWizard({
 
   return (
     <div>
+      <IntakeBrandingHeader branding={branding} />
       {error && (
         <div
           role="alert"

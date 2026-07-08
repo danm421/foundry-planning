@@ -106,4 +106,29 @@ describe("IntakeWizard", () => {
     fireEvent.click(submitBtn);
     expect(onSubmit).toHaveBeenCalledOnce();
   });
+
+  it("shows the firm logo letterhead when branding is provided, on welcome and chrome steps", () => {
+    render(
+      <IntakeWizard
+        {...makeProps({
+          branding: {
+            logoUrl: "https://cdn.example/logo.png",
+            firmName: "Acme Wealth",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Acme Wealth" })).toBeInTheDocument();
+
+    // Letterhead persists past the welcome screen onto WizardChrome steps
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    expect(screen.getByRole("img", { name: "Acme Wealth" })).toBeInTheDocument();
+  });
+
+  it("shows the Foundry lockup letterhead when unbranded", () => {
+    render(<IntakeWizard {...makeProps()} />);
+    expect(
+      screen.getByRole("img", { name: "Foundry Planning" }),
+    ).toBeInTheDocument();
+  });
 });
