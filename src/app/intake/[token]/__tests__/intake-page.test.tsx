@@ -20,20 +20,27 @@ vi.mock("@/lib/intake/tokens", () => ({
   isExpired: vi.fn(),
 }));
 
+vi.mock("@/lib/branding/branding", () => ({
+  resolveIntakeBranding: vi.fn(),
+}));
+
 // ─── Mock IntakeClient so the branching test stays pure ─────────────────────
 
 vi.mock("../intake-client", () => ({
   IntakeClient: ({
     token,
     recipientName,
+    branding,
   }: {
     token: string;
     recipientName: string | null;
     initialPayload: unknown;
+    branding: { firmName: string } | null;
   }) => (
     <div data-testid="intake-client">
       <span data-testid="token">{token}</span>
       <span data-testid="recipient">{recipientName ?? "anonymous"}</span>
+      <span data-testid="branding">{branding?.firmName ?? "none"}</span>
     </div>
   ),
 }));
@@ -42,10 +49,18 @@ vi.mock("../intake-client", () => ({
 
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
-import IntakePage from "../page";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
+import IntakePage, { generateMetadata } from "../page";
 
 const mockLoadFormByToken = vi.mocked(loadFormByToken);
 const mockIsExpired = vi.mocked(isExpired);
+const mockResolveIntakeBranding = vi.mocked(resolveIntakeBranding);
+
+const ACME_BRANDING = {
+  logoUrl: "https://cdn.example/logo.png",
+  firmName: "Acme Wealth",
+  faviconUrl: "https://cdn.example/fav.png",
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -177,5 +192,66 @@ describe("IntakePage server component branching", () => {
 
     expect(screen.getByTestId("intake-client")).toBeInTheDocument();
     expect(screen.getByTestId("recipient")).toHaveTextContent("anonymous");
+  });
+
+  it("passes firm branding to the client wrapper when the firm has a logo", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(makeForm() as any);
+    mockIsExpired.mockReturnValue(false);
+    mockResolveIntakeBranding.mockResolvedValue(ACME_BRANDING);
+
+    render(await IntakePage({ params: makeParams() }));
+
+    expect(screen.getByTestId("branding")).toHaveTextContent("Acme Wealth");
+    expect(mockResolveIntakeBranding).toHaveBeenCalledWith("firm-1");
+  });
+
+  it("renders the Foundry lockup on the expired state for an unknown token", async () => {
+    mockLoadFormByToken.mockResolvedValue(null);
+
+    render(await IntakePage({ params: makeParams() }));
+
+    expect(
+      screen.getByRole("img", { name: "Foundry Planning" }),
+    ).toBeInTheDocument();
+    expect(mockResolveIntakeBranding).not.toHaveBeenCalled();
+  });
+
+  it("shows the firm letterhead on the expired state when the form is known", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(makeForm() as any);
+    mockIsExpired.mockReturnValue(true);
+    mockResolveIntakeBranding.mockResolvedValue(ACME_BRANDING);
+
+    render(await IntakePage({ params: makeParams() }));
+
+    expect(screen.getByRole("img", { name: "Acme Wealth" })).toBeInTheDocument();
+  });
+});
+
+describe("generateMetadata", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns firm title and favicon for a branded firm", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(makeForm() as any);
+    mockResolveIntakeBranding.mockResolvedValue(ACME_BRANDING);
+
+    const meta = await generateMetadata({ params: makeParams() });
+
+    expect(meta.title).toBe("Acme Wealth — Client information form");
+    expect(meta.icons).toEqual({ icon: "https://cdn.example/fav.png" });
+  });
+
+  it("returns empty metadata for an unknown token or unbranded firm", async () => {
+    mockLoadFormByToken.mockResolvedValue(null);
+    expect(await generateMetadata({ params: makeParams() })).toEqual({});
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(makeForm() as any);
+    mockResolveIntakeBranding.mockResolvedValue(null);
+    expect(await generateMetadata({ params: makeParams() })).toEqual({});
   });
 });

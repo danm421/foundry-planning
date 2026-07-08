@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
+import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ interface IntakeClientProps {
   token: string;
   recipientName: string | null;
   initialPayload: unknown; // IntakePayload from DB, cast to IntakeDraft on mount
+  /** Firm letterhead; null renders the Foundry Planning lockup. */
+  branding?: IntakeHeaderBranding | null;
 }
 
 // ─── Client wrapper ───────────────────────────────────────────────────────────
@@ -21,6 +24,7 @@ export function IntakeClient({
   token,
   recipientName,
   initialPayload,
+  branding,
 }: IntakeClientProps) {
   // Seed local draft from the stored payload.
   // The payload is a full IntakePayload (strict) when filled, or a partial
@@ -139,7 +143,7 @@ export function IntakeClient({
   }, [token, value]);
 
   if (submitted) {
-    return <IntakeThankYou recipientName={recipientName} />;
+    return <IntakeThankYou recipientName={recipientName} branding={branding} />;
   }
 
   return (
@@ -150,6 +154,7 @@ export function IntakeClient({
       onSubmit={handleSubmit}
       busy={busy}
       error={error}
+      branding={branding}
     />
   );
 }
