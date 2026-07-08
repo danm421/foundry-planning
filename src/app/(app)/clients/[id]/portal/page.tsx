@@ -108,8 +108,13 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             title="Preview as client"
             description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
             action={
-              <Link href={`/clients/${id}/portal/preview`} className={portalBtn.accent}>
-                Open preview
+              <Link
+                href={`/clients/${id}/portal/preview`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={portalBtn.accent}
+              >
+                Open preview ↗
               </Link>
             }
           />
