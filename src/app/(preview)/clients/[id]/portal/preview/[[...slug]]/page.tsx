@@ -1,8 +1,10 @@
 import type { ReactElement } from "react";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts } from "@/db/schema";
+import { crmHouseholdContacts } from "@/db/schema";
+import { requireClientAccess } from "@/lib/clients/authz";
 import HouseholdSection from "@/components/portal/household-section";
 import FamilySection from "@/components/portal/family-section";
 import TrustsSection from "@/components/portal/trusts-section";
@@ -23,30 +25,42 @@ interface Props {
   params: Promise<{ id: string; slug?: string[] }>;
 }
 
+// Advisor-only preview of the client portal. This route lives OUTSIDE the
+// (app) route group so it renders full-screen — no advisor sidebar/topbar —
+// matching what the client actually sees. It's opened in a new tab from
+// /clients/[id]/portal.
+export const metadata: Metadata = {
+  title: "Portal preview",
+  robots: { index: false, follow: false },
+};
+
 export default async function PortalPreviewPage({
   params,
 }: Props): Promise<ReactElement> {
   const { id, slug } = await params;
 
-  // Firm-ownership of `id` is enforced by the parent clients/[id]/layout.tsx
-  // (requireClientAccess → notFound() on wrong firm). The by-id db reads below
-  // are safe ONLY because no ungated layout sits between that layout and this
-  // page — do not add a portal/ or preview/ layout without re-asserting access.
+  // No parent layout asserts firm-ownership here (unlike routes under
+  // (app)/clients/[id]) — this page must do it itself before any by-id reads.
+  const access = await requireClientAccess(id).catch(() => null);
+  if (!access) notFound();
 
   // The client's advisor-sharing switches gate the budgeting sections below.
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
-  // the client kept private may enter this page's payload. The client row
-  // (display name + editEnabled for nav + banner) is an independent lookup.
-  const [privacy, [row]] = await Promise.all([
+  // the client kept private may enter this page's payload. Both reads sit
+  // behind the access gate above; they are independent of each other.
+  const [privacy, contacts] = await Promise.all([
     loadPortalPrivacy(id),
-    db
-      .select({
-        crmHouseholdId: clients.crmHouseholdId,
-        portalEditEnabled: clients.portalEditEnabled,
-      })
-      .from(clients)
-      .where(eq(clients.id, id))
-      .limit(1),
+    access.client.crmHouseholdId
+      ? db
+          .select({
+            firstName: crmHouseholdContacts.firstName,
+            lastName: crmHouseholdContacts.lastName,
+            email: crmHouseholdContacts.email,
+            role: crmHouseholdContacts.role,
+          })
+          .from(crmHouseholdContacts)
+          .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
+      : [],
   ]);
 
   // Dispatch on slug. Empty / ["profile"] → Household.
@@ -88,17 +102,6 @@ export default async function PortalPreviewPage({
     notFound();
   }
 
-  const contacts = row?.crmHouseholdId
-    ? await db
-        .select({
-          firstName: crmHouseholdContacts.firstName,
-          lastName: crmHouseholdContacts.lastName,
-          email: crmHouseholdContacts.email,
-          role: crmHouseholdContacts.role,
-        })
-        .from(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, row.crmHouseholdId))
-    : [];
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
   const displayName = primary
     ? `${primary.firstName} ${primary.lastName ?? ""}`.trim()
@@ -107,29 +110,32 @@ export default async function PortalPreviewPage({
   const basePath = `/clients/${id}/portal/preview`;
 
   return (
-    <div className="grid min-h-[calc(100vh-4rem)] grid-cols-[240px_minmax(0,1fr)_auto] border border-hair bg-paper text-ink">
-      <PortalNav
-        displayName={displayName}
-        email={primary?.email ?? ""}
-        basePath={basePath}
+    <div className="flex min-h-dvh flex-col bg-paper text-ink">
+      {/* Full-width sticky banner — spans nav + content + detail rail. */}
+      <PortalPreviewBanner
+        clientId={id}
+        clientName={displayName}
+        editEnabled={access.client.portalEditEnabled}
       />
-      <main className="border-x border-hair">
-        <PortalPreviewBanner
-          clientId={id}
-          clientName={displayName}
-          editEnabled={row?.portalEditEnabled ?? false}
+      <div className="grid flex-1 grid-cols-[240px_minmax(0,1fr)_auto]">
+        <PortalNav
+          displayName={displayName}
+          email={primary?.email ?? ""}
+          basePath={basePath}
         />
-        <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
-          {section}
-        </PortalModeProvider>
-      </main>
-      {/*
-        Detail rail (createPortal target). `empty:hidden` collapses the slot —
-        and with the `auto` third track, the empty grid column too — so the main
-        content fills the full width when nothing is selected. When populated it
-        reserves a fixed 420px panel.
-      */}
-      <aside id="portal-detail" className="w-[420px] p-4 empty:hidden" />
+        <main className="border-x border-hair">
+          <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
+            {section}
+          </PortalModeProvider>
+        </main>
+        {/*
+          Detail rail (createPortal target). `empty:hidden` collapses the slot —
+          and with the `auto` third track, the empty grid column too — so the main
+          content fills the full width when nothing is selected. When populated it
+          reserves a fixed 420px panel.
+        */}
+        <aside id="portal-detail" className="w-[420px] p-4 empty:hidden" />
+      </div>
     </div>
   );
 }
