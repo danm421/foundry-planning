@@ -16,6 +16,8 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
+import { syncTransactionsForItem } from "@/lib/plaid/transactions-sync";
+import { redactPlaidError } from "@/lib/plaid/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +77,8 @@ export async function POST(req: Request): Promise<Response> {
       .select({
         clientId: plaidItems.clientId,
         institutionName: plaidItems.institutionName,
+        accessToken: plaidItems.accessToken,
+        transactionsCursor: plaidItems.transactionsCursor,
       })
       .from(plaidItems)
       .where(eq(plaidItems.id, body.itemId))
@@ -309,6 +313,37 @@ export async function POST(req: Request): Promise<Response> {
         skippedCount,
       },
     });
+
+    // Best-effort initial transactions sync now that the account mappings are
+    // committed and visible: a fresh link gets its spending history immediately
+    // and transactionsCursor is set — the signal the portal UI uses to drop the
+    // spurious "needs transactions consent" (enable-products) button. Gate on
+    // something actually mapped this commit: advancing the cursor with nothing
+    // mapped would permanently skip the backlog for accounts added later. Never
+    // fail the commit on a sync error — the SYNC_UPDATES_AVAILABLE webhook is the
+    // idempotent safety net.
+    if (linkedCount + addedCount > 0) {
+      try {
+        const summary = await syncTransactionsForItem({
+          id: body.itemId,
+          clientId,
+          accessToken: item.accessToken,
+          transactionsCursor: item.transactionsCursor,
+        });
+        if (!summary.ok) {
+          console.error(
+            "POST /api/portal/plaid/exchange/commit initial sync error:",
+            summary.errorCode,
+            summary.errorMessage,
+          );
+        }
+      } catch (err) {
+        console.error(
+          "POST /api/portal/plaid/exchange/commit initial sync threw:",
+          redactPlaidError(err),
+        );
+      }
+    }
 
     return NextResponse.json({ ok: true, linkedAccountIds });
   } catch (err) {

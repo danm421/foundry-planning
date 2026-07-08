@@ -98,6 +98,12 @@ vi.mock("@/db", () => ({
   db: { select: (...a: unknown[]) => dbSelect(...a), transaction: dbTransaction },
 }));
 
+// Best-effort initial transactions sync fired after a successful commit.
+const syncTransactionsForItem = vi.fn();
+vi.mock("@/lib/plaid/transactions-sync", () => ({
+  syncTransactionsForItem: (...a: unknown[]) => syncTransactionsForItem(...a),
+}));
+
 beforeEach(() => {
   recordCreate.mockReset();
   resolvePortalClient.mockReset();
@@ -114,6 +120,8 @@ beforeEach(() => {
   liabilityUpdateWhere.mockClear();
   txSelect.mockClear();
   txSelectResp = [];
+  syncTransactionsForItem.mockReset();
+  syncTransactionsForItem.mockResolvedValue({ ok: true, added: 0, modified: 0, removed: 0 });
 
   resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
   requireEditEnabled.mockResolvedValue(undefined);
@@ -428,5 +436,133 @@ describe("POST commit — Plaid debt → liabilities", () => {
       }),
     );
     expect(res.status).toBe(409);
+  });
+});
+
+describe("POST commit — best-effort initial transactions sync", () => {
+  it("syncs the item once after a commit that maps at least one account", async () => {
+    nextResponses(
+      [
+        {
+          clientId: "client-1",
+          institutionName: "Chase",
+          accessToken: "enc-token",
+          transactionsCursor: null,
+        },
+      ], // item (now includes accessToken + cursor for the sync)
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }], // link target
+    );
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          { plaidAccountId: "pa-link", action: "link", existingAccountId: "manual-1" },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(syncTransactionsForItem).toHaveBeenCalledTimes(1);
+    expect(syncTransactionsForItem).toHaveBeenCalledWith({
+      id: "item-1",
+      clientId: "client-1",
+      accessToken: "enc-token",
+      transactionsCursor: null,
+    });
+  });
+
+  it("does NOT sync when every decision is skip (nothing mapped — avoids advancing the cursor)", async () => {
+    nextResponses(
+      [
+        {
+          clientId: "client-1",
+          institutionName: "Chase",
+          accessToken: "enc-token",
+          transactionsCursor: null,
+        },
+      ],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+    );
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [{ plaidAccountId: "pa-skip", action: "skip" }],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(syncTransactionsForItem).not.toHaveBeenCalled();
+  });
+
+  it("still returns 200 when the initial sync throws (best-effort)", async () => {
+    syncTransactionsForItem.mockRejectedValue(new Error("plaid down"));
+    nextResponses(
+      [
+        {
+          clientId: "client-1",
+          institutionName: "Chase",
+          accessToken: "enc-token",
+          transactionsCursor: null,
+        },
+      ],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+    );
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          { plaidAccountId: "pa-link", action: "link", existingAccountId: "manual-1" },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ ok: true, linkedAccountIds: ["manual-1"] });
+  });
+
+  it("still returns 200 when the initial sync returns ok:false (best-effort)", async () => {
+    syncTransactionsForItem.mockResolvedValue({
+      ok: false,
+      errorCode: "RATE_LIMIT_EXCEEDED",
+      errorMessage: "slow down",
+    });
+    nextResponses(
+      [
+        {
+          clientId: "client-1",
+          institutionName: "Chase",
+          accessToken: "enc-token",
+          transactionsCursor: null,
+        },
+      ],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+    );
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          { plaidAccountId: "pa-link", action: "link", existingAccountId: "manual-1" },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(syncTransactionsForItem).toHaveBeenCalledTimes(1);
   });
 });
