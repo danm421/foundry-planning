@@ -66,8 +66,9 @@ next-env.d.ts
 # Local-only scripts — filename convention for tools that connect to a
 # live database or otherwise shouldn't run in CI. Mirrors the .env.local
 # pattern above. Committed versions live next to them without the
-# `.local` suffix.
-scripts/*.local.ts
+# `.local` suffix. Covers any extension (.ts/.mjs/.js) plus local state
+# files like saved Playwright auth (scripts/.<name>.local.json).
+scripts/*.local.*
 scripts/.backfill-securities.checkpoint.json
 scripts/.backfill-securities.checkpoint.json.tmp
 
