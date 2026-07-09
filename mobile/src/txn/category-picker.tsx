@@ -1,8 +1,9 @@
 // mobile/src/txn/category-picker.tsx
 //
 // Modal category chooser, shared by the Transactions screen for two jobs:
-// filtering the list (onPick receives the picked category, or null to
-// clear) and recategorizing a single row (onPick applies it to that row).
+// filtering the list (onPick receives the picked category) and
+// recategorizing a single row (onPick applies it to that row; with
+// allowUncategorized, onPick(null) clears the row's category).
 // The caller decides what onPick does — this component only presents +
 // picks. Categories are fetched once, the first time the modal opens.
 
@@ -19,10 +20,18 @@ export function CategoryPickerModal({
   visible,
   onClose,
   onPick,
+  allowUncategorized = false,
 }: {
   visible: boolean;
   onClose: () => void;
   onPick: (category: CategoryPick) => void;
+  /** Show the "Uncategorized" (onPick(null)) row. True for row
+   *  recategorize, where null unambiguously means "clear this
+   *  transaction's category". Omit for filter mode: the server has no
+   *  "categoryId is null" filter param, so onPick(null) there would just
+   *  silently clear the filter — matches the web filter dropdown, which
+   *  offers no Uncategorized option either. */
+  allowUncategorized?: boolean;
 }) {
   const api = useApi();
   const [categories, setCategories] = useState<PortalCategoryDTO[] | null>(null);
@@ -71,7 +80,7 @@ export function CategoryPickerModal({
           </View>
         ) : (
           <ScrollView>
-            <Row label="Uncategorized" onPress={() => onPick(null)} />
+            {allowUncategorized ? <Row label="Uncategorized" onPress={() => onPick(null)} /> : null}
             {groups.map((g) => {
               const leaves = leavesFor(g.id);
               if (leaves.length === 0) return null;

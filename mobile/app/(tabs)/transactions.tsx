@@ -264,6 +264,10 @@ export default function Transactions() {
 
       <CategoryPickerModal
         visible={pickerOpen}
+        // Filter mode hides "Uncategorized": the server can't filter on
+        // "categoryId is null", so picking it would just silently clear the
+        // filter. Row mode keeps it — there null means "clear the category".
+        allowUncategorized={pickerTarget?.kind === "row"}
         onClose={() => {
           setPickerOpen(false);
           setPickerTarget(null);
