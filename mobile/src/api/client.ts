@@ -62,7 +62,11 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new ApiError(body.error ?? `request failed (${res.status})`, res.status);
     }
-    return (await res.json()) as T;
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new ApiError("invalid JSON response", res.status);
+    }
   }
 
   return {

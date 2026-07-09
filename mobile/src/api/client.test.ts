@@ -67,6 +67,21 @@ describe("createApiClient", () => {
     await expect(api.get("/x")).rejects.toBeInstanceOf(NonJsonResponseError);
   });
 
+  it("throws ApiError (not NonJsonResponseError) when 2xx response has malformed JSON body", async () => {
+    const api = createApiClient({
+      baseUrl: "https://api.test",
+      getToken: token,
+      fetchFn: async () =>
+        new Response("{truncated", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const err = await expect(api.get("/x")).rejects.toThrow();
+    await expect(api.get("/x")).rejects.toBeInstanceOf(ApiError);
+    await expect(api.get("/x")).rejects.not.toBeInstanceOf(NonJsonResponseError);
+  });
+
   it("throws ApiError with the status for other failures", async () => {
     const api = createApiClient({
       baseUrl: "https://api.test",
