@@ -77,7 +77,7 @@ describe("createApiClient", () => {
           headers: { "content-type": "application/json" },
         }),
     });
-    const err = await expect(api.get("/x")).rejects.toThrow();
+    await expect(api.get("/x")).rejects.toThrow();
     await expect(api.get("/x")).rejects.toBeInstanceOf(ApiError);
     await expect(api.get("/x")).rejects.not.toBeInstanceOf(NonJsonResponseError);
   });

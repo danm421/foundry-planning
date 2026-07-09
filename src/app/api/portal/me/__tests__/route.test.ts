@@ -34,6 +34,8 @@ beforeEach(() => {
   selectQueue.length = 0;
   resolveMock.mockReset();
   resolveMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+  authErrMock.mockReset();
+  authErrMock.mockReturnValue(null);
   getBrandingMock.mockReset();
   getBrandingMock.mockResolvedValue({ displayName: "Ethos Cached", logoUrl: "https://blob/logo.png" });
   firmNameMock.mockReset();

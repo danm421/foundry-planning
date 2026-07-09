@@ -15,9 +15,9 @@ export type { PortalActorMode };
  *   `x-portal-as-client` header is IGNORED — a client cannot act as another.
  * - Advisor (orgId present): "act as client" preview. The target clientId comes
  *   from the header and is validated with `requireClientEditAccess` (firm/share
- *   edit scope). Every `/api/portal/*` route mutates, so edit access is always
- *   required. If a read-only portal API route is ever added, branch here on a
- *   view variant.
+ *   edit scope). Read-only portal routes (e.g. GET /api/portal/me, /dashboard)
+ *   intentionally require edit access too, mirroring the web act-as preview: an
+ *   advisor with only view-share access cannot load the preview (fail-closed).
  */
 export async function resolvePortalClient(): Promise<{
   clientId: string;
