@@ -18,6 +18,8 @@ export function useAppLock() {
       enabledRef.current = on;
       setEnabledState(on);
       setLocked(shouldLock({ enabled: on, lastActiveAt: null, now: Date.now(), graceMs: LOCK_GRACE_MS }));
+    }).catch(() => {
+      /* keychain unreadable — keep the fail-closed defaults (enabled + locked) */
     });
   }, []);
 
@@ -56,9 +58,13 @@ export function useAppLock() {
   }, []);
 
   const setEnabled = useCallback(async (v: boolean) => {
+    try {
+      await SecureStore.setItemAsync(ENABLED_KEY, v ? "true" : "false");
+    } catch {
+      return; // write failed — keep prior state so UI and persisted flag never diverge
+    }
     enabledRef.current = v;
     setEnabledState(v);
-    await SecureStore.setItemAsync(ENABLED_KEY, v ? "true" : "false");
   }, []);
 
   return { locked, unlock, enabled, setEnabled };
