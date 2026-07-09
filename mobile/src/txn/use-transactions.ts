@@ -124,6 +124,13 @@ export function useTransactions(api: ApiClient, filter: TxnFilter): UseTransacti
   stateRef.current = state;
 
   const offsetRef = useRef(0);
+  // Bumped by every reset() (initial load, filter change, and pull-to-refresh
+  // all funnel through reset()) so an in-flight loadMore/reset fetch can tell,
+  // once it resolves, whether it's still fetching for the CURRENT list. A
+  // mismatch means the list was reset out from under it — its page must be
+  // dropped rather than appended, otherwise rows fetched under the old filter
+  // land in the new filter's list and desync offsetRef from rows.length.
+  const epochRef = useRef(0);
   const dispatch = useCallback((action: TxnAction) => setState((s) => txnReducer(s, action)), []);
 
   const filterKey = JSON.stringify(filter);
@@ -133,18 +140,27 @@ export function useTransactions(api: ApiClient, filter: TxnFilter): UseTransacti
   const stableFilter = useMemo(() => filter, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = useCallback(async () => {
+    // New epoch before anything else — any loadMore/reset fetch already in
+    // flight is now stale and must drop its result on arrival.
+    epochRef.current += 1;
+    const epoch = epochRef.current;
     setLoading(true);
     setError(false);
+    setMutationError(false);
     dispatch({ type: "reset" });
     offsetRef.current = 0;
     try {
       const page = await fetchTransactions(api, { ...stableFilter, limit: TXN_PAGE_SIZE, offset: 0 });
+      if (epoch !== epochRef.current) return; // superseded by a later reset — drop it
       dispatch({ type: "appendPage", page });
       offsetRef.current = page.transactions.length;
     } catch {
-      setError(true);
+      if (epoch === epochRef.current) setError(true);
     } finally {
-      setLoading(false);
+      // Only the still-current epoch clears `loading` — an older, superseded
+      // reset finishing late must not flip the flag off while a newer one is
+      // still in flight (the newer call's own finally will clear it).
+      if (epoch === epochRef.current) setLoading(false);
     }
   }, [api, stableFilter, dispatch]);
 
@@ -157,13 +173,20 @@ export function useTransactions(api: ApiClient, filter: TxnFilter): UseTransacti
   const loadMore = useCallback(() => {
     if (!stateRef.current.hasMore || loadingMore) return;
     const offset = offsetRef.current;
+    const epoch = epochRef.current;
     setLoadingMore(true);
     fetchTransactions(api, { ...stableFilter, limit: TXN_PAGE_SIZE, offset })
       .then((page) => {
+        if (epoch !== epochRef.current) return; // list was reset while this page was in flight
         dispatch({ type: "appendPage", page });
         offsetRef.current = offset + page.transactions.length;
       })
-      .catch(() => setError(true))
+      .catch(() => {
+        if (epoch === epochRef.current) setError(true);
+      })
+      // Unconditional, unlike reset()'s finally: once a reset happens,
+      // loadingMore has no other writer, so a stale drop must still clear it
+      // here or the reentrancy guard above wedges every future loadMore().
       .finally(() => setLoadingMore(false));
   }, [api, stableFilter, dispatch, loadingMore]);
 
