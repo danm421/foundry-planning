@@ -111,7 +111,16 @@ export default function AccountDetail() {
                 </View>
 
                 <View className="mt-6">
-                  <Text className="text-ink-3 text-xs uppercase tracking-wide mb-2">Recent activity</Text>
+                  <View className="flex-row justify-between items-baseline mb-2">
+                    <Text className="text-ink-3 text-xs uppercase tracking-wide">Recent activity</Text>
+                    <Pressable
+                      onPress={() =>
+                        router.push({ pathname: "/(tabs)/transactions", params: { accountId: id } })
+                      }
+                    >
+                      <Text className="text-accent-ink text-xs">View in Transactions →</Text>
+                    </Pressable>
+                  </View>
                   {txnState === "loading" ? (
                     <ActivityIndicator />
                   ) : txnState === "private" ? (
