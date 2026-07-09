@@ -63,6 +63,24 @@ it("refuses to rename the shared root", async () => {
   await expect(updatePortalFolder(rootId, { name: "Renamed" })).rejects.toThrow();
 });
 
+it("rejects moving a folder into itself (cycle guard)", async () => {
+  const child = await createPortalFolder({ name: "Child", parentFolderId: null });
+  await refreshCtx();
+  await expect(updatePortalFolder(child.id, { parentFolderId: child.id })).rejects.toThrow(
+    "Move would create a folder cycle",
+  );
+});
+
+it("rejects moving a folder into its own descendant (cycle guard)", async () => {
+  const parent = await createPortalFolder({ name: "Parent", parentFolderId: null });
+  await refreshCtx();
+  const child = await createPortalFolder({ name: "Child", parentFolderId: parent.id });
+  await refreshCtx();
+  await expect(updatePortalFolder(parent.id, { parentFolderId: child.id })).rejects.toThrow(
+    "Move would create a folder cycle",
+  );
+});
+
 it("on delete, re-homes contained docs to the folder's parent (never vault root)", async () => {
   const child = await createPortalFolder({ name: "Old", parentFolderId: null });
   await refreshCtx();

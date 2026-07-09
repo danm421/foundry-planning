@@ -103,16 +103,45 @@ export async function updatePortalFolder(
   }
   if (patch.parentFolderId !== undefined) {
     const dest = patch.parentFolderId;
+    // Fail-fast against the request-scoped snapshot; the authoritative check
+    // is re-run inside the transaction below against freshly locked data.
     assertInSubtree(ctx.subtree, dest);
-    // Cycle guard: dest must not be folderId or a descendant of it.
-    const all = await db.query.crmDocumentFolders.findMany({ where: eq(crmDocumentFolders.householdId, ctx.householdId) });
-    const descendants = new Set(collectFolderSubtreeIds(all, folderId));
-    if (descendants.has(dest)) throw new Error("Move would create a folder cycle");
     updates.parentFolderId = dest; before.parentFolderId = folder.parentFolderId; after.parentFolderId = dest;
   }
-  const [updated] = await db.update(crmDocumentFolders).set(updates)
-    .where(and(eq(crmDocumentFolders.id, folderId), eq(crmDocumentFolders.householdId, ctx.householdId)))
-    .returning();
+
+  const updated = await db.transaction(async (tx) => {
+    if (patch.parentFolderId !== undefined) {
+      const dest = patch.parentFolderId;
+      // Re-check the cycle/subtree guard here, against data read (and
+      // locked) inside this same transaction, so the check and the write
+      // commit atomically. Without this, two concurrent moves — folder A
+      // into B, and folder B into A — can each pass the guard against a
+      // pre-move snapshot and then both persist, producing a folder cycle
+      // that hangs every future subtree computation for the household
+      // (collectFolderSubtreeIds has no visited-set), and
+      // resolvePortalVaultContext runs one on every portal request. Plain
+      // transaction-wrapping alone doesn't close this: the two moves touch
+      // disjoint rows, so their row-level UPDATE locks never conflict.
+      // `.for("update")` locks every folder row for this household for the
+      // duration of the transaction, so a concurrent mover blocks here
+      // until this transaction commits (or rolls back) and then re-reads
+      // the post-commit state — same pattern as the check-then-act guard in
+      // ownership.ts (_applyToAccount/_applyToLiability).
+      const all = await tx
+        .select()
+        .from(crmDocumentFolders)
+        .where(eq(crmDocumentFolders.householdId, ctx.householdId))
+        .for("update");
+      const freshSubtree = new Set(collectFolderSubtreeIds(all, ctx.sharedRootId));
+      assertInSubtree(freshSubtree, dest);
+      const descendants = new Set(collectFolderSubtreeIds(all, folderId));
+      if (descendants.has(dest)) throw new Error("Move would create a folder cycle");
+    }
+    const [row] = await tx.update(crmDocumentFolders).set(updates)
+      .where(and(eq(crmDocumentFolders.id, folderId), eq(crmDocumentFolders.householdId, ctx.householdId)))
+      .returning();
+    return row;
+  });
   await recordUpdate({
     action: "portal.folder.update",
     resourceType: "crm_document_folder",
