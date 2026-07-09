@@ -39,6 +39,7 @@ export interface ApiClientOpts {
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
+  put<T>(path: string, body: unknown): Promise<T>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -74,6 +75,12 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
     post: <T>(path: string, body: unknown) =>
       request<T>(path, {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    put: <T>(path: string, body: unknown) =>
+      request<T>(path, {
+        method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       }),

@@ -101,6 +101,19 @@ describe("createApiClient", () => {
     const api = createApiClient({ baseUrl: "https://api.test", getToken: token, fetchFn });
     await expect(api.post("/x", { a: 1 })).resolves.toEqual({ ok: true });
   });
+
+  it("puts JSON bodies", async () => {
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      expect(init?.body).toBe(JSON.stringify({ reviewed: true }));
+      expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    });
+    const api = createApiClient({ baseUrl: "https://api.test", getToken: () => Promise.resolve("t"), fetchFn });
+    await expect(api.put("/x", { reviewed: true })).resolves.toEqual({ ok: true });
+  });
 });
 
 describe("fetchMe", () => {
