@@ -124,6 +124,7 @@ export async function loadCategoryDetail(
         name: plaidTransactions.name,
         merchantName: plaidTransactions.merchantName,
         amount: plaidTransactions.amount,
+        categoryId: plaidTransactions.categoryId,
         categoryName: transactionCategories.name,
         categoryColor: transactionCategories.color,
       })
@@ -148,6 +149,7 @@ export async function loadCategoryDetail(
       name: t.name,
       merchantName: t.merchantName,
       amount: Number(t.amount),
+      categoryId: t.categoryId,
       categoryName: t.categoryName,
       categoryColor: t.categoryColor ?? cat.color,
     }));

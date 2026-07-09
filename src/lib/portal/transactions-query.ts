@@ -84,6 +84,42 @@ export async function loadPortalTransactions(
   return rows.map(({ reviewedAt, ...r }) => ({ ...r, reviewed: reviewedAt != null })) as PortalTransactionDTO[];
 }
 
+/** One transaction as the list DTO (client-scoped). Null when missing/foreign. */
+export async function loadPortalTransactionById(
+  clientId: string,
+  id: string,
+): Promise<PortalTransactionDTO | null> {
+  const rows = await db
+    .select({
+      id: plaidTransactions.id,
+      date: plaidTransactions.date,
+      name: plaidTransactions.name,
+      merchantName: plaidTransactions.merchantName,
+      amount: plaidTransactions.amount,
+      pending: plaidTransactions.pending,
+      excluded: plaidTransactions.excluded,
+      categoryId: plaidTransactions.categoryId,
+      categorizedBy: plaidTransactions.categorizedBy,
+      accountId: plaidTransactions.accountId,
+      categoryName: transactionCategories.name,
+      categoryColor: transactionCategories.color,
+      accountName: accounts.name,
+      accountMask: accounts.accountNumberLast4,
+      type: plaidTransactions.type,
+      source: plaidTransactions.source,
+      reviewedAt: plaidTransactions.reviewedAt,
+    })
+    .from(plaidTransactions)
+    .leftJoin(transactionCategories, eq(transactionCategories.id, plaidTransactions.categoryId))
+    .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
+    .where(and(eq(plaidTransactions.id, id), eq(plaidTransactions.clientId, clientId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const { reviewedAt, ...rest } = row;
+  return { ...rest, reviewed: reviewedAt != null } as PortalTransactionDTO;
+}
+
 export async function countPortalTransactions(
   clientId: string,
   f: TransactionFilters,

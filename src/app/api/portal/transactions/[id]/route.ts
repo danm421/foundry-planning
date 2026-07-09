@@ -9,6 +9,7 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import { encodeSignedAmount } from "@/lib/portal/transaction-amount";
+import { loadPortalTransactionById } from "@/lib/portal/transactions-query";
 import type { EntitySnapshot, FieldLabels } from "@/lib/audit/types";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,24 @@ const FIELD_LABELS: FieldLabels = {
   name: { label: "Description", format: "text" },
   accountId: { label: "Account", format: "reference" },
 };
+
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
+  try {
+    // Read-only: same gates as the list endpoint (no edit/subscription checks).
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "transactions");
+    const { id } = await ctx.params;
+    const transaction = await loadPortalTransactionById(clientId, id);
+    if (!transaction) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ transaction });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
