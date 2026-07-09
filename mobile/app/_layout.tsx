@@ -1,7 +1,7 @@
 import "../global.css";
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
-import { Slot } from "expo-router";
+import { Stack } from "expo-router";
 import { ApiProvider } from "@/api/context";
 import { LockScreen } from "@/lock/lock-screen";
 import { useAppLock } from "@/lock/use-app-lock";
@@ -25,7 +25,14 @@ export default function RootLayout() {
     >
       <ApiProvider>
         <AppLockGate>
-          <Slot />
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="account/[id]"
+              options={{ presentation: "modal", headerShown: false }}
+            />
+          </Stack>
         </AppLockGate>
       </ApiProvider>
     </ClerkProvider>
