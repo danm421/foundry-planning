@@ -5,8 +5,8 @@ import { UnauthorizedError } from "@/lib/db-helpers";
 import { getPortalClientId } from "@/lib/portal/get-portal-client";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { PORTAL_AS_CLIENT_HEADER } from "@/lib/portal/portal-as-client-header";
-
-export type PortalActorMode = "client" | "advisor";
+import type { PortalActorMode } from "@/lib/portal/contracts";
+export type { PortalActorMode };
 
 /**
  * Portal identity resolver for `/api/portal/*` route handlers.
