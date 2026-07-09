@@ -14,8 +14,21 @@ vi.mock("../vault-context", async (importOriginal) => {
   return { ...actual, resolvePortalVaultContext: vi.fn(async () => ctx.value) };
 });
 
+// The rename test reaches recordUpdate → recordAudit → Clerk auth(), which has
+// no request context under vitest. Audit behavior isn't under test here.
+vi.mock("@/lib/audit/record-helpers", () => ({
+  recordCreate: vi.fn(),
+  recordDelete: vi.fn(),
+  recordUpdate: vi.fn(),
+}));
+
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { resolvePortalVaultContext, PortalVaultNotFoundError } from "../vault-context";
-import { listPortalDocuments, deletePortalDocument } from "../vault-documents";
+import {
+  listPortalDocuments,
+  deletePortalDocument,
+  updatePortalDocument,
+} from "../vault-documents";
 
 const ORG = "org_vault_docs_test";
 let householdId: string;
@@ -56,4 +69,31 @@ it("refuses to delete a doc outside the subtree (404)", async () => {
     .values({ householdId, filename: "secret.pdf", storageProvider: "vercel-blob", storageKey: "crm/s", folderId: siblingId })
     .returning();
   await expect(deletePortalDocument(doc.id)).rejects.toThrow(PortalVaultNotFoundError);
+});
+
+it("sanitizes renamed filenames the same way uploads do", async () => {
+  const [doc] = await db.insert(crmHouseholdDocuments)
+    .values({ householdId, filename: "a.pdf", storageProvider: "vercel-blob", storageKey: "crm/a", folderId: rootId })
+    .returning();
+  const dirty = 'bad"na\r\nme.pdf'; // quote + CRLF → header-injection class
+  const updated = await updatePortalDocument(doc.id, { filename: dirty });
+  expect(updated.filename).toBe(toSafeDisplayFilename(dirty));
+  expect(updated.filename).not.toMatch(/["\r\n]/);
+  const row = await db.query.crmHouseholdDocuments.findFirst({
+    where: eq(crmHouseholdDocuments.id, doc.id),
+  });
+  expect(row?.filename).toBe(toSafeDisplayFilename(dirty));
+});
+
+it("refuses to move a doc to an out-of-subtree folder and leaves it in place", async () => {
+  const [doc] = await db.insert(crmHouseholdDocuments)
+    .values({ householdId, filename: "a.pdf", storageProvider: "vercel-blob", storageKey: "crm/a", folderId: rootId })
+    .returning();
+  await expect(
+    updatePortalDocument(doc.id, { folderId: siblingId }),
+  ).rejects.toThrow(PortalVaultNotFoundError);
+  const row = await db.query.crmHouseholdDocuments.findFirst({
+    where: eq(crmHouseholdDocuments.id, doc.id),
+  });
+  expect(row?.folderId).toBe(rootId);
 });

@@ -199,8 +199,12 @@ export async function updatePortalDocument(
     after.folderId = patch.folderId;
   }
   if (patch.filename !== undefined) {
-    const name = patch.filename.trim();
-    if (!name) throw new Error("Filename is required");
+    const trimmed = patch.filename.trim();
+    if (!trimmed) throw new Error("Filename is required");
+    // Stored display names feed Content-Disposition / zip entries downstream —
+    // sanitize renames the same way uploads do. (toSafeDisplayFilename never
+    // returns "": it falls back to "file" for degenerate input.)
+    const name = toSafeDisplayFilename(trimmed);
     updates.filename = name;
     before.filename = doc.filename;
     after.filename = name;
