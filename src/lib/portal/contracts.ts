@@ -140,9 +140,163 @@ export interface PortalDashboardDTO {
   sharing: PortalPrivacy;
 }
 
-// ---- GET /api/portal/me (new in this plan) ----
+// ---- GET /api/portal/me ----
 export interface PortalMeDTO {
   client: { id: string; displayName: string; email: string };
   firm: { name: string; logoUrl: string | null };
   mode: PortalActorMode;
+  /** clients.portalEditEnabled — mobile gates review/recategorize/exclude/budget-edit on this. */
+  editEnabled: boolean;
 }
+
+// ============================================================================
+// Phase 2 — money screens (Accounts, Transactions, Budget). All wire types.
+// ============================================================================
+
+// ---- accounts overview (GET /api/portal/accounts/overview) ----
+// NetWorthSummary + PortalDebtRow MOVED here from portal-networth.ts.
+export interface NetWorthSummary {
+  assets: number;
+  debt: number;
+  netWorth: number;
+}
+
+export interface PortalDebtRow {
+  id: string;
+  name: string;
+  /** Household-share-applied balance (what the row displays). */
+  balance: number;
+  /** Full stored balance, unscaled. */
+  rawBalance: number;
+  liabilityType: string | null;
+  aprPercentage: number | null;
+  statementBalance: number | null;
+  minimumPayment: number | null;
+  nextPaymentDueDate: string | null;
+  isPlaidLinked: boolean;
+  ownerFmIds: string[];
+  ownerEntityIds: string[];
+}
+
+export interface PortalAccountRow {
+  id: string;
+  name: string;
+  category: string;
+  subType: string;
+  last4: string | null;
+  value: number;
+  isPlaidLinked: boolean;
+}
+
+export interface AccountsOverviewDTO {
+  assets: PortalAccountRow[];
+  debts: PortalDebtRow[];
+  netWorth: NetWorthSummary;
+}
+
+// ---- transactions ----
+// PortalTransactionDTO MOVED here from transactions-query.ts.
+export type PortalTransactionDTO = {
+  id: string;
+  date: string;
+  name: string;
+  merchantName: string | null;
+  /** Signed 2-dp string. Plaid convention: + = money OUT (spend), - = money IN. */
+  amount: string;
+  pending: boolean;
+  excluded: boolean;
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  categorizedBy: "plaid" | "rule" | "manual" | "recurring";
+  accountId: string | null;
+  accountName: string | null;
+  accountMask: string | null;
+  type: "income" | "expense" | "transfer";
+  source: "plaid" | "manual";
+  reviewed: boolean;
+};
+
+export interface TransactionsPageDTO {
+  transactions: PortalTransactionDTO[];
+  total: number;
+  hasMore: boolean;
+}
+
+// ---- categories (GET /api/portal/categories) — the subset the picker reads ----
+export interface PortalCategoryDTO {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string | null;
+  /** var(--data-*) token; resolve to hex on mobile via data-color.ts. */
+  color: string;
+  kind: "group" | "category";
+  sortOrder: number;
+}
+
+// ---- budget summary (GET /api/portal/budgets) ----
+// LeafCell/GroupCell/BudgetSummary MOVED here from budget-summary.ts.
+export type LeafCell = {
+  id: string;
+  name: string;
+  slug: string | null;
+  color: string;
+  budget: number | null;
+  actual: number;
+};
+
+export type GroupCell = {
+  id: string;
+  name: string;
+  slug: string | null;
+  color: string;
+  budget: number | null;
+  budgetIsExplicit: boolean;
+  unallocated: number;
+  actual: number;
+  remaining: number | null;
+  leaves: LeafCell[];
+};
+
+export type BudgetSummary = {
+  groups: GroupCell[];
+  totalBudget: number;
+  totalSpent: number;
+  totalRemaining: number;
+  incomeThisMonth: number;
+};
+
+export type BudgetSummaryDTO = BudgetSummary & { month: string };
+
+// ---- budget category detail (GET /api/portal/budgets/category/[id]) ----
+// Heat/HistoryBar/YearMetric/CategoryTransaction/CategoryDetail MOVED here
+// from category-detail.ts.
+export type Heat = "good" | "warn" | "crit" | "none";
+export type HistoryBar = { month: string; amount: number; heat: Heat };
+export type YearMetric = { year: number; total: number; avgMonthly: number };
+export type CategoryTransaction = {
+  id: string;
+  date: string;
+  name: string;
+  merchantName: string | null;
+  /** signed; positive = spend. */
+  amount: number;
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryColor: string;
+};
+export type CategoryDetail = {
+  id: string;
+  name: string;
+  slug: string | null;
+  color: string;
+  emoji: string;
+  kind: "group" | "category";
+  monthlyBudget: number | null;
+  spentThisMonth: number;
+  remainingThisMonth: number | null;
+  history: HistoryBar[];
+  metrics: YearMetric[];
+  transactions: CategoryTransaction[];
+};

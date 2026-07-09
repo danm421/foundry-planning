@@ -7,36 +7,10 @@
 // Sign convention (inherited from plaidTransactions): positive = money OUT
 // (spend), so a category's monthly spend is the signed sum and refunds net down.
 
-export type Heat = "good" | "warn" | "crit" | "none";
-
-export type HistoryBar = { month: string; amount: number; heat: Heat };
-export type YearMetric = { year: number; total: number; avgMonthly: number };
-
-export type CategoryTransaction = {
-  id: string;
-  date: string; // YYYY-MM-DD
-  name: string;
-  merchantName: string | null;
-  amount: number; // signed; positive = spend
-  categoryId: string | null;
-  categoryName: string | null;
-  categoryColor: string;
-};
-
-export type CategoryDetail = {
-  id: string;
-  name: string;
-  slug: string | null;
-  color: string;
-  emoji: string;
-  kind: "group" | "category";
-  monthlyBudget: number | null;
-  spentThisMonth: number;
-  remainingThisMonth: number | null; // null when no budget
-  history: HistoryBar[];
-  metrics: YearMetric[];
-  transactions: CategoryTransaction[];
-};
+import type {
+  Heat, HistoryBar, YearMetric, CategoryTransaction, CategoryDetail,
+} from "@/lib/portal/contracts";
+export type { Heat, HistoryBar, YearMetric, CategoryTransaction, CategoryDetail };
 
 const WARN_RATIO = 0.85; // >= this fraction of budget reads amber
 

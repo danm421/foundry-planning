@@ -12,6 +12,9 @@
 //  - `expense` rows roll up by leaf category as before.
 //  - "actual" is the SIGNED Plaid sum (positive = money out) so refunds net down.
 
+import type { LeafCell, GroupCell, BudgetSummary } from "@/lib/portal/contracts";
+export type { LeafCell, GroupCell, BudgetSummary };
+
 export type BudgetCategory = {
   id: string;
   parentId: string | null;
@@ -23,34 +26,6 @@ export type BudgetCategory = {
 };
 export type BudgetAmount = { categoryId: string; monthlyAmount: number };
 export type BudgetTransaction = { categoryId: string | null; amount: number; type: "income" | "expense" | "transfer" };
-
-export type LeafCell = {
-  id: string;
-  name: string;
-  slug: string | null;
-  color: string;
-  budget: number | null;
-  actual: number;
-};
-export type GroupCell = {
-  id: string;
-  name: string;
-  slug: string | null;
-  color: string;
-  budget: number | null;
-  budgetIsExplicit: boolean;
-  unallocated: number;
-  actual: number;
-  remaining: number | null;
-  leaves: LeafCell[];
-};
-export type BudgetSummary = {
-  groups: GroupCell[];
-  totalBudget: number;
-  totalSpent: number;
-  totalRemaining: number;
-  incomeThisMonth: number;
-};
 
 const INCOME_GROUP_SLUG = "income";
 
