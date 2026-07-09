@@ -1,11 +1,10 @@
 // src/lib/portal/networth-trend.ts
+import type { TrendPoint } from "@/lib/portal/contracts";
+export type { TrendPoint };
+
 export interface TrendTransaction {
   date: string; // yyyy-mm-dd
   amount: number; // Plaid sign: positive = money OUT
-}
-export interface TrendPoint {
-  date: string;
-  netWorth: number;
 }
 export type TrendWindow = "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
 

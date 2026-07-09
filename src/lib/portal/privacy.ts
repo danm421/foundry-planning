@@ -8,14 +8,10 @@ import { db } from "@/db";
 import { portalPrivacySettings } from "@/db/schema";
 import { ForbiddenError } from "@/lib/authz";
 import type { PortalActorMode } from "@/lib/portal/resolve-portal-client";
+import type { PortalPrivacy } from "@/lib/portal/contracts";
+export type { PortalPrivacy };
 
 export type PortalArea = "transactions" | "budgets" | "recurrings";
-
-export interface PortalPrivacy {
-  shareTransactions: boolean;
-  shareBudgets: boolean;
-  shareRecurrings: boolean;
-}
 
 /** Missing row = share everything (the pre-feature behavior). */
 export const DEFAULT_PORTAL_PRIVACY: PortalPrivacy = {

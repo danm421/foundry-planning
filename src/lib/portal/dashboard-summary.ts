@@ -4,6 +4,8 @@
 // testable in plain vitest (mirrors budget-summary.ts).
 import type { GroupCell } from "@/lib/portal/budget-summary";
 import type { RecurringRowDTO } from "@/lib/portal/load-recurrings-data";
+import type { PacePoint, DueRecurring, TopCategory } from "@/lib/portal/contracts";
+export type { PacePoint, DueRecurring, TopCategory };
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -14,12 +16,6 @@ export function daysInMonth(now: Date): number {
 }
 
 // ---- Monthly spending pace curve -------------------------------------------
-export interface PacePoint {
-  day: number;
-  cumulative: number;
-  pace: number;
-}
-
 /**
  * Cumulative expense spend by day-of-month (days 1..today) vs a linear budget
  * pace line (pace at day d = totalBudget * d / N). `dailySpend` amounts are
@@ -65,17 +61,6 @@ export function netThisMonth(input: {
 }
 
 // ---- Recurrings due within N days ------------------------------------------
-export interface DueRecurring {
-  id: string;
-  name: string;
-  cadence: "monthly" | "annually";
-  predicted: number;
-  state: "paid" | "due" | "overdue";
-  dueDate: string;
-  daysUntil: number;
-  postedThisMonth: number;
-}
-
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -135,14 +120,6 @@ export function dueWithinDays(
 }
 
 // ---- Top categories --------------------------------------------------------
-export interface TopCategory {
-  id: string;
-  name: string;
-  color: string;
-  spent: number;
-  budget: number | null;
-}
-
 export function topCategories(groups: GroupCell[], n: number): TopCategory[] {
   return groups
     .filter((g) => g.actual > 0)

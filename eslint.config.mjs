@@ -68,6 +68,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".worktrees/**",
+    // Self-contained Expo app — not Next.js, gets its own lint later if wanted.
+    "mobile/**",
   ]),
 ]);
 

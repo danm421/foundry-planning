@@ -22,6 +22,10 @@ export default defineConfig({
       // copy whose `@/` alias still resolves to the main `src/`, so in-flight
       // feature modules fail to import and surface as spurious failures.
       "**/.claire/worktrees/**",
+      // `mobile/` is a self-contained Expo app with its own package.json,
+      // vitest config, and node_modules — run its tests via `cd mobile &&
+      // npm test`, not the root web suite.
+      "**/mobile/**",
     ],
     // Several test files clean up by toggling user triggers on shared tables
     // (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE TRIGGER`,

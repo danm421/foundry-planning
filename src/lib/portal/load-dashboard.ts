@@ -14,92 +14,28 @@ import {
   transactionCategories,
 } from "@/db/schema";
 import { loadBudgetSummary, currentMonthRange } from "@/lib/portal/load-budget-data";
-import { loadRecurringsData, type RecurringRowDTO } from "@/lib/portal/load-recurrings-data";
+import { loadRecurringsData } from "@/lib/portal/load-recurrings-data";
 import {
   loadPortalDebt,
   loadPortalTrendTransactions,
 } from "@/lib/portal/load-portal-financials";
 import { DEFAULT_PORTAL_PRIVACY, type PortalPrivacy } from "@/lib/portal/privacy";
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
-import { reconstructDailyNetWorth, type TrendPoint } from "@/lib/portal/networth-trend";
+import { reconstructDailyNetWorth } from "@/lib/portal/networth-trend";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 import {
   spendingPaceCurve,
   netThisMonth,
   dueWithinDays,
   topCategories,
-  type PacePoint,
-  type DueRecurring,
-  type TopCategory,
 } from "@/lib/portal/dashboard-summary";
-
-export interface ReviewTxn {
-  id: string;
-  date: string;
-  name: string;
-  merchantName: string | null;
-  amount: number;
-  accountName: string | null;
-  categoryId: string | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-}
-
-/** One row of the net-worth drill-down (visible asset account or debt). */
-export interface NetWorthLine {
-  id: string;
-  name: string;
-  value: number;
-}
-
-/** One budget group for the spending drill-down. */
-export interface SpendingGroupLine {
-  id: string;
-  name: string;
-  color: string;
-  spent: number;
-  budget: number | null;
-}
-
-export interface PortalDashboardDTO {
-  spending: {
-    left: number;
-    budgeted: number;
-    spent: number;
-    pace: PacePoint[];
-    underBy: number;
-    month: string;
-    groups: SpendingGroupLine[];
-  };
-  netWorth: {
-    assets: number;
-    debt: number;
-    netWorth: number;
-    series: TrendPoint[];
-    asOfDate: string;
-    accounts: NetWorthLine[];
-    debts: NetWorthLine[];
-  };
-  toReview: { count: number; sample: ReviewTxn[] };
-  topCategories: TopCategory[];
-  netThisMonth: {
-    net: number;
-    income: number;
-    spent: number;
-    prior: number;
-    deltaAbs: number;
-    deltaPct: number | null;
-  };
-  recurrings: DueRecurring[];
-  /** Full recurring rows so the drill-down can reuse RecurringDetailPanel. */
-  recurringRows: RecurringRowDTO[];
-  /**
-   * The client's advisor-sharing switches. All-true on the client's own
-   * portal. In advisor preview, switched-off sections are never queried (they
-   * come back zeroed) and the grid shows a NotSharedNotice tile instead.
-   */
-  sharing: PortalPrivacy;
-}
+import type {
+  ReviewTxn,
+  NetWorthLine,
+  SpendingGroupLine,
+  PortalDashboardDTO,
+} from "@/lib/portal/contracts";
+export type { ReviewTxn, NetWorthLine, SpendingGroupLine, PortalDashboardDTO };
 
 function priorMonthRange(now: Date): { from: string; to: string } {
   const y = now.getUTCFullYear();

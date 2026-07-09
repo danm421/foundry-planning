@@ -81,3 +81,9 @@ scripts/output/
 
 # Brainstorming visual companion
 .superpowers/
+
+# Expo mobile app (mobile/)
+mobile/.expo/
+mobile/ios/
+mobile/android/
+mobile/.env

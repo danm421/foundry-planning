@@ -53,7 +53,7 @@ export const resolveIntakeBranding = cache(
  * Clerk widget) used as a fallback when Clerk is briefly unreachable;
  * "Foundry Planning" is the last-resort default.
  */
-async function resolveFirmName(
+export async function resolveFirmName(
   firmId: string,
   cachedName: string | null,
 ): Promise<string> {
