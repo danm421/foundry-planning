@@ -3,9 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
+import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 
 export default async function PortalLayout({
@@ -17,6 +19,7 @@ export default async function PortalLayout({
 
   const [row] = await db
     .select({
+      firmId: clients.firmId,
       crmHouseholdId: clients.crmHouseholdId,
       portalEditEnabled: clients.portalEditEnabled,
     })
@@ -52,6 +55,10 @@ export default async function PortalLayout({
     }
   }
 
+  // Firm letterhead for the portal chrome; null → Foundry lockup (same
+  // fallback semantics as the intake pages).
+  const branding = row ? await resolveIntakeBranding(row.firmId) : null;
+
   return (
     <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">
       {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
@@ -68,7 +75,13 @@ export default async function PortalLayout({
       />
       <main className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
         {/* Mobile-only swipeable top tab bar. */}
-        <PortalMobileNav displayName={displayName} className="lg:hidden" />
+        <PortalMobileNav
+          displayName={displayName}
+          branding={branding}
+          className="lg:hidden"
+        />
+        {/* Desktop-only firm letterhead pinned above the scrolling content. */}
+        <PortalBrandingStrip branding={branding} className="hidden lg:flex" />
         {!row?.portalEditEnabled && <PortalReadOnlyBanner />}
         <PortalModeProvider value={{ mode: "client", clientId }}>
           {children}

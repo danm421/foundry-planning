@@ -80,10 +80,20 @@ vi.mock("next/navigation", () => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
 }));
+vi.mock("@/lib/branding/branding", () => ({
+  resolveIntakeBranding: vi.fn(() =>
+    Promise.resolve({
+      logoUrl: "https://blob.example/logo.png",
+      firmName: "Acme Wealth",
+      faviconUrl: null,
+    }),
+  ),
+}));
 
 import PreviewPage from "../page";
 import { notFound } from "next/navigation";
 import { requireClientAccess } from "@/lib/clients/authz";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
 
 async function renderPreview(slug: string[] | undefined) {
   const ui = await PreviewPage({ params: Promise.resolve({ id: "c1", slug }) });
@@ -141,5 +151,12 @@ describe("PortalPreview catch-all", () => {
     const node = container.querySelector("[data-testid='screen-accounts']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
+  });
+
+  it("resolves firm branding and renders the letterhead strip", async () => {
+    const { container } = await renderPreview(undefined);
+    expect(resolveIntakeBranding).toHaveBeenCalledWith("f1");
+    const img = container.querySelector('img[alt="Acme Wealth"]');
+    expect(img?.getAttribute("src")).toBe("https://blob.example/logo.png");
   });
 });
