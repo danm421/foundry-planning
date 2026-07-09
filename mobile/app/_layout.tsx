@@ -1,13 +1,18 @@
 import "../global.css";
-import { Stack } from "expo-router";
+import { ClerkProvider } from "@clerk/clerk-expo";
+import { tokenCache } from "@clerk/clerk-expo/token-cache";
+import { Slot } from "expo-router";
+import { ApiProvider } from "@/api/context";
 
 export default function RootLayout() {
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: "#0b0c0f" },
-      }}
-    />
+    <ClerkProvider
+      publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!}
+      tokenCache={tokenCache}
+    >
+      <ApiProvider>
+        <Slot />
+      </ApiProvider>
+    </ClerkProvider>
   );
 }
