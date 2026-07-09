@@ -72,4 +72,24 @@ describe("GET /api/portal/me", () => {
     const res = await GET();
     expect(res.status).toBe(403);
   });
+
+  it("returns 404 when client is not found", async () => {
+    // Push nothing to selectQueue so the first select resolves to []
+    const res = await GET();
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Not found" });
+    expect(getBrandingMock).not.toHaveBeenCalled();
+  });
+
+  it("includes advisor mode in response when act-as advisor", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "adv" });
+    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1" }]);
+    selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.mode).toBe("advisor");
+    expect(body.client.id).toBe("c1");
+  });
 });
