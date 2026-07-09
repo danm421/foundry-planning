@@ -55,6 +55,27 @@ describe("planAutoHeal", () => {
     });
   });
 
+  it("stays detect-only for seat drift (never auto-moves money)", () => {
+    // Seat-quantity drift means real billing changes with proration; the cron
+    // must only flag + Sentry-page it, never silently re-charge the customer.
+    const drift: DriftEntry[] = [
+      { firmId: "org_1", field: "seats", stripeValue: 100, clerkValue: 150 },
+    ];
+    expect(planAutoHeal(drift)).toBeNull();
+  });
+
+  it("ignores seat drift but still heals a co-occurring status drift", () => {
+    const drift: DriftEntry[] = [
+      { firmId: "org_1", field: "seats", stripeValue: 100, clerkValue: 150 },
+      { firmId: "org_1", field: "status", stripeValue: "active", dbValue: "active", clerkValue: "missing" },
+    ];
+    expect(planAutoHeal(drift)).toEqual({
+      firmId: "org_1",
+      patch: { subscription_status: "active" },
+      healedFields: ["status"],
+    });
+  });
+
   it("returns null for empty drift", () => {
     expect(planAutoHeal([])).toBeNull();
   });

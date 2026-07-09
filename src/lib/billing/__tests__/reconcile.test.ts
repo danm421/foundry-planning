@@ -112,6 +112,55 @@ describe("diffReconciliation", () => {
   });
 });
 
+describe("diffReconciliation — member count vs Stripe seat quantity", () => {
+  it("flags seat drift when the true member count exceeds the billed seat quantity (underbilling)", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      stripe: {
+        status: "active",
+        items: [{ kind: "seat", addonKey: null, quantity: 100, removed: false }],
+      },
+      db: {
+        status: "active",
+        items: [{ kind: "seat", addonKey: null, quantity: 100, removed: false }],
+      },
+      clerk: { ...ok.clerk, memberCount: 150 },
+    };
+    expect(diffReconciliation(input)).toContainEqual({
+      firmId: "org_1",
+      field: "seats",
+      stripeValue: 100,
+      clerkValue: 150,
+    });
+  });
+
+  it("no seat drift when the member count matches the billed seat quantity", () => {
+    // `ok` bills 3 seats.
+    const input: ReconcileInput = { ...ok, clerk: { ...ok.clerk, memberCount: 3 } };
+    expect(diffReconciliation(input).some((d) => d.field === "seats")).toBe(false);
+  });
+
+  it("treats a 0-member firm as the 1-seat minimum (seat qty 1 is not drift)", () => {
+    const input: ReconcileInput = {
+      ...ok,
+      stripe: {
+        status: "active",
+        items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }],
+      },
+      db: {
+        status: "active",
+        items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }],
+      },
+      clerk: { ...ok.clerk, memberCount: 0 },
+    };
+    expect(diffReconciliation(input).some((d) => d.field === "seats")).toBe(false);
+  });
+
+  it("does not check seats when memberCount is absent (backward compatible)", () => {
+    expect(diffReconciliation(ok).some((d) => d.field === "seats")).toBe(false);
+  });
+});
+
 describe("diffReconciliation — entitlement overrides (no-clobber)", () => {
   it("includes an active grant in derived → no entitlements drift when Clerk already has it", () => {
     const input: ReconcileInput = {

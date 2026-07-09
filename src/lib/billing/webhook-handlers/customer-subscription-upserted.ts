@@ -1,7 +1,7 @@
 import type Stripe from "stripe";
 import * as Sentry from "@sentry/nextjs";
 import { clerkClient } from "@clerk/nextjs/server";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { firms, subscriptions, subscriptionItems } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -168,7 +168,11 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
       )
       .onConflictDoUpdate({
         target: subscriptionItems.stripeItemId,
-        set: { quantity: subscriptionItems.quantity, updatedAt: new Date() },
+        // Pull the INCOMING (excluded) quantity — `subscriptionItems.quantity`
+        // here would compile to `SET quantity = quantity`, a no-op that freezes
+        // the seat-count mirror at its first-insert value (reconcile then reads
+        // stale seats). Stripe is source of truth; mirror its new quantity.
+        set: { quantity: sql`excluded.quantity`, updatedAt: new Date() },
       })
       .returning({ id: subscriptionItems.id });
   }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { sql } from "drizzle-orm";
 
 const mockSubsRetrieve = vi.fn();
 vi.mock("@/lib/billing/stripe-client", () => ({
@@ -20,6 +21,7 @@ const mockSelectFirms = vi.fn();
 const mockSelectActiveSub = vi.fn();
 const mockSubsUpsert = vi.fn();
 const mockItemsUpsert = vi.fn();
+const mockItemsConflictSet = vi.fn(); // captures the items onConflictDoUpdate `set`
 const mockUpdateFirms = vi.fn();
 vi.mock("@/db", async (orig) => {
   const schema = (await import("@/db/schema")) as Record<string, unknown>;
@@ -37,10 +39,13 @@ vi.mock("@/db", async (orig) => {
       }),
       insert: () => ({
         values: (v: unknown) => ({
-          onConflictDoUpdate: () => ({
-            returning: () =>
-              Array.isArray(v) ? mockItemsUpsert(v) : mockSubsUpsert(v),
-          }),
+          onConflictDoUpdate: (opts: { set?: unknown }) => {
+            if (Array.isArray(v)) mockItemsConflictSet(opts?.set);
+            return {
+              returning: () =>
+                Array.isArray(v) ? mockItemsUpsert(v) : mockSubsUpsert(v),
+            };
+          },
         }),
       }),
       update: () => ({
@@ -80,6 +85,7 @@ beforeEach(() => {
   mockSelectActiveSub.mockResolvedValue([]); // default: no conflicting active sub
   mockCaptureMessage.mockReset();
   mockUpdateFirms.mockReset();
+  mockItemsConflictSet.mockReset();
 });
 
 describe("handleSubscriptionUpsert", () => {
@@ -138,6 +144,50 @@ describe("handleSubscriptionUpsert", () => {
         actorId: "stripe:webhook:evt_1",
       }),
     );
+  });
+
+  it("refreshes the stored seat quantity from Stripe on conflict (not a self-referential no-op)", async () => {
+    // A subscription.updated whose seat quantity changed. The item already
+    // exists (stripeItemId conflict), so the upsert takes the DO UPDATE branch.
+    // The `set` MUST pull the incoming (excluded) quantity — writing the column
+    // to itself compiles to `SET quantity = quantity`, freezing the mirror.
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_q",
+      customer: "cus_q",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_start: null,
+      trial_end: null,
+      metadata: { firm_id: "org_q" },
+      items: {
+        data: [
+          {
+            id: "si_seat",
+            price: { id: "price_seat", unit_amount: 9900, currency: "usd" },
+            quantity: 7,
+            metadata: { kind: "seat" },
+            current_period_start: 1700000000,
+            current_period_end: 1702592000,
+          },
+        ],
+      },
+    });
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_q", isFounder: false }]);
+    mockSubsUpsert.mockResolvedValue([{ id: "internal-sub-q" }]);
+    mockItemsUpsert.mockResolvedValue([]);
+
+    await handleSubscriptionUpsert({
+      id: "evt_q",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_q" } },
+    } as never);
+
+    expect(mockItemsConflictSet).toHaveBeenCalledTimes(1);
+    const set = mockItemsConflictSet.mock.calls[0][0] as { quantity: unknown };
+    // Must be `sql`excluded.quantity`` (the incoming row), NOT the column
+    // self-reference `subscriptionItems.quantity` (which is `SET q = q`, a no-op).
+    expect(set.quantity).toEqual(sql`excluded.quantity`);
   });
 
   it("grants the seat-bundled entitlements and mirrors add-on taxonomy to the DB", async () => {

@@ -137,9 +137,10 @@ describe("organizationMembership.created — absolute seat sync", () => {
       items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 2 }] },
     });
     // Clerk reports 4 members now — absolute quantity must be 4, NOT 2+1.
+    // (SDK exposes the total camelCase as `totalCount`.)
     mockListMembers.mockResolvedValue({
       data: [{}, {}, {}, {}],
-      total_count: 4,
+      totalCount: 4,
     });
 
     const res = await dispatchClerkMembership(
@@ -159,6 +160,39 @@ describe("organizationMembership.created — absolute seat sync", () => {
         items: [{ id: "si_seat", quantity: 4 }],
         proration_behavior: "create_prorations",
       }),
+    );
+  });
+
+  it("bills the true member count (SDK totalCount) even when the org exceeds one page", async () => {
+    mockSelectFirms.mockResolvedValue([{ firmId: "org_big", isFounder: false }]);
+    mockSelectSubs.mockResolvedValue([
+      { stripeSubscriptionId: "sub_1", status: "active" },
+    ]);
+    mockSubsRetrieve.mockResolvedValue({
+      items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 100 }] },
+    });
+    // A firm with 150 members: Clerk returns a FULL first page (100 rows, the
+    // limit) but totalCount reports the real total. Reading data.length would
+    // undercount to 100 → the firm is billed for 100 seats, not 150.
+    mockListMembers.mockResolvedValue({
+      data: Array.from({ length: 100 }, () => ({})),
+      totalCount: 150,
+    });
+
+    const res = await dispatchClerkMembership(
+      {
+        type: "organizationMembership.created",
+        data: {
+          organization: { id: "org_big" },
+          public_user_data: { user_id: "user_new" },
+        },
+      } as never,
+      "svix_big",
+    );
+    expect(res?.status).toBe(200);
+    expect(mockSubsUpdate).toHaveBeenCalledWith(
+      "sub_1",
+      expect.objectContaining({ items: [{ id: "si_seat", quantity: 150 }] }),
     );
   });
 
@@ -187,7 +221,7 @@ describe("organizationMembership.created — absolute seat sync", () => {
     mockSubsRetrieve.mockResolvedValue({
       items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 2 }] },
     });
-    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], total_count: 3 });
+    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], totalCount: 3 });
     mockSubsUpdate.mockRejectedValue(new Error("stripe 500"));
 
     const res = await dispatchClerkMembership(
@@ -217,7 +251,7 @@ describe("organizationMembership.deleted — absolute seat sync", () => {
     mockSubsRetrieve.mockResolvedValue({
       items: { data: [{ id: "si_seat", metadata: { kind: "seat" }, quantity: 4 }] },
     });
-    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], total_count: 3 });
+    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], totalCount: 3 });
 
     await dispatchClerkMembership(
       {
@@ -285,7 +319,7 @@ describe("organizationMembership.created — billing contact pin", () => {
     mockSelectFirms.mockResolvedValue([{ firmId: "org_paid", isFounder: false }]);
     mockSelectSubs.mockResolvedValue([]);
     // Clerk membership list still needed even if seat sync is a no-op (no active sub).
-    mockListMembers.mockResolvedValue({ data: [], total_count: 0 });
+    mockListMembers.mockResolvedValue({ data: [], totalCount: 0 });
   });
 
   it("pins the first admin as billing contact when none is set yet", async () => {

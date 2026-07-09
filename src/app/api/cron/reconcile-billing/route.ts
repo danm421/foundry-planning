@@ -16,6 +16,7 @@ import {
   type DriftEntry,
 } from "@/lib/billing/reconcile";
 import { readSubscriptionItemMeta } from "@/lib/billing/subscription-item-meta";
+import { getOrgMemberCount } from "@/lib/billing/seat-count";
 import { checkRecentWebhookErrors } from "@/lib/billing/webhook-error-check";
 import { getActiveEntitlementOverrides } from "@/lib/ops/entitlements";
 import { recordAudit } from "@/lib/audit";
@@ -85,6 +86,10 @@ export async function GET(req: NextRequest): Promise<Response> {
         organizationId: firm.firmId,
       });
       const clerkMeta = (org.publicMetadata ?? {}) as Record<string, unknown>;
+      // Source-of-truth seat count. Passed into the diff so a billed seat
+      // quantity that never got synced from real membership surfaces as drift
+      // (detect-only) — the one check the Stripe↔DB mirror comparison can't make.
+      const memberCount = await getOrgMemberCount(cc, firm.firmId);
 
       const dbItems: ReconcileItem[] = itemRows.map((r) => ({
         kind: r.kind as "seat" | "addon",
@@ -115,6 +120,7 @@ export async function GET(req: NextRequest): Promise<Response> {
           entitlements: Array.isArray(clerkMeta.entitlements)
             ? (clerkMeta.entitlements as string[])
             : [],
+          memberCount,
         },
         overrides,
       });
