@@ -3,8 +3,12 @@
 // Endpoint helpers for /api/portal/*. Contract types are imported
 // type-only from @contracts (enforced by the mobile build).
 
-import type { PortalDashboardDTO, PortalMeDTO } from "@contracts";
+import type {
+  AccountsOverviewDTO, BudgetSummaryDTO, CategoryDetail,
+  PortalCategoryDTO, PortalDashboardDTO, PortalMeDTO, TransactionsPageDTO,
+} from "@contracts";
 import { ForbiddenError, NonJsonResponseError, type ApiClient } from "./client";
+import { buildTransactionsQuery, type TxnQuery } from "./query";
 
 /** Signed in with Clerk, but not a bound portal client (advisor or unbound). */
 export class NotPortalClientError extends Error {
@@ -27,4 +31,49 @@ export async function fetchMe(api: ApiClient): Promise<PortalMeDTO> {
 
 export function fetchDashboard(api: ApiClient): Promise<PortalDashboardDTO> {
   return api.get<PortalDashboardDTO>("/api/portal/dashboard");
+}
+
+// ============================================================================
+// Phase 2 — money screens (Accounts, Transactions, Budget)
+// ============================================================================
+
+export function fetchAccountsOverview(api: ApiClient): Promise<AccountsOverviewDTO> {
+  return api.get<AccountsOverviewDTO>("/api/portal/accounts/overview");
+}
+
+export function fetchTransactions(api: ApiClient, params: TxnQuery): Promise<TransactionsPageDTO> {
+  return api.get<TransactionsPageDTO>(`/api/portal/transactions${buildTransactionsQuery(params)}`);
+}
+
+export async function markReviewed(api: ApiClient, id: string, reviewed: boolean): Promise<void> {
+  await api.put(`/api/portal/transactions/${id}`, { reviewed });
+}
+
+export function markAllReviewed(api: ApiClient): Promise<{ count: number }> {
+  return api.post<{ ok: true; count: number }>("/api/portal/transactions/review-all", {})
+    .then((r) => ({ count: r.count }));
+}
+
+export async function recategorize(api: ApiClient, id: string, categoryId: string | null): Promise<void> {
+  await api.put(`/api/portal/transactions/${id}`, { categoryId });
+}
+
+export async function setExcluded(api: ApiClient, id: string, excluded: boolean): Promise<void> {
+  await api.put(`/api/portal/transactions/${id}`, { excluded });
+}
+
+export function fetchCategories(api: ApiClient): Promise<PortalCategoryDTO[]> {
+  return api.get<{ categories: PortalCategoryDTO[] }>("/api/portal/categories").then((r) => r.categories);
+}
+
+export function fetchBudgetSummary(api: ApiClient): Promise<BudgetSummaryDTO> {
+  return api.get<BudgetSummaryDTO>("/api/portal/budgets");
+}
+
+export function fetchCategoryDetail(api: ApiClient, id: string): Promise<CategoryDetail> {
+  return api.get<{ detail: CategoryDetail }>(`/api/portal/budgets/category/${id}`).then((r) => r.detail);
+}
+
+export async function setBudget(api: ApiClient, categoryId: string, monthlyAmount: number | null): Promise<void> {
+  await api.put("/api/portal/budgets", { categoryId, monthlyAmount });
 }
