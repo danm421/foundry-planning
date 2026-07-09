@@ -140,11 +140,11 @@ export default async function PortalPreviewPage({
           Detail rail (createPortal target). `empty:hidden` collapses the slot —
           and with the `auto` third track, the empty grid column too — so the main
           content fills the full width when nothing is selected. When populated it
-          reserves a fixed 420px panel that scrolls on its own.
+          reserves a fixed 480px panel that scrolls on its own.
         */}
         <aside
           id="portal-detail"
-          className="min-h-0 w-[420px] overflow-y-auto p-4 empty:hidden"
+          className="min-h-0 w-[480px] overflow-y-auto p-4 empty:hidden"
         />
       </div>
     </div>

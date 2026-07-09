@@ -18,6 +18,7 @@ export type CategoryTransaction = {
   name: string;
   merchantName: string | null;
   amount: number; // signed; positive = spend
+  categoryId: string | null;
   categoryName: string | null;
   categoryColor: string;
 };

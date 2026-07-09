@@ -78,13 +78,13 @@ export default async function PortalLayout({
         Transaction detail target (createPortal). `empty:hidden` collapses the
         slot when nothing is selected — and with the `auto` third track, the
         empty grid column too — so the main content fills the full width. On
-        desktop it's the 3rd grid column (a fixed 420px panel, `lg:p-4`); below
+        desktop it's the 3rd grid column (a fixed 480px panel, `lg:p-4`); below
         `lg` the slot is a zero-height block and the portaled content positions
         itself as a bottom sheet (see transactions-list).
       */}
       <aside
         id="portal-detail"
-        className="empty:hidden lg:h-dvh lg:w-[420px] lg:overflow-y-auto lg:p-4"
+        className="empty:hidden lg:h-dvh lg:w-[480px] lg:overflow-y-auto lg:p-4"
       />
     </div>
   );

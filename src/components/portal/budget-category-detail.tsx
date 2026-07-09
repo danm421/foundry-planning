@@ -1,13 +1,23 @@
 // src/components/portal/budget-category-detail.tsx
 "use client";
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { BudgetHistoryChart } from "@/components/portal/budget-history-chart";
+import { CategoryComboBox } from "@/components/portal/category-combobox";
+import { TransactionDrawer } from "@/components/portal/transaction-drawer";
 import type {
   CategoryDetail,
   CategoryTransaction,
 } from "@/lib/portal/category-detail";
+
+type CategoryRow = {
+  id: string;
+  name: string;
+  kind: "group" | "category";
+  parentId: string | null;
+  color: string | null;
+};
 
 /** Currency with cents — the detail panel shows exact figures (Monarch-style). */
 function money(n: number): string {
@@ -75,6 +85,10 @@ export function BudgetCategoryDetail({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
+  const [drawerTxnId, setDrawerTxnId] = useState<string | null>(null);
+  const [txnError, setTxnError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // When edit mode opens, drop the cursor into the amount field (and select any
@@ -109,6 +123,58 @@ export function BudgetCategoryDetail({
     };
   }, [categoryId, portalFetch]);
 
+  // Categories power the per-transaction combobox + the drawer's dialogs;
+  // recurrings feed the drawer's "link to a recurring" select. Both are
+  // fetched here (once per panel) because the drawer remounts per transaction.
+  useEffect(() => {
+    void portalFetch("/api/portal/categories")
+      .then((r) => (r.ok ? r.json() : { categories: [] }))
+      .then((d: { categories: CategoryRow[] }) => setCategories(d.categories ?? []))
+      .catch(() => setCategories([]));
+    void portalFetch("/api/portal/recurrings")
+      .then((r) => (r.ok ? r.json() : { recurrings: [] }))
+      .then((d: { recurrings: { id: string; name: string }[] }) =>
+        setRecurrings(d.recurrings ?? []),
+      )
+      .catch(() => setRecurrings([]));
+  }, [portalFetch]);
+
+  /** Re-pull this panel in place (totals, chart, transaction list). */
+  const refreshDetail = useCallback(async (): Promise<void> => {
+    const res = await portalFetch(`/api/portal/budgets/category/${categoryId}`);
+    if (res.ok) {
+      const json = (await res.json()) as { detail: CategoryDetail };
+      setDetail(json.detail);
+    }
+  }, [categoryId, portalFetch]);
+
+  /** A drawer mutation touched this transaction — refresh list + panel. */
+  const handleTxnChanged = useCallback((): void => {
+    onBudgetSaved();
+    void refreshDetail();
+  }, [onBudgetSaved, refreshDetail]);
+
+  // Recategorize a transaction straight from the rail. The row may leave this
+  // category (or move between leaves of a group), so re-pull rather than patch
+  // local state.
+  async function changeTxnCategory(txnId: string, catId: string | null): Promise<void> {
+    setTxnError(null);
+    try {
+      const res = await portalFetch(`/api/portal/transactions/${txnId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ categoryId: catId }),
+      });
+      if (!res.ok) {
+        setTxnError("Couldn't change that category.");
+        return;
+      }
+      handleTxnChanged();
+    } catch {
+      setTxnError("Couldn't change that category.");
+    }
+  }
+
   async function saveBudget(): Promise<void> {
     if (!detail) return;
     setSaveError(null);
@@ -128,11 +194,7 @@ export function BudgetCategoryDetail({
       // Tell the parent to refresh the server-rendered list, then re-pull
       // this panel so the chart line + remaining update too.
       onBudgetSaved();
-      const reload = await portalFetch(`/api/portal/budgets/category/${detail.id}`);
-      if (reload.ok) {
-        const json = (await reload.json()) as { detail: CategoryDetail };
-        setDetail(json.detail);
-      }
+      await refreshDetail();
     } finally {
       setSaving(false);
     }
@@ -298,6 +360,7 @@ export function BudgetCategoryDetail({
 
       {/* Transactions grouped by month */}
       <section className="space-y-4 border-t border-hair pt-4">
+        {txnError && <p className="text-[12px] text-crit">{txnError}</p>}
         {months.length === 0 && (
           <p className="text-[13px] text-ink-3">No transactions yet.</p>
         )}
@@ -315,19 +378,36 @@ export function BudgetCategoryDetail({
                   <span className="tabular w-12 shrink-0 text-[12px] text-ink-3">
                     {txnDate(t.date)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">
+                  <button
+                    type="button"
+                    onClick={() => setDrawerTxnId(t.id)}
+                    title="View transaction details"
+                    className="min-w-0 flex-1 truncate text-left text-[13px] text-ink-2 hover:text-ink"
+                  >
                     {t.merchantName ?? t.name}
-                  </span>
-                  {t.categoryName && (
-                    <span className="hidden items-center gap-1.5 sm:inline-flex">
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: t.categoryColor }}
+                  </button>
+                  {editEnabled ? (
+                    <span className="w-28 shrink-0">
+                      <CategoryComboBox
+                        categories={categories}
+                        value={t.categoryId}
+                        currentName={t.categoryName}
+                        currentColor={t.categoryColor}
+                        onPick={(catId) => void changeTxnCategory(t.id, catId)}
                       />
-                      <span className="text-[10px] uppercase tracking-wide text-ink-3">
-                        {t.categoryName}
-                      </span>
                     </span>
+                  ) : (
+                    t.categoryName && (
+                      <span className="hidden items-center gap-1.5 sm:inline-flex">
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ background: t.categoryColor }}
+                        />
+                        <span className="text-[10px] uppercase tracking-wide text-ink-3">
+                          {t.categoryName}
+                        </span>
+                      </span>
+                    )
                   )}
                   <span
                     className={`tabular w-20 shrink-0 text-right text-[13px] ${
@@ -344,6 +424,18 @@ export function BudgetCategoryDetail({
           </div>
         ))}
       </section>
+
+      {drawerTxnId && (
+        <TransactionDrawer
+          key={drawerTxnId}
+          txnId={drawerTxnId}
+          categories={categories}
+          recurrings={recurrings}
+          editEnabled={editEnabled}
+          onClose={() => setDrawerTxnId(null)}
+          onChanged={handleTxnChanged}
+        />
+      )}
     </div>
   );
 }

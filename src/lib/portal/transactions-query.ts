@@ -3,6 +3,7 @@ import { accounts, plaidTransactions, transactionCategories } from "@/db/schema"
 import { and, eq, gte, lte, or, ilike, desc, sql, isNull, isNotNull } from "drizzle-orm";
 
 export type TransactionFilters = {
+  id?: string;
   from?: string;
   to?: string;
   categoryId?: string;
@@ -36,6 +37,7 @@ export type PortalTransactionDTO = {
 
 export function buildTransactionConditions(clientId: string, f: TransactionFilters) {
   const conds: unknown[] = [eq(plaidTransactions.clientId, clientId)];
+  if (f.id) conds.push(eq(plaidTransactions.id, f.id));
   if (!f.includeExcluded) conds.push(eq(plaidTransactions.excluded, false));
   if (f.from) conds.push(gte(plaidTransactions.date, f.from));
   if (f.to) conds.push(lte(plaidTransactions.date, f.to));
@@ -82,6 +84,22 @@ export async function loadPortalTransactions(
     .limit(f.limit)
     .offset(f.offset);
   return rows.map(({ reviewedAt, ...r }) => ({ ...r, reviewed: reviewedAt != null })) as PortalTransactionDTO[];
+}
+
+/** One transaction as the list DTO (client-scoped). Null when missing/foreign. */
+export async function loadPortalTransactionById(
+  clientId: string,
+  id: string,
+): Promise<PortalTransactionDTO | null> {
+  // includeExcluded: an excluded transaction is still viewable by id (the
+  // list hides it by default; a detail panel must not).
+  const rows = await loadPortalTransactions(clientId, {
+    id,
+    includeExcluded: true,
+    limit: 1,
+    offset: 0,
+  });
+  return rows[0] ?? null;
 }
 
 export async function countPortalTransactions(
