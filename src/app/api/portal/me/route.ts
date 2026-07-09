@@ -15,7 +15,11 @@ export async function GET(): Promise<Response> {
     const { clientId, mode } = await resolvePortalClient();
 
     const [row] = await db
-      .select({ firmId: clients.firmId, crmHouseholdId: clients.crmHouseholdId })
+      .select({
+        firmId: clients.firmId,
+        crmHouseholdId: clients.crmHouseholdId,
+        portalEditEnabled: clients.portalEditEnabled,
+      })
       .from(clients)
       .where(eq(clients.id, clientId))
       .limit(1);
@@ -53,6 +57,7 @@ export async function GET(): Promise<Response> {
       client: { id: clientId, displayName, email },
       firm: { name: firmName, logoUrl: branding?.logoUrl ?? null },
       mode,
+      editEnabled: row.portalEditEnabled ?? false,
     };
     return NextResponse.json(dto);
   } catch (err) {
