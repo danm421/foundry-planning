@@ -371,7 +371,14 @@ export type AuditAction =
   | "portal.recurring.update"
   | "portal.recurring.delete"
   // Portal privacy (advisor-sharing switches)
-  | "portal.privacy.update";
+  | "portal.privacy.update"
+  // Portal document vault (client-uploaded shared documents)
+  | "portal.document.create"
+  | "portal.document.update"
+  | "portal.document.delete"
+  | "portal.folder.create"
+  | "portal.folder.update"
+  | "portal.folder.delete";
 
 type Args = {
   action: AuditAction;
