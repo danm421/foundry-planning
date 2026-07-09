@@ -76,4 +76,27 @@ describe("PortalMobileNav", () => {
     render(<PortalMobileNav displayName="" />);
     expect(screen.getByText("Your portal")).toBeInTheDocument();
   });
+
+  it("renders the firm logo next to the account button when branding is provided", () => {
+    mockPathname = "/portal";
+    render(
+      <PortalMobileNav
+        displayName="Jane"
+        branding={{
+          logoUrl: "https://blob.example/logo.png",
+          firmName: "Acme Wealth",
+        }}
+      />,
+    );
+    const img = screen.getByRole("img", { name: "Acme Wealth" });
+    expect(img).toHaveAttribute("src", "https://blob.example/logo.png");
+  });
+
+  it("shows the Foundry lockup when the firm has no branding", () => {
+    mockPathname = "/portal";
+    render(<PortalMobileNav displayName="Jane" />);
+    expect(
+      screen.getByRole("img", { name: "Foundry Planning" }),
+    ).toBeInTheDocument();
+  });
 });

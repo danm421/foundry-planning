@@ -5,9 +5,14 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useEffect, useRef, type ReactElement } from "react";
 import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
+import PortalBrandingMark, {
+  type PortalBranding,
+} from "@/components/portal/portal-branding-mark";
 
 interface Props {
   displayName: string;
+  /** Resolved firm branding; null → Foundry lockup (same fallback as intake). */
+  branding?: PortalBranding | null;
   basePath?: string;
   /** Visibility classes from the layout (e.g. `"lg:hidden"`). */
   className?: string;
@@ -23,6 +28,7 @@ interface Props {
  */
 export default function PortalMobileNav({
   displayName,
+  branding = null,
   basePath = "/portal",
   className = "",
 }: Props): ReactElement {
@@ -49,7 +55,13 @@ export default function PortalMobileNav({
         <span className="truncate text-[15px] font-semibold text-ink">
           {displayName || "Your portal"}
         </span>
-        <UserButton />
+        <div className="flex shrink-0 items-center gap-3">
+          <PortalBrandingMark
+            branding={branding}
+            className="h-6 max-w-[140px]"
+          />
+          <UserButton />
+        </div>
       </div>
 
       <nav
