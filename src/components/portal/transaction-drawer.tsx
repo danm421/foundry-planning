@@ -6,6 +6,7 @@
 // overlay idiom: fixed scrim + right panel + ref-counted body scroll lock.
 
 import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { CloseButton } from "@/components/portal/portal-detail-rail";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
@@ -26,12 +27,15 @@ type CategoryRow = {
 export function TransactionDrawer({
   txnId,
   categories,
+  recurrings,
   editEnabled,
   onClose,
   onChanged,
 }: {
   txnId: string;
   categories: CategoryRow[];
+  /** Host-owned (this drawer remounts per transaction; don't refetch here). */
+  recurrings: { id: string; name: string }[];
   editEnabled: boolean;
   onClose: () => void;
   /** Fired after any successful mutation so the host view can refresh. */
@@ -41,7 +45,6 @@ export function TransactionDrawer({
   const [txn, setTxn] = useState<PortalTransactionDTO | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
   const [ruleOpen, setRuleOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -59,28 +62,16 @@ export function TransactionDrawer({
   // remounts it fresh — no stale-state reset needed here.
   useEffect(() => {
     let cancelled = false;
-    portalFetch(`/api/portal/transactions/${txnId}`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error("load failed");
-        const json = (await res.json()) as { transaction: PortalTransactionDTO };
-        if (!cancelled) setTxn(json.transaction);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      });
+    // False positive: loadTxn's setState runs after an awaited fetch, not
+    // synchronously in the effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadTxn().catch(() => {
+      if (!cancelled) setLoadError(true);
+    });
     return () => {
       cancelled = true;
     };
-  }, [txnId, portalFetch]);
-
-  useEffect(() => {
-    void portalFetch("/api/portal/recurrings")
-      .then((r) => (r.ok ? r.json() : { recurrings: [] }))
-      .then((d: { recurrings: { id: string; name: string }[] }) =>
-        setRecurrings(d.recurrings ?? []),
-      )
-      .catch(() => setRecurrings([]));
-  }, [portalFetch]);
+  }, [loadTxn]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -179,13 +170,7 @@ export function TransactionDrawer({
           <div className="rounded-xl border border-hair bg-card p-5">
             <div className="flex items-start justify-between gap-3">
               <p className="text-[13px] text-ink-3">Couldn&apos;t load this transaction.</p>
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-[12px] text-ink-3 hover:text-ink"
-              >
-                Close
-              </button>
+              <CloseButton onClose={onClose} />
             </div>
           </div>
         ) : !txn ? (

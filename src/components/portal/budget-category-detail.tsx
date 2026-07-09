@@ -86,6 +86,7 @@ export function BudgetCategoryDetail({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
   const [drawerTxnId, setDrawerTxnId] = useState<string | null>(null);
   const [txnError, setTxnError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -122,12 +123,20 @@ export function BudgetCategoryDetail({
     };
   }, [categoryId, portalFetch]);
 
-  // Categories power the per-transaction combobox + the drawer's dialogs.
+  // Categories power the per-transaction combobox + the drawer's dialogs;
+  // recurrings feed the drawer's "link to a recurring" select. Both are
+  // fetched here (once per panel) because the drawer remounts per transaction.
   useEffect(() => {
     void portalFetch("/api/portal/categories")
       .then((r) => (r.ok ? r.json() : { categories: [] }))
       .then((d: { categories: CategoryRow[] }) => setCategories(d.categories ?? []))
       .catch(() => setCategories([]));
+    void portalFetch("/api/portal/recurrings")
+      .then((r) => (r.ok ? r.json() : { recurrings: [] }))
+      .then((d: { recurrings: { id: string; name: string }[] }) =>
+        setRecurrings(d.recurrings ?? []),
+      )
+      .catch(() => setRecurrings([]));
   }, [portalFetch]);
 
   /** Re-pull this panel in place (totals, chart, transaction list). */
@@ -160,8 +169,7 @@ export function BudgetCategoryDetail({
         setTxnError("Couldn't change that category.");
         return;
       }
-      onBudgetSaved();
-      await refreshDetail();
+      handleTxnChanged();
     } catch {
       setTxnError("Couldn't change that category.");
     }
@@ -422,6 +430,7 @@ export function BudgetCategoryDetail({
           key={drawerTxnId}
           txnId={drawerTxnId}
           categories={categories}
+          recurrings={recurrings}
           editEnabled={editEnabled}
           onClose={() => setDrawerTxnId(null)}
           onChanged={handleTxnChanged}
