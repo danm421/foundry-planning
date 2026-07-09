@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, plaidItems } from "@/db/schema";
-import { needsUserAction } from "./errors";
+import { CONFIG_ERROR_CODES, needsUserAction } from "./errors";
 import { syncTransactionsForItem } from "./transactions-sync";
 import { refreshPlaidItemData } from "./refresh-item-data";
 import { recordCreate } from "@/lib/audit/record-helpers";
@@ -101,8 +101,15 @@ const dataRefreshHandler: Handler = async (payload) => {
   if (!item) return "ignored";
   const result = await refreshPlaidItemData({ id: item.id, accessToken: item.accessToken });
   if (!result.ok) {
-    // refreshPlaidItemData already persisted the code.
-    if (result.needsReauth || needsUserAction(result.errorCode)) return "ok";
+    // refreshPlaidItemData already persisted the code. User-action and
+    // product-config errors are permanent — redelivery can't fix them.
+    if (
+      result.needsReauth ||
+      needsUserAction(result.errorCode) ||
+      CONFIG_ERROR_CODES.has(result.errorCode)
+    ) {
+      return "ok";
+    }
     throw new Error(`webhook refresh failed: ${result.errorCode}`);
   }
   await auditSystem("webhook.plaid.refresh", item, {
@@ -152,9 +159,13 @@ export const plaidWebhookHandlers: Record<string, Handler> = {
     if (!item) return "ignored";
     const result = await syncTransactionsForItem(item);
     if (!result.ok) {
-      // Login-type failures: record status and stop — redelivery can't fix
-      // them. Anything else: throw so the route 500s and Plaid retries.
-      if (needsUserAction(result.errorCode)) {
+      // Login-type and product-config failures: record status and stop —
+      // redelivery can't fix them. Anything else: throw so the route 500s
+      // and Plaid retries.
+      if (
+        needsUserAction(result.errorCode) ||
+        CONFIG_ERROR_CODES.has(result.errorCode)
+      ) {
         await persistErrorCode(item.id, result.errorCode);
         return "ok";
       }

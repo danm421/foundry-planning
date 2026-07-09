@@ -1,11 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const accountsBalanceGet = vi.fn();
+const accountsGet = vi.fn();
 const investmentsHoldingsGet = vi.fn();
 
 vi.mock("../client", () => ({
   getPlaidClient: () => ({
-    accountsBalanceGet,
+    accountsGet,
     investmentsHoldingsGet,
   }),
 }));
@@ -22,13 +22,17 @@ const fakeItem = {
 };
 
 beforeEach(() => {
-  accountsBalanceGet.mockReset();
+  accountsGet.mockReset();
   investmentsHoldingsGet.mockReset();
 });
 
 describe("fetchBalancesForItem", () => {
-  it("returns per-account updates from /accounts/balance/get for depository accounts", async () => {
-    accountsBalanceGet.mockResolvedValue({
+  // Balances come from /accounts/get (cached), NOT /accounts/balance/get:
+  // real-time Balance is a separately-approved (and per-call billed) Plaid
+  // product, and requesting it without approval fails the whole refresh with
+  // INVALID_PRODUCT in production.
+  it("returns per-account updates from /accounts/get for depository accounts", async () => {
+    accountsGet.mockResolvedValue({
       data: {
         accounts: [
           {
@@ -51,7 +55,7 @@ describe("fetchBalancesForItem", () => {
   });
 
   it("sums cash + holdings for investment accounts via /investments/holdings/get", async () => {
-    accountsBalanceGet.mockResolvedValue({
+    accountsGet.mockResolvedValue({
       data: {
         accounts: [
           {
@@ -86,7 +90,7 @@ describe("fetchBalancesForItem", () => {
     const err = Object.assign(new Error("login required"), {
       response: { data: { error_code: "ITEM_LOGIN_REQUIRED" } },
     });
-    accountsBalanceGet.mockRejectedValue(err);
+    accountsGet.mockRejectedValue(err);
 
     const { fetchBalancesForItem } = await import("../refresh");
     const result = await fetchBalancesForItem(fakeItem, ["plaid-acct-1"]);
@@ -95,7 +99,7 @@ describe("fetchBalancesForItem", () => {
   });
 
   it("skips Plaid accounts not in the supplied linked-id list", async () => {
-    accountsBalanceGet.mockResolvedValue({
+    accountsGet.mockResolvedValue({
       data: {
         accounts: [
           {
