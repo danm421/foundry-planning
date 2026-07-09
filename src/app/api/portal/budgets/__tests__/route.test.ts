@@ -1,5 +1,5 @@
 // src/app/api/portal/budgets/__tests__/route.test.ts
-import { it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const resolvePortalClientMock = vi.fn();
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
@@ -24,6 +24,10 @@ vi.mock("@/lib/audit/record-helpers", () => ({
 const areaSharedMock = vi.fn();
 vi.mock("@/lib/portal/privacy", () => ({
   requireAreaShared: (...a: unknown[]) => areaSharedMock(...a),
+}));
+const loadBudgetMock = vi.fn();
+vi.mock("@/lib/portal/load-budget-data", () => ({
+  loadBudgetSummary: (...a: unknown[]) => loadBudgetMock(...a),
 }));
 vi.mock("@/db/schema", () => ({
   budgets: { _name: "budgets", categoryId: "category_id" },
@@ -52,7 +56,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { PUT } from "@/app/api/portal/budgets/route";
+import { GET, PUT } from "@/app/api/portal/budgets/route";
 
 function req(body: unknown): Request {
   return new Request("http://t/api/portal/budgets", {
@@ -73,6 +77,10 @@ beforeEach(() => {
   requireEditEnabledMock.mockResolvedValue(undefined);
   areaSharedMock.mockReset();
   areaSharedMock.mockResolvedValue(undefined);
+  loadBudgetMock.mockReset();
+  loadBudgetMock.mockResolvedValue({
+    groups: [], totalBudget: 0, totalSpent: 100, totalRemaining: -100, incomeThisMonth: 0, month: "2026-07",
+  });
 });
 
 it("upserts a budget for an expense leaf", async () => {
@@ -151,4 +159,23 @@ it("rejects the advisor when the client has not shared budgets (403)", async () 
   expect(res.status).toBe(403);
   expect(insertValuesMock).not.toHaveBeenCalled();
   authErrorResponseMock.mockImplementation(() => null);
+});
+
+describe("GET /api/portal/budgets", () => {
+  it("returns the current-month budget summary, gated on the budgets area", async () => {
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.month).toBe("2026-07");
+    expect(body.totalSpent).toBe(100);
+    expect(areaSharedMock).toHaveBeenCalledWith("client", "c1", "budgets");
+    expect(loadBudgetMock).toHaveBeenCalledWith("c1", expect.any(Date));
+  });
+
+  it("propagates auth errors (e.g. advisor preview with budgets off)", async () => {
+    areaSharedMock.mockRejectedValue(new Error("forbidden"));
+    authErrorResponseMock.mockReturnValue({ status: 403, body: { error: "forbidden" } });
+    const res = await GET();
+    expect(res.status).toBe(403);
+  });
 });

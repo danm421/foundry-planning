@@ -44,7 +44,7 @@ beforeEach(() => {
 
 describe("GET /api/portal/me", () => {
   it("returns client identity + firm branding for a bound client", async () => {
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1" }]);
+    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
     selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
     const res = await GET();
     expect(res.status).toBe(200);
@@ -53,12 +53,13 @@ describe("GET /api/portal/me", () => {
       client: { id: "c1", displayName: "Casey Cooper", email: "casey@example.com" },
       firm: { name: "Ethos Wealth", logoUrl: "https://blob/logo.png" },
       mode: "client",
+      editEnabled: true,
     });
     expect(firmNameMock).toHaveBeenCalledWith("firm-1", "Ethos Cached");
   });
 
   it("degrades gracefully with no primary contact and no branding", async () => {
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1" }]);
+    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: false }]);
     selectQueue.push([]); // no primary contact
     getBrandingMock.mockResolvedValue(null);
     firmNameMock.mockResolvedValue("Foundry Planning");
@@ -66,6 +67,7 @@ describe("GET /api/portal/me", () => {
     const body = await res.json();
     expect(body.client.displayName).toBe("");
     expect(body.firm).toEqual({ name: "Foundry Planning", logoUrl: null });
+    expect(body.editEnabled).toBe(false);
   });
 
   it("propagates auth errors through authErrorResponse", async () => {

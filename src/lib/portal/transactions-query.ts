@@ -1,6 +1,8 @@
 import { db } from "@/db";
 import { accounts, plaidTransactions, transactionCategories } from "@/db/schema";
 import { and, eq, gte, lte, or, ilike, desc, sql, isNull, isNotNull } from "drizzle-orm";
+import type { PortalTransactionDTO } from "@/lib/portal/contracts";
+export type { PortalTransactionDTO };
 
 export type TransactionFilters = {
   id?: string;
@@ -13,26 +15,6 @@ export type TransactionFilters = {
   reviewed?: boolean;
   limit: number;
   offset: number;
-};
-
-export type PortalTransactionDTO = {
-  id: string;
-  date: string;
-  name: string;
-  merchantName: string | null;
-  amount: string;
-  pending: boolean;
-  excluded: boolean;
-  categoryId: string | null;
-  categoryName: string | null;
-  categoryColor: string | null;
-  categorizedBy: "plaid" | "rule" | "manual" | "recurring";
-  accountId: string | null;
-  accountName: string | null;
-  accountMask: string | null;
-  type: "income" | "expense" | "transfer";
-  source: "plaid" | "manual";
-  reviewed: boolean;
 };
 
 export function buildTransactionConditions(clientId: string, f: TransactionFilters) {

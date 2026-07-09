@@ -10,6 +10,7 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot, FieldLabels } from "@/lib/audit/types";
+import { loadBudgetSummary } from "@/lib/portal/load-budget-data";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,19 @@ const FIELD_LABELS: FieldLabels = {
 };
 
 type Body = { categoryId?: string; monthlyAmount?: number | null };
+
+export async function GET(): Promise<Response> {
+  try {
+    const { clientId, mode } = await resolvePortalClient();
+    await requireAreaShared(mode, clientId, "budgets");
+    const dto = await loadBudgetSummary(clientId, new Date());
+    return NextResponse.json(dto);
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
 
 export async function PUT(req: Request): Promise<Response> {
   try {

@@ -1,6 +1,7 @@
 import { Text, View } from "react-native";
 import type { PortalDashboardDTO } from "@contracts";
 import { formatMoney } from "@/ui/money";
+import { tokenToHex } from "@/ui/data-color";
 import { Sparkline } from "./sparkline";
 
 export function Tile({ title, children }: { title: string; children: React.ReactNode }) {
@@ -87,7 +88,7 @@ export function TopCategoriesTile({ d }: { d: PortalDashboardDTO["topCategories"
       {d.map((c) => (
         <View key={c.id} className="flex-row items-center justify-between mt-2">
           <View className="flex-row items-center flex-1 mr-2">
-            <View className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: c.color }} />
+            <View className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: tokenToHex(c.color) }} />
             <Text className="text-ink-2" numberOfLines={1}>
               {c.name}
             </Text>

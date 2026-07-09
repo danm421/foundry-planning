@@ -1,3 +1,6 @@
+import type { NetWorthSummary, PortalDebtRow } from "@/lib/portal/contracts";
+export type { NetWorthSummary, PortalDebtRow };
+
 export type FamilyRole = string;
 
 export interface LiabilityOwnerShare {
@@ -21,12 +24,6 @@ export function householdOwnedShare(
   return Math.max(0, Math.min(1, share));
 }
 
-export interface NetWorthSummary {
-  assets: number;
-  debt: number;
-  netWorth: number;
-}
-
 export function summarizeNetWorth(input: { assets: number; debt: number }): NetWorthSummary {
   return { assets: input.assets, debt: input.debt, netWorth: input.assets - input.debt };
 }
@@ -43,25 +40,6 @@ export interface RawLiability {
   statementBalance: string | null;
   aprPercentage: string | null;
   nextPaymentDueDate: string | null;
-}
-
-/** Presentational debt row consumed by ProfileDebtList (household share applied). */
-export interface PortalDebtRow {
-  id: string;
-  name: string;
-  /** Household-share-applied balance (what the row displays). */
-  balance: number;
-  /** Full stored balance, unscaled — what the edit form prefills. */
-  rawBalance: number;
-  liabilityType: string | null;
-  aprPercentage: number | null;
-  statementBalance: number | null;
-  minimumPayment: number | null;
-  nextPaymentDueDate: string | null;
-  isPlaidLinked: boolean;
-  /** Owner family-member / entity ids, for prefilling the edit form's checkboxes. */
-  ownerFmIds: string[];
-  ownerEntityIds: string[];
 }
 
 function num(s: string | null): number | null {
