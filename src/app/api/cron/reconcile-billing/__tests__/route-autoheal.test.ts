@@ -34,11 +34,13 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 
 const mockGetOrg = vi.fn();
 const mockUpdateOrgMeta = vi.fn();
+const mockListMembers = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       getOrganization: (...a: unknown[]) => mockGetOrg(...a),
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
+      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
     },
   }),
 }));
@@ -71,6 +73,8 @@ beforeEach(() => {
   mockSubsRetrieve.mockReset();
   mockGetOrg.mockReset();
   mockUpdateOrgMeta.mockReset();
+  mockListMembers.mockReset();
+  mockListMembers.mockResolvedValue({ data: [{}], totalCount: 1 }); // 1 member, 1 seat → no seat drift
   mockRecordAudit.mockReset();
   process.env.CRON_SECRET = "secret_t";
   mockReconcileInsert.mockResolvedValue([{ id: "run_1" }]);

@@ -46,11 +46,13 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 
 const mockGetOrg = vi.fn();
 const mockUpdateOrgMeta = vi.fn();
+const mockListMembers = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   clerkClient: async () => ({
     organizations: {
       getOrganization: (...a: unknown[]) => mockGetOrg(...a),
       updateOrganizationMetadata: (...a: unknown[]) => mockUpdateOrgMeta(...a),
+      getOrganizationMembershipList: (...a: unknown[]) => mockListMembers(...a),
     },
   }),
 }));
@@ -84,6 +86,9 @@ beforeEach(() => {
   mockSubsRetrieve.mockReset();
   mockGetOrg.mockReset();
   mockUpdateOrgMeta.mockReset();
+  mockListMembers.mockReset();
+  // Default: no members → 1-seat minimum. Per-test overrides set a real count.
+  mockListMembers.mockResolvedValue({ data: [], totalCount: 0 });
   mockSentryCapture.mockReset();
   process.env.CRON_SECRET = "secret_t";
 });
@@ -171,6 +176,7 @@ describe("GET /api/cron/reconcile-billing", () => {
     mockGetOrg.mockResolvedValue({
       publicMetadata: { subscription_status: "active", entitlements: [] },
     });
+    mockListMembers.mockResolvedValue({ data: [{}, {}, {}], totalCount: 3 }); // matches seat qty → status is the only drift
     const res = await GET(authedReq() as never);
     expect(res.status).toBe(200);
     expect(mockSentryCapture).toHaveBeenCalledWith(
@@ -236,6 +242,7 @@ describe("GET /api/cron/reconcile-billing", () => {
         entitlements: ["ai_copilot", "ai_forge", "ai_import", "white_label"],
       },
     });
+    mockListMembers.mockResolvedValue({ data: [{}], totalCount: 1 }); // 1 member, 1 seat → no seat drift
 
     const res = await GET(authedReq() as never);
     expect(res.status).toBe(200);
@@ -243,5 +250,57 @@ describe("GET /api/cron/reconcile-billing", () => {
     expect(mockReconcileUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ status: "ok" }),
     );
+  });
+
+  it("flags seat drift when Clerk reports more members than the billed seat quantity", async () => {
+    // Everything else agrees (status, entitlements, Stripe↔DB items). The ONLY
+    // discrepancy is that 150 members are billed as 100 seats — the underbilling
+    // the Stripe↔DB item comparison structurally cannot catch.
+    mockReconcileInsert.mockResolvedValue([{ id: "run_seat" }]);
+    mockSelectFirms.mockResolvedValue([
+      { firmId: "org_big", isFounder: false, archivedAt: null },
+    ]);
+    mockSelectSubs.mockResolvedValue([
+      {
+        id: "internal-sub-big",
+        firmId: "org_big",
+        stripeSubscriptionId: "sub_big",
+        status: "active",
+      },
+    ]);
+    mockSelectItems.mockResolvedValue([
+      { kind: "seat", addonKey: null, quantity: 100, removedAt: null },
+    ]);
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_big",
+      status: "active",
+      items: { data: [{ id: "si_seat", quantity: 100, metadata: { kind: "seat" } }] },
+    });
+    mockGetOrg.mockResolvedValue({
+      publicMetadata: {
+        subscription_status: "active",
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
+      },
+    });
+    mockListMembers.mockResolvedValue({
+      data: Array.from({ length: 100 }, () => ({})),
+      totalCount: 150,
+    });
+
+    const res = await GET(authedReq() as never);
+    expect(res.status).toBe(200);
+    expect(mockReconcileUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "drift_detected",
+        discrepancies: expect.arrayContaining([
+          expect.objectContaining({
+            field: "seats",
+            stripeValue: 100,
+            clerkValue: 150,
+          }),
+        ]),
+      }),
+    );
+    expect(mockSentryCapture).toHaveBeenCalled();
   });
 });

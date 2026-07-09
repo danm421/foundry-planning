@@ -10,6 +10,7 @@ import {
   tosAcceptances,
 } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
+import { getOrgMemberCount, expectedSeatQuantity } from "@/lib/billing/seat-count";
 import { recordAudit } from "@/lib/audit";
 import { sendWelcomeEmail } from "@/lib/onboarding/welcome-email";
 import type { ClerkEvent } from "./handler";
@@ -51,7 +52,7 @@ async function claimSvixDelivery(
  * org member count (never +/- delta — deltas drift under duplicate/concurrent
  * webhooks). No-op for founder orgs and firms without a live subscription.
  * A Stripe failure is swallowed (logged + Sentry) so Clerk doesn't retry-storm;
- * the daily reconcile cron self-heals the quantity.
+ * the daily reconcile cron then detects + Sentry-pages any seat-quantity drift.
  */
 async function syncSeatQuantity(firmId: string): Promise<void> {
   const firmRows = await db.select().from(firms).where(eq(firms.firmId, firmId));
@@ -69,12 +70,7 @@ async function syncSeatQuantity(firmId: string): Promise<void> {
 
   try {
     const cc = await clerkClient();
-    const members = await cc.organizations.getOrganizationMembershipList({
-      organizationId: firmId,
-      limit: 100,
-    });
-    const memberCount =
-      (members as { total_count?: number }).total_count ?? members.data.length;
+    const memberCount = await getOrgMemberCount(cc, firmId);
 
     const stripe = getStripe();
     const liveSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId, {
@@ -86,7 +82,7 @@ async function syncSeatQuantity(firmId: string): Promise<void> {
         "addon",
     );
     if (!seat) return;
-    const quantity = Math.max(1, memberCount);
+    const quantity = expectedSeatQuantity(memberCount);
     await stripe.subscriptions.update(sub.stripeSubscriptionId, {
       items: [{ id: seat.id, quantity }],
       proration_behavior: "create_prorations",
