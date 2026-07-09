@@ -20,6 +20,8 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
+import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 
 interface Props {
   params: Promise<{ id: string; slug?: string[] }>;
@@ -48,7 +50,7 @@ export default async function PortalPreviewPage({
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
   // the client kept private may enter this page's payload. Both reads sit
   // behind the access gate above; they are independent of each other.
-  const [privacy, contacts] = await Promise.all([
+  const [privacy, contacts, branding] = await Promise.all([
     loadPortalPrivacy(id),
     access.client.crmHouseholdId
       ? db
@@ -61,6 +63,7 @@ export default async function PortalPreviewPage({
           .from(crmHouseholdContacts)
           .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
       : [],
+    resolveIntakeBranding(access.firmId),
   ]);
 
   // Dispatch on slug. Empty / ["profile"] → Household.
@@ -132,6 +135,7 @@ export default async function PortalPreviewPage({
           className="flex min-h-0 overflow-y-auto"
         />
         <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
+          <PortalBrandingStrip branding={branding} />
           <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
             {section}
           </PortalModeProvider>
