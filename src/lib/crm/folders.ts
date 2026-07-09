@@ -82,11 +82,42 @@ export async function ensureMeetingPrepFolder(
   return folder.id;
 }
 
+export const PORTAL_SHARED_FOLDER_NAME = "Shared with Client";
+
+/** Find-or-create the household's single portal-shared root folder. Idempotent
+ *  on the specific folder (mirrors ensureTranscriptsFolder). The partial unique
+ *  index `crm_doc_folders_one_portal_root_per_hh` is the DB-level backstop. */
+export async function ensureSharedFolder(
+  householdId: string,
+  firmId: string,
+): Promise<string> {
+  const existing = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.householdId, householdId),
+      eq(crmDocumentFolders.isPortalRoot, true),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+  const [folder] = await db
+    .insert(crmDocumentFolders)
+    .values({
+      householdId,
+      firmId,
+      name: PORTAL_SHARED_FOLDER_NAME,
+      isSystem: true,
+      isPortalRoot: true,
+    })
+    .returning({ id: crmDocumentFolders.id });
+  return folder.id;
+}
+
 export async function listFolders(
   householdId: string,
 ): Promise<CrmDocumentFolderRow[]> {
   const { orgId } = await requireVaultAccess(householdId);
   await ensureSystemFolders(householdId, orgId);
+  await ensureSharedFolder(householdId, orgId);
   return db.query.crmDocumentFolders.findMany({
     where: eq(crmDocumentFolders.householdId, householdId),
     orderBy: [asc(crmDocumentFolders.sortOrder), asc(crmDocumentFolders.createdAt)],
