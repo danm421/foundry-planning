@@ -60,13 +60,16 @@ export default function Home() {
         <View className="py-24 items-center">
           <ActivityIndicator />
         </View>
-      ) : error ? (
+      ) : data === null && error ? (
         <View className="py-24 items-center">
           <Text className="text-ink-2">Couldn't load your dashboard.</Text>
           <Text className="text-ink-4 mt-1">Pull down to retry.</Text>
         </View>
       ) : data ? (
         <>
+          {error ? (
+            <Text className="text-warn mb-3">Couldn't refresh. Pull down to try again.</Text>
+          ) : null}
           <NetWorthTile d={data.netWorth} />
           <SpendingTile d={data.spending} />
           <ToReviewTile d={data.toReview} />
