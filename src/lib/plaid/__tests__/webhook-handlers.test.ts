@@ -149,6 +149,19 @@ describe("data handlers", () => {
     expect(recordCreate).not.toHaveBeenCalled();
   });
 
+  it("sync failure with a product-config code persists it and returns ok (retry can't fix it)", async () => {
+    // INVALID_PRODUCT = the product isn't enabled for our client in this Plaid
+    // environment. Permanent until the dashboard config changes — throwing
+    // would put Plaid into a pointless 500 redelivery loop.
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({
+      ok: false, errorCode: "INVALID_PRODUCT", errorMessage: "product not enabled",
+    });
+    const r = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"](base);
+    expect(r).toBe("ok");
+    expect(dbSetArgs).toContainEqual({ lastRefreshError: "INVALID_PRODUCT" });
+    expect(recordCreate).not.toHaveBeenCalled();
+  });
+
   it("sync failure with a transient code throws (Plaid should retry)", async () => {
     vi.mocked(syncTransactionsForItem).mockResolvedValue({
       ok: false, errorCode: "INTERNAL_SERVER_ERROR", errorMessage: "oops",
@@ -176,6 +189,19 @@ describe("data handlers", () => {
     expect(recordCreate).not.toHaveBeenCalled();
     vi.mocked(refreshPlaidItemData).mockResolvedValue({ ok: false, errorCode: "INTERNAL_SERVER_ERROR", needsReauth: false });
     await expect(plaidWebhookHandlers["HOLDINGS:DEFAULT_UPDATE"](base)).rejects.toThrow();
+  });
+
+  it("refresh with a product-config code returns ok without audit (no retry loop)", async () => {
+    // Regression: the first real production item (Chase, 2026-07-08) had every
+    // LIABILITIES:DEFAULT_UPDATE refresh fail INVALID_PRODUCT (Balance product
+    // not in the prod approval); throwing made Plaid retry-loop the delivery.
+    // refreshPlaidItemData has already persisted the code — just ack.
+    vi.mocked(refreshPlaidItemData).mockResolvedValue({
+      ok: false, errorCode: "INVALID_PRODUCT", needsReauth: false,
+    });
+    const r = await plaidWebhookHandlers["LIABILITIES:DEFAULT_UPDATE"](base);
+    expect(r).toBe("ok");
+    expect(recordCreate).not.toHaveBeenCalled();
   });
 
   it("refresh with a REVOKED code (needsReauth=false) still returns ok without audit", async () => {

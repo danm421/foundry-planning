@@ -42,6 +42,16 @@ export function needsUserAction(code: string | null): boolean {
   return code != null && (REAUTH_CODES.has(code) || REVOKED_CODES.has(code));
 }
 
+// Product-authorization failures: the product isn't enabled for our client in
+// this Plaid environment (production approval is per-product; sandbox allows
+// everything) or the item can never support it. Permanent until the Plaid
+// dashboard config changes — webhook redelivery can't fix them, so handlers
+// persist the code and ack instead of 500ing into Plaid's retry loop.
+export const CONFIG_ERROR_CODES = new Set([
+  "INVALID_PRODUCT",
+  "PRODUCTS_NOT_SUPPORTED",
+]);
+
 export function isReauthError(err: unknown): boolean {
   return REAUTH_CODES.has(plaidErrorCode(err));
 }

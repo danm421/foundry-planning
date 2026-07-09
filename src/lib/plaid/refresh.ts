@@ -23,6 +23,12 @@ type PlaidItemForRefresh = {
  * account: investment accounts use the sum of `institution_value` from
  * holdings (positions-only); other accounts use `balances.current`.
  *
+ * Balances come from /accounts/get (cached), NOT /accounts/balance/get:
+ * real-time Balance is a separately-approved (and per-call billed) Plaid
+ * product, and requesting it without approval fails the whole refresh with
+ * INVALID_PRODUCT in production. Cached is fresh enough here — webhook-driven
+ * refreshes fire exactly when Plaid has just pulled new data for the item.
+ *
  * On Plaid error, returns `{ ok: false, errorCode, errorMessage }` —
  * the caller maps `ITEM_LOGIN_REQUIRED` / `PENDING_EXPIRATION` to the
  * re-auth UI.
@@ -36,8 +42,8 @@ export async function fetchBalancesForItem(
   const linkedSet = new Set(linkedPlaidAccountIds);
 
   try {
-    const balanceResp = await client.accountsBalanceGet({ access_token });
-    const balanceAccounts = balanceResp.data.accounts.filter((a: { account_id: string }) =>
+    const accountsResp = await client.accountsGet({ access_token });
+    const balanceAccounts = accountsResp.data.accounts.filter((a: { account_id: string }) =>
       linkedSet.has(a.account_id),
     );
 
