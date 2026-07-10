@@ -11,22 +11,27 @@ export interface AdapterContext {
   spouseAge: number | null;
 }
 
-/** Single source of truth for the adapter's Schedule-D fallback semantics.
- *  Schedule D detail is "present" when either the long- or short-term line
- *  was extracted (netLongTermGain != null || netShortTermGain != null) — a
+/** Single source of truth for the Schedule-D presence test: detail is
+ *  "present" when either the long- or short-term line was extracted — a
  *  short-term-only return still counts as "present" and must NOT fall back
- *  to line 7. When present, LTCG is netLongTermGain (0 when only the
- *  short-term line was found). When absent, LTCG falls back to line 7
- *  (capitalGainOrLoss), which may itself be null.
+ *  to line 7. */
+export function hasScheduleDDetail(facts: TaxReturnFacts): boolean {
+  return facts.income.netLongTermGain != null || facts.income.netShortTermGain != null;
+}
+
+/** Single source of truth for the adapter's Schedule-D fallback semantics.
+ *  When Schedule D detail is present (see `hasScheduleDDetail`), LTCG is
+ *  netLongTermGain (0 when only the short-term line was found). When absent,
+ *  LTCG falls back to line 7 (capitalGainOrLoss), which may itself be null.
  *
  *  Exported so callers needing "the LTCG figure for this return" (adapter,
  *  and later observation modules) share exactly one copy of this rule —
  *  the plan's original draft inlined `netLongTermGain ?? capitalGainOrLoss`
  *  in three separate files with subtly diverging trigger conditions. */
 export function resolveLtcg(facts: TaxReturnFacts): number | null {
-  const inc = facts.income;
-  const hasScheduleDDetail = inc.netLongTermGain != null || inc.netShortTermGain != null;
-  return hasScheduleDDetail ? (inc.netLongTermGain ?? 0) : inc.capitalGainOrLoss;
+  return hasScheduleDDetail(facts)
+    ? (facts.income.netLongTermGain ?? 0)
+    : facts.income.capitalGainOrLoss;
 }
 
 export function factsToCalcInput(
@@ -36,11 +41,11 @@ export function factsToCalcInput(
   const notes: string[] = [];
   const inc = facts.income;
 
-  const hasScheduleDDetail = inc.netLongTermGain != null || inc.netShortTermGain != null;
+  const hasSchedD = hasScheduleDDetail(facts);
   const resolvedLtcg = resolveLtcg(facts);
   const ltcg = Math.max(0, n(resolvedLtcg));
-  const stcg = hasScheduleDDetail ? Math.max(0, n(inc.netShortTermGain)) : 0;
-  if (!hasScheduleDDetail && resolvedLtcg != null) {
+  const stcg = hasSchedD ? Math.max(0, n(inc.netShortTermGain)) : 0;
+  if (!hasSchedD && resolvedLtcg != null) {
     notes.push(
       "Long/short-term split unavailable (no Schedule D detail) — net capital gain treated as long-term.",
     );
