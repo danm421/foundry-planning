@@ -2338,6 +2338,45 @@ export const medicareCoverage = pgTable("medicare_coverage", {
   uniqueOwnerPerClient: unique("medicare_coverage_unique_owner").on(t.clientId, t.owner),
 }));
 
+export const taxReturnStatusEnum = pgEnum("tax_return_status", [
+  "extracting",
+  "needs_review",
+  "ready",
+  "failed",
+]);
+
+export const taxReturns = pgTable(
+  "tax_returns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    taxYear: integer("tax_year").notNull(),
+    status: taxReturnStatusEnum("status").notNull().default("extracting"),
+    // Immutable as-extracted snapshot (audit trail); null until extraction completes.
+    extractedFacts: jsonb("extracted_facts"),
+    // Editable working copy — advisor corrections land here.
+    facts: jsonb("facts"),
+    warnings: jsonb("warnings").$type<string[]>().notNull().default([]),
+    vaultDocumentId: uuid("vault_document_id").references(
+      () => crmHouseholdDocuments.id,
+      { onDelete: "set null" },
+    ),
+    sourceFilename: text("source_filename"),
+    promptVersion: text("prompt_version"),
+    model: text("model"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueYearPerClient: unique("tax_returns_unique_client_year").on(
+      t.clientId,
+      t.taxYear,
+    ),
+  }),
+);
+
 export const expenses = pgTable("expenses", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
