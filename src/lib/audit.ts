@@ -66,6 +66,11 @@ export type AuditAction =
   | "deduction.create"
   | "deduction.update"
   | "deduction.delete"
+  // Tax return analysis (AI-extracted 1040 facts)
+  | "tax_return.extract"
+  | "tax_return.update"
+  | "tax_return.delete"
+  | "tax_return.export_pdf"
   // Scenario-level movements
   | "transfer.create"
   | "transfer.update"
