@@ -804,7 +804,7 @@ export function ForgePanel({
             data-testid="forge-file-input"
             type="file"
             multiple
-            accept=".pdf,.docx,.xlsx,.xls,.csv"
+            accept=".pdf,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
             className="hidden"
             onChange={(e) => {
               onPickFiles(e.target.files);
@@ -876,6 +876,26 @@ export function ForgePanel({
               onChange={(e) => setInput(e.target.value)}
               onPaste={(e) => {
                 if (locked) return;
+                // Screenshots first: image clipboard items become attachments
+                // (client context only — imports require a client). Renamed
+                // because clipboard images all arrive as generic "image.png",
+                // which reads as noise in the review wizard.
+                const images = Array.from(e.clipboardData.files ?? []).filter(
+                  (f) => f.type === "image/png" || f.type === "image/jpeg",
+                );
+                if (images.length > 0 && clientId != null) {
+                  e.preventDefault();
+                  setAttached((prev) => [
+                    ...prev,
+                    ...images.map((f, i) => {
+                      const ext = f.type === "image/png" ? "png" : "jpg";
+                      return new File([f], `screenshot-${prev.length + i + 1}.${ext}`, {
+                        type: f.type,
+                      });
+                    }),
+                  ]);
+                  return;
+                }
                 const text = e.clipboardData.getData("text");
                 const { isCandidate, wordCount } = looksLikeTranscript(text);
                 if (isCandidate) {
