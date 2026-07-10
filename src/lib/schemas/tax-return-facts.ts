@@ -5,6 +5,7 @@ import { z } from "zod";
  *  observations degrade per-field. */
 
 export const TAX_RETURN_MIN_YEAR = 2022; // earliest seeded tax_year_parameters row
+export const TAX_RETURN_MAX_YEAR = 2100; // matches the tax_year_parameters upper bound / plausibility ceiling
 
 const money = z.number().finite().nullable();
 const count = z.number().int().min(0).nullable();
@@ -29,7 +30,7 @@ const scheduleASchema = z
 
 export const taxReturnFactsSchema = z
   .object({
-    taxYear: z.number().int().min(TAX_RETURN_MIN_YEAR).max(2100),
+    taxYear: z.number().int().min(TAX_RETURN_MIN_YEAR).max(TAX_RETURN_MAX_YEAR),
     filingStatus: z.enum(filingStatusValues).nullable(),
     residenceState: z.string().length(2).nullable(),
     dependentsUnder17: count,

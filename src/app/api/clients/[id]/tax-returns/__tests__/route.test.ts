@@ -154,4 +154,16 @@ describe("POST /api/clients/[id]/tax-returns", () => {
     expect(extractTaxReturnFacts).not.toHaveBeenCalled();
     expect(upsertExtracted).toHaveBeenCalledWith(expect.objectContaining({ taxYear: 2023, model: "manual" }));
   });
+
+  it("400s in manual mode for a tax year past the upper bound", async () => {
+    const form = new FormData();
+    form.set("manualTaxYear", "999999");
+    const res = await POST(
+      new NextRequest(`http://test/api/clients/${CLIENT_ID}/tax-returns`, { method: "POST", body: form }),
+      params,
+    );
+    expect(res.status).toBe(400);
+    expect(extractTaxReturnFacts).not.toHaveBeenCalled();
+    expect(upsertExtracted).not.toHaveBeenCalled();
+  });
 });

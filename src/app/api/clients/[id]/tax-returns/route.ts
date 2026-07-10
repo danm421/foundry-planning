@@ -16,6 +16,7 @@ import {
 import {
   emptyTaxReturnFacts,
   TAX_RETURN_MIN_YEAR,
+  TAX_RETURN_MAX_YEAR,
 } from "@/lib/schemas/tax-return-facts";
 
 export const dynamic = "force-dynamic";
@@ -94,9 +95,13 @@ export async function POST(
     const manualYearRaw = form.get("manualTaxYear");
     if (typeof manualYearRaw === "string" && manualYearRaw !== "") {
       const manualYear = Number(manualYearRaw);
-      if (!Number.isInteger(manualYear) || manualYear < TAX_RETURN_MIN_YEAR) {
+      if (
+        !Number.isInteger(manualYear) ||
+        manualYear < TAX_RETURN_MIN_YEAR ||
+        manualYear > TAX_RETURN_MAX_YEAR
+      ) {
         return NextResponse.json(
-          { error: `Tax years from ${TAX_RETURN_MIN_YEAR} onward are supported.` },
+          { error: `Tax years from ${TAX_RETURN_MIN_YEAR} to ${TAX_RETURN_MAX_YEAR} are supported.` },
           { status: 400 },
         );
       }
