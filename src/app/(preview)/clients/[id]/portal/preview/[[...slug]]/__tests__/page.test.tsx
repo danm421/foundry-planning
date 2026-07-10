@@ -30,6 +30,11 @@ vi.mock("@/components/portal/portal-accounts-screen", () => ({
     <div data-testid="screen-accounts" data-client={clientId} />
   ),
 }));
+vi.mock("@/components/portal/portal-documents-screen", () => ({
+  PortalDocumentsScreen: ({ editEnabled }: { editEnabled: boolean }) => (
+    <div data-testid="screen-documents" data-edit={String(editEnabled)} />
+  ),
+}));
 vi.mock("@/components/portal/portal-nav", () => ({
   default: ({ basePath }: { basePath?: string }) => (
     <div data-testid="nav" data-basepath={basePath} />
@@ -141,5 +146,12 @@ describe("PortalPreview catch-all", () => {
     const node = container.querySelector("[data-testid='screen-accounts']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
+  });
+
+  it("renders PortalDocumentsScreen on slug=['documents'], passing the client's edit toggle", async () => {
+    const { container } = await renderPreview(["documents"]);
+    const node = container.querySelector("[data-testid='screen-documents']");
+    expect(node).toBeTruthy();
+    expect(node?.getAttribute("data-edit")).toBe("true");
   });
 });
