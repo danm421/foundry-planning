@@ -5,6 +5,8 @@ import {
   solveRequiredReturn,
   impliedGrowthPct,
   CAPACITY_WEIGHTS,
+  computeVerdict,
+  assembleRiskAlignment,
 } from "../risk-capacity";
 
 describe("computeCapacityScore", () => {
@@ -95,5 +97,42 @@ describe("computeRequiredGrowthPct", () => {
       equityReturn: 0.07,
     });
     expect(pct).toBe(100);
+  });
+});
+
+describe("computeVerdict", () => {
+  it("aligned when current sits between required and capacity", () => {
+    expect(computeVerdict({ currentPct: 55, requiredPct: 45, capacityPct: 60 })).toBe("aligned");
+  });
+  it("over_risked when current exceeds capacity beyond the band", () => {
+    expect(computeVerdict({ currentPct: 78, requiredPct: 45, capacityPct: 60 })).toBe("over_risked");
+  });
+  it("under_risked when current is below required beyond the band", () => {
+    expect(computeVerdict({ currentPct: 30, requiredPct: 45, capacityPct: 60 })).toBe("under_risked");
+  });
+  it("goals_over_reaching takes precedence when required exceeds capacity", () => {
+    expect(computeVerdict({ currentPct: 90, requiredPct: 80, capacityPct: 55 })).toBe("goals_over_reaching");
+  });
+  it("respects the ±5 tolerance band (61 vs cap 60 is still aligned)", () => {
+    expect(computeVerdict({ currentPct: 61, requiredPct: 45, capacityPct: 60 })).toBe("aligned");
+  });
+});
+
+describe("assembleRiskAlignment", () => {
+  it("produces all markers and a verdict", () => {
+    const a = assembleRiskAlignment({
+      currentPct: 78,
+      capacity: { horizonYears: 20, fundingScore: 1.3, withdrawalRate: 0.03, guaranteedIncomeCoverage: 0.6 },
+      required: {
+        startingLiquidAssets: 800_000,
+        avgAnnualRealNetWithdrawal: 30_000,
+        horizonYears: 20,
+        cashReturn: 0.02,
+        equityReturn: 0.07,
+      },
+    });
+    expect(a.currentPct).toBe(78);
+    expect(a.capacityPct).toBe(a.capacityScore);
+    expect(["aligned", "over_risked", "under_risked", "goals_over_reaching"]).toContain(a.verdict);
   });
 });

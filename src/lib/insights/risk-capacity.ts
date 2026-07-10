@@ -115,3 +115,34 @@ export function computeRequiredGrowthPct(i: RequiredInputs): number {
   );
   return impliedGrowthPct(r, i.cashReturn, i.equityReturn);
 }
+
+export function computeVerdict(a: {
+  currentPct: number;
+  requiredPct: number;
+  capacityPct: number;
+}): Verdict {
+  const b = VERDICT_TOLERANCE_PCT;
+  // Structural conflict first: goals demand more risk than capacity supports.
+  if (a.requiredPct > a.capacityPct + b) return "goals_over_reaching";
+  if (a.currentPct > a.capacityPct + b) return "over_risked";
+  if (a.currentPct < a.requiredPct - b) return "under_risked";
+  return "aligned";
+}
+
+export function assembleRiskAlignment(args: {
+  currentPct: number;
+  capacity: CapacityInputs;
+  required: RequiredInputs;
+}): RiskAlignment {
+  const capacityScore = computeCapacityScore(args.capacity);
+  const capacityPct = capacityScore; // v1: 1:1 map (tunable)
+  const requiredPct = computeRequiredGrowthPct(args.required);
+  const currentPct = Math.round(args.currentPct);
+  return {
+    currentPct,
+    requiredPct,
+    capacityPct,
+    capacityScore,
+    verdict: computeVerdict({ currentPct, requiredPct, capacityPct }),
+  };
+}
