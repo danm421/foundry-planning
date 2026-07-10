@@ -16,7 +16,14 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { listFolders, SYSTEM_FOLDERS, createFolder, updateFolder, deleteFolder } from "../folders";
+import {
+  listFolders,
+  SYSTEM_FOLDERS,
+  PORTAL_SHARED_FOLDER_NAME,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+} from "../folders";
 
 const ORG = "org_folders_test";
 let householdId: string;
@@ -36,9 +43,14 @@ beforeEach(async () => {
 });
 
 describe("listFolders + system seed", () => {
-  it("lazily seeds the six system folders on first call", async () => {
+  it("lazily seeds the system folders + shared root on first call", async () => {
     const folders = await listFolders(householdId);
-    expect(folders.map((f) => f.name)).toEqual([...SYSTEM_FOLDERS]);
+    // Order-tolerant for the shared root (its position among the seed folders
+    // depends on a createdAt tie-break), but still exact-set: fails if a system
+    // folder goes missing or an extra folder appears.
+    expect(folders.map((f) => f.name).sort()).toEqual(
+      [...SYSTEM_FOLDERS, PORTAL_SHARED_FOLDER_NAME].sort(),
+    );
     expect(folders.every((f) => f.isSystem)).toBe(true);
   });
 
@@ -48,7 +60,7 @@ describe("listFolders + system seed", () => {
     const rows = await db.query.crmDocumentFolders.findMany({
       where: eq(crmDocumentFolders.householdId, householdId),
     });
-    expect(rows).toHaveLength(SYSTEM_FOLDERS.length);
+    expect(rows).toHaveLength(SYSTEM_FOLDERS.length + 1);
   });
 });
 

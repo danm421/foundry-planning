@@ -41,9 +41,12 @@ export function collectFolderSubtreeIds<T extends FolderLike>(
     childrenByParent.set(f.parentFolderId, arr);
   }
   const out: string[] = [];
+  const visited = new Set<string>();
   const stack = [rootId];
   while (stack.length) {
     const id = stack.pop()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
     out.push(id);
     for (const child of childrenByParent.get(id) ?? []) stack.push(child.id);
   }

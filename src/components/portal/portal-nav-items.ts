@@ -28,5 +28,6 @@ export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
   { label: "Transactions", suffix: "/transactions", group: "money" },
   { label: "Budget", suffix: "/budget", group: "money" },
   { label: "Recurrings", suffix: "/recurrings", group: "money" },
+  { label: "Documents", suffix: "/documents", group: "money" },
   { label: "Settings", suffix: "/settings", group: "settings" },
 ] as const;

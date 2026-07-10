@@ -679,12 +679,19 @@ export const crmDocumentFolders = pgTable("crm_document_folders", {
   ),
   name: text("name").notNull(),
   isSystem: boolean("is_system").notNull().default(false),
+  // Exactly one folder per household carries is_portal_root = true: the
+  // "Shared with Client" root that the client portal mounts. It is the
+  // security boundary — the portal only ever touches this folder's subtree.
+  isPortalRoot: boolean("is_portal_root").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("crm_document_folders_household_idx").on(t.householdId),
   index("crm_document_folders_parent_idx").on(t.householdId, t.parentFolderId),
+  uniqueIndex("crm_doc_folders_one_portal_root_per_hh")
+    .on(t.householdId)
+    .where(sql`${t.isPortalRoot}`),
 ]);
 
 export const generationRunStatusEnum = pgEnum("generation_run_status", [

@@ -32,7 +32,7 @@ export { MAX_DOCUMENT_SIZE_BYTES } from "./document-constants";
 export const MAX_SIZE_BYTES = MAX_DOCUMENT_SIZE_BYTES;
 export const STORAGE_PROVIDER = "vercel-blob";
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return name.replace(SAFE_FILENAME_RE, "_").replace(DOT_RUN_RE, "_");
 }
 

@@ -1,0 +1,2 @@
+ALTER TABLE "crm_document_folders" ADD COLUMN "is_portal_root" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "crm_doc_folders_one_portal_root_per_hh" ON "crm_document_folders" USING btree ("household_id") WHERE "crm_document_folders"."is_portal_root";

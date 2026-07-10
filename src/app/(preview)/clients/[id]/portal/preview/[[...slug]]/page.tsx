@@ -13,6 +13,7 @@ import TransactionsSection from "@/components/portal/transactions-section";
 import BudgetSection from "@/components/portal/budget-section";
 import RecurringsSection from "@/components/portal/recurrings-section";
 import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-screen";
+import { PortalDocumentsScreen } from "@/components/portal/portal-documents-screen";
 import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
@@ -99,6 +100,8 @@ export default async function PortalPreviewPage({
     );
   } else if (path === "investments") {
     section = <PortalInvestmentsScreen clientId={id} />;
+  } else if (path === "documents") {
+    section = <PortalDocumentsScreen editEnabled={access.client.portalEditEnabled} />;
   } else if (path === "settings") {
     section = <PortalSettingsView privacy={privacy} readOnly />;
   } else {
