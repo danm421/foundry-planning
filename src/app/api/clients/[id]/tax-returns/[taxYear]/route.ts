@@ -92,6 +92,12 @@ export async function PUT(
         { status: 400 },
       );
     }
+    if (parsed.data.facts.taxYear !== taxYear) {
+      return NextResponse.json(
+        { error: "Facts tax year does not match the URL." },
+        { status: 400 },
+      );
+    }
     const nextStatus = parsed.data.reopen ? "needs_review" : parsed.data.markReady ? "ready" : undefined;
     const row = await updateFacts(id, taxYear, parsed.data.facts, nextStatus);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });

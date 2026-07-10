@@ -254,6 +254,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
 
           {!detailLoading && detail?.status === "needs_review" && detail.facts && (
             <FactsReviewForm
+              key={detail.taxYear}
               clientId={clientId}
               detail={detail}
               onSaved={() => {

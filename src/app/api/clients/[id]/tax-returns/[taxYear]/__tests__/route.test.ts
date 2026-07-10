@@ -114,6 +114,19 @@ describe("PUT .../tax-returns/[taxYear]", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("400s when the facts payload's taxYear doesn't match the URL's taxYear", async () => {
+    const res = await PUT(
+      new NextRequest("http://test", {
+        method: "PUT",
+        body: JSON.stringify({ facts: emptyTaxReturnFacts(2024), markReady: false }),
+        headers: { "content-type": "application/json" },
+      }),
+      routeParams, // URL year is 2025
+    );
+    expect(res.status).toBe(400);
+    expect(updateFacts).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE .../tax-returns/[taxYear]", () => {

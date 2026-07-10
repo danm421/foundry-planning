@@ -7,9 +7,11 @@ export function BracketMapBars({ map }: { map: BracketMap }) {
   const visible = map.ordinary.segments.filter(
     (s) => s.filled > 0 || s.from <= map.ordinary.taxBase * 1.6,
   );
+  const lastVisible = visible[visible.length - 1];
   const scaleTop = Math.max(
     map.ordinary.taxBase * 1.25,
-    visible[visible.length - 1]?.from ?? 1,
+    lastVisible?.to ?? lastVisible?.from ?? 1,
+    1,
   );
 
   return (
@@ -23,7 +25,7 @@ export function BracketMapBars({ map }: { map: BracketMap }) {
         </div>
         <div className="flex h-8 w-full overflow-hidden rounded border border-hair">
           {visible.map((seg) => {
-            const width = ((Math.min(seg.to ?? scaleTop, scaleTop) - seg.from) / scaleTop) * 100;
+            const width = Math.max(0, ((Math.min(seg.to ?? scaleTop, scaleTop) - seg.from) / scaleTop) * 100);
             const fillPct = seg.to
               ? Math.min(100, (seg.filled / (seg.to - seg.from)) * 100)
               : seg.filled > 0 ? 100 : 0;

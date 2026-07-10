@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TaxAnalysisContent } from "../tax-analysis-content";
+import { TaxAnalysisContent, type YearDetail } from "../tax-analysis-content";
+import { FactsReviewForm } from "../facts-review-form";
 import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
 import { params2025, retireeMfj } from "@/lib/tax-analysis/__tests__/fixtures";
@@ -178,5 +179,119 @@ describe("TaxAnalysisContent", () => {
     // report heading is gone) rather than the old placeholder text.
     await waitFor(() => expect(screen.getByText(/wages \(1a\)/i)).toBeTruthy());
     expect(screen.queryByText(/2025 tax analysis/i)).toBeNull();
+  });
+
+  it("shows the correct year's facts after switching between two needs_review years", async () => {
+    const facts2024 = retireeMfj();
+    facts2024.taxYear = 2024;
+    facts2024.income.agi = 240000;
+    const facts2023 = retireeMfj();
+    facts2023.taxYear = 2023;
+    facts2023.income.agi = 130000;
+
+    fetchMock
+      // 1. initial list — two needs_review years, 2024 first (selected by default)
+      .mockReturnValueOnce(
+        jsonResponse({
+          returns: [
+            { taxYear: 2024, status: "needs_review", warningCount: 0, sourceFilename: "a.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+            { taxYear: 2023, status: "needs_review", warningCount: 0, sourceFilename: "b.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+          ],
+        }),
+      )
+      // 2. detail fetch for 2024
+      .mockReturnValueOnce(
+        jsonResponse({
+          taxYear: 2024,
+          status: "needs_review",
+          facts: facts2024,
+          extractedFacts: facts2024,
+          warnings: [],
+          analysis: null,
+        }),
+      )
+      // 3. detail fetch for 2023 (after clicking the 2023 tab)
+      .mockReturnValueOnce(
+        jsonResponse({
+          taxYear: 2023,
+          status: "needs_review",
+          facts: facts2023,
+          extractedFacts: facts2023,
+          warnings: [],
+          analysis: null,
+        }),
+      );
+
+    const user = userEvent.setup();
+    render(<TaxAnalysisContent clientId="c1" />);
+
+    // 2024's form is showing first, with its AGI.
+    await waitFor(() => expect(screen.getByText(/AGI \$240,000/)).toBeTruthy());
+
+    await user.click(screen.getByRole("tab", { name: /2023/ }));
+
+    // Regression guard for correct year-switching: today this is also
+    // enforced by the `!detailLoading && …` gate around FactsReviewForm
+    // (confirmed via mount/unmount tracing: switching years fully unmounts
+    // and remounts the form while detailLoading is true, so it always
+    // reseeds from the freshly-fetched `detail` regardless of `key`). The
+    // `key={detail.taxYear}` fix below is defense-in-depth for if that gate
+    // is ever relaxed (e.g. a stale-while-revalidate UX that keeps the old
+    // form visible during a background refetch) — see the FactsReviewForm-level
+    // test below for a test that actually discriminates the fix.
+    await waitFor(() => expect(screen.getByText(/AGI \$130,000/)).toBeTruthy());
+    expect(screen.queryByText(/AGI \$240,000/)).toBeNull();
+  });
+
+  it("FactsReviewForm: a same-instance detail-prop change leaves stale facts in place unless keyed by taxYear (the mechanism tax-analysis-content.tsx's key={detail.taxYear} guards against)", () => {
+    const detail2024: YearDetail = {
+      taxYear: 2024,
+      status: "needs_review",
+      facts: (() => {
+        const f = retireeMfj();
+        f.taxYear = 2024;
+        f.income.agi = 240000;
+        return f;
+      })(),
+      extractedFacts: null,
+      warnings: [],
+      analysis: null,
+    };
+    const detail2023: YearDetail = {
+      taxYear: 2023,
+      status: "needs_review",
+      facts: (() => {
+        const f = retireeMfj();
+        f.taxYear = 2023;
+        f.income.agi = 130000;
+        return f;
+      })(),
+      extractedFacts: null,
+      warnings: [],
+      analysis: null,
+    };
+
+    // No `key` — FactsReviewForm seeds `useState(detail.facts!)` once at mount,
+    // so a same-instance rerender with a new `detail` prop keeps the old facts.
+    const { rerender } = render(
+      <FactsReviewForm clientId="c1" detail={detail2024} onSaved={vi.fn()} />,
+    );
+    expect(screen.getByText(/AGI \$240,000/)).toBeTruthy();
+
+    rerender(<FactsReviewForm clientId="c1" detail={detail2023} onSaved={vi.fn()} />);
+    // BUG the fix guards against: still showing 2024's AGI even though
+    // `detail` now points at 2023 — `save()` would PUT the stale 2024 facts
+    // to the 2023 URL.
+    expect(screen.getByText(/AGI \$240,000/)).toBeTruthy();
+    expect(screen.queryByText(/AGI \$130,000/)).toBeNull();
+
+    // Keying by taxYear — exactly what tax-analysis-content.tsx now does —
+    // forces React to unmount the stale instance and mount a fresh one,
+    // reseeding `facts` from the current `detail`.
+    rerender(
+      <FactsReviewForm key={detail2023.taxYear} clientId="c1" detail={detail2023} onSaved={vi.fn()} />,
+    );
+    expect(screen.getByText(/AGI \$130,000/)).toBeTruthy();
+    expect(screen.queryByText(/AGI \$240,000/)).toBeNull();
   });
 });
