@@ -31,6 +31,7 @@ vi.mock("../excel-parser", () => ({
 
 vi.mock("../vision-ocr", () => ({
     visionOcrPdf: vi.fn(),
+    visionOcrImage: vi.fn(),
 }));
 
 vi.mock("../docx-parser", () => ({
@@ -40,13 +41,14 @@ vi.mock("../docx-parser", () => ({
 import { extractDocument } from "../extract";
 import { callAIExtraction } from "../azure-client";
 import { extractPdfText, extractPdfPages } from "../pdf-parser";
-import { visionOcrPdf } from "../vision-ocr";
+import { visionOcrPdf, visionOcrImage } from "../vision-ocr";
 import { extractDocxText } from "../docx-parser";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 const mockedPdf = vi.mocked(extractPdfText);
 const mockedPages = vi.mocked(extractPdfPages);
 const mockedVision = vi.mocked(visionOcrPdf);
+const mockedVisionImage = vi.mocked(visionOcrImage);
 const mockedDocx = vi.mocked(extractDocxText);
 
 beforeEach(() => {
@@ -348,5 +350,83 @@ describe("scanned-PDF vision OCR fallback", () => {
 
         expect(result.extracted.accounts).toEqual([]);
         expect(result.warnings.some((w) => /scanned image/i.test(w))).toBe(true);
+    });
+});
+
+describe("extractDocument — images", () => {
+    beforeEach(() => {
+        mockedVisionImage.mockReset();
+    });
+
+    it("extracts from a PNG screenshot via vision transcription", async () => {
+        mockedVisionImage.mockResolvedValue(
+            "Account Statement\nSchwab Brokerage\nMarket Value: $150,000"
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake png bytes"),
+            "screenshot-1.png",
+            "auto",
+            "mini",
+            "png"
+        );
+
+        expect(mockedVisionImage).toHaveBeenCalledWith(expect.any(Buffer), { model: "mini" });
+        expect(result.documentType).toBe("account_statement");
+        expect(result.extracted.accounts).toHaveLength(1);
+        expect(result.extracted.accounts[0].name).toBe("Schwab Brokerage");
+        expect(
+            result.warnings.some((w) => /image.*verify/i.test(w))
+        ).toBe(true);
+    });
+
+    it("maps .jpg extension to the jpeg kind when no verified kind is passed", async () => {
+        mockedVisionImage.mockResolvedValue(
+            "Account Statement\nSchwab Brokerage\nMarket Value: $150,000"
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake jpeg bytes"),
+            "photo.jpg",
+            "auto",
+            "mini"
+        );
+
+        expect(mockedVisionImage).toHaveBeenCalled();
+        expect(result.extracted.accounts).toHaveLength(1);
+    });
+
+    it("returns a graceful empty result when the transcript is too short", async () => {
+        mockedVisionImage.mockResolvedValue("blurry");
+
+        const result = await extractDocument(
+            Buffer.from("fake png bytes"),
+            "screenshot-2.png",
+            "auto",
+            "mini",
+            "png"
+        );
+
+        expect(result.extracted.accounts).toHaveLength(0);
+        expect(
+            result.warnings.some((w) => /couldn't read this image/i.test(w))
+        ).toBe(true);
+    });
+
+    it("returns a graceful empty result when the vision call throws", async () => {
+        mockedVisionImage.mockRejectedValue(new Error("400 content_filter"));
+
+        const result = await extractDocument(
+            Buffer.from("fake png bytes"),
+            "screenshot-3.png",
+            "auto",
+            "mini",
+            "png"
+        );
+
+        expect(result.extracted.accounts).toHaveLength(0);
+        expect(
+            result.warnings.some((w) => /couldn't read this image/i.test(w))
+        ).toBe(true);
     });
 });

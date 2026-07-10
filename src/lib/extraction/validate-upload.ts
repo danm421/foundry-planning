@@ -1,5 +1,6 @@
 /**
- * Shallow content-type validation for uploaded files by magic bytes.
+ * Shallow content-type validation for uploaded files by magic bytes,
+ * including images accepted for the vision-transcription path.
  *
  * The extract route previously picked its parser branch from the
  * user-controlled filename extension, which is a cheap spoof (rename
@@ -9,7 +10,7 @@
  * runs.
  */
 
-export type UploadKind = "pdf" | "xlsx" | "docx" | "csv";
+export type UploadKind = "pdf" | "xlsx" | "docx" | "csv" | "png" | "jpeg";
 
 const TEXTUAL_CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
@@ -24,6 +25,21 @@ export function detectUploadKind(buffer: Buffer): UploadKind | null {
     buffer[3] === 0x46
   ) {
     return "pdf";
+  }
+
+  // PNG: \x89 P N G
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return "png";
+  }
+
+  // JPEG: FF D8 FF (SOI marker + first segment marker prefix)
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "jpeg";
   }
 
   // Both .xlsx and .docx are OOXML packages — ZIP archives sharing the

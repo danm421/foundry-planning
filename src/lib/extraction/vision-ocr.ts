@@ -117,3 +117,34 @@ export async function visionOcrPdf(
     truncated: pageCount > opts.maxPages,
   };
 }
+
+/**
+ * Transcribe a single uploaded image (PNG/JPEG screenshot or photo of a
+ * statement) via the Azure OpenAI vision deployment. The sibling of
+ * `visionOcrPdf` for images that never had a PDF wrapper — same downscale
+ * bounds, same transcription call, no pdf.js/canvas involvement. Fails
+ * closed when Azure is unconfigured; callers treat a throw as a per-file
+ * extraction failure.
+ */
+export async function visionOcrImage(
+  buffer: Buffer,
+  opts: { model: "mini" | "full" },
+): Promise<string> {
+  if (!process.env.AZURE_API_KEY) {
+    throw new Error("AZURE_API_KEY is not configured — vision OCR unavailable.");
+  }
+  const sharp = (await import("sharp")).default;
+  const jpeg = await sharp(buffer)
+    .resize({
+      width: MAX_LONG_EDGE,
+      height: MAX_LONG_EDGE,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: JPEG_QUALITY })
+    .toBuffer();
+  return callAIVisionTranscription(
+    [{ b64: jpeg.toString("base64"), mime: "image/jpeg" }],
+    opts.model,
+  );
+}

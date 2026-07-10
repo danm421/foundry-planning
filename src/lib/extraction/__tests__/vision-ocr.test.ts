@@ -18,21 +18,25 @@ vi.mock("unpdf", () => ({
 const FAKE_CANVAS_FACTORY = { __fakeCanvasFactory: true };
 
 // sharp(buffer).resize(...).jpeg(...).toBuffer() chain → returns a tiny buffer.
-vi.mock("sharp", () => {
-  const chain = {
+// Hoisted so beforeEach can clear recorded calls between tests — without that,
+// toHaveBeenCalledWith would match stale chain calls left by earlier tests in
+// this file, and per-test assertions on the chain wouldn't discriminate.
+const { sharpChain, sharpFactory } = vi.hoisted(() => {
+  const sharpChain = {
     resize: vi.fn().mockReturnThis(),
     jpeg: vi.fn().mockReturnThis(),
     toBuffer: vi.fn().mockResolvedValue(Buffer.from("img")),
   };
-  return { default: vi.fn(() => chain) };
+  return { sharpChain, sharpFactory: vi.fn(() => sharpChain) };
 });
+vi.mock("sharp", () => ({ default: sharpFactory }));
 
 const { callAIVisionTranscription } = vi.hoisted(() => ({
   callAIVisionTranscription: vi.fn(),
 }));
 vi.mock("../azure-client", () => ({ callAIVisionTranscription }));
 
-import { visionOcrPdf } from "../vision-ocr";
+import { visionOcrPdf, visionOcrImage } from "../vision-ocr";
 
 beforeEach(() => {
   vi.stubEnv("AZURE_API_KEY", "test-key");
@@ -40,6 +44,12 @@ beforeEach(() => {
   getDocumentProxy.mockReset();
   createIsomorphicCanvasFactory.mockReset().mockResolvedValue(FAKE_CANVAS_FACTORY);
   callAIVisionTranscription.mockReset();
+  // Clear (not reset) the sharp mocks: drop recorded calls/results while
+  // keeping the mockReturnThis/mockResolvedValue chain implementations.
+  sharpFactory.mockClear();
+  sharpChain.resize.mockClear();
+  sharpChain.jpeg.mockClear();
+  sharpChain.toBuffer.mockClear();
 });
 
 describe("visionOcrPdf", () => {
@@ -134,5 +144,42 @@ describe("visionOcrPdf", () => {
     // Only the first concurrency*batchSize pages render; the rest wait behind
     // the full window — bounding peak memory to the in-flight JPEGs.
     expect(renderPageAsImage).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("visionOcrImage", () => {
+  it("downscales the image to the shared bounds and returns the transcript", async () => {
+    callAIVisionTranscription.mockResolvedValue("TRANSCRIBED TEXT");
+
+    const out = await visionOcrImage(Buffer.from("raw-png-bytes"), { model: "mini" });
+
+    expect(out).toBe("TRANSCRIBED TEXT");
+    const sharp = (await import("sharp")).default;
+    const chain = vi.mocked(sharp).mock.results[0].value;
+    expect(chain.resize).toHaveBeenCalledWith({
+      width: 1600,
+      height: 1600,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+    expect(chain.jpeg).toHaveBeenCalledWith({ quality: 70 });
+    // The mocked sharp chain resolves to Buffer.from("img").
+    expect(callAIVisionTranscription).toHaveBeenCalledWith(
+      [{ b64: Buffer.from("img").toString("base64"), mime: "image/jpeg" }],
+      "mini",
+    );
+  });
+
+  it("passes the full model through", async () => {
+    callAIVisionTranscription.mockResolvedValue("T");
+    await visionOcrImage(Buffer.from("x"), { model: "full" });
+    expect(callAIVisionTranscription).toHaveBeenCalledWith(expect.any(Array), "full");
+  });
+
+  it("fails closed when AZURE_API_KEY is unset", async () => {
+    vi.stubEnv("AZURE_API_KEY", "");
+    await expect(
+      visionOcrImage(Buffer.from("x"), { model: "mini" }),
+    ).rejects.toThrow(/AZURE_API_KEY/);
   });
 });

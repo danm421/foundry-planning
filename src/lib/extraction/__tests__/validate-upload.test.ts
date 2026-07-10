@@ -39,4 +39,27 @@ describe("detectUploadKind", () => {
   it("returns null for binary payloads it can't classify", () => {
     expect(detectUploadKind(Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04]))).toBeNull();
   });
+
+  it("detects a PNG by its \\x89PNG signature", () => {
+    expect(
+      detectUploadKind(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    ).toBe("png");
+  });
+
+  it("detects a JPEG by its \\xFF\\xD8\\xFF signature", () => {
+    expect(
+      detectUploadKind(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])),
+    ).toBe("jpeg");
+  });
+
+  it("still rejects GIF payloads", () => {
+    expect(detectUploadKind(Buffer.from("GIF89a\x01\x00"))).toBeNull();
+  });
+
+  it("still rejects WebP payloads", () => {
+    // RIFF....WEBP
+    expect(
+      detectUploadKind(Buffer.concat([Buffer.from("RIFF"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBP")])),
+    ).toBeNull();
+  });
 });

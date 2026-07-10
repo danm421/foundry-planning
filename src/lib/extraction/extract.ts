@@ -32,7 +32,7 @@ import { redactSsns } from "./redact-ssn";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
-import { visionOcrPdf } from "./vision-ocr";
+import { visionOcrPdf, visionOcrImage } from "./vision-ocr";
 
 const PROMPTS: Record<DocumentType, string> = {
     account_statement: ACCOUNT_STATEMENT_PROMPT,
@@ -168,7 +168,11 @@ export async function extractDocument(
               ? "xlsx"
               : ext === "docx"
                 ? "docx"
-                : "pdf");
+                : ext === "png"
+                  ? "png"
+                  : ["jpg", "jpeg"].includes(ext)
+                    ? "jpeg"
+                    : "pdf");
 
     // 1. Parse file to text. Fact-finder PDFs go through page-level
     // extraction so the multi-pass orchestrator can target page ranges.
@@ -194,6 +198,36 @@ export async function extractDocument(
         // whole document as one pseudo-page: the classifier sees all of it
         // (more complete than a PDF's first-3-+-last anchors) and runs each
         // section prompt over the full text.
+        if (documentType === "fact_finder" || comprehensive) {
+            pdfPages = [text];
+        }
+    } else if (kind === "png" || kind === "jpeg") {
+        // A screenshot/photo is a scanned page without the PDF wrapper: the
+        // vision transcription IS the parser. A throw (Azure unconfigured,
+        // Prompt Shield content_filter, network) or an illegible transcript
+        // degrades to the same per-file graceful failure as an unreadable
+        // scanned PDF; other files in the import proceed.
+        let imageText = "";
+        try {
+            imageText = await visionOcrImage(fileBuffer, { model });
+        } catch (err) {
+            console.error(
+                `[extract] ${sanitizeForLog(fileName)}: image vision transcription failed:`,
+                err instanceof Error ? err.message.slice(0, 200) : "unknown"
+            );
+        }
+        if (imageText.trim().length < 30) {
+            warnings.push(
+                "We couldn't read this image — it may be too small, blurry, or cropped. Try a sharper screenshot or a text-based PDF."
+            );
+            return scannedUnreadableResult(fileName, documentType, warnings);
+        }
+        text = imageText;
+        warnings.push(
+            "This document is an image; its text was read via OCR — please verify the extracted figures."
+        );
+        // Mirror the docx treatment: multi-pass keys off pdfPages, so feed the
+        // whole transcript as one pseudo-page for fact-finder/comprehensive.
         if (documentType === "fact_finder" || comprehensive) {
             pdfPages = [text];
         }

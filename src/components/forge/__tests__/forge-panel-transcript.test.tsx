@@ -333,3 +333,70 @@ describe("ForgePanel transcript paste-detection", () => {
     });
   });
 });
+
+function makeImageFile(name: string, type: string) {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type });
+}
+
+describe("ForgePanel image paste", () => {
+  beforeEach(() => {
+    mockStreamState = makeStreamState();
+  });
+
+  it("pasting a PNG attaches it as screenshot-1.png and skips transcript detection", () => {
+    mountPanel();
+    const textarea = screen.getByRole("textbox", { name: /ask forge/i });
+
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [makeImageFile("image.png", "image/png")],
+        getData: () => "",
+      },
+    });
+
+    expect(screen.getByText("screenshot-1.png")).toBeInTheDocument();
+    expect(screen.queryByText(/looks like a meeting transcript/i)).toBeNull();
+  });
+
+  it("pasting a JPEG names the attachment with a .jpg extension", () => {
+    mountPanel();
+    fireEvent.paste(screen.getByRole("textbox", { name: /ask forge/i }), {
+      clipboardData: {
+        files: [makeImageFile("image.jpeg", "image/jpeg")],
+        getData: () => "",
+      },
+    });
+
+    expect(screen.getByText("screenshot-1.jpg")).toBeInTheDocument();
+  });
+
+  it("pasting two images numbers them sequentially", () => {
+    mountPanel();
+    const textarea = screen.getByRole("textbox", { name: /ask forge/i });
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [
+          makeImageFile("a.png", "image/png"),
+          makeImageFile("b.png", "image/png"),
+        ],
+        getData: () => "",
+      },
+    });
+
+    expect(screen.getByText("screenshot-1.png")).toBeInTheDocument();
+    expect(screen.getByText("screenshot-2.png")).toBeInTheDocument();
+  });
+
+  it("non-image clipboard files fall through to text handling", () => {
+    mountPanel();
+    fireEvent.paste(screen.getByRole("textbox", { name: /ask forge/i }), {
+      clipboardData: {
+        files: [makeImageFile("doc.pdf", "application/pdf")],
+        getData: () => SHORT_TEXT,
+      },
+    });
+
+    expect(screen.queryByText(/screenshot-1/)).toBeNull();
+    expect(screen.queryByText(/looks like a meeting transcript/i)).toBeNull();
+  });
+});
