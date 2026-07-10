@@ -6,10 +6,21 @@ vi.mock("@/lib/extraction/vision-ocr", () => ({
   visionOcrPdf: vi.fn(),
   visionOcrImage: vi.fn(),
 }));
+// Wrap the real parser in a vi.fn so a single test can inject a
+// non-TaxReturnParseError throw; every other test gets real behavior
+// (vi.clearAllMocks clears call history, not the wrapped implementation).
+vi.mock("../parse-facts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../parse-facts")>();
+  return {
+    ...actual,
+    parseTaxReturnFactsJson: vi.fn(actual.parseTaxReturnFactsJson),
+  };
+});
 
 import { extractPdfPages } from "@/lib/extraction/pdf-parser";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import { visionOcrPdf } from "@/lib/extraction/vision-ocr";
+import { parseTaxReturnFactsJson } from "../parse-facts";
 import { extractTaxReturnFacts, TaxReturnExtractionError } from "../extract-facts";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
@@ -74,6 +85,36 @@ describe("extractTaxReturnFacts", () => {
       buffer: Buffer.from("x"), fileName: "scan.pdf", uploadKind: "pdf", model: "full",
     });
     expect(result.warnings.some((w) => w.includes("OCR"))).toBe(true);
+  });
+
+  it("scanned PDF: surfaces OCR truncation as a warning", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue([]);
+    vi.mocked(visionOcrPdf).mockResolvedValue({
+      text: "Form 1040 wages 100 ".repeat(10),
+      pageCount: 45,
+      pagesProcessed: 30,
+      truncated: true,
+    });
+    vi.mocked(callAIExtraction).mockResolvedValue(factsResponse);
+    const result = await extractTaxReturnFacts({
+      buffer: Buffer.from("x"), fileName: "scan.pdf", uploadKind: "pdf", model: "full",
+    });
+    expect(result.warnings.some((w) => w.includes("first 30 of 45 pages"))).toBe(true);
+  });
+
+  it("wraps unexpected parse-stage errors with a userMessage", async () => {
+    vi.mocked(extractPdfPages).mockResolvedValue(pagesOfText(4));
+    vi.mocked(callAIExtraction).mockResolvedValue(factsResponse);
+    vi.mocked(parseTaxReturnFactsJson).mockImplementationOnce(() => {
+      throw new RangeError("internal boom");
+    });
+    await expect(
+      extractTaxReturnFacts({ buffer: Buffer.from("x"), fileName: "t.pdf", uploadKind: "pdf", model: "full" }),
+    ).rejects.toMatchObject({
+      name: "TaxReturnExtractionError",
+      message: "internal boom",
+      userMessage: expect.not.stringContaining("boom"), // internals never reach the user
+    });
   });
 
   it("throws a user-facing error for amended returns", async () => {

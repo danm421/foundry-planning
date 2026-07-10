@@ -108,6 +108,11 @@ export async function extractTaxReturnFacts(args: {
       warnings.push(
         "This document had no text layer; figures were recovered via image OCR — please verify them.",
       );
+      if (ocr.truncated) {
+        warnings.push(
+          `Only the first ${ocr.pagesProcessed} of ${ocr.pageCount} pages were read via OCR — verify completeness of extracted figures.`,
+        );
+      }
     }
   } else if (args.uploadKind === "png" || args.uploadKind === "jpeg") {
     let text: string;
@@ -165,7 +170,13 @@ export async function extractTaxReturnFacts(args: {
     if (err instanceof TaxReturnParseError) {
       throw new TaxReturnExtractionError(err.message, err.message);
     }
-    throw err;
+    // Unknown throw: keep the internal message for logs, but never leak it
+    // to the user — every failure from this orchestrator carries a
+    // user-safe userMessage.
+    throw new TaxReturnExtractionError(
+      err instanceof Error ? err.message : "unexpected parse failure",
+      "The document couldn't be analyzed right now. Retry in a moment, or enter figures manually.",
+    );
   }
   if (parsed.isAmended) {
     throw new TaxReturnExtractionError(
