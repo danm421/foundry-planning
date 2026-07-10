@@ -18,14 +18,18 @@ vi.mock("unpdf", () => ({
 const FAKE_CANVAS_FACTORY = { __fakeCanvasFactory: true };
 
 // sharp(buffer).resize(...).jpeg(...).toBuffer() chain → returns a tiny buffer.
-vi.mock("sharp", () => {
-  const chain = {
+// Hoisted so beforeEach can clear recorded calls between tests — without that,
+// toHaveBeenCalledWith would match stale chain calls left by earlier tests in
+// this file, and per-test assertions on the chain wouldn't discriminate.
+const { sharpChain, sharpFactory } = vi.hoisted(() => {
+  const sharpChain = {
     resize: vi.fn().mockReturnThis(),
     jpeg: vi.fn().mockReturnThis(),
     toBuffer: vi.fn().mockResolvedValue(Buffer.from("img")),
   };
-  return { default: vi.fn(() => chain) };
+  return { sharpChain, sharpFactory: vi.fn(() => sharpChain) };
 });
+vi.mock("sharp", () => ({ default: sharpFactory }));
 
 const { callAIVisionTranscription } = vi.hoisted(() => ({
   callAIVisionTranscription: vi.fn(),
@@ -40,6 +44,12 @@ beforeEach(() => {
   getDocumentProxy.mockReset();
   createIsomorphicCanvasFactory.mockReset().mockResolvedValue(FAKE_CANVAS_FACTORY);
   callAIVisionTranscription.mockReset();
+  // Clear (not reset) the sharp mocks: drop recorded calls/results while
+  // keeping the mockReturnThis/mockResolvedValue chain implementations.
+  sharpFactory.mockClear();
+  sharpChain.resize.mockClear();
+  sharpChain.jpeg.mockClear();
+  sharpChain.toBuffer.mockClear();
 });
 
 describe("visionOcrPdf", () => {
