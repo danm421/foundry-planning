@@ -68,11 +68,11 @@ export async function updateFacts(
   clientId: string,
   taxYear: number,
   facts: TaxReturnFacts,
-  markReady: boolean,
+  nextStatus?: "ready" | "needs_review",
 ): Promise<TaxReturnRow | null> {
   const [row] = await db
     .update(taxReturns)
-    .set({ facts, ...(markReady ? { status: "ready" as const } : {}), updatedAt: new Date() })
+    .set({ facts, ...(nextStatus ? { status: nextStatus } : {}), updatedAt: new Date() })
     .where(and(eq(taxReturns.clientId, clientId), eq(taxReturns.taxYear, taxYear)))
     .returning();
   return row ?? null;
