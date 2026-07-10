@@ -7,6 +7,7 @@ import { portalVaultErrorResponse } from "@/lib/portal/vault-context";
 import { listPortalFolders, createPortalFolder } from "@/lib/portal/vault-folders";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 const CreateSchema = z.object({
   name: z.string().trim().min(1).max(120),

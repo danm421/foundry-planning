@@ -36,4 +36,18 @@ describe("collectFolderSubtreeIds", () => {
   it("returns just the folder when it has no children", () => {
     expect(collectFolderSubtreeIds(folders, "e")).toEqual(["e"]);
   });
+
+  it("terminates and dedupes when the input contains a parent cycle", () => {
+    // Malformed/corrupted data: a <-> b form a cycle via parentFolderId,
+    // with c hanging off b. A visited-set guard is required for this to
+    // terminate at all; without it the stack grows unbounded.
+    const cyclic: F[] = [
+      { id: "a", name: "A", parentFolderId: "b", sortOrder: 0 },
+      { id: "b", name: "B", parentFolderId: "a", sortOrder: 0 },
+      { id: "c", name: "C", parentFolderId: "b", sortOrder: 0 },
+    ];
+    const result = collectFolderSubtreeIds(cyclic, "a");
+    expect(new Set(result)).toEqual(new Set(["a", "b", "c"]));
+    expect(result.length).toBe(new Set(result).size);
+  });
 });
