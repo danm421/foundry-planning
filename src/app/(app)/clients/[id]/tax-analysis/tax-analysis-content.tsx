@@ -92,8 +92,13 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         setError(typeof body.error === "string" ? body.error : "Extraction failed");
         return;
       }
+      const y = body.taxYear as number;
       await loadList();
-      setSelectedYear(body.taxYear as number);
+      if (selectedYear === y) {
+        void loadDetail(y); // same year → the [selectedYear] effect won't re-fire; fetch directly
+      } else {
+        setSelectedYear(y); // different year → effect fires loadDetail
+      }
     } finally {
       setUploading(false);
     }
@@ -115,8 +120,13 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
       setError(typeof body.error === "string" ? body.error : "Could not create the year");
       return;
     }
+    const y = body.taxYear as number;
     await loadList();
-    setSelectedYear(body.taxYear as number);
+    if (selectedYear === y) {
+      void loadDetail(y); // same year → the [selectedYear] effect won't re-fire; fetch directly
+    } else {
+      setSelectedYear(y); // different year → effect fires loadDetail
+    }
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
@@ -223,7 +233,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
 
           {detailLoading && <div className="p-8 text-ink-3">Loading {selectedYear}…</div>}
 
-          {!detailLoading && detail?.factsParseError && (
+          {!detailLoading && detail?.factsParseError && !detail.facts && (
             <div className="flex flex-col items-start gap-3 rounded-lg border border-crit bg-crit/10 p-6">
               <h2 className="text-sm font-semibold text-crit">
                 This year&apos;s data couldn&apos;t be read
