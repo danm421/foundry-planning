@@ -61,7 +61,12 @@ export function buildBracketMap(
   const next = tiers[marginalIdx + 1] ?? null;
 
   const cg = params.capGainsBrackets[fs];
-  const stackTop = taxBase + preferentialBase; // == ti when split extracted cleanly
+  // == ti when the split extracted cleanly. Capped at ti per the IRS Qualified
+  // Dividends and Capital Gain Tax Worksheet: the stacked amount can never
+  // exceed taxable income — when ti < preferentialBase (deductions consumed
+  // the ordinary portion), the uncapped sum would overstate the stack top and
+  // understate 0%-bracket headroom.
+  const stackTop = Math.min(taxBase + preferentialBase, ti);
 
   return {
     ordinary: {

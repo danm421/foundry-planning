@@ -37,4 +37,41 @@ describe("buildBracketMap", () => {
     // ordinary floor 50000, pref 10000 → top of stack 60000; room to 96700
     expect(map.capGains.zeroPctHeadroom).toBe(96700 - 60000);
   });
+
+  it("caps the cap-gains stack at taxable income when deductions eat the ordinary portion", () => {
+    // Ordinary $10k + LTCG $50k − MFJ std deduction $30k → TI 30000 < preferential 50000.
+    // Per the QDCGT worksheet the stacked amount can never exceed TI: stack top is
+    // 30000, not taxBase(0) + pref(50000) = 50000.
+    const f = retireeMfj();
+    f.deductions.taxableIncome = 30000;
+    f.income.netLongTermGain = 50000;
+    f.income.netShortTermGain = 0;
+    f.income.qualifiedDividends = 0;
+    const map = buildBracketMap(f, params2025)!;
+    expect(map.ordinary.taxBase).toBe(0);
+    expect(map.capGains.preferentialBase).toBe(50000);
+    expect(map.capGains.zeroPctHeadroom).toBe(96700 - 30000);
+  });
+
+  it("clamps a filed capital loss to zero preferential income", () => {
+    const f = retireeMfj();
+    f.income.netLongTermGain = -3000;
+    f.income.netShortTermGain = 0;
+    f.income.capitalGainOrLoss = -3000;
+    const map = buildBracketMap(f, params2025)!;
+    // loss clamps to 0 → preferential is qualified dividends only
+    expect(map.capGains.preferentialBase).toBe(15000);
+    expect(map.ordinary.taxBase).toBe(155500 - 15000);
+  });
+
+  it("treats short-term-only Schedule D as zero LTCG (no line-7 fallback)", () => {
+    const f = retireeMfj();
+    f.income.netLongTermGain = null;
+    f.income.netShortTermGain = 20000;
+    f.income.capitalGainOrLoss = 20000;
+    const map = buildBracketMap(f, params2025)!;
+    // Schedule D detail present (short-term line) → LTCG is 0, NOT line 7's 20000
+    expect(map.capGains.preferentialBase).toBe(15000);
+    expect(map.ordinary.taxBase).toBe(155500 - 15000);
+  });
 });
