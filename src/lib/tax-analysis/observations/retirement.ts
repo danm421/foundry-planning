@@ -50,11 +50,17 @@ export function qcd(ctx: ObservationContext): Observation | null {
   const why = takesStandard
     ? "Because this return takes the standard deduction, cash gifts to charity produce no federal benefit — but a QCD excludes the gift from income entirely."
     : "A QCD excludes the gift from income rather than deducting it, which also lowers AGI-driven items like IRMAA and taxation of Social Security.";
+  // Only assert charitable intent when the return evidences it (cash gifts on
+  // Schedule A); otherwise phrase the opportunity conditionally.
+  const opening =
+    charitableCash > 0
+      ? `With ${fmtUsd(iraGross)} of IRA distributions and charitable intent, giving directly from the IRA via qualified charitable distribution (available from age 70½, up to the annual QCD limit) is likely more tax-efficient.`
+      : `If charitable giving is part of your plans, this return's ${fmtUsd(iraGross)} of IRA distributions makes giving directly from the IRA via qualified charitable distribution (available from age 70½, up to the annual QCD limit) likely more tax-efficient.`;
   return {
     id: "qcd",
     severity: "opportunity",
     title: "Qualified charitable distributions from the IRA",
-    body: `With ${fmtUsd(iraGross)} of IRA distributions and charitable intent, giving directly from the IRA via qualified charitable distribution (available from age 70½, up to the annual QCD limit) is likely more tax-efficient. ${why}`,
+    body: `${opening} ${why}`,
     numbers: { iraDistributions: iraGross, charitableCash },
   };
 }

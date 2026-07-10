@@ -37,6 +37,9 @@ describe("qcd", () => {
     const o = qcd(ctxFor(retireeMfj(), { primaryAge: 72, spouseAge: 72 }))!;
     expect(o.severity).toBe("opportunity");
     expect(o.body).toContain("qualified charitable distribution");
+    // No Schedule A giving evidence on this return — intent must be conditional, not asserted.
+    expect(o.body).toContain("If charitable giving is part of your plans");
+    expect(o.body).not.toContain("charitable intent");
   });
   it("skips when nobody is 70+", () => {
     expect(qcd(ctxFor(retireeMfj(), { primaryAge: 68, spouseAge: 67 }))).toBeNull();
