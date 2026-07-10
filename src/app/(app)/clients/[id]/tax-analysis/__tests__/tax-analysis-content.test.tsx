@@ -3,6 +3,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaxAnalysisContent } from "../tax-analysis-content";
+import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
+import { createTaxResolver } from "@/lib/tax/resolver";
+import { params2025, retireeMfj } from "@/lib/tax-analysis/__tests__/fixtures";
+
+// Task 14 replaced the Task-13 placeholders ("Report 2025" / "Review 2025")
+// with the real TaxReportView / FactsReviewForm, which read actual analysis
+// and facts fields — a bare `{} as never` now crashes them. These tests use
+// a realistic MFJ-retiree fixture (same one the report-view unit test uses)
+// so the D1/D2 state-machine assertions below still exercise real renders.
+const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
+const analysis = buildTaxAnalysis({ facts: retireeMfj(), prior: null, resolver, primaryAge: 72, spouseAge: 72 });
 
 const fetchMock = vi.fn();
 
@@ -59,15 +70,17 @@ describe("TaxAnalysisContent", () => {
         jsonResponse({
           taxYear: 2025,
           status: "ready",
-          facts: {} as never,
+          facts: retireeMfj(),
           extractedFacts: null,
           warnings: [],
-          analysis: {} as never,
+          analysis,
           factsParseError: true,
         }),
       );
     render(<TaxAnalysisContent clientId="c1" />);
-    await waitFor(() => expect(screen.getByText(/report 2025/i)).toBeTruthy());
+    // facts is non-null (valid), so the corrupt-notice guard (`!detail.facts`)
+    // stays false even with factsParseError true — the report still renders.
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
     expect(screen.queryByText(/couldn.t be read/i)).toBeNull();
   });
 
@@ -113,10 +126,10 @@ describe("TaxAnalysisContent", () => {
         jsonResponse({
           taxYear: 2025,
           status: "ready",
-          facts: {} as never,
-          extractedFacts: {} as never,
+          facts: retireeMfj(),
+          extractedFacts: retireeMfj(),
           warnings: [],
-          analysis: {} as never,
+          analysis,
         }),
       )
       // 3. POST upload (replace) response
@@ -134,8 +147,8 @@ describe("TaxAnalysisContent", () => {
         jsonResponse({
           taxYear: 2025,
           status: "needs_review",
-          facts: {} as never,
-          extractedFacts: {} as never,
+          facts: retireeMfj(),
+          extractedFacts: retireeMfj(),
           warnings: [],
           analysis: null,
           factsParseError: false,
@@ -144,7 +157,7 @@ describe("TaxAnalysisContent", () => {
 
     const user = userEvent.setup();
     const { container } = render(<TaxAnalysisContent clientId="c1" />);
-    await waitFor(() => expect(screen.getByText(/report 2025/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
 
     const detailUrl = "/api/clients/c1/tax-returns/2025";
     const detailCallsBefore = fetchMock.mock.calls.filter((c) => c[0] === detailUrl).length;
@@ -161,7 +174,9 @@ describe("TaxAnalysisContent", () => {
 
     // Review branch should now render for the reopened 2025 return, proving
     // the detail state actually refreshed rather than staying on the stale
-    // "ready" report.
-    await waitFor(() => expect(screen.getByText(/review 2025/i)).toBeTruthy());
+    // "ready" report. Assert on a real FactsReviewForm field label (the
+    // report heading is gone) rather than the old placeholder text.
+    await waitFor(() => expect(screen.getByText(/wages \(1a\)/i)).toBeTruthy());
+    expect(screen.queryByText(/2025 tax analysis/i)).toBeNull();
   });
 });
