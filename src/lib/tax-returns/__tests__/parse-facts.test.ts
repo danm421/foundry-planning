@@ -49,4 +49,30 @@ describe("parseTaxReturnFactsJson", () => {
   it("throws on a pre-2022 tax year", () => {
     expect(() => parseTaxReturnFactsJson(aiResponse({ taxYear: 2019 }))).toThrow(TaxReturnParseError);
   });
+
+  it("throws TaxReturnParseError when conformed facts fail schema validation", () => {
+    // "married" is not a valid filing-status enum value; conform() passes
+    // non-numeric strings through, so this must be caught by safeParse.
+    expect(() => parseTaxReturnFactsJson(aiResponse({ filingStatus: "married" }))).toThrow(
+      TaxReturnParseError,
+    );
+  });
+
+  it('treats string "true" isAmended as amended, with a warning', () => {
+    const raw = JSON.stringify({ isAmended: "true", facts: emptyTaxReturnFacts(2025) });
+    const parsed = parseTaxReturnFactsJson(raw);
+    expect(parsed.isAmended).toBe(true);
+    expect(parsed.warnings.length).toBe(1);
+    expect(parsed.warnings[0]).toContain("isAmended");
+  });
+
+  it("coerces a numeric-string taxYear with a warning, keeping pre-2022 rejection", () => {
+    const parsed = parseTaxReturnFactsJson(aiResponse({ taxYear: "2025" }));
+    expect(parsed.facts.taxYear).toBe(2025);
+    expect(parsed.warnings.length).toBe(1);
+    expect(parsed.warnings[0]).toContain("taxYear");
+    expect(() => parseTaxReturnFactsJson(aiResponse({ taxYear: "2019" }))).toThrow(
+      TaxReturnParseError,
+    );
+  });
 });

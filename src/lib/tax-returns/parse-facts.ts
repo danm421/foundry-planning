@@ -17,6 +17,12 @@ function stripFences(raw: string): string {
   return (fenced ? fenced[1] : raw).trim();
 }
 
+/** "$1,234" / "1234" → 1234; null when the string is not numeric. */
+function numericFromString(value: string): number | null {
+  const num = Number(value.replace(/[$,\s]/g, ""));
+  return Number.isFinite(num) ? num : null;
+}
+
 /** Recursively: coerce "$1,234"/"1234" → number (warning), drop unknown keys
  *  (warning), fill missing keys from the empty template. */
 function conform(
@@ -27,8 +33,8 @@ function conform(
 ): unknown {
   if (template === null || typeof template === "number") {
     if (typeof value === "string") {
-      const num = Number(value.replace(/[$,\s]/g, ""));
-      if (Number.isFinite(num)) {
+      const num = numericFromString(value);
+      if (num !== null) {
         warnings.push(`Coerced string to number at ${path}`);
         return num;
       }
@@ -71,14 +77,26 @@ export function parseTaxReturnFactsJson(raw: string): {
   }
 
   const rawFacts = obj.facts as Record<string, unknown>;
-  const taxYear = typeof rawFacts.taxYear === "number" ? rawFacts.taxYear : NaN;
+  const warnings: string[] = [];
+
+  // taxYear gets the same numeric-string tolerance as every other field —
+  // coerce (with a warning) BEFORE the NaN/min-year rejection.
+  let taxYear = NaN;
+  if (typeof rawFacts.taxYear === "number") {
+    taxYear = rawFacts.taxYear;
+  } else if (typeof rawFacts.taxYear === "string") {
+    const coerced = numericFromString(rawFacts.taxYear);
+    if (coerced !== null) {
+      warnings.push("Coerced string to number at facts.taxYear");
+      taxYear = coerced;
+    }
+  }
   if (!Number.isInteger(taxYear) || taxYear < TAX_RETURN_MIN_YEAR) {
     throw new TaxReturnParseError(
       `Unsupported or missing tax year (${String(rawFacts.taxYear)}). Returns from ${TAX_RETURN_MIN_YEAR} onward are supported.`,
     );
   }
 
-  const warnings: string[] = [];
   const template = emptyTaxReturnFacts(taxYear);
 
   // scheduleA's template value is null, so conform() can't learn its shape from
@@ -102,5 +120,14 @@ export function parseTaxReturnFactsJson(raw: string): {
       `Extracted facts failed validation: ${result.error.issues[0]?.path.join(".")} ${result.error.issues[0]?.message}`,
     );
   }
-  return { facts: result.data, isAmended: obj.isAmended === true, warnings };
+  // Tolerate a stringly-typed isAmended ("true") instead of silently mapping
+  // it to false — but surface any non-boolean value as a warning.
+  if (obj.isAmended !== undefined && typeof obj.isAmended !== "boolean") {
+    warnings.push(
+      `isAmended: expected boolean, got ${obj.isAmended === null ? "null" : typeof obj.isAmended}`,
+    );
+  }
+  const isAmended = obj.isAmended === true || obj.isAmended === "true";
+
+  return { facts: result.data, isAmended, warnings };
 }
