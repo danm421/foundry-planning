@@ -69,6 +69,7 @@ const nextConfig: NextConfig = {
     "/api/clients/*/presentations/*": ["public/fonts/*.ttf"],
     "/api/clients/*/liquidity-report/export-pdf": ["public/fonts/*.ttf"],
     "/api/clients/*/balance-sheet-report/export-pdf": ["public/fonts/*.ttf"],
+    "/api/clients/*/tax-returns/*/export-pdf": ["public/fonts/*.ttf"],
     "/api/crm/households/*/meeting-prep/export": ["public/fonts/*.ttf"],
     // Forge's report tool renders artifact PDFs inside the chat routes.
     "/api/forge/stream": ["public/fonts/*.ttf"],
