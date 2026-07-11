@@ -6,6 +6,7 @@ import { runProjectionWithEvents } from "@/engine/projection";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { ClientNotFoundError, ProjectionInputError } from "@/lib/projection/load-client-data";
+import { authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -57,9 +58,8 @@ export async function GET(
         { status: 422 },
       );
     }
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("GET /api/clients/[id]/observations/token-values error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

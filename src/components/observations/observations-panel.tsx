@@ -225,6 +225,7 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
       if (!res.ok) throw new Error("create failed");
     } catch {
       setItems((prev) => prev.filter((i) => i.id !== temp.id));
+      setDraftError("Couldn't add that. Please try again.");
       return;
     }
     refetch();
