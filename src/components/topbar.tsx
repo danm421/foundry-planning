@@ -100,7 +100,6 @@ const TABS: ReadonlyArray<{
   },
   { label: "Tax Analysis", href: "tax-analysis" },
   { label: "Solver", href: "solver" },
-  { label: "360 AI", href: "insights" },
   {
     label: "Estate Planning",
     href: "estate-planning",

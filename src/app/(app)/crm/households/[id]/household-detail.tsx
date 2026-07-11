@@ -14,11 +14,34 @@ import { ActivityTab } from "./tabs/activity-tab";
 import { DocumentsTab } from "./tabs/documents-tab";
 import { TasksTab } from "./tabs/tasks-tab";
 import { NotesTab } from "./tabs/notes-tab";
+import { InsightsTab } from "./tabs/insights/insights-tab";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
-const TABS = ["overview", "contacts", "accounts", "activity", "documents", "tasks", "notes"] as const;
-type Tab = (typeof TABS)[number];
+// "insights" (the 360 AI tab) is only shown when the household has a linked
+// planning client — its data is derived entirely from plan projections.
+const ALL_TABS = [
+  "overview",
+  "insights",
+  "contacts",
+  "accounts",
+  "activity",
+  "documents",
+  "tasks",
+  "notes",
+] as const;
+type Tab = (typeof ALL_TABS)[number];
+
+const TAB_LABELS: Record<Tab, string> = {
+  overview: "Overview",
+  insights: "360 AI",
+  contacts: "Contacts",
+  accounts: "Accounts",
+  activity: "Activity",
+  documents: "Documents",
+  tasks: "Tasks",
+  notes: "Notes",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   prospect: "Prospect",
@@ -50,12 +73,15 @@ export function HouseholdDetail({
   tasksBootstrap: HouseholdDetailTasksBootstrap;
   canManage: boolean;
 }) {
+  const planningClientId = household.planningClient?.id ?? null;
+  const tabs: Tab[] = ALL_TABS.filter((t) => t !== "insights" || planningClientId !== null);
+
   const [tab, setTab] = useState<Tab>(
-    (TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "overview"),
+    tabs.includes(initialTab as Tab) ? (initialTab as Tab) : "overview",
   );
 
-  const planningHref = household.planningClient
-    ? `/clients/${household.planningClient.id}/details`
+  const planningHref = planningClientId
+    ? `/clients/${planningClientId}/details`
     : `/clients/new?crmHouseholdId=${household.id}`;
 
   return (
@@ -99,7 +125,7 @@ export function HouseholdDetail({
       )}
 
       <div role="tablist" className="mt-6 flex gap-0.5 border-b border-hair">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             role="tab"
@@ -109,10 +135,10 @@ export function HouseholdDetail({
             className={
               tab === t
                 ? "cursor-pointer border-b-2 border-accent px-4 py-2.5 text-sm font-medium text-accent transition-colors duration-150"
-                : "cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-sm capitalize text-ink-3 transition-colors duration-150 hover:text-ink-2"
+                : "cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-sm text-ink-3 transition-colors duration-150 hover:text-ink-2"
             }
           >
-            {t}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
@@ -120,6 +146,9 @@ export function HouseholdDetail({
       <div className="mt-6">
         {tab === "overview" && (
           <OverviewTab household={household} advisorName={advisorName} />
+        )}
+        {tab === "insights" && planningClientId && (
+          <InsightsTab clientId={planningClientId} />
         )}
         {tab === "contacts" && <ContactsTab household={household} />}
         {tab === "accounts" && <AccountsTab household={household} />}

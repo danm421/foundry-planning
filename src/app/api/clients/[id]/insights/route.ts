@@ -11,12 +11,56 @@ import { auth } from "@clerk/nextjs/server";
 import { loadInsightsBattery } from "@/lib/insights/battery";
 import { hashBattery } from "@/lib/insights/hash";
 import { generateInsights } from "@/lib/insights/generate";
-import { saveInsightProfile } from "@/lib/insights/persist";
+import { loadInsightProfile, saveInsightProfile } from "@/lib/insights/persist";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const Body = z.object({ force: z.boolean().default(false) });
+
+/**
+ * Read the 360 view — KPIs, risk alignment, needs-attention, and any persisted
+ * AI prose plus its staleness flag. Powers the CRM household "360 AI" tab, which
+ * fetches this lazily on tab-open so the heavy battery compute (overview
+ * projection + Monte Carlo) never runs on a plain household page view.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    await requireOrgId();
+    const { id } = await params;
+
+    const access = await verifyClientAccess(id);
+    if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const battery = await loadInsightsBattery(id, access.firmId);
+    const inputHash = hashBattery(battery);
+    const profile = await loadInsightProfile(id);
+    const stale = !profile || profile.inputHash !== inputHash;
+
+    return NextResponse.json({
+      kpis: battery.kpis,
+      risk: battery.risk,
+      needsAttention: battery.needsAttention,
+      stale,
+      profile: profile
+        ? {
+            snapshot: profile.snapshot,
+            goals: profile.goals,
+            opportunities: profile.opportunities,
+            generatedAt: profile.updatedAt.toISOString(),
+          }
+        : null,
+    });
+  } catch (err) {
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
+    console.error("GET clients/[id]/insights", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 export async function POST(
   request: NextRequest,
