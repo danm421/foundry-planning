@@ -439,6 +439,35 @@ export const openItemPriorityEnum = pgEnum("open_item_priority", [
   "high",
 ]);
 
+export const planObservationSectionEnum = pgEnum("plan_observation_section", [
+  "observation",
+  "next_step",
+]);
+export const planObservationTopicEnum = pgEnum("plan_observation_topic", [
+  "retirement",
+  "cash-flow",
+  "investments",
+  "tax",
+  "insurance",
+  "estate",
+  "education",
+  "general",
+]);
+export const planObservationStatusEnum = pgEnum("plan_observation_status", [
+  "open",
+  "in_progress",
+  "done",
+]);
+export const planObservationOwnerEnum = pgEnum("plan_observation_owner", [
+  "advisor",
+  "client",
+  "joint",
+]);
+export const planObservationSourceEnum = pgEnum("plan_observation_source", [
+  "manual",
+  "ai",
+]);
+
 export const importModeEnum = pgEnum("import_mode", ["onboarding", "updating"]);
 
 export const importStatusEnum = pgEnum("import_status", [
@@ -2685,6 +2714,36 @@ export const clientOpenItems = pgTable(
     index("client_open_items_client_completed_idx").on(t.clientId, t.completedAt),
   ],
 );
+
+export const planObservations = pgTable(
+  "plan_observations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    section: planObservationSectionEnum("section").notNull(),
+    topic: planObservationTopicEnum("topic").notNull().default("general"),
+    title: text("title"),
+    body: text("body").notNull(),
+    status: planObservationStatusEnum("status").notNull().default("open"),
+    owner: planObservationOwnerEnum("owner"),
+    priority: openItemPriorityEnum("priority"),
+    targetDate: date("target_date"),
+    completedAt: timestamp("completed_at"),
+    source: planObservationSourceEnum("source").notNull().default("manual"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("plan_observations_client_section_idx").on(t.clientId, t.section, t.sortOrder),
+  ],
+);
+
+export type PlanObservationRow = InferSelectModel<typeof planObservations>;
+export type NewPlanObservationRow = InferInsertModel<typeof planObservations>;
 
 export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   id: uuid("id").defaultRandom().primaryKey(),

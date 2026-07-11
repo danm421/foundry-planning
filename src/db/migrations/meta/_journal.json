@@ -1471,6 +1471,13 @@
       "when": 1783626662505,
       "tag": "0209_minor_whizzer",
       "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1783730283266,
+      "tag": "0210_bumpy_spectrum",
+      "breakpoints": true
     }
   ]
 }
