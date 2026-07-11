@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Document, renderToBuffer } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { ObservationsNextStepsPagePdf } from "../page-pdf";
+import { MarkdownPdf } from "@/components/presentations/pages/blank/markdown-pdf";
 import {
   buildObservationsPageData,
   type ObservationsRowInput,
@@ -11,6 +12,41 @@ import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import type { TokenContext } from "@/lib/plan-text/tokens";
+
+// Regression guard for the "(empty page)" placeholder bug: MarkdownPdf prints
+// that literal text whenever `blocks` is empty — a fallback meant for the
+// Blank page type. This page reuses MarkdownPdf for intro/observation/
+// next-step sub-content, where empty input must render nothing instead.
+// `renderToBuffer` only produces opaque PDF bytes (asserted via buf.length
+// below), which can't observe rendered text — @react-pdf/renderer ships no
+// text-extraction API (its `renderToString` is a deprecated alias for
+// `buffer.toString()`, not readable text) and the repo has no PDF-text
+// extraction utility elsewhere to reuse. So this walks the *React element
+// tree* returned by the page component instead of doing a full PDF render:
+// every component involved (PageFrame, ObservationTopicGroup, NextStepRow)
+// is a plain function with no hooks, so invoking them directly to expand
+// their output is safe and mirrors what React itself would do.
+function collectMarkdownPdfBlockCounts(node: unknown, out: number[] = []): number[] {
+  if (node == null || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) collectMarkdownPdfBlockCounts(child, out);
+    return out;
+  }
+  const el = node as { type?: unknown; props?: { children?: unknown; blocks?: unknown[] } };
+  if (!("type" in el)) return out;
+  if (el.type === MarkdownPdf) {
+    out.push((el.props?.blocks ?? []).length);
+    return out;
+  }
+  if (typeof el.type === "function") {
+    collectMarkdownPdfBlockCounts((el.type as (props: unknown) => unknown)(el.props), out);
+    return out;
+  }
+  if (el.props?.children !== undefined) {
+    collectMarkdownPdfBlockCounts(el.props.children, out);
+  }
+  return out;
+}
 
 // Fixture ctx mirrors src/lib/presentations/pages/observations-next-steps/__tests__/view-model.test.ts
 // (net_worth resolves to $2,100,000 = 2,500,000 portfolio assets - 400,000 liabilities).
@@ -99,6 +135,15 @@ describe("ObservationsNextStepsPagePdf", () => {
     expect(data.topicGroups.map((g) => g.topic)).toContain("estate");
     expect(data.nextSteps.some((s) => s.title === "Rebalance portfolio")).toBe(true);
     expect(data.showOwnerAndDate).toBe(true);
+
+    // Common case reproduced: OBSERVATIONS_PAGE_OPTIONS_DEFAULT.intro is ""
+    // (introBlocks === []) while observations/next-steps are populated. Every
+    // MarkdownPdf usage this render reaches (observation body, both next-step
+    // bodies) must carry content — the intro's MarkdownPdf must not render at
+    // all, so it must not appear here with an empty `blocks` array.
+    const blockCounts = collectMarkdownPdfBlockCounts(ObservationsNextStepsPagePdf({ data, ...frame }));
+    expect(blockCounts.length).toBeGreaterThan(0);
+    expect(blockCounts.every((count) => count > 0)).toBe(true);
 
     const buf = await renderToBuffer(
       <Document>

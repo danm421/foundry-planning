@@ -65,7 +65,7 @@ function ObservationTopicGroup({ group }: { group: TopicGroup }) {
         <View key={i} style={s.bulletRow}>
           <Text style={s.bullet}>•</Text>
           <View style={s.bulletBody}>
-            <MarkdownPdf blocks={blocks} />
+            {blocks.length > 0 && <MarkdownPdf blocks={blocks} />}
           </View>
         </View>
       ))}
@@ -94,7 +94,7 @@ function NextStepRow({ step, showOwnerAndDate }: { step: NextStep; showOwnerAndD
         </View>
         {metaLabel ? <Text style={s.meta}>{metaLabel}</Text> : null}
       </View>
-      <MarkdownPdf blocks={step.bodyBlocks} />
+      {step.bodyBlocks.length > 0 && <MarkdownPdf blocks={step.bodyBlocks} />}
     </View>
   );
 }
@@ -115,7 +115,7 @@ export function ObservationsNextStepsPagePdf({
       pageIndex={pageIndex}
       totalPages={totalPages}
     >
-      <MarkdownPdf blocks={data.introBlocks} />
+      {data.introBlocks.length > 0 && <MarkdownPdf blocks={data.introBlocks} />}
 
       {data.topicGroups.length > 0 && (
         <View>
