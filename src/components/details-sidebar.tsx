@@ -71,6 +71,16 @@ function ImportIcon() {
   );
 }
 
+function TaxAnalysisIcon() {
+  return (
+    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 18v-3M12 18v-5M15 18v-2" />
+    </svg>
+  );
+}
+
 function TechniquesIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -110,6 +120,11 @@ const TABS: SidebarTab[] = [
 ];
 
 const IMPORT_TAB: SidebarTab = { label: "Import", href: "import", icon: <ImportIcon /> };
+const TAX_ANALYSIS_TAB: SidebarTab = {
+  label: "Tax Analysis",
+  href: "tax-analysis",
+  icon: <TaxAnalysisIcon />,
+};
 
 function GuidedWalkthroughMenu({
   clientId,
@@ -219,7 +234,10 @@ export default function DetailsSidebar({ clientId, quickStartResumeStep = null }
     <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
       {access === "own" && (
-        <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
+        <div className="mt-2 flex flex-col gap-1 border-t border-gray-800 pt-3">
+          {renderLink(IMPORT_TAB)}
+          {renderLink(TAX_ANALYSIS_TAB)}
+        </div>
       )}
       <GuidedWalkthroughMenu
         clientId={clientId}

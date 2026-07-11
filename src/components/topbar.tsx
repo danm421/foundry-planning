@@ -98,7 +98,6 @@ const TABS: ReadonlyArray<{
       },
     ],
   },
-  { label: "Tax Analysis", href: "tax-analysis" },
   { label: "Solver", href: "solver" },
   {
     label: "Estate Planning",
