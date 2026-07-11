@@ -1,9 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import type { TaxReturnFacts, TaxReturnFilingStatus } from "@/lib/schemas/tax-return-facts";
 import { fmtUsd } from "@/lib/tax-analysis/format";
+import { StateSelect } from "@/components/state-select";
+import { selectClassName } from "@/components/forms/input-styles";
 import type { YearDetail } from "./tax-analysis-content";
+
+const FILING_STATUS_OPTIONS: Array<{ value: TaxReturnFilingStatus; label: string }> = [
+  { value: "single", label: "Single" },
+  { value: "married_joint", label: "Married filing jointly" },
+  { value: "married_separate", label: "Married filing separately" },
+  { value: "head_of_household", label: "Head of household" },
+];
 
 type MoneyPath =
   | ["income", keyof TaxReturnFacts["income"]]
@@ -92,6 +101,17 @@ export function FactsReviewForm({
     setFacts((prev) => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
   }
 
+  function setFilingStatus(value: string) {
+    setFacts((prev) => ({
+      ...prev,
+      filingStatus: value === "" ? null : (value as TaxReturnFilingStatus),
+    }));
+  }
+
+  function setResidenceState(value: string) {
+    setFacts((prev) => ({ ...prev, residenceState: value === "" ? null : value }));
+  }
+
   async function save(markReady: boolean) {
     setSaving(true);
     setError(null);
@@ -125,11 +145,43 @@ export function FactsReviewForm({
         </div>
       )}
 
-      <div className="rounded border border-hair bg-card p-3 text-sm text-ink-2">
-        Filing status: <span className="font-medium">{facts.filingStatus ?? "unknown"}</span>
-        {" · "}State: <span className="font-medium">{facts.residenceState ?? "—"}</span>
-        {" · "}
-        {facts.income.agi != null ? `AGI ${fmtUsd(facts.income.agi)}` : "AGI not extracted"}
+      <div className="rounded border border-hair bg-card p-3">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="facts-filing-status" className="text-ink-2">
+              Filing status
+            </label>
+            <select
+              id="facts-filing-status"
+              className={selectClassName}
+              value={facts.filingStatus ?? ""}
+              onChange={(e) => setFilingStatus(e.target.value)}
+            >
+              <option value="">Select filing status…</option>
+              {FILING_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="facts-residence-state" className="text-ink-2">
+              Residence state
+            </label>
+            <StateSelect
+              id="facts-residence-state"
+              name="residenceState"
+              value={facts.residenceState ?? ""}
+              onChange={setResidenceState}
+            />
+          </div>
+
+          <div className="flex flex-col justify-end text-ink-2">
+            {facts.income.agi != null ? `AGI ${fmtUsd(facts.income.agi)}` : "AGI not extracted"}
+          </div>
+        </div>
       </div>
 
       {SECTIONS.map((section) => (
