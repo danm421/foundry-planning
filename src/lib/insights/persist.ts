@@ -1,10 +1,11 @@
 // src/lib/insights/persist.ts
 import { db } from "@/db";
 import { clientInsightProfiles } from "@/db/schema";
+import type { ClientInsightProfileRow } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { GeneratedInsights } from "./generate";
 
-export type InsightProfileRow = typeof clientInsightProfiles.$inferSelect;
+export type InsightProfileRow = ClientInsightProfileRow;
 
 export async function loadInsightProfile(clientId: string): Promise<InsightProfileRow | null> {
   const row = await db.query.clientInsightProfiles.findFirst({

@@ -72,7 +72,6 @@ export async function InsightsContent({
                 goals: profile.goals,
                 opportunities: profile.opportunities,
                 generatedAt: profile.updatedAt.toISOString(),
-                model: profile.model,
               }
             : null
         }

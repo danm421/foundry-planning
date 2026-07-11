@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import type { GeneratedInsights } from "@/lib/insights/generate";
 
-type Sections = { snapshot: string; goals: string; opportunities: string };
-type Initial = Sections & { generatedAt: string; model: string };
+type Sections = GeneratedInsights;
+type Initial = Sections & { generatedAt: string };
 
 function Section({ title, body }: { title: string; body: string }) {
   if (!body) return null;
@@ -32,6 +33,7 @@ export function GeneratePanel({
   const [generatedAt, setGeneratedAt] = useState<string | null>(initial?.generatedAt ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(stale);
 
   const run = async () => {
     setLoading(true);
@@ -46,6 +48,7 @@ export function GeneratePanel({
       const data = await res.json();
       setSections(data.sections);
       setGeneratedAt(data.generatedAt);
+      setDirty(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -60,7 +63,7 @@ export function GeneratePanel({
           {generatedAt ? (
             <>
               Generated {new Date(generatedAt).toLocaleString()}
-              {stale && sections ? " · plan data changed" : ""}
+              {dirty && sections ? " · plan data changed" : ""}
             </>
           ) : (
             "AI summary not generated yet"

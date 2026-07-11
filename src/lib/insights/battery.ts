@@ -48,8 +48,11 @@ export async function loadInsightsBattery(
   const overview = await getOverviewData(clientId, firmId, "base");
   const projection = overview.projection;
 
-  // Current growth exposure from the household allocation rollup.
-  const allocation = overview.allocation as Array<{ group: string; pct: number }>;
+  // Current growth exposure from the household allocation rollup. Keep only
+  // { group, pct } — the raw dollar `value` on Rollup would otherwise flow
+  // into `grounding.allocation` and get hashed, flipping staleness on pure
+  // market-value drift even when the allocation mix (pct) is unchanged.
+  const allocation = overview.allocation.map((a) => ({ group: a.group, pct: a.pct }));
   const currentPct = growthPctFromAllocation(allocation);
 
   // Monte Carlo success (non-fatal).
@@ -90,7 +93,13 @@ export async function loadInsightsBattery(
   ).length;
   const lastContactAt = notes[0]?.occurredAt ? new Date(notes[0].occurredAt) : null;
   const needsAttention = computeNeedsAttention(
-    { overdueTaskCount, lastContactAt, oldestAccountValuationAt: null },
+    {
+      overdueTaskCount,
+      lastContactAt,
+      // oldestAccountValuationAt deferred to a follow-up (no account-valuation-date
+      // source wired yet); the stale_valuation lint branch is intentionally dormant in v1.
+      oldestAccountValuationAt: null,
+    },
     now,
   );
 
