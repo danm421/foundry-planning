@@ -103,5 +103,11 @@ describe("ObservationsPanel", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+
+    const postCall = fetchFn.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    const postedBody = JSON.parse((postCall?.[1] as RequestInit).body as string);
+    expect(postedBody).toEqual({ section: "observation", body: "Quick note" });
   });
 });

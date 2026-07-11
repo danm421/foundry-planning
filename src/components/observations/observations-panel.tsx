@@ -90,14 +90,18 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
 
   const base = `/api/clients/${clientId}/observations`;
 
-  const refetch = useCallback(async () => {
+  // Returns whether the resync actually landed, so mutation-failure paths that
+  // depend on refetch() to reflect server truth can tell the user when it
+  // didn't (instead of leaving a stale screen with no signal).
+  const refetch = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(base, { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) return false;
       const rows = (await res.json()) as ObservationItem[];
       setItems(rows);
+      return true;
     } catch {
-      // Non-fatal — keep the current optimistic view.
+      return false;
     }
   }, [base]);
 
@@ -229,29 +233,41 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
   }
 
   async function cycleStatus(item: ObservationItem) {
+    setDraftError(null);
     const next = STATUS_CYCLE[item.status];
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: next } : i)));
     try {
-      await fetch(`${base}/${item.id}`, {
+      const res = await fetch(`${base}/${item.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: next }),
       });
-    } finally {
-      refetch();
+      if (!res.ok) throw new Error("update failed");
+    } catch {
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: item.status } : i)));
+      setDraftError("Couldn't update the status. Please try again.");
+      return;
     }
+    refetch();
   }
 
   async function deleteItem(item: ObservationItem) {
+    setDraftError(null);
+    const prevItems = items;
     setItems((prev) => prev.filter((i) => i.id !== item.id));
     try {
-      await fetch(`${base}/${item.id}`, { method: "DELETE" });
-    } finally {
-      refetch();
+      const res = await fetch(`${base}/${item.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+    } catch {
+      setItems(prevItems);
+      setDraftError("Couldn't delete this item. Please try again.");
+      return;
     }
+    refetch();
   }
 
   async function moveObservation(id: string, dir: "up" | "down") {
+    setDraftError(null);
     const byTopic = new Map<ObservationTopic, ObservationItem[]>();
     for (const t of OBSERVATION_TOPICS) byTopic.set(t, []);
     for (const it of items) if (it.section === "observation") byTopic.get(it.topic)!.push(it);
@@ -268,20 +284,31 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
     const orderedIds = newObs.map((i) => i.id);
     setItems([...newObs, ...items.filter((i) => i.section === "next_step")]);
     try {
-      await fetch(`${base}/reorder`, {
+      const res = await fetch(`${base}/reorder`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ section: "observation", orderedIds }),
       });
-    } finally {
-      refetch();
+      if (!res.ok) throw new Error("reorder failed");
+    } catch {
+      // We don't know the true order after a rejected reorder (e.g. a stale-order
+      // race with another editor), so resync from the server rather than guess.
+      const synced = await refetch();
+      setDraftError(
+        synced
+          ? "Couldn't save the new order — it's been reset to match the server."
+          : "Couldn't save the new order, and the screen may be out of date. Please refresh.",
+      );
+      return;
     }
+    refetch();
   }
 
   async function acceptSuggestion(s: Suggestion, idx: number) {
+    setDraftError(null);
     setSuggestions((prev) => (prev ? prev.filter((_, i) => i !== idx) : prev));
     try {
-      await fetch(base, {
+      const res = await fetch(base, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -294,9 +321,17 @@ export default function ObservationsPanel({ clientId, initialItems }: Props) {
           priority: s.priority,
         }),
       });
-    } finally {
-      refetch();
+      if (!res.ok) throw new Error("accept failed");
+    } catch {
+      setSuggestions((prev) => {
+        const next = prev ? [...prev] : [];
+        next.splice(idx, 0, s);
+        return next;
+      });
+      setDraftError("Couldn't accept this suggestion. Please try again.");
+      return;
     }
+    refetch();
   }
 
   function editSuggestion(s: Suggestion, idx: number) {
