@@ -4472,6 +4472,39 @@ export const lifeInsuranceSolverSettingsRelations = relations(
 export type LifeInsuranceSolverSettingsRow = InferSelectModel<typeof lifeInsuranceSolverSettings>;
 export type NewLifeInsuranceSolverSettingsRow = InferInsertModel<typeof lifeInsuranceSolverSettings>;
 
+// ============================================================================
+// Client Insight Profiles (per-client, global — AI-generated 360 cache)
+// ============================================================================
+
+export const clientInsightProfiles = pgTable("client_insight_profiles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .unique()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  snapshot: text("snapshot").notNull().default(""),
+  goals: text("goals").notNull().default(""),
+  opportunities: text("opportunities").notNull().default(""),
+  inputHash: text("input_hash").notNull().default(""),
+  model: text("model").notNull().default(""),
+  generatedByUserId: text("generated_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const clientInsightProfilesRelations = relations(
+  clientInsightProfiles,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [clientInsightProfiles.clientId],
+      references: [clients.id],
+    }),
+  }),
+);
+
+export type ClientInsightProfileRow = InferSelectModel<typeof clientInsightProfiles>;
+export type NewClientInsightProfileRow = InferInsertModel<typeof clientInsightProfiles>;
+
 // Presentation templates: a saved, ordered list of presentation pages
 // with their per-page options. Firm-scoped; either shared (any firm
 // member sees them) or private (only the creator sees them). Page

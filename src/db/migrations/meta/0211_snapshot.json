@@ -1,6 +1,6 @@
 {
-  "id": "0ff43b4a-f158-4dca-bda4-a8e913534e7c",
-  "prevId": "798b42cf-9312-4304-b1a6-91ecf505ca1c",
+  "id": "3507c28d-2c55-4a1f-8b3a-4cecc7e1cd6b",
+  "prevId": "0ff43b4a-f158-4dca-bda4-a8e913534e7c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16330,6 +16330,139 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.tax_returns": {
+      "name": "tax_returns",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_year": {
+          "name": "tax_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "tax_return_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'extracting'"
+        },
+        "extracted_facts": {
+          "name": "extracted_facts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "facts": {
+          "name": "facts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warnings": {
+          "name": "warnings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "vault_document_id": {
+          "name": "vault_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_filename": {
+          "name": "source_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tax_returns_client_id_clients_id_fk": {
+          "name": "tax_returns_client_id_clients_id_fk",
+          "tableFrom": "tax_returns",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tax_returns_vault_document_id_crm_household_documents_id_fk": {
+          "name": "tax_returns_vault_document_id_crm_household_documents_id_fk",
+          "tableFrom": "tax_returns",
+          "tableTo": "crm_household_documents",
+          "columnsFrom": [
+            "vault_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tax_returns_unique_client_year": {
+          "name": "tax_returns_unique_client_year",
+          "nullsNotDistinct": false,
+          "columns": [
+            "client_id",
+            "tax_year"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.tax_year_parameters": {
       "name": "tax_year_parameters",
       "schema": "",
@@ -19153,6 +19286,16 @@
       "values": [
         "flat",
         "bracket"
+      ]
+    },
+    "public.tax_return_status": {
+      "name": "tax_return_status",
+      "schema": "public",
+      "values": [
+        "extracting",
+        "needs_review",
+        "ready",
+        "failed"
       ]
     },
     "public.titling_type": {
