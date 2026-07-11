@@ -53,6 +53,11 @@ export const observationReorderSchema = z.object({
   orderedIds: z.array(z.string().uuid()).min(1).max(200),
 });
 
+export const observationPolishSchema = z.object({
+  body: z.string().min(1).max(8000),
+});
+
 export type ObservationCreateInput = z.infer<typeof observationCreateSchema>;
 export type ObservationUpdateInput = z.infer<typeof observationUpdateSchema>;
 export type ObservationReorderInput = z.infer<typeof observationReorderSchema>;
+export type ObservationPolishInput = z.infer<typeof observationPolishSchema>;
