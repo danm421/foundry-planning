@@ -4,12 +4,8 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
-import {
-  getTaxReturn, getPriorTaxReturn, updateFacts, deleteTaxReturn,
-} from "@/lib/tax-returns/store";
-import { parseRowFacts } from "@/lib/tax-returns/db";
-import { loadAnalysisContext } from "@/lib/tax-returns/load-analysis-context";
-import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
+import { updateFacts, deleteTaxReturn } from "@/lib/tax-returns/store";
+import { assembleTaxAnalysis, parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +15,6 @@ export const dynamic = "force-dynamic";
 const putBodySchema = z
   .object({ facts: taxReturnFactsSchema, markReady: z.boolean().optional(), reopen: z.boolean().optional() })
   .strict();
-
-function parseYear(raw: string): number | null {
-  const year = Number(raw);
-  return Number.isInteger(year) && year >= 1900 && year <= 2200 ? year : null;
-}
 
 export async function GET(
   _request: NextRequest,
@@ -37,32 +28,17 @@ export async function GET(
     const access = await verifyClientAccess(id);
     if (!access.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-    const row = await getTaxReturn(id, taxYear);
-    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const assembled = await assembleTaxAnalysis(id, taxYear);
+    if (!assembled) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const { facts, extractedFacts, parseError } = parseRowFacts(row);
-    let analysis = null;
-    if (facts) {
-      const [ctx, priorRow] = await Promise.all([
-        loadAnalysisContext(id, taxYear),
-        getPriorTaxReturn(id, taxYear),
-      ]);
-      const prior = priorRow ? parseRowFacts(priorRow).facts : null;
-      analysis = buildTaxAnalysis({
-        facts, prior,
-        resolver: ctx.resolver,
-        primaryAge: ctx.primaryAge,
-        spouseAge: ctx.spouseAge,
-      });
-    }
     return NextResponse.json({
-      taxYear: row.taxYear,
-      status: row.status,
-      facts,
-      extractedFacts,
-      warnings: row.warnings,
-      factsParseError: parseError,
-      analysis,
+      taxYear: assembled.row.taxYear,
+      status: assembled.row.status,
+      facts: assembled.facts,
+      extractedFacts: assembled.extractedFacts,
+      warnings: assembled.row.warnings,
+      factsParseError: assembled.parseError,
+      analysis: assembled.analysis,
     });
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {

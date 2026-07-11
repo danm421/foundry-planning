@@ -1,6 +1,6 @@
 import type { TaxYearParameters } from "@/lib/tax/types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { resolveLtcg } from "./adapter";
+import { n, resolveLtcg } from "./adapter";
 
 export interface BracketSegment {
   from: number;
@@ -26,8 +26,6 @@ export interface BracketMap {
     zeroPctHeadroom: number;
   };
 }
-
-const n = (v: number | null | undefined): number => v ?? 0;
 
 export function buildBracketMap(
   facts: TaxReturnFacts,
@@ -82,6 +80,77 @@ export function buildBracketMap(
       preferentialBase,
       ordinaryFloor: taxBase,
       zeroPctHeadroom: Math.max(0, cg.zeroPctTop - stackTop),
+    },
+  };
+}
+
+export interface BracketBarSegment {
+  from: number;
+  to: number | null;
+  rate: number;
+  /** 0-100: this segment's share of the bar's horizontal width. */
+  widthPct: number;
+  /** 0-100: how much of the segment's own width is "filled" (taxed). */
+  fillPct: number;
+}
+
+export interface CapGainsBarLayout {
+  /** 0-100: width of the ordinary-income floor portion. */
+  floorPct: number;
+  /** 0-100: left offset of the preferential-income fill. */
+  fillLeftPct: number;
+  /** 0-100: width of the preferential-income fill. */
+  fillWidthPct: number;
+  /** 0-100: left offset of the 0%-bracket-top dashed marker. */
+  markerLeftPct: number;
+}
+
+export interface BracketBarLayout {
+  segments: BracketBarSegment[];
+  capGains: CapGainsBarLayout;
+}
+
+/** Pure layout geometry for the two bracket bars (ordinary-income segments +
+ *  cap-gains stacking), shared by the screen (bracket-map-bars.tsx) and the
+ *  PDF (tax-analysis-pdf-document.tsx) renderers — same visible-segment
+ *  filter, scaleTop taxBase=0 guard, and cap-gains cgTop/cgPct math in one
+ *  place instead of duplicated byte-for-byte across two components. */
+export function computeBracketBarLayout(map: BracketMap): BracketBarLayout {
+  const visible = map.ordinary.segments.filter(
+    (s) => s.filled > 0 || s.from <= map.ordinary.taxBase * 1.6,
+  );
+  const lastVisible = visible[visible.length - 1];
+  const scaleTop = Math.max(
+    map.ordinary.taxBase * 1.25,
+    lastVisible?.to ?? lastVisible?.from ?? 1,
+    1,
+  );
+
+  const segments: BracketBarSegment[] = visible.map((seg) => {
+    const widthPct = Math.max(
+      0,
+      ((Math.min(seg.to ?? scaleTop, scaleTop) - seg.from) / scaleTop) * 100,
+    );
+    const fillPct = seg.to
+      ? Math.min(100, (seg.filled / (seg.to - seg.from)) * 100)
+      : seg.filled > 0 ? 100 : 0;
+    return { from: seg.from, to: seg.to, rate: seg.rate, widthPct, fillPct };
+  });
+
+  const cgTop = Math.max(
+    map.capGains.fifteenPctTop * 0.4,
+    map.capGains.ordinaryFloor + map.capGains.preferentialBase * 1.5,
+    map.capGains.zeroPctTop * 1.2,
+  );
+  const cgPct = (v: number) => Math.min(100, (v / cgTop) * 100);
+
+  return {
+    segments,
+    capGains: {
+      floorPct: cgPct(map.capGains.ordinaryFloor),
+      fillLeftPct: cgPct(map.capGains.ordinaryFloor),
+      fillWidthPct: cgPct(map.capGains.preferentialBase),
+      markerLeftPct: cgPct(map.capGains.zeroPctTop),
     },
   };
 }

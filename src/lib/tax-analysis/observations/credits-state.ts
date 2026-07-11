@@ -1,10 +1,8 @@
 import type { Observation, ObservationContext } from "../types";
 import { fmtUsd, fmtPct } from "../format";
-import { runCalc } from "../adapter";
+import { n } from "../adapter";
 import { isNoIncomeTaxState } from "@/lib/tax/state-income/data/no-income-tax-states";
 import type { USPSStateCode } from "@/lib/usps-states";
-
-const n = (v: number | null | undefined): number => v ?? 0;
 
 // Statutory §24(h) phase-out thresholds (not inflation-indexed, so constants
 // here rather than TaxYearParameters).
@@ -73,12 +71,7 @@ export function stateNotes(ctx: ObservationContext): Observation | null {
       numbers: {},
     };
   }
-  const r = runCalc(ctx.facts, {
-    taxParams: ctx.params,
-    primaryAge: ctx.primaryAge,
-    spouseAge: ctx.spouseAge,
-  });
-  const s = r?.state;
+  const s = ctx.calc?.state;
   if (!s || !s.hasIncomeTax) return null;
   const topRate = s.bracketsUsed.length > 0 ? s.bracketsUsed[s.bracketsUsed.length - 1].rate : 0;
   const rules = s.specialRulesApplied.length > 0 ? ` Notes: ${s.specialRulesApplied.join("; ")}.` : "";

@@ -4,6 +4,7 @@ import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import { visionOcrPdf, visionOcrImage } from "@/lib/extraction/vision-ocr";
 import { buildPageOutline } from "@/lib/extraction/page-outline";
+import { parseAIResponse } from "@/lib/extraction/parse-response";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import {
   TAX_RETURN_FACTS_PROMPT,
@@ -55,7 +56,7 @@ async function selectPages(pages: string[], warnings: string[]): Promise<number[
       `OUTLINE:\n${outline}\n\nANCHORS:\n${anchors}`,
       "mini",
     );
-    const parsed = rangesSchema.parse(JSON.parse(raw.replace(/```(?:json)?|```/g, "").trim()));
+    const parsed = rangesSchema.parse(parseAIResponse(raw));
     const selected = new Set<number>();
     for (const [start, end] of parsed.relevantPages) {
       for (let p = start; p <= Math.min(end, pages.length); p++) selected.add(p);

@@ -1,10 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { ctcPhaseout, educationCredits, stateNotes } from "../observations/credits-state";
 import type { ObservationContext } from "../types";
+import { runCalc } from "../adapter";
+import { buildBracketMap } from "../bracket-map";
 import { params2025, retireeMfj, highEarnerMfj } from "./fixtures";
 
 function ctxFor(facts: ReturnType<typeof retireeMfj>): ObservationContext {
-  return { facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge: 45, spouseAge: 44 };
+  const primaryAge = 45;
+  const spouseAge = 44;
+  return {
+    facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
+    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
+    bracketMap: buildBracketMap(facts, params2025),
+  };
 }
 
 describe("ctcPhaseout", () => {

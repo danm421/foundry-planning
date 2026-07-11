@@ -1,11 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { bracketPosition, rothHeadroom, ltcgZeroHeadroom } from "../observations/brackets";
 import type { ObservationContext } from "../types";
+import { runCalc } from "../adapter";
+import { buildBracketMap } from "../bracket-map";
 import { params2025, retireeMfj } from "./fixtures";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
 function ctxFor(facts = retireeMfj()): ObservationContext {
-  return { facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge: 72, spouseAge: 72 };
+  const primaryAge = 72;
+  const spouseAge = 72;
+  return {
+    facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
+    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
+    bracketMap: buildBracketMap(facts, params2025),
+  };
 }
 
 describe("bracketPosition", () => {

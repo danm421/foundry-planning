@@ -4,17 +4,13 @@ import {
   TAX_RETURN_MIN_YEAR,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
+import { parseAIResponse } from "@/lib/extraction/parse-response";
 
 export class TaxReturnParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TaxReturnParseError";
   }
-}
-
-function stripFences(raw: string): string {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return (fenced ? fenced[1] : raw).trim();
 }
 
 /** "$1,234" / "1234" → 1234; null when the string is not numeric. */
@@ -65,14 +61,16 @@ export function parseTaxReturnFactsJson(raw: string): {
   isAmended: boolean;
   warnings: string[];
 } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripFences(raw));
-  } catch {
+  // parseAIResponse (the codebase-canonical AI-response parser — handles
+  // fences, reasoning-model thinking text, and balanced-brace fallback)
+  // returns {} when it can't extract any JSON at all — that's the same
+  // "not valid JSON" failure the old direct JSON.parse used to throw on.
+  const parsed = parseAIResponse(raw);
+  if (Object.keys(parsed).length === 0) {
     throw new TaxReturnParseError("AI response was not valid JSON");
   }
   const obj = parsed as { isAmended?: unknown; facts?: unknown };
-  if (typeof obj !== "object" || obj === null || typeof obj.facts !== "object" || obj.facts === null) {
+  if (typeof obj.facts !== "object" || obj.facts === null) {
     throw new TaxReturnParseError("AI response missing facts object");
   }
 

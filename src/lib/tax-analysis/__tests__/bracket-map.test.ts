@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBracketMap } from "../bracket-map";
+import { buildBracketMap, computeBracketBarLayout } from "../bracket-map";
 import { params2025, retireeMfj } from "./fixtures";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
@@ -73,5 +73,36 @@ describe("buildBracketMap", () => {
     // Schedule D detail present (short-term line) → LTCG is 0, NOT line 7's 20000
     expect(map.capGains.preferentialBase).toBe(15000);
     expect(map.ordinary.taxBase).toBe(155500 - 15000);
+  });
+});
+
+describe("computeBracketBarLayout", () => {
+  it("produces finite, non-NaN widths for the retiree persona", () => {
+    const map = buildBracketMap(retireeMfj(), params2025)!;
+    const layout = computeBracketBarLayout(map);
+    expect(layout.segments.length).toBeGreaterThan(0);
+    for (const seg of layout.segments) {
+      expect(Number.isFinite(seg.widthPct)).toBe(true);
+      expect(Number.isFinite(seg.fillPct)).toBe(true);
+    }
+    expect(Number.isFinite(layout.capGains.floorPct)).toBe(true);
+    expect(Number.isFinite(layout.capGains.markerLeftPct)).toBe(true);
+  });
+
+  it("guards against NaN when ordinary taxBase is 0 (scaleTop floor of 1)", () => {
+    // Same recipe as the bracket-map-bars/PDF NaN-regression fixtures:
+    // deductions eat the ordinary portion entirely.
+    const f = retireeMfj();
+    f.deductions.taxableIncome = 30000;
+    f.income.netLongTermGain = 50000;
+    f.income.netShortTermGain = 0;
+    f.income.qualifiedDividends = 0;
+    const map = buildBracketMap(f, params2025)!;
+    expect(map.ordinary.taxBase).toBe(0);
+    const layout = computeBracketBarLayout(map);
+    for (const seg of layout.segments) {
+      expect(Number.isFinite(seg.widthPct)).toBe(true);
+      expect(Number.isFinite(seg.fillPct)).toBe(true);
+    }
   });
 });

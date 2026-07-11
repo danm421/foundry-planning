@@ -1,5 +1,5 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { runCalc, type AdapterContext } from "./adapter";
+import type { TaxResult } from "@/lib/tax/types";
 
 export interface ReconstructionCheck {
   /** Engine pre-credit income tax: regular bracket tax + preferential
@@ -11,13 +11,14 @@ export interface ReconstructionCheck {
   withinTolerance: boolean | null; // null when either side unavailable
 }
 
+/** `calc` is the engine run for these facts — precomputed once by the
+ *  caller (buildTaxAnalysis) rather than re-run here. */
 export function runReconstruction(
   facts: TaxReturnFacts,
-  ctx: AdapterContext,
+  calc: TaxResult | null,
 ): ReconstructionCheck {
-  const r = runCalc(facts, ctx);
-  const computed = r
-    ? r.flow.regularTaxCalc + r.flow.capitalGainsTax + r.flow.amtAdditional
+  const computed = calc
+    ? calc.flow.regularTaxCalc + calc.flow.capitalGainsTax + calc.flow.amtAdditional
     : null;
   const filed =
     facts.tax.taxBeforeCredits != null

@@ -1,5 +1,6 @@
-import type { TaxYearParameters } from "@/lib/tax/types";
+import type { TaxResult, TaxYearParameters } from "@/lib/tax/types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import type { BracketMap } from "./bracket-map";
 
 export type ObservationSeverity = "opportunity" | "watch" | "info";
 
@@ -24,4 +25,10 @@ export interface ObservationContext {
   /** Ages at END of the tax year; null when DOB unknown. */
   primaryAge: number | null;
   spouseAge: number | null;
+  /** Engine run over these facts, computed once in buildTaxAnalysis and
+   *  shared across observations — null when filingStatus is unknown. */
+  calc: TaxResult | null;
+  /** Bracket positioning, computed once in buildTaxAnalysis and shared
+   *  across observations — null when taxableIncome/filingStatus is missing. */
+  bracketMap: BracketMap | null;
 }

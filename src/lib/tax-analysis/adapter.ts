@@ -3,7 +3,9 @@ import { calculateTaxYear } from "@/lib/tax/calculate";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { USPSStateCode } from "@/lib/usps-states";
 
-const n = (v: number | null | undefined): number => v ?? 0;
+/** Shared "null/undefined → 0" coercion — single copy for adapter.ts,
+ *  bracket-map.ts, and the observation modules that need it. */
+export const n = (v: number | null | undefined): number => v ?? 0;
 
 export interface AdapterContext {
   taxParams: TaxYearParameters;

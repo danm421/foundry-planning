@@ -73,6 +73,22 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     else setDetail(null);
   }, [selectedYear, loadDetail]);
 
+  // Shared by upload() and manualEntry(): after either creates/replaces a
+  // year, refresh the tab list, then either re-fetch the detail directly
+  // (same year → the [selectedYear] effect above won't re-fire) or switch
+  // the selected year (different year → that effect fires loadDetail).
+  const selectYearAfterMutation = useCallback(
+    async (y: number) => {
+      await loadList();
+      if (selectedYear === y) {
+        void loadDetail(y);
+      } else {
+        setSelectedYear(y);
+      }
+    },
+    [selectedYear, loadList, loadDetail],
+  );
+
   async function upload(file: File, replace = false) {
     setUploading(true);
     setError(null);
@@ -93,12 +109,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         return;
       }
       const y = body.taxYear as number;
-      await loadList();
-      if (selectedYear === y) {
-        void loadDetail(y); // same year → the [selectedYear] effect won't re-fire; fetch directly
-      } else {
-        setSelectedYear(y); // different year → effect fires loadDetail
-      }
+      await selectYearAfterMutation(y);
     } finally {
       setUploading(false);
     }
@@ -121,12 +132,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
       return;
     }
     const y = body.taxYear as number;
-    await loadList();
-    if (selectedYear === y) {
-      void loadDetail(y); // same year → the [selectedYear] effect won't re-fire; fetch directly
-    } else {
-      setSelectedYear(y); // different year → effect fires loadDetail
-    }
+    await selectYearAfterMutation(y);
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves

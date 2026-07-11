@@ -1,10 +1,9 @@
 import type { Observation, ObservationContext } from "../types";
-import { buildBracketMap } from "../bracket-map";
 import { fmtUsd, fmtPct } from "../format";
 import { computeMagi, irmaaTiersFor, nextIrmaaCliff } from "../irmaa-util";
 
 export function bracketPosition(ctx: ObservationContext): Observation | null {
-  const map = buildBracketMap(ctx.facts, ctx.params);
+  const map = ctx.bracketMap;
   if (!map) return null;
   const { marginalRate, headroomToNext, nextRate } = map.ordinary;
   const tail =
@@ -21,7 +20,7 @@ export function bracketPosition(ctx: ObservationContext): Observation | null {
 }
 
 export function rothHeadroom(ctx: ObservationContext): Observation | null {
-  const map = buildBracketMap(ctx.facts, ctx.params);
+  const map = ctx.bracketMap;
   if (!map) return null;
   const { marginalRate, headroomToNext, nextRate } = map.ordinary;
   if (headroomToNext == null || nextRate == null || headroomToNext < 1000) return null;
@@ -47,7 +46,7 @@ export function rothHeadroom(ctx: ObservationContext): Observation | null {
 }
 
 export function ltcgZeroHeadroom(ctx: ObservationContext): Observation | null {
-  const map = buildBracketMap(ctx.facts, ctx.params);
+  const map = ctx.bracketMap;
   if (!map || map.capGains.zeroPctHeadroom < 500) return null;
   const room = map.capGains.zeroPctHeadroom;
   return {

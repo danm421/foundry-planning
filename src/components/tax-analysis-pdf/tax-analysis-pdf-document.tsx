@@ -2,6 +2,7 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { Observation } from "@/lib/tax-analysis/types";
+import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
 
@@ -95,29 +96,15 @@ function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
-/** Ported 1:1 from the screen's BracketMapBars (bracket-map-bars.tsx), swapping
- *  Tailwind divs for react-pdf Views. Same taxBase=0 guard (the final `,1` in
- *  scaleTop) so an all-LTCG retiree return can't produce NaN segment widths. */
+/** Swaps Tailwind divs for react-pdf Views on top of the same layout geometry
+ *  the screen's BracketMapBars uses (bracket-map-bars.tsx) — both consume
+ *  computeBracketBarLayout, so the taxBase=0 scaleTop guard (an all-LTCG
+ *  retiree return can't produce NaN segment widths) lives in exactly one
+ *  place. */
 function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
   const map = analysis.bracketMap;
   if (!map) return null;
-
-  const visible = map.ordinary.segments.filter(
-    (s) => s.filled > 0 || s.from <= map.ordinary.taxBase * 1.6,
-  );
-  const lastVisible = visible[visible.length - 1];
-  const scaleTop = Math.max(
-    map.ordinary.taxBase * 1.25,
-    lastVisible?.to ?? lastVisible?.from ?? 1,
-    1,
-  );
-
-  const cgTop = Math.max(
-    map.capGains.fifteenPctTop * 0.4,
-    map.capGains.ordinaryFloor + map.capGains.preferentialBase * 1.5,
-    map.capGains.zeroPctTop * 1.2,
-  );
-  const cgPct = (v: number) => `${Math.min(100, (v / cgTop) * 100)}%`;
+  const layout = computeBracketBarLayout(map);
 
   return (
     <View>
@@ -127,18 +114,12 @@ function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
           <Text style={styles.bracketCaption}>{fmtUsd(map.ordinary.taxBase)} of ordinary taxable income</Text>
         </View>
         <View style={styles.bracketBarRow}>
-          {visible.map((seg) => {
-            const width = Math.max(0, ((Math.min(seg.to ?? scaleTop, scaleTop) - seg.from) / scaleTop) * 100);
-            const fillPct = seg.to
-              ? Math.min(100, (seg.filled / (seg.to - seg.from)) * 100)
-              : seg.filled > 0 ? 100 : 0;
-            return (
-              <View key={seg.from} style={[styles.bracketSegment, { width: `${width}%` }]}>
-                <View style={[styles.bracketFill, { width: `${fillPct}%` }]} />
-                <Text style={styles.bracketSegmentLabel}>{fmtPct(seg.rate)}</Text>
-              </View>
-            );
-          })}
+          {layout.segments.map((seg) => (
+            <View key={seg.from} style={[styles.bracketSegment, { width: `${seg.widthPct}%` }]}>
+              <View style={[styles.bracketFill, { width: `${seg.fillPct}%` }]} />
+              <Text style={styles.bracketSegmentLabel}>{fmtPct(seg.rate)}</Text>
+            </View>
+          ))}
         </View>
         {map.ordinary.headroomToNext != null && map.ordinary.nextRate != null && (
           <Text style={styles.bracketFootnote}>
@@ -154,14 +135,14 @@ function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
           <Text style={styles.bracketCaption}>{fmtUsd(map.capGains.preferentialBase)} stacked on top of ordinary income</Text>
         </View>
         <View style={styles.capGainsBarWrap}>
-          <View style={[styles.capGainsFloor, { width: cgPct(map.capGains.ordinaryFloor) }]} />
+          <View style={[styles.capGainsFloor, { width: `${layout.capGains.floorPct}%` }]} />
           <View
             style={[
               styles.capGainsFill,
-              { left: cgPct(map.capGains.ordinaryFloor), width: cgPct(map.capGains.preferentialBase) },
+              { left: `${layout.capGains.fillLeftPct}%`, width: `${layout.capGains.fillWidthPct}%` },
             ]}
           />
-          <View style={[styles.capGainsMarker, { left: cgPct(map.capGains.zeroPctTop) }]} />
+          <View style={[styles.capGainsMarker, { left: `${layout.capGains.markerLeftPct}%` }]} />
         </View>
         <Text style={styles.bracketFootnote}>
           Dashed line = top of the 0% bracket ({fmtUsd(map.capGains.zeroPctTop)}).{" "}

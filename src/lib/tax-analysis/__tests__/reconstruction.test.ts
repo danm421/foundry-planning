@@ -15,7 +15,7 @@ describe("runReconstruction", () => {
       engine.flow.amtAdditional;
     base.tax.taxBeforeCredits = Math.round(filed);
     base.tax.amt = 0;
-    const check = runReconstruction(base, ctx);
+    const check = runReconstruction(base, engine);
     expect(check.withinTolerance).toBe(true);
     expect(Math.abs(check.delta!)).toBeLessThanOrEqual(1);
   });
@@ -23,14 +23,14 @@ describe("runReconstruction", () => {
   it("flags a large mismatch", () => {
     const base = retireeMfj();
     base.tax.taxBeforeCredits = 5000; // wildly off
-    const check = runReconstruction(base, ctx);
+    const check = runReconstruction(base, runCalc(base, ctx));
     expect(check.withinTolerance).toBe(false);
   });
 
   it("returns null tolerance when filed tax is missing", () => {
     const base = retireeMfj();
     base.tax.taxBeforeCredits = null;
-    const check = runReconstruction(base, ctx);
+    const check = runReconstruction(base, runCalc(base, ctx));
     expect(check.withinTolerance).toBeNull();
     expect(check.filedPreCreditTax).toBeNull();
   });

@@ -1,13 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { irmaaCliff, qcd } from "../observations/retirement";
 import type { ObservationContext } from "../types";
+import { runCalc } from "../adapter";
+import { buildBracketMap } from "../bracket-map";
 import { params2025, retireeMfj, singleNearIrmaa, highEarnerMfj } from "./fixtures";
 
 function ctxFor(
   facts: ReturnType<typeof retireeMfj>,
   ages: { primaryAge: number | null; spouseAge: number | null },
 ): ObservationContext {
-  return { facts, prior: null, params: params2025, irmaaParams: params2025, ...ages };
+  return {
+    facts, prior: null, params: params2025, irmaaParams: params2025, ...ages,
+    calc: runCalc(facts, { taxParams: params2025, ...ages }),
+    bracketMap: buildBracketMap(facts, params2025),
+  };
 }
 
 describe("irmaaCliff", () => {

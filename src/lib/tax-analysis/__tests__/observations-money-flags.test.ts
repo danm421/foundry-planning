@@ -3,10 +3,18 @@ import {
   charitableBunching, niitExposure, additionalMedicare, safeHarbor, capitalLossCarryover,
 } from "../observations/money-flags";
 import type { ObservationContext } from "../types";
+import { runCalc } from "../adapter";
+import { buildBracketMap } from "../bracket-map";
 import { params2025, retireeMfj, highEarnerMfj } from "./fixtures";
 
 function ctxFor(facts: ReturnType<typeof retireeMfj>, prior: ReturnType<typeof retireeMfj> | null = null): ObservationContext {
-  return { facts, prior, params: params2025, irmaaParams: params2025, primaryAge: 55, spouseAge: 54 };
+  const primaryAge = 55;
+  const spouseAge = 54;
+  return {
+    facts, prior, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
+    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
+    bracketMap: buildBracketMap(facts, params2025),
+  };
 }
 
 describe("charitableBunching", () => {

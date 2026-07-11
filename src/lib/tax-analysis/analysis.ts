@@ -1,7 +1,8 @@
 import type { TaxResolver } from "@/lib/tax/resolver";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { calculateTaxYear } from "@/lib/tax/calculate";
 import type { Observation } from "./types";
-import { factsToCalcInput, runCalc, type AdapterContext } from "./adapter";
+import { factsToCalcInput, type AdapterContext } from "./adapter";
 import { runReconstruction, type ReconstructionCheck } from "./reconstruction";
 import { buildBracketMap, type BracketMap } from "./bracket-map";
 import { buildObservations } from "./observations";
@@ -41,8 +42,13 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
   const irmaaParams = resolver.getYear(facts.taxYear + 2).params;
   const ctx: AdapterContext = { taxParams: params, primaryAge, spouseAge };
 
-  const calc = runCalc(facts, ctx);
-  const { notes } = factsToCalcInput(facts, ctx);
+  // Single pass: factsToCalcInput and calculateTaxYear each run once here —
+  // bracketMap and calc are then shared (via ObservationContext) with every
+  // observation builder and with runReconstruction, instead of each of them
+  // re-deriving CalcInput/TaxResult/BracketMap independently.
+  const { input, notes } = factsToCalcInput(facts, ctx);
+  const calc = facts.filingStatus ? calculateTaxYear(input) : null;
+  const bracketMap = buildBracketMap(facts, params);
   const agi = facts.income.agi;
   const totalTax = facts.tax.totalTax;
 
@@ -57,10 +63,10 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
       refund: facts.payments.refund,
       amountOwed: facts.payments.amountOwed,
     },
-    bracketMap: buildBracketMap(facts, params),
-    observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge }),
+    bracketMap,
+    observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap }),
     yoy: prior ? buildYoY(facts, prior) : null,
-    reconstruction: runReconstruction(facts, ctx),
+    reconstruction: runReconstruction(facts, calc),
     adapterNotes: notes,
   };
 }

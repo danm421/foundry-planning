@@ -7,10 +7,9 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { getTaxReturn, getPriorTaxReturn } from "@/lib/tax-returns/store";
+import { getTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
-import { loadAnalysisContext } from "@/lib/tax-returns/load-analysis-context";
-import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
+import { buildAnalysisForFacts, parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { resolveBranding } from "@/lib/branding/branding";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordCompletedRun } from "@/lib/crm/generation-runs";
@@ -26,11 +25,6 @@ export const dynamic = "force-dynamic";
 // whole route well below Vercel's default (300 s) so a pathological render
 // can't pin a function instance for minutes.
 export const maxDuration = 60;
-
-function parseYear(raw: string): number | null {
-  const year = Number(raw);
-  return Number.isInteger(year) && year >= 1900 && year <= 2200 ? year : null;
-}
 
 export async function POST(
   _request: NextRequest,
@@ -63,37 +57,30 @@ export async function POST(
       return NextResponse.json({ error: "Tax return facts unavailable" }, { status: 404 });
     }
 
-    // CRM contacts — source of client name for the PDF, same as the
-    // balance-sheet-report export route.
-    const [primaryContact] = client.crmHouseholdId
-      ? await db
-          .select({
-            firstName: crmHouseholdContacts.firstName,
-            lastName: crmHouseholdContacts.lastName,
-          })
-          .from(crmHouseholdContacts)
-          .where(
-            and(
-              eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
-              eq(crmHouseholdContacts.role, "primary"),
-            ),
-          )
-      : [];
-    const clientName = [primaryContact?.firstName, primaryContact?.lastName].filter(Boolean).join(" ") || "Client";
-
-    const [ctx, priorRow, branding] = await Promise.all([
-      loadAnalysisContext(id, taxYear),
-      getPriorTaxReturn(id, taxYear),
+    // CRM contacts (source of client name for the PDF, same as the
+    // balance-sheet-report export route), the tax analysis, and firm branding
+    // are all independent — run them concurrently instead of awaiting the CRM
+    // lookup before starting the rest.
+    const [primaryContactRows, analysis, branding] = await Promise.all([
+      client.crmHouseholdId
+        ? db
+            .select({
+              firstName: crmHouseholdContacts.firstName,
+              lastName: crmHouseholdContacts.lastName,
+            })
+            .from(crmHouseholdContacts)
+            .where(
+              and(
+                eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
+                eq(crmHouseholdContacts.role, "primary"),
+              ),
+            )
+        : Promise.resolve([]),
+      buildAnalysisForFacts(id, taxYear, facts),
       resolveBranding(firmId),
     ]);
-    const prior = priorRow ? parseRowFacts(priorRow).facts : null;
-    const analysis = buildTaxAnalysis({
-      facts,
-      prior,
-      resolver: ctx.resolver,
-      primaryAge: ctx.primaryAge,
-      spouseAge: ctx.spouseAge,
-    });
+    const [primaryContact] = primaryContactRows;
+    const clientName = [primaryContact?.firstName, primaryContact?.lastName].filter(Boolean).join(" ") || "Client";
 
     const generatedAt = new Date().toLocaleString("en-US", {
       year: "numeric",

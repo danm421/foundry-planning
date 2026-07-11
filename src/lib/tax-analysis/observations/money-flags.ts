@@ -1,8 +1,17 @@
 import type { Observation, ObservationContext } from "../types";
+import type { TaxYearParameters } from "@/lib/tax/types";
+import type { TaxReturnFilingStatus } from "@/lib/schemas/tax-return-facts";
 import { fmtUsd } from "../format";
-import { resolveLtcg } from "../adapter";
+import { n, resolveLtcg } from "../adapter";
 
-const n = (v: number | null | undefined): number => v ?? 0;
+/** niitExposure and additionalMedicare both key the same three-way MFJ/MFS/single
+ *  threshold shape off filing status — one lookup instead of two duplicated ternaries. */
+function thresholdFor(
+  fs: TaxReturnFilingStatus,
+  t: TaxYearParameters["niitThreshold"] | TaxYearParameters["addlMedicareThreshold"],
+): number {
+  return fs === "married_joint" ? t.mfj : fs === "married_separate" ? t.mfs : t.single;
+}
 
 export function charitableBunching(ctx: ObservationContext): Observation | null {
   const d = ctx.facts.deductions;
@@ -39,10 +48,7 @@ export function niitExposure(ctx: ObservationContext): Observation | null {
   const f = ctx.facts;
   const fs = f.filingStatus;
   if (!fs || f.income.agi == null) return null;
-  const threshold =
-    fs === "married_joint" ? ctx.params.niitThreshold.mfj
-    : fs === "married_separate" ? ctx.params.niitThreshold.mfs
-    : ctx.params.niitThreshold.single;
+  const threshold = thresholdFor(fs, ctx.params.niitThreshold);
   const ltcg = Math.max(0, resolveLtcg(f) ?? 0);
   const nii = n(f.income.taxableInterest) + n(f.income.ordinaryDividends) + ltcg + Math.max(0, n(f.income.netShortTermGain));
   if (nii <= 0) return null;
@@ -62,10 +68,7 @@ export function additionalMedicare(ctx: ObservationContext): Observation | null 
   const f = ctx.facts;
   const fs = f.filingStatus;
   if (!fs) return null;
-  const threshold =
-    fs === "married_joint" ? ctx.params.addlMedicareThreshold.mfj
-    : fs === "married_separate" ? ctx.params.addlMedicareThreshold.mfs
-    : ctx.params.addlMedicareThreshold.single;
+  const threshold = thresholdFor(fs, ctx.params.addlMedicareThreshold);
   const earned = n(f.income.wages) + Math.max(0, n(f.income.scheduleCNet));
   if (earned <= threshold) return null;
   const excess = earned - threshold;
