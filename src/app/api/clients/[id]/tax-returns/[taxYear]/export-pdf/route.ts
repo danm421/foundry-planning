@@ -5,7 +5,7 @@ import { crmHouseholdContacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
-import { authErrorResponse } from "@/lib/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExportPdfRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { getTaxReturn, getPriorTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
@@ -43,6 +43,7 @@ export async function POST(
     if (taxYear == null) return NextResponse.json({ error: "Invalid tax year" }, { status: 400 });
 
     const { client, firmId } = await requireClientAccess(id);
+    await requireActiveSubscriptionForFirm(firmId);
 
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {

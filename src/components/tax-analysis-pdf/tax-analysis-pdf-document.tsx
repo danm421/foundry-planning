@@ -251,7 +251,7 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
             {a.reconstruction.withinTolerance === true
               ? "Cross-check: our independent computation of this return's pre-credit tax matches the filed amount. "
               : a.reconstruction.withinTolerance === false
-                ? "Cross-check: our computed pre-credit tax differs from the filed amount — figures should be re-verified. "
+                ? `Cross-check: our computed pre-credit tax (${fmtUsd(a.reconstruction.computedPreCreditTax ?? 0)}) differs from the filed amount — verify the extracted figures. `
                 : ""}
             This analysis is informational, based on the return as provided, and is not tax advice.
           </Text>
