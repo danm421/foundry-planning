@@ -30,6 +30,17 @@ import { useClientAccess } from "./client-access-provider";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
+/** Which external integration feeds a row's balance. `null`/`undefined` means
+ *  the account or liability was entered by hand. Drives the small linked
+ *  indicator next to the name. Extend this union (and LINKED_SOURCE_LABEL) as
+ *  integrations are added — addepar, black_diamond, … */
+export type LinkedSource = "plaid" | "orion";
+
+const LINKED_SOURCE_LABEL: Record<LinkedSource, string> = {
+  plaid: "Linked via Plaid",
+  orion: "Synced from Orion",
+};
+
 export interface AccountRow {
   id: string;
   name: string;
@@ -38,6 +49,10 @@ export interface AccountRow {
   owner: string;
   value: string;
   basis: string;
+  /** External integration that feeds this account (plaid/orion). Null/undefined
+   *  = manually entered. Set only by the Net Worth loader; report builders leave
+   *  it unset. Drives the linked indicator next to the name. */
+  linkedSource?: LinkedSource | null;
   rothValue?: string | null;
   /** HSA coverage tier (self/family). Hydrated from `accounts.hsa_coverage`
    * so the edit form round-trips the value instead of silently defaulting to
@@ -98,6 +113,9 @@ export interface LiabilityRow {
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
   isInterestDeductible?: boolean;
+  /** External integration that feeds this liability (plaid). Null/undefined =
+   *  manually entered. Drives the linked indicator next to the name. */
+  linkedSource?: LinkedSource | null;
   owners?: AccountOwner[];
   /** Parent business account id when this liability hangs off a business
    *  (e.g. an LLC's mortgage). Null for household liabilities. */
@@ -239,6 +257,45 @@ function ChevronRight() {
     <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
       <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
     </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 12h6" />
+      <path d="M10.5 8.5H8a3.5 3.5 0 1 0 0 7h2.5" />
+      <path d="M13.5 8.5H16a3.5 3.5 0 1 1 0 7h-2.5" />
+    </svg>
+  );
+}
+
+/** Small indicator shown next to an account/liability name when its balance is
+ *  fed by an external integration (Plaid today; Orion/Addepar/Black Diamond
+ *  later). Hover or focus reveals which one via the native tooltip; a bare row
+ *  (no badge) reads as a manual entry. Kept neutral — the accent stays reserved
+ *  for actions, and a native `title` avoids clipping inside the list's
+ *  overflow-hidden containers. */
+function LinkedSourceBadge({ source }: { source: LinkedSource }) {
+  const label = LINKED_SOURCE_LABEL[source];
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className="inline-flex shrink-0 cursor-help items-center text-gray-500"
+    >
+      <LinkIcon />
+    </span>
   );
 }
 
@@ -933,6 +990,9 @@ export default function BalanceSheetView({
                         onDelete={canEdit ? () => setDeletingAccount(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
+                        labelBadge={
+                          a.linkedSource ? <LinkedSourceBadge source={a.linkedSource} /> : undefined
+                        }
                         subLabel={
                           cat === "education_savings"
                             ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary) · ${growthDisplay(a)}`
@@ -1019,6 +1079,9 @@ export default function BalanceSheetView({
                     editMode={canEdit && liabilitiesEdit}
                     onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
                     label={l.name}
+                    labelBadge={
+                      l.linkedSource ? <LinkedSourceBadge source={l.linkedSource} /> : undefined
+                    }
                     subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
                     value={`(${fmt(currentYearBalance(l))})`}
                     valueClassName="text-red-400"
@@ -1075,8 +1138,11 @@ export default function BalanceSheetView({
                           onClick={canEdit ? () => handleAccountClick(a) : undefined}
                           className={`flex items-center justify-between px-4 py-2 ${canEdit ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
                         >
-                          <div>
-                            <div className="text-sm font-medium text-gray-100">{a.name}</div>
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-sm font-medium text-gray-100">{a.name}</span>
+                              {a.linkedSource && <LinkedSourceBadge source={a.linkedSource} />}
+                            </div>
                             <div className="text-xs text-gray-400">
                               {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
                             </div>
@@ -1559,7 +1625,10 @@ function BusinessRowGroup({
           className={`flex flex-1 items-center justify-between ${onClickRow ? "cursor-pointer" : ""}`}
         >
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-gray-100">{biz.name}</div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-sm font-medium text-gray-100">{biz.name}</span>
+              {biz.linkedSource && <LinkedSourceBadge source={biz.linkedSource} />}
+            </div>
             <div className="truncate text-xs text-gray-400">
               {ownerDisplay(biz)} · {growthDisplay(biz)}
             </div>
@@ -1602,7 +1671,10 @@ function BusinessRowGroup({
                     className={`flex items-center justify-between px-3 py-1.5 ${onClickChild ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] text-gray-100">{c.name}</div>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13px] text-gray-100">{c.name}</span>
+                        {c.linkedSource && <LinkedSourceBadge source={c.linkedSource} />}
+                      </div>
                       <div className="truncate text-[11px] text-gray-500">{c.category}</div>
                     </div>
                     <div className="flex items-center gap-3">

@@ -97,6 +97,10 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
         annualPropertyTax: accounts.annualPropertyTax,
         propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
         propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
+        // Linked-account indicator: identify integration-fed rows.
+        source: accounts.source,
+        plaidItemId: accounts.plaidItemId,
+        externalProvider: accounts.externalProvider,
       })
       .from(accounts)
       .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
@@ -104,6 +108,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       .select({
         id: liabilities.id,
         termUnit: liabilities.termUnit,
+        plaidItemId: liabilities.plaidItemId,
       })
       .from(liabilities)
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
@@ -135,6 +140,20 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
   // edited metadata and scenario-added accounts don't fall to defaults.
   const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
   const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
+
+  // Linked-account indicator: an account fed by an external integration shows a
+  // small badge next to its name in the Net Worth view. `plaidItemId` is the
+  // reliable Plaid signal (the `source` enum can lag until holdings ingest);
+  // `externalProvider === "orion"` drives the Orion label. Base-scoped like the
+  // metadata above, so scenario-added accounts (no entry) correctly read as
+  // manual with no badge.
+  const linkedSourceById = new Map<string, "plaid" | "orion">();
+  for (const r of accountMetaRows) {
+    if (r.plaidItemId != null) linkedSourceById.set(r.id, "plaid");
+    else if (r.externalProvider === "orion" || r.source === "orion") {
+      linkedSourceById.set(r.id, "orion");
+    }
+  }
 
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -229,6 +248,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       owner: _ownerKeyOf(a),
       value: String(a.value),
       basis: String(a.basis),
+      linkedSource: linkedSourceById.get(a.id) ?? null,
       rothValue: a.rothValue != null ? String(a.rothValue) : null,
       hsaCoverage: a.hsaCoverage ?? null,
       growthRate: a.growthRate == null ? null : String(a.growthRate),
@@ -280,6 +300,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       linkedPropertyId: l.linkedPropertyId ?? null,
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
+      linkedSource: meta?.plaidItemId != null ? "plaid" : null,
       owners: l.owners,
       parentAccountId: l.parentAccountId ?? null,
     };
