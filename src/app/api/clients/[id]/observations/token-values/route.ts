@@ -14,13 +14,17 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await requireOrgId();
+    await requireOrgId();
     const { id } = await params;
 
     const access = await verifyClientAccess(id);
     if (!access.ok) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
+    // Scope data loads by the CLIENT's firm, not the caller's org — for
+    // cross-org shared clients the two differ, and the effective tree /
+    // MC cache live under the client's home firm.
+    const firmId = access.firmId;
 
     const scenario = request.nextUrl.searchParams.get("scenario") ?? "base";
 

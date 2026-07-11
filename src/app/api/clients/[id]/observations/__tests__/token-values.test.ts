@@ -17,12 +17,17 @@ vi.mock("@clerk/nextjs/server", () => ({
 // Shared mock fns declared via vi.hoisted so vi.mock factories (hoisted above
 // imports) can close over them, and beforeEach can mockClear them — this repo
 // has been bitten before by stale shared mocks bleeding state across tests.
-const { mockLoadEffectiveTree, mockRunProjectionWithEvents, mockGetOrComputeMonteCarlo } =
-  vi.hoisted(() => ({
-    mockLoadEffectiveTree: vi.fn(),
-    mockRunProjectionWithEvents: vi.fn(),
-    mockGetOrComputeMonteCarlo: vi.fn(),
-  }));
+const {
+  mockLoadEffectiveTree,
+  mockRunProjectionWithEvents,
+  mockGetOrComputeMonteCarlo,
+  mockVerifyClientAccess,
+} = vi.hoisted(() => ({
+  mockLoadEffectiveTree: vi.fn(),
+  mockRunProjectionWithEvents: vi.fn(),
+  mockGetOrComputeMonteCarlo: vi.fn(),
+  mockVerifyClientAccess: vi.fn(),
+}));
 
 vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: mockLoadEffectiveTree,
@@ -33,6 +38,15 @@ vi.mock("@/engine/projection", () => ({
 vi.mock("@/lib/compute-cache/monte-carlo", () => ({
   getOrComputeMonteCarlo: mockGetOrComputeMonteCarlo,
 }));
+// Pass-through wrapper: delegates to the REAL verifyClientAccess by default
+// (so the seeded-DB authz tests exercise the genuine path); individual tests
+// mockResolvedValueOnce a shared-access shape to prove the route scopes data
+// loads by the client's firm, not the caller's org.
+vi.mock("@/lib/clients/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/clients/authz")>();
+  mockVerifyClientAccess.mockImplementation(actual.verifyClientAccess);
+  return { ...actual, verifyClientAccess: mockVerifyClientAccess };
+});
 
 const FIRM = "firm_test_token_values";
 const FIRM_OTHER = "firm_test_token_values_other";
@@ -116,6 +130,9 @@ beforeEach(() => {
   mockLoadEffectiveTree.mockClear();
   mockRunProjectionWithEvents.mockClear();
   mockGetOrComputeMonteCarlo.mockClear();
+  // mockClear (NOT mockReset) — wipes call history while keeping the
+  // real-implementation delegate installed by the vi.mock factory.
+  mockVerifyClientAccess.mockClear();
   mockLoadEffectiveTree.mockResolvedValue({ effectiveTree: FAKE_CLIENT_DATA });
   mockRunProjectionWithEvents.mockReturnValue(FAKE_PROJECTION);
   mockGetOrComputeMonteCarlo.mockResolvedValue({
@@ -158,6 +175,27 @@ describe("GET /api/clients/[id]/observations/token-values", () => {
     const body = await res.json();
     expect(body.values.mc_success).toBeNull();
     expect(body.values.net_worth).toBe("$1,000,000");
+  });
+
+  it("scopes data loads by the CLIENT's firm, not the caller's org, for shared access", async () => {
+    // Cross-org share: verifyClientAccess returns the client's HOME firm,
+    // which differs from the caller's org (FIRM). The tree + MC cache live
+    // under the client's firm, so that's what the loaders must receive.
+    const clientHomeFirm = "firm_client_home_shared";
+    mockVerifyClientAccess.mockResolvedValueOnce({
+      ok: true,
+      permission: "view",
+      firmId: clientHomeFirm,
+      access: "shared",
+    });
+    const res = await GET(makeReq(), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(200);
+    expect(mockLoadEffectiveTree).toHaveBeenCalledWith(clientId, clientHomeFirm, "base", {});
+    expect(mockGetOrComputeMonteCarlo).toHaveBeenCalledWith({
+      clientId,
+      firmId: clientHomeFirm,
+      scenarioId: "base",
+    });
   });
 
   it("404s on cross-firm read", async () => {
