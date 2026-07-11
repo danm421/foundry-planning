@@ -16,6 +16,8 @@ vi.mock("@/lib/insights/hash", () => ({ hashBattery: vi.fn(() => "hash1") }));
 import { POST } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { generateInsights } from "@/lib/insights/generate";
+import { saveInsightProfile } from "@/lib/insights/persist";
 
 const req = () => new Request("http://x", { method: "POST", body: "{}" });
 const ctx = { params: Promise.resolve({ id: "c1" }) };
@@ -28,5 +30,20 @@ describe("POST /insights", () => {
     vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false } as never);
     const res = await POST(req() as never, ctx as never);
     expect(res.status).toBe(404);
+    expect(vi.mocked(generateInsights)).not.toHaveBeenCalled();
+  });
+
+  it("404s when the caller has only view access", async () => {
+    vi.mocked(requireOrgId).mockResolvedValue("org1");
+    vi.mocked(verifyClientAccess).mockResolvedValue({
+      ok: true,
+      permission: "view",
+      firmId: "f1",
+      access: "shared",
+    } as never);
+    const res = await POST(req() as never, ctx as never);
+    expect(res.status).toBe(404);
+    expect(vi.mocked(generateInsights)).not.toHaveBeenCalled();
+    expect(vi.mocked(saveInsightProfile)).not.toHaveBeenCalled();
   });
 });
