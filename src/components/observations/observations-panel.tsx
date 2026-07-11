@@ -3,15 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownMessage } from "@/components/forge/markdown-message";
 import { renderTokens } from "@/lib/plan-text/tokens";
-import { OBSERVATION_TOPICS } from "@/lib/schemas/observations";
+import { OBSERVATION_TOPICS, TOPIC_LABELS, type ObservationTopic } from "@/lib/schemas/observations";
 import ObservationEditDialog, {
-  TOPIC_LABELS,
   type EditInitial,
   type ObservationOwner,
   type ObservationPriority,
   type ObservationSection,
   type ObservationSource,
-  type ObservationTopic,
 } from "./observation-edit-dialog";
 
 type ObservationStatus = "open" | "in_progress" | "done";

@@ -4,9 +4,8 @@ import { useMemo, useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { RichTextEditor } from "@/components/rich-text-editor-dynamic";
 import { listTokens } from "@/lib/plan-text/tokens";
-import { OBSERVATION_TOPICS } from "@/lib/schemas/observations";
+import { OBSERVATION_TOPICS, TOPIC_LABELS, type ObservationTopic } from "@/lib/schemas/observations";
 
-export type ObservationTopic = (typeof OBSERVATION_TOPICS)[number];
 export type ObservationSection = "observation" | "next_step";
 export type ObservationOwner = "advisor" | "client" | "joint";
 export type ObservationPriority = "high" | "medium" | "low";
@@ -25,17 +24,6 @@ export interface EditInitial {
   priority: ObservationPriority | null;
   targetDate: string | null;
 }
-
-export const TOPIC_LABELS: Record<ObservationTopic, string> = {
-  retirement: "Retirement",
-  "cash-flow": "Cash Flow",
-  investments: "Investments",
-  tax: "Tax",
-  insurance: "Insurance",
-  estate: "Estate",
-  education: "Education",
-  general: "General",
-};
 
 const OWNER_LABELS: Record<ObservationOwner, string> = {
   advisor: "Advisor",

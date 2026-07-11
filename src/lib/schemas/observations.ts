@@ -11,6 +11,22 @@ export const OBSERVATION_TOPICS = [
   "general",
 ] as const;
 
+export type ObservationTopic = (typeof OBSERVATION_TOPICS)[number];
+
+/** Shared with the advisor-facing dialog UI and the Observations presentation
+ *  page's server-side view-model — kept here (not in a component) so both
+ *  sides can import it without the lib layer reaching into src/components/. */
+export const TOPIC_LABELS: Record<ObservationTopic, string> = {
+  retirement: "Retirement",
+  "cash-flow": "Cash Flow",
+  investments: "Investments",
+  tax: "Tax",
+  insurance: "Insurance",
+  estate: "Estate",
+  education: "Education",
+  general: "General",
+};
+
 const base = {
   topic: z.enum(OBSERVATION_TOPICS).default("general"),
   title: z.string().trim().max(200).nullish(),
