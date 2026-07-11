@@ -99,6 +99,7 @@ const TABS: ReadonlyArray<{
     ],
   },
   { label: "Solver", href: "solver" },
+  { label: "360 AI", href: "insights" },
   {
     label: "Estate Planning",
     href: "estate-planning",
