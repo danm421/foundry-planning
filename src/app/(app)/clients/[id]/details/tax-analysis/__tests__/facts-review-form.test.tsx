@@ -129,3 +129,57 @@ describe("FactsReviewForm — filing status + residence state (editable)", () =>
     expect(body.facts.filingStatus).toBeNull();
   });
 });
+
+function retireeDetail(): YearDetail {
+  return {
+    taxYear: 2025,
+    status: "needs_review",
+    facts: retireeMfj(),
+    extractedFacts: retireeMfj(),
+    warnings: [],
+    analysis: null,
+  };
+}
+
+describe("FactsReviewForm — formatted money + surfaced scalar fields", () => {
+  it("renders extracted money formatted when blurred (taxable interest → $8,000)", () => {
+    render(<FactsReviewForm clientId="c1" detail={retireeDetail()} onSaved={vi.fn()} />);
+    const input = screen.getByLabelText(/taxable interest/i) as HTMLInputElement;
+    expect(input.value).toBe("$8,000");
+    expect(input.type).toBe("text");
+  });
+
+  it("editing Unemployment (surfaced field) flows into the PUT body as a number", async () => {
+    fetchMock.mockReturnValueOnce(jsonResponse({}));
+    const user = userEvent.setup();
+    render(<FactsReviewForm clientId="c1" detail={manualEntryDetail()} onSaved={vi.fn()} />);
+    const input = screen.getByLabelText(/unemployment/i);
+    await user.click(input);
+    await user.type(input, "12,000");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+    const body = putRequestBody();
+    expect((body.facts.income as Record<string, unknown>).unemployment).toBe(12000);
+  });
+
+  it("renders the other surfaced fields", () => {
+    render(<FactsReviewForm clientId="c1" detail={manualEntryDetail()} onSaved={vi.fn()} />);
+    for (const label of [
+      /other income/i, /total income/i, /foreign tax credit/i, /energy credits/i,
+      /excess aptc repayment/i, /other credits/i, /other taxes/i, /other payments/i,
+    ]) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+  });
+
+  it("dependents counts render in the top card and round-trip on save", async () => {
+    fetchMock.mockReturnValueOnce(jsonResponse({}));
+    const user = userEvent.setup();
+    render(<FactsReviewForm clientId="c1" detail={manualEntryDetail()} onSaved={vi.fn()} />);
+    await user.type(screen.getByLabelText(/dependents under 17/i), "2");
+    await user.type(screen.getByLabelText(/dependents 17–23/i), "1");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+    const body = putRequestBody();
+    expect(body.facts.dependentsUnder17).toBe(2);
+    expect(body.facts.dependents17to23).toBe(1);
+  });
+});
