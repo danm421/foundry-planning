@@ -36,6 +36,10 @@ export default function RootLayout() {
               name="category/[id]"
               options={{ presentation: "modal", headerShown: false }}
             />
+            <Stack.Screen
+              name="plaid/[itemId]"
+              options={{ presentation: "modal", headerShown: false }}
+            />
           </Stack>
         </AppLockGate>
       </ApiProvider>
