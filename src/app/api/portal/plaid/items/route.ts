@@ -15,6 +15,7 @@ export async function GET(): Promise<Response> {
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
-    throw err;
+    console.error("GET /api/portal/plaid/items error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
