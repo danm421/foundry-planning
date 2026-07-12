@@ -7,6 +7,12 @@ import { runReconstruction, type ReconstructionCheck } from "./reconstruction";
 import { buildBracketMap, type BracketMap } from "./bracket-map";
 import { buildObservations } from "./observations";
 import { buildYoY, type YoYRow } from "./yoy";
+import {
+  buildIncomeComposition,
+  buildDeductionDetail,
+  type IncomeCompositionRow,
+  type DeductionDetail,
+} from "./breakdowns";
 
 export interface TaxAnalysisKeyFigures {
   agi: number | null;
@@ -22,6 +28,8 @@ export interface TaxAnalysis {
   taxYear: number;
   keyFigures: TaxAnalysisKeyFigures;
   bracketMap: BracketMap | null;
+  incomeComposition: IncomeCompositionRow[] | null;
+  deductionDetail: DeductionDetail | null;
   observations: Observation[];
   yoy: YoYRow[] | null;
   reconstruction: ReconstructionCheck;
@@ -64,6 +72,8 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
       amountOwed: facts.payments.amountOwed,
     },
     bracketMap,
+    incomeComposition: buildIncomeComposition(facts),
+    deductionDetail: buildDeductionDetail(facts),
     observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap }),
     yoy: prior ? buildYoY(facts, prior) : null,
     reconstruction: runReconstruction(facts, calc),
