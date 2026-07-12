@@ -34,6 +34,13 @@ const isPublicRoute = createRouteMatcher([
   // Public intake forms — reachable without a Clerk session.
   "/intake/(.*)",
   "/api/intake/(.*)",
+  // AASA / assetlinks — Apple's universal-links crawler and Google's Digital
+  // Asset Links fetcher hit these paths with no session cookie. The AASA file
+  // has no extension (Apple requires that), so clerkMiddleware's
+  // extension-based `config.matcher` below DOES run on it; without this
+  // exemption auth.protect() 404s/redirects the crawler and iOS never trusts
+  // the universal link (see src/app/__tests__/aasa.test.ts).
+  "/.well-known/(.*)",
 ]);
 
 // The org picker is the one authenticated route that signed-in-but-
