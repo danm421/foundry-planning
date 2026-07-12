@@ -273,6 +273,19 @@ import { summarizeBlankOptions } from "@/lib/presentations/pages/blank/summarize
 import { buildBlankPageData, type BlankPageData } from "@/lib/presentations/pages/blank/view-model";
 import { BlankOptionsControl } from "./pages/blank/options-control";
 import { BlankPagePdf } from "./pages/blank/page-pdf";
+import {
+  buildObservationsPageData,
+  type ObservationsPageData,
+  type ObservationsRowInput,
+} from "@/lib/presentations/pages/observations-next-steps/view-model";
+import {
+  observationsPageOptionsSchema,
+  OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
+  type ObservationsPageOptions,
+} from "@/lib/presentations/pages/observations-next-steps/options-schema";
+import { summarizeObservationsOptions } from "@/lib/presentations/pages/observations-next-steps/summarize-options";
+import { ObservationsOptionsControl } from "./pages/observations-next-steps/options-control";
+import { ObservationsNextStepsPagePdf } from "./pages/observations-next-steps/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -316,6 +329,9 @@ export interface BuildDataContext {
   /** Present only when the deck includes the Life Insurance Summary page;
    *  loaded conditionally in the export route. */
   lifeInsurance?: LifeInsuranceInventory;
+  /** Present only when the deck includes the Observations page; loaded
+   *  conditionally in the export route. */
+  observations?: ObservationsRowInput[];
   /** Present only when the deck includes the Scenario Changes page and the
    *  active ref is a live scenario; absent for base/snapshot decks. */
   scenarioChanges?: ScenarioChangesContext;
@@ -539,6 +555,26 @@ export const blankPage: PresentationPage<BlankPageData, BlankPageOptions> = {
   supportsScenarioOverride: false,
   buildData: (_ctx, options) => buildBlankPageData(options),
   renderPdf: (input) => <BlankPagePdf {...input} />,
+};
+
+export const observationsNextStepsPage: PresentationPage<ObservationsPageData, ObservationsPageOptions> = {
+  id: "observationsNextSteps",
+  title: "Observations & Next Steps",
+  description: "Your plan findings and action items, with live plan figures.",
+  category: "Framing",
+  defaultOptions: OBSERVATIONS_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: observationsPageOptionsSchema,
+  summarizeOptions: summarizeObservationsOptions,
+  estimatePageCount: () => 1,
+  OptionsControl: ObservationsOptionsControl,
+  supportsScenarioOverride: true, // tokens resolve against the page's scenario bundle
+  buildData: (ctx, options) =>
+    buildObservationsPageData({
+      rows: ctx.observations ?? [],
+      ctx: { clientData: ctx.clientData, projection: ctx.projection, monteCarlo: ctx.monteCarlo?.summary ?? null },
+      options,
+    }),
+  renderPdf: (input) => <ObservationsNextStepsPagePdf {...input} />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1052,6 +1088,7 @@ export const PRESENTATION_PAGES = {
   clientProfile: clientProfilePage,
   assumptions: assumptionsPage,
   blank: blankPage,
+  observationsNextSteps: observationsNextStepsPage,
   cashFlow: cashFlowPage,
   cashFlowIncome: cashFlowIncomePage,
   cashFlowExpenses: cashFlowExpensesPage,

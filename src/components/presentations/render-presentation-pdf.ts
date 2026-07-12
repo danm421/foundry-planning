@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
-import { inArray } from "drizzle-orm";
+import { inArray, eq, asc } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios, scenarioSnapshots } from "@/db/schema";
+import { scenarios, scenarioSnapshots, planObservations } from "@/db/schema";
 import { resolveBranding } from "@/lib/branding/branding";
 import { foundryDefaultLogoDataUrl } from "@/lib/presentations/default-logo";
 import {
@@ -412,6 +412,32 @@ export async function renderPresentationPdf(
     ? await loadLifeInsuranceInventory(clientId, firmId, clientFullName, spouseFirstName)
     : undefined;
 
+  // Conditionally load observation/next-step rows — only when the deck
+  // includes the Observations & Next Steps page. Org-scoping note: clientId +
+  // firmId were already proven by loadEffectiveTreeForRef above; this query
+  // adds eq(planObservations.clientId, clientId) only — rows carry no
+  // cross-client data, so no separate firmId check is needed here.
+  const needsObservations = body.pages.some((p) => p.pageId === "observationsNextSteps");
+  const observations = needsObservations
+    ? (
+        await db
+          .select()
+          .from(planObservations)
+          .where(eq(planObservations.clientId, clientId))
+          .orderBy(asc(planObservations.section), asc(planObservations.sortOrder), asc(planObservations.createdAt))
+      ).map((r) => ({
+        section: r.section,
+        topic: r.topic,
+        title: r.title,
+        body: r.body,
+        status: r.status,
+        owner: r.owner,
+        priority: r.priority,
+        targetDate: r.targetDate,
+        sortOrder: r.sortOrder,
+      }))
+    : undefined;
+
   // Life Insurance Summary: solve server-side from the compute cache, mirroring
   // the (now-removed) client-side pre-solve. For each LI page on a *live*
   // scenario we build the LiAssumptions from the page options + scenario and
@@ -508,6 +534,7 @@ export async function renderPresentationPdf(
     topScenarioKey: plan.topKey,
     investments,
     lifeInsurance,
+    observations,
   }) as unknown as React.ReactElement<DocumentProps>;
 
   const buffer = await Promise.race<Buffer>([

@@ -196,6 +196,26 @@ export async function checkMeetingPrepRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Observations & Next Steps AI draft (one reasoning-model call per run, via
+// generation_runs). Separate bucket from meeting-prep so the two AI-drafting
+// flows can't starve each other. 6/min/firm.
+const getObservationsAiLimiter = buildLimiter(6, "1 m", "rl:observations-ai");
+
+/**
+ * Check whether `key` (firm id) may invoke the Observations & Next Steps AI
+ * draft endpoint. Budget: 6 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkObservationsAiRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getObservationsAiLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // PDF preview (in-builder, interactive). Looser than export (advisors iterate
 // on options/scenarios), but still bounded — each preview is a real projection
 // render. Separate bucket so preview bursts never drain the export budget and

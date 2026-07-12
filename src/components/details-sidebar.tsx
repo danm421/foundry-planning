@@ -32,6 +32,16 @@ function ProfileIcon() {
   );
 }
 
+function ObservationsIcon() {
+  return (
+    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="4" width="12" height="16" rx="1.5" />
+      <path d="M9 4V3.2A1.2 1.2 0 0 1 10.2 2h3.6A1.2 1.2 0 0 1 15 3.2V4" />
+      <path d="M9 12.5l2 2 3.5-4" />
+    </svg>
+  );
+}
+
 function NetWorthIcon() {
   return (
     <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -111,6 +121,7 @@ function InsuranceIcon() {
 
 const TABS: SidebarTab[] = [
   { label: "Profile", href: "family", icon: <ProfileIcon /> },
+  { label: "Observations", href: "observations", icon: <ObservationsIcon /> },
   { label: "Net Worth", href: "net-worth", icon: <NetWorthIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },

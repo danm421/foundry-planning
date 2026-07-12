@@ -61,6 +61,7 @@ describe("registry — Cash Flow page", () => {
         "lifeInsuranceSummary",
         "medicareSummary",
         "monteCarlo",
+        "observationsNextSteps",
         "portfolioAnalysis",
         "retirementComparison",
         "retirementSummary",

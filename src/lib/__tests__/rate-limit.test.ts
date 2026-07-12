@@ -104,6 +104,37 @@ describe("checkProjectionRateLimit", () => {
   });
 });
 
+describe("checkObservationsAiRateLimit", () => {
+  it("returns allowed when limiter succeeds", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 5, reset: 5555 });
+    const { checkObservationsAiRateLimit } = await import("../rate-limit");
+    const result = await checkObservationsAiRateLimit("firm-1");
+    expect(result).toEqual({ allowed: true, remaining: 5, reset: 5555 });
+  });
+
+  it("returns exceeded when limiter denies", async () => {
+    mockLimit.mockResolvedValue({ success: false, remaining: 0, reset: 6666 });
+    const { checkObservationsAiRateLimit } = await import("../rate-limit");
+    const result = await checkObservationsAiRateLimit("firm-1");
+    expect(result).toEqual({
+      allowed: false,
+      reason: "exceeded",
+      remaining: 0,
+      reset: 6666,
+    });
+  });
+
+  it("returns unconfigured when env vars missing", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { checkObservationsAiRateLimit } = await import("../rate-limit");
+    const result = await checkObservationsAiRateLimit("firm-1");
+    expect(result).toEqual({ allowed: false, reason: "unconfigured" });
+    errorSpy.mockRestore();
+  });
+});
+
 describe("rateLimitErrorResponse", () => {
   it("uses 429 with Retry-After when exceeded", async () => {
     const { rateLimitErrorResponse } = await import("../rate-limit");
