@@ -9,6 +9,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.foundryplanning.portal",
+      "associatedDomains": ["applinks:app.foundryplanning.com"],
       "infoPlist": {
         "NSFaceIDUsageDescription": "Foundry Planning uses Face ID to unlock the app."
       }
