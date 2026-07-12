@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import type { AccountsOverviewDTO, PlaidItemDTO } from "@contracts";
 import { useApi } from "@/api/context";
 import { useMe } from "@/auth/me-gate";
@@ -87,10 +87,16 @@ export default function Accounts() {
     }
   }, [api]);
 
-  useEffect(() => {
-    void load();
-    void loadPlaidItems();
-  }, [load, loadPlaidItems]);
+  // Re-syncs on every focus (initial mount counts as the first focus, so this
+  // also covers the mount load) — this is what picks up changes made in the
+  // manage-bank modal (detach/add/unlink), since expo-router keeps this tab
+  // mounted underneath and a plain mount effect would never re-fire on return.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+      void loadPlaidItems();
+    }, [load, loadPlaidItems]),
+  );
 
   // Re-entrant guard: the hook has no internal lock, so gate every open()
   // trigger on its own status while a Link session is already in flight.
