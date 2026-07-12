@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { TaxReturnFacts, TaxReturnFilingStatus } from "@/lib/schemas/tax-return-facts";
 import { fmtUsd } from "@/lib/tax-analysis/format";
 import { StateSelect } from "@/components/state-select";
-import { selectClassName, inputBaseClassName } from "@/components/forms/input-styles";
+import { selectClassName, selectBaseClassName, inputBaseClassName } from "@/components/forms/input-styles";
 import { MoneyField } from "./money-field";
 import type { YearDetail } from "./tax-analysis-content";
 
@@ -21,6 +21,23 @@ type MoneyPath =
   | ["tax", keyof TaxReturnFacts["tax"]]
   | ["payments", keyof TaxReturnFacts["payments"]]
   | ["carryovers", "capitalLossCarryover"];
+
+type ScheduleAFacts = NonNullable<TaxReturnFacts["deductions"]["scheduleA"]>;
+type ScheduleAKey = keyof ScheduleAFacts;
+
+const EMPTY_SCHEDULE_A: ScheduleAFacts = {
+  saltPaid: null, saltDeducted: null, mortgageInterest: null,
+  charitableCash: null, charitableNonCash: null, medical: null,
+};
+
+const SCHEDULE_A_FIELDS: Array<{ label: string; key: ScheduleAKey }> = [
+  { label: "SALT paid (Sch A 5d)", key: "saltPaid" },
+  { label: "SALT deducted — after cap (Sch A 7)", key: "saltDeducted" },
+  { label: "Mortgage interest (Sch A 8e)", key: "mortgageInterest" },
+  { label: "Charitable — cash (Sch A 11)", key: "charitableCash" },
+  { label: "Charitable — non-cash (Sch A 12)", key: "charitableNonCash" },
+  { label: "Medical — after AGI floor (Sch A 4)", key: "medical" },
+];
 
 const SECTIONS: Array<{ heading: string; fields: Array<{ label: string; path: MoneyPath }> }> = [
   {
@@ -131,6 +148,33 @@ export function FactsReviewForm({
     setFacts((prev) => ({ ...prev, [key]: n }));
   }
 
+  function setDeductionTaken(value: string) {
+    setFacts((prev) => ({
+      ...prev,
+      deductions: {
+        ...prev.deductions,
+        deductionTaken: value === "" ? null : (value as "standard" | "itemized"),
+      },
+    }));
+  }
+
+  function setScheduleA(key: ScheduleAKey, v: number | null) {
+    setFacts((prev) => ({
+      ...prev,
+      deductions: {
+        ...prev.deductions,
+        scheduleA: { ...(prev.deductions.scheduleA ?? EMPTY_SCHEDULE_A), [key]: v },
+      },
+    }));
+  }
+
+  function addScheduleA() {
+    setFacts((prev) => ({
+      ...prev,
+      deductions: { ...prev.deductions, scheduleA: { ...EMPTY_SCHEDULE_A } },
+    }));
+  }
+
   async function save(markReady: boolean) {
     setSaving(true);
     setError(null);
@@ -236,6 +280,25 @@ export function FactsReviewForm({
       {SECTIONS.map((section) => (
         <fieldset key={section.heading} className="rounded border border-hair bg-card p-4">
           <legend className="px-1 text-sm font-medium">{section.heading}</legend>
+
+          {section.heading === "Deductions" && (
+            <div className="mb-3 flex items-center gap-3 text-sm">
+              <label htmlFor="facts-deduction-taken" className="text-ink-2">
+                Deduction taken
+              </label>
+              <select
+                id="facts-deduction-taken"
+                className={`${selectBaseClassName} w-36`}
+                value={facts.deductions.deductionTaken ?? ""}
+                onChange={(e) => setDeductionTaken(e.target.value)}
+              >
+                <option value="">Not set</option>
+                <option value="standard">Standard</option>
+                <option value="itemized">Itemized</option>
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
             {section.fields.map((f) => (
               <label key={f.label} className="flex items-center justify-between gap-3 text-sm">
@@ -244,6 +307,35 @@ export function FactsReviewForm({
               </label>
             ))}
           </div>
+
+          {section.heading === "Deductions" && facts.deductions.scheduleA && (
+            <div className="mt-3 border-l-2 border-hair pl-4">
+              <p className="mb-2 text-xs font-medium uppercase text-ink-3">Schedule A breakdown</p>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
+                {SCHEDULE_A_FIELDS.map((f) => (
+                  <label key={f.key} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-ink-2">{f.label}</span>
+                    <MoneyField
+                      value={facts.deductions.scheduleA![f.key]}
+                      onChange={(v) => setScheduleA(f.key, v)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {section.heading === "Deductions" &&
+            !facts.deductions.scheduleA &&
+            facts.deductions.deductionTaken === "itemized" && (
+              <button
+                type="button"
+                className="mt-3 rounded border border-hair px-3 py-1.5 text-sm text-ink-2"
+                onClick={addScheduleA}
+              >
+                Add Schedule A breakdown
+              </button>
+            )}
         </fieldset>
       ))}
 

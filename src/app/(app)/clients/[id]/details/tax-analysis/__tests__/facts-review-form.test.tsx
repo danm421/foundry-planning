@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FactsReviewForm } from "../facts-review-form";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { retireeMfj } from "@/lib/tax-analysis/__tests__/fixtures";
+import { retireeMfj, highEarnerMfj } from "@/lib/tax-analysis/__tests__/fixtures";
 import type { YearDetail } from "../tax-analysis-content";
 
 // Filing status and residence state used to render as read-only text
@@ -181,5 +181,70 @@ describe("FactsReviewForm — formatted money + surfaced scalar fields", () => {
     const body = putRequestBody();
     expect(body.facts.dependentsUnder17).toBe(2);
     expect(body.facts.dependents17to23).toBe(1);
+  });
+});
+
+function highEarnerDetail(): YearDetail {
+  return {
+    taxYear: 2025,
+    status: "needs_review",
+    facts: highEarnerMfj(),
+    extractedFacts: highEarnerMfj(),
+    warnings: [],
+    analysis: null,
+  };
+}
+
+describe("FactsReviewForm — deduction taken + Schedule A", () => {
+  it("renders the deduction-taken select seeded from the fixture", () => {
+    render(<FactsReviewForm clientId="c1" detail={highEarnerDetail()} onSaved={vi.fn()} />);
+    expect((screen.getByLabelText(/deduction taken/i) as HTMLSelectElement).value).toBe("itemized");
+  });
+
+  it("shows editable, formatted Schedule A fields when scheduleA was extracted", () => {
+    render(<FactsReviewForm clientId="c1" detail={highEarnerDetail()} onSaved={vi.fn()} />);
+    expect((screen.getByLabelText(/salt paid/i) as HTMLInputElement).value).toBe("$32,000");
+    expect((screen.getByLabelText(/mortgage interest/i) as HTMLInputElement).value).toBe("$22,000");
+  });
+
+  it("hides Schedule A entirely for a standard-deduction return", () => {
+    render(<FactsReviewForm clientId="c1" detail={retireeDetail()} onSaved={vi.fn()} />);
+    expect(screen.queryByLabelText(/salt paid/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /add schedule a/i })).toBeNull();
+  });
+
+  it("itemized with no Schedule A offers the add button; clicking reveals fields that flow to PUT", async () => {
+    fetchMock.mockReturnValueOnce(jsonResponse({}));
+    const user = userEvent.setup();
+    render(<FactsReviewForm clientId="c1" detail={manualEntryDetail()} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText(/deduction taken/i), "itemized");
+    await user.click(screen.getByRole("button", { name: /add schedule a breakdown/i }));
+
+    const salt = screen.getByLabelText(/salt paid/i);
+    await user.click(salt);
+    await user.type(salt, "9,000");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+
+    const body = putRequestBody();
+    const deductions = body.facts.deductions as Record<string, unknown>;
+    expect(deductions.deductionTaken).toBe("itemized");
+    expect((deductions.scheduleA as Record<string, unknown>).saltPaid).toBe(9000);
+  });
+
+  it("edited Schedule A values round-trip alongside untouched siblings", async () => {
+    fetchMock.mockReturnValueOnce(jsonResponse({}));
+    const user = userEvent.setup();
+    render(<FactsReviewForm clientId="c1" detail={highEarnerDetail()} onSaved={vi.fn()} />);
+
+    const cash = screen.getByLabelText(/charitable — cash/i);
+    await user.click(cash);
+    await user.clear(cash);
+    await user.type(cash, "5000");
+    await user.click(screen.getByRole("button", { name: /save draft/i }));
+
+    const scheduleA = (putRequestBody().facts.deductions as { scheduleA: Record<string, unknown> }).scheduleA;
+    expect(scheduleA.charitableCash).toBe(5000);
+    expect(scheduleA.saltPaid).toBe(32000); // untouched sibling preserved
   });
 });
