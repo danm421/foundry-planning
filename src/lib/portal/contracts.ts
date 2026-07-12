@@ -300,3 +300,15 @@ export type CategoryDetail = {
   metrics: YearMetric[];
   transactions: CategoryTransaction[];
 };
+
+// ---- plaid items (GET /api/portal/plaid/items) ----
+export interface PlaidItemDTO {
+  id: string;
+  institutionName: string | null;
+  /** ISO string, or null if never refreshed. Mobile formats relative time. */
+  lastRefreshedAt: string | null;
+  needsReauth: boolean;
+  revoked: boolean;
+  newAccountsAvailable: boolean;
+  needsTransactionsConsent: boolean;
+}
