@@ -2,15 +2,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { AccountBase } from "plaid";
 import { db } from "@/db";
 import { accounts, liabilities } from "@/db/schema";
+import type { PlaidMappedAccount } from "@/lib/portal/contracts";
 
-export type PlaidMappedAccount = {
-  plaidAccountId: string;
-  name: string;
-  mask: string | null;
-  type: string;
-  subtype: string | null;
-  balance: number | null;
-};
+export type { PlaidMappedAccount };
 
 export function mapPlaidAccount(a: AccountBase): PlaidMappedAccount {
   return {

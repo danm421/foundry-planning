@@ -7,6 +7,8 @@
 // the side-effects here — and letting each caller own its own UI continuation
 // (in-memory callbacks vs. navigation) — keeps the two paths identical.
 
+import type { PlaidLinkSuccessPayload } from "@/lib/portal/contracts";
+
 export type PlaidLinkMode =
   | "link"
   | "reauth"
@@ -14,29 +16,7 @@ export type PlaidLinkMode =
   | "account-selection";
 
 /** Response shape of `POST /api/portal/plaid/exchange` (new-link mode). */
-export type LinkSuccessPayload = {
-  itemId: string;
-  accounts: Array<{
-    plaidAccountId: string;
-    name: string;
-    mask: string | null;
-    type: string;
-    subtype: string | null;
-    balance: number | null;
-  }>;
-  existingCandidates: Array<{
-    id: string;
-    name: string;
-    category: string;
-    subType: string;
-  }>;
-  existingLiabilityCandidates: Array<{
-    id: string;
-    name: string;
-    liabilityType: string | null;
-    balance: string;
-  }>;
-};
+export type LinkSuccessPayload = PlaidLinkSuccessPayload;
 
 /** Persisted across the OAuth full-page redirect (sessionStorage). */
 export type PlaidLinkCtx = {
