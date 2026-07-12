@@ -26,6 +26,7 @@ export function usePlaidLink() {
     async (args: { mode: PlaidLinkMode; itemId?: string }) => {
       setError(null);
       setStatus("opening");
+      setPickerPayload(null);
       try {
         const { linkToken } = await createLinkToken(api, {
           itemId: args.itemId,
@@ -46,7 +47,14 @@ export function usePlaidLink() {
               if (res.kind === "link") { setPickerPayload(res.payload); setStatus("done"); }
               else if (res.kind === "done") { setStatus("done"); }
               else { setError(res.message); setStatus("error"); }
-            });
+            })
+              .catch(() => {
+                // runPlaidLinkSuccess resolves on every current path, but guard the
+                // native-callback boundary so a future throw can't strand status at
+                // "in-progress" with an unhandled rejection.
+                setError("Something went wrong. Please try again.");
+                setStatus("error");
+              });
           },
           onExit: (e: LinkExit) => {
             if (e.error) { setError(e.error.displayMessage ?? e.error.errorMessage ?? "Link cancelled."); setStatus("error"); }
