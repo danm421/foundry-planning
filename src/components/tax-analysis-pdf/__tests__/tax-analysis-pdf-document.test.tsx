@@ -47,4 +47,23 @@ describe("TaxAnalysisPdfDocument", () => {
     );
     expect(buffer.length).toBeGreaterThan(2000);
   }, 30000);
+
+  it("includes composition + deduction blocks and still renders a non-trivial PDF", async () => {
+    const facts = highEarnerMfj();
+    const analysis = buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 45, spouseAge: 45 });
+    // Guard the data the new sections render from — the buffer assertion alone
+    // can't distinguish "section rendered" from "section skipped as null".
+    expect(analysis.incomeComposition?.length).toBeGreaterThan(0);
+    expect(analysis.deductionDetail?.scheduleA?.saltLostToCap).toBe(22000);
+
+    const buffer = await renderToBuffer(
+      <TaxAnalysisPdfDocument
+        clientName="Sam & Casey Cooper"
+        taxYear={facts.taxYear}
+        generatedAt="July 12, 2026"
+        analysis={analysis}
+      />,
+    );
+    expect(buffer.length).toBeGreaterThan(2000);
+  }, 30000);
 });
