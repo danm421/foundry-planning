@@ -4,6 +4,7 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { Observation } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
+import { deductionDetailRows } from "@/lib/tax-analysis/breakdowns";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
 
 export interface TaxAnalysisPdfProps {
@@ -58,14 +59,14 @@ const styles = StyleSheet.create({
   capGainsFill: { position: "absolute", top: 0, bottom: 0, backgroundColor: BAR_FILL, opacity: 0.55 },
   capGainsMarker: { position: "absolute", top: 0, bottom: 0, borderLeftWidth: 1.5, borderLeftColor: PDF_THEME.text.primary, borderLeftStyle: "dashed" },
 
-  // YoY table
-  yoyTable: { marginTop: 2 },
-  yoyHeaderRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: PDF_THEME.surface.divider, paddingBottom: 3, marginBottom: 2 },
-  yoyRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: PDF_THEME.surface.divider, paddingVertical: 3 },
-  yoyLabelCell: { flex: 2, fontSize: 9 },
-  yoyValueCell: { flex: 1, fontSize: 9, textAlign: "right" },
-  yoyHeaderLabelCell: { flex: 2, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase" },
-  yoyHeaderValueCell: { flex: 1, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase", textAlign: "right" },
+  // Tables (income composition, deductions, YoY)
+  table: { marginTop: 2 },
+  tableHeaderRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: PDF_THEME.surface.divider, paddingBottom: 3, marginBottom: 2 },
+  tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: PDF_THEME.surface.divider, paddingVertical: 3 },
+  tableLabelCell: { flex: 2, fontSize: 9 },
+  tableValueCell: { flex: 1, fontSize: 9, textAlign: "right" },
+  tableHeaderLabelCell: { flex: 2, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase" },
+  tableHeaderValueCell: { flex: 1, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase", textAlign: "right" },
 });
 
 function KeyFigure({ label, value }: { label: string; value: string }) {
@@ -155,6 +156,48 @@ function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
+function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
+  const rows = analysis.incomeComposition;
+  if (!rows) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Income composition</Text>
+      <View style={styles.table}>
+        <View style={styles.tableHeaderRow}>
+          <Text style={styles.tableHeaderLabelCell}>Source</Text>
+          <Text style={styles.tableHeaderValueCell}>Amount</Text>
+          <Text style={styles.tableHeaderValueCell}>% of total</Text>
+        </View>
+        {rows.map((r) => (
+          <View key={r.key} style={styles.tableRow}>
+            <Text style={styles.tableLabelCell}>{r.label}</Text>
+            <Text style={styles.tableValueCell}>{fmtUsd(r.amount)}</Text>
+            <Text style={styles.tableValueCell}>{r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
+  const d = analysis.deductionDetail;
+  if (!d) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Deductions</Text>
+      <View style={styles.table}>
+        {deductionDetailRows(d).map((r) => (
+          <View key={r.label} style={styles.tableRow}>
+            <Text style={styles.tableLabelCell}>{r.label}</Text>
+            <Text style={styles.tableValueCell}>{r.value}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function ObservationsSection({ analysis }: { analysis: TaxAnalysis }) {
   return (
     <View>
@@ -183,19 +226,19 @@ function YoYSection({ analysis, taxYear }: { analysis: TaxAnalysis; taxYear: num
   return (
     <View>
       <Text style={styles.sectionHeading}>Year over year</Text>
-      <View style={styles.yoyTable}>
-        <View style={styles.yoyHeaderRow}>
-          <Text style={styles.yoyHeaderLabelCell}>Measure</Text>
-          <Text style={styles.yoyHeaderValueCell}>Prior</Text>
-          <Text style={styles.yoyHeaderValueCell}>{taxYear}</Text>
-          <Text style={styles.yoyHeaderValueCell}>Change</Text>
+      <View style={styles.table}>
+        <View style={styles.tableHeaderRow}>
+          <Text style={styles.tableHeaderLabelCell}>Measure</Text>
+          <Text style={styles.tableHeaderValueCell}>Prior</Text>
+          <Text style={styles.tableHeaderValueCell}>{taxYear}</Text>
+          <Text style={styles.tableHeaderValueCell}>Change</Text>
         </View>
         {analysis.yoy.map((r) => (
-          <View key={r.label} style={styles.yoyRow}>
-            <Text style={styles.yoyLabelCell}>{r.label}</Text>
-            <Text style={styles.yoyValueCell}>{f(r.prior, r.kind)}</Text>
-            <Text style={styles.yoyValueCell}>{f(r.current, r.kind)}</Text>
-            <Text style={styles.yoyValueCell}>{f(r.delta, r.kind)}</Text>
+          <View key={r.label} style={styles.tableRow}>
+            <Text style={styles.tableLabelCell}>{r.label}</Text>
+            <Text style={styles.tableValueCell}>{f(r.prior, r.kind)}</Text>
+            <Text style={styles.tableValueCell}>{f(r.current, r.kind)}</Text>
+            <Text style={styles.tableValueCell}>{f(r.delta, r.kind)}</Text>
           </View>
         ))}
       </View>
@@ -222,6 +265,10 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
         <KeyFiguresRow analysis={a} />
 
         <BracketMapSection analysis={a} />
+
+        <IncomeCompositionSection analysis={a} />
+
+        <DeductionsSection analysis={a} />
 
         <ObservationsSection analysis={a} />
 
