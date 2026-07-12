@@ -2,6 +2,7 @@
 
 import type { Observation } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
+import { deductionDetailRows } from "@/lib/tax-analysis/breakdowns";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
 
@@ -78,6 +79,48 @@ export function TaxReportView({
         <div className="rounded border border-hair bg-card p-4">
           <BracketMapBars map={a.bracketMap} />
         </div>
+      )}
+
+      {a.incomeComposition && (
+        <section>
+          <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">Income composition</h3>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-hair text-left text-ink-3">
+                <th className="py-1 font-normal">Source</th>
+                <th className="py-1 text-right font-normal">Amount</th>
+                <th className="py-1 text-right font-normal">% of total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.incomeComposition.map((r) => (
+                <tr key={r.key} className="border-b border-hair">
+                  <td className="py-1">{r.label}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtUsd(r.amount)}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {a.deductionDetail && (
+        <section>
+          <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">Deductions</h3>
+          <table className="w-full border-collapse text-sm">
+            <tbody>
+              {deductionDetailRows(a.deductionDetail).map((r) => (
+                <tr key={r.label} className="border-b border-hair">
+                  <td className="py-1">{r.label}</td>
+                  <td className="py-1 text-right tabular-nums">{r.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
 
       {GROUPS.map(({ severity, heading }) => {
