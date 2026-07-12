@@ -40,6 +40,7 @@ export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
+  delete<T>(path: string): Promise<T>;
 }
 
 export function createApiClient(opts: ApiClientOpts): ApiClient {
@@ -84,5 +85,6 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       }),
+    delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   };
 }

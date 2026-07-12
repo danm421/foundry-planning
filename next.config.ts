@@ -84,6 +84,16 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       { source: "/api/:path*", headers: apiNoCache },
+      // Apple's universal-links file. Must be served as JSON with no
+      // redirect so iOS can validate it for the Plaid OAuth bank redirect
+      // (/portal/oauth) universal-linking back into the mobile app. The
+      // file itself lives at public/.well-known/apple-app-site-association
+      // (no extension) — Next serves /public statically, but without this
+      // it would come back as application/octet-stream.
+      {
+        source: "/.well-known/apple-app-site-association",
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      },
     ];
   },
   async redirects() {

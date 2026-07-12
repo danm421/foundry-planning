@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID_PENDING.com.foundryplanning.portal"],
+        "components": [
+          { "/": "/portal/oauth*", "comment": "Plaid OAuth redirect" }
+        ]
+      }
+    ]
+  }
+}

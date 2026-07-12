@@ -5,7 +5,9 @@
 
 import type {
   AccountsOverviewDTO, BudgetSummaryDTO, CategoryDetail,
+  PlaidCommitDecision, PlaidItemAccountsDTO, PlaidItemDTO,
   PortalCategoryDTO, PortalDashboardDTO, PortalMeDTO, TransactionsPageDTO,
+  PlaidLinkSuccessPayload, PlaidLinkTokenDTO,
 } from "@contracts";
 import { ForbiddenError, NonJsonResponseError, type ApiClient } from "./client";
 import { buildTransactionsQuery, type TxnQuery } from "./query";
@@ -76,4 +78,58 @@ export function fetchCategoryDetail(api: ApiClient, id: string): Promise<Categor
 
 export async function setBudget(api: ApiClient, categoryId: string, monthlyAmount: number | null): Promise<void> {
   await api.put("/api/portal/budgets", { categoryId, monthlyAmount });
+}
+
+// ============================================================================
+// Phase 3 — Plaid linking (mobile)
+// ============================================================================
+
+export type LinkTokenRequest = { itemId?: string; enableProducts?: boolean; accountSelection?: boolean };
+
+export function createLinkToken(api: ApiClient, body: LinkTokenRequest): Promise<PlaidLinkTokenDTO> {
+  return api.post<PlaidLinkTokenDTO>("/api/portal/plaid/link-token", body);
+}
+
+export function exchangePublicToken(
+  api: ApiClient, args: { publicToken: string; institution?: { id?: string; name?: string } },
+): Promise<PlaidLinkSuccessPayload> {
+  return api.post<PlaidLinkSuccessPayload>("/api/portal/plaid/exchange", args);
+}
+
+export function commitExchange(
+  api: ApiClient, args: { itemId: string; decisions: PlaidCommitDecision[] },
+): Promise<{ ok: true; linkedAccountIds: string[] }> {
+  return api.post("/api/portal/plaid/exchange/commit", args);
+}
+
+export function fetchPlaidItems(api: ApiClient): Promise<PlaidItemDTO[]> {
+  return api.get<{ items: PlaidItemDTO[] }>("/api/portal/plaid/items").then((r) => r.items);
+}
+
+export function fetchItemAccounts(api: ApiClient, itemId: string): Promise<PlaidItemAccountsDTO> {
+  return api.get<PlaidItemAccountsDTO>(`/api/portal/plaid/items/${itemId}/accounts`);
+}
+
+export function refreshItem(api: ApiClient, itemId: string): Promise<unknown> {
+  return api.post(`/api/portal/plaid/items/${itemId}/refresh`, {});
+}
+
+export function reauthComplete(api: ApiClient, itemId: string): Promise<unknown> {
+  return api.post(`/api/portal/plaid/items/${itemId}/reauth-complete`, {});
+}
+
+export function syncItem(api: ApiClient, itemId: string): Promise<unknown> {
+  return api.post(`/api/portal/plaid/items/${itemId}/sync`, {});
+}
+
+export function unlinkItem(api: ApiClient, itemId: string): Promise<{ ok: true; detachedCount: number }> {
+  return api.delete(`/api/portal/plaid/items/${itemId}`);
+}
+
+export function detachAccount(api: ApiClient, itemId: string, plaidAccountId: string): Promise<unknown> {
+  return api.delete(`/api/portal/plaid/items/${itemId}/accounts/${plaidAccountId}`);
+}
+
+export function dismissNewAccounts(api: ApiClient, itemId: string): Promise<unknown> {
+  return api.post(`/api/portal/plaid/items/${itemId}/dismiss-new-accounts`, {});
 }

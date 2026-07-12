@@ -300,3 +300,69 @@ export type CategoryDetail = {
   metrics: YearMetric[];
   transactions: CategoryTransaction[];
 };
+
+// ---- plaid items (GET /api/portal/plaid/items) ----
+export interface PlaidItemDTO {
+  id: string;
+  institutionName: string | null;
+  /** ISO string, or null if never refreshed. Mobile formats relative time. */
+  lastRefreshedAt: string | null;
+  needsReauth: boolean;
+  revoked: boolean;
+  newAccountsAvailable: boolean;
+  needsTransactionsConsent: boolean;
+}
+
+// ---- plaid link (from plaid-link-complete.ts / portal-link-helpers.ts / route files) ----
+export interface PlaidLinkTokenDTO {
+  linkToken: string;
+  expiration: string;
+}
+export interface PlaidMappedAccount {
+  plaidAccountId: string;
+  name: string;
+  mask: string | null;
+  type: string;
+  subtype: string | null;
+  balance: number | null;
+}
+export interface PlaidLinkCandidate {
+  id: string;
+  name: string;
+  category: string;
+  subType: string;
+}
+export interface PlaidLiabilityCandidate {
+  id: string;
+  name: string;
+  liabilityType: string | null;
+  balance: string;
+}
+export interface PlaidLinkSuccessPayload {
+  itemId: string;
+  accounts: PlaidMappedAccount[];
+  existingCandidates: PlaidLinkCandidate[];
+  existingLiabilityCandidates: PlaidLiabilityCandidate[];
+}
+export interface PlaidItemAccountsDTO {
+  itemId: string;
+  institutionName: string | null;
+  linked: Array<{
+    id: string;
+    kind: "account" | "liability";
+    name: string;
+    value: number;
+    plaidAccountId: string;
+    mask: string | null;
+  }>;
+  available: PlaidMappedAccount[];
+  existingCandidates: PlaidLinkCandidate[];
+  existingLiabilityCandidates: PlaidLiabilityCandidate[];
+  needsReauth: boolean;
+}
+export type PlaidCommitDecision =
+  | { plaidAccountId: string; action: "skip" }
+  | { plaidAccountId: string; action: "link"; existingAccountId: string }
+  | { plaidAccountId: string; action: "link-liability"; existingLiabilityId: string }
+  | { plaidAccountId: string; action: "create"; kind: "asset"; name: string; mask: string | null; balance: number | null; category: string; subType: string }
+  | { plaidAccountId: string; action: "create"; kind: "debt"; name: string; mask: string | null; balance: number | null; liabilityType: string };

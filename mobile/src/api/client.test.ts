@@ -114,6 +114,26 @@ describe("createApiClient", () => {
     const api = createApiClient({ baseUrl: "https://api.test", getToken: () => Promise.resolve("t"), fetchFn });
     await expect(api.put("/x", { reviewed: true })).resolves.toEqual({ ok: true });
   });
+
+  describe("delete", () => {
+    it("issues a DELETE with bearer auth and returns parsed JSON", async () => {
+      let seen: { url: string; init?: RequestInit } | null = null;
+      const api = createApiClient({
+        baseUrl: "https://x", getToken: async () => "tok",
+        fetchFn: async (url, init) => { seen = { url: String(url), init }; return jsonResponse({ ok: true }, 200); },
+      });
+      await expect(api.delete("/api/portal/plaid/items/abc")).resolves.toEqual({ ok: true });
+      expect(seen!.init?.method).toBe("DELETE");
+      expect((seen!.init?.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    });
+    it("throws ForbiddenError on 403", async () => {
+      const api = createApiClient({
+        baseUrl: "https://x", getToken: async () => "tok",
+        fetchFn: async () => jsonResponse({ error: "no" }, 403),
+      });
+      await expect(api.delete("/api/portal/plaid/items/abc")).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
 });
 
 describe("fetchMe", () => {
