@@ -4,6 +4,7 @@ import { TaxAnalysisPdfDocument } from "../tax-analysis-pdf-document";
 import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
 import { params2025, retireeMfj, highEarnerMfj } from "@/lib/tax-analysis/__tests__/fixtures";
+import { incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 
 const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
 
@@ -55,6 +56,27 @@ describe("TaxAnalysisPdfDocument", () => {
     // can't distinguish "section rendered" from "section skipped as null".
     expect(analysis.incomeComposition?.length).toBeGreaterThan(0);
     expect(analysis.deductionDetail?.scheduleA?.saltLostToCap).toBe(22000);
+
+    const buffer = await renderToBuffer(
+      <TaxAnalysisPdfDocument
+        clientName="Sam & Casey Cooper"
+        taxYear={facts.taxYear}
+        generatedAt="July 12, 2026"
+        analysis={analysis}
+      />,
+    );
+    expect(buffer.length).toBeGreaterThan(2000);
+  }, 30000);
+
+  it("renders a non-trivial PDF with the Total income figure + total row when line 9 is present", async () => {
+    const facts = retireeMfj();
+    facts.income.totalIncome = 195700;
+    facts.income.adjustmentsToIncome = 7000;
+    const analysis = buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 72, spouseAge: 72 });
+    // Guard the data the new KPI + total row render from — the buffer assertion
+    // alone can't distinguish "rendered" from "skipped as —/null".
+    expect(analysis.keyFigures.totalIncome).toBe(195700);
+    expect(incomeCompositionTotal(analysis.keyFigures.totalIncome)).toEqual({ amount: "$195,700", pct: "100%" });
 
     const buffer = await renderToBuffer(
       <TaxAnalysisPdfDocument

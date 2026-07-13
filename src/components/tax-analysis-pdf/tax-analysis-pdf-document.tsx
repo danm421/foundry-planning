@@ -4,7 +4,7 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { Observation } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows } from "@/lib/tax-analysis/breakdowns";
+import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
 
 export interface TaxAnalysisPdfProps {
@@ -67,6 +67,9 @@ const styles = StyleSheet.create({
   tableValueCell: { flex: 1, fontSize: 9, textAlign: "right" },
   tableHeaderLabelCell: { flex: 2, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase" },
   tableHeaderValueCell: { flex: 1, fontSize: 8, color: PDF_THEME.text.muted, textTransform: "uppercase", textAlign: "right" },
+  tableTotalRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: PDF_THEME.surface.divider, paddingTop: 3, marginTop: 1 },
+  tableTotalLabelCell: { flex: 2, fontSize: 9, fontWeight: "bold" },
+  tableTotalValueCell: { flex: 1, fontSize: 9, fontWeight: "bold", textAlign: "right" },
 });
 
 function KeyFigure({ label, value }: { label: string; value: string }) {
@@ -87,6 +90,7 @@ function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
       : k.amountOwed != null ? fmtUsd(k.amountOwed) : "—";
   return (
     <View style={styles.figuresRow}>
+      <KeyFigure label="Total income" value={k.totalIncome != null ? fmtUsd(k.totalIncome) : "—"} />
       <KeyFigure label="AGI" value={k.agi != null ? fmtUsd(k.agi) : "—"} />
       <KeyFigure label="Taxable income" value={k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—"} />
       <KeyFigure label="Total tax" value={k.totalTax != null ? fmtUsd(k.totalTax) : "—"} />
@@ -175,6 +179,17 @@ function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
             <Text style={styles.tableValueCell}>{r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}</Text>
           </View>
         ))}
+        {(() => {
+          const total = incomeCompositionTotal(analysis.keyFigures.totalIncome);
+          if (!total) return null;
+          return (
+            <View style={styles.tableTotalRow}>
+              <Text style={styles.tableTotalLabelCell}>Total income</Text>
+              <Text style={styles.tableTotalValueCell}>{total.amount}</Text>
+              <Text style={styles.tableTotalValueCell}>{total.pct}</Text>
+            </View>
+          );
+        })()}
       </View>
     </View>
   );
