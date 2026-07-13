@@ -1,5 +1,5 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { fmtUsd } from "./format";
+import { fmtUsd, fmtPct } from "./format";
 
 /** Derived display blocks for the report + PDF. Computed per-request inside
  *  buildTaxAnalysis (never persisted); the PDF route receives `analysis`
@@ -57,6 +57,19 @@ export function buildIncomeComposition(facts: TaxReturnFacts): IncomeComposition
   const denom = facts.income.totalIncome ?? present.reduce((s, r) => s + r.amount, 0);
   const usePct = denom > 0;
   return present.map((r) => ({ ...r, pctOfTotal: usePct ? r.amount / denom : null }));
+}
+
+/** Total row for the Income composition table — shared by the report view and
+ *  the PDF so the two can't drift. Returns null when 1040 line 9 wasn't
+ *  extracted (no total row rendered; we never pass a summed-rows figure off as
+ *  an authoritative total). % is 100% for a positive total, em dash for a
+ *  zero/negative (loss-year) total, mirroring buildIncomeComposition's usePct
+ *  guard. */
+export function incomeCompositionTotal(
+  totalIncome: number | null,
+): { amount: string; pct: string } | null {
+  if (totalIncome == null) return null;
+  return { amount: fmtUsd(totalIncome), pct: totalIncome > 0 ? fmtPct(1) : "—" };
 }
 
 export function buildDeductionDetail(facts: TaxReturnFacts): DeductionDetail | null {

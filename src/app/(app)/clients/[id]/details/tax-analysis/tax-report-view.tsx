@@ -2,7 +2,7 @@
 
 import type { Observation } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows } from "@/lib/tax-analysis/breakdowns";
+import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
 
@@ -32,6 +32,7 @@ export function TaxReportView({
 }) {
   const a = detail.analysis!;
   const k = a.keyFigures;
+  const incomeTotal = incomeCompositionTotal(k.totalIncome);
 
   async function exportPdf() {
     const res = await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}/export-pdf`, { method: "POST" });
@@ -59,7 +60,8 @@ export function TaxReportView({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+        <KeyFigure label="Total income" value={k.totalIncome != null ? fmtUsd(k.totalIncome) : "—"} />
         <KeyFigure label="AGI" value={k.agi != null ? fmtUsd(k.agi) : "—"} />
         <KeyFigure label="Taxable income" value={k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—"} />
         <KeyFigure label="Total tax" value={k.totalTax != null ? fmtUsd(k.totalTax) : "—"} />
@@ -103,6 +105,15 @@ export function TaxReportView({
                 </tr>
               ))}
             </tbody>
+            {incomeTotal && (
+              <tfoot>
+                <tr className="border-t-2 border-hair font-medium">
+                  <td className="py-1">Total income</td>
+                  <td className="py-1 text-right tabular-nums">{incomeTotal.amount}</td>
+                  <td className="py-1 text-right tabular-nums">{incomeTotal.pct}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </section>
       )}

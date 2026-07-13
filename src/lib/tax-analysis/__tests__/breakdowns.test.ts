@@ -4,6 +4,7 @@ import {
   buildIncomeComposition,
   buildDeductionDetail,
   deductionDetailRows,
+  incomeCompositionTotal,
 } from "../breakdowns";
 import { buildTaxAnalysis } from "../analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
@@ -47,6 +48,21 @@ describe("buildIncomeComposition", () => {
 
   it("returns null when no income fields are present", () => {
     expect(buildIncomeComposition(emptyTaxReturnFacts(2025))).toBeNull();
+  });
+});
+
+describe("incomeCompositionTotal", () => {
+  it("returns null when line 9 was not extracted (gates the total row off)", () => {
+    expect(incomeCompositionTotal(null)).toBeNull();
+  });
+
+  it("formats a positive total at 100%", () => {
+    expect(incomeCompositionTotal(195700)).toEqual({ amount: "$195,700", pct: "100%" });
+  });
+
+  it("shows an em dash for the % of a loss-year (non-positive) total", () => {
+    expect(incomeCompositionTotal(-5000)).toEqual({ amount: "-$5,000", pct: "—" });
+    expect(incomeCompositionTotal(0)).toEqual({ amount: "$0", pct: "—" });
   });
 });
 

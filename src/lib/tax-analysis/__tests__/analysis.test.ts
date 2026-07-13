@@ -38,4 +38,20 @@ describe("buildTaxAnalysis", () => {
     expect(a.yoy).toBeNull(); // no prior year
     expect(a.reconstruction.filedPreCreditTax).toBe(21588);
   });
+
+  it("reads totalIncome as null when the return has no line-9 total (retiree fixture)", () => {
+    const a = buildTaxAnalysis({
+      facts: retireeMfj(), prior: null, resolver, primaryAge: 72, spouseAge: 72,
+    });
+    expect(a.keyFigures.totalIncome).toBeNull();
+  });
+
+  it("surfaces facts.income.totalIncome (1040 line 9) on keyFigures", () => {
+    const f = retireeMfj();
+    f.income.totalIncome = 195700; // distinct from AGI 188700 (adjustments in between)
+    f.income.adjustmentsToIncome = 7000;
+    const a = buildTaxAnalysis({ facts: f, prior: null, resolver, primaryAge: 72, spouseAge: 72 });
+    expect(a.keyFigures.totalIncome).toBe(195700);
+    expect(a.keyFigures.agi).toBe(188700); // unchanged — proves totalIncome ≠ AGI
+  });
 });
