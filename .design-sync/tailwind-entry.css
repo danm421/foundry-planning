@@ -1,0 +1,4 @@
+/* Tailwind entry for the design-sync bundle: the app's real stylesheet plus
+   the authored preview sources (a dot-dir the automatic scan skips). */
+@import "../src/app/globals.css";
+@source "./previews";

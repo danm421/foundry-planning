@@ -1,0 +1,112 @@
+{
+  "projectId": "3ff757b2-2cdb-4890-bc83-1043d4df93f6",
+  "shape": "package",
+  "pkg": "foundry-planning",
+  "globalName": "FoundryPlanning",
+  "entry": "./.design-sync/ds-entry.tsx",
+  "tsconfig": "tsconfig.json",
+  "buildCmd": "./.ds-sync/node_modules/.bin/tailwindcss -i .design-sync/tailwind-entry.css -o .design-sync/.cache/tailwind.css && cat .design-sync/tokens.css >> .design-sync/.cache/tailwind.css",
+  "cssEntry": ".design-sync/.cache/tailwind.css",
+  "extraFonts": [
+    ".design-sync/fonts/fonts.css"
+  ],
+  "docsDir": ".design-sync/docs",
+  "overrides": {
+    "DialogShell": {
+      "cardMode": "single",
+      "viewport": "960x700"
+    },
+    "ConfirmDeleteDialog": {
+      "cardMode": "single",
+      "viewport": "860x480"
+    },
+    "ToastProvider": {
+      "cardMode": "single",
+      "viewport": "860x420"
+    },
+    "FieldHintPopover": {
+      "cardMode": "single",
+      "viewport": "760x460"
+    },
+    "ThemeToggle": {
+      "cardMode": "column"
+    },
+    "WizardChrome": {
+      "cardMode": "column"
+    },
+    "Skeleton": {
+      "cardMode": "column"
+    },
+    "DialogTabs": {
+      "cardMode": "column"
+    },
+    "Card": {
+      "cardMode": "column"
+    },
+    "HelpTip": {
+      "cardMode": "column"
+    },
+    "MoneyText": {
+      "cardMode": "column"
+    },
+    "SectionMarker": {
+      "cardMode": "column"
+    },
+    "LoadingLabel": {
+      "cardMode": "column"
+    },
+    "SkeletonCard": {
+      "cardMode": "column"
+    },
+    "SkeletonChart": {
+      "cardMode": "column"
+    },
+    "SkeletonForm": {
+      "cardMode": "column"
+    },
+    "SkeletonTable": {
+      "cardMode": "column"
+    },
+    "SkeletonText": {
+      "cardMode": "column"
+    },
+    "FooterActions": {
+      "cardMode": "column"
+    },
+    "TabAutoSaveIndicator": {
+      "cardMode": "column"
+    }
+  },
+  "guidelinesGlob": [
+    ".design-sync/guidelines/*.md"
+  ],
+  "componentSrcMap": {
+    "Card": "src/components/card.tsx",
+    "MoneyText": "src/components/money-text.tsx",
+    "SectionMarker": "src/components/section-marker.tsx",
+    "HelpTip": "src/components/help-tip.tsx",
+    "CurrencyInput": "src/components/currency-input.tsx",
+    "PercentInput": "src/components/percent-input.tsx",
+    "StateSelect": "src/components/state-select.tsx",
+    "FieldTooltip": "src/components/forms/field-tooltip.tsx",
+    "FieldHintPopover": "src/components/forms/field-hint-popover.tsx",
+    "DialogShell": "src/components/dialog-shell.tsx",
+    "DialogTabs": "src/components/dialog-tabs.tsx",
+    "ConfirmDeleteDialog": "src/components/confirm-delete-dialog.tsx",
+    "ToastProvider": "src/components/toast.tsx",
+    "BrandHeader": "src/components/brand-header.tsx",
+    "ThemeToggle": "src/components/theme-toggle.tsx",
+    "FooterActions": "src/components/footer-actions.tsx",
+    "WizardChrome": "src/components/wizard-chrome.tsx",
+    "TabAutoSaveIndicator": "src/components/tab-auto-save-indicator.tsx",
+    "Skeleton": "src/components/skeleton/skeleton.tsx",
+    "SkeletonText": "src/components/skeleton/skeleton.tsx",
+    "LoadingLabel": "src/components/skeleton/skeleton.tsx",
+    "SkeletonCard": "src/components/skeleton/skeleton-blocks.tsx",
+    "SkeletonKpi": "src/components/skeleton/skeleton-blocks.tsx",
+    "SkeletonTable": "src/components/skeleton/skeleton-blocks.tsx",
+    "SkeletonChart": "src/components/skeleton/skeleton-blocks.tsx",
+    "SkeletonForm": "src/components/skeleton/skeleton-blocks.tsx"
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
