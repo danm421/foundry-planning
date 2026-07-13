@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   annotatePayload,
@@ -17,6 +17,16 @@ import type {
   ExtractedLifePolicy,
   ExtractedWill,
 } from "@/lib/extraction/types";
+
+// runMatchingPass now loads living slots from the DB in both modes. Stub the
+// select chain to return no rows so the pure annotation path is exercised
+// without a database. (Positive slot-fill is covered by the annotatePayload
+// precedence test above and the matchLivingSlot unit tests.)
+vi.mock("@/db", () => ({
+  db: {
+    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+  },
+}));
 
 function payloadFixture(overrides: Partial<ImportPayload> = {}): ImportPayload {
   return {
@@ -194,7 +204,7 @@ describe("annotatePayload", () => {
 });
 
 describe("runMatchingPass — onboarding mode", () => {
-  it("short-circuits without loading from DB and returns the payload unchanged", async () => {
+  it("annotates via living-slot pass (no DB slots) and leaves other rows new", async () => {
     const payload: ImportPayload = payloadFixture({
       accounts: [
         annotated({
@@ -205,14 +215,16 @@ describe("runMatchingPass — onboarding mode", () => {
           value: 100_000,
         }),
       ],
+      expenses: [annotated({ type: "living", name: "Housing", annualAmount: 24000 })],
     });
     const result = await runMatchingPass({
       payload,
       clientId: "client-1",
-      scenarioId: "scenario-1",
+      scenarioId: "",
       mode: "onboarding",
     });
-    expect(result).toBe(payload);
     expect(result.accounts[0].match).toEqual({ kind: "new" });
+    expect(result.expenses[0].match).toEqual({ kind: "new" });
+    expect(result.expenseSlots).toEqual([]);
   });
 });

@@ -9,8 +9,10 @@ import {
   incomes,
   liabilities,
   lifeInsurancePolicies,
+  scenarios,
   wills,
 } from "@/db/schema";
+import type { YearRef } from "@/lib/milestones";
 
 import { matchAccount, type AccountCandidate } from "./match-keys/account";
 import { matchEntity, type EntityCandidate } from "./match-keys/entity";
@@ -25,7 +27,11 @@ import {
   matchLifePolicy,
   type LifePolicyCandidate,
 } from "./match-keys/life-policy";
-import { matchLivingSlot, type LivingSlot } from "./match-keys/living-slot";
+import {
+  livingSlotRole,
+  matchLivingSlot,
+  type LivingSlot,
+} from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
 import type { ImportPayload } from "./types";
 
@@ -112,20 +118,70 @@ export interface RunMatchingPassArgs {
 }
 
 /**
- * Orchestrates the matching pass. In onboarding mode every row stays as
- * `{ kind: "new" }` (already seeded by mergeExtractionResults), so we
- * skip the DB lookup entirely. In updating mode we load all eight
- * canonical row sets in parallel, project them into Candidate shapes,
- * and call `annotatePayload`.
+ * Orchestrates the matching pass. In both modes we load the persistent
+ * Current/Retirement living-expense slots and use them to link imported
+ * living-expense totals (via `matchLivingSlot`'s precedence over
+ * `matchExpense`). In onboarding mode the other row sets stay as
+ * `{ kind: "new" }` (already seeded by mergeExtractionResults) since there
+ * is nothing else to match against yet. In updating mode we additionally
+ * load all eight canonical row sets in parallel and project them into
+ * Candidate shapes before calling `annotatePayload`.
  */
 export async function runMatchingPass(
   args: RunMatchingPassArgs,
 ): Promise<ImportPayload> {
-  if (args.mode === "onboarding") {
-    return args.payload;
+  const livingSlots = await loadLivingSlots(args.clientId, args.scenarioId);
+  const candidates: MatchCandidates =
+    args.mode === "onboarding"
+      ? { ...emptyCandidates(), livingSlots }
+      : { ...(await loadCandidates(args.clientId, args.scenarioId)), livingSlots };
+  const annotated = annotatePayload(args.payload, candidates);
+  annotated.expenseSlots = livingSlots.map((s) => ({ id: s.id, name: s.name }));
+  return annotated;
+}
+
+/**
+ * Load the two seeded `isDefault` living-expense slots (current + retirement)
+ * for the scenario this import commits to. Onboarding imports leave scenarioId
+ * empty, so we resolve the base-case scenario the same way the commit route
+ * does — the slot ids MUST match the rows the commit will update.
+ */
+async function loadLivingSlots(
+  clientId: string,
+  scenarioId: string,
+): Promise<LivingSlot[]> {
+  let resolvedScenarioId = scenarioId;
+  if (!resolvedScenarioId) {
+    const [base] = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+    resolvedScenarioId = base?.id ?? "";
   }
-  const candidates = await loadCandidates(args.clientId, args.scenarioId);
-  return annotatePayload(args.payload, candidates);
+  if (!resolvedScenarioId) return [];
+
+  const rows = await db
+    .select({
+      id: expenses.id,
+      name: expenses.name,
+      startYearRef: expenses.startYearRef,
+    })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.clientId, clientId),
+        eq(expenses.scenarioId, resolvedScenarioId),
+        eq(expenses.type, "living"),
+        eq(expenses.isDefault, true),
+      ),
+    );
+
+  const slots: LivingSlot[] = [];
+  for (const r of rows) {
+    const role = livingSlotRole((r.startYearRef ?? null) as YearRef | null);
+    if (role) slots.push({ id: r.id, name: r.name, role });
+  }
+  return slots;
 }
 
 async function loadCandidates(
