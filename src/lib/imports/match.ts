@@ -314,9 +314,7 @@ async function loadCandidates(
       name: r.name,
       entityType: r.entityType,
     })),
-    // TODO(Task 3): load the persistent Current/Retirement living-expense
-    // slots for this scenario. Stubbed empty here so MatchCandidates stays
-    // fully typed until that task wires the DB query.
+    // overridden by runMatchingPass; empty stub keeps the type total
     livingSlots: [],
   };
 }

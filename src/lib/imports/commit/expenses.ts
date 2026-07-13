@@ -11,7 +11,9 @@ import { resolveImportTiming } from "./timing";
  * update, annualAmount always replaces, year/growthRate fields use
  * replace-if-non-null. Schema requires startYear/endYear so we fall back
  * to a sensible default range (current year → +30) on insert when
- * extraction omitted them.
+ * extraction omitted them. Exception: a row linked to a seeded `isDefault`
+ * living slot (Current/Retirement) fills amount/growthRate but keeps its
+ * canonical year window — timing is never replaced for those rows.
  */
 export async function commitExpenses(
   tx: Tx,
