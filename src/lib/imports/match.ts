@@ -25,6 +25,7 @@ import {
   matchLifePolicy,
   type LifePolicyCandidate,
 } from "./match-keys/life-policy";
+import { matchLivingSlot, type LivingSlot } from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
 import type { ImportPayload } from "./types";
 
@@ -37,6 +38,7 @@ export interface MatchCandidates {
   lifePolicies: LifePolicyCandidate[];
   wills: WillCandidate[];
   entities: EntityCandidate[];
+  livingSlots: LivingSlot[];
 }
 
 export function emptyCandidates(): MatchCandidates {
@@ -49,6 +51,7 @@ export function emptyCandidates(): MatchCandidates {
     lifePolicies: [],
     wills: [],
     entities: [],
+    livingSlots: [],
   };
 }
 
@@ -74,7 +77,9 @@ export function annotatePayload(
     })),
     expenses: payload.expenses.map((row) => ({
       ...row,
-      match: matchExpense(row, candidates.expenses),
+      match:
+        matchLivingSlot(row, candidates.livingSlots) ??
+        matchExpense(row, candidates.expenses),
     })),
     liabilities: payload.liabilities.map((row) => ({
       ...row,
@@ -253,5 +258,9 @@ async function loadCandidates(
       name: r.name,
       entityType: r.entityType,
     })),
+    // TODO(Task 3): load the persistent Current/Retirement living-expense
+    // slots for this scenario. Stubbed empty here so MatchCandidates stays
+    // fully typed until that task wires the DB query.
+    livingSlots: [],
   };
 }

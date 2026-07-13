@@ -118,6 +118,7 @@ describe("annotatePayload", () => {
       ],
       wills: [{ id: "w-1", grantor: "client" }],
       entities: [{ id: "ent-1", name: "Smith Family Trust", entityType: "trust" }],
+      livingSlots: [],
     };
 
     const result = annotatePayload(payload, candidates);
@@ -167,6 +168,28 @@ describe("annotatePayload", () => {
     const payload: ImportPayload = payloadFixture({ accounts: [account] });
     annotatePayload(payload, emptyCandidates());
     expect(account.match).toEqual({ kind: "new" });
+  });
+
+  it("prefers the living-slot heuristic over matchExpense for living totals", () => {
+    const candidates: MatchCandidates = {
+      ...emptyCandidates(),
+      expenses: [{ id: "exp-housing", type: "living", name: "Housing" }],
+      livingSlots: [
+        { id: "slot-current", name: "Current Living Expenses", role: "current" },
+        { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+      ],
+    };
+    const payload = payloadFixture({
+      expenses: [
+        annotated({ type: "living", name: "Living Expenses", annualAmount: 60000 }),
+        annotated({ type: "living", name: "Retirement Expenses", annualAmount: 48000 }),
+        annotated({ type: "living", name: "Housing", annualAmount: 24000 }),
+      ] as Annotated<ExtractedExpense>[],
+    });
+    const result = annotatePayload(payload, candidates);
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match).toEqual({ kind: "exact", existingId: "slot-retirement" });
+    expect(result.expenses[2].match).toEqual({ kind: "exact", existingId: "exp-housing" });
   });
 });
 
