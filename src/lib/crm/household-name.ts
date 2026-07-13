@@ -30,6 +30,16 @@ export interface ContactNameParts {
 }
 
 /**
+ * True when a contact's role feeds deriveHouseholdNameFromContacts — i.e.
+ * adding, removing, or renaming it can change the household name. Only the
+ * primary and spouse do; dependents and other roles never affect the name.
+ * Callers use this to avoid a pointless re-sync on dependent-only edits.
+ */
+export function roleAffectsHouseholdName(role: string): boolean {
+  return role === "primary" || role === "spouse";
+}
+
+/**
  * Derives the auto-generated household name from a set of CRM contacts.
  * The primary contact drives the name; the spouse (if any) is folded in via
  * buildHouseholdName. Dependents and other roles are ignored. Returns null

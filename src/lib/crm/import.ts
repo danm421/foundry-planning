@@ -433,9 +433,11 @@ export async function commit(
     try {
       const household = await createCrmHousehold(d.row.household);
       householdId = household.id;
-      await createCrmContact(household.id, d.row.primary);
+      // Keep the advisor-supplied CSV household name — don't let the derived
+      // name overwrite it as contacts are seeded.
+      await createCrmContact(household.id, d.row.primary, { syncHouseholdName: false });
       if (d.row.spouse) {
-        await createCrmContact(household.id, d.row.spouse);
+        await createCrmContact(household.id, d.row.spouse, { syncHouseholdName: false });
       }
       created++;
     } catch (err) {

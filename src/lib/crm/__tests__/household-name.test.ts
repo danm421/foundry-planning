@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildHouseholdName,
   deriveHouseholdNameFromContacts,
+  roleAffectsHouseholdName,
 } from "../household-name";
 
 describe("buildHouseholdName", () => {
@@ -94,5 +95,17 @@ describe("deriveHouseholdNameFromContacts", () => {
 
   it("returns null for an empty contact list", () => {
     expect(deriveHouseholdNameFromContacts([])).toBeNull();
+  });
+});
+
+describe("roleAffectsHouseholdName", () => {
+  it("is true for the primary and spouse roles", () => {
+    expect(roleAffectsHouseholdName("primary")).toBe(true);
+    expect(roleAffectsHouseholdName("spouse")).toBe(true);
+  });
+
+  it("is false for dependents and other roles", () => {
+    expect(roleAffectsHouseholdName("dependent")).toBe(false);
+    expect(roleAffectsHouseholdName("other")).toBe(false);
   });
 });

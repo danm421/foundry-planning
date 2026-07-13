@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { createCrmContact } from "../contacts";
+import { createCrmContact, deleteCrmContact } from "../contacts";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
@@ -57,5 +57,50 @@ describe("createCrmContact primary/spouse invariant", () => {
     await createCrmContact(householdId, { role: "other", firstName: "Friend", lastName: "Smith" });
     const rows = await db.query.crmHouseholdContacts.findMany({ where: eq(crmHouseholdContacts.householdId, householdId) });
     expect(rows).toHaveLength(3);
+  });
+});
+
+describe("household name follows contact add / remove", () => {
+  let householdId: string;
+
+  const currentName = async () =>
+    (
+      await db.query.crmHouseholds.findFirst({
+        where: eq(crmHouseholds.id, householdId),
+      })
+    )?.name;
+
+  beforeEach(async () => {
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, "test_org_contacts"));
+    const [h] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: "test_org_contacts", advisorId: "test_advisor", name: "Placeholder" })
+      .returning();
+    householdId = h.id;
+  });
+
+  it("updates the household name when a spouse is added", async () => {
+    await createCrmContact(householdId, { role: "primary", firstName: "Jane", lastName: "Doe" });
+    expect(await currentName()).toBe("Jane Doe");
+
+    await createCrmContact(householdId, { role: "spouse", firstName: "Jim", lastName: "Doe" });
+    expect(await currentName()).toBe("Jane & Jim Doe");
+  });
+
+  it("collapses the household name when a spouse is removed", async () => {
+    await createCrmContact(householdId, { role: "primary", firstName: "Jane", lastName: "Doe" });
+    const spouse = await createCrmContact(householdId, { role: "spouse", firstName: "Jim", lastName: "Doe" });
+    expect(await currentName()).toBe("Jane & Jim Doe");
+
+    await deleteCrmContact(spouse.id);
+    expect(await currentName()).toBe("Jane Doe");
+  });
+
+  it("does not change the household name when a dependent is added", async () => {
+    await createCrmContact(householdId, { role: "primary", firstName: "Jane", lastName: "Doe" });
+    expect(await currentName()).toBe("Jane Doe");
+
+    await createCrmContact(householdId, { role: "dependent", firstName: "Kid", lastName: "Doe" });
+    expect(await currentName()).toBe("Jane Doe");
   });
 });

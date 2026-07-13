@@ -7,9 +7,19 @@ import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
 import { syncHouseholdNameFromContacts } from "./sync-household-name";
+import { roleAffectsHouseholdName } from "./household-name";
 import type { CreateCrmContactInput } from "./schemas";
 
-export async function createCrmContact(householdId: string, input: CreateCrmContactInput) {
+export async function createCrmContact(
+  householdId: string,
+  input: CreateCrmContactInput,
+  // Bulk CSV import seeds households with advisor-typed names ("Johnson Trust")
+  // then adds contacts; it opts out so the derived name doesn't clobber them.
+  // The interactive add-contact endpoint keeps the default so adding a spouse
+  // updates the household name.
+  options: { syncHouseholdName?: boolean } = {},
+) {
+  const { syncHouseholdName = true } = options;
   const { orgId } = await requireCrmHouseholdAccess(householdId);
   const { userId } = await auth();
 
@@ -39,6 +49,11 @@ export async function createCrmContact(householdId: string, input: CreateCrmCont
       notes: input.notes,
     })
     .returning();
+
+  // Adding a primary/spouse changes the derived household name; keep it in sync.
+  if (syncHouseholdName && roleAffectsHouseholdName(input.role)) {
+    await syncHouseholdNameFromContacts(db, householdId);
+  }
 
   await recordAudit({
     action: "crm.contact.create",
@@ -75,8 +90,9 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
     .where(eq(crmHouseholdContacts.id, contactId))
     .returning();
 
-  // Keep the denormalized household name tracking the contacts.
-  if (nameChanging) {
+  // Keep the denormalized household name tracking the contacts — only when a
+  // name changed on a role that actually feeds the name (primary/spouse).
+  if (nameChanging && roleAffectsHouseholdName(existing.role)) {
     await syncHouseholdNameFromContacts(db, existing.householdId);
   }
 
@@ -107,6 +123,13 @@ export async function deleteCrmContact(contactId: string) {
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
   const { userId } = await auth();
   await db.delete(crmHouseholdContacts).where(eq(crmHouseholdContacts.id, contactId));
+
+  // Removing a primary/spouse changes the derived household name; e.g. deleting
+  // a spouse collapses "Jane & Jim Doe" back to "Jane Doe".
+  if (roleAffectsHouseholdName(existing.role)) {
+    await syncHouseholdNameFromContacts(db, existing.householdId);
+  }
+
   await recordAudit({
     action: "crm.contact.delete",
     resourceType: "crm_contact",
