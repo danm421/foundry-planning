@@ -1,14 +1,44 @@
 import "../global.css";
+import { useEffect } from "react";
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
-import { Stack } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { Stack, useRouter } from "expo-router";
 import { ApiProvider } from "@/api/context";
 import { LockScreen } from "@/lock/lock-screen";
 import { useAppLock } from "@/lock/use-app-lock";
+import { routeForNotificationData } from "@/push/notification-route";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+function useNotificationRouting() {
+  const router = useRouter();
+  useEffect(() => {
+    // Cold-start: app was launched by tapping a notification.
+    Notifications.getLastNotificationResponseAsync().then((resp) => {
+      const route = resp && routeForNotificationData(resp.notification.request.content.data);
+      if (route) router.push(route as never);
+    });
+    // Warm: tapped while running.
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const route = routeForNotificationData(resp.notification.request.content.data);
+      if (route) router.push(route as never);
+    });
+    return () => sub.remove();
+  }, [router]);
+}
 
 function AppLockGate({ children }: { children: React.ReactNode }) {
   const { isSignedIn } = useAuth();
   const { locked, unlock } = useAppLock();
+  useNotificationRouting();
   return (
     <>
       {children}
