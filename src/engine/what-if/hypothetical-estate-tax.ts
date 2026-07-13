@@ -260,3 +260,28 @@ export function computeAnchoredHypotheticalEstateTax(
 
   return { year: input.year, primaryFirst };
 }
+
+/**
+ * Zero-valued `hypotheticalEstateTax` sentinel for the Monte Carlo trial path.
+ * MC runs `runProjection` once per trial (1000×) with `skipHypotheticalEstateTax`
+ * because it scores liquid-portfolio totals only and then discards the
+ * `ProjectionYear`; it never reads this field. Computing the real value is ~80%
+ * of MC compute — 7 `structuredClone`s + a death pass, every projection year ×
+ * every trial (see scripts/profile-mc.local.ts). This keeps `ProjectionYear`'s
+ * required field populated for free. Only `year` and the zeroed `totals` are
+ * meaningful; `firstDeath` is a typed placeholder never read on the MC path.
+ */
+export function emptyHypotheticalEstateTax(year: number): HypotheticalEstateTax {
+  return {
+    year,
+    primaryFirst: {
+      firstDecedent: "client",
+      // Never read on the skip path — a minimal typed placeholder. Building a
+      // full zeroed EstateTaxResult (~40 fields + nested state/inheritance
+      // detail) would be dead weight that drifts as that type evolves.
+      firstDeath: { year, deathOrder: 1, deceased: "client" } as EstateTaxResult,
+      firstDeathTransfers: [],
+      totals: { federal: 0, state: 0, admin: 0, total: 0 },
+    },
+  };
+}

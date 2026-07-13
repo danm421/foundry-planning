@@ -136,7 +136,11 @@ export function runTrial(input: RunTrialInput): TrialResult {
     return weighted;
   };
 
-  const years = runProjection(data, { returnsOverride });
+  // MC scores liquid-portfolio totals only and discards these ProjectionYear
+  // objects, so skip the per-year hypothetical estate tax — a reporting-only
+  // field this path never reads. It's ~80% of MC compute (see run.ts / the
+  // profiler in scripts/profile-mc.local.ts).
+  const years = runProjection(data, { returnsOverride, skipHypotheticalEstateTax: true });
   const byYearLiquidAssets = years.map(liquidPortfolioTotal);
   const endingLiquidAssets = byYearLiquidAssets[byYearLiquidAssets.length - 1];
   const success = classifyTrial(byYearLiquidAssets, requiredMinimumAssetLevel);

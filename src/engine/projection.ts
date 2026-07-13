@@ -96,6 +96,7 @@ import {
 import {
   computeHypotheticalEstateTax,
   computeAnchoredHypotheticalEstateTax,
+  emptyHypotheticalEstateTax,
 } from "./what-if/hypothetical-estate-tax";
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
@@ -319,6 +320,15 @@ export interface ProjectionOptions {
    * path is byte-identical.
    */
   returnsOverride?: (year: number, accountId: string) => number | undefined;
+  /**
+   * Skip the per-year hypothetical estate-tax computation (a reporting-only
+   * field — the Balance Sheet "Today" view). Set by the Monte Carlo trial path,
+   * which runs `runProjection` 1000× and never reads it; computing it is ~80% of
+   * MC compute (7 structuredClones + a death pass, every year). When set, each
+   * year's `hypotheticalEstateTax` is a zeroed sentinel. Left unset, behavior is
+   * byte-identical to before. NEVER set on the report/balance-sheet path.
+   */
+  skipHypotheticalEstateTax?: boolean;
 }
 
 /** Fold life-insurance death benefits into a year's displayed income so they
@@ -6076,8 +6086,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // everything to the surviving spouse under the marital deduction and
     // showing $0 to heirs.
     const hypotheticalIsMarried = client.spouseDob != null;
-    const hypotheticalEstateTax =
-      realFirstDeath != null
+    const hypotheticalEstateTax = options?.skipHypotheticalEstateTax
+      ? emptyHypotheticalEstateTax(year)
+      : realFirstDeath != null
         ? computeAnchoredHypotheticalEstateTax({
             year,
             survivor: realFirstDeath.decedent === "client" ? "spouse" : "client",
