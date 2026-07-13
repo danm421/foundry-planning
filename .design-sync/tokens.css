@@ -1,0 +1,9 @@
+/* Font stacks the app normally injects at runtime via next/font — defined
+   statically for the design-system bundle. --font-display/--font-body are
+   timeline-report faces; aliased to the brand sans here. */
+:root {
+  --font-inter: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-b612: "B612 Mono", ui-monospace, monospace;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
