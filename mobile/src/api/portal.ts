@@ -133,3 +133,18 @@ export function detachAccount(api: ApiClient, itemId: string, plaidAccountId: st
 export function dismissNewAccounts(api: ApiClient, itemId: string): Promise<unknown> {
   return api.post(`/api/portal/plaid/items/${itemId}/dismiss-new-accounts`, {});
 }
+
+// ============================================================================
+// Phase 4 — push notifications
+// ============================================================================
+
+export async function registerPushToken(
+  api: ApiClient,
+  input: { expoPushToken: string; platform: "ios" | "android"; enabled: boolean },
+): Promise<void> {
+  await api.post("/api/portal/push-tokens", input);
+}
+
+export async function deletePushToken(api: ApiClient, expoPushToken: string): Promise<void> {
+  await api.delete(`/api/portal/push-tokens?token=${encodeURIComponent(expoPushToken)}`);
+}
