@@ -11,7 +11,9 @@ import { resolveImportTiming } from "./timing";
  * update, annualAmount always replaces, year/growthRate fields use
  * replace-if-non-null. Schema requires startYear/endYear so we fall back
  * to a sensible default range (current year → +30) on insert when
- * extraction omitted them.
+ * extraction omitted them. Exception: a row linked to a seeded `isDefault`
+ * living slot (Current/Retirement) fills amount/growthRate but keeps its
+ * canonical year window — timing is never replaced for those rows.
  */
 export async function commitExpenses(
   tx: Tx,
@@ -21,6 +23,22 @@ export async function commitExpenses(
   const result = emptyResult();
   const now = new Date();
   const currentYear = now.getUTCFullYear();
+
+  // Seeded isDefault living slots (Current/Retirement). A row linked to one of
+  // these gets its amount filled but keeps its canonical current/retirement
+  // year window — never reshaped by extracted timing.
+  const slotRows = await tx
+    .select({ id: expenses.id })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.clientId, ctx.clientId),
+        eq(expenses.scenarioId, ctx.scenarioId),
+        eq(expenses.type, "living"),
+        eq(expenses.isDefault, true),
+      ),
+    );
+  const slotIds = new Set(slotRows.map((r) => r.id));
 
   for (const row of payload.expenses) {
     const kind = row.match?.kind ?? "new";
@@ -58,14 +76,16 @@ export async function commitExpenses(
     if (row.annualAmount !== undefined) {
       updates.annualAmount = String(row.annualAmount);
     }
-    const timing = resolveImportTiming(row, ctx.milestones);
-    if (timing.start.year !== undefined) {
-      updates.startYear = timing.start.year;
-      updates.startYearRef = timing.start.ref ?? null;
-    }
-    if (timing.end.year !== undefined) {
-      updates.endYear = timing.end.year;
-      updates.endYearRef = timing.end.ref ?? null;
+    if (!slotIds.has(existingId)) {
+      const timing = resolveImportTiming(row, ctx.milestones);
+      if (timing.start.year !== undefined) {
+        updates.startYear = timing.start.year;
+        updates.startYearRef = timing.start.ref ?? null;
+      }
+      if (timing.end.year !== undefined) {
+        updates.endYear = timing.end.year;
+        updates.endYearRef = timing.end.ref ?? null;
+      }
     }
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
     await tx

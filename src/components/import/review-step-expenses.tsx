@@ -2,9 +2,13 @@
 
 import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import type { MatchAnnotation } from "@/lib/imports/types";
+import { candidatesForRow } from "@/lib/imports/expense-slot-candidates";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import MatchColumn from "./match-column";
+import type { MatchCandidate } from "./match-link-picker";
 import SourceBadge from "./source-badge";
 
 // Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
@@ -25,6 +29,12 @@ interface ReviewStepExpensesProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /** Match annotation per row (parallel to `expenses`). */
+  matches?: Array<MatchAnnotation | undefined>;
+  /** Change a row's link target (→ slot / new). */
+  onMatchChange?: (index: number, match: MatchAnnotation) => void;
+  /** The persistent Current/Retirement living-expense slots as link targets. */
+  candidates?: MatchCandidate[];
 }
 
 const INPUT_CLASS =
@@ -42,7 +52,12 @@ export default function ReviewStepExpenses({
   milestones,
   clientFirstName,
   spouseFirstName,
+  matches,
+  onMatchChange,
+  candidates = [],
 }: ReviewStepExpensesProps) {
+  const matchingEnabled = Boolean(matches && onMatchChange && candidates.length > 0);
+
   const updateField = (index: number, field: keyof ExtractedExpense, value: unknown) => {
     const updated = expenses.map((exp, i) =>
       i === index ? { ...exp, [field]: value } : exp
@@ -90,119 +105,139 @@ export default function ReviewStepExpenses({
       </div>
 
       <div className="space-y-3">
-        {expenses.map((expense, i) => (
-          <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
-            <div className="grid grid-cols-6 gap-2">
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-300">Name</label>
-                <input
-                  value={expense.name}
-                  onChange={(e) => updateField(i, "name", e.target.value)}
-                  className={expense.name ? INPUT_CLASS : EMPTY_CLASS}
-                  placeholder="Expense name"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-gray-300">Type</label>
-                <select
-                  value={expense.type ?? ""}
-                  onChange={(e) => updateField(i, "type", e.target.value || undefined)}
-                  className={expense.type ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
-                >
-                  <option value="">Select...</option>
-                  {EXPENSE_TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
-                <CurrencyInput
-                  value={expense.annualAmount != null ? String(expense.annualAmount) : ""}
-                  onChange={(raw) => updateField(i, "annualAmount", raw === "" ? undefined : Number(raw))}
-                  className={expense.annualAmount != null ? "" : TINT_EMPTY}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                {milestones ? (
-                  <MilestoneYearPicker
-                    name={`exp-start-${i}`}
-                    id={`exp-start-${i}`}
-                    value={expense.startYear ?? defaultStartYear}
-                    yearRef={expense.startYearRef ?? null}
-                    milestones={milestones}
-                    showSSRefs={false}
-                    onChange={(yr, ref) => updateTiming(i, "start", yr, ref)}
-                    label="Start Year"
-                    clientFirstName={clientFirstName}
-                    spouseFirstName={spouseFirstName}
-                    position="start"
+        {expenses.map((expense, i) => {
+          const match = matches?.[i];
+          const existingId = match?.kind === "exact" ? match.existingId : null;
+          const existingName = existingId
+            ? candidates.find((c) => c.id === existingId)?.name
+            : undefined;
+
+          return (
+            <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+              {matchingEnabled ? (
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-xs text-ink-3">Link to:</span>
+                  <MatchColumn
+                    match={match}
+                    existingName={existingName}
+                    candidates={candidatesForRow(i, matches ?? [], candidates)}
+                    entityKind="expense"
+                    onChange={(next) => onMatchChange?.(i, next)}
                   />
-                ) : (
-                  <>
-                    <label className="mb-1 block text-xs text-gray-300">Start Year</label>
-                    <input
-                      type="number"
-                      value={expense.startYear ?? ""}
-                      onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
-                      className={expense.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
-                      placeholder={String(defaultStartYear)}
-                    />
-                  </>
-                )}
-              </div>
-              <div>
-                {milestones ? (
-                  <MilestoneYearPicker
-                    name={`exp-end-${i}`}
-                    id={`exp-end-${i}`}
-                    value={expense.endYear ?? defaultEndYear}
-                    yearRef={expense.endYearRef ?? null}
-                    milestones={milestones}
-                    showSSRefs={false}
-                    onChange={(yr, ref) => updateTiming(i, "end", yr, ref)}
-                    label="End Year"
-                    clientFirstName={clientFirstName}
-                    spouseFirstName={spouseFirstName}
-                    startYearForDuration={expense.startYear ?? defaultStartYear}
-                    position="end"
+                </div>
+              ) : null}
+              <div className="grid grid-cols-6 gap-2">
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs text-gray-300">Name</label>
+                  <input
+                    value={expense.name}
+                    onChange={(e) => updateField(i, "name", e.target.value)}
+                    className={expense.name ? INPUT_CLASS : EMPTY_CLASS}
+                    placeholder="Expense name"
                   />
-                ) : (
-                  <>
-                    <label className="mb-1 block text-xs text-gray-300">End Year</label>
-                    <input
-                      type="number"
-                      value={expense.endYear ?? ""}
-                      onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
-                      className={expense.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
-                      placeholder={String(defaultEndYear)}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-300">Type</label>
+                  <select
+                    value={expense.type ?? ""}
+                    onChange={(e) => updateField(i, "type", e.target.value || undefined)}
+                    className={expense.type ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
+                  >
+                    <option value="">Select...</option>
+                    {EXPENSE_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
+                  <CurrencyInput
+                    value={expense.annualAmount != null ? String(expense.annualAmount) : ""}
+                    onChange={(raw) => updateField(i, "annualAmount", raw === "" ? undefined : Number(raw))}
+                    className={expense.annualAmount != null ? "" : TINT_EMPTY}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  {milestones ? (
+                    <MilestoneYearPicker
+                      name={`exp-start-${i}`}
+                      id={`exp-start-${i}`}
+                      value={expense.startYear ?? defaultStartYear}
+                      yearRef={expense.startYearRef ?? null}
+                      milestones={milestones}
+                      showSSRefs={false}
+                      onChange={(yr, ref) => updateTiming(i, "start", yr, ref)}
+                      label="Start Year"
+                      clientFirstName={clientFirstName}
+                      spouseFirstName={spouseFirstName}
+                      position="start"
                     />
-                  </>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
-                <PercentInput
-                  value={expense.growthRate != null ? (expense.growthRate * 100).toFixed(2) : ""}
-                  onChange={(raw) => updateField(i, "growthRate", raw === "" ? undefined : Number(raw) / 100)}
-                  className={TINT_EMPTY}
-                  placeholder="0"
-                />
-              </div>
-              <div className="flex items-end gap-2">
-                <SourceBadge row={expense} className="pb-1" />
-                <button
-                  onClick={() => removeRow(i)}
-                  className="pb-1 text-white hover:text-white"
-                  title="Remove"
-                >
-                  <TrashIcon />
-                </button>
+                  ) : (
+                    <>
+                      <label className="mb-1 block text-xs text-gray-300">Start Year</label>
+                      <input
+                        type="number"
+                        value={expense.startYear ?? ""}
+                        onChange={(e) => updateField(i, "startYear", e.target.value ? Number(e.target.value) : undefined)}
+                        className={expense.startYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                        placeholder={String(defaultStartYear)}
+                      />
+                    </>
+                  )}
+                </div>
+                <div>
+                  {milestones ? (
+                    <MilestoneYearPicker
+                      name={`exp-end-${i}`}
+                      id={`exp-end-${i}`}
+                      value={expense.endYear ?? defaultEndYear}
+                      yearRef={expense.endYearRef ?? null}
+                      milestones={milestones}
+                      showSSRefs={false}
+                      onChange={(yr, ref) => updateTiming(i, "end", yr, ref)}
+                      label="End Year"
+                      clientFirstName={clientFirstName}
+                      spouseFirstName={spouseFirstName}
+                      startYearForDuration={expense.startYear ?? defaultStartYear}
+                      position="end"
+                    />
+                  ) : (
+                    <>
+                      <label className="mb-1 block text-xs text-gray-300">End Year</label>
+                      <input
+                        type="number"
+                        value={expense.endYear ?? ""}
+                        onChange={(e) => updateField(i, "endYear", e.target.value ? Number(e.target.value) : undefined)}
+                        className={expense.endYear != null ? INPUT_CLASS : EMPTY_CLASS}
+                        placeholder={String(defaultEndYear)}
+                      />
+                    </>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
+                  <PercentInput
+                    value={expense.growthRate != null ? (expense.growthRate * 100).toFixed(2) : ""}
+                    onChange={(raw) => updateField(i, "growthRate", raw === "" ? undefined : Number(raw) / 100)}
+                    className={TINT_EMPTY}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <SourceBadge row={expense} className="pb-1" />
+                  <button
+                    onClick={() => removeRow(i)}
+                    className="pb-1 text-white hover:text-white"
+                    title="Remove"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

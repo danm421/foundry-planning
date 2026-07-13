@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   annotatePayload,
@@ -17,6 +17,16 @@ import type {
   ExtractedLifePolicy,
   ExtractedWill,
 } from "@/lib/extraction/types";
+
+// runMatchingPass now loads living slots from the DB in both modes. Stub the
+// select chain to return no rows so the pure annotation path is exercised
+// without a database. (Positive slot-fill is covered by the annotatePayload
+// precedence test above and the matchLivingSlot unit tests.)
+vi.mock("@/db", () => ({
+  db: {
+    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+  },
+}));
 
 function payloadFixture(overrides: Partial<ImportPayload> = {}): ImportPayload {
   return {
@@ -118,6 +128,7 @@ describe("annotatePayload", () => {
       ],
       wills: [{ id: "w-1", grantor: "client" }],
       entities: [{ id: "ent-1", name: "Smith Family Trust", entityType: "trust" }],
+      livingSlots: [],
     };
 
     const result = annotatePayload(payload, candidates);
@@ -168,10 +179,52 @@ describe("annotatePayload", () => {
     annotatePayload(payload, emptyCandidates());
     expect(account.match).toEqual({ kind: "new" });
   });
+
+  it("prefers the living-slot heuristic over matchExpense for living totals", () => {
+    const candidates: MatchCandidates = {
+      ...emptyCandidates(),
+      expenses: [{ id: "exp-housing", type: "living", name: "Housing" }],
+      livingSlots: [
+        { id: "slot-current", name: "Current Living Expenses", role: "current" },
+        { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+      ],
+    };
+    const payload = payloadFixture({
+      expenses: [
+        annotated({ type: "living", name: "Living Expenses", annualAmount: 60000 }),
+        annotated({ type: "living", name: "Retirement Expenses", annualAmount: 48000 }),
+        annotated({ type: "living", name: "Housing", annualAmount: 24000 }),
+      ] as Annotated<ExtractedExpense>[],
+    });
+    const result = annotatePayload(payload, candidates);
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match).toEqual({ kind: "exact", existingId: "slot-retirement" });
+    expect(result.expenses[2].match).toEqual({ kind: "exact", existingId: "exp-housing" });
+  });
+
+  it("claims a living slot for only the first matching row; later rows fall through to matchExpense", () => {
+    const candidates: MatchCandidates = {
+      ...emptyCandidates(),
+      expenses: [],
+      livingSlots: [
+        { id: "slot-current", name: "Current Living Expenses", role: "current" },
+        { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+      ],
+    };
+    const payload = payloadFixture({
+      expenses: [
+        annotated({ type: "living", name: "Living Expenses", annualAmount: 60000 }),
+        annotated({ type: "living", name: "Total Monthly Expenses", annualAmount: 61000 }),
+      ] as Annotated<ExtractedExpense>[],
+    });
+    const result = annotatePayload(payload, candidates);
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match).toEqual({ kind: "new" });
+  });
 });
 
 describe("runMatchingPass — onboarding mode", () => {
-  it("short-circuits without loading from DB and returns the payload unchanged", async () => {
+  it("annotates via living-slot pass (no DB slots) and leaves other rows new", async () => {
     const payload: ImportPayload = payloadFixture({
       accounts: [
         annotated({
@@ -182,14 +235,16 @@ describe("runMatchingPass — onboarding mode", () => {
           value: 100_000,
         }),
       ],
+      expenses: [annotated({ type: "living", name: "Housing", annualAmount: 24000 })],
     });
     const result = await runMatchingPass({
       payload,
       clientId: "client-1",
-      scenarioId: "scenario-1",
+      scenarioId: "",
       mode: "onboarding",
     });
-    expect(result).toBe(payload);
     expect(result.accounts[0].match).toEqual({ kind: "new" });
+    expect(result.expenses[0].match).toEqual({ kind: "new" });
+    expect(result.expenseSlots).toEqual([]);
   });
 });

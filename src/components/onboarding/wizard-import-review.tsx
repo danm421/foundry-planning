@@ -216,6 +216,16 @@ export default function WizardImportReview({
     return map;
   }, [canonical.accounts]);
 
+  // Match-column candidates for review-step-expenses (living-expense slot linking).
+  const expenseCandidates: MatchCandidate[] = useMemo(
+    () => (payload.expenseSlots ?? []).map((s) => ({ id: s.id, name: s.name })),
+    [payload.expenseSlots],
+  );
+  const expenseMatches = expenses.map((e) => e.match);
+  const onExpenseMatchChange = (i: number, m: MatchAnnotation) => {
+    setExpenses(expenses.map((e, idx) => (idx === i ? { ...e, match: m } : e)));
+  };
+
   const buildLatestPayload = useCallback((): ImportPayload => {
     return {
       primary,
@@ -233,6 +243,7 @@ export default function WizardImportReview({
       })) as ImportPayload["wills"],
       entities,
       warnings: payload.warnings,
+      expenseSlots: payload.expenseSlots,
     };
   }, [
     primary,
@@ -247,6 +258,7 @@ export default function WizardImportReview({
     willMatches,
     entities,
     payload.warnings,
+    payload.expenseSlots,
   ]);
 
   const alreadyCommitted = STEP_COMMIT_TABS[step].every((ct) =>
@@ -343,6 +355,9 @@ export default function WizardImportReview({
               onChange={(e) => setExpenses(e as Annotated<ExtractedExpense>[])}
               defaultStartYear={currentYear}
               defaultEndYear={currentYear + 30}
+              matches={expenseMatches}
+              onMatchChange={onExpenseMatchChange}
+              candidates={expenseCandidates}
             />
           </div>
         )}

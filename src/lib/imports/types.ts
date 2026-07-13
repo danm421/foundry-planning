@@ -52,6 +52,12 @@ export type ImportPayload = {
   wills: Annotated<ExtractedWill>[];
   entities: Annotated<ExtractedEntity>[];
   warnings: string[];
+  /**
+   * Persistent Current/Retirement living-expense slots for this import's
+   * scenario, surfaced to the review UI so the expenses tab can offer them as
+   * link targets. Set by the matching pass; absent until then.
+   */
+  expenseSlots?: Array<{ id: string; name: string }>;
 };
 
 /**

@@ -999,9 +999,61 @@ describe("commitExpenses", () => {
     };
     const result = await commitExpenses(tx, payload, ctx);
     expect(result.created).toBe(1);
-    const v = (callsForTable(calls, "expenses")[0] as { values: Record<string, unknown> }).values;
+    const v = (
+      callsForTable(calls, "expenses").filter((c) => c.op === "insert")[0] as {
+        values: Record<string, unknown>;
+      }
+    ).values;
     expect(v.type).toBe("living");
     expect(v.annualAmount).toBe("50000");
+  });
+
+  it("fills a living slot by amount and preserves its year window", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("expenses", [{ id: "slot-current" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      expenses: [
+        {
+          name: "Living Expenses",
+          annualAmount: 60000,
+          startYear: 2050,
+          startYearRef: "plan_start",
+          match: { kind: "exact", existingId: "slot-current" },
+        },
+      ],
+    };
+    const result = await commitExpenses(tx, payload, ctx);
+    expect(result.updated).toBe(1);
+    const upd = callsForTable(calls, "expenses").find((c) => c.op === "update") as {
+      values: Record<string, unknown>;
+    };
+    expect(upd.values.annualAmount).toBe("60000");
+    expect(upd.values.startYear).toBeUndefined();
+    expect(upd.values.startYearRef).toBeUndefined();
+    expect(upd.values.endYear).toBeUndefined();
+  });
+
+  it("still updates timing for a non-slot exact match", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("expenses", []); // no isDefault slots
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      expenses: [
+        {
+          name: "Housing",
+          annualAmount: 24000,
+          startYear: 2040,
+          match: { kind: "exact", existingId: "exp-housing" },
+        },
+      ],
+    };
+    await commitExpenses(tx, payload, ctx);
+    const upd = callsForTable(calls, "expenses").find((c) => c.op === "update") as {
+      values: Record<string, unknown>;
+    };
+    expect(upd.values.annualAmount).toBe("24000");
+    expect(upd.values.startYear).toBe(2040);
   });
 });
 

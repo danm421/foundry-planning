@@ -291,8 +291,9 @@ export default function ReviewWizard({
       })) as ImportPayload["wills"],
       entities,
       warnings: payload.warnings,
+      expenseSlots: payload.expenseSlots,
     };
-  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings]);
+  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots]);
 
   const handleCommit = useCallback(
     async (tab: WizardTabId) => {
@@ -387,6 +388,16 @@ export default function ReviewWizard({
     return map;
   }, [canonical.accounts]);
 
+  // Match-column candidates for review-step-expenses (living-expense slot linking).
+  const expenseCandidates: MatchCandidate[] = useMemo(
+    () => (payload.expenseSlots ?? []).map((s) => ({ id: s.id, name: s.name })),
+    [payload.expenseSlots],
+  );
+  const expenseMatches = expenses.map((e) => e.match);
+  const onExpenseMatchChange = (i: number, m: MatchAnnotation) => {
+    setExpenses(expenses.map((e, idx) => (idx === i ? { ...e, match: m } : e)));
+  };
+
   return (
     <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
@@ -459,6 +470,9 @@ export default function ReviewWizard({
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}
+            matches={expenseMatches}
+            onMatchChange={onExpenseMatchChange}
+            candidates={expenseCandidates}
           />
         )}
         {currentTab === "liabilities" && (
