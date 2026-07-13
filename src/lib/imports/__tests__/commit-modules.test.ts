@@ -110,6 +110,48 @@ describe("commitClientsIdentity", () => {
     expect(crmValues[1].firstName).toBe("Riley");
   });
 
+  it("re-syncs the denormalized household name when the import changes a name", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
+    // Contacts as they read back AFTER the import upserts the new names.
+    setSelectResult("crm_household_contacts", [
+      { role: "primary", firstName: "Jordan", lastName: "Doe" },
+      { role: "spouse", firstName: "Riley", lastName: "Doe" },
+    ]);
+    // The stale denormalized name the household still carries.
+    setSelectResult("crm_households", [{ name: "old placeholder name" }]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      primary: { firstName: "Jordan", lastName: "Doe" },
+      spouse: { firstName: "Riley", lastName: "Doe" },
+    };
+    await commitClientsIdentity(tx, payload, ctx);
+
+    // The household name must be rewritten from the (now-updated) contacts.
+    const householdUpdates = callsForTable(calls, "crm_households").filter(
+      (c) => c.op === "update",
+    );
+    expect(householdUpdates).toHaveLength(1);
+    const setValues =
+      householdUpdates[0].op === "update"
+        ? (householdUpdates[0].values as Record<string, unknown>)
+        : {};
+    expect(setValues.name).toBe("Jordan & Riley Doe");
+  });
+
+  it("does not touch the household name when no name field is imported", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
+    // Only a DOB comes in — the extractor recovered no usable name on either
+    // slot, so the household name must be left alone.
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      primary: { firstName: "", dateOfBirth: "1980-01-01" },
+    };
+    await commitClientsIdentity(tx, payload, ctx);
+    expect(callsForTable(calls, "crm_households")).toHaveLength(0);
+  });
+
   it("skips empty fields rather than overwriting with undefined", async () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);

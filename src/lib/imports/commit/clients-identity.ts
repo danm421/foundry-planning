@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { clients, crmHouseholdContacts } from "@/db/schema";
+import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import type { FilingStatus } from "@/lib/extraction/types";
 
 import type { ImportPayload } from "../types";
@@ -72,6 +73,20 @@ export async function commitClientsIdentity(
         lastName: spouse.lastName,
         dateOfBirth: spouse.dateOfBirth,
       });
+    }
+
+    // Keep the denormalized household name tracking the contacts, same as the
+    // CRM-edit (updateCrmContact) and planning PUT (/api/clients/[id]) paths.
+    // An AI import that changes a primary/spouse name mirrors it into the CRM
+    // contacts above but leaves crm_households.name stale otherwise.
+    const nameChanged = Boolean(
+      primary?.firstName ||
+        primary?.lastName ||
+        spouse?.firstName ||
+        spouse?.lastName,
+    );
+    if (nameChanged) {
+      await syncHouseholdNameFromContacts(tx, clientRow.crmHouseholdId);
     }
   }
 
