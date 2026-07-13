@@ -79,13 +79,14 @@ function accountSublabel(t: PortalTransactionDTO): string {
 }
 
 export default function Transactions() {
-  const { accountId: accountIdParam } = useLocalSearchParams<{ accountId?: string }>();
+  const { accountId: accountIdParam, review: reviewParam } =
+    useLocalSearchParams<{ accountId?: string; review?: string }>();
   const api = useApi();
   const me = useMe();
 
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
-  const [unreviewedOnly, setUnreviewedOnly] = useState(false);
+  const [unreviewedOnly, setUnreviewedOnly] = useState(reviewParam === "1");
   const [windowKey, setWindowKey] = useState<WindowKey>("ALL");
   const [category, setCategory] = useState<CategoryPick>(null);
   const [accountId, setAccountId] = useState<string | undefined>(accountIdParam);

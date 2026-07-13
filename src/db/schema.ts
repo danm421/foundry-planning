@@ -3501,6 +3501,61 @@ export const plaidTransactionsRelations = relations(plaidTransactions, ({ one })
   }),
 }));
 
+export const portalNotificationKind = pgEnum("portal_notification_kind", [
+  "transactions_to_review",
+  "reconnect_required",
+]);
+
+// Registry of Expo push-delivery addresses for the client portal mobile app.
+export const portalPushTokens = pgTable(
+  "portal_push_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    clerkUserId: text("clerk_user_id").notNull(),
+    // Opaque Expo delivery address (not a credential). Unique = the upsert key.
+    expoPushToken: text("expo_push_token").notNull().unique(),
+    platform: text("platform").notNull(), // 'ios' | 'android'
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    clientIdx: index("portal_push_tokens_client_idx").on(t.clientId),
+  }),
+);
+
+// One row per delivered push-notification EVENT. Doubles as the throttle
+// source (query MAX(created_at) by client/kind) and the delivery log — the
+// only local evidence a push fired before TestFlight. No audit-log row: the
+// send is a system side-effect of an already-audited webhook sync.
+export const portalNotifications = pgTable(
+  "portal_notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    // Set for reconnect events (per-item throttle grain); null for transactions.
+    plaidItemId: uuid("plaid_item_id").references(() => plaidItems.id, {
+      onDelete: "cascade",
+    }),
+    kind: portalNotificationKind("kind").notNull(),
+    body: text("body").notNull(),
+    tokenCount: integer("token_count").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    clientKindIdx: index("portal_notifications_client_kind_idx").on(
+      t.clientId,
+      t.kind,
+      t.createdAt,
+    ),
+  }),
+);
+
 export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
   account: one(accounts, {
     fields: [accountOwners.accountId],

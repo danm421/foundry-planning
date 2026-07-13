@@ -6,6 +6,7 @@ import { syncTransactionsForItem } from "./transactions-sync";
 import { refreshPlaidItemData } from "./refresh-item-data";
 import { recordCreate } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
+import { notifyReconnectRequired, notifyTransactionsToReview } from "@/lib/portal/push/notify";
 
 /**
  * Handler map for POST /api/webhooks/plaid, keyed "<webhook_type>:<webhook_code>"
@@ -33,6 +34,8 @@ type ItemRow = {
   clientId: string;
   accessToken: string;
   transactionsCursor: string | null;
+  lastRefreshError: string | null;
+  institutionName: string | null;
 };
 
 async function findItem(payload: PlaidWebhookPayload): Promise<ItemRow | null> {
@@ -43,6 +46,8 @@ async function findItem(payload: PlaidWebhookPayload): Promise<ItemRow | null> {
       clientId: plaidItems.clientId,
       accessToken: plaidItems.accessToken,
       transactionsCursor: plaidItems.transactionsCursor,
+      lastRefreshError: plaidItems.lastRefreshError,
+      institutionName: plaidItems.institutionName,
     })
     .from(plaidItems)
     .where(eq(plaidItems.plaidItemId, payload.item_id))
@@ -85,11 +90,26 @@ async function auditSystem(
   });
 }
 
-async function persistErrorCode(itemRowId: string, code: string): Promise<void> {
-  await db
-    .update(plaidItems)
-    .set({ lastRefreshError: code })
-    .where(eq(plaidItems.id, itemRowId));
+const RECONNECT_CODE = "ITEM_LOGIN_REQUIRED";
+
+/** Writes the item's error code and, only on the transition INTO
+ *  ITEM_LOGIN_REQUIRED, fires the reconnect push (edge-triggered + the
+ *  per-item throttle prevents redelivered webhooks from re-nudging). Push
+ *  failures never propagate — they must not 500 the webhook. */
+async function setItemErrorAndMaybeNotify(item: ItemRow, code: string): Promise<void> {
+  const wasReconnect = item.lastRefreshError === RECONNECT_CODE;
+  await db.update(plaidItems).set({ lastRefreshError: code }).where(eq(plaidItems.id, item.id));
+  if (code === RECONNECT_CODE && !wasReconnect) {
+    try {
+      await notifyReconnectRequired({
+        id: item.id,
+        clientId: item.clientId,
+        institutionName: item.institutionName,
+      });
+    } catch (e) {
+      console.error("push: reconnect notify failed", e);
+    }
+  }
 }
 
 const ignore: Handler = async () => "ignored";
@@ -127,10 +147,7 @@ export const plaidWebhookHandlers: Record<string, Handler> = {
     if (!code) return "ignored";
     const item = await findItem(payload);
     if (!item) return "ignored";
-    await db
-      .update(plaidItems)
-      .set({ lastRefreshError: code })
-      .where(eq(plaidItems.id, item.id));
+    await setItemErrorAndMaybeNotify(item, code);
     return "ok";
   },
   // Fired ~7 days before consent expiry / disconnection — proactive re-auth.
@@ -166,7 +183,7 @@ export const plaidWebhookHandlers: Record<string, Handler> = {
         needsUserAction(result.errorCode) ||
         CONFIG_ERROR_CODES.has(result.errorCode)
       ) {
-        await persistErrorCode(item.id, result.errorCode);
+        await setItemErrorAndMaybeNotify(item, result.errorCode);
         return "ok";
       }
       throw new Error(`webhook sync failed: ${result.errorCode} ${result.errorMessage}`);
@@ -176,6 +193,13 @@ export const plaidWebhookHandlers: Record<string, Handler> = {
       modified: result.modified,
       removed: result.removed,
     });
+    if (result.added > 0) {
+      try {
+        await notifyTransactionsToReview(item.clientId);
+      } catch (e) {
+        console.error("push: transactions notify failed", e);
+      }
+    }
     return "ok";
   },
   // Legacy polling-model codes; we use /transactions/sync.
