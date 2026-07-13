@@ -32,6 +32,7 @@ export function TaxReportView({
 }) {
   const a = detail.analysis!;
   const k = a.keyFigures;
+  const incomeTotal = incomeCompositionTotal(k.totalIncome);
 
   async function exportPdf() {
     const res = await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}/export-pdf`, { method: "POST" });
@@ -104,19 +105,15 @@ export function TaxReportView({
                 </tr>
               ))}
             </tbody>
-            {(() => {
-              const total = incomeCompositionTotal(k.totalIncome);
-              if (!total) return null;
-              return (
-                <tfoot>
-                  <tr className="border-t-2 border-hair font-medium">
-                    <td className="py-1">Total income</td>
-                    <td className="py-1 text-right tabular-nums">{total.amount}</td>
-                    <td className="py-1 text-right tabular-nums">{total.pct}</td>
-                  </tr>
-                </tfoot>
-              );
-            })()}
+            {incomeTotal && (
+              <tfoot>
+                <tr className="border-t-2 border-hair font-medium">
+                  <td className="py-1">Total income</td>
+                  <td className="py-1 text-right tabular-nums">{incomeTotal.amount}</td>
+                  <td className="py-1 text-right tabular-nums">{incomeTotal.pct}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </section>
       )}

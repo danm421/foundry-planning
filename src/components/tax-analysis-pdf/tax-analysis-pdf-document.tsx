@@ -163,6 +163,7 @@ function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
 function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
   const rows = analysis.incomeComposition;
   if (!rows) return null;
+  const total = incomeCompositionTotal(analysis.keyFigures.totalIncome);
   return (
     <View>
       <Text style={styles.sectionHeading}>Income composition</Text>
@@ -179,17 +180,13 @@ function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
             <Text style={styles.tableValueCell}>{r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}</Text>
           </View>
         ))}
-        {(() => {
-          const total = incomeCompositionTotal(analysis.keyFigures.totalIncome);
-          if (!total) return null;
-          return (
-            <View style={styles.tableTotalRow}>
-              <Text style={styles.tableTotalLabelCell}>Total income</Text>
-              <Text style={styles.tableTotalValueCell}>{total.amount}</Text>
-              <Text style={styles.tableTotalValueCell}>{total.pct}</Text>
-            </View>
-          );
-        })()}
+        {total && (
+          <View style={styles.tableTotalRow}>
+            <Text style={styles.tableTotalLabelCell}>Total income</Text>
+            <Text style={styles.tableTotalValueCell}>{total.amount}</Text>
+            <Text style={styles.tableTotalValueCell}>{total.pct}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
