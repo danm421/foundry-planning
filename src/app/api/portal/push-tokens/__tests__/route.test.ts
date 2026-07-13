@@ -5,7 +5,7 @@ vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolveMock(),
 }));
 vi.mock("@/lib/authz", () => ({ authErrorResponse: () => null }));
-vi.mock("@/db/schema", () => ({ portalPushTokens: { _n: "ppt", expoPushToken: "t" } }));
+vi.mock("@/db/schema", () => ({ portalPushTokens: { _n: "ppt", expoPushToken: "t", clientId: "c" } }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a }));
 
 const insertValuesMock = vi.fn();
@@ -87,5 +87,12 @@ describe("DELETE /api/portal/push-tokens", () => {
     const res = await DELETE(delReq("?token=ExponentPushToken%5Ba%5D"));
     expect(res.status).toBe(200);
     expect(deleteWhereMock).toHaveBeenCalledOnce();
+    // Tenant isolation: the WHERE must AND both the token AND the caller's clientId.
+    // With and/eq mocked as identity passthroughs, the captured arg is a nested array.
+    const whereArg = deleteWhereMock.mock.calls[0][0];
+    expect(whereArg).toContainEqual(["t", "ExponentPushToken[a]"]);
+    expect(whereArg).toContainEqual(["c", "c1"]);
+    // A refactor that dropped the clientId condition would fail the assertion above.
+    expect(whereArg).toEqual([["t", "ExponentPushToken[a]"], ["c", "c1"]]);
   });
 });
