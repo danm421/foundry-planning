@@ -22,10 +22,12 @@ function useNotificationRouting() {
   const router = useRouter();
   useEffect(() => {
     // Cold-start: app was launched by tapping a notification.
-    Notifications.getLastNotificationResponseAsync().then((resp) => {
-      const route = resp && routeForNotificationData(resp.notification.request.content.data);
-      if (route) router.push(route as never);
-    });
+    Notifications.getLastNotificationResponseAsync()
+      .then((resp) => {
+        const route = resp && routeForNotificationData(resp.notification.request.content.data);
+        if (route) router.push(route as never);
+      })
+      .catch(() => {});
     // Warm: tapped while running.
     const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
       const route = routeForNotificationData(resp.notification.request.content.data);
