@@ -20,6 +20,12 @@ export function livingSlotRole(
 }
 
 const RETIREMENT_RE = /retirement/i;
+/**
+ * A "Pre-Retirement" / "Non-Retirement" phase mentions retirement but is not the
+ * retirement slot, so it must not auto-fill it (it falls through to the generic
+ * matcher; the advisor can still re-link it via the review dropdown).
+ */
+const NON_RETIREMENT_PREFIX_RE = /\b(?:pre|non)[-\s]?retirement/i;
 const RETIREMENT_QUALIFIER_RE = /(expense|budget|living|income|need|spend)/i;
 const CURRENT_RE =
   /(living expenses?|monthly expenses?|total expenses?|annual expenses?|household (budget|expenses)|current (living|expenses))/i;
@@ -39,7 +45,10 @@ export function matchLivingSlot(
   const name = incoming.name?.trim() ?? "";
   if (!name) return null;
 
-  const isRetirement = RETIREMENT_RE.test(name) && RETIREMENT_QUALIFIER_RE.test(name);
+  const isRetirement =
+    RETIREMENT_RE.test(name) &&
+    !NON_RETIREMENT_PREFIX_RE.test(name) &&
+    RETIREMENT_QUALIFIER_RE.test(name);
   const isCurrent = !RETIREMENT_RE.test(name) && CURRENT_RE.test(name);
   const wantRole = isRetirement ? "retirement" : isCurrent ? "current" : null;
   if (!wantRole) return null;

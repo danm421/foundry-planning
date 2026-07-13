@@ -68,4 +68,20 @@ describe("matchLivingSlot", () => {
   it("returns null for a bare ambiguous 'Retirement' with no qualifier", () => {
     expect(matchLivingSlot({ type: "living", name: "Retirement" }, SLOTS)).toBeNull();
   });
+
+  it("does not route a pre-/non-retirement phase to the retirement slot", () => {
+    // These contain "retirement" + a qualifier but name a phase before/outside
+    // retirement, so they must NOT auto-fill the retirement slot. They fall
+    // through to the generic matcher (imported as a separate row); the advisor
+    // can still re-link them via the review dropdown.
+    expect(
+      matchLivingSlot({ type: "living", name: "Pre-Retirement Expenses" }, SLOTS),
+    ).toBeNull();
+    expect(
+      matchLivingSlot({ type: "living", name: "Pre Retirement Budget" }, SLOTS),
+    ).toBeNull();
+    expect(
+      matchLivingSlot({ type: "living", name: "Non-Retirement Expenses" }, SLOTS),
+    ).toBeNull();
+  });
 });
