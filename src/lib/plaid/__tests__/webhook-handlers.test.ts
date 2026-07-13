@@ -17,11 +17,16 @@ vi.mock("@/db", () => ({
 vi.mock("../transactions-sync", () => ({ syncTransactionsForItem: vi.fn() }));
 vi.mock("../refresh-item-data", () => ({ refreshPlaidItemData: vi.fn() }));
 vi.mock("@/lib/audit/record-helpers", () => ({ recordCreate: vi.fn() }));
+vi.mock("@/lib/portal/push/notify", () => ({
+  notifyTransactionsToReview: vi.fn(),
+  notifyReconnectRequired: vi.fn(),
+}));
 
 import { plaidWebhookHandlers } from "../webhook-handlers";
 import { syncTransactionsForItem } from "../transactions-sync";
 import { refreshPlaidItemData } from "../refresh-item-data";
 import { recordCreate } from "@/lib/audit/record-helpers";
+import { notifyTransactionsToReview } from "@/lib/portal/push/notify";
 
 const ITEM_ROW = {
   id: "row-1",
@@ -40,6 +45,7 @@ beforeEach(() => {
   vi.mocked(syncTransactionsForItem).mockReset();
   vi.mocked(refreshPlaidItemData).mockReset();
   vi.mocked(recordCreate).mockReset();
+  vi.mocked(notifyTransactionsToReview).mockReset();
 });
 
 const base = { item_id: "plaid-item-1", environment: "production" };
@@ -238,5 +244,26 @@ describe("data handlers", () => {
     for (const code of ["INITIAL_UPDATE", "HISTORICAL_UPDATE", "DEFAULT_UPDATE"]) {
       expect(await plaidWebhookHandlers[`TRANSACTIONS:${code}`](base)).toBe("ignored");
     }
+  });
+});
+
+describe("TRANSACTIONS:SYNC_UPDATES_AVAILABLE — push", () => {
+  it("nudges when the sync added new transactions", async () => {
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({ ok: true, added: 3, modified: 0, removed: 0 });
+    await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"]({ ...base });
+    expect(notifyTransactionsToReview).toHaveBeenCalledWith("client-1");
+  });
+
+  it("does not nudge when nothing was added", async () => {
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({ ok: true, added: 0, modified: 2, removed: 1 });
+    await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"]({ ...base });
+    expect(notifyTransactionsToReview).not.toHaveBeenCalled();
+  });
+
+  it("still returns ok when the push throws", async () => {
+    vi.mocked(syncTransactionsForItem).mockResolvedValue({ ok: true, added: 1, modified: 0, removed: 0 });
+    vi.mocked(notifyTransactionsToReview).mockRejectedValue(new Error("expo down"));
+    const result = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"]({ ...base });
+    expect(result).toBe("ok");
   });
 });

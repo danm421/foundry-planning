@@ -6,6 +6,7 @@ import { syncTransactionsForItem } from "./transactions-sync";
 import { refreshPlaidItemData } from "./refresh-item-data";
 import { recordCreate } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
+import { notifyTransactionsToReview } from "@/lib/portal/push/notify";
 
 /**
  * Handler map for POST /api/webhooks/plaid, keyed "<webhook_type>:<webhook_code>"
@@ -176,6 +177,13 @@ export const plaidWebhookHandlers: Record<string, Handler> = {
       modified: result.modified,
       removed: result.removed,
     });
+    if (result.added > 0) {
+      try {
+        await notifyTransactionsToReview(item.clientId);
+      } catch (e) {
+        console.error("push: transactions notify failed", e);
+      }
+    }
     return "ok";
   },
   // Legacy polling-model codes; we use /transactions/sync.
