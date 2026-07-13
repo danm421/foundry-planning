@@ -16,7 +16,7 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ error: "Client mode only" }, { status: 403 });
     }
     const body = (await req.json().catch(() => ({}))) as PostBody;
-    const token = body.expoPushToken?.trim();
+    const token = typeof body.expoPushToken === "string" ? body.expoPushToken.trim() : undefined;
     if (!token) {
       return NextResponse.json({ error: "expoPushToken required" }, { status: 400 });
     }

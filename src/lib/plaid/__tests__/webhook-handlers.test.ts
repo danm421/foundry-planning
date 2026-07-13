@@ -294,4 +294,14 @@ describe("ITEM:ERROR — reconnect push (edge-triggered)", () => {
     await plaidWebhookHandlers["ITEM:ERROR"]({ ...base, error: { error_code: "INSTITUTION_DOWN" } });
     expect(notifyReconnectRequired).not.toHaveBeenCalled();
   });
+
+  it("still returns ok when the reconnect push throws", async () => {
+    dbSelect.mockImplementation(() => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...ITEM_ROW, lastRefreshError: null }]) }) }),
+    }));
+    vi.mocked(notifyReconnectRequired).mockRejectedValue(new Error("expo down"));
+    const result = await plaidWebhookHandlers["ITEM:ERROR"]({ ...base, error: { error_code: "ITEM_LOGIN_REQUIRED" } });
+    expect(result).toBe("ok");
+    expect(dbSetArgs[0]).toEqual({ lastRefreshError: "ITEM_LOGIN_REQUIRED" });
+  });
 });

@@ -51,6 +51,11 @@ describe("POST /api/portal/push-tokens", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400s when the token is not a string", async () => {
+    const res = await POST(req({ expoPushToken: 123, platform: "ios" }));
+    expect(res.status).toBe(400);
+  });
+
   it("upserts the token with enabled defaulting to true", async () => {
     const res = await POST(req({ expoPushToken: "ExponentPushToken[a]", platform: "ios" }));
     expect(res.status).toBe(200);
