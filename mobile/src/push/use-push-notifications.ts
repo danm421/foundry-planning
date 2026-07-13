@@ -28,12 +28,16 @@ export function usePushNotifications() {
   const tokenRef = useRef<string | null>(null);
 
   const register = useCallback(async () => {
-    const perm = await Notifications.requestPermissionsAsync();
-    if (perm.status !== "granted") return;
-    const token = await getExpoToken();
-    if (!token) return;
-    tokenRef.current = token;
-    await registerPushToken(api, { expoPushToken: token, platform: platform(), enabled: true });
+    try {
+      const perm = await Notifications.requestPermissionsAsync();
+      if (perm.status !== "granted") return;
+      const token = await getExpoToken();
+      if (!token) return;
+      tokenRef.current = token;
+      await registerPushToken(api, { expoPushToken: token, platform: platform(), enabled: true });
+    } catch {
+      // offline device / backend error — swallow, matching setEnabled's disable-branch pattern
+    }
   }, [api]);
 
   useEffect(() => {
