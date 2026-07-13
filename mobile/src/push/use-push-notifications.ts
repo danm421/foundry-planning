@@ -26,6 +26,12 @@ export function usePushNotifications() {
   const api = useApi();
   const [enabled, setEnabledState] = useState(true);
   const tokenRef = useRef<string | null>(null);
+  // In-flight `register()` promise, if any. `unregister()` and the disable
+  // path in `setEnabled` must await this before consulting `tokenRef` —
+  // otherwise a registration that's still mid-flight (permission check →
+  // getExpoPushTokenAsync → POST) races sign-out/toggle-off and the token
+  // never gets deleted server-side.
+  const registrationRef = useRef<Promise<void> | null>(null);
 
   const register = useCallback(async () => {
     try {
@@ -40,15 +46,21 @@ export function usePushNotifications() {
     }
   }, [api]);
 
+  const startRegistration = useCallback(() => {
+    const p = register();
+    registrationRef.current = p;
+    return p;
+  }, [register]);
+
   useEffect(() => {
     SecureStore.getItemAsync(ENABLED_KEY)
       .then((v) => {
         const on = v !== "false";
         setEnabledState(on);
-        if (on) void register();
+        if (on) void startRegistration();
       })
       .catch(() => {});
-  }, [register]);
+  }, [startRegistration]);
 
   const setEnabled = useCallback(
     async (v: boolean) => {
@@ -59,19 +71,23 @@ export function usePushNotifications() {
       }
       setEnabledState(v);
       if (v) {
-        await register();
-      } else if (tokenRef.current) {
-        await registerPushToken(api, {
-          expoPushToken: tokenRef.current,
-          platform: platform(),
-          enabled: false,
-        }).catch(() => {});
+        await startRegistration();
+      } else {
+        if (registrationRef.current) await registrationRef.current;
+        if (tokenRef.current) {
+          await registerPushToken(api, {
+            expoPushToken: tokenRef.current,
+            platform: platform(),
+            enabled: false,
+          }).catch(() => {});
+        }
       }
     },
-    [api, register],
+    [api, startRegistration],
   );
 
   const unregister = useCallback(async () => {
+    if (registrationRef.current) await registrationRef.current;
     if (tokenRef.current) await deletePushToken(api, tokenRef.current).catch(() => {});
   }, [api]);
 
