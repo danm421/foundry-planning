@@ -26,13 +26,15 @@ import { plaidWebhookHandlers } from "../webhook-handlers";
 import { syncTransactionsForItem } from "../transactions-sync";
 import { refreshPlaidItemData } from "../refresh-item-data";
 import { recordCreate } from "@/lib/audit/record-helpers";
-import { notifyTransactionsToReview } from "@/lib/portal/push/notify";
+import { notifyTransactionsToReview, notifyReconnectRequired } from "@/lib/portal/push/notify";
 
 const ITEM_ROW = {
   id: "row-1",
   clientId: "client-1",
   accessToken: "enc",
   transactionsCursor: null,
+  lastRefreshError: null as string | null,
+  institutionName: "Chase" as string | null,
 };
 
 beforeEach(() => {
@@ -46,6 +48,7 @@ beforeEach(() => {
   vi.mocked(refreshPlaidItemData).mockReset();
   vi.mocked(recordCreate).mockReset();
   vi.mocked(notifyTransactionsToReview).mockReset();
+  vi.mocked(notifyReconnectRequired).mockReset();
 });
 
 const base = { item_id: "plaid-item-1", environment: "production" };
@@ -265,5 +268,30 @@ describe("TRANSACTIONS:SYNC_UPDATES_AVAILABLE — push", () => {
     vi.mocked(notifyTransactionsToReview).mockRejectedValue(new Error("expo down"));
     const result = await plaidWebhookHandlers["TRANSACTIONS:SYNC_UPDATES_AVAILABLE"]({ ...base });
     expect(result).toBe("ok");
+  });
+});
+
+describe("ITEM:ERROR — reconnect push (edge-triggered)", () => {
+  it("nudges on the transition into ITEM_LOGIN_REQUIRED", async () => {
+    dbSelect.mockImplementation(() => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...ITEM_ROW, lastRefreshError: null }]) }) }),
+    }));
+    await plaidWebhookHandlers["ITEM:ERROR"]({ ...base, error: { error_code: "ITEM_LOGIN_REQUIRED" } });
+    expect(notifyReconnectRequired).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "row-1", clientId: "client-1", institutionName: "Chase" }),
+    );
+  });
+
+  it("does NOT nudge when already in the login-required state", async () => {
+    dbSelect.mockImplementation(() => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ ...ITEM_ROW, lastRefreshError: "ITEM_LOGIN_REQUIRED" }]) }) }),
+    }));
+    await plaidWebhookHandlers["ITEM:ERROR"]({ ...base, error: { error_code: "ITEM_LOGIN_REQUIRED" } });
+    expect(notifyReconnectRequired).not.toHaveBeenCalled();
+  });
+
+  it("does NOT nudge for a non-login error code", async () => {
+    await plaidWebhookHandlers["ITEM:ERROR"]({ ...base, error: { error_code: "INSTITUTION_DOWN" } });
+    expect(notifyReconnectRequired).not.toHaveBeenCalled();
   });
 });
