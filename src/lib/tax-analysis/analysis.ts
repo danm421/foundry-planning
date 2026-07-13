@@ -15,6 +15,7 @@ import {
 } from "./breakdowns";
 
 export interface TaxAnalysisKeyFigures {
+  totalIncome: number | null; // 1040 line 9
   agi: number | null;
   taxableIncome: number | null;
   totalTax: number | null;
@@ -63,6 +64,7 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
   return {
     taxYear: facts.taxYear,
     keyFigures: {
+      totalIncome: facts.income.totalIncome,
       agi,
       taxableIncome: facts.deductions.taxableIncome,
       totalTax,
