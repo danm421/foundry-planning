@@ -23,7 +23,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { POST } from "../route";
+import { DELETE, POST } from "../route";
 
 function req(body: unknown): Request {
   return new Request("http://x/api/portal/push-tokens", {
@@ -63,5 +63,29 @@ describe("POST /api/portal/push-tokens", () => {
   it("honors an explicit enabled:false (toggle off)", async () => {
     await POST(req({ expoPushToken: "ExponentPushToken[a]", platform: "ios", enabled: false }));
     expect(insertValuesMock).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+  });
+});
+
+function delReq(qs: string): Request {
+  return new Request(`http://x/api/portal/push-tokens${qs}`, { method: "DELETE" });
+}
+
+describe("DELETE /api/portal/push-tokens", () => {
+  it("rejects advisor mode with 403", async () => {
+    resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "u1" });
+    const res = await DELETE(delReq("?token=ExponentPushToken%5Ba%5D"));
+    expect(res.status).toBe(403);
+    expect(deleteWhereMock).not.toHaveBeenCalled();
+  });
+
+  it("400s when the token query param is missing", async () => {
+    const res = await DELETE(delReq(""));
+    expect(res.status).toBe(400);
+  });
+
+  it("deletes the token (scoped to the caller's client)", async () => {
+    const res = await DELETE(delReq("?token=ExponentPushToken%5Ba%5D"));
+    expect(res.status).toBe(200);
+    expect(deleteWhereMock).toHaveBeenCalledOnce();
   });
 });

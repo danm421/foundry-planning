@@ -37,3 +37,24 @@ export async function POST(req: Request): Promise<Response> {
     throw err;
   }
 }
+
+export async function DELETE(req: Request): Promise<Response> {
+  try {
+    const { clientId, mode } = await resolvePortalClient();
+    if (mode !== "client") {
+      return NextResponse.json({ error: "Client mode only" }, { status: 403 });
+    }
+    const token = new URL(req.url).searchParams.get("token")?.trim();
+    if (!token) {
+      return NextResponse.json({ error: "token required" }, { status: 400 });
+    }
+    await db
+      .delete(portalPushTokens)
+      .where(and(eq(portalPushTokens.expoPushToken, token), eq(portalPushTokens.clientId, clientId)));
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
