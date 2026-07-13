@@ -201,6 +201,26 @@ describe("annotatePayload", () => {
     expect(result.expenses[1].match).toEqual({ kind: "exact", existingId: "slot-retirement" });
     expect(result.expenses[2].match).toEqual({ kind: "exact", existingId: "exp-housing" });
   });
+
+  it("claims a living slot for only the first matching row; later rows fall through to matchExpense", () => {
+    const candidates: MatchCandidates = {
+      ...emptyCandidates(),
+      expenses: [],
+      livingSlots: [
+        { id: "slot-current", name: "Current Living Expenses", role: "current" },
+        { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+      ],
+    };
+    const payload = payloadFixture({
+      expenses: [
+        annotated({ type: "living", name: "Living Expenses", annualAmount: 60000 }),
+        annotated({ type: "living", name: "Total Monthly Expenses", annualAmount: 61000 }),
+      ] as Annotated<ExtractedExpense>[],
+    });
+    const result = annotatePayload(payload, candidates);
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match).toEqual({ kind: "new" });
+  });
 });
 
 describe("runMatchingPass — onboarding mode", () => {

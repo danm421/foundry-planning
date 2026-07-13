@@ -71,6 +71,11 @@ export function annotatePayload(
   payload: ImportPayload,
   candidates: MatchCandidates,
 ): ImportPayload {
+  // One row -> one slot: the first row that matches a given living-expense
+  // slot claims it. Any later row that would resolve to the same slot id
+  // falls through to matchExpense instead of re-claiming it (which would
+  // otherwise cause a last-wins UPDATE at commit and silently drop a row).
+  const claimedSlotIds = new Set<string>();
   return {
     ...payload,
     accounts: payload.accounts.map((row) => ({
@@ -81,12 +86,18 @@ export function annotatePayload(
       ...row,
       match: matchIncome(row, candidates.incomes),
     })),
-    expenses: payload.expenses.map((row) => ({
-      ...row,
-      match:
-        matchLivingSlot(row, candidates.livingSlots) ??
-        matchExpense(row, candidates.expenses),
-    })),
+    expenses: payload.expenses.map((row) => {
+      const slotMatch = matchLivingSlot(row, candidates.livingSlots);
+      if (
+        slotMatch &&
+        slotMatch.kind === "exact" &&
+        !claimedSlotIds.has(slotMatch.existingId)
+      ) {
+        claimedSlotIds.add(slotMatch.existingId);
+        return { ...row, match: slotMatch };
+      }
+      return { ...row, match: matchExpense(row, candidates.expenses) };
+    }),
     liabilities: payload.liabilities.map((row) => ({
       ...row,
       match: matchLiability(row, candidates.liabilities),
