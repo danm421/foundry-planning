@@ -201,7 +201,7 @@ describe("LiveSolverWorkspace — solve minimum additional savings", () => {
     ]);
   });
 
-  it("shows the outcome and 'Keep self-funding' surfaces the savings box", async () => {
+  it("shows the outcome and 'Save flexibly' surfaces the savings box", async () => {
     render(<LiveSolverWorkspace {...baseProps} />);
 
     openAndSolve();
@@ -216,9 +216,9 @@ describe("LiveSolverWorkspace — solve minimum additional savings", () => {
     // Outcome panel renders (appears in both panel copies → findAllByText).
     expect((await screen.findAllByText(/24,500/)).length).toBeGreaterThan(0);
 
-    // Click "Keep self-funding" (first copy) → the Additional Savings box appears.
+    // Click "Save flexibly" (first copy) → the Additional Savings box appears.
     fireEvent.click(
-      screen.getAllByRole("button", { name: /Keep self-funding/i })[0],
+      screen.getAllByRole("button", { name: /Save flexibly/i })[0],
     );
     expect(
       (await screen.findAllByLabelText("Additional Savings")).length,
@@ -259,22 +259,22 @@ describe("LiveSolverWorkspace — solve minimum additional savings", () => {
     expect(liveAccountIds).toEqual([secondAccountId]);
   });
 
-  it("after committing one account, re-solve + Keep self-funding surfaces the SECOND account", async () => {
+  it("after committing one account, re-solve + Save flexibly surfaces the SECOND account", async () => {
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // Solve #1 → converged → Keep self-funding (commits the first account).
+    // Solve #1 → converged → Save flexibly (commits the first account).
     openAndSolve();
     act(() => capturedOnResult?.(convergedEvent as never));
-    fireEvent.click(screen.getAllByRole("button", { name: /Keep self-funding/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Save flexibly/i })[0]);
     const afterFirst = (await screen.findAllByLabelText("Additional Savings")).length;
     expect(afterFirst).toBeGreaterThan(0);
 
-    // Solve #2 → converged → Keep self-funding again. The include handler must
+    // Solve #2 → converged → Save flexibly again. The include handler must
     // target THIS solve's account (the ref), not `.find(fundFromExpenseReduction)`
     // which grabs the already-committed first account, so a NEW box appears.
     openAndSolve();
     act(() => capturedOnResult?.(convergedEvent as never));
-    fireEvent.click(screen.getAllByRole("button", { name: /Keep self-funding/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Save flexibly/i })[0]);
 
     const afterSecond = (await screen.findAllByLabelText("Additional Savings")).length;
     expect(afterSecond).toBeGreaterThan(afterFirst);

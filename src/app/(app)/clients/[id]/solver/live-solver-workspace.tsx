@@ -282,11 +282,11 @@ export function LiveSolverWorkspace({
   // synthetic Additional-Savings accounts (min-savings solve) and inline-created
   // draft accounts (e.g. a Roth IRA from the Roth-conversion dialog).
   const [savingsAccountMixes, setSavingsAccountMixes] = useState<Map<string, { assetClassId: string; weight: number }[]>>(() => new Map());
-  // fundFromExpenseReduction accounts surfaced as editable boxes ("Keep self-funding").
+  // fundFromExpenseReduction accounts surfaced as editable boxes ("Save flexibly").
   const [visibleSelfFundingAccts, setVisibleSelfFundingAccts] = useState<Set<string>>(() => new Set());
   // The current still-UNCOMMITTED synthetic Additional Savings account from the
   // last min-savings solve. Set when a solve mints the account, cleared when the
-  // advisor commits it (Keep self-funding / Lock in cut) or discards it (Dismiss).
+  // advisor commits it (Save flexibly / Lock in a fixed budget) or discards it (Dismiss).
   // Lets a re-solve retire the prior uncommitted account instead of stacking a
   // second one, and lets the include handlers target THIS account rather than a
   // fragile `.find(fundFromExpenseReduction)` that grabs the oldest committed one.
@@ -921,7 +921,7 @@ export function LiveSolverWorkspace({
     ],
   );
 
-  // "Keep self-funding": the synthetic fundFromExpenseReduction rule is already
+  // "Save flexibly": the synthetic fundFromExpenseReduction rule is already
   // in the tree (written back by onResult). Surface THIS solve's account as an
   // editable box and commit it (clear the ref so a later solve won't retire it).
   const handleIncludeSelfFunding = useCallback(() => {
@@ -932,7 +932,7 @@ export function LiveSolverWorkspace({
     setMinSavingsResult(null);
   }, [minSavingsResult]);
 
-  // "Lock in cut": convert THIS solve's synthetic rule to a normal savings rule
+  // "Lock in a fixed budget": convert THIS solve's synthetic rule to a normal savings rule
   // and lower working-years living expenses by the year-0 expense-reduction
   // amount. Commits the account (clear the ref) so a later solve won't retire it.
   const handleIncludeLockInCut = useCallback(() => {

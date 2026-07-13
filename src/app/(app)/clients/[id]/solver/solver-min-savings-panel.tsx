@@ -81,22 +81,22 @@ export function SolverMinSavingsPanel({
             : `fully funded by existing cash flow`}
         </p>
         <div className="mt-3 flex items-center gap-2">
-          <ActionTip text="Keep funding the plan from the modeled spending cut. The amount is added as an editable contribution above so you can fine-tune it; the client's stated living expenses are left unchanged.">
+          <ActionTip text="Adds the savings as an editable contribution that adapts each year — surplus cash flow first, trimming spending only as needed. Never forces a portfolio withdrawal, and the client's stated budget stays as entered.">
             <button
               type="button"
               onClick={onIncludeSelfFunding}
               className="h-7 rounded-md bg-accent px-2.5 text-[12px] font-semibold text-accent-on hover:bg-accent/90"
             >
-              Keep self-funding
+              Save flexibly
             </button>
           </ActionTip>
-          <ActionTip text="Bake the cut in permanently: lower the client's working-years living expenses by this amount and turn the freed-up cash into a regular savings contribution.">
+          <ActionTip text="Permanently lowers the client's working-years living expenses by the cut and adds a fixed yearly contribution. A concrete committed budget — in a lean year the fixed savings can draw from the portfolio.">
             <button
               type="button"
               onClick={onIncludeLockInCut}
               className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair"
             >
-              Lock in cut
+              Lock in a fixed budget
             </button>
           </ActionTip>
           <ActionTip

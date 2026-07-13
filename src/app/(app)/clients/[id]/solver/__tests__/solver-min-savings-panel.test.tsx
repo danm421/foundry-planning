@@ -45,9 +45,9 @@ describe("SolverMinSavingsPanel", () => {
     );
     expect(screen.getByText(/24,500/)).toBeInTheDocument();
     expect(screen.getByText(/108,300/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Keep self-funding/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Save flexibly/i }));
     expect(onSelf).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /Lock in cut/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Lock in a fixed budget/i }));
     expect(onLock).toHaveBeenCalled();
   });
 
