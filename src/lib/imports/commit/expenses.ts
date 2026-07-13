@@ -22,6 +22,22 @@ export async function commitExpenses(
   const now = new Date();
   const currentYear = now.getUTCFullYear();
 
+  // Seeded isDefault living slots (Current/Retirement). A row linked to one of
+  // these gets its amount filled but keeps its canonical current/retirement
+  // year window — never reshaped by extracted timing.
+  const slotRows = await tx
+    .select({ id: expenses.id })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.clientId, ctx.clientId),
+        eq(expenses.scenarioId, ctx.scenarioId),
+        eq(expenses.type, "living"),
+        eq(expenses.isDefault, true),
+      ),
+    );
+  const slotIds = new Set(slotRows.map((r) => r.id));
+
   for (const row of payload.expenses) {
     const kind = row.match?.kind ?? "new";
 
@@ -58,14 +74,16 @@ export async function commitExpenses(
     if (row.annualAmount !== undefined) {
       updates.annualAmount = String(row.annualAmount);
     }
-    const timing = resolveImportTiming(row, ctx.milestones);
-    if (timing.start.year !== undefined) {
-      updates.startYear = timing.start.year;
-      updates.startYearRef = timing.start.ref ?? null;
-    }
-    if (timing.end.year !== undefined) {
-      updates.endYear = timing.end.year;
-      updates.endYearRef = timing.end.ref ?? null;
+    if (!slotIds.has(existingId)) {
+      const timing = resolveImportTiming(row, ctx.milestones);
+      if (timing.start.year !== undefined) {
+        updates.startYear = timing.start.year;
+        updates.startYearRef = timing.start.ref ?? null;
+      }
+      if (timing.end.year !== undefined) {
+        updates.endYear = timing.end.year;
+        updates.endYearRef = timing.end.ref ?? null;
+      }
     }
     if (row.growthRate != null) updates.growthRate = String(row.growthRate);
     await tx
