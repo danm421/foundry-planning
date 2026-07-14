@@ -19,32 +19,9 @@ import {
 } from "@/lib/investments/holdings-rollup";
 import { loadInvestmentSeries } from "@/lib/investments/value-snapshots";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
-import type { TrendPoint } from "@/lib/portal/networth-trend";
+import type { PortalInvestmentAccount, PortalInvestmentsData } from "@/lib/portal/contracts";
 
-export interface PortalInvestmentAccount {
-  id: string;
-  name: string;
-  category: string;
-  last4: string | null;
-  value: number; // Σ holdingMarketValue
-  series: TrendPoint[]; // this account's snapshots (ascending)
-  allocations: { name: string; weight: number }[]; // by asset class, desc
-  holdings: {
-    ticker: string | null;
-    name: string;
-    shares: number;
-    price: number;
-    marketValue: number;
-    costBasis: number | null;
-  }[];
-}
-
-export interface PortalInvestmentsData {
-  totalValue: number;
-  totalSeries: TrendPoint[];
-  accounts: PortalInvestmentAccount[];
-  overallAllocations: { name: string; weight: number }[];
-}
+export type { PortalInvestmentAccount, PortalInvestmentsData } from "@/lib/portal/contracts";
 
 const INVESTMENT_CATEGORIES = new Set(["taxable", "retirement"]);
 
