@@ -77,6 +77,7 @@ export default function RootLayout() {
               options={{ presentation: "modal", headerShown: false }}
             />
             <Stack.Screen name="investments" options={{ headerShown: false }} />
+            <Stack.Screen name="recurrings" options={{ headerShown: false }} />
           </Stack>
         </AppLockGate>
       </ApiProvider>
