@@ -336,6 +336,14 @@ export function applyMutations(
         };
         break;
       }
+      case "surplus-allocation": {
+        result.planSettings = {
+          ...result.planSettings,
+          surplusSpendPct: m.spendPct,          // engine reads a number 0–1
+          surplusSaveAccountId: m.saveAccountId, // account id | null (null = checking)
+        };
+        break;
+      }
       case "gift-upsert": {
         // Deferred: applied once after the loop so giftEvents is rebuilt from the
         // full scenario draft set (last-write-wins; null marks a delete).

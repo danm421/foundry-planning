@@ -835,3 +835,24 @@ describe("applyMutations — life-expectancy horizon recompute", () => {
     expect(out.planSettings.planEndYear).toBe(2065);
   });
 });
+
+describe("applyMutations — surplus allocation", () => {
+  it("surplus-allocation writes surplusSpendPct + surplusSaveAccountId", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-brokerage" },
+    ]);
+    expect(out.planSettings.surplusSpendPct).toBe(0.3);
+    expect(out.planSettings.surplusSaveAccountId).toBe("acct-brokerage");
+    // input untouched (deep clone)
+    expect(data.planSettings.surplusSpendPct).toBeUndefined();
+  });
+
+  it("preserves a null saveAccountId (household checking default)", () => {
+    const out = applyMutations(makeBase(), [
+      { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: null },
+    ]);
+    expect(out.planSettings.surplusSpendPct).toBe(0.5);
+    expect(out.planSettings.surplusSaveAccountId).toBeNull();
+  });
+});
