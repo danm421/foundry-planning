@@ -305,4 +305,48 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0].set).toMatchObject({ annualAmount: "250000" });
   });
+
+  it("remaps a surplus save-to account created in the same batch to its inserted uuid", async () => {
+    // Account created inline (synthetic id) AND chosen as the surplus destination.
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          { kind: "account-upsert", id: "synthetic-new", value: ACCT },
+          { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "synthetic-new" },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The plan_settings update carries the surplus fields; its save-to id must be
+    // the generated DB uuid, NOT the synthetic id (else FK violation).
+    const ps = updates.find((u) => u.set && "surplusSaveAccountId" in (u.set as object));
+    expect(ps).toBeDefined();
+    expect((ps!.set as { surplusSaveAccountId: string }).surplusSaveAccountId).toBe(
+      "generated-account-id",
+    );
+  });
+
+  it("returns 400 when the surplus save-to account is not in the client", async () => {
+    // Only the surplus destination id fails tenant validation; the (empty) savings
+    // and dedicated guards pass. This forces the 400 to come from the NEW surplus
+    // guard specifically — the test fails if that guard is removed.
+    vi.mocked(assertAccountsInClient).mockImplementation((async (_clientId: string, ids: string[]) =>
+      ids.includes("acct-external")
+        ? { ok: false, reason: "Account acct-external not owned by this client" }
+        : { ok: true }) as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "acct-external" }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // The surplus guard was actually consulted with the destination id.
+    expect(assertAccountsInClient).toHaveBeenCalledWith(CLIENT_ID, ["acct-external"]);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(updates).toHaveLength(0);
+  });
 });
