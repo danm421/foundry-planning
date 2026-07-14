@@ -170,6 +170,16 @@ export function ForgePanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // Autofocus the composer when the panel opens (and again once it unlocks after
+  // a turn) so the advisor can start typing immediately without a second click.
+  // Guard on !locked — a disabled textarea can't take focus, and the composer is
+  // locked while a stream/approval/import is in flight. The panel is `inert` when
+  // closed, so focusing only makes sense once `open` is true (inert is already
+  // gone by the time this post-commit effect runs).
+  useEffect(() => {
+    if (open && !locked) composerRef.current?.focus();
+  }, [open, locked]);
+
   // Shared helper so all three refresh sites stay DRY.
   // Pass clientId directly: null (global mode) → SQL IS NULL filter;
   // string (client mode) → SQL eq filter. Never coerce null→undefined here

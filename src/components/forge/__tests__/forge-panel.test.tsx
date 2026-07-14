@@ -112,6 +112,11 @@ describe("ForgePanel", () => {
     expect(screen.getByText(/how can i help/i)).toBeInTheDocument();
   });
 
+  it("autofocuses the composer when the panel opens so the advisor can type immediately", () => {
+    mountPanel();
+    expect(screen.getByLabelText("Ask Forge")).toHaveFocus();
+  });
+
   it("shows a humanized context line (client name, scenario, page — no raw IDs)", () => {
     mountPanel();
     expect(screen.getByTestId("chip-client").textContent).toBe("Jane & John Smith");
