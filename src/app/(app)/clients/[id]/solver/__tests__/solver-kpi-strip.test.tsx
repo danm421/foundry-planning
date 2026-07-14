@@ -13,8 +13,6 @@ describe("SolverKpiStrip", () => {
     portfolioAtRetirement: 8_200_000,
     portfolioAtRetirementDelta: 640_000,
     showPortfolioAtRetirement: true,
-    yearsFunded: 45,
-    yearsFundedDelta: 0,
     lifetimeTax: 4_010_000,
     lifetimeTaxDelta: 386_000,
     netToHeirs: 2_400_000,

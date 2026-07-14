@@ -32,7 +32,7 @@ import { SolverRowSavingsContributions } from "./solver-row-savings-contribution
 import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
-import { yearsFullyFunded, lifetimeTaxes, portfolioAtYear } from "@/lib/solver/solver-summary-metrics";
+import { lifetimeTaxes, portfolioAtYear } from "@/lib/solver/solver-summary-metrics";
 import { useSolverNetToHeirs } from "./use-solver-net-to-heirs";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
@@ -548,8 +548,6 @@ export function LiveSolverWorkspace({
     );
   }, [currentProjection]);
 
-  const baseYearsFunded = yearsFullyFunded(baseProjection);
-  const workingYearsFunded = yearsFullyFunded(currentProjection);
   const baseLifetimeTax = lifetimeTaxes(baseProjection);
   const workingLifetimeTax = lifetimeTaxes(currentProjection);
 
@@ -1363,8 +1361,6 @@ export function LiveSolverWorkspace({
                 portfolioAtRetirement={workingPortfolioAtRetirement}
                 portfolioAtRetirementDelta={portfolioAtRetirementDelta}
                 showPortfolioAtRetirement={showPortfolioAtRetirement}
-                yearsFunded={workingYearsFunded}
-                yearsFundedDelta={workingYearsFunded - baseYearsFunded}
                 lifetimeTax={workingLifetimeTax}
                 lifetimeTaxDelta={workingLifetimeTax - baseLifetimeTax}
                 netToHeirs={netToHeirs}
