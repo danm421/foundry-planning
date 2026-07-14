@@ -8,7 +8,7 @@ import type { ProjectionYear } from "@/engine/types";
 const y = (liquidTotal: number, taxes: number, year = 0) =>
   ({
     year,
-    portfolioAssets: { taxableTotal: liquidTotal, cashTotal: 0, retirementTotal: 0 },
+    portfolioAssets: { taxableTotal: liquidTotal, cashTotal: 0, retirementTotal: 0, liquidTotal },
     expenses: { taxes },
   }) as unknown as ProjectionYear;
 
@@ -33,6 +33,14 @@ describe("solver summary metrics", () => {
     });
     it("returns null for an empty projection", () => {
       expect(portfolioAtYear([], 2035)).toBeNull();
+    });
+    it("reads liquidTotal (incl. life insurance + trust), not the narrow taxable+cash+retirement sum", () => {
+      const rowWithLifeInsurance = {
+        year: 2040,
+        portfolioAssets: { taxableTotal: 500_000, cashTotal: 0, retirementTotal: 0, liquidTotal: 650_000 },
+        expenses: { taxes: 0 },
+      } as unknown as ProjectionYear;
+      expect(portfolioAtYear([rowWithLifeInsurance], 2040)).toBe(650_000);
     });
   });
 });
