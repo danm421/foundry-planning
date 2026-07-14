@@ -44,7 +44,16 @@ export function buildPortfolioDeltaSegments(
   for (const y of current) {
     const scenario = liquidPortfolioTotal(y);
     scenarioTotals.push(scenario);
-    const base = baseLiquidByYear.get(y.year) ?? scenario;
+    // A scenario year with no base counterpart means the base projection ended
+    // earlier — its household is fully deceased by then (a genuinely shorter-
+    // lived base), or the two horizons briefly disagree. Treat the absent base
+    // as $0 so the bar renders as "scenario fully ahead" (green) rather than the
+    // misleading "identical to base" (all-blue floor) that a `?? scenario`
+    // fallback drew. Matches the sibling estate trajectory chart's `?? 0`
+    // convention. (Horizon staleness is separately reconciled before projecting
+    // — see applyLifeExpectancyHorizon — so this normally only fires when a
+    // scenario legitimately outlives the base case.)
+    const base = baseLiquidByYear.get(y.year) ?? 0;
 
     // Clamp each side to 0: an underwater side contributes a flat bar, the
     // solvent side still renders its full projection.

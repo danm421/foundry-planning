@@ -1,3 +1,5 @@
+import type { ClientData } from "@/engine/types";
+
 /**
  * Compute the plan-end age (in the primary client's years) from the
  * household's life-expectancy inputs. The plan horizon is the year the last
@@ -61,5 +63,32 @@ export function planHorizonFromLifeExpectancy(client: {
   return {
     planEndAge: lastDeathYear - clientBirthYear,
     planEndYear: lastDeathYear,
+  };
+}
+
+/**
+ * Return a copy of `tree` whose plan horizon (planSettings.planEndYear and
+ * client.planEndAge) is re-derived from the household's life expectancies.
+ *
+ * Mirrors the scenario-side recompute in `applyMutations` so a base or source
+ * projection ends in the same year a mutated scenario would when their life
+ * expectancies match. A loaded tree carries its *stored* planEndYear, which can
+ * lag the life-expectancy-implied horizon (the facts route re-derives it on
+ * every horizon-input change, but the stored value can still drift). Without
+ * this reconciliation the shorter projection stops early and the portfolio
+ * comparison chart renders the longer side's extra trailing years as an
+ * (all-blue) common floor — visually implying the two plans are identical.
+ *
+ * Pure — never mutates the input. No-op (returns the same reference) when no
+ * horizon can be derived (missing/unparsable client DOB), matching
+ * planHorizonFromLifeExpectancy's null contract.
+ */
+export function applyLifeExpectancyHorizon(tree: ClientData): ClientData {
+  const horizon = planHorizonFromLifeExpectancy(tree.client);
+  if (!horizon) return tree;
+  return {
+    ...tree,
+    client: { ...tree.client, planEndAge: horizon.planEndAge },
+    planSettings: { ...tree.planSettings, planEndYear: horizon.planEndYear },
   };
 }

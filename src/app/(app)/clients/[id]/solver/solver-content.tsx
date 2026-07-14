@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations, scenarios } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { buildClientMilestones } from "@/lib/milestones";
+import { applyLifeExpectancyHorizon } from "@/lib/plan-horizon";
 import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
 import { assembleSolverPortfolios, mixFromAllocationRows, type SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
@@ -49,9 +50,22 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     cash: growthResolver?.resolveCategoryDefault("cash").rate ?? 0.02,
   };
 
-  const baseProjection = runProjection(baseLoaded.effectiveTree);
-  const sourceProjection = sourceLoaded
-    ? runProjection(sourceLoaded.effectiveTree)
+  // Re-derive each side's plan horizon from its life expectancies before
+  // projecting. The scenario (right column) re-derives its horizon whenever a
+  // life-expectancy lever moves (see applyMutations), but a loaded tree carries
+  // its *stored* planEndYear, which can lag the life-expectancy-implied horizon.
+  // Left unreconciled the base projection stops early and the portfolio
+  // comparison chart paints the scenario's extra trailing years as "identical
+  // to base" (an all-blue floor). Normalizing both sides keeps them on the same
+  // year grid; it's a no-op for trees whose stored horizon is already correct.
+  const baseTree = applyLifeExpectancyHorizon(baseLoaded.effectiveTree);
+  const sourceTree = sourceLoaded
+    ? applyLifeExpectancyHorizon(sourceLoaded.effectiveTree)
+    : null;
+
+  const baseProjection = runProjection(baseTree);
+  const sourceProjection = sourceTree
+    ? runProjection(sourceTree)
     : baseProjection;
 
   const [modelPortfolioRows, allocationRows, baseGifts] = await Promise.all([
@@ -99,9 +113,9 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     : [];
 
   const milestones = buildClientMilestones(
-    baseLoaded.effectiveTree.client,
-    baseLoaded.effectiveTree.planSettings.planStartYear,
-    baseLoaded.effectiveTree.planSettings.planEndYear,
+    baseTree.client,
+    baseTree.planSettings.planStartYear,
+    baseTree.planSettings.planEndYear,
   );
 
   // Per-goal education POS gauge inputs. The gauge simulates each goal's
@@ -112,7 +126,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
   // the life-insurance-settings await below so the two independent loads run
   // in parallel on this page's server-render path; a load failure resolves to
   // null and takes the neutral-fallback branch.
-  const solverTree = sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree;
+  const solverTree = sourceTree ?? baseTree;
   const hasEducationGoals = solverTree.expenses.some(
     (e) => e.type === "education" && (e.dedicatedAccountIds?.length ?? 0) > 0,
   );
@@ -122,12 +136,12 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
 
   const lifeInsuranceSettings = await loadLifeInsuranceSettings(
     clientId,
-    baseLoaded.effectiveTree,
+    baseTree,
   );
 
   // Display names for the Life Insurance tab's need cards / survivor chart.
   // Fall back to generic labels when a name is missing.
-  const baseClient = baseLoaded.effectiveTree.client;
+  const baseClient = baseTree.client;
   const clientName = baseClient.firstName?.trim() || "Client";
   const spouseName = baseClient.spouseName?.trim() || "Spouse";
 
@@ -167,10 +181,10 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       key={source}
       clientId={clientId}
       userId={userId}
-      baseClientData={baseLoaded.effectiveTree}
+      baseClientData={baseTree}
       baseProjection={baseProjection}
       initialSource={source}
-      initialSourceClientData={sourceLoaded?.effectiveTree ?? baseLoaded.effectiveTree}
+      initialSourceClientData={sourceTree ?? baseTree}
       initialSourceProjection={sourceProjection}
       modelPortfolios={solverPortfolios}
       milestones={milestones}

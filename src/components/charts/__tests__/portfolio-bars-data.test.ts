@@ -83,11 +83,31 @@ describe("buildPortfolioDeltaSegments", () => {
     expect(seg.baseAhead).toEqual([0]);
   });
 
-  it("falls back to the scenario value when the base case lacks that year", () => {
+  it("treats a missing base year as $0 so the scenario shows fully ahead", () => {
     const seg = buildPortfolioDeltaSegments([yr(2030, 800)], new Map());
-    expect(seg.floor).toEqual([800]);
-    expect(seg.scenarioAhead).toEqual([0]);
+    // No base counterpart → base is $0 → the whole bar is "scenario ahead"
+    // (green), NOT a misleading all-blue "identical to base" floor.
+    expect(seg.floor).toEqual([0]);
+    expect(seg.scenarioAhead).toEqual([800]);
     expect(seg.baseAhead).toEqual([0]);
+    expect(seg.scenarioTotals).toEqual([800]);
+  });
+
+  it("does not paint trailing years all-blue when the base projection ends early", () => {
+    // Regression: base runs 2030–2031; the scenario runs 2030–2033 (its horizon
+    // was recomputed longer). The trailing 2032–2033 have no base counterpart
+    // and must render as scenario-ahead (green), never as an identical all-blue
+    // floor. Matching years still compute a real floor + delta.
+    const seg = buildPortfolioDeltaSegments(
+      [yr(2030, 1000), yr(2031, 1100), yr(2032, 1200), yr(2033, 1300)],
+      new Map([
+        [2030, 900],
+        [2031, 950],
+      ]),
+    );
+    expect(seg.floor).toEqual([900, 950, 0, 0]);
+    expect(seg.scenarioAhead).toEqual([100, 150, 1200, 1300]);
+    expect(seg.baseAhead).toEqual([0, 0, 0, 0]);
   });
 });
 
