@@ -107,7 +107,7 @@ export default function Privacy() {
     const prev = settings.privacy;
     setSettings({ ...settings, privacy: { ...prev, [key]: next } });
     updatePrivacy(api, { [key]: next }).catch(() => {
-      setSettings((s) => (s ? { ...s, privacy: prev } : s));
+      setSettings((s) => (s ? { ...s, privacy: { ...s.privacy, [key]: prev[key] } } : s));
       setSaveError("Couldn't save that change.");
     });
   }
