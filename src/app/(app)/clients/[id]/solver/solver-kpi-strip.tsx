@@ -2,6 +2,7 @@
 
 import { SolverPosGauge } from "./solver-pos-gauge";
 import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
+import { SolverPortfolioAtRetirementKpi } from "./solver-portfolio-at-retirement-kpi";
 import { SolverYearsFundedKpi } from "./solver-years-funded-kpi";
 import { SolverLifetimeTaxKpi } from "./solver-lifetime-tax-kpi";
 import { SolverNetToHeirsKpi } from "./solver-net-to-heirs-kpi";
@@ -12,6 +13,9 @@ interface Props {
   baselineSuccess: number | null;
   endingAssets: number | null;
   endingAssetsDelta: number | null;
+  portfolioAtRetirement: number | null;
+  portfolioAtRetirementDelta: number | null;
+  showPortfolioAtRetirement: boolean;
   yearsFunded: number;
   yearsFundedDelta: number;
   lifetimeTax: number;
@@ -31,6 +35,9 @@ export function SolverKpiStrip({
   baselineSuccess,
   endingAssets,
   endingAssetsDelta,
+  portfolioAtRetirement,
+  portfolioAtRetirementDelta,
+  showPortfolioAtRetirement,
   yearsFunded,
   yearsFundedDelta,
   lifetimeTax,
@@ -51,6 +58,13 @@ export function SolverKpiStrip({
         onRegenerate={onRegenerate}
         solveActive={solveActive}
       />
+      {showPortfolioAtRetirement ? (
+        <SolverPortfolioAtRetirementKpi
+          value={portfolioAtRetirement}
+          delta={portfolioAtRetirementDelta}
+          dimmed={dimmed}
+        />
+      ) : null}
       <SolverEndingAssetsKpi value={endingAssets} delta={endingAssetsDelta} dimmed={dimmed} />
       <SolverYearsFundedKpi value={yearsFunded} delta={yearsFundedDelta} dimmed={dimmed} />
       <SolverLifetimeTaxKpi value={lifetimeTax} delta={lifetimeTaxDelta} dimmed={dimmed} />

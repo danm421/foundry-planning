@@ -47,3 +47,17 @@ export function netToHeirsEol(
   if (report.isEmpty) return null;
   return summarizeHousehold(report).netToHeirs;
 }
+
+/**
+ * Liquid portfolio total at a specific projection year — the same measure the
+ * Ending Portfolio Assets KPI and the portfolio bar chart use
+ * (`portfolioAssets.liquidTotal` = taxable + cash + retirement + life insurance
+ * + accessible trust assets), sampled at `year` instead of the last row.
+ * Returns null when no projection year matches `year` (e.g. the year precedes
+ * the projection because the client is already retired, or falls beyond the
+ * plan horizon).
+ */
+export function portfolioAtYear(years: ProjectionYear[], year: number): number | null {
+  const row = years.find((y) => y.year === year);
+  return row ? row.portfolioAssets.liquidTotal : null;
+}

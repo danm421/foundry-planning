@@ -10,6 +10,9 @@ describe("SolverKpiStrip", () => {
     baselineSuccess: 0.84,
     endingAssets: 11_500_000,
     endingAssetsDelta: 1_610_000,
+    portfolioAtRetirement: 8_200_000,
+    portfolioAtRetirementDelta: 640_000,
+    showPortfolioAtRetirement: true,
     yearsFunded: 45,
     yearsFundedDelta: 0,
     lifetimeTax: 4_010_000,
@@ -49,5 +52,17 @@ describe("SolverKpiStrip", () => {
   it("shows a loading placeholder for Total to Heirs before the estate fetch resolves", () => {
     render(<SolverKpiStrip {...base} netToHeirs={null} netToHeirsDelta={null} netToHeirsLoading />);
     expect(screen.getByText("…")).toBeTruthy();
+  });
+
+  it("renders the Portfolio at Retirement tile with its vs-Base delta when applicable", () => {
+    render(<SolverKpiStrip {...base} />);
+    expect(screen.getByText(/Portfolio at Retirement/)).toBeTruthy();
+    expect(screen.getByText(/\$8\.20M/)).toBeTruthy();
+    expect(screen.getByText(/\+\$640,000 vs Base/)).toBeTruthy();
+  });
+
+  it("omits the Portfolio at Retirement tile when the client is already retired", () => {
+    render(<SolverKpiStrip {...base} showPortfolioAtRetirement={false} />);
+    expect(screen.queryByText(/Portfolio at Retirement/)).toBeNull();
   });
 });
