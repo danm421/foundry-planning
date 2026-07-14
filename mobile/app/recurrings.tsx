@@ -2,10 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { RecurringRowDTO, RecurringsDTO } from "@contracts";
+import type { PortalMeDTO, RecurringRowDTO, RecurringsDTO } from "@contracts";
 import { useApi } from "@/api/context";
-import { fetchRecurrings } from "@/api/portal";
-import { useMe } from "@/auth/me-gate";
+import { fetchMe, fetchRecurrings } from "@/api/portal";
 import { formatMoney } from "@/ui/money";
 import { formatMonth } from "@/ui/date";
 import { Tile } from "@/home/tiles";
@@ -61,7 +60,13 @@ function RecurringRow({
 export default function Recurrings() {
   const api = useApi();
   const router = useRouter();
-  const { editEnabled } = useMe();
+
+  // This screen is a Stack sibling of (tabs), outside the MeGate provider
+  // that scopes `useMe()` to the tab bar's subtree — fetch editEnabled
+  // directly rather than crashing on a missing context. Fails closed: no
+  // "+ New recurring" affordance until this resolves true. Same pattern as
+  // category/[id].tsx / recurring/[id].tsx.
+  const [me, setMe] = useState<PortalMeDTO | null>(null);
   const [data, setData] = useState<RecurringsDTO | null>(null);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,6 +83,22 @@ export default function Recurrings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let live = true;
+    fetchMe(api)
+      .then((m) => {
+        if (live) setMe(m);
+      })
+      .catch(() => {
+        // Edit affordance simply stays hidden; the rest of the screen still works.
+      });
+    return () => {
+      live = false;
+    };
+  }, [api]);
+
+  const editEnabled = me?.editEnabled === true;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
