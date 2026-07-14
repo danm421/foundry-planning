@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { yearsFullyFunded, lifetimeTaxes } from "../solver-summary-metrics";
+import { yearsFullyFunded, lifetimeTaxes, portfolioAtYear } from "../solver-summary-metrics";
 import type { ProjectionYear } from "@/engine/types";
 
 // liquidPortfolioTotal (from @/engine/monteCarlo/trial) reads
 // portfolioAssets.taxableTotal + cashTotal + retirementTotal.
 // Supply that shape; put all liquid value in taxableTotal for simplicity.
-const y = (liquidTotal: number, taxes: number) =>
+const y = (liquidTotal: number, taxes: number, year = 0) =>
   ({
+    year,
     portfolioAssets: { taxableTotal: liquidTotal, cashTotal: 0, retirementTotal: 0 },
     expenses: { taxes },
   }) as unknown as ProjectionYear;
@@ -17,5 +18,21 @@ describe("solver summary metrics", () => {
   });
   it("sums per-year taxes", () => {
     expect(lifetimeTaxes([y(0, 1000), y(0, 2500), y(0, 0)])).toBe(3500);
+  });
+
+  describe("portfolioAtYear", () => {
+    const years = [y(500_000, 0, 2026), y(800_000, 0, 2035), y(1_200_000, 0, 2060)];
+    it("returns the liquid portfolio total for the matching year", () => {
+      expect(portfolioAtYear(years, 2035)).toBe(800_000);
+    });
+    it("returns null when no projection year matches (beyond horizon)", () => {
+      expect(portfolioAtYear(years, 2099)).toBeNull();
+    });
+    it("returns null for a year before the projection (already retired)", () => {
+      expect(portfolioAtYear(years, 2010)).toBeNull();
+    });
+    it("returns null for an empty projection", () => {
+      expect(portfolioAtYear([], 2035)).toBeNull();
+    });
   });
 });
