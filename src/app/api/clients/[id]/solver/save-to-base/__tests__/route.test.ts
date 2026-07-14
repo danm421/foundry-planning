@@ -391,4 +391,85 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
       expect.arrayContaining(["fm-ava"]),
     );
   });
+
+  it("validates a new 529's Roth-rollover destination account against tenant scope", async () => {
+    const ACCT_529_ROTH = {
+      id: "syn-529-roth",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: true,
+        rothRolloverStartYear: 2040,
+        // Not the account's own synthetic id, and not any other id inserted in
+        // this batch — so it is NOT filtered by insertedSyntheticIds and must
+        // reach the tenant check as a crafted / cross-tenant destination.
+        rothRolloverAccountId: "cross-tenant-roth-acct",
+      },
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "syn-529-roth", value: ACCT_529_ROTH }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The roth-rollover destination id was actually consulted by the tenant guard.
+    expect(assertAccountsInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["cross-tenant-roth-acct"]),
+    );
+  });
+
+  it("returns 400 when the 529 Roth-rollover destination account is not in the client", async () => {
+    // Only the roth-rollover destination id fails tenant validation; the other
+    // (empty) guards pass. This forces the 400 to come from the NEW roth-rollover
+    // guard specifically — the test fails if that guard is removed.
+    vi.mocked(assertAccountsInClient).mockImplementation((async (_clientId: string, ids: string[]) =>
+      ids.includes("cross-tenant-roth-acct")
+        ? { ok: false, reason: "Account cross-tenant-roth-acct not owned by this client" }
+        : { ok: true }) as never);
+    const ACCT_529_ROTH = {
+      id: "syn-529-roth",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: true,
+        rothRolloverStartYear: 2040,
+        rothRolloverAccountId: "cross-tenant-roth-acct",
+      },
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "syn-529-roth", value: ACCT_529_ROTH }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(inserts).toHaveLength(0);
+  });
 });

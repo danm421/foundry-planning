@@ -304,6 +304,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: surplusCheck.reason }, { status: 400 });
     }
 
+    // Validate the 529 Roth-rollover destination account FK. education529
+    // .roth_rollover_account_id → accounts.id is a GLOBAL FK (no tenant column),
+    // so — like the savings-rule, dedicated-account, and surplus guards above —
+    // an unvalidated id could link cross-tenant or FK-crash the whole save. Ids
+    // satisfied by an in-batch account insert are remapped to their generated
+    // uuid inside the txn, so skip those here.
+    const rothRolloverAccountIds = [...accountInserts, ...accountUpdates]
+      .flatMap((a) => (a.education529?.rothRolloverAccountId ? [a.education529.rothRolloverAccountId] : []))
+      .filter((aid) => !insertedSyntheticIds.has(aid));
+    const rothRolloverCheck = await assertAccountsInClient(clientId, rothRolloverAccountIds);
+    if (!rothRolloverCheck.ok) {
+      return NextResponse.json({ error: rothRolloverCheck.reason }, { status: 400 });
+    }
+
     // Validate the owner FKs on every account we (re)write — family members,
     // entities, and external beneficiaries must all belong to this client. Without
     // this a crafted owner id would either FK-crash the whole save (500) or attach
