@@ -238,6 +238,30 @@ describe("extractDocument", () => {
         expect(result.extracted.incomes[0].name).toBe("John SS");
     });
 
+    it("auto-detects a fact_finder from the FILENAME when the body text is generic, and routes to multi-pass", async () => {
+        // Generic body classifies as account_statement on its own; the MoneyGuidePro
+        // filename is the ONLY fact_finder signal — so this test fails if the
+        // fileName arg is ever dropped from classifyDocument(text, fileName).
+        mockedPdf.mockResolvedValueOnce("General overview prepared for the client this quarter.");
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>  // income-summary
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "Smith-MoneyGuidePro-2025.pdf",
+            "auto",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.documentType).toBe("fact_finder");
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.extracted.incomes).toHaveLength(1);
+    });
+
     it("auto-detects a fact_finder .docx and routes to multi-pass", async () => {
         // A generic 'Financial Planning Questionnaire' title trips the vendor tier;
         // docx has no pages, so the guard wraps the whole transcript as one page.

@@ -47,11 +47,11 @@ const RULES: ClassificationRule[] = [
  * thing that needs to change to recognize a new vendor.
  */
 const FACT_FINDER_VENDOR_SIGNATURES: { vendor: string; patterns: RegExp[] }[] = [
-  { vendor: "emoney", patterns: [/\bemoney\b/, /\bemx\b/, /emoney advisor/, /confidential client profile/] },
+  { vendor: "emoney", patterns: [/\bemoney\b/, /emoney advisor/, /confidential client profile/] },
   { vendor: "moneyguide", patterns: [/moneyguidepro/, /\bmoneyguide\b/, /\bpietech\b/] },
   { vendor: "rightcapital", patterns: [/\brightcapital\b/] },
   { vendor: "naviplan", patterns: [/\bnaviplan\b/, /\badvicent\b/, /\bfiglo\b/] },
-  { vendor: "asset-map", patterns: [/asset-?map/] },
+  { vendor: "asset-map", patterns: [/\basset-?map\b/] },
   { vendor: "advisys", patterns: [/\badvisys\b/, /\badvizr\b/] },
   { vendor: "moneytree", patterns: [/\bmoneytree\b/] },
   { vendor: "generic", patterns: [/\bfact[\s-]?finder\b/, /financial planning questionnaire/, /client data summary/] },
@@ -60,10 +60,10 @@ const FACT_FINDER_VENDOR_SIGNATURES: { vendor: string; patterns: RegExp[] }[] = 
 /**
  * Distinct planning-entity categories used by the structural fact-finder
  * heuristic. A document that touches >= STRUCTURAL_MIN_CATEGORIES of these,
- * including at least one "planning-only" category (one a plain account statement
- * would never contain), is treated as a fact finder even when no vendor
- * signature matched — this is what catches unbranded / less-common / in-house
- * fact finders.
+ * including at least two "planning-only" categories (ones a plain account
+ * statement would never contain), is treated as a fact finder even when no
+ * vendor signature matched — this is what catches unbranded / less-common /
+ * in-house fact finders.
  */
 const PLANNING_CATEGORY_KEYWORDS: { category: string; planningOnly: boolean; keywords: string[] }[] = [
   { category: "assets", planningOnly: false, keywords: ["account", "balance", "holdings", "portfolio", "brokerage", "401(k)", "market value"] },
@@ -77,6 +77,7 @@ const PLANNING_CATEGORY_KEYWORDS: { category: string; planningOnly: boolean; key
 ];
 
 const STRUCTURAL_MIN_CATEGORIES = 4;
+const STRUCTURAL_MIN_PLANNING_ONLY = 2;
 
 function matchFactFinderVendor(haystack: string): string | null {
   for (const { vendor, patterns } of FACT_FINDER_VENDOR_SIGNATURES) {
@@ -87,14 +88,14 @@ function matchFactFinderVendor(haystack: string): string | null {
 
 function looksLikeFactFinderStructurally(lowerText: string): boolean {
   let count = 0;
-  let hasPlanningOnly = false;
+  let planningOnlyCount = 0;
   for (const { planningOnly, keywords } of PLANNING_CATEGORY_KEYWORDS) {
     if (keywords.some((kw) => lowerText.includes(kw))) {
       count += 1;
-      if (planningOnly) hasPlanningOnly = true;
+      if (planningOnly) planningOnlyCount += 1;
     }
   }
-  return count >= STRUCTURAL_MIN_CATEGORIES && hasPlanningOnly;
+  return count >= STRUCTURAL_MIN_CATEGORIES && planningOnlyCount >= STRUCTURAL_MIN_PLANNING_ONLY;
 }
 
 /**
@@ -103,8 +104,9 @@ function looksLikeFactFinderStructurally(lowerText: string): boolean {
  * Fact-finder detection runs in two tiers before the single-type rules:
  *   1. A vendor signature (eMoney, MoneyGuidePro, RightCapital, …) matched
  *      against text + filename — an outright win.
- *   2. A structural check — >= 4 distinct planning categories including a
- *      planning-only one — which catches unbranded / less-common fact finders.
+ *   2. A structural check — >= 4 distinct planning categories including at
+ *      least two planning-only ones — which catches unbranded / less-common
+ *      fact finders.
  * Structural detection defers to a strong single-purpose match (a Form 1040 tax
  * return, a pay stub) so those are never dragged into the slower multi-pass path.
  *

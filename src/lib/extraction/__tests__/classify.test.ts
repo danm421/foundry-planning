@@ -79,6 +79,14 @@ describe("classifyDocument", () => {
     expect(classifyDocument(text)).toBe("fact_finder");
   });
 
+  it("does NOT structurally flag a doc that hits 4 categories with only ONE planning-only category", () => {
+    // assets(account/balance) + income(salary) + liabilities(mortgage) + family(spouse, planning-only)
+    // = 4 categories but only 1 planning-only → stays a plain account statement under the >=2 rule.
+    const text =
+      "Account balance $100,000.\nSalary $120,000.\nMortgage balance $300,000.\nSpouse Jane.";
+    expect(classifyDocument(text)).toBe("account_statement");
+  });
+
   // --- False-positive guards ---
 
   it("does NOT treat a plain brokerage statement as a fact finder", () => {
