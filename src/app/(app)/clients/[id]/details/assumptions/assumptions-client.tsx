@@ -4,6 +4,7 @@ import { useState } from "react";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
+import SurplusCashFlowForm from "@/components/forms/surplus-cash-flow-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -108,7 +109,7 @@ interface AssumptionsClientProps {
 const TABS = [
   { id: "tax-rates", label: "Tax Rates" },
   { id: "growth-inflation", label: "Growth & Inflation" },
-  { id: "withdrawal", label: "Withdrawal Strategy" },
+  { id: "withdrawal", label: "Savings & Withdrawals" },
   { id: "deductions", label: "Deductions" },
   { id: "account-groups", label: "Account Groups" },
 ];
@@ -183,22 +184,27 @@ export default function AssumptionsClient({
             ssWageGrowthRate={settings.ssWageGrowthRate}
             medicarePremiumInflationRate={settings.medicarePremiumInflationRate}
             medicarePremiumInflationEnabled={settings.medicarePremiumInflationEnabled}
-            surplusSpendPct={settings.surplusSpendPct}
-            surplusSaveAccountId={settings.surplusSaveAccountId}
-            householdAccounts={accounts
-              .filter((a) => !a.ownerEntityId)
-              .map((a) => ({ id: a.id, name: a.name }))}
           />
         )}
         {activeTab === "withdrawal" && (
-          <WithdrawalStrategySection
-            clientId={clientId}
-            accounts={accounts}
-            initialStrategies={withdrawalStrategies}
-            milestones={milestones}
-            clientFirstName={clientFirstName}
-            spouseFirstName={spouseFirstName}
-          />
+          <div className="space-y-8">
+            <SurplusCashFlowForm
+              clientId={clientId}
+              surplusSpendPct={settings.surplusSpendPct}
+              surplusSaveAccountId={settings.surplusSaveAccountId}
+              householdAccounts={accounts
+                .filter((a) => !a.ownerEntityId)
+                .map((a) => ({ id: a.id, name: a.name }))}
+            />
+            <WithdrawalStrategySection
+              clientId={clientId}
+              accounts={accounts}
+              initialStrategies={withdrawalStrategies}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
+            />
+          </div>
         )}
         {activeTab === "deductions" && (
           <DeductionsClient

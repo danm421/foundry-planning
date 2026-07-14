@@ -40,10 +40,6 @@ interface GrowthInflationFormProps {
   ssWageGrowthRate?: string;
   medicarePremiumInflationRate?: string;
   medicarePremiumInflationEnabled: boolean;
-  // Surplus cash flow allocation
-  surplusSpendPct: string;
-  surplusSaveAccountId: string | null;
-  householdAccounts: Array<{ id: string; name: string }>;
 }
 
 // Non-investable categories — choose between Inflation and Custom %
@@ -80,7 +76,7 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
   );
 }
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, surplusSpendPct, surplusSaveAccountId, householdAccounts, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
@@ -191,10 +187,6 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     body.ssWageGrowthRate = ssWageGrowthRaw ? Number(ssWageGrowthRaw) / 100 : null;
     if (medicareInflRaw) body.medicarePremiumInflationRate = Number(medicareInflRaw) / 100;
     body.medicarePremiumInflationEnabled = medicareInflEnabled;
-
-    // Surplus cash flow allocation
-    body.surplusSpendPct = toDec("surplusSpendPct");
-    body.surplusSaveAccountId = (data.get("surplusSaveAccountId") as string) || null;
 
     try {
       const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
@@ -373,45 +365,6 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 </div>
               );
             })}
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle
-          title="Surplus Cash Flow"
-          help="Controls what happens to any positive net cash flow each year, after savings, gifts, and taxes are applied. By default, surplus accumulates in the household checking account."
-        />
-        <div className="grid grid-cols-2 gap-4 rounded-md border border-gray-800 bg-gray-900/40 p-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="surplusSpendPct">
-              Spend % of surplus
-            </label>
-            <PercentInput
-              id="surplusSpendPct"
-              name="surplusSpendPct"
-              defaultValue={pct(surplusSpendPct)}
-              className={`${INPUT_CLS} mt-1`}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              The spent portion appears as &quot;Surplus spent&quot; on the Cash Flow report.
-            </p>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-300" htmlFor="surplusSaveAccountId">
-              Save remainder to
-            </label>
-            <select
-              id="surplusSaveAccountId"
-              name="surplusSaveAccountId"
-              defaultValue={surplusSaveAccountId ?? ""}
-              className={`${INPUT_CLS} mt-1`}
-            >
-              <option value="">Household checking (default)</option>
-              {householdAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
           </div>
         </div>
       </section>
