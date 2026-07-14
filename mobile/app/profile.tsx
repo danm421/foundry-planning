@@ -300,6 +300,16 @@ export default function Profile() {
   const [trustSaving, setTrustSaving] = useState(false);
   const [trustError, setTrustError] = useState<string | null>(null);
 
+  // Full reload: (re)seeds household, family, and trusts from the server,
+  // including resetting editedPrimary/editedSpouse. Only three call sites
+  // should ever use this: mount, pull-to-refresh (onRefresh), and a
+  // successful household Save (handleSave) — all three are moments where
+  // re-syncing the household edit fields from the server is correct/expected.
+  // Family and trust mutations (saveFamily, confirmDeleteFamily,
+  // saveTrustName) intentionally do NOT call this — they refetch only their
+  // own slice (setFamily(await fetchFamily(api)) / setTrusts(await
+  // fetchTrusts(api))) so an unsaved household-contact edit in progress isn't
+  // silently discarded by an unrelated family/trust action.
   const load = useCallback(async () => {
     try {
       setError(false);
@@ -395,8 +405,16 @@ export default function Profile() {
   }
 
   function changeFamilyRelationship(r: PortalFamilyRelationshipOption) {
+    // Only flip the dirty flag on an ACTUAL value change. The picker only
+    // ever shows "other" as a stand-in for an out-of-subset real value (e.g.
+    // "grandchild" — see fromMember() in src/profile/family.ts), so a stray
+    // or confirmatory tap on the already-selected pill must be a no-op: it
+    // must NOT mark relationship dirty, or saveFamily() would start sending
+    // "other" over the wire and downgrade the real relationship.
+    if (familyForm && r !== familyForm.relationship) {
+      setRelationshipTouched(true);
+    }
     setFamilyForm((prev) => (prev ? { ...prev, relationship: r } : prev));
-    setRelationshipTouched(true);
   }
 
   async function saveFamily() {
@@ -424,7 +442,10 @@ export default function Profile() {
         await updateFamilyMember(api, familyTarget, patchBody);
       }
       closeFamilyForm();
-      await load();
+      // Narrow refresh: refetch only family, not the shared load(), so an
+      // in-progress unsaved household-contact edit (editedPrimary/
+      // editedSpouse) isn't silently reset out from under the user.
+      setFamily(await fetchFamily(api));
     } catch (e) {
       setFamilyError(e instanceof ApiError ? e.message : "Couldn't save this family member. Try again.");
     } finally {
@@ -445,7 +466,9 @@ export default function Profile() {
             setFamilyError(null);
             try {
               await deleteFamilyMember(api, m.id);
-              await load();
+              // Narrow refresh — see saveFamily() for why this doesn't route
+              // through load().
+              setFamily(await fetchFamily(api));
             } catch {
               setFamilyError("Couldn't delete this family member. Try again.");
             } finally {
@@ -480,7 +503,9 @@ export default function Profile() {
     try {
       await renameTrust(api, trustEditingId, trustNameDraft.trim());
       closeTrustEditor();
-      await load();
+      // Narrow refresh — see saveFamily() for why this doesn't route through
+      // load().
+      setTrusts(await fetchTrusts(api));
     } catch (e) {
       setTrustError(e instanceof ApiError ? e.message : "Couldn't rename this trust. Try again.");
     } finally {
