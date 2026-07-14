@@ -211,6 +211,59 @@ describe("extractDocument", () => {
         ).toBe(false);
     });
 
+    it("auto-detects a fact_finder PDF (vendor signature) and routes to multi-pass", async () => {
+        // extractPdfText returns the first-pass text; its eMoney signature makes
+        // classifyDocument return fact_finder, which then re-parses per-page via
+        // extractPdfPages (default mock: 4 pages, income on page 4) for multi-pass.
+        mockedPdf.mockResolvedValueOnce(
+            "eMoney Advisor — Confidential Client Profile\nPrepared for the Smith household."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>  // income-summary
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "smith-emoney.pdf",
+            "auto",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.documentType).toBe("fact_finder");
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.extracted.incomes).toHaveLength(1);
+        expect(result.extracted.incomes[0].name).toBe("John SS");
+    });
+
+    it("auto-detects a fact_finder .docx and routes to multi-pass", async () => {
+        // A generic 'Financial Planning Questionnaire' title trips the vendor tier;
+        // docx has no pages, so the guard wraps the whole transcript as one page.
+        mockedDocx.mockResolvedValueOnce(
+            "Financial Planning Questionnaire\nIncome Summary\n" +
+                "John receives Social Security of $38,400 per year."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () =>  // income-summary
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "questionnaire.docx",
+            "auto",
+            "mini",
+            "docx",
+        );
+
+        expect(result.documentType).toBe("fact_finder");
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.extracted.incomes).toHaveLength(1);
+    });
+
     it("comprehensive mode runs multi-pass for a non-fact_finder PDF", async () => {
         // classifier → incomes on page 4; income-summary → one SS row.
         // Use mockImplementationOnce variants so the default mock is restored

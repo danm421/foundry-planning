@@ -289,9 +289,22 @@ export async function extractDocument(
         }
     }
 
-    // 2. Classify if auto
+    // 2. Classify if auto. The filename is a cheap, high-signal input for
+    // fact-finder detection ("Smith eMoney Fact Finder.pdf") and is never
+    // logged raw, so it is safe to feed the classifier.
     if (documentType === "auto") {
-        documentType = classifyDocument(text);
+        documentType = classifyDocument(text, fileName);
+    }
+
+    // 2b. A fact finder routes through the multi-pass orchestrator, which slices
+    // per-page text. When auto-classification (or an explicit selection on a path
+    // that skipped page extraction) lands on fact_finder without pages, populate
+    // them now: re-parse the PDF into real pages so the section classifier can
+    // target ranges; for a docx/image transcript, wrap the whole text as a single
+    // pseudo-page (mirrors the explicit-fact_finder handling earlier in this fn).
+    // Runs before SSN redaction below; the multi-pass path re-redacts each page.
+    if (documentType === "fact_finder" && (!pdfPages || pdfPages.length === 0)) {
+        pdfPages = kind === "pdf" ? await extractPdfPages(fileBuffer) : [text];
     }
 
     // 3. Redact SSNs before any AI call. Defense in depth — even though
