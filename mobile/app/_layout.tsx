@@ -79,6 +79,7 @@ export default function RootLayout() {
             <Stack.Screen name="investments" options={{ headerShown: false }} />
             <Stack.Screen name="recurrings" options={{ headerShown: false }} />
             <Stack.Screen name="profile" options={{ headerShown: false }} />
+            <Stack.Screen name="privacy" options={{ headerShown: false }} />
             <Stack.Screen
               name="recurring/[id]"
               options={{ presentation: "modal", headerShown: false }}
