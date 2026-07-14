@@ -32,7 +32,7 @@ import { SolverRowSavingsContributions } from "./solver-row-savings-contribution
 import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
-import { yearsFullyFunded, lifetimeTaxes } from "@/lib/solver/solver-summary-metrics";
+import { yearsFullyFunded, lifetimeTaxes, portfolioAtYear } from "@/lib/solver/solver-summary-metrics";
 import { useSolverNetToHeirs } from "./use-solver-net-to-heirs";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 import { SolverTechniquesTab } from "./solver-techniques-tab";
@@ -164,6 +164,20 @@ export function LiveSolverWorkspace({
     const birthYear = dob ? Number(String(dob).slice(0, 4)) : null;
     const curAge = birthYear != null && Number.isFinite(birthYear) ? currentYear - birthYear : 0;
     return currentYear + Math.max(0, retAge - curAge);
+  }, [baseClientData, currentYear]);
+
+  // Primary client's retirement year for the "Portfolio at Retirement" KPI.
+  // retirementYearForOwner clamps to >= currentYear (correct for lever
+  // end-years), which can't tell an already-retired client from one retiring
+  // this year — so we compute the raw age comparison here and hide the KPI when
+  // retirement is already in the past. Birth-year-only, matching the helper.
+  const primaryRetirement = useMemo(() => {
+    const c = baseClientData.client;
+    const retAge = c.retirementAge ?? 65;
+    const birthYear = c.dateOfBirth ? Number(String(c.dateOfBirth).slice(0, 4)) : null;
+    if (birthYear == null || !Number.isFinite(birthYear)) return null;
+    const curAge = currentYear - birthYear;
+    return { sampleYear: currentYear + Math.max(0, retAge - curAge), alreadyRetired: curAge > retAge };
   }, [baseClientData, currentYear]);
 
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
@@ -506,6 +520,22 @@ export function LiveSolverWorkspace({
   const endingAssetsDelta =
     baseEndingAssets != null && workingEndingAssets != null
       ? workingEndingAssets - baseEndingAssets
+      : null;
+
+  // Liquid portfolio at the primary client's (base) retirement year. The sample
+  // year is fixed across base/working, so the delta isolates the levers' effect
+  // on the retirement-year balance. Hidden entirely for already-retired clients.
+  const showPortfolioAtRetirement =
+    primaryRetirement != null && !primaryRetirement.alreadyRetired;
+  const basePortfolioAtRetirement = showPortfolioAtRetirement
+    ? portfolioAtYear(baseProjection, primaryRetirement.sampleYear)
+    : null;
+  const workingPortfolioAtRetirement = showPortfolioAtRetirement
+    ? portfolioAtYear(currentProjection, primaryRetirement.sampleYear)
+    : null;
+  const portfolioAtRetirementDelta =
+    basePortfolioAtRetirement != null && workingPortfolioAtRetirement != null
+      ? workingPortfolioAtRetirement - basePortfolioAtRetirement
       : null;
 
   // Default the cash-flow detail to the earliest projection year, and recover
@@ -1330,6 +1360,9 @@ export function LiveSolverWorkspace({
                 baselineSuccess={baseSuccess}
                 endingAssets={workingEndingAssets}
                 endingAssetsDelta={endingAssetsDelta}
+                portfolioAtRetirement={workingPortfolioAtRetirement}
+                portfolioAtRetirementDelta={portfolioAtRetirementDelta}
+                showPortfolioAtRetirement={showPortfolioAtRetirement}
                 yearsFunded={workingYearsFunded}
                 yearsFundedDelta={workingYearsFunded - baseYearsFunded}
                 lifetimeTax={workingLifetimeTax}
