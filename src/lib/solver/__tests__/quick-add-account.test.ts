@@ -5,7 +5,9 @@ import {
   QUICK_ADD_TYPE_MAP,
   buildAdditionalSavingsAccount,
   buildSavingsRuleForAccount,
+  buildQuickAdd529,
 } from "../quick-add-account";
+import { EDUCATION_529_SENTINEL_OWNER_ID } from "@/engine/ownership";
 
 describe("quick-add account builder", () => {
   const args = {
@@ -167,5 +169,60 @@ describe("buildSavingsRuleForAccount", () => {
         ...base,
       }).isDeductible,
     ).toBe(false);
+  });
+});
+
+describe("buildQuickAdd529", () => {
+  const base = {
+    accountId: "acct-529",
+    ruleId: "rule-529",
+    name: "Ava — 529 Plan",
+    beneficiaryFamilyMemberId: "fm-ava",
+    balance: 15000,
+    annualAmount: 6000,
+    growthRate: 0.06,
+    startYear: 2026,
+    endYear: 2035,
+  };
+
+  it("builds an education_savings/529 account with the sentinel owner and beneficiary", () => {
+    const { account } = buildQuickAdd529(base);
+    expect(account).toMatchObject({
+      id: "acct-529",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+    });
+    expect(account.owners).toEqual([
+      { kind: "external_beneficiary", externalBeneficiaryId: EDUCATION_529_SENTINEL_OWNER_ID, percent: 1 },
+    ]);
+    expect(account.education529).toMatchObject({
+      beneficiaryFamilyMemberId: "fm-ava",
+      grantorFamilyMemberId: null,
+      rothRolloverEnabled: false,
+    });
+  });
+
+  it("builds a non-deductible savings rule spanning start→end when contribution > 0", () => {
+    const { rule } = buildQuickAdd529(base);
+    expect(rule).toMatchObject({
+      id: "rule-529",
+      accountId: "acct-529",
+      annualAmount: 6000,
+      isDeductible: false,
+      startYear: 2026,
+      endYear: 2035,
+    });
+    expect(rule?.rothPercent).toBeUndefined();
+  });
+
+  it("returns a null rule when the annual contribution is 0", () => {
+    const { rule } = buildQuickAdd529({ ...base, annualAmount: 0 });
+    expect(rule).toBeNull();
   });
 });
