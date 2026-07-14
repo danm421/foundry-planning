@@ -86,6 +86,9 @@ describe("SolverSurplusAllocation", () => {
     const trustAccount = { ...HOUSEHOLD[1], id: "acct-trust", name: "Trust Brokerage", owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }] };
     const t = tree({}, [...HOUSEHOLD, trustAccount]);
     renderControl(t, t);
+    // Positive control: a household account still renders as an option, so a
+    // "hide everything" bug could not satisfy this test.
+    expect(screen.getByRole("option", { name: "Brokerage" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Trust Brokerage" })).toBeNull();
   });
 });
