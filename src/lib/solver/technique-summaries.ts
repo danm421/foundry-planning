@@ -68,3 +68,14 @@ function reinvestmentDisplayRate(
 export function summarizeRelocation(r: Relocation): string {
   return `${USPS_STATE_NAMES[r.destinationState]} · ${r.year}`;
 }
+
+export function summarizeSurplusAllocation({
+  spendPct,
+  saveAccountName,
+}: {
+  spendPct: number;
+  saveAccountName?: string | null;
+}): string {
+  const pct = Math.round(spendPct * 100);
+  return `Spend ${pct}% · save rest to ${saveAccountName ?? "household checking"}`;
+}

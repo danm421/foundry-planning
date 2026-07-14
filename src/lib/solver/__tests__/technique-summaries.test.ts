@@ -3,6 +3,7 @@ import {
   summarizeRothConversion,
   summarizeAssetTransaction,
   summarizeReinvestment,
+  summarizeSurplusAllocation,
 } from "../technique-summaries";
 
 describe("technique summaries", () => {
@@ -74,5 +75,17 @@ describe("technique summaries", () => {
       targetType: "custom", customGrowthRate: 0.04,
     });
     expect(s).toContain("4%");
+  });
+});
+
+describe("summarizeSurplusAllocation", () => {
+  it("names the destination account when given", () => {
+    expect(summarizeSurplusAllocation({ spendPct: 0.3, saveAccountName: "Brokerage" }))
+      .toBe("Spend 30% · save rest to Brokerage");
+  });
+
+  it("falls back to household checking when no account", () => {
+    expect(summarizeSurplusAllocation({ spendPct: 0.5 }))
+      .toBe("Spend 50% · save rest to household checking");
   });
 });
