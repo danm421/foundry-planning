@@ -226,6 +226,8 @@ export function SolverChartPanel({
     clientId,
     liAssumptions,
     tab === "lifeInsurance",
+    source,
+    mutations,
   );
 
   const tabs = REPORT_TABS;

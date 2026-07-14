@@ -16,6 +16,12 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 vi.mock("@/lib/db-scoping", () => ({ findClientInFirm: vi.fn() }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: vi.fn() }));
+vi.mock("@/lib/solver/apply-mutations", () => ({
+  applyMutations: vi.fn((tree) => tree),
+}));
+vi.mock("@/lib/solver/resolve-technique-mutations", () => ({
+  resolveTechniqueMutations: vi.fn((tree) => tree),
+}));
 vi.mock("@/lib/life-insurance/load-li-portfolio", () => ({
   loadLiProceedsGrowth: vi.fn(),
   DEFAULT_LI_GROWTH: 0.05,
@@ -51,18 +57,29 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { checkProjectionRateLimit } from "@/lib/rate-limit";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { applyMutations } from "@/lib/solver/apply-mutations";
+import { computeNeedOverTime } from "@/lib/life-insurance/need-over-time";
 import { loadLiProceedsGrowth } from "@/lib/life-insurance/load-li-portfolio";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
+const SCENARIO_ID = "00000000-0000-4000-8000-0000000000aa";
 
-const VALID_BODY = {
+const ASSUMPTIONS = {
   deathYear: 2030,
   modelPortfolioId: null,
   leaveToHeirsAmount: 1000000,
   livingExpenseAtDeath: 80000,
   payoffLiabilityIds: [],
   mcTargetScore: 0.8,
+};
+
+// Live-solver envelope: source (base | scenario id) + unsaved mutations wrap the
+// assumptions, so the need curve reflects the edited plan, not the base case.
+const VALID_BODY = {
+  source: "base",
+  mutations: [],
+  assumptions: ASSUMPTIONS,
 };
 
 function makeRequest(body: unknown) {
@@ -112,5 +129,48 @@ describe("POST /api/clients/[id]/life-insurance/over-time — rate limit (F6)", 
     const res = await POST(makeRequest(VALID_BODY), ctx as never);
     expect(checkProjectionRateLimit).toHaveBeenCalledWith(FIRM_ID);
     expect(res.status).toBe(200);
+  });
+});
+
+/** Drain the SSE stream so the ReadableStream `start` body (which does the tree
+ *  load + solve) runs to completion before assertions. */
+async function drain(res: Response): Promise<void> {
+  const reader = res.body!.getReader();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done } = await reader.read();
+    if (done) break;
+  }
+}
+
+describe("POST /api/clients/[id]/life-insurance/over-time — honors edited scenario", () => {
+  beforeEach(() => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true } as never);
+  });
+
+  it("solves the source scenario + mutations, not the hardcoded base case", async () => {
+    const res = await POST(
+      makeRequest({ source: SCENARIO_ID, mutations: [], assumptions: ASSUMPTIONS }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    await drain(res);
+
+    // The edited plan's scenario id drives the tree load — NOT "base".
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {});
+    // Live mutations are applied to the loaded tree before solving.
+    expect(applyMutations).toHaveBeenCalled();
+    // The need curve is computed against the mutated working tree.
+    expect(computeNeedOverTime).toHaveBeenCalled();
+  });
+
+  it("defaults source to base when omitted (back-compat)", async () => {
+    const res = await POST(
+      makeRequest({ assumptions: ASSUMPTIONS }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    await drain(res);
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
   });
 });

@@ -16,6 +16,7 @@ import { useCallback, useRef, useState } from "react";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { LiSolveCase, LiSolveResult } from "./solver-tab-life-insurance";
 
 // Mirrors the solvers' coverage cap (see solve-need.ts / solve-need-mc.ts).
@@ -76,12 +77,16 @@ interface Props {
   clientId: string;
   /** Straight-line solve — the range's lower bound (owned by the tab). */
   solveResult: LiSolveResult;
-  /** Full current assumptions — POSTed verbatim as the solve-mc body. */
+  /** Full current assumptions — POSTed as the solve-mc body's `assumptions`. */
   assumptions: LiAssumptions;
   clientName: string;
   spouseName: string;
   /** Lift the updated `mcTargetScore` (decimal 0–1) to the parent. */
   onScoreChange(score: number): void;
+  /** Live solver source + unsaved mutations, so the MC solve reflects the
+   *  edited plan — not the base case. */
+  source: SolverSource;
+  mutations: SolverMutation[];
 }
 
 export function LiNeedRange({
@@ -91,6 +96,8 @@ export function LiNeedRange({
   clientName,
   spouseName,
   onScoreChange,
+  source,
+  mutations,
 }: Props) {
   const [isSolving, setIsSolving] = useState(false);
   const [progress, setProgress] = useState<McProgressPayload | null>(null);
@@ -119,7 +126,7 @@ export function LiNeedRange({
       res = await fetch(`/api/clients/${clientId}/life-insurance/solve-mc`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(assumptions),
+        body: JSON.stringify({ source, mutations, assumptions }),
         signal: ac.signal,
       });
     } catch (err) {
@@ -169,7 +176,7 @@ export function LiNeedRange({
       setIsSolving(false);
       setProgress(null);
     }
-  }, [clientId, assumptions]);
+  }, [clientId, assumptions, source, mutations]);
 
   const targetPct = Math.round(assumptions.mcTargetScore * 1000) / 10;
   const deathYear = assumptions.deathYear;

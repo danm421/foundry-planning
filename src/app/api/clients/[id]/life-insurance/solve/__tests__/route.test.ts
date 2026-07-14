@@ -19,6 +19,12 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: vi.fn(),
 }));
+vi.mock("@/lib/solver/apply-mutations", () => ({
+  applyMutations: vi.fn((tree) => tree),
+}));
+vi.mock("@/lib/solver/resolve-technique-mutations", () => ({
+  resolveTechniqueMutations: vi.fn((tree) => tree),
+}));
 vi.mock("@/lib/life-insurance/solve-need", () => ({
   solveLifeInsuranceNeed: vi.fn(() => ({
     status: "solved",
@@ -56,10 +62,12 @@ import { POST } from "../route";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { applyMutations } from "@/lib/solver/apply-mutations";
 import { solveLifeInsuranceNeed } from "@/lib/life-insurance/solve-need";
 
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
+const SCENARIO_ID = "00000000-0000-4000-8000-0000000000aa";
 
 function makeRequest(body: unknown) {
   return new Request(
@@ -74,13 +82,20 @@ function makeRequest(body: unknown) {
 
 const ctx = { params: Promise.resolve({ id: CLIENT_ID }) };
 
-const VALID_BODY = {
+const ASSUMPTIONS = {
   deathYear: 2030,
   modelPortfolioId: null,
   leaveToHeirsAmount: 1000000,
   livingExpenseAtDeath: 80000,
   payoffLiabilityIds: [],
   mcTargetScore: 0.8,
+};
+
+// Live-solver envelope: source + unsaved mutations wrap the assumptions.
+const VALID_BODY = {
+  source: "base",
+  mutations: [],
+  assumptions: ASSUMPTIONS,
 };
 
 function mockTree(filingStatus: string, spouseDob: string | null = "1970-06-15") {
@@ -170,10 +185,28 @@ describe("POST /api/clients/[id]/life-insurance/solve", () => {
 
   it("returns 400 when the body fails schema validation", async () => {
     const res = await POST(
-      makeRequest({ ...VALID_BODY, deathYear: "not-a-year" }),
+      makeRequest({ ...VALID_BODY, assumptions: { ...ASSUMPTIONS, deathYear: "not-a-year" } }),
       ctx as never,
     );
     expect(res.status).toBe(400);
+  });
+
+  it("solves the source scenario + mutations, not the hardcoded base case", async () => {
+    const res = await POST(
+      makeRequest({ source: SCENARIO_ID, mutations: [], assumptions: ASSUMPTIONS }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The edited plan's scenario id drives the tree load — NOT "base".
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, SCENARIO_ID, {});
+    // Live mutations are applied before solving.
+    expect(applyMutations).toHaveBeenCalled();
+  });
+
+  it("defaults source to base when omitted (back-compat)", async () => {
+    const res = await POST(makeRequest({ assumptions: ASSUMPTIONS }), ctx as never);
+    expect(res.status).toBe(200);
+    expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
   });
 
   it("returns 500 when the solver throws", async () => {

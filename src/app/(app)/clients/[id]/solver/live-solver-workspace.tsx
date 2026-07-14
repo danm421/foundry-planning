@@ -225,7 +225,13 @@ export function LiveSolverWorkspace({
   // (notably the default retirement view).
   const liEnabled =
     activeTab === "life_insurance" || activeReport === "lifeInsurance";
-  const liSolve = useLiNeedSolve(clientId, liAssumptions, liEnabled);
+  const liSolve = useLiNeedSolve(
+    clientId,
+    liAssumptions,
+    liEnabled,
+    initialSource,
+    mutations,
+  );
 
   // Display label for the LI-proceeds portfolio, resolved from the picker
   // selection (null → the "Plan default rate" option). Carried into the summary
@@ -1349,6 +1355,8 @@ export function LiveSolverWorkspace({
                 onScoreChange={(s) =>
                   setLiAssumptions((a) => ({ ...a, mcTargetScore: s }))
                 }
+                source={initialSource}
+                mutations={mutations}
               />
             ) : null}
             {activeReport !== "summaries" && activeReport !== "monteCarlo" ? (

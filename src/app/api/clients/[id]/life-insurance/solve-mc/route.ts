@@ -12,6 +12,7 @@
 // never mutates the database. Allowlisted in the active-subscription lint for
 // parity with solver/solve.
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -20,6 +21,10 @@ import {
 } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { applyMutations } from "@/lib/solver/apply-mutations";
+import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
+import type { SolverMutation } from "@/lib/solver/types";
+import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { solveLifeInsuranceNeedMc } from "@/lib/life-insurance/solve-need-mc";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
@@ -33,6 +38,16 @@ import { SYNTHETIC_POLICY_ID } from "@/engine/what-if/life-insurance-need";
 import type { LifeInsuranceAssumptions } from "@/lib/life-insurance/solve-need";
 
 export const dynamic = "force-dynamic";
+
+// Envelope: live solver posts `source` + `mutations` so the MC need solve runs
+// against the edited plan. The MC payload (returns / liquid set) stays
+// source-based, matching /solver/life-insurance-summary + getOrComputeLifeInsuranceSolve;
+// the working tree drives the projection. Supersedes the legacy scenarioRef.
+const BODY = z.object({
+  source: z.union([z.literal("base"), z.string().uuid()]).default("base"),
+  mutations: z.array(SOLVER_MUTATION_SCHEMA).default([]),
+  assumptions: LI_ASSUMPTIONS_SCHEMA,
+});
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -77,14 +92,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     });
   }
 
-  const parsed = LI_ASSUMPTIONS_SCHEMA.safeParse(await req.json());
+  const parsed = BODY.safeParse(await req.json());
   if (!parsed.success) {
     return new Response(
       JSON.stringify({ error: "Invalid body", details: parsed.error.flatten() }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const assumptions = parsed.data;
+  const { source, mutations, assumptions } = parsed.data;
 
   const encoder = new TextEncoder();
   const abortController = new AbortController();
@@ -96,22 +111,32 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         controller.enqueue(encoder.encode(sseChunk(event, payload)));
       };
       try {
-        const [{ effectiveTree }, proceeds] = await Promise.all([
-          loadEffectiveTree(clientId, access.firmId, assumptions.scenarioRef, {}),
+        const [{ effectiveTree, resolutionContext }, proceeds] = await Promise.all([
+          loadEffectiveTree(clientId, access.firmId, source, {}),
           loadLiProceedsGrowth(
             access.firmId,
             assumptions.modelPortfolioId,
             DEFAULT_LI_GROWTH,
           ),
         ]);
+        // Working tree = source + live mutations, so the MC need solve reflects
+        // the scenario the advisor is editing (matches /solver/project).
+        let workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
+        if (resolutionContext) {
+          workingTree = resolveTechniqueMutations(
+            workingTree,
+            mutations as SolverMutation[],
+            resolutionContext,
+          );
+        }
 
         // Inject the synthetic policy's model-portfolio mix so the §101
         // proceeds randomize through Monte Carlo. The transformed payout
-        // account keeps id === SYNTHETIC_POLICY_ID.
-        // scenarioId is the 3rd positional arg; it defaults to "base" (the
-        // solver tab) but the presentations pre-solve passes a live scenario id
-        // for scenario-override decks. The synthetic mixes stay in the 4th slot.
-        const mcPayload = await loadMonteCarloData(clientId, access.firmId, assumptions.scenarioRef, [
+        // account keeps id === SYNTHETIC_POLICY_ID. The MC payload stays
+        // `source`-based (returns / liquid set / startingLiquidBalance), matching
+        // getOrComputeLifeInsuranceSolve + the /solver/life-insurance-summary
+        // route; the working tree drives the projection via solveLifeInsuranceNeedMc.
+        const mcPayload = await loadMonteCarloData(clientId, access.firmId, source, [
           { accountId: SYNTHETIC_POLICY_ID, mix: proceeds.mix },
         ]);
         // `coverEstateTaxes` is handled at the route level — the addend is computed
@@ -130,16 +155,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         // Use hasSpouse (filing status AND spouseDob), not filing status alone:
         // a married plan with no spouseDob cannot build the spouse-death case
         // and would throw inside buildLifeInsuranceWhatIfData (F8).
-        const isMarried = hasSpouse(effectiveTree);
+        const isMarried = hasSpouse(workingTree);
 
         // Per-decedent estate-tax addend (0 when the toggle is off).
         const clientAddend = assumptions.coverEstateTaxes
-          ? computeEstateTaxAddend(effectiveTree, "client", solveAssumptions)
+          ? computeEstateTaxAddend(workingTree, "client", solveAssumptions)
           : 0;
 
         const spouseAddend =
           assumptions.coverEstateTaxes && isMarried
-            ? computeEstateTaxAddend(effectiveTree, "spouse", solveAssumptions)
+            ? computeEstateTaxAddend(workingTree, "spouse", solveAssumptions)
             : 0;
 
         // The survivor must end with at least the leave-to-heirs target plus
@@ -149,7 +174,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           assumptions.leaveToHeirsAmount + clientAddend;
 
         const clientResult = await solveLifeInsuranceNeedMc(
-          effectiveTree,
+          workingTree,
           "client",
           solveAssumptions,
           mcPayload,
@@ -166,7 +191,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           mcPayload.requiredMinimumAssetLevel =
             assumptions.leaveToHeirsAmount + spouseAddend;
           const spouseResult = await solveLifeInsuranceNeedMc(
-            effectiveTree,
+            workingTree,
             "spouse",
             solveAssumptions,
             mcPayload,
