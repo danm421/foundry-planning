@@ -35,6 +35,17 @@ const richSource = {
   planSettings: { planStartYear: 2026 },
 } as unknown as ClientData;
 
+const horizonSourceForMerge = {
+  ...richSource,
+  client: {
+    ...(richSource as unknown as { client: object }).client,
+    dateOfBirth: "1965-03-15",
+    spouseDob: "1967-05-20",
+    planEndAge: 95,
+  },
+  planSettings: { planStartYear: 2026, planEndYear: 2060 },
+} as unknown as ClientData;
+
 describe("mutationsToBaseUpdates", () => {
   it("classifies a brand-new account as an insert", () => {
     const out = mutationsToBaseUpdates(source, [
@@ -228,10 +239,54 @@ describe("living-expense-amount → base updates", () => {
   });
 });
 
+describe("mutationsToBaseUpdates — surplus allocation", () => {
+  it("emits a planSettingsUpdate with a string-coerced pct and passthrough account", () => {
+    const out = mutationsToBaseUpdates(richSource, [
+      { kind: "surplus-allocation", spendPct: 0.25, saveAccountId: "acct1" },
+    ]);
+    expect(out.planSettingsUpdate).toEqual({
+      surplusSpendPct: "0.25",
+      surplusSaveAccountId: "acct1",
+    });
+  });
+
+  it("preserves a null saveAccountId", () => {
+    const out = mutationsToBaseUpdates(richSource, [
+      { kind: "surplus-allocation", spendPct: 0, saveAccountId: null },
+    ]);
+    expect(out.planSettingsUpdate).toEqual({
+      surplusSpendPct: "0",
+      surplusSaveAccountId: null,
+    });
+  });
+
+  it("merges surplus fields with the LE-horizon planEndYear into one patch", () => {
+    // horizonSource: client born 1965, planEndYear 2060, accounts [{id:acct1}]
+    const out = mutationsToBaseUpdates(
+      { ...horizonSourceForMerge },
+      [
+        { kind: "life-expectancy", person: "client", age: 105 },
+        { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1" },
+      ],
+    );
+    expect(out.planSettingsUpdate).toEqual({
+      planEndYear: 2070,
+      surplusSpendPct: "0.3",
+      surplusSaveAccountId: "acct1",
+    });
+  });
+});
+
 describe("isBaseSavableMutation", () => {
   it("is true for retirement-tab levers", () => {
     expect(isBaseSavableMutation({ kind: "retirement-age", person: "client", age: 67 })).toBe(true);
     expect(isBaseSavableMutation({ kind: "account-upsert", id: "x", value: ACCT })).toBe(true);
+  });
+
+  it("reports surplus-allocation as base-savable", () => {
+    expect(
+      isBaseSavableMutation({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null }),
+    ).toBe(true);
   });
 
   it("is false for techniques and the engine-only self-employment flag", () => {
@@ -301,6 +356,7 @@ describe("every base-savable mutation kind produces a write", () => {
     "savings-end-year": { kind: "savings-end-year", accountId: "acct1", year: 2050 },
     "account-upsert": { kind: "account-upsert", id: "new", value: ACCT },
     "savings-rule-upsert": { kind: "savings-rule-upsert", id: "r2", value: { ...RULE, id: "r2", accountId: "acct1" } },
+    "surplus-allocation": { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1" },
   };
 
   for (const [kind, m] of Object.entries(representatives)) {
@@ -311,6 +367,7 @@ describe("every base-savable mutation kind produces a write", () => {
         out.accountInserts.length + out.accountUpdates.length + out.accountRemoves.length +
         out.savingsInserts.length + out.savingsUpdates.length + out.savingsRemoves.length +
         out.savingsFieldUpdates.length + (out.clientUpdate ? 1 : 0) +
+        (out.planSettingsUpdate ? 1 : 0) +
         out.incomeUpdates.length + out.expenseUpdates.length + out.expenseInserts.length;
       expect(total).toBeGreaterThan(0);
     });

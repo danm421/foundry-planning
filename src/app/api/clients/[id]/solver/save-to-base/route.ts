@@ -268,6 +268,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: dedicatedCheck.reason }, { status: 400 });
     }
 
+    // Validate the surplus "save remainder to" destination when it's a non-null
+    // account NOT satisfied by an in-batch insert. surplus_save_account_id →
+    // accounts.id is a GLOBAL FK (no tenant column), so an unvalidated id could
+    // link cross-tenant or FK-crash the whole save — same posture as the
+    // savings-rule and dedicated-account guards above. In-batch inserts are
+    // remapped to their generated uuid inside the txn (below).
+    const surplusSaveAccountId =
+      typeof planSettingsUpdate?.surplusSaveAccountId === "string"
+        ? planSettingsUpdate.surplusSaveAccountId
+        : null;
+    const surplusAcctToCheck =
+      surplusSaveAccountId && !insertedSyntheticIds.has(surplusSaveAccountId)
+        ? [surplusSaveAccountId]
+        : [];
+    const surplusCheck = await assertAccountsInClient(clientId, surplusAcctToCheck);
+    if (!surplusCheck.ok) {
+      return NextResponse.json({ error: surplusCheck.reason }, { status: 400 });
+    }
+
     // Validate the owner FKs on every account we (re)write — family members,
     // entities, and external beneficiaries must all belong to this client. Without
     // this a crafted owner id would either FK-crash the whole save (500) or attach
@@ -535,10 +554,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       // pushed to ALL the client's plan_settings rows so the engine's year loop
       // extends with the new LE — mirrors the base-facts PUT route.
       if (planSettingsUpdate) {
+        // A surplus "save remainder to" account created inline in THIS batch is a
+        // synthetic id until inserted — remap it to the generated DB uuid, the same
+        // way savings rules and dedicated accounts are remapped above. Otherwise the
+        // FK (surplus_save_account_id → accounts.id) would reference a non-existent
+        // id and roll back the whole save. Existing-account and null destinations
+        // pass through unchanged.
+        const rawSurplusAcct = planSettingsUpdate.surplusSaveAccountId;
+        const remappedPlanSettings =
+          typeof rawSurplusAcct === "string" && idRemap.has(rawSurplusAcct)
+            ? { ...planSettingsUpdate, surplusSaveAccountId: idRemap.get(rawSurplusAcct)! }
+            : planSettingsUpdate;
         await tx
           .update(planSettings)
           .set({
-            ...(planSettingsUpdate as Partial<typeof planSettings.$inferInsert>),
+            ...(remappedPlanSettings as Partial<typeof planSettings.$inferInsert>),
             updatedAt: new Date(),
           })
           .where(eq(planSettings.clientId, clientId));

@@ -483,6 +483,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("stress-exemption-cap"),
     cap: MONEY,
   }),
+  z.object({
+    kind: z.literal("surplus-allocation"),
+    spendPct: z.number().min(0).max(1),
+    saveAccountId: z.string().min(1).nullable(),
+  }),
 ]);
 
 export type SolverMutationFromSchema = z.infer<typeof SOLVER_MUTATION_SCHEMA>;

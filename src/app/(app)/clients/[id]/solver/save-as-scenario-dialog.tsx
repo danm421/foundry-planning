@@ -94,6 +94,8 @@ function describeMutation(m: SolverMutation): string {
       return `Savings contribution (${m.accountId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
     case "life-expectancy":
       return `Life expectancy (${m.person}) → ${m.age}`;
+    case "surplus-allocation":
+      return `Surplus: spend ${Math.round(m.spendPct * 100)}% of cash flow`;
     default:
       return m.kind;
   }

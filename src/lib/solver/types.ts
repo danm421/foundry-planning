@@ -85,7 +85,8 @@ export type SolverMutation =
   | { kind: "stress-ss-haircut"; pct: number; startYear: number }
   | { kind: "stress-disability"; person: SolverPerson; startYear: number }
   | { kind: "stress-market-crash"; year: number; drawdownPct: number }
-  | { kind: "stress-exemption-cap"; cap: number };
+  | { kind: "stress-exemption-cap"; cap: number }
+  | { kind: "surplus-allocation"; spendPct: number; saveAccountId: string | null };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
@@ -133,7 +134,8 @@ export type SolverMutationKey =
   | "stress-ss-haircut"
   | "stress-disability"
   | "stress-market-crash"
-  | "stress-exemption-cap";
+  | "stress-exemption-cap"
+  | "surplus-allocation";
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
   switch (m.kind) {
@@ -227,6 +229,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return "stress-market-crash";
     case "stress-exemption-cap":
       return "stress-exemption-cap";
+    case "surplus-allocation":
+      return "surplus-allocation";
   }
 }
 

@@ -376,4 +376,25 @@ describe("SolverTechniquesTab", () => {
     );
     expect(screen.getByRole("button", { name: /edit estate planning/i })).toBeInTheDocument();
   });
+
+  it("renders the Surplus Cash Flow control", () => {
+    const base = {
+      client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],
+      incomes: [], expenses: {}, savingsRules: [], liabilities: [], gifts: [], giftEvents: [],
+      taxYearRows: [], planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025 },
+    } as unknown as ClientData;
+
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={base}
+        baseClientData={base}
+        baseGifts={[]}
+        onChange={vi.fn()}
+        onResetField={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Surplus Cash Flow")).toBeInTheDocument();
+    expect(screen.getByLabelText("Save remainder to")).toBeInTheDocument();
+  });
 });

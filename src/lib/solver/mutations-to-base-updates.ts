@@ -138,6 +138,7 @@ export function mutationsToBaseUpdates(
   // Coalesce field edits per target so multiple levers on one row produce a
   // single partial update.
   const clientPatch: ColumnPatch = {};
+  const planSettingsPatch: ColumnPatch = {};
   const incomePatches = new Map<string, ColumnPatch>();
   const expensePatches = new Map<string, ColumnPatch>();
   // Field edits keyed by accountId; resolved to a rule id (existing) or folded
@@ -179,6 +180,13 @@ export function mutationsToBaseUpdates(
       case "life-expectancy": {
         if (m.person === "client") clientPatch.lifeExpectancy = m.age;
         else clientPatch.spouseLifeExpectancy = m.age;
+        break;
+      }
+
+      // ── Plan settings ─────────────────────────────────────────────────
+      case "surplus-allocation": {
+        planSettingsPatch.surplusSpendPct = dec(m.spendPct);      // decimal → DB string
+        planSettingsPatch.surplusSaveAccountId = m.saveAccountId; // account id | null
         break;
       }
 
@@ -360,11 +368,12 @@ export function mutationsToBaseUpdates(
     });
     if (horizon) {
       clientPatch.planEndAge = horizon.planEndAge;
-      out.planSettingsUpdate = { planEndYear: horizon.planEndYear };
+      planSettingsPatch.planEndYear = horizon.planEndYear;
     }
   }
 
   if (Object.keys(clientPatch).length > 0) out.clientUpdate = clientPatch;
+  if (Object.keys(planSettingsPatch).length > 0) out.planSettingsUpdate = planSettingsPatch;
 
   // Finalize income / expense partial updates.
   for (const [id, set] of incomePatches) {

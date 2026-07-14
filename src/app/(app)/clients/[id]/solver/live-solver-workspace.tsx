@@ -1190,6 +1190,7 @@ export function LiveSolverWorkspace({
             resolvedInflationRate={baseClientData.planSettings.inflationRate}
             onRegisterAccountMix={registerDraftAccountMix}
             onChange={pushMutation}
+            onResetField={clearMutations}
             onSolveStart={handleSolveStart}
             baseClientData={baseClientData}
             baseGifts={baseGifts}
