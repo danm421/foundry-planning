@@ -35,6 +35,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, accountOwners, savingsRules, scenarios, clients, incomes, expenses, planSettings, expenseDedicatedAccounts } from "@/db/schema";
 import type { Account, SavingsRule } from "@/engine/types";
+import { EDUCATION_529_SENTINEL_OWNER_ID } from "@/engine/ownership";
 import type { SolverMutation } from "@/lib/solver/types";
 import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { mutationsToBaseUpdates } from "@/lib/solver/mutations-to-base-updates";
@@ -88,6 +89,12 @@ async function insertAccountOwnerRows(
     // no column for them, so skip rather than write an all-null row that violates
     // the one-owner check constraint.
     if (o.kind === "gifted_away") continue;
+    // 529s carry no account_owners rows — the loader synthesizes this sentinel
+    // external_beneficiary owner at load time. It is not a real DB row, so never
+    // persist it (and its beneficiary lives in the education529 columns instead).
+    if (o.kind === "external_beneficiary" && o.externalBeneficiaryId === EDUCATION_529_SENTINEL_OWNER_ID) {
+      continue;
+    }
     await tx.insert(accountOwners).values({
       accountId,
       familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
@@ -144,6 +151,16 @@ function accountInsertValues(
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
     titlingType: a.titlingType ?? "jtwros",
+    // 529 / education-savings columns (null for every other category). The
+    // beneficiary is required for a real 529; the solver sets it from the goal's
+    // "For" person. Grantor stays null → the sentinel external beneficiary owner.
+    grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
+    grantorName: a.education529?.grantorName ?? null,
+    beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
+    beneficiaryName: a.education529?.beneficiaryName ?? null,
+    rothRolloverEnabled: a.education529?.rothRolloverEnabled ?? false,
+    rothRolloverStartYear: a.education529?.rothRolloverStartYear ?? null,
+    rothRolloverAccountId: a.education529?.rothRolloverAccountId ?? null,
   };
 }
 
@@ -293,10 +310,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // a cross-tenant owner. Mirrors the accounts write-core's owner tenant guard,
     // extended to the external_beneficiary kind the solver supports.
     const ownerRows = [...accountInserts, ...accountUpdates].flatMap((a) => a.owners ?? []);
-    const fmCheck = await assertFamilyMembersInClient(
-      clientId,
-      ownerRows.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : [])),
-    );
+    const fmCheck = await assertFamilyMembersInClient(clientId, [
+      ...ownerRows.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : [])),
+      // 529 grantor/beneficiary reference family members via the education529
+      // block, not account_owners — validate them here or a crafted id could
+      // FK-crash the save or attach a cross-tenant beneficiary.
+      ...[...accountInserts, ...accountUpdates].flatMap((a) => [
+        a.education529?.beneficiaryFamilyMemberId,
+        a.education529?.grantorFamilyMemberId,
+      ]),
+    ]);
     if (!fmCheck.ok) {
       return NextResponse.json({ error: fmCheck.reason }, { status: 400 });
     }
@@ -309,7 +332,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
     const ebCheck = await assertExternalBeneficiariesInClient(
       clientId,
-      ownerRows.flatMap((o) => (o.kind === "external_beneficiary" ? [o.externalBeneficiaryId] : [])),
+      ownerRows.flatMap((o) =>
+        o.kind === "external_beneficiary" && o.externalBeneficiaryId !== EDUCATION_529_SENTINEL_OWNER_ID
+          ? [o.externalBeneficiaryId]
+          : [],
+      ),
     );
     if (!ebCheck.ok) {
       return NextResponse.json({ error: ebCheck.reason }, { status: 400 });

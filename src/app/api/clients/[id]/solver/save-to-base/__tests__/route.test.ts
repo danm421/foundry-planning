@@ -349,4 +349,46 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     // Guarded BEFORE the transaction — nothing written.
     expect(updates).toHaveLength(0);
   });
+
+  it("persists a new 529's beneficiary and does not write a sentinel owner row", async () => {
+    const ACCT_529 = {
+      id: "syn-529",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: false,
+        rothRolloverStartYear: null,
+        rothRolloverAccountId: null,
+      },
+    };
+    const res = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "syn-529", value: ACCT_529 }] }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // Exactly ONE insert — the account row. No account_owners row for the sentinel.
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].values).toMatchObject({
+      category: "education_savings",
+      beneficiaryFamilyMemberId: "fm-ava",
+    });
+    // The sentinel is excluded from external-beneficiary tenant validation …
+    expect(assertExternalBeneficiariesInClient).toHaveBeenCalledWith(CLIENT_ID, []);
+    // … while the beneficiary family member IS validated.
+    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["fm-ava"]),
+    );
+  });
 });
