@@ -9,7 +9,7 @@ describe("SolverBaseHint", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows 'base was X' when values differ", () => {
+  it("shows a passive 'base was X' note when values differ and no reset handler", () => {
     render(<SolverBaseHint base={65} working={67} />);
     expect(screen.getByText(/base was/)).toBeTruthy();
     expect(screen.getByText("65")).toBeTruthy();
@@ -20,10 +20,14 @@ describe("SolverBaseHint", () => {
     expect(screen.getByText("$1000")).toBeTruthy();
   });
 
-  it("calls onReset when reset is clicked", () => {
+  it("shows a 'Reset to <base>' action carrying the prior value", () => {
     const onReset = vi.fn();
-    render(<SolverBaseHint base={65} working={67} onReset={onReset} />);
-    screen.getByRole("button", { name: "reset" }).click();
+    render(
+      <SolverBaseHint base={210000} working={185000} format={(v) => `$${v}/yr`} onReset={onReset} />,
+    );
+    const btn = screen.getByRole("button", { name: /Reset to/ });
+    expect(btn.textContent).toContain("$210000/yr");
+    btn.click();
     expect(onReset).toHaveBeenCalledOnce();
   });
 
