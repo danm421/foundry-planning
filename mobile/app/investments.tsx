@@ -11,20 +11,8 @@ import { Sparkline } from "@/home/sparkline";
 import { Row } from "@/ui/row";
 import { EmptyState } from "@/ui/empty-state";
 import { AllocationBars } from "@/invest/allocation-bars";
+import { TrendBadge } from "@/invest/trend-badge";
 import { formatPct, pctChange } from "@/invest/trend";
-
-/** Arrow + signed percent, colored by direction. Hidden entirely when
- *  `pct` is null (fewer than 2 trend points, or a zero baseline). */
-function TrendBadge({ pct }: { pct: number | null }) {
-  if (pct === null) return null;
-  const positive = pct >= 0;
-  return (
-    <Text className={positive ? "text-good" : "text-crit"}>
-      {positive ? "↗ " : "↘ "}
-      {formatPct(pct)}
-    </Text>
-  );
-}
 
 export default function Investments() {
   const api = useApi();

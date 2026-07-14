@@ -72,6 +72,10 @@ export default function RootLayout() {
               name="plaid/[itemId]"
               options={{ presentation: "modal", headerShown: false }}
             />
+            <Stack.Screen
+              name="investment/[id]"
+              options={{ presentation: "modal", headerShown: false }}
+            />
             <Stack.Screen name="investments" options={{ headerShown: false }} />
           </Stack>
         </AppLockGate>
