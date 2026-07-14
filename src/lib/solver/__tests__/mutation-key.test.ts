@@ -38,3 +38,11 @@ describe("mutationKey — stress test", () => {
     expect(mutationKey({ kind: "stress-exemption-cap", cap: 7_000_000 })).toBe("stress-exemption-cap");
   });
 });
+
+describe("mutationKey — surplus allocation", () => {
+  it("keys the surplus lever as a single global lever", () => {
+    expect(
+      mutationKey({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null }),
+    ).toBe("surplus-allocation");
+  });
+});

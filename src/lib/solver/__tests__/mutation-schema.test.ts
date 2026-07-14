@@ -130,6 +130,12 @@ const SAMPLES: SolverMutation[] = [
   { kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 },
   { kind: "stress-disability", person: "client", startYear: 2030 },
   { kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 },
+  { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null },
+  {
+    kind: "surplus-allocation",
+    spendPct: 0.3,
+    saveAccountId: "00000000-0000-4000-8000-000000000009",
+  },
 ];
 
 describe("SOLVER_MUTATION_SCHEMA", () => {
@@ -160,6 +166,16 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
         kind: "savings-roth-percent",
         accountId: "00000000-0000-4000-8000-000000000003",
         rothPercent: 1.5,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects surplus-allocation with spendPct outside 0..1", () => {
+    expect(
+      SOLVER_MUTATION_SCHEMA.safeParse({
+        kind: "surplus-allocation",
+        spendPct: 1.4,
+        saveAccountId: null,
       }).success,
     ).toBe(false);
   });
