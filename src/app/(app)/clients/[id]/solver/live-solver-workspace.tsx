@@ -1017,11 +1017,16 @@ export function LiveSolverWorkspace({
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Fills the flex-filled <section> (see ClientLayout / AppLayout), so the
-          two panes always reach the footer no matter the chrome height — no
-          magic viewport-minus-Npx that leaves a tall void below the workspace.
-          Each pane scrolls its own overflow. */}
+    <div className="flex min-h-0 flex-1 flex-col lg:h-[calc(100dvh-100px)] lg:flex-none">
+      {/* On desktop the workspace is pinned to the viewport height. The app
+          shell scrolls the whole page (min-h-screen), so without a definite
+          height the grid grows to fit content and the *window* scrolls — which
+          drags the inputs down whenever the report side is scrolled. The 100px
+          is the sticky chrome above (topbar h-14 = 56px + client header 44px),
+          matching details/layout.tsx. With a fixed height here, each pane's own
+          overflow-y-auto finally engages, so the two panes scroll independently
+          and the action bar stays pinned below. On mobile (<lg) the panes stack
+          and the page scrolls normally. */}
       <div
         ref={workspaceRef}
         style={{ "--solver-left": `${leftPct}%` } as React.CSSProperties}
