@@ -8,10 +8,12 @@
 // editEnabled is fetched locally (fail-closed), same pattern as
 // category/[id].tsx / plaid/[itemId].tsx.
 //
-// Detail body only for now (`DetailBody`). Task 10 adds a `FormBody` sibling
-// for mode === "edit" and wires the id === "new" create flow; until then,
-// "new" (and any other unmatched id, e.g. deleted-elsewhere) falls through
-// to the not-found EmptyState below.
+// Detail body (`DetailBody`) plus the Task 10 create/edit form
+// (`RecurringForm`, in src/recurrings/recurring-form.tsx): id === "new" goes
+// straight to the form seeded with emptyForm(); an existing row's Edit
+// action switches `mode` to "edit" with the form seeded via fromRow(r). Any
+// other unmatched id (e.g. deleted-elsewhere) falls through to the
+// not-found EmptyState below.
 
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
@@ -23,6 +25,8 @@ import { formatMoney } from "@/ui/money";
 import { formatDay } from "@/ui/date";
 import { EmptyState } from "@/ui/empty-state";
 import { ruleChips } from "@/recurrings/logic";
+import { emptyForm, fromRow } from "@/recurrings/form";
+import { RecurringForm, categoryFromRow } from "@/recurrings/recurring-form";
 
 /** "2026-07" -> "J". Mirrors the web RecurringTimeline's monthAbbr, trimmed
  *  to the single initial the mobile strip shows under each dot. */
@@ -131,16 +135,6 @@ function DetailBody({
         </View>
       ) : null}
     </>
-  );
-}
-
-/** Placeholder for Task 10's create/edit form. Kept as a sibling function
- *  (rather than inlined) so Task 10 can drop `FormBody` in cleanly. */
-function FormBody() {
-  return (
-    <View className="py-24 items-center">
-      <Text className="text-ink-2">Editing coming soon.</Text>
-    </View>
   );
 }
 
@@ -261,8 +255,21 @@ export default function RecurringDetail() {
                   deleteError={deleteError}
                 />
               ) : (
-                <FormBody />
+                <RecurringForm
+                  mode="edit"
+                  recurringId={r.id}
+                  initial={fromRow(r)}
+                  initialCategory={categoryFromRow(r)}
+                  onCancel={() => setMode("detail")}
+                />
               )
+            ) : id === "new" ? (
+              <RecurringForm
+                mode="create"
+                initial={emptyForm()}
+                initialCategory={null}
+                onCancel={() => router.back()}
+              />
             ) : (
               <EmptyState title="Recurring not found" hint="It may have been removed." />
             )}
