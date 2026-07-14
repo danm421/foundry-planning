@@ -26,7 +26,16 @@ export interface NeedResult {
 }
 
 /** Maximum face value the solver will try before declaring exceeds-cap. */
-const CAP = 20_000_000;
+export const CAP = 20_000_000;
+
+/** Lower clamp for the reference probe so a degenerate tiny seed can't produce
+ *  a noisy slope. */
+const MIN_REF_FACE = 1_000;
+
+/** Bias a warm-start seed slightly high so the common case lands in the tight
+ *  [0, ref] bracket (eRef >= target) and skips the CAP fallback probe. The
+ *  bias only moves the reference probe location — never the converged root. */
+const SEED_OVERSHOOT = 1.15;
 
 /** The solver stops when the achieved portfolio is within 0.5% of the target. */
 const TOLERANCE = 0.005;
@@ -50,6 +59,7 @@ export function solveLifeInsuranceNeed(
   data: ClientData,
   deceased: "client" | "spouse",
   a: LifeInsuranceAssumptions,
+  opts?: { atZero?: number; seedFace?: number },
 ): NeedResult {
   const ending = (faceValue: number): number =>
     survivorEndingPortfolio(
@@ -69,32 +79,39 @@ export function solveLifeInsuranceNeed(
 
   const target = a.leaveToHeirsAmount;
 
-  // If the survivor already meets the target at $0 face value (or target is 0),
-  // no insurance is needed.
-  const atZero = ending(0);
+  // Face-0 anchor. Reuse a caller-supplied value (fused zero-projection) when
+  // present, else probe it.
+  const atZero = opts?.atZero ?? ending(0);
   if (atZero >= target) {
     return { status: "solved", faceValue: 0, achievedEndingPortfolio: atZero };
   }
 
-  // If even the CAP cannot reach the target, the need exceeds our search range.
-  const atCap = ending(CAP);
-  if (atCap < target) {
-    return { status: "exceeds-cap", faceValue: CAP, achievedEndingPortfolio: atCap };
+  // Reference probe near the expected root. Seed from the previous year's
+  // answer (warm start, biased slightly high) when available, else from the
+  // shortfall. Clamp into [MIN_REF_FACE, CAP].
+  const gap = target - atZero;
+  const rawRef = opts?.seedFace && opts.seedFace > 0 ? opts.seedFace * SEED_OVERSHOOT : gap;
+  const refFace = Math.min(CAP, Math.max(MIN_REF_FACE, rawRef));
+  const eRef = ending(refFace);
+
+  let lo: number;
+  let flo: number;
+  let hi: number;
+  let fhi: number;
+  if (eRef >= target) {
+    // Root in (0, refFace]. Tight, locally-near-linear bracket.
+    lo = 0; flo = atZero; hi = refFace; fhi = eRef;
+  } else {
+    // refFace still below the root — establish the upper bound at CAP.
+    const atCap = ending(CAP);
+    if (atCap < target) {
+      return { status: "exceeds-cap", faceValue: CAP, achievedEndingPortfolio: atCap };
+    }
+    lo = refFace; flo = eRef; hi = CAP; fhi = atCap;
   }
 
-  // Bracket is valid: atZero < target <= atCap (guaranteed by the two early
-  // returns above). Solve for the minimum face value via Illinois-modified
-  // false position -- converges in ~4-6 probes vs bisection's ~24.
   const root = findRoot(
-    {
-      lo: 0,
-      flo: atZero,
-      hi: CAP,
-      fhi: atCap,
-      target,
-      tol: target * TOLERANCE,
-      maxIterations: 24,
-    },
+    { lo, flo, hi, fhi, target, tol: target * TOLERANCE, maxIterations: 24 },
     ending,
   );
 
