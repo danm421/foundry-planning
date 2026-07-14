@@ -361,22 +361,6 @@ export function SolverTechniquesTab({
 
   return (
     <div>
-      {baseClientData && onResetField ? (
-        <SolverSection
-          title="Surplus Cash Flow"
-          action={
-            <FieldTooltip text="Splits each year's leftover cash flow: the spent share leaves the household as discretionary spending; the rest is saved to the chosen account (or household checking). Raising the spend % lowers Monte Carlo success, Net to Heirs, and ending net worth, and grows the Cash Flow chart's discretionary band." />
-          }
-        >
-          <SolverSurplusAllocation
-            workingTree={workingTree}
-            baseClientData={baseClientData}
-            onChange={onChange}
-            onResetField={onResetField}
-          />
-        </SolverSection>
-      ) : null}
-
       <SolverSection title="Roth Conversions">
         <TechniqueGroup
           working={workingRoth}
@@ -485,6 +469,22 @@ export function SolverTechniquesTab({
             baseGifts={baseGifts ?? []}
             onChange={onChange}
             onOpen={onEstateOpen}
+          />
+        </SolverSection>
+      ) : null}
+
+      {baseClientData && onResetField ? (
+        <SolverSection
+          title="Surplus Cash Flow"
+          action={
+            <FieldTooltip text="Splits each year's leftover cash flow: the spent share leaves the household as discretionary spending; the rest is saved to the chosen account (or household checking). Raising the spend % lowers Monte Carlo success, Net to Heirs, and ending net worth, and grows the Cash Flow chart's discretionary band." />
+          }
+        >
+          <SolverSurplusAllocation
+            workingTree={workingTree}
+            baseClientData={baseClientData}
+            onChange={onChange}
+            onResetField={onResetField}
           />
         </SolverSection>
       ) : null}
