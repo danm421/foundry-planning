@@ -5,16 +5,20 @@
 // pendingApproval from the outside without a live SSE connection.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ForgePanel } from "../forge-panel";
 import type { UseForgeStreamResult, PendingApproval } from "../use-forge-stream";
 
 // ---------------------------------------------------------------------------
-// Mock next/navigation (needed by forge-provider + panel internals)
+// Mock next/navigation (needed by forge-provider + panel internals).
+// refreshMock is hoisted + stable so a test can assert the panel calls
+// router.refresh() after a committed resume (server-rendered plan views only
+// re-fetch on a soft refresh).
 // ---------------------------------------------------------------------------
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: refreshMock }),
   usePathname: () => "/clients/c1/overview",
   useSearchParams: () => new URLSearchParams("scenario=s1"),
 }));
@@ -129,6 +133,7 @@ function mountPanel() {
 describe("ForgePanel approval slot — Phase 2", () => {
   beforeEach(() => {
     mockStreamState = makeStreamState();
+    refreshMock.mockClear();
   });
 
   it("(1) does NOT render ApprovalCard text when pendingApproval is null", () => {
@@ -176,6 +181,41 @@ describe("ForgePanel approval slot — Phase 2", () => {
     mountPanel();
     expect(screen.getByRole("textbox", { name: /ask forge/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+  });
+
+  it("(6) refreshes the server-rendered page after a confirmed Apply", async () => {
+    // A confirmed write commits during the resume; the host planning views are
+    // server components, so the panel must soft-refresh or the advisor sees
+    // stale data (e.g. deleted accounts still listed) until a manual reload.
+    const resumeMock = vi.fn(async () => {});
+    mockStreamState = makeStreamState({
+      pendingApproval: SAMPLE_APPROVAL,
+      resume: resumeMock,
+    });
+    mountPanel();
+
+    await userEvent.click(screen.getByRole("button", { name: /confirm row 1/i }));
+    await userEvent.click(screen.getByRole("button", { name: /apply selected/i }));
+
+    expect(resumeMock).toHaveBeenCalledWith({ call_a: "confirm" });
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledOnce());
+  });
+
+  it("(7) does NOT refresh when the advisor rejects everything (Cancel)", async () => {
+    // A reject-only resume mutates nothing, so there is nothing to re-fetch.
+    const resumeMock = vi.fn(async () => {});
+    mockStreamState = makeStreamState({
+      pendingApproval: SAMPLE_APPROVAL,
+      resume: resumeMock,
+    });
+    mountPanel();
+
+    await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+
+    expect(resumeMock).toHaveBeenCalledWith({ call_a: "reject" });
+    // Flush any microtask the resume-then chain might schedule, then assert.
+    await Promise.resolve();
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });
 

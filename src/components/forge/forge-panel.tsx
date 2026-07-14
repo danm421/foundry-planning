@@ -635,7 +635,18 @@ export function ForgePanel({
               busy={status === "streaming"}
               onSubmit={(decisions) => {
                 setResolvedApproval({ ...pendingApproval, decisions });
-                resume(decisions);
+                // A confirmed write COMMITS during the resume (the graph is
+                // paused mid-interrupt; the tool only runs on /resume). The
+                // host planning views (Net Worth, Inflows & Outflows, etc.) are
+                // server components reading the DB, so nothing re-fetches on
+                // its own — without this the advisor sees stale data (deleted
+                // accounts still listed) until a manual page reload. Refresh
+                // after the resume drains so those views reflect the change in
+                // place. A reject-only resume mutates nothing, so skip it.
+                const committed = Object.values(decisions).some((v) => v === "confirm");
+                void Promise.resolve(resume(decisions)).then(() => {
+                  if (committed) router.refresh();
+                });
               }}
               onCancel={() => {
                 const rejectAll: Record<string, "confirm" | "reject"> = {};
@@ -651,7 +662,14 @@ export function ForgePanel({
             <MeetingReviewCard
               review={pendingMeetingReview}
               busy={busy}
-              onApprove={(payload) => void resumeMeetingReview(payload)}
+              onApprove={(payload) =>
+                // Saving a meeting record commits a note + tasks + transcript
+                // doc on approval; refresh so CRM/tasks views reflect it
+                // without a manual reload (mirrors the approval path above).
+                void Promise.resolve(resumeMeetingReview(payload)).then(() => {
+                  if (payload.approved) router.refresh();
+                })
+              }
               onCancel={() =>
                 void resumeMeetingReview({
                   approved: false,
