@@ -166,18 +166,20 @@ export function LiveSolverWorkspace({
     return currentYear + Math.max(0, retAge - curAge);
   }, [baseClientData, currentYear]);
 
-  // Primary client's retirement year for the "Portfolio at Retirement" KPI.
-  // retirementYearForOwner clamps to >= currentYear (correct for lever
-  // end-years), which can't tell an already-retired client from one retiring
-  // this year — so we compute the raw age comparison here and hide the KPI when
-  // retirement is already in the past. Birth-year-only, matching the helper.
-  const primaryRetirement = useMemo(() => {
+  // Primary client's retirement year for the "Portfolio at Retirement" KPI, or
+  // null to hide the tile. retirementYearForOwner clamps to >= currentYear
+  // (correct for lever end-years), which can't tell an already-retired client
+  // from one retiring this year — so we compute the raw age comparison here and
+  // return null (hide) when retirement is already past, or when the birth year
+  // is missing/unparseable. Birth-year-only, matching the helper.
+  const primaryRetirementYear = useMemo(() => {
     const c = baseClientData.client;
     const retAge = c.retirementAge ?? 65;
     const birthYear = c.dateOfBirth ? Number(String(c.dateOfBirth).slice(0, 4)) : null;
     if (birthYear == null || !Number.isFinite(birthYear)) return null;
     const curAge = currentYear - birthYear;
-    return { sampleYear: currentYear + Math.max(0, retAge - curAge), alreadyRetired: curAge > retAge };
+    if (curAge > retAge) return null; // already retired — hide the KPI
+    return currentYear + Math.max(0, retAge - curAge);
   }, [baseClientData, currentYear]);
 
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
@@ -524,15 +526,13 @@ export function LiveSolverWorkspace({
 
   // Liquid portfolio at the primary client's (base) retirement year. The sample
   // year is fixed across base/working, so the delta isolates the levers' effect
-  // on the retirement-year balance. Hidden entirely for already-retired clients.
-  const showPortfolioAtRetirement =
-    primaryRetirement != null && !primaryRetirement.alreadyRetired;
-  const basePortfolioAtRetirement = showPortfolioAtRetirement
-    ? portfolioAtYear(baseProjection, primaryRetirement.sampleYear)
-    : null;
-  const workingPortfolioAtRetirement = showPortfolioAtRetirement
-    ? portfolioAtYear(currentProjection, primaryRetirement.sampleYear)
-    : null;
+  // on the retirement-year balance. Hidden entirely for already-retired clients
+  // (primaryRetirementYear is null).
+  const showPortfolioAtRetirement = primaryRetirementYear != null;
+  const basePortfolioAtRetirement =
+    primaryRetirementYear != null ? portfolioAtYear(baseProjection, primaryRetirementYear) : null;
+  const workingPortfolioAtRetirement =
+    primaryRetirementYear != null ? portfolioAtYear(currentProjection, primaryRetirementYear) : null;
   const portfolioAtRetirementDelta =
     basePortfolioAtRetirement != null && workingPortfolioAtRetirement != null
       ? workingPortfolioAtRetirement - basePortfolioAtRetirement
