@@ -7,6 +7,7 @@ import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
+import { loadPortalHousehold } from "@/lib/portal/load-profile-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,19 @@ type ContactPatch = {
 };
 
 type Body = { primary?: ContactPatch; spouse?: ContactPatch };
+
+export async function GET(): Promise<Response> {
+  try {
+    const { clientId } = await resolvePortalClient();
+    const dto = await loadPortalHousehold(clientId);
+    if (!dto) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(dto);
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
 
 export async function PUT(req: Request): Promise<Response> {
   try {

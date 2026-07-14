@@ -7,6 +7,7 @@ import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
+import { loadPortalFamily } from "@/lib/portal/load-profile-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,17 @@ type Body = {
   relationship?: string;
   dateOfBirth?: string | null;
 };
+
+export async function GET(): Promise<Response> {
+  try {
+    const { clientId } = await resolvePortalClient();
+    return NextResponse.json({ members: await loadPortalFamily(clientId) });
+  } catch (err) {
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
+    throw err;
+  }
+}
 
 export async function POST(req: Request): Promise<Response> {
   try {
