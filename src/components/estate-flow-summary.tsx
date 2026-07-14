@@ -74,9 +74,11 @@ export function EstateFlowSummaryView({
   // "Net Worth" box and the first-death "Estate" box anchor at the same y —
   // putting the section headers inside the data columns made each column
   // start at a different vertical offset depending on whether it had a label.
-  const gridCols = hasOoe
-    ? "lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)_minmax(0,1fr)]"
-    : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]";
+  // The grid stays three columns whether or not there are out-of-estate
+  // assets, so the in-estate flow keeps its position instead of sliding to
+  // the right when the out-of-estate column is empty.
+  const gridCols =
+    "lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)_minmax(0,1fr)]";
 
   return (
     <div className="flex flex-col gap-6">
@@ -85,11 +87,9 @@ export function EstateFlowSummaryView({
         <div className="hidden lg:col-span-2 lg:flex lg:justify-center">
           <SectionHeader tone="estate" label="In Estate" />
         </div>
-        {hasOoe && (
-          <div className="hidden lg:flex lg:justify-start">
-            <SectionHeader tone="neutral" label="Out of Estate" />
-          </div>
-        )}
+        <div className="hidden lg:flex lg:justify-start">
+          <SectionHeader tone="neutral" label="Out of Estate" />
+        </div>
 
         {/* LEFT: Survivor Net Worth + detail panel */}
         <div className="flex flex-col items-start gap-3 lg:items-end">
@@ -175,46 +175,51 @@ export function EstateFlowSummaryView({
           )}
         </div>
 
-        {/* RIGHT: Out of Estate (column hidden entirely when empty) */}
-        {hasOoe && (
-          <div className="flex flex-col items-start gap-3">
-            <div className="lg:hidden">
-              <SectionHeader tone="neutral" label="Out of Estate" />
-            </div>
-            <div className="flex w-full max-w-[280px] flex-col gap-3">
-              {outOfEstate.heirs.entities.length > 0 && (
-                <OoeEntityGroup
-                  label="Heirs"
-                  entities={outOfEstate.heirs.entities}
-                  onSelect={(entity) =>
-                    setSelected({
-                      kind: "ooeGroup",
-                      payload: {
-                        groupLabel: entity.entityLabel,
-                        entities: [entity],
-                      },
-                    })
-                  }
-                />
-              )}
-              {outOfEstate.irrevTrusts.entities.length > 0 && (
-                <OoeEntityGroup
-                  label="Irrev Trusts"
-                  entities={outOfEstate.irrevTrusts.entities}
-                  onSelect={(entity) =>
-                    setSelected({
-                      kind: "ooeGroup",
-                      payload: {
-                        groupLabel: entity.entityLabel,
-                        entities: [entity],
-                      },
-                    })
-                  }
-                />
-              )}
-            </div>
+        {/* RIGHT: Out of Estate — column always rendered so the in-estate
+            flow keeps its position; shows a placeholder when empty. */}
+        <div className="flex flex-col items-start gap-3">
+          <div className="lg:hidden">
+            <SectionHeader tone="neutral" label="Out of Estate" />
           </div>
-        )}
+          <div className="flex w-full max-w-[280px] flex-col gap-3">
+            {hasOoe ? (
+              <>
+                {outOfEstate.heirs.entities.length > 0 && (
+                  <OoeEntityGroup
+                    label="Heirs"
+                    entities={outOfEstate.heirs.entities}
+                    onSelect={(entity) =>
+                      setSelected({
+                        kind: "ooeGroup",
+                        payload: {
+                          groupLabel: entity.entityLabel,
+                          entities: [entity],
+                        },
+                      })
+                    }
+                  />
+                )}
+                {outOfEstate.irrevTrusts.entities.length > 0 && (
+                  <OoeEntityGroup
+                    label="Irrev Trusts"
+                    entities={outOfEstate.irrevTrusts.entities}
+                    onSelect={(entity) =>
+                      setSelected({
+                        kind: "ooeGroup",
+                        payload: {
+                          groupLabel: entity.entityLabel,
+                          entities: [entity],
+                        },
+                      })
+                    }
+                  />
+                )}
+              </>
+            ) : (
+              <OoeEmptyState />
+            )}
+          </div>
+        </div>
       </div>
 
       {heirBoxes.length > 0 && (
@@ -319,6 +324,19 @@ function OoeEntityGroup({
           onClick={() => onSelect(entity)}
         />
       ))}
+    </div>
+  );
+}
+
+function OoeEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-600/50 bg-slate-950/30 px-5 py-6 text-center">
+      <span className="text-xs font-medium text-slate-400">
+        Nothing outside the estate
+      </span>
+      <span className="text-[11px] leading-snug text-slate-500">
+        All assets are included in the taxable estate.
+      </span>
     </div>
   );
 }

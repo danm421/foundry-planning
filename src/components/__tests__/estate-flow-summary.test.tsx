@@ -116,4 +116,16 @@ describe("EstateFlowSummaryView", () => {
     render(<EstateFlowSummaryView summary={null} />);
     expect(screen.getByText(/No estate flow to show/)).toBeInTheDocument();
   });
+
+  it("keeps the Out of Estate column with a placeholder when there are no OOE assets", () => {
+    const summary = fixture();
+    summary.outOfEstate = {
+      heirs: { total: 0, entities: [] },
+      irrevTrusts: { total: 0, entities: [] },
+    };
+    render(<EstateFlowSummaryView summary={summary} />);
+    // Section header still present so the in-estate columns keep their spot.
+    expect(screen.getAllByText(/Out of Estate/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Nothing outside the estate/)).toBeInTheDocument();
+  });
 });
