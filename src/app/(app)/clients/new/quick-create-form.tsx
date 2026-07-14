@@ -19,7 +19,9 @@ import {
 } from "@/components/icons";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { StateSelect } from "@/components/state-select";
+import { AgeYearField } from "@/components/forms/age-year-field";
 import { buildHouseholdName } from "@/lib/crm/household-name";
+import { birthYearFromDob } from "@/lib/age-year";
 import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
 
 /**
@@ -143,6 +145,12 @@ export default function QuickCreateForm() {
   const [createSpouse, setCreateSpouse] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Client DOB is held in state so its birth year is still available to the
+  // step-2 retirement-age / life-expectancy year readouts after the step-1
+  // identity form unmounts. Empty (e.g. picked an existing household) → the
+  // year readout is disabled and only the age shows.
+  const [dob, setDob] = useState("");
+  const clientBirthYear = birthYearFromDob(dob);
 
   // Keep state in sync with the URL (so a returnTo bounce from /crm/new
   // pre-selects the freshly created household).
@@ -425,6 +433,8 @@ export default function QuickCreateForm() {
                   type="date"
                   required
                   min="1910-01-01"
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
                   className={inputClassName}
                 />
               </div>
@@ -624,21 +634,15 @@ export default function QuickCreateForm() {
           {(path === "quick" || path === "detailed") && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="retirementAge">
-                    Retirement age
-                  </label>
-                  <input
-                    id="retirementAge"
-                    name="retirementAge"
-                    type="number"
-                    min={50}
-                    max={85}
-                    defaultValue={65}
-                    required
-                    className={inputClassName}
-                  />
-                </div>
+                <AgeYearField
+                  name="retirementAge"
+                  label="Retirement age"
+                  required
+                  defaultAge={65}
+                  min={50}
+                  max={85}
+                  birthYear={clientBirthYear}
+                />
 
                 <div>
                   <label className={fieldLabelClassName} htmlFor="retirementMonth">
@@ -658,21 +662,15 @@ export default function QuickCreateForm() {
                   </select>
                 </div>
 
-                <div>
-                  <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
-                    Life expectancy
-                  </label>
-                  <input
-                    id="lifeExpectancy"
-                    name="lifeExpectancy"
-                    type="number"
-                    min={1}
-                    max={120}
-                    defaultValue={95}
-                    required
-                    className={inputClassName}
-                  />
-                </div>
+                <AgeYearField
+                  name="lifeExpectancy"
+                  label="Life expectancy"
+                  required
+                  defaultAge={95}
+                  min={1}
+                  max={120}
+                  birthYear={clientBirthYear}
+                />
 
                 <div>
                   <label className={fieldLabelClassName} htmlFor="filingStatus">

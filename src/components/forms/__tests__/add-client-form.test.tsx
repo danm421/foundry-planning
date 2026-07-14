@@ -44,7 +44,7 @@ describe("AddClientForm — base mode (no ?scenario= in URL)", () => {
     mockSearch = "";
     render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
 
-    fireEvent.change(screen.getByLabelText(/Retirement Age/i), {
+    fireEvent.change(screen.getByLabelText("Retirement Age (age)"), {
       target: { value: "67" },
     });
     fireEvent.submit(document.getElementById("add-client-form")!);
@@ -66,7 +66,7 @@ describe("AddClientForm — scenario mode (?scenario=<sid> in URL)", () => {
     mockSearch = "scenario=scen-456";
     render(<AddClientForm mode="edit" initial={SAMPLE_CLIENT} />);
 
-    fireEvent.change(screen.getByLabelText(/Retirement Age/i), {
+    fireEvent.change(screen.getByLabelText("Retirement Age (age)"), {
       target: { value: "67" },
     });
     fireEvent.submit(document.getElementById("add-client-form")!);

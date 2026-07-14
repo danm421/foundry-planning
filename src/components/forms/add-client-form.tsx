@@ -11,6 +11,8 @@ import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { buildHouseholdName } from "@/lib/crm/household-name";
 import { CheckCircleIcon } from "@/components/icons";
 import { StateSelect } from "@/components/state-select";
+import { AgeYearField } from "./age-year-field";
+import { birthYearFromDob } from "@/lib/age-year";
 
 export interface ClientFormInitial {
   id: string;
@@ -78,6 +80,12 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
   const [lastName, setLastName] = useState(initial?.lastName ?? "");
+  // DOB is controlled so the retirement-age / life-expectancy year readouts
+  // recompute live as the birth date is edited in the same form.
+  const [dob, setDob] = useState(toDateInput(initial?.dateOfBirth));
+  const [spouseDob, setSpouseDob] = useState(toDateInput(initial?.spouseDob));
+  const clientBirthYear = birthYearFromDob(dob);
+  const spouseBirthYear = birthYearFromDob(spouseDob);
   const [activeTab, setActiveTab] = useState<FormTab>("details");
   const formRef = useRef<HTMLFormElement | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -487,7 +495,7 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                 <label className={fieldLabelClassName} htmlFor="dateOfBirth">
                   Date of Birth <span className="text-red-500">*</span>
                 </label>
-                <input id="dateOfBirth" name="dateOfBirth" type="date" required min="1910-01-01" defaultValue={toDateInput(initial?.dateOfBirth)} className={`mt-1 ${inputClassName}`} />
+                <input id="dateOfBirth" name="dateOfBirth" type="date" required min="1910-01-01" value={dob} onChange={(e) => setDob(e.target.value)} className={`mt-1 ${inputClassName}`} />
               </div>
             </>
           )}
@@ -504,12 +512,15 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             </select>
           </div>
 
-          <div>
-            <label className={fieldLabelClassName} htmlFor="retirementAge">
-              Retirement Age <span className="text-red-500">*</span>
-            </label>
-            <input id="retirementAge" name="retirementAge" type="number" min={50} max={85} defaultValue={initial?.retirementAge ?? 65} required className={`mt-1 ${inputClassName}`} />
-          </div>
+          <AgeYearField
+            name="retirementAge"
+            label="Retirement Age"
+            required
+            defaultAge={initial?.retirementAge ?? 65}
+            min={50}
+            max={85}
+            birthYear={clientBirthYear}
+          />
 
           <div>
             <label className={fieldLabelClassName} htmlFor="retirementMonth">Retirement Month</label>
@@ -523,15 +534,20 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
             </p>
           </div>
 
-          <div>
-            <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
-              Life Expectancy <span className="text-red-500">*</span>
-            </label>
-            <input id="lifeExpectancy" name="lifeExpectancy" type="number" min={1} max={120} defaultValue={initial?.lifeExpectancy ?? 95} required className={`mt-1 ${inputClassName}`} />
-            <p className="mt-1 text-xs text-gray-400">
-              Plan horizon ends the year of the last spouse to die.
-            </p>
-          </div>
+          <AgeYearField
+            name="lifeExpectancy"
+            label="Life Expectancy"
+            required
+            defaultAge={initial?.lifeExpectancy ?? 95}
+            min={1}
+            max={120}
+            birthYear={clientBirthYear}
+            hint={
+              <p className="text-xs text-gray-400">
+                Plan horizon ends the year of the last spouse to die.
+              </p>
+            }
+          />
         </div>
 
         <div className="border-t border-gray-700 pt-4">
@@ -561,15 +577,19 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
 
                   <div>
                     <label className={fieldLabelClassName} htmlFor="spouseDob">Spouse Date of Birth</label>
-                    <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" defaultValue={toDateInput(initial?.spouseDob)} className={`mt-1 ${inputClassName}`} />
+                    <input id="spouseDob" name="spouseDob" type="date" min="1910-01-01" value={spouseDob} onChange={(e) => setSpouseDob(e.target.value)} className={`mt-1 ${inputClassName}`} />
                   </div>
                 </>
               )}
 
-              <div>
-                <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">Spouse Retirement Age</label>
-                <input id="spouseRetirementAge" name="spouseRetirementAge" type="number" min={50} max={85} defaultValue={initial?.spouseRetirementAge ?? 65} className={`mt-1 ${inputClassName}`} />
-              </div>
+              <AgeYearField
+                name="spouseRetirementAge"
+                label="Spouse Retirement Age"
+                defaultAge={initial?.spouseRetirementAge ?? 65}
+                min={50}
+                max={85}
+                birthYear={spouseBirthYear}
+              />
 
               <div>
                 <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">Spouse Retirement Month</label>
@@ -580,10 +600,14 @@ export default function AddClientForm({ initial, onSuccess, onSubmitStateChange,
                 </select>
               </div>
 
-              <div>
-                <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">Spouse Life Expectancy</label>
-                <input id="spouseLifeExpectancy" name="spouseLifeExpectancy" type="number" min={1} max={120} defaultValue={initial?.spouseLifeExpectancy ?? 95} className={`mt-1 ${inputClassName}`} />
-              </div>
+              <AgeYearField
+                name="spouseLifeExpectancy"
+                label="Spouse Life Expectancy"
+                defaultAge={initial?.spouseLifeExpectancy ?? 95}
+                min={1}
+                max={120}
+                birthYear={spouseBirthYear}
+              />
             </div>
           )}
         </div>

@@ -9,6 +9,8 @@ import {
 } from "@/lib/solver/types";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverYearEdit } from "./solver-year-edit";
+import { birthYearFromDob, yearForAge } from "@/lib/age-year";
 
 interface Props {
   baseClient: ClientData["client"];
@@ -33,6 +35,8 @@ export function SolverRowLifeExpectancy({
   };
   const clientMinLE = ageFromDob(workingClient.dateOfBirth);
   const spouseMinLE = ageFromDob(workingClient.spouseDob);
+  const clientBirthYear = birthYearFromDob(workingClient.dateOfBirth);
+  const spouseBirthYear = birthYearFromDob(workingClient.spouseDob);
 
   return (
     <div className="space-y-2.5">
@@ -46,6 +50,7 @@ export function SolverRowLifeExpectancy({
           min={clientMinLE}
           max={110}
           person="client"
+          birthYear={clientBirthYear}
           onCommit={(v) =>
             onChange({ kind: "life-expectancy", person: "client", age: v })
           }
@@ -60,6 +65,7 @@ export function SolverRowLifeExpectancy({
             min={spouseMinLE}
             max={110}
             person="spouse"
+            birthYear={spouseBirthYear}
             onCommit={(v) =>
               onChange({ kind: "life-expectancy", person: "spouse", age: v })
             }
@@ -79,6 +85,7 @@ function Editable({
   min,
   max,
   person,
+  birthYear,
   onCommit,
   onResetField,
 }: {
@@ -89,14 +96,25 @@ function Editable({
   min: number;
   max: number;
   person: SolverPerson;
+  birthYear: number | null;
   onCommit: (v: number) => void;
   onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] text-ink-3" htmlFor={id}>
-        {label}
-      </label>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <label className="text-[11px] text-ink-3" htmlFor={id}>
+          {label}
+        </label>
+        <SolverYearEdit
+          year={yearForAge(birthYear, value)}
+          birthYear={birthYear}
+          min={min}
+          max={max}
+          ariaLabel={`${label} calendar year`}
+          onCommitAge={onCommit}
+        />
+      </div>
       <SolverFieldSlider
         id={id}
         label={label}

@@ -14,6 +14,8 @@ import { SolverFieldSlider } from "./solver-field-slider";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
+import { SolverYearEdit } from "./solver-year-edit";
+import { birthYearFromDob, yearForAge } from "@/lib/age-year";
 
 type ActiveSolve = {
   target: SolveLeverKey;
@@ -59,6 +61,7 @@ export function SolverRowRetirementAges({
           min={40}
           max={85}
           person="client"
+          birthYear={birthYearFromDob(workingClient.dateOfBirth)}
           activeSolve={activeSolve}
           onSolveStart={onSolveStart}
           onSolveCancel={onSolveCancel}
@@ -76,6 +79,7 @@ export function SolverRowRetirementAges({
             min={40}
             max={85}
             person="spouse"
+            birthYear={birthYearFromDob(workingClient.spouseDob)}
             activeSolve={activeSolve}
             onSolveStart={onSolveStart}
             onSolveCancel={onSolveCancel}
@@ -98,6 +102,7 @@ function EditableWithSolve({
   min,
   max,
   person,
+  birthYear,
   activeSolve,
   onSolveStart,
   onSolveCancel,
@@ -111,6 +116,7 @@ function EditableWithSolve({
   min: number;
   max: number;
   person: SolverPerson;
+  birthYear: number | null;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -124,6 +130,8 @@ function EditableWithSolve({
     activeSolve?.target.kind === "retirement-age" &&
     (activeSolve.target as { kind: "retirement-age"; person: SolverPerson }).person === person;
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
+  // The calendar year the person turns `value` — updates live as the slider moves.
+  const retirementYear = yearForAge(birthYear, value);
 
   if (isSolvingHere) {
     return (
@@ -144,9 +152,19 @@ function EditableWithSolve({
 
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] text-ink-3" htmlFor={id}>
-        {label}
-      </label>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <label className="text-[11px] text-ink-3" htmlFor={id}>
+          {label}
+        </label>
+        <SolverYearEdit
+          year={retirementYear}
+          birthYear={birthYear}
+          min={min}
+          max={max}
+          ariaLabel={`${label} calendar year`}
+          onCommitAge={onCommit}
+        />
+      </div>
       <SolverFieldSlider
         id={id}
         label={label}
