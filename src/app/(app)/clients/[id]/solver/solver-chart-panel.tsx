@@ -476,38 +476,42 @@ export function SolverChartPanel({
         <ResizeChevron direction="down" />
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-3">
-        {tab === "estate" ? (
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
-            <input
-              type="checkbox"
-              checked={showPortfolioAssets}
-              onChange={(e) => setShowPortfolioAssets(e.target.checked)}
-              className="accent-accent"
-            />
-            Show portfolio assets
-          </label>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => setShowTable((v) => !v)}
-          aria-expanded={showTable}
-          className="text-[12px] font-medium text-ink-3 hover:text-ink"
-        >
-          {showTable ? "Hide table" : "Expand table"}
-        </button>
-      </div>
+      {/* The Taxes report shows its bracket table inline at all times, so it
+          needs no expand/collapse control. Every other tab keeps the toggle. */}
+      {tab === "taxBracket" ? null : (
+        <div className="mt-3 flex items-center justify-end gap-3">
+          {tab === "estate" ? (
+            <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
+              <input
+                type="checkbox"
+                checked={showPortfolioAssets}
+                onChange={(e) => setShowPortfolioAssets(e.target.checked)}
+                className="accent-accent"
+              />
+              Show portfolio assets
+            </label>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowTable((v) => !v)}
+            aria-expanded={showTable}
+            className="text-[12px] font-medium text-ink-3 hover:text-ink"
+          >
+            {showTable ? "Hide table" : "Expand table"}
+          </button>
+        </div>
+      )}
 
-      {showTable ? (
-        tab === "taxBracket" ? (
+      {tab === "taxBracket" ? (
+        <div className="mt-3">
           <TaxBracketTab years={currentProjection} />
-        ) : (
-          <SolverYearTablePanel
-            years={currentProjection}
-            hasSpouse={isMarried}
-            clientData={workingTree}
-          />
-        )
+        </div>
+      ) : showTable ? (
+        <SolverYearTablePanel
+          years={currentProjection}
+          hasSpouse={isMarried}
+          clientData={workingTree}
+        />
       ) : null}
 
       {recalculating}
