@@ -8,7 +8,7 @@ import type {
   PlaidCommitDecision, PlaidItemAccountsDTO, PlaidItemDTO,
   PortalCategoryDTO, PortalDashboardDTO, PortalMeDTO, TransactionsPageDTO,
   PlaidLinkSuccessPayload, PlaidLinkTokenDTO,
-  PortalInvestmentsData, LiveQuote, RecurringsDTO, RecurringUpsertInput,
+  PortalInvestmentsData, LiveQuote, QuotesResponseDTO, RecurringsDTO, RecurringUpsertInput,
   RecurringPreviewDTO, PortalHouseholdDTO, HouseholdUpdateInput,
   PortalFamilyMemberDTO, FamilyMemberInput, PortalTrustDTO, PortalSettingsDTO,
   PortalPrivacy,
@@ -164,7 +164,7 @@ export function fetchInvestments(api: ApiClient): Promise<PortalInvestmentsData>
 export async function fetchQuotes(api: ApiClient, tickers: (string | null)[]): Promise<Record<string, LiveQuote>> {
   const q = buildQuotesQuery(tickers);
   if (!q) return {};
-  return api.get<{ quotes: Record<string, LiveQuote> }>(`/api/portal/investments/quotes${q}`).then((r) => r.quotes);
+  return api.get<QuotesResponseDTO>(`/api/portal/investments/quotes${q}`).then((r) => r.quotes);
 }
 
 export function fetchRecurrings(api: ApiClient): Promise<RecurringsDTO> {

@@ -19,7 +19,7 @@ beforeEach(() => {
   loadMock.mockReset();
   loadMock.mockResolvedValue({
     totalValue: 12000,
-    totalSeries: [{ date: "2026-01-01", value: 10000 }],
+    totalSeries: [{ date: "2026-01-01", netWorth: 10000 }],
     accounts: [
       {
         id: "a1",
@@ -27,7 +27,7 @@ beforeEach(() => {
         category: "taxable",
         last4: "5678",
         value: 12000,
-        series: [{ date: "2026-01-01", value: 10000 }],
+        series: [{ date: "2026-01-01", netWorth: 10000 }],
         allocations: [{ name: "US Equity", weight: 1 }],
         holdings: [],
       },

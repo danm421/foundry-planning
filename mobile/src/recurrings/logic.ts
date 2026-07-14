@@ -10,8 +10,9 @@
 //       ternary + cadence label (lines 99-101, 108)
 //   - src/lib/portal/recurring-matching.ts
 //       describeRules (lines 250-270) -> ported as ruleChips, along with its
-//       private helpers ordinal/fmtWhole/MONTH_NAMES (lines 97-118)
+//       private helpers ordinal/MONTH_NAMES (lines 97-118)
 import type { RecurringRowDTO } from "@contracts";
+import { formatMoney } from "@/ui/money";
 
 const STATE_ORDER: Record<RecurringRowDTO["state"], number> = { overdue: 0, due: 1, paid: 2 };
 
@@ -47,15 +48,11 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
-function fmtWhole(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
 /** Port of describeRules (src/lib/portal/recurring-matching.ts:250-270). */
 export function ruleChips(r: RecurringRowDTO): string[] {
   const chips: string[] = [];
   chips.push(r.matchType === "exact" ? `Named exactly ${r.pattern}` : `Named ${r.pattern}`);
-  chips.push(`from ${fmtWhole(r.amountMin)} to ${fmtWhole(r.amountMax)}`);
+  chips.push(`from ${formatMoney(r.amountMin)} to ${formatMoney(r.amountMax)}`);
   if (r.cadence === "monthly") {
     chips.push(r.dueDay == null ? "anytime in the month" : `around the ${ordinal(r.dueDay)}`);
     chips.push("every month");
