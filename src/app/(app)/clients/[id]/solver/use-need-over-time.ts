@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 
 /** Streamed `progress` SSE payload from the over-time route. */
 export interface OverTimeProgress {
@@ -62,6 +63,10 @@ export function useNeedOverTime(
   clientId: string,
   assumptions: LiAssumptions,
   enabled: boolean,
+  /** Live solver source (base | scenario id) + unsaved mutations, so the need
+   *  curve reflects the plan the advisor is editing — not the base case. */
+  source: SolverSource,
+  mutations: SolverMutation[],
 ): NeedOverTimeState {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<OverTimeProgress | null>(null);
@@ -69,21 +74,23 @@ export function useNeedOverTime(
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  // Signature of the assumptions that produced the current `rows` — set only
-  // when a run's terminal `result` event lands, so canceled or failed runs
-  // re-solve on the next enable edge.
+  // Signature of the (source + mutations + assumptions) that produced the
+  // current `rows` — set only when a run's terminal `result` event lands, so
+  // canceled or failed runs re-solve on the next enable edge, and any scenario
+  // edit re-solves.
   const lastCompletedKeyRef = useRef<string | null>(null);
 
   // Abort any in-flight run when the consumer unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const run = useCallback((a: LiAssumptions) => {
+  const run = useCallback(
+    (a: LiAssumptions, src: SolverSource, muts: SolverMutation[]) => {
     void (async () => {
       // Tear down any prior run before starting a fresh one.
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
-      const key = JSON.stringify(a);
+      const key = JSON.stringify({ source: src, mutations: muts, assumptions: a });
 
       setIsRunning(true);
       setProgress(null);
@@ -97,7 +104,7 @@ export function useNeedOverTime(
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(a),
+            body: JSON.stringify({ source: src, mutations: muts, assumptions: a }),
             signal: ac.signal,
           },
         );
@@ -155,32 +162,41 @@ export function useNeedOverTime(
     })();
   }, [clientId]);
 
-  // Mirrors the latest `assumptions` prop so the enable-edge run reads the
-  // current value without re-running when only the assumptions change.
+  // Mirrors the latest inputs so the enable-edge run reads current values
+  // without re-running when only they change (edits ride the debounce effect).
   const assumptionsRef = useRef(assumptions);
   assumptionsRef.current = assumptions;
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const mutationsRef = useRef(mutations);
+  mutationsRef.current = mutations;
 
   // Run on each false→true edge — populate the chart whenever the report
-  // becomes active — unless the current rows already match these assumptions.
+  // becomes active — unless the current rows already match these inputs.
   // Deactivating aborts any in-flight run.
   const wasEnabledRef = useRef(false);
   useEffect(() => {
     if (enabled && !wasEnabledRef.current) {
       wasEnabledRef.current = true;
-      if (JSON.stringify(assumptionsRef.current) !== lastCompletedKeyRef.current) {
-        run(assumptionsRef.current);
+      const key = JSON.stringify({
+        source: sourceRef.current,
+        mutations: mutationsRef.current,
+        assumptions: assumptionsRef.current,
+      });
+      if (key !== lastCompletedKeyRef.current) {
+        run(assumptionsRef.current, sourceRef.current, mutationsRef.current);
       }
     } else if (!enabled) {
       wasEnabledRef.current = false;
       abortRef.current?.abort();
     }
-    // `assumptions` is intentionally not a dep — the edge run reads the latest
-    // value via `assumptionsRef`; assumptions edits ride the debounce effect.
+    // Inputs are intentionally not deps — the edge run reads the latest values
+    // via refs; edits ride the debounce effect below.
   }, [enabled, run]);
 
-  // Debounced re-run on any assumptions edit while enabled. Skips the run that
-  // coincides with the enable edge (the effect above already handled it) so
-  // the edge never double-fires.
+  // Debounced re-run on any source / mutation / assumptions edit while enabled.
+  // Skips the run that coincides with the enable edge (the effect above already
+  // handled it) so the edge never double-fires.
   const skipNextDebounceRef = useRef(true);
   useEffect(() => {
     if (!enabled) {
@@ -192,12 +208,13 @@ export function useNeedOverTime(
       return;
     }
     const timer = setTimeout(() => {
-      if (JSON.stringify(assumptions) !== lastCompletedKeyRef.current) {
-        run(assumptions);
+      const key = JSON.stringify({ source, mutations, assumptions });
+      if (key !== lastCompletedKeyRef.current) {
+        run(assumptions, source, mutations);
       }
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [assumptions, enabled, run]);
+  }, [assumptions, source, mutations, enabled, run]);
 
   return { rows, isRunning, progress, errorMessage };
 }

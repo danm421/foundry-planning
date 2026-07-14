@@ -8,6 +8,7 @@
 // reads the client tree, runs projections, never mutates the database.
 // Allowlisted in the active-subscription lint for parity with solver/solve.
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -16,6 +17,10 @@ import {
 } from "@/lib/rate-limit";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { applyMutations } from "@/lib/solver/apply-mutations";
+import { resolveTechniqueMutations } from "@/lib/solver/resolve-technique-mutations";
+import type { SolverMutation } from "@/lib/solver/types";
+import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import {
   solveLifeInsuranceNeed,
   type LifeInsuranceAssumptions,
@@ -32,6 +37,16 @@ import { LI_ASSUMPTIONS_SCHEMA } from "@/lib/life-insurance/schema";
 import type { ClientData } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
+
+// Envelope: the live solver posts its edited scenario as `source` + `mutations`
+// so the LI need reflects the plan being built (the same working tree the
+// portfolio chart uses), not the untouched base case. `source`/`mutations`
+// supersede the legacy `assumptions.scenarioRef`. Mirrors the over-time route.
+const BODY = z.object({
+  source: z.union([z.literal("base"), z.string().uuid()]).default("base"),
+  mutations: z.array(SOLVER_MUTATION_SCHEMA).default([]),
+  assumptions: LI_ASSUMPTIONS_SCHEMA,
+});
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -89,19 +104,29 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const parsed = LI_ASSUMPTIONS_SCHEMA.safeParse(await req.json());
+    const parsed = BODY.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid body", details: parsed.error.flatten() },
         { status: 400 },
       );
     }
-    const body = parsed.data;
+    const { source, mutations, assumptions: body } = parsed.data;
 
-    const [{ effectiveTree }, proceeds] = await Promise.all([
-      loadEffectiveTree(clientId, access.firmId, "base", {}),
+    const [{ effectiveTree, resolutionContext }, proceeds] = await Promise.all([
+      loadEffectiveTree(clientId, access.firmId, source, {}),
       loadLiProceedsGrowth(access.firmId, body.modelPortfolioId, DEFAULT_LI_GROWTH),
     ]);
+    // Working tree = source + live mutations, so the need reflects the scenario
+    // the advisor is editing (matches /solver/project's derivation).
+    let workingTree = applyMutations(effectiveTree, mutations as SolverMutation[]);
+    if (resolutionContext) {
+      workingTree = resolveTechniqueMutations(
+        workingTree,
+        mutations as SolverMutation[],
+        resolutionContext,
+      );
+    }
     const a: LifeInsuranceAssumptions = {
       deathYear: body.deathYear,
       proceedsGrowthRate: proceeds.rate,
@@ -114,11 +139,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Use hasSpouse (filing status AND spouseDob), not filing status alone:
     // a married plan with no spouseDob cannot build the spouse-death case and
     // would throw inside buildLifeInsuranceWhatIfData (F5).
-    const isMarried = hasSpouse(effectiveTree);
+    const isMarried = hasSpouse(workingTree);
 
-    const client = solveCase(effectiveTree, "client", a, body.coverEstateTaxes);
+    const client = solveCase(workingTree, "client", a, body.coverEstateTaxes);
     const spouse = isMarried
-      ? solveCase(effectiveTree, "spouse", a, body.coverEstateTaxes)
+      ? solveCase(workingTree, "spouse", a, body.coverEstateTaxes)
       : null;
 
     return NextResponse.json({ isMarried, client, spouse });

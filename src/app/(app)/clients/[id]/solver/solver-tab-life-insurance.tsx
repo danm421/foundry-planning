@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiNeedRange } from "./li-need-range";
 import { useClientAccess } from "@/components/client-access-provider";
@@ -60,6 +61,10 @@ export function useLiNeedSolve(
   clientId: string,
   assumptions: LiAssumptions,
   enabled: boolean,
+  /** Live solver source (base | scenario id) + unsaved mutations, so the solve
+   *  reflects the plan the advisor is editing — not the base case. */
+  source: SolverSource,
+  mutations: SolverMutation[],
 ): {
   solveResult: LiSolveResult | null;
   isSolving: boolean;
@@ -77,23 +82,28 @@ export function useLiNeedSolve(
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSolveAndSave = useCallback(
-    async (a: LiAssumptions) => {
+    async (a: LiAssumptions, src: SolverSource, muts: SolverMutation[]) => {
       const seq = ++solveSeqRef.current;
       setIsSolving(true);
-      const body = JSON.stringify(a);
       try {
-        // Persist only when the user has edit permission (fire-and-forget;
-        // surface failures but don't block the solve).
+        // Persist only the assumptions (flat — the settings row's shape) when
+        // the user has edit permission (fire-and-forget; surface failures but
+        // don't block the solve).
         const savePromise = canEdit
           ? fetch(
               `/api/clients/${clientId}/life-insurance/settings`,
-              { method: "PUT", headers: { "content-type": "application/json" }, body },
+              { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(a) },
             )
           : null;
 
+        // Solve against the edited plan: source + live mutations + assumptions.
         const res = await fetch(
           `/api/clients/${clientId}/life-insurance/solve`,
-          { method: "POST", headers: { "content-type": "application/json" }, body },
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ source: src, mutations: muts, assumptions: a }),
+          },
         );
         if (!res.ok) throw new Error(`Solve failed (HTTP ${res.status})`);
         const data: LiSolveResult = await res.json();
@@ -119,10 +129,14 @@ export function useLiNeedSolve(
     [clientId, canEdit],
   );
 
-  // Mirrors the latest `assumptions` prop so the enable-edge solve reads the
-  // current value without re-running when only the assumptions change.
+  // Mirrors the latest inputs so the enable-edge solve reads current values
+  // without re-running when only they change (edits ride the debounce effect).
   const assumptionsRef = useRef(assumptions);
   assumptionsRef.current = assumptions;
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const mutationsRef = useRef(mutations);
+  mutationsRef.current = mutations;
 
   // Initial solve on each false→true edge — show results immediately whenever
   // the LI surface becomes active (replaces the old mount-solve; re-opening LI
@@ -131,38 +145,37 @@ export function useLiNeedSolve(
   useEffect(() => {
     if (enabled && !wasEnabledRef.current) {
       wasEnabledRef.current = true;
-      void runSolveAndSave(assumptionsRef.current);
+      void runSolveAndSave(assumptionsRef.current, sourceRef.current, mutationsRef.current);
     } else if (!enabled) {
       wasEnabledRef.current = false;
     }
-    // `assumptions` is intentionally not a dep — the edge solve reads the latest
-    // value via `assumptionsRef`; assumptions edits ride the debounce effect.
+    // Inputs are intentionally not deps — the edge solve reads the latest values
+    // via refs; edits ride the debounce effect below.
   }, [enabled, runSolveAndSave]);
 
-  // Debounced solve + autosave on any assumptions edit while enabled. Skips the
-  // run that coincides with the enable edge (the effect above already solved
-  // that one) so the edge never double-fires.
+  // Debounced solve + autosave on any source / mutation / assumptions edit while
+  // enabled. Skips the run that coincides with the enable edge (the effect above
+  // already solved that one) so the edge never double-fires.
   const skipNextDebounceRef = useRef(true);
   useEffect(() => {
     if (!enabled) {
       // Inactive: no solving, and re-arm the skip so the next enable edge's
-      // assumptions change doesn't fire a redundant debounce on top of the
-      // edge solve.
+      // change doesn't fire a redundant debounce on top of the edge solve.
       skipNextDebounceRef.current = true;
       return;
     }
     if (skipNextDebounceRef.current) {
       skipNextDebounceRef.current = false;
-      return; // the enable-edge effect already solved with these assumptions
+      return; // the enable-edge effect already solved with these inputs
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      void runSolveAndSave(assumptions);
+      void runSolveAndSave(assumptions, source, mutations);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [assumptions, enabled, runSolveAndSave]);
+  }, [assumptions, source, mutations, enabled, runSolveAndSave]);
 
   return { solveResult, isSolving, errorMessage };
 }
@@ -218,9 +231,11 @@ export function SolverLifeInsuranceResults({
   clientName,
   spouseName,
   onScoreChange,
+  source,
+  mutations,
 }: {
   clientId: string;
-  /** Full current assumptions — POSTed verbatim as the solve-mc body. */
+  /** Full current assumptions — POSTed as the solve-mc body's `assumptions`. */
   assumptions: LiAssumptions;
   /** Straight-line solve from `useLiNeedSolve`; null until the first solve lands. */
   solveResult: LiSolveResult | null;
@@ -232,6 +247,10 @@ export function SolverLifeInsuranceResults({
   spouseName: string;
   /** Lift the updated `mcTargetScore` (decimal 0–1) to the workspace. */
   onScoreChange: (score: number) => void;
+  /** Live solver source + unsaved mutations, so the MC solve reflects the
+   *  edited plan (forwarded to LiNeedRange's solve-mc call). */
+  source: SolverSource;
+  mutations: SolverMutation[];
 }) {
   return (
     <div className="space-y-4">
@@ -253,6 +272,8 @@ export function SolverLifeInsuranceResults({
             clientName={clientName}
             spouseName={spouseName}
             onScoreChange={onScoreChange}
+            source={source}
+            mutations={mutations}
           />
         </div>
       ) : (
