@@ -162,9 +162,16 @@ function TechniqueGroup<T extends { id: string; name: string; enabled?: boolean 
   /** Per-row control (e.g. a Solve button). */
   renderExtraAction?: (t: T) => ReactNode;
 }) {
+  // Float techniques that are in use (enabled) to the top; keep the existing
+  // relative order within each group via a stable sort.
+  const ordered = working
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => Number(a.t.enabled === false) - Number(b.t.enabled === false) || a.i - b.i)
+    .map(({ t }) => t);
+
   return (
     <div className="col-span-2 space-y-2">
-      {working.map((t) => (
+      {ordered.map((t) => (
         <SolverTechniqueRow
           key={t.id}
           name={t.name}
