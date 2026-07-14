@@ -610,3 +610,45 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
   });
 });
+
+describe("mutationsToScenarioChanges — surplus allocation → plan_settings", () => {
+  it("emits one plan_settings edit carrying both surplus fields", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, surplusSpendPct: 0, surplusSaveAccountId: null } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1" },
+    ]);
+    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
+    expect(ps).toHaveLength(1);
+    expect(ps[0]).toMatchObject({ opType: "edit", targetId: "plan_settings" });
+    expect(ps[0].payload).toEqual({
+      surplusSpendPct: { from: 0, to: 0.3 },
+      surplusSaveAccountId: { from: null, to: "acct-1" },
+    });
+  });
+
+  it("coalesces surplus with a stressor into ONE plan_settings edit", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, inflationRate: 0.025, surplusSpendPct: 0 } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "stress-inflation", rate: 0.05 },
+      { kind: "surplus-allocation", spendPct: 0.4, saveAccountId: null },
+    ]);
+    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(1);
+  });
+
+  it("drops a surplus edit equal to base (no-op)", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, surplusSpendPct: 0.3, surplusSaveAccountId: "acct-1" } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1" },
+    ]);
+    expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+  });
+});

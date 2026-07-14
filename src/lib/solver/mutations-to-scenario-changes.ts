@@ -600,6 +600,21 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "surplus-allocation": {
+        maybeDiff(
+          planSettingsDiff,
+          "surplusSpendPct",
+          source.planSettings.surplusSpendPct ?? 0,
+          m.spendPct,
+        );
+        maybeDiff(
+          planSettingsDiff,
+          "surplusSaveAccountId",
+          source.planSettings.surplusSaveAccountId ?? null,
+          m.saveAccountId,
+        );
+        break;
+      }
     }
   }
 
