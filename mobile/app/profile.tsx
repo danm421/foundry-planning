@@ -360,7 +360,13 @@ export default function Profile() {
         { primary: editedPrimary, spouse: editedSpouse },
       )
     : null;
-  const canSave = patch !== null && validateFields(editedPrimary) && validateFields(editedSpouse);
+  // Blanking a firstName ALONE yields patch === null (householdPatch() never
+  // emits a blank firstName, so there's nothing to submit), which would hide
+  // the Save/Cancel row and silently swallow the edit. Derive the warning
+  // straight from the Save-gate so a blanked firstName always surfaces, even
+  // when it's the only change.
+  const firstNameMissing = !validateFields(editedPrimary) || !validateFields(editedSpouse);
+  const canSave = patch !== null && !firstNameMissing;
 
   function handleCancel() {
     if (!household) return;
@@ -560,7 +566,7 @@ export default function Profile() {
           {noContacts ? <EmptyState title="No household contacts on file" /> : null}
 
           {saveError ? <Text className="text-crit mt-2">Couldn't save that change.</Text> : null}
-          {patch !== null && !canSave ? (
+          {firstNameMissing ? (
             <Text className="text-warn mt-2">First name is required.</Text>
           ) : null}
 
