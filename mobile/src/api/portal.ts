@@ -8,9 +8,13 @@ import type {
   PlaidCommitDecision, PlaidItemAccountsDTO, PlaidItemDTO,
   PortalCategoryDTO, PortalDashboardDTO, PortalMeDTO, TransactionsPageDTO,
   PlaidLinkSuccessPayload, PlaidLinkTokenDTO,
+  PortalInvestmentsData, LiveQuote, RecurringsDTO, RecurringUpsertInput,
+  RecurringPreviewDTO, PortalHouseholdDTO, HouseholdUpdateInput,
+  PortalFamilyMemberDTO, FamilyMemberInput, PortalTrustDTO, PortalSettingsDTO,
+  PortalPrivacy,
 } from "@contracts";
 import { ForbiddenError, NonJsonResponseError, type ApiClient } from "./client";
-import { buildTransactionsQuery, type TxnQuery } from "./query";
+import { buildTransactionsQuery, buildQuotesQuery, buildRecurringPreviewQuery, type TxnQuery, type RecurringPreviewQuery } from "./query";
 
 /** Signed in with Clerk, but not a bound portal client (advisor or unbound). */
 export class NotPortalClientError extends Error {
@@ -147,4 +151,80 @@ export async function registerPushToken(
 
 export async function deletePushToken(api: ApiClient, expoPushToken: string): Promise<void> {
   await api.delete(`/api/portal/push-tokens?token=${encodeURIComponent(expoPushToken)}`);
+}
+
+// ============================================================================
+// Phase 5 — More-tab surfaces
+// ============================================================================
+
+export function fetchInvestments(api: ApiClient): Promise<PortalInvestmentsData> {
+  return api.get<PortalInvestmentsData>("/api/portal/investments");
+}
+
+export async function fetchQuotes(api: ApiClient, tickers: (string | null)[]): Promise<Record<string, LiveQuote>> {
+  const q = buildQuotesQuery(tickers);
+  if (!q) return {};
+  return api.get<{ quotes: Record<string, LiveQuote> }>(`/api/portal/investments/quotes${q}`).then((r) => r.quotes);
+}
+
+export function fetchRecurrings(api: ApiClient): Promise<RecurringsDTO> {
+  return api.get<RecurringsDTO>("/api/portal/recurrings");
+}
+
+export function createRecurring(api: ApiClient, input: RecurringUpsertInput): Promise<{ id: string; claimed: number }> {
+  return api.post<{ id: string; claimed: number }>("/api/portal/recurrings", input);
+}
+
+export function updateRecurring(
+  api: ApiClient, id: string, input: Partial<RecurringUpsertInput>,
+): Promise<{ claimed: number }> {
+  return api.put<{ ok: true; claimed: number }>(`/api/portal/recurrings/${id}`, input).then((r) => ({ claimed: r.claimed }));
+}
+
+export async function deleteRecurring(api: ApiClient, id: string): Promise<void> {
+  await api.delete(`/api/portal/recurrings/${id}`);
+}
+
+export function previewRecurring(api: ApiClient, q: RecurringPreviewQuery): Promise<RecurringPreviewDTO> {
+  return api.get<RecurringPreviewDTO>(`/api/portal/recurrings/preview${buildRecurringPreviewQuery(q)}`);
+}
+
+export function fetchHousehold(api: ApiClient): Promise<PortalHouseholdDTO> {
+  return api.get<PortalHouseholdDTO>("/api/portal/household");
+}
+
+export async function updateHousehold(api: ApiClient, input: HouseholdUpdateInput): Promise<void> {
+  await api.put("/api/portal/household", input);
+}
+
+export function fetchFamily(api: ApiClient): Promise<PortalFamilyMemberDTO[]> {
+  return api.get<{ members: PortalFamilyMemberDTO[] }>("/api/portal/family").then((r) => r.members);
+}
+
+export function addFamilyMember(api: ApiClient, input: FamilyMemberInput): Promise<{ id: string }> {
+  return api.post<{ ok: true; id: string }>("/api/portal/family", input).then((r) => ({ id: r.id }));
+}
+
+export async function updateFamilyMember(api: ApiClient, id: string, input: FamilyMemberInput): Promise<void> {
+  await api.put(`/api/portal/family/${id}`, input);
+}
+
+export async function deleteFamilyMember(api: ApiClient, id: string): Promise<void> {
+  await api.delete(`/api/portal/family/${id}`);
+}
+
+export function fetchTrusts(api: ApiClient): Promise<PortalTrustDTO[]> {
+  return api.get<{ trusts: PortalTrustDTO[] }>("/api/portal/trusts").then((r) => r.trusts);
+}
+
+export async function renameTrust(api: ApiClient, id: string, name: string): Promise<void> {
+  await api.put(`/api/portal/trusts/${id}`, { name });
+}
+
+export function fetchSettings(api: ApiClient): Promise<PortalSettingsDTO> {
+  return api.get<PortalSettingsDTO>("/api/portal/settings");
+}
+
+export async function updatePrivacy(api: ApiClient, patch: Partial<PortalPrivacy>): Promise<void> {
+  await api.put("/api/portal/settings", patch);
 }
