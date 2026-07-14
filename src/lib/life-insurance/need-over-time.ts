@@ -1,10 +1,14 @@
 import type { ClientData } from "@/engine/types";
 import {
+  runLifeInsuranceWhatIf,
+  survivorEndingPortfolio,
+} from "@/engine/what-if/life-insurance-need";
+import {
   solveLifeInsuranceNeed,
   type LifeInsuranceAssumptions,
   type NeedResult,
 } from "./solve-need";
-import { computeEstateTaxAddend } from "./estate-tax-addend";
+import { estateTaxAddendFromProjection } from "./estate-tax-addend";
 
 /**
  * One straight-line life-insurance need value per plan year, per decedent.
@@ -37,26 +41,40 @@ export function hasSpouse(data: ClientData): boolean {
 }
 
 /**
- * Solve one decedent's straight-line need, folding the household's estate-tax
- * addend into the target when `coverEstateTaxes` is on. Mirrors `solveCase` in
- * the /life-insurance/solve route so the over-time curve and the single-point
- * solve agree at any given death year. The addend depends on `a.deathYear`
- * (later deaths grow the estate), so it is recomputed per year per decedent.
+ * Solve one decedent's straight-line need. One face-value-0 what-if projection
+ * powers BOTH the estate-tax addend (when enabled) AND the solver's `atZero`
+ * anchor, so the zero probe is never run twice. `seedFace` warm-starts the
+ * solver's reference probe from the previous year's answer.
+ *
+ * Mirrors `solveCase` in the /life-insurance/solve route so the over-time
+ * curve and the single-point solve agree at any given death year. The addend
+ * depends on `a.deathYear` (later deaths grow the estate), so it is
+ * recomputed per year per decedent.
  */
-function solveNeedWithEstateTax(
+function solveNeedFused(
   data: ClientData,
   deceased: "client" | "spouse",
   a: LifeInsuranceAssumptions,
   coverEstateTaxes: boolean,
+  seedFace: number | undefined,
 ): NeedResult {
-  const estateTaxAddend = coverEstateTaxes
-    ? computeEstateTaxAddend(data, deceased, a)
-    : 0;
+  const proj0 = runLifeInsuranceWhatIf({
+    data,
+    deceased,
+    deathYear: a.deathYear,
+    faceValue: 0,
+    proceedsGrowthRate: a.proceedsGrowthRate,
+    proceedsRealization: a.proceedsRealization,
+    livingExpenseAtDeath: a.livingExpenseAtDeath,
+    payoffLiabilityIds: a.payoffLiabilityIds,
+  });
+  const atZero = survivorEndingPortfolio(proj0, deceased, data);
+  const estateTaxAddend = coverEstateTaxes ? estateTaxAddendFromProjection(proj0) : 0;
   const augmented: LifeInsuranceAssumptions = {
     ...a,
     leaveToHeirsAmount: a.leaveToHeirsAmount + estateTaxAddend,
   };
-  return solveLifeInsuranceNeed(data, deceased, augmented);
+  return solveLifeInsuranceNeed(data, deceased, augmented, { atZero, seedFace });
 }
 
 /**
@@ -91,9 +109,9 @@ export function computeNeedOverTime(
       deathYear: year,
     };
 
-    const clientResult = solveNeedWithEstateTax(data, "client", yearAssumptions, coverEstateTaxes);
+    const clientResult = solveNeedFused(data, "client", yearAssumptions, coverEstateTaxes, undefined);
     const spouseResult = married
-      ? solveNeedWithEstateTax(data, "spouse", yearAssumptions, coverEstateTaxes)
+      ? solveNeedFused(data, "spouse", yearAssumptions, coverEstateTaxes, undefined)
       : null;
 
     rows.push({
