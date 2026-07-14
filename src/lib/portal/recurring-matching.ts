@@ -1,7 +1,8 @@
 // Pure recurring-transaction matching / prediction / period logic.
 // NO @/db, Next, or Plaid imports — unit-tested in plain vitest.
-import type { RecurringRowDTO } from "@/lib/portal/contracts";
+import type { RecurringRowDTO, RecurringsDTO } from "@/lib/portal/contracts";
 export type { RecurringRowDTO };
+export type RecurringsData = RecurringsDTO;
 
 export type RecurringLike = {
   id: string;
@@ -176,13 +177,6 @@ export function computeYearlyMetrics(
     }))
     .sort((a, b) => b.year - a.year);
 }
-
-export type RecurringsData = {
-  recurrings: RecurringRowDTO[];
-  paidSoFar: number;
-  leftToPay: number;
-  month: string;
-};
 
 type AssembleInput = {
   rows: {

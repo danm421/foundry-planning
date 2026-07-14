@@ -1,13 +1,22 @@
 import { Pressable, Switch, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@clerk/clerk-expo";
 import { useMe } from "@/auth/me-gate";
 import { useAppLock } from "@/lock/use-app-lock";
 import { usePushNotifications } from "@/push/use-push-notifications";
+import { Row } from "@/ui/row";
 
-const COMING_NEXT = ["Investments", "Recurrings", "Profile", "Settings"];
+const MORE_LINKS = [
+  { label: "Investments", href: "/investments" },
+  { label: "Recurrings", href: "/recurrings" },
+  { label: "Profile", href: "/profile" },
+  { label: "Privacy & sharing", href: "/privacy" },
+] as const;
 
 export default function More() {
   const me = useMe();
+  const router = useRouter();
   const { signOut } = useAuth();
   const { enabled, setEnabled } = useAppLock();
   const { enabled: pushEnabled, setEnabled: setPushEnabled, unregister } = usePushNotifications();
@@ -22,12 +31,16 @@ export default function More() {
       <Text className="text-ink text-2xl font-semibold mb-6">More</Text>
 
       <View className="bg-card border border-hair rounded-2xl px-4">
-        {COMING_NEXT.map((label, i) => (
+        {MORE_LINKS.map((link, i) => (
           <View
-            key={label}
-            className={`py-4 ${i === COMING_NEXT.length - 1 ? "" : "border-b border-hair"}`}
+            key={link.href}
+            className={i === MORE_LINKS.length - 1 ? "" : "border-b border-hair"}
           >
-            <Text className="text-ink-4">{label} — next build</Text>
+            <Row
+              label={link.label}
+              right={<Ionicons name="chevron-forward" size={20} color="#848a98" />}
+              onPress={() => router.push(link.href)}
+            />
           </View>
         ))}
       </View>

@@ -29,3 +29,28 @@ export function buildTransactionsQuery(p: TxnQuery): string {
   if (p.reviewed !== undefined) add("reviewed", String(p.reviewed));
   return `?${parts.join("&")}`;
 }
+
+// ============================================================================
+// Phase 5 — quotes + recurring-preview query builders
+// ============================================================================
+
+export function buildQuotesQuery(tickers: (string | null)[]): string {
+  const uniq = [...new Set(tickers.flatMap((t) => (t && t.trim() ? [t.trim().toUpperCase()] : [])))];
+  return uniq.length ? `?tickers=${encodeURIComponent(uniq.join(","))}` : "";
+}
+
+export interface RecurringPreviewQuery {
+  matchType: "exact" | "contains";
+  pattern: string;
+  amountMin: number;
+  amountMax: number;
+}
+
+export function buildRecurringPreviewQuery(p: RecurringPreviewQuery): string {
+  return (
+    `?matchType=${encodeURIComponent(p.matchType)}` +
+    `&pattern=${encodeURIComponent(p.pattern)}` +
+    `&amountMin=${encodeURIComponent(String(p.amountMin))}` +
+    `&amountMax=${encodeURIComponent(String(p.amountMax))}`
+  );
+}

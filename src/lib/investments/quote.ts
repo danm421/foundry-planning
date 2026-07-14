@@ -3,6 +3,9 @@
 // browser challenge). Fail-soft throughout: unresolved symbols are simply absent
 // from the returned map and nothing throws to the caller — the refresh summary
 // (tickersMissing) surfaces what couldn't be priced.
+import type { LiveQuote } from "@/lib/portal/contracts";
+
+export type { LiveQuote } from "@/lib/portal/contracts";
 
 export interface QuoteDeps {
   /** Injectable EODHD API key (defaults to process.env.EODHD_API_KEY). */
@@ -104,8 +107,6 @@ export async function fetchEodClose(
     return null;
   }
 }
-
-export type LiveQuote = { price: number; changePct: number | null; asOf: string };
 
 const QUOTE_TTL_MS = 60_000;
 const quoteCache = new Map<string, { q: LiveQuote; at: number }>();

@@ -366,3 +366,109 @@ export type PlaidCommitDecision =
   | { plaidAccountId: string; action: "link-liability"; existingLiabilityId: string }
   | { plaidAccountId: string; action: "create"; kind: "asset"; name: string; mask: string | null; balance: number | null; category: string; subType: string }
   | { plaidAccountId: string; action: "create"; kind: "debt"; name: string; mask: string | null; balance: number | null; liabilityType: string };
+
+// ============================================================================
+// Phase 5 — investments, recurrings wire shapes, profile (household / family /
+// trusts). All wire types.
+// ============================================================================
+
+// ---- investments (Phase 5; from load-portal-investments.ts / investments/quote.ts) ----
+export interface PortalHolding {
+  ticker: string | null;
+  name: string;
+  shares: number;
+  price: number;
+  marketValue: number;
+  costBasis: number | null;
+}
+export interface PortalInvestmentAccount {
+  id: string;
+  name: string;
+  category: string;
+  last4: string | null;
+  value: number;
+  series: TrendPoint[];
+  allocations: { name: string; weight: number }[];
+  holdings: PortalHolding[];
+}
+export interface PortalInvestmentsData {
+  totalValue: number;
+  totalSeries: TrendPoint[];
+  accounts: PortalInvestmentAccount[];
+  overallAllocations: { name: string; weight: number }[];
+}
+export type LiveQuote = { price: number; changePct: number | null; asOf: string };
+export interface QuotesResponseDTO { quotes: Record<string, LiveQuote> }
+
+// ---- recurrings wire shapes (Phase 5; RecurringRowDTO already above) ----
+export interface RecurringsDTO {
+  recurrings: RecurringRowDTO[];
+  paidSoFar: number;
+  leftToPay: number;
+  month: string; // YYYY-MM
+}
+export interface RecurringPreviewDTO {
+  count: number;
+  sample: { id: string; merchantName: string | null; name: string; amount: string; date: string }[];
+}
+export interface RecurringUpsertInput {
+  name: string;
+  matchType: "exact" | "contains";
+  pattern: string;
+  amountMin: number;
+  amountMax: number;
+  cadence: "monthly" | "annually";
+  dueDay: number | null;
+  dueMonth: number | null;
+  categoryId: string;
+}
+
+// ---- profile (Phase 5; household / family / trusts) ----
+export interface PortalContactDTO {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+}
+export interface PortalHouseholdDTO {
+  filingStatus: string | null;
+  lifeExpectancy: number | null;
+  primary: PortalContactDTO | null;
+  spouse: PortalContactDTO | null;
+}
+export interface HouseholdContactPatch {
+  firstName?: string;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+export interface HouseholdUpdateInput {
+  primary?: HouseholdContactPatch;
+  spouse?: HouseholdContactPatch;
+}
+export interface PortalFamilyMemberDTO {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  relationship: string;
+  dateOfBirth: string | null; // YYYY-MM-DD
+}
+export type PortalFamilyRelationshipOption = "child" | "parent" | "sibling" | "other";
+export interface FamilyMemberInput {
+  firstName?: string;
+  lastName?: string | null;
+  relationship?: string;
+  dateOfBirth?: string | null;
+}
+export interface PortalTrustDTO {
+  id: string;
+  name: string;
+  entityType: string;
+  value: number;
+  isGrantor: boolean;
+}
+export interface PortalSettingsDTO {
+  privacy: PortalPrivacy;
+  mode: PortalActorMode;
+}
