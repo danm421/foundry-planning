@@ -30,6 +30,16 @@ export default function More() {
     <View className="flex-1 bg-paper px-4 pt-16">
       <Text className="text-ink text-2xl font-semibold mb-6">More</Text>
 
+      {me.intakePending ? (
+        <View className="bg-card border border-hair rounded-2xl px-4 mb-4">
+          <Row
+            label="Complete your intake"
+            right={<Ionicons name="chevron-forward" size={20} color="#848a98" />}
+            onPress={() => router.push("/intake")}
+          />
+        </View>
+      ) : null}
+
       <View className="bg-card border border-hair rounded-2xl px-4">
         {MORE_LINKS.map((link, i) => (
           <View
