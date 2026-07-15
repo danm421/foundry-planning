@@ -214,3 +214,34 @@ describe("POST /api/clients/[id]/life-insurance/over-time — SSE event shape", 
     expect(firstProgressIdx).toBeLessThan(resultIdx);
   });
 });
+
+describe("POST /api/clients/[id]/life-insurance/over-time — meta tracks the mutated working tree", () => {
+  beforeEach(() => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true } as never);
+  });
+
+  it("emits meta from the WORKING tree's plan range, not the effective tree's", async () => {
+    // The top-level beforeEach's loadEffectiveTree mock has planEndYear 2027 and
+    // no resolutionContext, so resolveTechniqueMutations never runs — only
+    // applyMutations's return value determines the working tree here. Make it
+    // diverge from the effective tree (2030 vs 2027) so this test can tell
+    // whether `meta` is sourced from the working tree (correct) or the
+    // effective tree (regression).
+    vi.mocked(applyMutations).mockReturnValue({
+      client: { filingStatus: "single" },
+      planSettings: { planStartYear: 2026, planEndYear: 2030 },
+    } as never);
+
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+
+    const metaChunk = text.split("\n\n").find((chunk) => chunk.startsWith("event: meta"));
+    expect(metaChunk).toBeDefined();
+    const metaPayload = JSON.parse(metaChunk!.split("\ndata: ")[1]);
+
+    // Working tree's horizon (2030) — not the effective tree's (2027).
+    expect(metaPayload.planEndYear).toBe(2030);
+    expect(metaPayload.planEndYear).not.toBe(2027);
+  });
+});

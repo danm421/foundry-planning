@@ -4,8 +4,10 @@
 //
 // Server-Sent Events endpoint for the life-insurance need-over-time view.
 // Runs the deterministic (straight-line) solver once per plan year, streaming
-// one `progress` event per year solved followed by exactly one terminal
-// `result` (or `error`) event carrying the full rows array.
+// one leading `meta` event (the working tree's plan year range), then one
+// `progress` event per year solved (each carrying that year's solved row),
+// followed by exactly one terminal `result` (or `error`) event carrying the
+// full rows array.
 //
 // `computeNeedOverTime` is synchronous and deterministic — no Monte Carlo — so
 // the stream simply drains its `onProgress` callback as it runs.
