@@ -88,6 +88,14 @@ export function SolverEducationGoalForm({
     const end = start + yrs - 1;
     const has529 = adding529 && dedicatedAccountIds.includes(new529Id) && !!forFamilyMemberId;
 
+    // When the pending 529 is NOT being emitted (e.g. the "For" person was
+    // cleared, or the row unchecked, after opening the sub-form), strip its
+    // synthetic id so the goal never carries a dedicated-funding reference to
+    // an account that was never created.
+    const finalDedicatedAccountIds = has529
+      ? dedicatedAccountIds
+      : dedicatedAccountIds.filter((id) => id !== new529Id);
+
     const expense: Expense = {
       id: initial?.id ?? crypto.randomUUID(),
       type: "education",
@@ -96,7 +104,7 @@ export function SolverEducationGoalForm({
       startYear: start,
       endYear: end,
       growthRate: initial?.growthRate ?? EDUCATION_DEFAULT_GROWTH,
-      dedicatedAccountIds,
+      dedicatedAccountIds: finalDedicatedAccountIds,
       payShortfallOutOfPocket: payOutOfPocket,
       institutionState: null,
       institutionName: null,

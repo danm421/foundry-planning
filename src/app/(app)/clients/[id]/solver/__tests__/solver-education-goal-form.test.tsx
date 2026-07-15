@@ -75,4 +75,23 @@ describe("SolverEducationGoalForm", () => {
     const new529Id = mutations[0].id;
     expect(expense.dedicatedAccountIds).toContain(new529Id);
   });
+
+  it("strips the pending 529 draw-ref when the For person is cleared before submit", () => {
+    const onSubmit = vi.fn();
+    render(
+      <SolverEducationGoalForm
+        mode="add" accounts={accounts} beneficiaries={beneficiaries} growth529={0.06}
+        currentYear={2026} onSubmit={onSubmit} onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("For"), { target: { value: "emma" } });
+    fireEvent.click(screen.getByRole("button", { name: /new 529 plan/i }));
+    // Clear the beneficiary AFTER opening the sub-form.
+    fireEvent.change(screen.getByLabelText("For"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+
+    const [expense, mutations] = onSubmit.mock.calls[0];
+    expect(mutations).toEqual([]);                 // no 529 emitted (no beneficiary)
+    expect(expense.dedicatedAccountIds).toEqual([]); // and no dangling draw-ref
+  });
 });
