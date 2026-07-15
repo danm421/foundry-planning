@@ -52,8 +52,17 @@ export function* parseSseStream(
 
 const DEBOUNCE_MS = 600;
 
+/** Streamed `meta` SSE payload — the working tree's plan year range, sent
+ *  once before any `progress` events so the chart can render a stable axis
+ *  and fill bars in progressively. */
+export interface YearRange {
+  planStartYear: number;
+  planEndYear: number;
+}
+
 export interface NeedOverTimeState {
   rows: NeedOverTimeRow[] | null;
+  yearRange: YearRange | null;
   isRunning: boolean;
   progress: OverTimeProgress | null;
   errorMessage: string | null;
@@ -71,6 +80,7 @@ export function useNeedOverTime(
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<OverTimeProgress | null>(null);
   const [rows, setRows] = useState<NeedOverTimeRow[] | null>(null);
+  const [yearRange, setYearRange] = useState<YearRange | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -95,6 +105,7 @@ export function useNeedOverTime(
       setIsRunning(true);
       setProgress(null);
       setRows(null);
+      setYearRange(null);
       setErrorMessage(null);
 
       let res: Response;
@@ -135,8 +146,21 @@ export function useNeedOverTime(
           let next = it.next();
           while (!next.done) {
             const ev = next.value;
-            if (ev.event === "progress") {
-              setProgress(JSON.parse(ev.data) as OverTimeProgress);
+            if (ev.event === "meta") {
+              setYearRange(JSON.parse(ev.data) as YearRange);
+              // Start the incremental accumulator — rows fill in as each
+              // `progress` event's row arrives, instead of waiting for the
+              // terminal `result`.
+              setRows([]);
+            } else if (ev.event === "progress") {
+              const p = JSON.parse(ev.data) as OverTimeProgress & {
+                row?: NeedOverTimeRow;
+              };
+              setProgress({ done: p.done, total: p.total });
+              if (p.row) {
+                const row = p.row;
+                setRows((prev) => (prev ? [...prev, row] : [row]));
+              }
             } else if (ev.event === "result") {
               const parsed = JSON.parse(ev.data) as {
                 rows: NeedOverTimeRow[];
@@ -216,5 +240,5 @@ export function useNeedOverTime(
     return () => clearTimeout(timer);
   }, [assumptions, source, mutations, enabled, run]);
 
-  return { rows, isRunning, progress, errorMessage };
+  return { rows, yearRange, isRunning, progress, errorMessage };
 }
