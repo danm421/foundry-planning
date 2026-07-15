@@ -51,7 +51,7 @@ export const dynamic = "force-dynamic";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-type SseEventName = "progress" | "result" | "error";
+type SseEventName = "meta" | "progress" | "result" | "error";
 
 function sseChunk(event: SseEventName, payload: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
@@ -137,11 +137,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           payoffLiabilityIds: assumptions.payoffLiabilityIds,
         };
 
+        // Meta carries the SAME tree's year range that computeNeedOverTime is
+        // about to iterate (workingTree, not effectiveTree) — mutations can
+        // shift the plan horizon, and the client needs a stable axis that
+        // matches the rows actually streamed below.
+        emit("meta", {
+          planStartYear: workingTree.planSettings.planStartYear,
+          planEndYear: workingTree.planSettings.planEndYear,
+        });
+
         const rows = computeNeedOverTime(
           workingTree,
           overTimeAssumptions,
           assumptions.coverEstateTaxes,
-          (done, total) => emit("progress", { done, total }),
+          (done, total, row) => emit("progress", { done, total, row }),
         );
 
         emit("result", { rows });
