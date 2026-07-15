@@ -4,6 +4,7 @@ import type { PortalDashboardDTO } from "@contracts";
 import { useApi } from "@/api/context";
 import { fetchDashboard } from "@/api/portal";
 import { useMe } from "@/auth/me-gate";
+import { IntakeBanner } from "@/home/intake-banner";
 import {
   NetThisMonthTile,
   NetWorthTile,
@@ -19,6 +20,7 @@ export default function Home() {
   const [data, setData] = useState<PortalDashboardDTO | null>(null);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [intakeDismissed, setIntakeDismissed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +57,10 @@ export default function Home() {
       <Text className="text-ink text-2xl font-semibold mb-4">
         Hi {me.client.displayName.split(" ")[0] || "there"}
       </Text>
+
+      {me.intakePending && !intakeDismissed ? (
+        <IntakeBanner onDismiss={() => setIntakeDismissed(true)} />
+      ) : null}
 
       {data === null && !error ? (
         <View className="py-24 items-center">
