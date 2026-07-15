@@ -5,6 +5,7 @@ import { WebView } from "react-native-webview";
 import { useApi } from "@/api/context";
 import { startIntakeSession } from "@/api/portal";
 import { buildIntakeEnterUrl } from "@/intake/enter-url";
+import { isSameOriginUrl } from "@/intake/same-origin";
 
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -63,7 +64,7 @@ export default function Intake() {
             </View>
           )}
           onShouldStartLoadWithRequest={(req) => {
-            if (req.url.startsWith(BASE)) return true;
+            if (isSameOriginUrl(req.url, BASE)) return true;
             void Linking.openURL(req.url).catch(() => {});
             return false;
           }}
