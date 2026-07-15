@@ -204,8 +204,8 @@ describe("LiNeedOverTimeView — clip to the need window", () => {
 });
 
 describe("LiNeedOverTimeView — loading + empty states", () => {
-  it("shows the developing skeleton (and no chart) before the year range is known", () => {
-    const { getByText } = render(
+  it("shows the animated shield loader (and no chart) before the year range is known", () => {
+    const { getByText, container } = render(
       <LiNeedOverTimeView
         rows={null}
         yearRange={null}
@@ -218,11 +218,15 @@ describe("LiNeedOverTimeView — loading + empty states", () => {
       />,
     );
 
-    // Accessible label is preserved for screen readers even though the visual
-    // is now a shimmering skeleton rather than plain text.
+    // The preparing state is now an animated shield mark. Its sr-only status
+    // stands in for the old skeleton's accessible label, and the drawn shield
+    // outline confirms the mark itself rendered.
     expect(
-      getByText(/Preparing the life-insurance need-by-year solve/i),
+      getByText(
+        /Solving the life-insurance need, year by year\. This can take a moment/i,
+      ),
     ).toBeTruthy();
+    expect(container.querySelector(".li-shield-outline")).toBeTruthy();
     expect(barProps()).toBeUndefined();
   });
 

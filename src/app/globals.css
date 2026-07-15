@@ -502,9 +502,17 @@ html {
 }
 
 /* ------------------------------------------------------------------ */
-/* LI need-over-time — "developing" loader: a verdigris shimmer sweep  */
-/* over ghost bars while the need-by-year solve runs, plus a gentle    */
-/* per-bar breathe. Both disabled under reduced motion.                */
+/* LI need-over-time motion.                                           */
+/*                                                                     */
+/* `.li-shimmer-sweep` — a verdigris sheen gliding across the chart    */
+/* while the need-by-year solve streams in.                            */
+/*                                                                     */
+/* `.li-shield-*` — the "solving" loader shown before the plan-year    */
+/* range lands: a shield-check that draws itself in (outline, then     */
+/* check) over a soft verdigris halo that breathes. Mirrors the shield */
+/* the empty NoNeedState renders, so loading and "no need" share one   */
+/* mark. Under reduced motion the sheen hides and the shield settles   */
+/* to a static, fully-drawn mark.                                      */
 /* ------------------------------------------------------------------ */
 
 @keyframes liShimmerSweep {
@@ -525,18 +533,38 @@ html {
   animation: liShimmerSweep 1.9s ease-in-out infinite;
 }
 
-@keyframes liBarBreathe {
-  0%, 100% { transform: scaleY(0.9); opacity: 0.6; }
-  50%      { transform: scaleY(1);   opacity: 0.95; }
+/* Shield draw-in: offset the normalised (pathLength=100) stroke to 0. */
+@keyframes liShieldDraw {
+  to { stroke-dashoffset: 0; }
 }
 
-.li-bar-breathe {
-  transform-origin: bottom;
-  will-change: transform, opacity;
-  animation: liBarBreathe 2.6s ease-in-out infinite;
+/* Halo breath — a calm pulse of glow behind the mark. */
+@keyframes liShieldHalo {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50%      { opacity: 0.8;  transform: scale(1.06); }
+}
+
+.li-shield-halo {
+  transform-origin: center;
+  will-change: opacity, transform;
+  animation: liShieldHalo 2.8s ease-in-out infinite;
+}
+
+.li-shield-outline {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: liShieldDraw 1.1s ease-out 0.1s forwards;
+}
+
+.li-shield-check {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: liShieldDraw 0.55s ease-out 0.95s forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .li-shimmer-sweep { animation: none; opacity: 0; }
-  .li-bar-breathe { animation: none; transform: none; opacity: 0.75; }
+  .li-shield-halo { animation: none; opacity: 0.5; transform: scale(1); }
+  .li-shield-outline,
+  .li-shield-check { animation: none; stroke-dashoffset: 0; }
 }

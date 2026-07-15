@@ -9,7 +9,7 @@
 // The chart stacks each year's client-death and spouse-death need into one
 // bar (client on the bottom, spouse on top) so both what-if scenarios read at
 // a glance. Four phases:
-//   • preparing — before the plan year range lands: the developing skeleton.
+//   • preparing — before the plan year range lands: the animated shield loader.
 //   • streaming — bars rise into the full stable plan-year axis as the solve
 //     fills in, so the axis never grows underneath the advisor.
 //   • done      — the axis collapses to just the need window (the years that
@@ -35,7 +35,7 @@ import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 import type { OverTimeProgress, YearRange } from "./use-need-over-time";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
-import { DevelopingSkeleton, NoNeedState } from "./li-need-skeleton";
+import { ShieldLoader, NoNeedState } from "./li-need-skeleton";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -138,9 +138,9 @@ function ChartArea({
   );
 
   // Before the plan year range lands there's nothing to plot — show the
-  // developing skeleton (unless the run has already errored out).
+  // animated shield loader (unless the run has already errored out).
   if (!yearRange) {
-    return hasError ? null : <DevelopingSkeleton isMarried={isMarried} />;
+    return hasError ? null : <ShieldLoader />;
   }
 
   if (clipped && clipped.length === 0) {
