@@ -48,10 +48,13 @@ export interface SavingsRuleAccount {
 // Savings contributions can only flow into liquid accounts the household owns
 // directly. Illiquid assets (real estate, businesses, life insurance, notes)
 // and trust/entity-owned accounts are out of the estate and not valid targets.
+// 529s (education_savings) are savings vehicles the engine credits directly —
+// they carry no ownerEntityId (beneficiary-owned), so they stay eligible.
 const SAVINGS_LIQUID_CATEGORIES: ReadonlySet<string> = new Set([
   "taxable",
   "cash",
   "retirement",
+  "education_savings",
 ]);
 
 export function isSavingsEligibleAccount(a: SavingsRuleAccount): boolean {
