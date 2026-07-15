@@ -147,6 +147,8 @@ export interface PortalMeDTO {
   mode: PortalActorMode;
   /** clients.portalEditEnabled — mobile gates review/recategorize/exclude/budget-edit on this. */
   editEnabled: boolean;
+  /** True when the client has an unsubmitted prefilled intake form (draft). Mobile gates the intake banner + More row on this. */
+  intakePending: boolean;
 }
 
 // ============================================================================

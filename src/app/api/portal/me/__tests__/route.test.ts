@@ -18,6 +18,10 @@ vi.mock("@/db/schema", () => ({
   crmHouseholdContacts: { _name: "crm_household_contacts" },
 }));
 vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a, and: (...a: unknown[]) => a }));
+const intakePendingMock = vi.fn<() => Promise<boolean>>(() => Promise.resolve(false));
+vi.mock("@/lib/intake/queries", () => ({
+  hasUnsubmittedPrefilledForm: () => intakePendingMock(),
+}));
 
 const selectQueue: unknown[][] = [];
 vi.mock("@/db", () => ({
@@ -40,6 +44,8 @@ beforeEach(() => {
   getBrandingMock.mockResolvedValue({ displayName: "Ethos Cached", logoUrl: "https://blob/logo.png" });
   firmNameMock.mockReset();
   firmNameMock.mockResolvedValue("Ethos Wealth");
+  intakePendingMock.mockReset();
+  intakePendingMock.mockResolvedValue(false);
 });
 
 describe("GET /api/portal/me", () => {
@@ -54,8 +60,19 @@ describe("GET /api/portal/me", () => {
       firm: { name: "Ethos Wealth", logoUrl: "https://blob/logo.png" },
       mode: "client",
       editEnabled: true,
+      intakePending: false,
     });
     expect(firmNameMock).toHaveBeenCalledWith("firm-1", "Ethos Cached");
+  });
+
+  it("sets intakePending true when the client has an unsubmitted prefilled form", async () => {
+    intakePendingMock.mockResolvedValue(true);
+    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
+    selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
+    const res = await GET();
+    const body = await res.json();
+    expect(body.intakePending).toBe(true);
+    expect(intakePendingMock).toHaveBeenCalled();
   });
 
   it("degrades gracefully with no primary contact and no branding", async () => {

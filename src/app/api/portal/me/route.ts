@@ -6,6 +6,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { getBranding } from "@/lib/branding/db";
 import { resolveFirmName } from "@/lib/branding/branding";
+import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 import type { PortalMeDTO } from "@/lib/portal/contracts";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,10 @@ export async function GET(): Promise<Response> {
       }
     }
 
-    const branding = await getBranding(row.firmId);
+    const [branding, intakePending] = await Promise.all([
+      getBranding(row.firmId),
+      hasUnsubmittedPrefilledForm(clientId),
+    ]);
     const firmName = await resolveFirmName(row.firmId, branding?.displayName ?? null);
 
     const dto: PortalMeDTO = {
@@ -58,6 +62,7 @@ export async function GET(): Promise<Response> {
       firm: { name: firmName, logoUrl: branding?.logoUrl ?? null },
       mode,
       editEnabled: row.portalEditEnabled ?? false,
+      intakePending,
     };
     return NextResponse.json(dto);
   } catch (err) {
