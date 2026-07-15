@@ -39,6 +39,10 @@ export function fetchDashboard(api: ApiClient): Promise<PortalDashboardDTO> {
   return api.get<PortalDashboardDTO>("/api/portal/dashboard");
 }
 
+export function startIntakeSession(api: ApiClient): Promise<{ ticket: string }> {
+  return api.post<{ ticket: string }>("/api/portal/intake/session", {});
+}
+
 // ============================================================================
 // Phase 2 — money screens (Accounts, Transactions, Budget)
 // ============================================================================
