@@ -6,7 +6,7 @@
 // auto-runs the solve when this report is active) and renders the progress
 // bar plus a single-dataset Chart.js bar chart whose series is chosen by a
 // married-only client/spouse toggle.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -19,13 +19,14 @@ import { Bar } from "react-chartjs-2";
 import { formatCurrency } from "@/components/monte-carlo/lib/format";
 import { roundUpTo50k } from "@/lib/life-insurance/round";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
-import type { OverTimeProgress } from "./use-need-over-time";
+import type { OverTimeProgress, YearRange } from "./use-need-over-time";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 interface Props {
   rows: NeedOverTimeRow[] | null;
+  yearRange: YearRange | null;
   isRunning: boolean;
   progress: OverTimeProgress | null;
   errorMessage: string | null;
@@ -36,6 +37,7 @@ interface Props {
 
 export function LiNeedOverTimeView({
   rows,
+  yearRange,
   isRunning,
   progress,
   errorMessage,
@@ -50,7 +52,7 @@ export function LiNeedOverTimeView({
 
   return (
     <div className="flex h-full flex-col">
-      {rows && !isRunning && isMarried ? (
+      {yearRange && isMarried ? (
         <div className="flex items-center">
           <div
             role="tablist"
@@ -82,11 +84,21 @@ export function LiNeedOverTimeView({
         </div>
       ) : null}
 
-      {/* Fills the remaining height of the resizable panel below the controls. */}
+      {/* Fills the remaining height of the resizable panel below the controls.
+          Rendered whenever the route's `meta` event has landed — before that,
+          rows haven't started streaming in yet. Not gated on `!isRunning`:
+          the whole point of the stable axis is that solved bars rise into
+          place while the solve is still running. */}
       <div className="mt-3 min-h-0 flex-1">
-        {rows && !isRunning ? (
-          <ChartPanel rows={rows} activeDeathOf={activeDeathOf} clientName={clientName} spouseName={spouseName} />
-        ) : !isRunning && !errorMessage ? (
+        {yearRange ? (
+          <ChartPanel
+            rows={rows ?? []}
+            yearRange={yearRange}
+            activeDeathOf={activeDeathOf}
+            clientName={clientName}
+            spouseName={spouseName}
+          />
+        ) : !errorMessage ? (
           <p className="text-[12px] text-ink-3">
             Preparing the life-insurance need-by-year solve…
           </p>
@@ -99,11 +111,13 @@ export function LiNeedOverTimeView({
 /** Inner chart component so we can call hooks (useThemeName). */
 function ChartPanel({
   rows,
+  yearRange,
   activeDeathOf,
   clientName,
   spouseName,
 }: {
   rows: NeedOverTimeRow[];
+  yearRange: YearRange;
   activeDeathOf: "client" | "spouse";
   clientName: string;
   spouseName: string;
@@ -111,60 +125,82 @@ function ChartPanel({
   const theme = useThemeName();
   const chrome = chartChrome(theme);
   const pal = dataPalette(theme);
-  const labels = rows.map((r) => String(r.year));
-  const data = {
-    labels,
-    datasets: [
-      activeDeathOf === "spouse"
-        ? {
-            label: `${spouseName} dies`,
-            data: rows.map((r) => roundUpTo50k(r.spouseNeed ?? 0)),
-            backgroundColor: pal.grey,
-            borderColor: pal.grey,
-            borderWidth: 1,
-          }
-        : {
-            label: `${clientName} dies`,
-            data: rows.map((r) => roundUpTo50k(r.clientNeed)),
-            backgroundColor: pal.blue,
-            borderColor: pal.blue,
-            borderWidth: 1,
+
+  // Stable full-plan year axis, independent of how many rows have streamed
+  // in so far — indexed by year so bars rise into place left-to-right as the
+  // solve progresses instead of the axis growing underneath the advisor.
+  // Only depends on `yearRange`, which is fixed for the life of a run, so it
+  // doesn't rebuild on every streamed row — unlike `data` below, which does.
+  const years = useMemo(() => {
+    const out: number[] = [];
+    for (let y = yearRange.planStartYear; y <= yearRange.planEndYear; y++) {
+      out.push(y);
+    }
+    return out;
+  }, [yearRange.planStartYear, yearRange.planEndYear]);
+  const labels = useMemo(() => years.map((y) => String(y)), [years]);
+
+  const seriesLabel = activeDeathOf === "spouse" ? `${spouseName} dies` : `${clientName} dies`;
+  const seriesColor = activeDeathOf === "spouse" ? pal.grey : pal.blue;
+  const data = useMemo(() => {
+    const byYear = new Map(rows.map((r) => [r.year, r]));
+    const valueFor = (y: number): number | null => {
+      const r = byYear.get(y);
+      if (!r) return null;
+      return activeDeathOf === "spouse"
+        ? roundUpTo50k(r.spouseNeed ?? 0)
+        : roundUpTo50k(r.clientNeed);
+    };
+    return {
+      labels,
+      datasets: [
+        {
+          label: seriesLabel,
+          data: years.map(valueFor),
+          backgroundColor: seriesColor,
+          borderColor: seriesColor,
+          borderWidth: 1,
+        },
+      ],
+    };
+  }, [rows, years, labels, activeDeathOf, seriesLabel, seriesColor]);
+
+  const options = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index" as const, intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
+        },
+        tooltip: {
+          backgroundColor: chrome.tooltipBg,
+          titleColor: chrome.tooltipTitle,
+          bodyColor: chrome.tooltipBody,
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+              `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
           },
-    ],
-  };
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: "index" as const, intersect: false },
-    plugins: {
-      legend: {
-        display: true,
-        labels: { color: chrome.legend, boxWidth: 12, padding: 16 },
-      },
-      tooltip: {
-        backgroundColor: chrome.tooltipBg,
-        titleColor: chrome.tooltipTitle,
-        bodyColor: chrome.tooltipBody,
-        callbacks: {
-          label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
-            `${ctx.dataset.label}: ${formatCurrency(Number(ctx.raw))}`,
         },
       },
-    },
-    scales: {
-      x: {
-        ticks: { color: chrome.tick },
-        grid: { color: chrome.grid },
-      },
-      y: {
-        ticks: {
-          color: chrome.tick,
-          callback: (value: unknown) => formatCurrency(Number(value)),
+      scales: {
+        x: {
+          ticks: { color: chrome.tick },
+          grid: { color: chrome.grid },
         },
-        grid: { color: chrome.grid },
+        y: {
+          ticks: {
+            color: chrome.tick,
+            callback: (value: unknown) => formatCurrency(Number(value)),
+          },
+          grid: { color: chrome.grid },
+        },
       },
-    },
-  };
+    }),
+    [chrome],
+  );
   return (
     <div className="h-full">
       <Bar data={data} options={options} />
