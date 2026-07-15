@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { buildEducationMcInput, buildEducationReturnStats } from "../education-mc-inputs";
+import { runEducationGoalMc } from "@/engine/education/education-mc";
 import type { EducationGoalReport } from "../education-report-data";
 
 const report = {
   goalId: "edu", name: "College", dedicatedFundsUsed: 30000, cashFlowFundsUsed: 0, totalShortfall: 10000,
+  coveredByCashFlow: false,
   chart: { labels: [], remaining: [], withdrawals: [], outOfPocket: [], shortfall: [] },
   rows: [
     { goalId: "edu", year: 2026, dedicatedAssetsBOY: 30000, growthAndSavings: 1800, goalExpense: 0, otherExpenseFlows: 0, dedicatedWithdrawal: 0, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 31800, shortfall: 0 },
@@ -15,9 +17,38 @@ describe("buildEducationMcInput", () => {
   it("uses BOY of the first row as starting balance and maps schedules", () => {
     const input = buildEducationMcInput(report, { arithMean: 0.06, stdDev: 0.12 }, 99);
     expect(input.startingBalance).toBe(30000);
-    expect(input.withdrawalsByYear).toEqual([0, 30000]);
+    // Target is the goal COST, not the capped dedicated withdrawal (40000 vs 30000).
+    expect(input.withdrawalsByYear).toEqual([0, 40000]);
     expect(input.contributionsByYear[0]).toBe(1800);
     expect(input.seed).toBe(99);
+  });
+
+  it("REGRESSION: a massively underfunded goal must not read as fully funded", () => {
+    // Pool covers only $40k of a $100k cost; the uncovered $60k is a genuine
+    // shortfall (no cash-flow funding). At zero volatility the gauge must report
+    // 0% — it previously read 100% because it targeted the capped dedicated
+    // *withdrawal* ($40k) instead of the true goal cost ($100k).
+    const underfunded = {
+      ...report,
+      coveredByCashFlow: false,
+      rows: [
+        { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 100000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, outOfPocketWithdrawal: 0, dedicatedAssetsEOY: 0, shortfall: 60000 },
+      ],
+    } as EducationGoalReport;
+    const input = buildEducationMcInput(underfunded, { arithMean: 0.05, stdDev: 0 }, 42);
+    expect(runEducationGoalMc(input).successRate).toBe(0);
+  });
+
+  it("counts a goal funded from cash flow as fully funded even when the pool falls short", () => {
+    const covered = {
+      ...report,
+      coveredByCashFlow: true,
+      rows: [
+        { goalId: "edu", year: 2033, dedicatedAssetsBOY: 40000, growthAndSavings: 0, goalExpense: 100000, otherExpenseFlows: 0, dedicatedWithdrawal: 40000, outOfPocketWithdrawal: 60000, dedicatedAssetsEOY: 0, shortfall: 0 },
+      ],
+    } as EducationGoalReport;
+    const input = buildEducationMcInput(covered, { arithMean: 0.05, stdDev: 0 }, 42);
+    expect(runEducationGoalMc(input).successRate).toBe(1);
   });
 
   it("ignores accumulation rows so the gauge stays scoped to the expense phase", () => {

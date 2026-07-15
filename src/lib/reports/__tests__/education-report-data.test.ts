@@ -15,6 +15,7 @@ describe("buildEducationReport", () => {
     expect(report.name).toBe("College for Child");
     expect(report.dedicatedFundsUsed).toBe(30000);
     expect(report.totalShortfall).toBe(10000);
+    expect(report.coveredByCashFlow).toBe(false); // no cash-flow funding → default off
     expect(report.chart.labels).toEqual(["2026", "2033"]);
     expect(report.chart.remaining).toEqual([31800, 0]);
     expect(report.chart.withdrawals).toEqual([0, 30000]);
@@ -26,7 +27,8 @@ describe("buildEducationReport", () => {
       py(2033, { goalExpense: 40000, dedicatedWithdrawal: 25000, outOfPocketWithdrawal: 15000, shortfall: 0, dedicatedAssetsEOY: 0 }),
       py(2034, { goalExpense: 40000, dedicatedWithdrawal: 30000, outOfPocketWithdrawal: 0, shortfall: 10000, dedicatedAssetsEOY: 0 }),
     ];
-    const [report] = buildEducationReport(years, [{ id: "edu", name: "College" }]);
+    const [report] = buildEducationReport(years, [{ id: "edu", name: "College", payShortfallOutOfPocket: true }]);
+    expect(report.coveredByCashFlow).toBe(true); // reads the goal's cash-flow funding setting
     expect(report.cashFlowFundsUsed).toBe(15000);
     expect(report.totalShortfall).toBe(10000); // unfunded only, not the cash-flow portion
     expect(report.chart.outOfPocket).toEqual([15000, 0]);

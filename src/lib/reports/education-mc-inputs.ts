@@ -17,7 +17,11 @@ export interface EducationReturnStat {
  *  needs a contributions-only figure split out of `growthAndSavings` on
  *  `EducationGoalYear` (logged as deferred future-work), not a change here.
  *
- *  withdrawalsByYear = the deterministic dedicatedWithdrawal path. */
+ *  withdrawalsByYear = the goal's yearly *cost* (`goalExpense`), i.e. the target
+ *  the funding must cover — NOT the pool's `dedicatedWithdrawal`, which is capped
+ *  at the pool balance and so would always read as fully funded. Cash-flow
+ *  funding (`coveredByCashFlow`) is passed through so the gauge counts a
+ *  dedicated-pool shortfall as covered rather than a failure. */
 export function buildEducationMcInput(
   report: EducationGoalReport,
   stats: EducationReturnStat,
@@ -31,7 +35,8 @@ export function buildEducationMcInput(
   return {
     startingBalance: expenseRows[0]?.dedicatedAssetsBOY ?? 0,
     contributionsByYear: expenseRows.map((r) => r.growthAndSavings),
-    withdrawalsByYear: expenseRows.map((r) => r.dedicatedWithdrawal),
+    withdrawalsByYear: expenseRows.map((r) => r.goalExpense),
+    coveredByCashFlow: report.coveredByCashFlow,
     arithMean: stats.arithMean,
     stdDev: stats.stdDev,
     seed,

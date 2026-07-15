@@ -24,7 +24,7 @@ const DEFAULT_EDUCATION_SEED = 1;
 
 interface Props {
   years: ProjectionYear[];
-  expenses: { id: string; name: string }[];
+  expenses: { id: string; name: string; payShortfallOutOfPocket?: boolean }[];
   /** Blended dedicated-pool return stats per goalId, from the solver's plan MC
    *  data. Optional — goals without an entry use FALLBACK_RETURN_STAT. */
   returnStats?: Record<string, EducationReturnStat>;
