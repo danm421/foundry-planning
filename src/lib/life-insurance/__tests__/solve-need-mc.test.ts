@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { solveLifeInsuranceNeedMc, solveNeedBracket } from "../solve-need-mc";
+import { solveLifeInsuranceNeedMc, solveNeedBracket, refineNeed } from "../solve-need-mc";
 import { marriedBase, assumptions } from "./test-helpers";
 
 // ── In-memory Monte Carlo payload ────────────────────────────────────────────
@@ -70,9 +70,10 @@ describe("solveLifeInsuranceNeedMc", () => {
       { trials: 150 },
     );
     expect(r.status).toBe("solved");
-    // 2 endpoint probes + a handful of root-finder iterations -- well under
-    // the old fixed budget of MAX_ITERATIONS + 2 = 26.
-    expect(r.iterations).toBeLessThanOrEqual(14);
+    // Two-phase progressive solve does MORE (but cheaper) evaluations than the
+    // single-phase solve — a coarse pass plus a full-trial refine. Still well
+    // under the old fixed budget of MAX_ITERATIONS + 2 = 26.
+    expect(r.iterations).toBeLessThanOrEqual(22);
     // Also assert solution quality: a fast-but-wrong convergence (e.g. a bug
     // reconstructing f(x) from g-space) would pass the iteration bound alone.
     expect(r.achievedScore).toBeGreaterThanOrEqual(0.83);
@@ -92,6 +93,35 @@ describe("solveLifeInsuranceNeedMc", () => {
     );
     expect(r.status).toBe("exceeds-cap");
     expect(r.faceValue).toBe(20_000_000);
+  }, 30_000);
+
+  it("progressive solve's reported face meets the target at full trials", async () => {
+    const r = await solveLifeInsuranceNeedMc(
+      marriedBase(),
+      "client",
+      { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
+      { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
+      { trials: 150 }, // coarse 32 → refine 150
+    );
+    expect(r.status).toBe("solved");
+    expect(r.faceValue).toBeGreaterThan(0);
+    // Answer is governed by the full 150-trial objective, within tolerance.
+    expect(Math.abs(r.achievedScore - 0.85)).toBeLessThanOrEqual(0.02);
+  }, 30_000);
+
+  it("progressive solve is deterministic (fixed seed)", async () => {
+    const run = () =>
+      solveLifeInsuranceNeedMc(
+        marriedBase(),
+        "client",
+        { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
+        { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
+        { trials: 150 },
+      );
+    const a = await run();
+    const b = await run();
+    expect(a.faceValue).toBe(b.faceValue);
+    expect(a.achievedScore).toBe(b.achievedScore);
   }, 30_000);
 });
 
@@ -152,5 +182,74 @@ describe("solveNeedBracket (pure bracket orchestration)", () => {
     const evaluate = async () => 0.89;
     const r = await solveNeedBracket(evaluate, opts);
     expect(r).toEqual({ status: "solved", faceValue: 0, achievedScore: 0.89 });
+  });
+});
+
+describe("refineNeed (full-trial refinement of a coarse verdict)", () => {
+  const opts = { target: 0.9, cap: 20_000_000, tolerance: 0.02, maxIterations: 24 };
+  // Full-trial objective: $0 → 0.5, rising to cross 0.9 at $10M (clamped ≤ 1).
+  const nearTen = async (f: number) => Math.min(1, 0.5 + 0.04 * (f / 1_000_000));
+
+  it("refines a coarse positive face to the full-trial root", async () => {
+    const r = await refineNeed(
+      nearTen,
+      { status: "solved", faceValue: 9_500_000, achievedScore: 0.9 },
+      opts,
+    );
+    expect(r.status).toBe("solved");
+    expect(Math.abs(r.achievedScore - 0.9)).toBeLessThanOrEqual(0.02);
+    expect(Math.abs(r.faceValue - 10_000_000)).toBeLessThan(600_000);
+  });
+
+  it("returns the coarse face immediately when full trials already agree", async () => {
+    const r = await refineNeed(
+      nearTen,
+      { status: "solved", faceValue: 10_000_000, achievedScore: 0.9 },
+      opts,
+    );
+    expect(r).toEqual({ status: "solved", faceValue: 10_000_000, achievedScore: 0.9 });
+  });
+
+  it("confirms a coarse funded ($0) verdict at full trials", async () => {
+    const funded = async () => 0.95;
+    const r = await refineNeed(
+      funded,
+      { status: "solved", faceValue: 0, achievedScore: 0.95 },
+      opts,
+    );
+    expect(r).toEqual({ status: "solved", faceValue: 0, achievedScore: 0.95 });
+  });
+
+  it("falls back to a full solve when a coarse funded verdict is wrong at full trials", async () => {
+    const r = await refineNeed(
+      nearTen, // $0 → 0.5, below target → not actually funded
+      { status: "solved", faceValue: 0, achievedScore: 0.91 },
+      opts,
+    );
+    expect(r.status).toBe("solved");
+    expect(r.faceValue).toBeGreaterThan(0);
+    expect(Math.abs(r.achievedScore - 0.9)).toBeLessThanOrEqual(0.02);
+  });
+
+  it("confirms a coarse exceeds-cap verdict at full trials", async () => {
+    const flat = async () => 0.4; // never reaches target
+    const r = await refineNeed(
+      flat,
+      { status: "exceeds-cap", faceValue: 20_000_000, achievedScore: 0.4 },
+      opts,
+    );
+    expect(r.status).toBe("exceeds-cap");
+    expect(r.faceValue).toBe(20_000_000);
+  });
+
+  it("falls back to a full solve when a coarse exceeds-cap verdict is wrong at full trials", async () => {
+    const r = await refineNeed(
+      nearTen, // reaches target within the cap
+      { status: "exceeds-cap", faceValue: 20_000_000, achievedScore: 0.89 },
+      opts,
+    );
+    expect(r.status).toBe("solved");
+    expect(r.faceValue).toBeGreaterThan(0);
+    expect(r.faceValue).toBeLessThan(20_000_000);
   });
 });
