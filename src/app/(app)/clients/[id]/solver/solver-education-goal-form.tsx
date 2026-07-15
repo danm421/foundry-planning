@@ -49,7 +49,6 @@ export function SolverEducationGoalForm({
   // Pending new-529 state. A stable id lets the synthetic account appear (checked)
   // in the funding picker before it's built on submit.
   const [new529Id] = useState(() => crypto.randomUUID());
-  const [adding529, setAdding529] = useState(false);
   const [new529Balance, setNew529Balance] = useState("");
   const [new529Annual, setNew529Annual] = useState("");
   const [new529Name, setNew529Name] = useState("");
@@ -58,6 +57,11 @@ export function SolverEducationGoalForm({
   const forLabel = beneficiaries.find((b) => b.familyMemberId === forFamilyMemberId)?.label ?? "";
   const composed529Name = forLabel ? `${forLabel} — 529 Plan` : "529 Plan";
   const new529NameValue = new529NameDirty ? new529Name : composed529Name;
+
+  // The pending 529 sub-form is open exactly when its synthetic id sits in the
+  // draw list — one source of truth, so unchecking the picker row and the
+  // "Remove" button are the same action (no separate flag to drift out of sync).
+  const adding529 = dedicatedAccountIds.includes(new529Id);
 
   // Show the pending 529 as a checked row in the funding picker (draw order).
   const pickerAccounts: EducationGoalFormAccount[] = adding529
@@ -74,11 +78,9 @@ export function SolverEducationGoalForm({
     : accounts;
 
   function openNew529() {
-    setAdding529(true);
     if (!dedicatedAccountIds.includes(new529Id)) setDedicatedAccountIds([...dedicatedAccountIds, new529Id]);
   }
   function discardNew529() {
-    setAdding529(false);
     setDedicatedAccountIds(dedicatedAccountIds.filter((id) => id !== new529Id));
   }
 
@@ -86,12 +88,12 @@ export function SolverEducationGoalForm({
     const start = Number(startYear) || currentYear + 1;
     const yrs = Math.max(1, Number(years) || 1);
     const end = start + yrs - 1;
-    const has529 = adding529 && dedicatedAccountIds.includes(new529Id) && !!forFamilyMemberId;
+    const has529 = adding529 && !!forFamilyMemberId;
 
     // When the pending 529 is NOT being emitted (e.g. the "For" person was
-    // cleared, or the row unchecked, after opening the sub-form), strip its
-    // synthetic id so the goal never carries a dedicated-funding reference to
-    // an account that was never created.
+    // cleared after opening the sub-form), strip its synthetic id so the goal
+    // never carries a dedicated-funding reference to an account that was never
+    // created.
     const finalDedicatedAccountIds = has529
       ? dedicatedAccountIds
       : dedicatedAccountIds.filter((id) => id !== new529Id);

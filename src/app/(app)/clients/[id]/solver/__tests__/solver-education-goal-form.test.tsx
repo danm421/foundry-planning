@@ -94,4 +94,26 @@ describe("SolverEducationGoalForm", () => {
     expect(mutations).toEqual([]);                 // no 529 emitted (no beneficiary)
     expect(expense.dedicatedAccountIds).toEqual([]); // and no dangling draw-ref
   });
+
+  it("unchecking the pending 529 in the funding picker closes the sub-form and drops it", () => {
+    const onSubmit = vi.fn();
+    render(
+      <SolverEducationGoalForm
+        mode="add" accounts={accounts} beneficiaries={beneficiaries} growth529={0.06}
+        currentYear={2026} onSubmit={onSubmit} onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("For"), { target: { value: "emma" } });
+    fireEvent.click(screen.getByRole("button", { name: /new 529 plan/i }));
+    fireEvent.change(screen.getByLabelText("Starting balance"), { target: { value: "15000" } });
+    // Unchecking the synthetic "(new)" row is the single source of truth for the
+    // pending 529 — it must close the sub-form, not leave it open-but-inert.
+    fireEvent.click(screen.getByLabelText("Emma — 529 Plan (new)"));
+    expect(screen.queryByLabelText("Starting balance")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+
+    const [expense, mutations] = onSubmit.mock.calls[0];
+    expect(mutations).toEqual([]);                 // no 529 emitted
+    expect(expense.dedicatedAccountIds).toEqual([]); // and no dangling draw-ref
+  });
 });
