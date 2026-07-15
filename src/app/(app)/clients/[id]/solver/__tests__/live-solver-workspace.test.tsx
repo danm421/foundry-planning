@@ -2,11 +2,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
+import { resolveReportLayout } from "@/lib/solver/report-layout";
 
 const routerPush = vi.fn();
 const routerRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
+}));
+
+// The workspace now calls useToast() for the report-layout save-failure
+// toast. Real usage is under the root <ToastProvider>; here (no provider in
+// the tree) the real hook throws, so stub it — same pattern as
+// balance-sheet-view-529.test.tsx.
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showToast: vi.fn() }),
 }));
 
 // Mock the cached-endpoint MC hook so the workspace's auto-run never hits the
@@ -141,6 +150,7 @@ const baseProps = {
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
   retirementDefaultMix: [],
   baseGifts: [],
+  initialReportLayout: resolveReportLayout(null),
 };
 
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {

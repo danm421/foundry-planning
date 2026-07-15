@@ -3,9 +3,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 import type { StartArgs } from "../use-solver-solve";
+import { resolveReportLayout } from "@/lib/solver/report-layout";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
+
+// The workspace now calls useToast() for the report-layout save-failure
+// toast. Real usage is under the root <ToastProvider>; here (no provider in
+// the tree) the real hook throws, so stub it — same pattern as
+// balance-sheet-view-529.test.tsx.
+vi.mock("@/components/toast", () => ({
+  useToast: () => ({ showToast: vi.fn() }),
 }));
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
@@ -116,6 +125,7 @@ const baseProps = {
   categoryGrowthDefaults: { taxable: 0.06, retirement: 0.06, cash: 0.02 },
   retirementDefaultMix: [],
   baseGifts: [],
+  initialReportLayout: resolveReportLayout(null),
 };
 
 describe("LiveSolverWorkspace — solve minimum additional savings", () => {

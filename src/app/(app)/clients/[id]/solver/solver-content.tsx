@@ -13,6 +13,7 @@ import {
   buildEducationReturnStats,
   type EducationReturnStat,
 } from "@/lib/reports/education-mc-inputs";
+import { loadReportLayout } from "@/lib/solver/report-layout-store";
 import { LiveSolverWorkspace } from "./live-solver-workspace";
 
 // Deterministic fallback seed when the plan MC data can't be loaded (never
@@ -68,7 +69,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
     ? runProjection(sourceTree)
     : baseProjection;
 
-  const [modelPortfolioRows, allocationRows, baseGifts] = await Promise.all([
+  const [modelPortfolioRows, allocationRows, baseGifts, reportLayout] = await Promise.all([
     db
       .select({ id: modelPortfolios.id, name: modelPortfolios.name })
       .from(modelPortfolios)
@@ -83,6 +84,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       .innerJoin(modelPortfolios, eq(modelPortfolioAllocations.modelPortfolioId, modelPortfolios.id))
       .where(eq(modelPortfolios.firmId, firmId)),
     loadGiftDrafts(clientId, firmId, source),
+    loadReportLayout(userId),
   ]);
 
   const allocsByPortfolio = new Map<string, { assetClassId: string; weight: string }[]>();
@@ -197,6 +199,7 @@ export async function SolverContent({ clientId, firmId, userId, source }: Props)
       baseGifts={baseGifts}
       educationReturnStats={educationReturnStats}
       educationSeed={educationSeed}
+      initialReportLayout={reportLayout}
     />
   );
 }

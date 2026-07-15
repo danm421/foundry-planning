@@ -23,6 +23,14 @@ import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { SolverPaneDivider } from "./solver-pane-divider";
 import { defaultReportForTab, type InputTab, type ReportKey } from "./report-tab-link";
+import {
+  resolveActiveReport,
+  isReportVisible,
+  firstVisibleReport,
+  type ReportLayoutEntry,
+} from "@/lib/solver/report-layout";
+import { saveReportLayout } from "./report-layout-actions";
+import { useToast } from "@/components/toast";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
@@ -97,6 +105,8 @@ interface Props {
   educationReturnStats?: Record<string, { arithMean: number; stdDev: number }>;
   /** Scenario Monte Carlo seed, so the per-goal education gauges reproduce. */
   educationSeed?: number;
+  /** Advisor's persisted report order + visibility, reconciled server-side. */
+  initialReportLayout: ReportLayoutEntry[];
 }
 
 /** Left-pane input tabs, in display order. Mirrors SolverChartPanel's REPORT_TABS.
@@ -138,6 +148,7 @@ export function LiveSolverWorkspace({
   baseGifts,
   educationReturnStats,
   educationSeed,
+  initialReportLayout,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -202,17 +213,50 @@ export function LiveSolverWorkspace({
     window.localStorage.setItem(SOLVER_LEFT_PCT_KEY, String(pct));
   }, []);
 
+  const { showToast } = useToast();
+  // Advisor's report order + visibility. Loaded server-side (no flash) and
+  // saved optimistically; reverted with a toast if the save fails.
+  const [reportLayout, setReportLayout] = useState<ReportLayoutEntry[]>(initialReportLayout);
+
   // The right-pane report is linked to the left input tab: selecting an input
   // tab applies that tab's default report; clicking a report tab overrides it
-  // until the next input-tab change.
-  const [activeReport, setActiveReport] = useState<ReportKey>(
-    defaultReportForTab("retirement"),
+  // until the next input-tab change. Both the initial value and every tab
+  // change are reconciled against the layout, so a hidden report is never
+  // selected.
+  const [activeReport, setActiveReport] = useState<ReportKey>(() =>
+    resolveActiveReport(defaultReportForTab("retirement"), initialReportLayout),
   );
   const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
-  const handleTabChange = useCallback((tab: InputTab) => {
-    setActiveTab(tab);
-    setActiveReport(defaultReportForTab(tab));
-  }, []);
+  const handleTabChange = useCallback(
+    (tab: InputTab) => {
+      setActiveTab(tab);
+      setActiveReport(resolveActiveReport(defaultReportForTab(tab), reportLayout));
+    },
+    [reportLayout],
+  );
+
+  // Optimistically apply a layout change, persist it, and revert + toast if
+  // the save fails. If the active report was just hidden, jump to the first
+  // visible one so the panel never renders a hidden report.
+  const handleLayoutChange = useCallback(
+    (next: ReportLayoutEntry[]) => {
+      const prev = reportLayout;
+      setReportLayout(next);
+      setActiveReport((cur) => (isReportVisible(cur, next) ? cur : firstVisibleReport(next)));
+      void saveReportLayout(next)
+        .then((res) => {
+          if (!res.ok) {
+            setReportLayout(prev);
+            showToast({ message: "Couldn't save report layout", durationMs: 4000 });
+          }
+        })
+        .catch(() => {
+          setReportLayout(prev);
+          showToast({ message: "Couldn't save report layout", durationMs: 4000 });
+        });
+    },
+    [reportLayout, showToast],
+  );
 
   // LI assumptions live here so both the left-pane inputs view and the right-
   // pane results/chart can read them; the LI views are controlled.
@@ -1330,6 +1374,8 @@ export function LiveSolverWorkspace({
               spouseName={spouseName}
               activeReport={activeReport}
               onReportChange={setActiveReport}
+              layout={reportLayout}
+              onLayoutChange={handleLayoutChange}
               baseTree={baseClientData}
               source={initialSource}
               mutations={mutations}
