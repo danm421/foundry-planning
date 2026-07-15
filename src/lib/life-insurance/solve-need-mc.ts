@@ -30,17 +30,21 @@ const CAP = 20_000_000;
 /** Production Monte Carlo trial count (per the Life Insurance Solver plan). */
 const DEFAULT_TRIALS = 250;
 
+/** Coarse Monte Carlo trials used during the search phase, before the full-trial
+ *  refine. Low enough to make search probes cheap, high enough to land near the
+ *  root; the refine phase resolves the final SCORE_TOLERANCE band. */
+const DEFAULT_COARSE_TRIALS = 64;
+
 /** Bisection stops when the achieved MC score is within ±0.02 of the target. */
 const SCORE_TOLERANCE = 0.02;
 
 /** Maximum bisection iterations — 24 halvings of [0, 20M] resolves to <$2. */
 const MAX_ITERATIONS = 24;
 
-/** Expected total evaluations used to size the progress bar. The Illinois
- *  root-finder converges in far fewer probes than the old fixed bisection
- *  (2 endpoint probes + ~8 root-finder iterations); `done` is clamped to
- *  this value so a rare long run never overflows the bar. */
-const EXPECTED_EVALUATIONS = 10;
+/** Expected total evaluations used to size the progress bar. Two-phase solve =
+ *  a coarse bracket pass (~6-8) + a full-trial refine (~3-5). `done` is clamped
+ *  to this value so a rare long run never overflows the bar. */
+const EXPECTED_EVALUATIONS = 16;
 
 export interface NeedMcResult {
   status: "solved" | "exceeds-cap";
@@ -53,6 +57,10 @@ export interface SolveLifeInsuranceNeedMcOptions {
   /** Monte Carlo trials per candidate evaluation. Defaults to 250. Tests
    *  pass a low count (100–200) to stay within their time budget. */
   trials?: number;
+  /** Coarse trials for the search phase (Phase A). Defaults to 64. When
+   *  `coarseTrials >= trials` the coarse phase is skipped and the solver runs a
+   *  single full-trial pass (parity path). */
+  coarseTrials?: number;
   /** Called once per candidate evaluation with the running evaluation count
    *  and a fixed estimated total (`EXPECTED_EVALUATIONS`). `done` is clamped
    *  so it never exceeds `total`, even on a rare long run. */
@@ -218,55 +226,66 @@ export async function solveLifeInsuranceNeedMc(
   opts: SolveLifeInsuranceNeedMcOptions = {},
 ): Promise<NeedMcResult> {
   const trials = opts.trials ?? DEFAULT_TRIALS;
+  const coarseTrials = opts.coarseTrials ?? DEFAULT_COARSE_TRIALS;
   const target = assumptions.mcTargetScore;
   const accountMixes = new Map(mcPayload.accountMixes.map((a) => [a.accountId, a.segments]));
   const total = EXPECTED_EVALUATIONS;
 
   let iterations = 0;
 
-  /** Run the Monte Carlo engine for one candidate face value and return its
-   *  success rate. A fresh return engine with the SAME seed is created each
-   *  call so the RNG stream restarts identically — only the face value moves,
-   *  keeping the score monotonic in face value (a prerequisite for bisection). */
-  const evaluate = async (faceValue: number): Promise<number> => {
-    if (opts.signal?.aborted) throw new Error("aborted");
-    iterations += 1;
-    const tree = buildLifeInsuranceWhatIfData({
-      data,
-      deceased,
-      deathYear: assumptions.deathYear,
-      faceValue,
-      proceedsGrowthRate: assumptions.proceedsGrowthRate,
-      proceedsRealization: assumptions.proceedsRealization,
-      livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
-      payoffLiabilityIds: assumptions.payoffLiabilityIds,
-    });
-    const returnEngine = createReturnEngine({
-      indices: mcPayload.indices,
-      correlation: mcPayload.correlation,
-      seed: mcPayload.seed,
-    });
-    const mc = await runMonteCarlo({
-      data: tree,
-      returnEngine,
-      accountMixes,
-      trials,
-      requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
-      signal: opts.signal,
-      yieldEvery: 50,
-    });
-    opts.onProgress?.(Math.min(iterations, total), total);
-    return mc.successRate;
-  };
+  /** Build an `evaluate(faceValue) => score` bound to a specific trial count. A
+   *  fresh return engine with the SAME seed is created each call so the RNG
+   *  stream restarts identically — only the face value moves, keeping the score
+   *  monotonic in face value (a prerequisite for the root-find). */
+  const makeEvaluate =
+    (trialCount: number) =>
+    async (faceValue: number): Promise<number> => {
+      if (opts.signal?.aborted) throw new Error("aborted");
+      iterations += 1;
+      const tree = buildLifeInsuranceWhatIfData({
+        data,
+        deceased,
+        deathYear: assumptions.deathYear,
+        faceValue,
+        proceedsGrowthRate: assumptions.proceedsGrowthRate,
+        proceedsRealization: assumptions.proceedsRealization,
+        livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
+        payoffLiabilityIds: assumptions.payoffLiabilityIds,
+      });
+      const returnEngine = createReturnEngine({
+        indices: mcPayload.indices,
+        correlation: mcPayload.correlation,
+        seed: mcPayload.seed,
+      });
+      const mc = await runMonteCarlo({
+        data: tree,
+        returnEngine,
+        accountMixes,
+        trials: trialCount,
+        requiredMinimumAssetLevel: mcPayload.requiredMinimumAssetLevel,
+        signal: opts.signal,
+        yieldEvery: 50,
+      });
+      opts.onProgress?.(Math.min(iterations, total), total);
+      return mc.successRate;
+    };
 
-  // The bracket orchestration (atZero/atCap guards + Illinois root-find) lives
-  // in the pure `solveNeedBracket` helper; the `evaluate` closure above still
-  // owns the `iterations` counter and `onProgress` side effects.
-  const result = await solveNeedBracket(evaluate, {
+  const bracketOpts = {
     target,
     cap: CAP,
     tolerance: SCORE_TOLERANCE,
     maxIterations: MAX_ITERATIONS,
-  });
+  };
+
+  // Phase A: cheap coarse bracket + root-find (skipped when it would give no
+  // benefit). Phase B: confirm / sharpen at full trials — the reported face and
+  // score always come from the full-trial refine.
+  let result;
+  if (coarseTrials >= trials) {
+    result = await solveNeedBracket(makeEvaluate(trials), bracketOpts);
+  } else {
+    const coarse = await solveNeedBracket(makeEvaluate(coarseTrials), bracketOpts);
+    result = await refineNeed(makeEvaluate(trials), coarse, bracketOpts);
+  }
   return { ...result, iterations };
 }

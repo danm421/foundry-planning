@@ -70,9 +70,10 @@ describe("solveLifeInsuranceNeedMc", () => {
       { trials: 150 },
     );
     expect(r.status).toBe("solved");
-    // 2 endpoint probes + a handful of root-finder iterations -- well under
-    // the old fixed budget of MAX_ITERATIONS + 2 = 26.
-    expect(r.iterations).toBeLessThanOrEqual(14);
+    // Two-phase progressive solve does MORE (but cheaper) evaluations than the
+    // single-phase solve — a coarse pass plus a full-trial refine. Still well
+    // under the old fixed budget of MAX_ITERATIONS + 2 = 26.
+    expect(r.iterations).toBeLessThanOrEqual(22);
     // Also assert solution quality: a fast-but-wrong convergence (e.g. a bug
     // reconstructing f(x) from g-space) would pass the iteration bound alone.
     expect(r.achievedScore).toBeGreaterThanOrEqual(0.83);
@@ -92,6 +93,35 @@ describe("solveLifeInsuranceNeedMc", () => {
     );
     expect(r.status).toBe("exceeds-cap");
     expect(r.faceValue).toBe(20_000_000);
+  }, 30_000);
+
+  it("progressive solve's reported face meets the target at full trials", async () => {
+    const r = await solveLifeInsuranceNeedMc(
+      marriedBase(),
+      "client",
+      { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
+      { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
+      { trials: 150 }, // coarse 64 → refine 150
+    );
+    expect(r.status).toBe("solved");
+    expect(r.faceValue).toBeGreaterThan(0);
+    // Answer is governed by the full 150-trial objective, within tolerance.
+    expect(Math.abs(r.achievedScore - 0.85)).toBeLessThanOrEqual(0.02);
+  }, 30_000);
+
+  it("progressive solve is deterministic (fixed seed)", async () => {
+    const run = () =>
+      solveLifeInsuranceNeedMc(
+        marriedBase(),
+        "client",
+        { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
+        { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
+        { trials: 150 },
+      );
+    const a = await run();
+    const b = await run();
+    expect(a.faceValue).toBe(b.faceValue);
+    expect(a.achievedScore).toBe(b.achievedScore);
   }, 30_000);
 });
 
