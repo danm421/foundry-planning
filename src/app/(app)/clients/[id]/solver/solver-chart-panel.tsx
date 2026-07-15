@@ -26,6 +26,12 @@ import {
   SummariesIcon,
   BalanceSheetIcon,
 } from "./report-tab-icons";
+import { ReportCustomizePopover, type ReportMeta } from "./report-customize-popover";
+import {
+  visibleReportsInOrder,
+  resolveReportLayout,
+  type ReportLayoutEntry,
+} from "@/lib/solver/report-layout";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { SummaryKey } from "@/components/solver/summaries/types";
 import { SolverSummaryPanel } from "./solver-summary-panel";
@@ -36,7 +42,7 @@ import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
 // read the same. Keep `label` exact: tests query tabs by accessible name.
-const REPORT_TABS: {
+export const REPORT_TABS: {
   id: ReportKey;
   label: string;
   short: string;
@@ -52,6 +58,12 @@ const REPORT_TABS: {
   { id: "balanceSheet", label: "Balance Sheet", short: "Bal Sheet", icon: BalanceSheetIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
+
+// Shared by the tab strip and the customize popover — one label/icon lookup
+// keyed by ReportKey, derived from REPORT_TABS so the two never drift.
+const REPORT_TAB_META: Record<ReportKey, ReportMeta> = Object.fromEntries(
+  REPORT_TABS.map((t) => [t.id, { label: t.label, icon: t.icon }]),
+) as Record<ReportKey, ReportMeta>;
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
 // the data-entry grid shows on first paint; the advisor can drag it taller and
@@ -133,6 +145,11 @@ interface Props {
   activeReport: ReportKey;
   /** Called when a report tab is clicked, so the workspace can override the default. */
   onReportChange: (r: ReportKey) => void;
+  /** Advisor's customized report order + visibility. Omitted ⇒ all reports,
+   *  canonical order. */
+  layout?: ReportLayoutEntry[];
+  /** Persist a layout change; omitted ⇒ the customize gear is hidden. */
+  onLayoutChange?: (next: ReportLayoutEntry[]) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
   source: SolverSource;
@@ -168,6 +185,8 @@ export function SolverChartPanel({
   spouseName,
   activeReport,
   onReportChange,
+  layout,
+  onLayoutChange,
   baseTree,
   source,
   mutations,
@@ -185,6 +204,7 @@ export function SolverChartPanel({
   const tab = activeReport;
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
   const [showTable, setShowTable] = useState(false);
+  const [showCustomize, setShowCustomize] = useState(false);
   const chartHeight = useSyncExternalStore(
     subscribeChartHeight,
     getChartHeightSnapshot,
@@ -230,7 +250,8 @@ export function SolverChartPanel({
     mutations,
   );
 
-  const tabs = REPORT_TABS;
+  const effectiveLayout = layout ?? resolveReportLayout(null);
+  const visibleTabIds = visibleReportsInOrder(effectiveLayout);
   // Toggle visibility must match the over-time engine's own spouse check
   // (need-over-time.ts `hasSpouse`) so the client/spouse toggle never offers
   // a series the engine returned as null, nor hides one it computed.
@@ -257,34 +278,64 @@ export function SolverChartPanel({
   }, [tab, currentProjection, workingTree]);
 
   const reportTabs = (
-    <div
-      role="tablist"
-      aria-label="Chart view"
-      className="flex border-b border-hair-2"
-    >
-      {tabs.map((t) => {
-        const Icon = t.icon;
-        const active = tab === t.id;
-        return (
+    <div className="relative">
+      <div
+        role="tablist"
+        aria-label="Chart view"
+        className="flex border-b border-hair-2"
+      >
+        {visibleTabIds.map((id) => {
+          const m = REPORT_TAB_META[id];
+          const Icon = m.icon;
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-label={m.label}
+              title={m.label}
+              onClick={() => onReportChange(id)}
+              className={
+                active
+                  ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
+                  : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="max-w-full truncate">
+                {REPORT_TABS.find((t) => t.id === id)!.short}
+              </span>
+            </button>
+          );
+        })}
+        {onLayoutChange ? (
           <button
-            key={t.id}
             type="button"
-            role="tab"
-            aria-selected={active}
-            aria-label={t.label}
-            title={t.label}
-            onClick={() => onReportChange(t.id)}
-            className={
-              active
-                ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"
-                : "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-transparent px-1 py-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
-            }
+            aria-label="Customize reports"
+            title="Customize reports"
+            onClick={() => setShowCustomize((v) => !v)}
+            className="flex shrink-0 items-center border-b-2 border-transparent px-2 py-1.5 text-ink-3 transition-colors hover:text-ink"
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span className="max-w-full truncate">{t.short}</span>
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fillRule="evenodd"
+                d="M8.34 2.51a1 1 0 0 1 .97-.76h1.38a1 1 0 0 1 .97.76l.2.8a6.5 6.5 0 0 1 1.06.61l.79-.24a1 1 0 0 1 1.16.44l.69 1.2a1 1 0 0 1-.19 1.23l-.6.55c.03.2.05.4.05.61s-.02.41-.05.61l.6.55a1 1 0 0 1 .19 1.23l-.69 1.2a1 1 0 0 1-1.16.44l-.79-.24c-.33.25-.69.45-1.06.61l-.2.8a1 1 0 0 1-.97.76H9.31a1 1 0 0 1-.97-.76l-.2-.8a6.5 6.5 0 0 1-1.06-.61l-.79.24a1 1 0 0 1-1.16-.44l-.69-1.2a1 1 0 0 1 .19-1.23l.6-.55A6.6 6.6 0 0 1 5.18 10c0-.21.02-.41.05-.61l-.6-.55a1 1 0 0 1-.19-1.23l.69-1.2a1 1 0 0 1 1.16-.44l.79.24c.33-.25.69-.45 1.06-.61l.2-.8ZM10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
+                clipRule="evenodd"
+              />
+            </svg>
           </button>
-        );
-      })}
+        ) : null}
+      </div>
+      {showCustomize && onLayoutChange ? (
+        <ReportCustomizePopover
+          layout={effectiveLayout}
+          meta={REPORT_TAB_META}
+          onChange={onLayoutChange}
+          onClose={() => setShowCustomize(false)}
+        />
+      ) : null}
     </div>
   );
 

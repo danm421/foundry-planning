@@ -6,6 +6,11 @@ import userEvent from "@testing-library/user-event";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { ReportKey } from "../report-tab-link";
+import {
+  resolveReportLayout,
+  REPORT_KEYS,
+  type ReportLayoutEntry,
+} from "@/lib/solver/report-layout";
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
   PortfolioBarsChart: () => <div data-testid="chart-portfolio" />,
@@ -54,7 +59,7 @@ vi.mock("../solver-balance-sheet-panel", () => ({
   SolverBalanceSheetPanel: () => <div data-testid="solver-balance-sheet-panel" />,
 }));
 
-import { SolverChartPanel } from "../solver-chart-panel";
+import { SolverChartPanel, REPORT_TABS } from "../solver-chart-panel";
 
 const workingTree = {
   client: {
@@ -72,9 +77,13 @@ const liAssumptions = {} as LiAssumptions;
 function ControlledPanel({
   initialReport = "portfolio",
   computeStatus = "fresh",
+  layout,
+  onLayoutChange,
 }: {
   initialReport?: ReportKey;
   computeStatus?: "fresh" | "stale" | "computing" | "error";
+  layout?: ReportLayoutEntry[];
+  onLayoutChange?: (next: ReportLayoutEntry[]) => void;
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   return (
@@ -102,6 +111,8 @@ function ControlledPanel({
       onSummaryChange={() => undefined}
       selectedYear={null}
       onYearClick={() => undefined}
+      layout={layout}
+      onLayoutChange={onLayoutChange}
     />
   );
 }
@@ -241,5 +252,47 @@ describe("SolverChartPanel", () => {
     render(<ControlledPanel initialReport="balanceSheet" />);
     expect(screen.getByRole("tab", { name: "Balance Sheet" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("solver-balance-sheet-panel")).toBeInTheDocument();
+  });
+
+  it("renders only visible tabs, in layout order", () => {
+    // Hide Cash Flow; move Monte Carlo to the front.
+    const layout = resolveReportLayout([
+      { id: "monteCarlo", visible: true },
+      { id: "portfolio", visible: true },
+      { id: "cashflow", visible: false },
+    ]);
+    render(
+      <ControlledPanel
+        initialReport="monteCarlo"
+        layout={layout}
+        onLayoutChange={() => undefined}
+      />,
+    );
+    // Cash Flow is hidden.
+    expect(
+      screen.queryByRole("tab", { name: "Cash Flow" }),
+    ).not.toBeInTheDocument();
+    // Monte Carlo tab is present (visible) and first in the strip.
+    const tabNames = screen
+      .getAllByRole("tab")
+      .map((t) => t.getAttribute("aria-label"));
+    expect(tabNames[0]).toBe("Monte Carlo");
+    expect(tabNames).not.toContain("Cash Flow");
+  });
+
+  it("shows the customize gear only when onLayoutChange is provided", () => {
+    const { unmount } = render(<ControlledPanel />);
+    expect(
+      screen.queryByRole("button", { name: /customize reports/i }),
+    ).not.toBeInTheDocument();
+    unmount();
+    render(<ControlledPanel onLayoutChange={() => undefined} />);
+    expect(
+      screen.getByRole("button", { name: /customize reports/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps REPORT_TABS ordered identically to REPORT_KEYS", () => {
+    expect(REPORT_TABS.map((t) => t.id)).toEqual([...REPORT_KEYS]);
   });
 });
