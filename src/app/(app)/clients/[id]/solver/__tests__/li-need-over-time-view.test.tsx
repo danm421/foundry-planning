@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 
 // Stub Chart.js's Bar so jsdom never touches <canvas>, and capture the props
-// it was rendered with so we can assert on the labels/data the view builds.
+// (data + options) it was rendered with so we can assert on the stacked
+// datasets / axis / clipping the view builds.
 vi.mock("react-chartjs-2", () => ({
   Bar: (props: {
-    data: { labels: string[]; datasets: { label: string; data: (number | null)[] }[] };
+    data: {
+      labels: string[];
+      datasets: { label: string; data: (number | null)[]; stack?: string }[];
+    };
+    options: {
+      scales?: { x?: { stacked?: boolean }; y?: { stacked?: boolean } };
+    };
   }) => {
     (globalThis as Record<string, unknown>).__barProps = props;
     return null;
@@ -17,9 +23,29 @@ vi.mock("react-chartjs-2", () => ({
 
 import { LiNeedOverTimeView } from "../li-need-over-time-view";
 
-function barProps() {
-  return (globalThis as Record<string, unknown>).__barProps as {
-    data: { labels: string[]; datasets: { label: string; data: (number | null)[] }[] };
+type BarProps = {
+  data: {
+    labels: string[];
+    datasets: { label: string; data: (number | null)[]; stack?: string }[];
+  };
+  options: { scales?: { x?: { stacked?: boolean }; y?: { stacked?: boolean } } };
+};
+
+function barProps(): BarProps | undefined {
+  return (globalThis as Record<string, unknown>).__barProps as BarProps | undefined;
+}
+
+function row(
+  year: number,
+  clientNeed: number,
+  spouseNeed: number | null,
+): NeedOverTimeRow {
+  return {
+    year,
+    clientNeed,
+    spouseNeed,
+    clientStatus: "solved",
+    spouseStatus: spouseNeed == null ? null : "solved",
   };
 }
 
@@ -27,19 +53,114 @@ beforeEach(() => {
   delete (globalThis as Record<string, unknown>).__barProps;
 });
 
-describe("LiNeedOverTimeView — stable year axis", () => {
-  it("renders the full plan-year axis mid-run, with only solved years populated", () => {
-    // clientNeed is an exact $50k multiple so roundUpTo50k is the identity —
-    // the assertion below can compare the raw value directly.
-    const rows: NeedOverTimeRow[] = [
-      {
-        year: 2026,
-        clientNeed: 1_000_000,
-        spouseNeed: null,
-        clientStatus: "solved",
-        spouseStatus: null,
-      },
+describe("LiNeedOverTimeView — stacked client + spouse", () => {
+  it("renders client and spouse as two stacked datasets after the solve completes", () => {
+    // All values are exact $50k multiples so roundUpTo50k is the identity.
+    const rows = [row(2026, 1_000_000, 500_000), row(2027, 1_500_000, 1_000_000)];
+
+    render(
+      <LiNeedOverTimeView
+        rows={rows}
+        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
+        isRunning={false}
+        progress={null}
+        errorMessage={null}
+        isMarried={true}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    const { data, options } = barProps()!;
+    expect(data.datasets).toHaveLength(2);
+    // Client segment first, spouse second — labelled by name.
+    expect(data.datasets[0].label).toContain("Alex");
+    expect(data.datasets[1].label).toContain("Jordan");
+    expect(data.datasets[0].data).toEqual([1_000_000, 1_500_000]);
+    expect(data.datasets[1].data).toEqual([500_000, 1_000_000]);
+    // Both share one stack so the bars stack rather than group.
+    expect(data.datasets[0].stack).toBeDefined();
+    expect(data.datasets[0].stack).toBe(data.datasets[1].stack);
+    // Axes are stacked.
+    expect(options.scales?.x?.stacked).toBe(true);
+    expect(options.scales?.y?.stacked).toBe(true);
+  });
+
+  it("renders a single client dataset (no spouse) for an unmarried plan", () => {
+    render(
+      <LiNeedOverTimeView
+        rows={[row(2026, 1_000_000, null)]}
+        yearRange={{ planStartYear: 2026, planEndYear: 2026 }}
+        isRunning={false}
+        progress={null}
+        errorMessage={null}
+        isMarried={false}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    const { data } = barProps()!;
+    expect(data.datasets).toHaveLength(1);
+    expect(data.datasets[0].label).toContain("Alex");
+    expect(data.datasets[0].label).not.toContain("Jordan");
+  });
+
+  it("does NOT render the client/spouse toggle (both are shown at once now)", () => {
+    const { queryAllByRole } = render(
+      <LiNeedOverTimeView
+        rows={[row(2026, 1_000_000, 500_000)]}
+        yearRange={{ planStartYear: 2026, planEndYear: 2026 }}
+        isRunning={false}
+        progress={null}
+        errorMessage={null}
+        isMarried={true}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    expect(queryAllByRole("tab")).toHaveLength(0);
+  });
+});
+
+describe("LiNeedOverTimeView — clip to the need window", () => {
+  it("shows only the years that have a need once the solve is done", () => {
+    // Need only in 2028–2029; the flat $0 years before/after are dropped.
+    const rows = [
+      row(2026, 0, 0),
+      row(2027, 0, 0),
+      row(2028, 1_000_000, 500_000),
+      row(2029, 1_500_000, 0),
+      row(2030, 0, 0),
+      row(2031, 0, 0),
     ];
+
+    render(
+      <LiNeedOverTimeView
+        rows={rows}
+        yearRange={{ planStartYear: 2026, planEndYear: 2031 }}
+        isRunning={false}
+        progress={null}
+        errorMessage={null}
+        isMarried={true}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    const { data } = barProps()!;
+    // Only the need window, not the full plan range.
+    expect(data.labels).toEqual(["2028", "2029"]);
+    expect(data.datasets[0].data).toEqual([1_000_000, 1_500_000]);
+    // 2029 spouse is a solved $0 INSIDE the window — kept as 0, not dropped.
+    expect(data.datasets[1].data).toEqual([500_000, 0]);
+  });
+
+  it("keeps the full stable plan-year axis while the solve is still streaming", () => {
+    // Mid-run: only 2026 has streamed in. Axis must still span all plan years
+    // so bars rise into place instead of the axis growing underneath.
+    const rows = [row(2026, 1_000_000, 500_000)];
 
     render(
       <LiNeedOverTimeView
@@ -48,155 +169,21 @@ describe("LiNeedOverTimeView — stable year axis", () => {
         isRunning={true}
         progress={{ done: 1, total: 3 }}
         errorMessage={null}
-        isMarried={false}
-        clientName="Client"
-        spouseName="Spouse"
-      />,
-    );
-
-    const props = barProps();
-    // Axis spans every plan year, not just the one solved row.
-    expect(props.data.labels).toEqual(["2026", "2027", "2028"]);
-    // Solved year gets its rounded value; unsolved years render as `null`
-    // gaps (Chart.js skips null points) rather than 0 or being omitted.
-    expect(props.data.datasets[0].data).toEqual([1_000_000, null, null]);
-  });
-
-  it("keeps the progress bar visible alongside the chart while running", () => {
-    const rows: NeedOverTimeRow[] = [
-      {
-        year: 2026,
-        clientNeed: 500_000,
-        spouseNeed: null,
-        clientStatus: "solved",
-        spouseStatus: null,
-      },
-    ];
-
-    const { getByRole } = render(
-      <LiNeedOverTimeView
-        rows={rows}
-        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
-        isRunning={true}
-        progress={{ done: 1, total: 2 }}
-        errorMessage={null}
-        isMarried={false}
-        clientName="Client"
-        spouseName="Spouse"
-      />,
-    );
-
-    // Progress bar (role="status") is present at the same time the chart
-    // renders — the whole point is bars rising in place during the solve.
-    expect(getByRole("status")).toBeTruthy();
-    expect(barProps().data.labels).toEqual(["2026", "2027"]);
-  });
-
-  it("shows the preparing message before the year range is known", () => {
-    const { getByText, queryByRole } = render(
-      <LiNeedOverTimeView
-        rows={null}
-        yearRange={null}
-        isRunning={true}
-        progress={null}
-        errorMessage={null}
-        isMarried={false}
-        clientName="Client"
-        spouseName="Spouse"
-      />,
-    );
-
-    expect(
-      getByText("Preparing the life-insurance need-by-year solve…"),
-    ).toBeTruthy();
-    expect((globalThis as Record<string, unknown>).__barProps).toBeUndefined();
-    expect(queryByRole("status")).toBeTruthy();
-  });
-
-  it("allows switching the client/spouse toggle mid-fill once yearRange is known", () => {
-    const rows: NeedOverTimeRow[] = [
-      {
-        year: 2026,
-        clientNeed: 1_000_000,
-        spouseNeed: 500_000,
-        clientStatus: "solved",
-        spouseStatus: "solved",
-      },
-    ];
-
-    const { getByRole } = render(
-      <LiNeedOverTimeView
-        rows={rows}
-        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
-        isRunning={true}
-        progress={{ done: 1, total: 2 }}
-        errorMessage={null}
         isMarried={true}
-        clientName="Client"
-        spouseName="Spouse"
+        clientName="Alex"
+        spouseName="Jordan"
       />,
     );
 
-    // The decedent toggle is available even while the solve is still running.
-    expect(getByRole("tab", { name: "Client dies" })).toBeTruthy();
-    expect(getByRole("tab", { name: "Spouse dies" })).toBeTruthy();
+    const { data } = barProps()!;
+    expect(data.labels).toEqual(["2026", "2027", "2028"]);
+    // Streamed year gets its value; unsolved years are null gaps.
+    expect(data.datasets[0].data).toEqual([1_000_000, null, null]);
+    expect(data.datasets[1].data).toEqual([500_000, null, null]);
   });
 
-  it("plots the SPOUSE dataset — not the client's — after selecting the spouse decedent toggle", () => {
-    // clientNeed (1,000,000) and spouseNeed (500,000) are exact $50k
-    // multiples so roundUpTo50k is the identity for both — deliberately
-    // DIFFERENT values so this test is a genuine discriminator: if the
-    // client/spouse dataset ternary regressed to always read `clientNeed`,
-    // the asserted data array would show 1,000,000 (client) instead of the
-    // expected 500,000 (spouse) and this test would fail.
-    const rows: NeedOverTimeRow[] = [
-      {
-        year: 2026,
-        clientNeed: 1_000_000,
-        spouseNeed: 500_000,
-        clientStatus: "solved",
-        spouseStatus: "solved",
-      },
-    ];
-
-    const { getByRole } = render(
-      <LiNeedOverTimeView
-        rows={rows}
-        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
-        isRunning={true}
-        progress={{ done: 1, total: 2 }}
-        errorMessage={null}
-        isMarried={true}
-        clientName="Client"
-        spouseName="Spouse"
-      />,
-    );
-
-    fireEvent.click(getByRole("tab", { name: "Spouse dies" }));
-
-    const props = barProps();
-    // Spouse's need (500,000), not the client's (1,000,000); year 2027 is
-    // still pending so it renders as `null`, same gap semantics as the
-    // client path.
-    expect(props.data.datasets[0].data).toEqual([500_000, null]);
-    expect(props.data.datasets[0].label).toContain("Spouse");
-    expect(props.data.datasets[0].label).not.toContain("Client");
-  });
-
-  it("renders a solved $0 need as 0, distinct from a pending year's null gap", () => {
-    // roundUpTo50k(0) === 0, so a genuinely solved zero-need year must show
-    // up as the number 0 — not be mistaken for an unsolved gap, which
-    // renders as `null`. 2027 is deliberately left out of `rows` to exercise
-    // both cases side by side.
-    const rows: NeedOverTimeRow[] = [
-      {
-        year: 2026,
-        clientNeed: 0,
-        spouseNeed: null,
-        clientStatus: "solved",
-        spouseStatus: null,
-      },
-    ];
+  it("distinguishes a solved $0 (0) from a pending year (null) while streaming", () => {
+    const rows = [row(2026, 0, null)];
 
     render(
       <LiNeedOverTimeView
@@ -206,13 +193,75 @@ describe("LiNeedOverTimeView — stable year axis", () => {
         progress={{ done: 1, total: 2 }}
         errorMessage={null}
         isMarried={false}
-        clientName="Client"
-        spouseName="Spouse"
+        clientName="Alex"
+        spouseName="Jordan"
       />,
     );
 
-    const props = barProps();
-    // Solved-zero year (2026) is `0`; still-pending year (2027) is `null`.
-    expect(props.data.datasets[0].data).toEqual([0, null]);
+    const { data } = barProps()!;
+    expect(data.datasets[0].data).toEqual([0, null]);
+  });
+});
+
+describe("LiNeedOverTimeView — loading + empty states", () => {
+  it("shows the developing skeleton (and no chart) before the year range is known", () => {
+    const { getByText } = render(
+      <LiNeedOverTimeView
+        rows={null}
+        yearRange={null}
+        isRunning={true}
+        progress={null}
+        errorMessage={null}
+        isMarried={false}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    // Accessible label is preserved for screen readers even though the visual
+    // is now a shimmering skeleton rather than plain text.
+    expect(
+      getByText(/Preparing the life-insurance need-by-year solve/i),
+    ).toBeTruthy();
+    expect(barProps()).toBeUndefined();
+  });
+
+  it("shows a clean 'no need' display when no year ever has a need", () => {
+    const rows = [row(2026, 0, 0), row(2027, 0, 0)];
+
+    const { getByText } = render(
+      <LiNeedOverTimeView
+        rows={rows}
+        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
+        isRunning={false}
+        progress={null}
+        errorMessage={null}
+        isMarried={true}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    expect(getByText(/No additional life insurance needed/i)).toBeTruthy();
+    // No chart is drawn in the empty state.
+    expect(barProps()).toBeUndefined();
+  });
+
+  it("keeps the progress bar visible alongside the chart while streaming", () => {
+    const { getByRole } = render(
+      <LiNeedOverTimeView
+        rows={[row(2026, 500_000, null)]}
+        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
+        isRunning={true}
+        progress={{ done: 1, total: 2 }}
+        errorMessage={null}
+        isMarried={false}
+        clientName="Alex"
+        spouseName="Jordan"
+      />,
+    );
+
+    expect(getByRole("status")).toBeTruthy();
+    expect(barProps()!.data.labels).toEqual(["2026", "2027"]);
   });
 });
