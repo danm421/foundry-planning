@@ -315,6 +315,11 @@ export function SolverChartPanel({
             type="button"
             aria-label="Customize reports"
             title="Customize reports"
+            // Stop the mousedown from reaching the popover's document-level
+            // outside-click listener; otherwise a second click on the gear
+            // would close the popover (mousedown) and immediately reopen it
+            // (click), making it impossible to dismiss via the gear.
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setShowCustomize((v) => !v)}
             className="flex shrink-0 items-center border-b-2 border-transparent px-2 py-1.5 text-ink-3 transition-colors hover:text-ink"
           >

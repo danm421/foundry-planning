@@ -295,4 +295,21 @@ describe("SolverChartPanel", () => {
   it("keeps REPORT_TABS ordered identically to REPORT_KEYS", () => {
     expect(REPORT_TABS.map((t) => t.id)).toEqual([...REPORT_KEYS]);
   });
+
+  it("closes the customize popover when the gear is clicked a second time", async () => {
+    render(<ControlledPanel onLayoutChange={() => undefined} />);
+    const gear = screen.getByRole("button", { name: /customize reports/i });
+    await userEvent.click(gear);
+    expect(
+      screen.getByRole("dialog", { name: /customize reports/i }),
+    ).toBeInTheDocument();
+    // The gear must act as a toggle. The popover closes on any outside
+    // mousedown; without a guard on the gear, its own mousedown closes the
+    // popover and the ensuing click immediately reopens it, so it could never
+    // be dismissed by clicking the gear again.
+    await userEvent.click(gear);
+    expect(
+      screen.queryByRole("dialog", { name: /customize reports/i }),
+    ).not.toBeInTheDocument();
+  });
 });
