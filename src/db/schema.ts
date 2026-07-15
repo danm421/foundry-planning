@@ -27,6 +27,7 @@ import type { BracketTier } from "@/lib/tax/types";
 import type { IrmaaTier } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
+import type { ReportLayoutEntry } from "@/lib/solver/report-layout";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -4369,6 +4370,23 @@ export const opsAdmins = pgTable(
   },
   (t) => [check("ops_admins_role_check", sql`${t.role} IN ('support','ops','superadmin')`)],
 );
+
+// Per-advisor customization of the solver right-panel report tab strip: the
+// order reports appear in and which are hidden. One row per Clerk *user* — the
+// preference follows the advisor across every client, scenario, and firm, so it
+// is deliberately NOT org-scoped. `layout` is the full ordered list with a
+// visible flag per report; it is reconciled against the canonical REPORT_KEYS
+// on every read (see resolveReportLayout), so adding/removing a report in code
+// never breaks a stored row.
+export const userSolverReportLayout = pgTable("user_solver_report_layout", {
+  clerkUserId: text("clerk_user_id").primaryKey(),
+  layout: jsonb("layout").$type<ReportLayoutEntry[]>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export type UserSolverReportLayoutRow = InferSelectModel<typeof userSolverReportLayout>;
 
 // Per-org entitlement overrides set by Foundry ops staff. Append-style and
 // attributable: each manual grant/revoke is its OWN row (reason + set_by +
