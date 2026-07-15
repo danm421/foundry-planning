@@ -32,8 +32,16 @@ const DEFAULT_TRIALS = 250;
 
 /** Coarse Monte Carlo trials used during the search phase, before the full-trial
  *  refine. Low enough to make search probes cheap, high enough to land near the
- *  root; the refine phase resolves the final SCORE_TOLERANCE band. */
-const DEFAULT_COARSE_TRIALS = 64;
+ *  root; the refine phase resolves the final SCORE_TOLERANCE band. A coarse-count
+ *  sweep on the married $12M worst case (see profile-li-mc.local.ts) found 32 the
+ *  sweet spot: 64 was near-worst (the refine ran more full-trial probes), 24 was
+ *  fast but drifted further from today's answer and could slightly regress cheap
+ *  solves, and 32 delivered ~2-4× on the expensive solves the progressive path
+ *  exists to speed up while keeping the sub-tolerance face drift tightest. Cheap
+ *  solves (small face, ~5 full evals) see little benefit either way —
+ *  progressive's coarse+refine overhead only pays off when the single-phase
+ *  solve would itself run many probes. */
+const DEFAULT_COARSE_TRIALS = 32;
 
 /** Bisection stops when the achieved MC score is within ±0.02 of the target. */
 const SCORE_TOLERANCE = 0.02;
@@ -57,7 +65,7 @@ export interface SolveLifeInsuranceNeedMcOptions {
   /** Monte Carlo trials per candidate evaluation. Defaults to 250. Tests
    *  pass a low count (100–200) to stay within their time budget. */
   trials?: number;
-  /** Coarse trials for the search phase (Phase A). Defaults to 64. When
+  /** Coarse trials for the search phase (Phase A). Defaults to 32. When
    *  `coarseTrials >= trials` the coarse phase is skipped and the solver runs a
    *  single full-trial pass (parity path). */
   coarseTrials?: number;

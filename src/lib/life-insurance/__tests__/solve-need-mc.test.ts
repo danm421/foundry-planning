@@ -101,7 +101,7 @@ describe("solveLifeInsuranceNeedMc", () => {
       "client",
       { ...assumptions, leaveToHeirsAmount: 8_000_000, mcTargetScore: 0.85 },
       { ...mcPayload(), requiredMinimumAssetLevel: 8_000_000 },
-      { trials: 150 }, // coarse 64 → refine 150
+      { trials: 150 }, // coarse 32 → refine 150
     );
     expect(r.status).toBe("solved");
     expect(r.faceValue).toBeGreaterThan(0);
