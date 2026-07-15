@@ -225,4 +225,14 @@ describe("buildQuickAdd529", () => {
     const { rule } = buildQuickAdd529({ ...base, annualAmount: 0 });
     expect(rule).toBeNull();
   });
+
+  it("returns a null rule when the annual contribution is negative", () => {
+    const { rule } = buildQuickAdd529({ ...base, annualAmount: -100 });
+    expect(rule).toBeNull();
+  });
+
+  it("falls back to a default name when the given name is blank", () => {
+    const { account } = buildQuickAdd529({ ...base, name: "   " });
+    expect(account.name).toBe("529 Plan");
+  });
 });

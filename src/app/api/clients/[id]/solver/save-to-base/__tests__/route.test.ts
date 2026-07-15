@@ -472,4 +472,71 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     // Guarded BEFORE the transaction — nothing written.
     expect(inserts).toHaveLength(0);
   });
+
+  it("validates an education goal's forFamilyMemberId against tenant scope", async () => {
+    const EDU_EXPENSE = {
+      id: "syn-edu-1",
+      name: "College",
+      type: "education",
+      annualAmount: 30000,
+      startYear: 2032,
+      endYear: 2035,
+      growthRate: 0.05,
+      dedicatedAccountIds: [],
+      payShortfallOutOfPocket: false,
+      institutionState: null,
+      institutionName: null,
+      // Not any account-owner or 529 grantor/beneficiary id — this must flow
+      // into the SAME fmCheck call via expenseInserts/expenseFullUpdates, or a
+      // crafted id here would slip past tenant validation.
+      forFamilyMemberId: "cross-tenant-fm",
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "expense-upsert", id: "syn-edu-1", value: EDU_EXPENSE }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The education goal's "For" id was actually consulted by the tenant guard.
+    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["cross-tenant-fm"]),
+    );
+  });
+
+  it("returns 400 when an education goal's forFamilyMemberId is not in the client", async () => {
+    // Only the "For" family-member id fails tenant validation; the other
+    // (empty) guards pass. This forces the 400 to come from the forFamilyMemberId
+    // guard specifically — the test fails if that guard is removed.
+    vi.mocked(assertFamilyMembersInClient).mockImplementation((async (_clientId: string, ids: string[]) =>
+      ids.includes("cross-tenant-fm")
+        ? { ok: false, reason: "Family member cross-tenant-fm not owned by this client" }
+        : { ok: true }) as never);
+    const EDU_EXPENSE = {
+      id: "syn-edu-1",
+      name: "College",
+      type: "education",
+      annualAmount: 30000,
+      startYear: 2032,
+      endYear: 2035,
+      growthRate: 0.05,
+      dedicatedAccountIds: [],
+      payShortfallOutOfPocket: false,
+      institutionState: null,
+      institutionName: null,
+      forFamilyMemberId: "cross-tenant-fm",
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "expense-upsert", id: "syn-edu-1", value: EDU_EXPENSE }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(inserts).toHaveLength(0);
+  });
 });

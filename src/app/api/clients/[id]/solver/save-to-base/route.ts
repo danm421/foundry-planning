@@ -333,6 +333,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         a.education529?.beneficiaryFamilyMemberId,
         a.education529?.grantorFamilyMemberId,
       ]),
+      // Education goals carry a "For" family member (expense.forFamilyMemberId) —
+      // a GLOBAL FK to family_members.id with no tenant column, made user-settable
+      // by the solver's "For" select. Validate it here or a crafted id could
+      // FK-crash the save (500) or attach a cross-tenant reference.
+      ...[...expenseInserts, ...expenseFullUpdates].map((e) => e.forFamilyMemberId),
     ]);
     if (!fmCheck.ok) {
       return NextResponse.json({ error: fmCheck.reason }, { status: 400 });
