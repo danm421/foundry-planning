@@ -38,11 +38,12 @@ describe("EnterClient", () => {
     expect(replaceMock).toHaveBeenCalledWith("/portal/intake");
   });
 
-  it("short-circuits to the wizard when already signed in", async () => {
+  it("consumes a fresh ticket even when a stale session exists (does not trust the cookie)", async () => {
     isSignedIn = true;
     render(<EnterClient ticket="sit_abc" />);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/portal/intake"));
-    expect(createMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith({ session: "sess_1" }));
+    expect(createMock).toHaveBeenCalledWith({ strategy: "ticket", ticket: "sit_abc" });
+    expect(replaceMock).toHaveBeenCalledWith("/portal/intake");
   });
 
   it("shows an error state when the ticket is rejected", async () => {
@@ -55,6 +56,13 @@ describe("EnterClient", () => {
   it("shows an error state when no ticket is present", async () => {
     render(<EnterClient ticket={null} />);
     await waitFor(() => expect(screen.getByText(/expired/i)).toBeTruthy());
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits to the wizard with no ticket when already signed in", async () => {
+    isSignedIn = true;
+    render(<EnterClient ticket={null} />);
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/portal/intake"));
     expect(createMock).not.toHaveBeenCalled();
   });
 });

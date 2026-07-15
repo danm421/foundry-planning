@@ -25,25 +25,25 @@ export function EnterClient({ ticket }: { ticket: string | null }): ReactElement
     if (!isLoaded || ran.current) return;
     ran.current = true;
     void (async () => {
+      if (ticket) {
+        try {
+          const res = await signIn.create({ strategy: "ticket", ticket });
+          if (res.status === "complete" && res.createdSessionId) {
+            await setActive({ session: res.createdSessionId });
+            router.replace("/portal/intake");
+          } else {
+            setFailed(true);
+          }
+        } catch {
+          setFailed(true);
+        }
+        return;
+      }
       if (isSignedIn) {
         router.replace("/portal/intake");
         return;
       }
-      if (!ticket) {
-        setFailed(true);
-        return;
-      }
-      try {
-        const res = await signIn.create({ strategy: "ticket", ticket });
-        if (res.status === "complete" && res.createdSessionId) {
-          await setActive({ session: res.createdSessionId });
-          router.replace("/portal/intake");
-        } else {
-          setFailed(true);
-        }
-      } catch {
-        setFailed(true);
-      }
+      setFailed(true);
     })();
   }, [isLoaded, isSignedIn, ticket, signIn, setActive, router]);
 
