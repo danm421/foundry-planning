@@ -502,17 +502,11 @@ html {
 }
 
 /* ------------------------------------------------------------------ */
-/* LI need-over-time motion.                                           */
+/* LI need-over-time chart sheen.                                      */
 /*                                                                     */
 /* `.li-shimmer-sweep` — a verdigris sheen gliding across the chart    */
-/* while the need-by-year solve streams in.                            */
-/*                                                                     */
-/* `.li-shield-*` — the "solving" loader shown before the plan-year    */
-/* range lands: a shield-check that draws itself in (outline, then     */
-/* check) over a soft verdigris halo that breathes. Mirrors the shield */
-/* the empty NoNeedState renders, so loading and "no need" share one   */
-/* mark. Under reduced motion the sheen hides and the shield settles   */
-/* to a static, fully-drawn mark.                                      */
+/* while the need-by-year solve streams in. (The "solving" mark itself */
+/* now rides the shared `.mark-*` loader recipe below.)               */
 /* ------------------------------------------------------------------ */
 
 @keyframes liShimmerSweep {
@@ -533,38 +527,48 @@ html {
   animation: liShimmerSweep 1.9s ease-in-out infinite;
 }
 
-/* Shield draw-in: offset the normalised (pathLength=100) stroke to 0. */
-@keyframes liShieldDraw {
+@media (prefers-reduced-motion: reduce) {
+  .li-shimmer-sweep { animation: none; opacity: 0; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Branded "mark" loaders (shared).                                    */
+/*                                                                     */
+/* `.mark-draw` / `.mark-halo` power the calm, branded loaders that    */
+/* stand in for a running computation: a verdigris mark that draws     */
+/* itself in (stroke-dashoffset over pathLength=100 paths) above a     */
+/* soft verdigris halo that breathes. Per-stroke duration + delay come */
+/* from the `--mark-draw-dur` / `--mark-draw-delay` custom props, so    */
+/* one recipe serves both the LI shield-check and the Monte Carlo fan  */
+/* mark. Under reduced motion every stroke settles fully drawn and the */
+/* halo holds steady. Driven by `components/mark-loader.tsx`.          */
+/* ------------------------------------------------------------------ */
+
+/* Draw-in: offset the normalised (pathLength=100) stroke to 0. */
+@keyframes markDraw {
   to { stroke-dashoffset: 0; }
 }
 
 /* Halo breath — a calm pulse of glow behind the mark. */
-@keyframes liShieldHalo {
+@keyframes markHalo {
   0%, 100% { opacity: 0.35; transform: scale(0.9); }
   50%      { opacity: 0.8;  transform: scale(1.06); }
 }
 
-.li-shield-halo {
+.mark-halo {
   transform-origin: center;
   will-change: opacity, transform;
-  animation: liShieldHalo 2.8s ease-in-out infinite;
+  animation: markHalo 2.8s ease-in-out infinite;
 }
 
-.li-shield-outline {
+.mark-draw {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  animation: liShieldDraw 1.1s ease-out 0.1s forwards;
-}
-
-.li-shield-check {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  animation: liShieldDraw 0.55s ease-out 0.95s forwards;
+  animation: markDraw var(--mark-draw-dur, 1s) ease-out
+    var(--mark-draw-delay, 0s) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .li-shimmer-sweep { animation: none; opacity: 0; }
-  .li-shield-halo { animation: none; opacity: 0.5; transform: scale(1); }
-  .li-shield-outline,
-  .li-shield-check { animation: none; stroke-dashoffset: 0; }
+  .mark-halo { animation: none; opacity: 0.5; transform: scale(1); }
+  .mark-draw { animation: none; stroke-dashoffset: 0; }
 }

@@ -219,14 +219,14 @@ describe("LiNeedOverTimeView — loading + empty states", () => {
     );
 
     // The preparing state is now an animated shield mark. Its sr-only status
-    // stands in for the old skeleton's accessible label, and the drawn shield
-    // outline confirms the mark itself rendered.
+    // stands in for the old skeleton's accessible label, and a drawn stroke
+    // (shared `.mark-draw` class) confirms the mark itself rendered.
     expect(
       getByText(
         /Solving the life-insurance need, year by year\. This can take a moment/i,
       ),
     ).toBeTruthy();
-    expect(container.querySelector(".li-shield-outline")).toBeTruthy();
+    expect(container.querySelector(".mark-draw")).toBeTruthy();
     expect(barProps()).toBeUndefined();
   });
 
