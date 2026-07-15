@@ -103,6 +103,98 @@ export async function solveNeedBracket(
 }
 
 /**
+ * Full-trial refinement of a coarse-phase verdict. Phase A runs the bracket +
+ * root-find cheaply at a low trial count; this confirms / sharpens it at the
+ * full trial count so the REPORTED face value is always governed by the
+ * full-trial objective (same semantics as a single-phase solve).
+ *
+ * `evaluateFull` runs Monte Carlo at the full trial count. Any ambiguous case —
+ * a coarse verdict the full-trial objective disagrees with, or a bracket the
+ * refine can't cheaply establish — falls back to a full single-phase
+ * `solveNeedBracket(evaluateFull, opts)`, so refinement can never do worse than
+ * today's solve.
+ */
+export async function refineNeed(
+  evaluateFull: (faceValue: number) => Promise<number>,
+  coarse: { status: "solved" | "exceeds-cap"; faceValue: number; achievedScore: number },
+  opts: { target: number; cap: number; tolerance: number; maxIterations: number },
+): Promise<{ status: "solved" | "exceeds-cap"; faceValue: number; achievedScore: number }> {
+  const { target, cap, tolerance } = opts;
+  const fundedThreshold = target > tolerance ? target - tolerance : target;
+
+  if (coarse.status === "exceeds-cap") {
+    const fcap = await evaluateFull(cap);
+    if (fcap < target) {
+      return { status: "exceeds-cap", faceValue: cap, achievedScore: fcap };
+    }
+    return solveNeedBracket(evaluateFull, opts); // coarse over-stated the need
+  }
+
+  if (coarse.faceValue === 0) {
+    const f0 = await evaluateFull(0);
+    if (f0 >= fundedThreshold) {
+      return { status: "solved", faceValue: 0, achievedScore: f0 };
+    }
+    return solveNeedBracket(evaluateFull, opts); // not actually funded at full trials
+  }
+
+  return refineAroundFace(evaluateFull, coarse.faceValue, opts);
+}
+
+/**
+ * Establish a tight full-trial bracket around the coarse root `Fc` and run the
+ * Illinois root-find inside it. Widens outward (×2, small guard); if it cannot
+ * cheaply bracket the full-trial root, falls back to a full solve.
+ */
+async function refineAroundFace(
+  evaluateFull: (faceValue: number) => Promise<number>,
+  Fc: number,
+  opts: { target: number; cap: number; tolerance: number; maxIterations: number },
+): Promise<{ status: "solved" | "exceeds-cap"; faceValue: number; achievedScore: number }> {
+  const { target, cap, tolerance, maxIterations } = opts;
+  const fFc = await evaluateFull(Fc);
+  if (Math.abs(fFc - target) <= tolerance) {
+    return { status: "solved", faceValue: Math.round(Fc), achievedScore: fFc };
+  }
+
+  const WIDEN_GUARD = 6;
+  let lo: number, flo: number, hi: number, fhi: number;
+  let delta = Math.max(0.15 * Fc, 1000);
+
+  if (fFc < target) {
+    // Root is above Fc; Fc is the lower endpoint, expand upward for hi.
+    lo = Fc;
+    flo = fFc;
+    hi = Math.min(Fc + delta, cap);
+    fhi = await evaluateFull(hi);
+    for (let g = 0; fhi < target && hi < cap && g < WIDEN_GUARD; g++) {
+      delta *= 2;
+      hi = Math.min(Fc + delta, cap);
+      fhi = await evaluateFull(hi);
+    }
+    if (fhi < target) return solveNeedBracket(evaluateFull, opts);
+  } else {
+    // Root is below Fc; Fc is the upper endpoint, expand downward for lo.
+    hi = Fc;
+    fhi = fFc;
+    lo = Math.max(Fc - delta, 0);
+    flo = await evaluateFull(lo);
+    for (let g = 0; flo >= target && lo > 0 && g < WIDEN_GUARD; g++) {
+      delta *= 2;
+      lo = Math.max(Fc - delta, 0);
+      flo = await evaluateFull(lo);
+    }
+    if (flo >= target) return solveNeedBracket(evaluateFull, opts);
+  }
+
+  const root = await findRootAsync(
+    { lo, flo, hi, fhi, target, tol: tolerance, maxIterations },
+    evaluateFull,
+  );
+  return { status: "solved", faceValue: Math.round(root.x), achievedScore: root.fx };
+}
+
+/**
  * Bisect on `faceValue` to find the minimum death benefit such that the
  * survivor's plan achieves a Monte Carlo success rate of at least
  * `assumptions.mcTargetScore`.
