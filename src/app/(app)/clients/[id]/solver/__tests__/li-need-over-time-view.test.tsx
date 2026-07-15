@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import type { NeedOverTimeRow } from "@/lib/life-insurance/need-over-time";
 
@@ -139,5 +140,79 @@ describe("LiNeedOverTimeView — stable year axis", () => {
     // The decedent toggle is available even while the solve is still running.
     expect(getByRole("tab", { name: "Client dies" })).toBeTruthy();
     expect(getByRole("tab", { name: "Spouse dies" })).toBeTruthy();
+  });
+
+  it("plots the SPOUSE dataset — not the client's — after selecting the spouse decedent toggle", () => {
+    // clientNeed (1,000,000) and spouseNeed (500,000) are exact $50k
+    // multiples so roundUpTo50k is the identity for both — deliberately
+    // DIFFERENT values so this test is a genuine discriminator: if the
+    // client/spouse dataset ternary regressed to always read `clientNeed`,
+    // the asserted data array would show 1,000,000 (client) instead of the
+    // expected 500,000 (spouse) and this test would fail.
+    const rows: NeedOverTimeRow[] = [
+      {
+        year: 2026,
+        clientNeed: 1_000_000,
+        spouseNeed: 500_000,
+        clientStatus: "solved",
+        spouseStatus: "solved",
+      },
+    ];
+
+    const { getByRole } = render(
+      <LiNeedOverTimeView
+        rows={rows}
+        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
+        isRunning={true}
+        progress={{ done: 1, total: 2 }}
+        errorMessage={null}
+        isMarried={true}
+        clientName="Client"
+        spouseName="Spouse"
+      />,
+    );
+
+    fireEvent.click(getByRole("tab", { name: "Spouse dies" }));
+
+    const props = barProps();
+    // Spouse's need (500,000), not the client's (1,000,000); year 2027 is
+    // still pending so it renders as `null`, same gap semantics as the
+    // client path.
+    expect(props.data.datasets[0].data).toEqual([500_000, null]);
+    expect(props.data.datasets[0].label).toContain("Spouse");
+    expect(props.data.datasets[0].label).not.toContain("Client");
+  });
+
+  it("renders a solved $0 need as 0, distinct from a pending year's null gap", () => {
+    // roundUpTo50k(0) === 0, so a genuinely solved zero-need year must show
+    // up as the number 0 — not be mistaken for an unsolved gap, which
+    // renders as `null`. 2027 is deliberately left out of `rows` to exercise
+    // both cases side by side.
+    const rows: NeedOverTimeRow[] = [
+      {
+        year: 2026,
+        clientNeed: 0,
+        spouseNeed: null,
+        clientStatus: "solved",
+        spouseStatus: null,
+      },
+    ];
+
+    render(
+      <LiNeedOverTimeView
+        rows={rows}
+        yearRange={{ planStartYear: 2026, planEndYear: 2027 }}
+        isRunning={true}
+        progress={{ done: 1, total: 2 }}
+        errorMessage={null}
+        isMarried={false}
+        clientName="Client"
+        spouseName="Spouse"
+      />,
+    );
+
+    const props = barProps();
+    // Solved-zero year (2026) is `0`; still-pending year (2027) is `null`.
+    expect(props.data.datasets[0].data).toEqual([0, null]);
   });
 });

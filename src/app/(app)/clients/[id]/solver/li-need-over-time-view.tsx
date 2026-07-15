@@ -123,8 +123,6 @@ function ChartPanel({
   spouseName: string;
 }) {
   const theme = useThemeName();
-  const chrome = chartChrome(theme);
-  const pal = dataPalette(theme);
 
   // Stable full-plan year axis, independent of how many rows have streamed
   // in so far — indexed by year so bars rise into place left-to-right as the
@@ -140,9 +138,17 @@ function ChartPanel({
   }, [yearRange.planStartYear, yearRange.planEndYear]);
   const labels = useMemo(() => years.map((y) => String(y)), [years]);
 
-  const seriesLabel = activeDeathOf === "spouse" ? `${spouseName} dies` : `${clientName} dies`;
-  const seriesColor = activeDeathOf === "spouse" ? pal.grey : pal.blue;
+  // `pal`/`seriesLabel`/`seriesColor` are computed INSIDE this memo (keyed on
+  // the primitive `theme` plus the other primitive deps) rather than as
+  // freshly-built objects/derived values at component scope — matching
+  // portfolio-bars-chart.tsx's pattern. That keeps `data` recomputing only
+  // when one of its real inputs changes, while still recomputing whenever
+  // `rows` grows (progressive fill during the streaming solve).
   const data = useMemo(() => {
+    const pal = dataPalette(theme);
+    const seriesLabel =
+      activeDeathOf === "spouse" ? `${spouseName} dies` : `${clientName} dies`;
+    const seriesColor = activeDeathOf === "spouse" ? pal.grey : pal.blue;
     const byYear = new Map(rows.map((r) => [r.year, r]));
     const valueFor = (y: number): number | null => {
       const r = byYear.get(y);
@@ -163,10 +169,17 @@ function ChartPanel({
         },
       ],
     };
-  }, [rows, years, labels, activeDeathOf, seriesLabel, seriesColor]);
+  }, [rows, years, labels, activeDeathOf, clientName, spouseName, theme]);
 
-  const options = useMemo(
-    () => ({
+  // `chrome` is computed INSIDE this memo, keyed on the primitive `theme`,
+  // instead of at component scope — a component-scope `chartChrome(theme)`
+  // returns a fresh object every render, so keying this memo on that object
+  // (as it previously did via `[chrome]`) made it recompute on every one of
+  // the many `rows`-driven re-renders during a streaming solve. Keyed on
+  // `theme` alone, it now only recomputes when the theme actually changes.
+  const options = useMemo(() => {
+    const chrome = chartChrome(theme);
+    return {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index" as const, intersect: false },
@@ -198,9 +211,8 @@ function ChartPanel({
           grid: { color: chrome.grid },
         },
       },
-    }),
-    [chrome],
-  );
+    };
+  }, [theme]);
   return (
     <div className="h-full">
       <Bar data={data} options={options} />
