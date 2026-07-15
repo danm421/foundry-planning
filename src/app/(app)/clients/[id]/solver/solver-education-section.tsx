@@ -20,6 +20,8 @@ interface Props {
   /** Accepted for API symmetry with sibling sections; unused in v1 (goal edits
    *  flow through expense-upsert, which carries its own reset semantics). */
   onResetField?: (keys: SolverMutationKey[]) => void;
+  /** CMA-resolved growth for a new 529 (retirement-category default). */
+  growth529?: number;
 }
 
 function ownerFamilyMemberIds(acct: {
@@ -47,6 +49,7 @@ export function SolverEducationSection({
   source,
   mutations,
   onChange,
+  growth529 = 0.05,
 }: Props) {
   const goals = workingTree.expenses.filter((e) => e.type === "education");
   const accountsById = useMemo(
@@ -64,13 +67,24 @@ export function SolverEducationSection({
       })),
     [workingTree.accounts],
   );
+  const beneficiaries = useMemo(
+    () =>
+      (workingTree.familyMembers ?? []).map((fm) => ({
+        familyMemberId: fm.id,
+        label: `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`,
+      })),
+    [workingTree.familyMembers],
+  );
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [solveResult, setSolveResult] = useState<Record<string, EducationSolveOutput>>({});
   const { pendingKey, run } = useEducationSolve({ clientId, source, mutations });
 
-  function upsertGoal(expense: Expense) {
+  function upsertGoal(expense: Expense, newMutations: SolverMutation[]) {
+    // Emit new-account + savings-rule mutations FIRST so the expense's
+    // dedicatedAccountIds references an account already in the working tree.
+    for (const m of newMutations) onChange(m);
     onChange({ kind: "expense-upsert", id: expense.id, value: expense });
     setAdding(false);
     setEditingId(null);
@@ -238,6 +252,8 @@ export function SolverEducationSection({
                     mode="edit"
                     initial={goal}
                     accounts={pickerAccounts}
+                    beneficiaries={beneficiaries}
+                    growth529={growth529}
                     currentYear={currentYear}
                     onSubmit={upsertGoal}
                     onCancel={() => setEditingId(null)}
@@ -253,6 +269,8 @@ export function SolverEducationSection({
         <SolverEducationGoalForm
           mode="add"
           accounts={pickerAccounts}
+          beneficiaries={beneficiaries}
+          growth529={growth529}
           currentYear={currentYear}
           onSubmit={upsertGoal}
           onCancel={() => setAdding(false)}

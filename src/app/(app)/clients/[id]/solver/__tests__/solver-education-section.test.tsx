@@ -51,4 +51,44 @@ describe("SolverEducationSection", () => {
     fireEvent.click(screen.getByRole("button", { name: /remove college — emma/i }));
     expect(onChange).toHaveBeenCalledWith({ kind: "expense-upsert", id: "goal-1", value: null });
   });
+
+  it("adds a goal with a new 529, emitting account → rule → expense in order", () => {
+    const onChange = vi.fn();
+    const tree = {
+      ...workingTree,
+      familyMembers: [{ id: "emma", role: "child", firstName: "Emma", lastName: null }],
+    } as unknown as ClientData;
+    render(
+      <SolverEducationSection
+        baseExpenses={[goal]}
+        workingTree={tree}
+        currentYear={2026}
+        growth529={0.06}
+        clientId="c1"
+        source="base"
+        mutations={[]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add education goal/i }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "College — Emma" } });
+    fireEvent.change(screen.getByLabelText("For"), { target: { value: "emma" } });
+    fireEvent.change(screen.getByLabelText("Start year"), { target: { value: "2032" } });
+    fireEvent.change(screen.getByLabelText("Number of years"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: /new 529 plan/i }));
+    fireEvent.change(screen.getByLabelText("Starting balance"), { target: { value: "15000" } });
+    fireEvent.change(screen.getByLabelText("Annual contribution"), { target: { value: "6000" } });
+    fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+
+    const kinds = onChange.mock.calls.map((c) => c[0].kind);
+    expect(kinds).toEqual(["account-upsert", "savings-rule-upsert", "expense-upsert"]);
+    const accountMut = onChange.mock.calls[0][0];
+    expect(accountMut.value).toMatchObject({
+      category: "education_savings",
+      education529: { beneficiaryFamilyMemberId: "emma" },
+    });
+    const expenseMut = onChange.mock.calls[2][0];
+    expect(expenseMut.value.forFamilyMemberId).toBe("emma");
+    expect(expenseMut.value.dedicatedAccountIds).toContain(accountMut.id);
+  });
 });

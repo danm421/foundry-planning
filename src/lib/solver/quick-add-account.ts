@@ -4,6 +4,7 @@
 // engine — just maps a small form payload onto engine Account + SavingsRule.
 
 import type { Account, SavingsRule } from "@/engine/types";
+import { EDUCATION_529_SENTINEL_OWNER_ID } from "@/engine/ownership";
 import { DEDUCTIBLE_ELIGIBLE_SUBTYPES } from "@/lib/tax/derive-deductions";
 
 export type QuickAddType = "taxable" | "ira" | "roth_ira" | "cash";
@@ -156,4 +157,66 @@ export function buildSavingsRuleForAccount(args: ExistingAccountRuleArgs): Savin
   };
   if (account.subType === "roth_ira") rule.rothPercent = 1;
   return rule;
+}
+
+export interface QuickAdd529Args {
+  accountId: string;
+  ruleId: string;
+  /** Fully composed account name (e.g. "Ava — 529 Plan"). */
+  name: string;
+  /** The education goal's "For" person; a 529 legally needs a beneficiary. */
+  beneficiaryFamilyMemberId: string;
+  /** Starting balance (value == basis; a 529 is a cash-basis savings vehicle). */
+  balance: number;
+  /** Annual contribution. <= 0 → no savings rule is created. */
+  annualAmount: number;
+  growthRate: number;
+  startYear: number;
+  endYear: number;
+}
+
+/**
+ * Builds a new 529 (education_savings) account + optional contribution rule for
+ * the Solver's inline "add a 529 while adding an education goal" flow. The
+ * account mirrors what the loader (resolve-entity) produces for a persisted
+ * 529: the single external_beneficiary SENTINEL owner (529s carry no
+ * family_member owners) with the real grantor/beneficiary in the education529
+ * block. Contributions are never federally deductible.
+ */
+export function buildQuickAdd529(args: QuickAdd529Args): { account: Account; rule: SavingsRule | null } {
+  const account: Account = {
+    id: args.accountId,
+    name: args.name.trim() || "529 Plan",
+    category: "education_savings",
+    subType: "529",
+    value: args.balance,
+    basis: args.balance,
+    growthRate: args.growthRate,
+    rmdEnabled: false,
+    titlingType: "jtwros",
+    owners: [
+      { kind: "external_beneficiary", externalBeneficiaryId: EDUCATION_529_SENTINEL_OWNER_ID, percent: 1 },
+    ],
+    education529: {
+      grantorFamilyMemberId: null,
+      grantorName: null,
+      beneficiaryFamilyMemberId: args.beneficiaryFamilyMemberId,
+      beneficiaryName: null,
+      rothRolloverEnabled: false,
+      rothRolloverStartYear: null,
+      rothRolloverAccountId: null,
+    },
+  };
+  const rule: SavingsRule | null =
+    args.annualAmount > 0
+      ? {
+          id: args.ruleId,
+          accountId: args.accountId,
+          annualAmount: args.annualAmount,
+          isDeductible: false,
+          startYear: args.startYear,
+          endYear: args.endYear,
+        }
+      : null;
+  return { account, rule };
 }

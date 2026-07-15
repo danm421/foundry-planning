@@ -349,4 +349,194 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     // Guarded BEFORE the transaction — nothing written.
     expect(updates).toHaveLength(0);
   });
+
+  it("persists a new 529's beneficiary and does not write a sentinel owner row", async () => {
+    const ACCT_529 = {
+      id: "syn-529",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: false,
+        rothRolloverStartYear: null,
+        rothRolloverAccountId: null,
+      },
+    };
+    const res = await POST(
+      makeRequest({ source: "base", mutations: [{ kind: "account-upsert", id: "syn-529", value: ACCT_529 }] }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // Exactly ONE insert — the account row. No account_owners row for the sentinel.
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].values).toMatchObject({
+      category: "education_savings",
+      beneficiaryFamilyMemberId: "fm-ava",
+    });
+    // The sentinel is excluded from external-beneficiary tenant validation …
+    expect(assertExternalBeneficiariesInClient).toHaveBeenCalledWith(CLIENT_ID, []);
+    // … while the beneficiary family member IS validated.
+    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["fm-ava"]),
+    );
+  });
+
+  it("validates a new 529's Roth-rollover destination account against tenant scope", async () => {
+    const ACCT_529_ROTH = {
+      id: "syn-529-roth",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: true,
+        rothRolloverStartYear: 2040,
+        // Not the account's own synthetic id, and not any other id inserted in
+        // this batch — so it is NOT filtered by insertedSyntheticIds and must
+        // reach the tenant check as a crafted / cross-tenant destination.
+        rothRolloverAccountId: "cross-tenant-roth-acct",
+      },
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "syn-529-roth", value: ACCT_529_ROTH }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The roth-rollover destination id was actually consulted by the tenant guard.
+    expect(assertAccountsInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["cross-tenant-roth-acct"]),
+    );
+  });
+
+  it("returns 400 when the 529 Roth-rollover destination account is not in the client", async () => {
+    // Only the roth-rollover destination id fails tenant validation; the other
+    // (empty) guards pass. This forces the 400 to come from the NEW roth-rollover
+    // guard specifically — the test fails if that guard is removed.
+    vi.mocked(assertAccountsInClient).mockImplementation((async (_clientId: string, ids: string[]) =>
+      ids.includes("cross-tenant-roth-acct")
+        ? { ok: false, reason: "Account cross-tenant-roth-acct not owned by this client" }
+        : { ok: true }) as never);
+    const ACCT_529_ROTH = {
+      id: "syn-529-roth",
+      name: "Ava — 529 Plan",
+      category: "education_savings",
+      subType: "529",
+      value: 15000,
+      basis: 15000,
+      growthRate: 0.06,
+      rmdEnabled: false,
+      titlingType: "jtwros",
+      owners: [{ kind: "external_beneficiary", externalBeneficiaryId: "__529_beneficiary", percent: 1 }],
+      education529: {
+        grantorFamilyMemberId: null,
+        grantorName: null,
+        beneficiaryFamilyMemberId: "fm-ava",
+        beneficiaryName: null,
+        rothRolloverEnabled: true,
+        rothRolloverStartYear: 2040,
+        rothRolloverAccountId: "cross-tenant-roth-acct",
+      },
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "account-upsert", id: "syn-529-roth", value: ACCT_529_ROTH }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("validates an education goal's forFamilyMemberId against tenant scope", async () => {
+    const EDU_EXPENSE = {
+      id: "syn-edu-1",
+      name: "College",
+      type: "education",
+      annualAmount: 30000,
+      startYear: 2032,
+      endYear: 2035,
+      growthRate: 0.05,
+      dedicatedAccountIds: [],
+      payShortfallOutOfPocket: false,
+      institutionState: null,
+      institutionName: null,
+      // Not any account-owner or 529 grantor/beneficiary id — this must flow
+      // into the SAME fmCheck call via expenseInserts/expenseFullUpdates, or a
+      // crafted id here would slip past tenant validation.
+      forFamilyMemberId: "cross-tenant-fm",
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "expense-upsert", id: "syn-edu-1", value: EDU_EXPENSE }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // The education goal's "For" id was actually consulted by the tenant guard.
+    expect(assertFamilyMembersInClient).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.arrayContaining(["cross-tenant-fm"]),
+    );
+  });
+
+  it("returns 400 when an education goal's forFamilyMemberId is not in the client", async () => {
+    // Only the "For" family-member id fails tenant validation; the other
+    // (empty) guards pass. This forces the 400 to come from the forFamilyMemberId
+    // guard specifically — the test fails if that guard is removed.
+    vi.mocked(assertFamilyMembersInClient).mockImplementation((async (_clientId: string, ids: string[]) =>
+      ids.includes("cross-tenant-fm")
+        ? { ok: false, reason: "Family member cross-tenant-fm not owned by this client" }
+        : { ok: true }) as never);
+    const EDU_EXPENSE = {
+      id: "syn-edu-1",
+      name: "College",
+      type: "education",
+      annualAmount: 30000,
+      startYear: 2032,
+      endYear: 2035,
+      growthRate: 0.05,
+      dedicatedAccountIds: [],
+      payShortfallOutOfPocket: false,
+      institutionState: null,
+      institutionName: null,
+      forFamilyMemberId: "cross-tenant-fm",
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "expense-upsert", id: "syn-edu-1", value: EDU_EXPENSE }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(400);
+    // Guarded BEFORE the transaction — nothing written.
+    expect(inserts).toHaveLength(0);
+  });
 });

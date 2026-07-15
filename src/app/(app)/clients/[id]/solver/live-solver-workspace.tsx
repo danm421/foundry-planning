@@ -1268,6 +1268,7 @@ export function LiveSolverWorkspace({
             mutations={mutations}
             onChange={pushMutation}
             onResetField={clearMutations}
+            growth529={categoryGrowthDefaults.retirement}
           />
         )}
           </div>
