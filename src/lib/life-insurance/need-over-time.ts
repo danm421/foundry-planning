@@ -23,8 +23,13 @@ export interface NeedOverTimeRow {
   spouseStatus: NeedResult["status"] | null;
 }
 
-/** Progress callback fired once per year after that year's solve(s) complete. */
-export type NeedOverTimeProgress = (done: number, total: number) => void;
+/** Progress callback fired once per year after that year's solve(s) complete,
+ *  carrying that year's solved row so a streaming caller can paint it live. */
+export type NeedOverTimeProgress = (
+  done: number,
+  total: number,
+  row: NeedOverTimeRow,
+) => void;
 
 /**
  * Whether the spouse-death solve can run for this client.
@@ -91,6 +96,13 @@ function solveNeedFused(
  * `onProgress` is invoked once per year with the cumulative count of years
  * solved and the total number of years, so a caller (e.g. an SSE route) can
  * stream progress to the UI.
+ *
+ * Each decedent's solve is warm-started from that decedent's own previous
+ * year's solved face value (an optimization input only — it narrows the
+ * solver's reference-probe bracket, it never changes the converged root).
+ * The seed resets to `undefined` whenever the prior year didn't land on a
+ * positive solved face value (unsolved, exceeds-cap, or a genuine $0 need),
+ * so a stale or inapplicable seed never leaks into the next year's solve.
  */
 export function computeNeedOverTime(
   data: ClientData,
@@ -103,26 +115,39 @@ export function computeNeedOverTime(
   const rows: NeedOverTimeRow[] = [];
   const total = planEndYear - planStartYear + 1;
 
+  let clientSeed: number | undefined;
+  let spouseSeed: number | undefined;
+
   for (let year = planStartYear; year <= planEndYear; year++) {
     const yearAssumptions: LifeInsuranceAssumptions = {
       ...assumptions,
       deathYear: year,
     };
 
-    const clientResult = solveNeedFused(data, "client", yearAssumptions, coverEstateTaxes, undefined);
-    const spouseResult = married
-      ? solveNeedFused(data, "spouse", yearAssumptions, coverEstateTaxes, undefined)
-      : null;
+    const clientResult = solveNeedFused(data, "client", yearAssumptions, coverEstateTaxes, clientSeed);
+    clientSeed = clientResult.status === "solved" && clientResult.faceValue > 0
+      ? clientResult.faceValue
+      : undefined;
 
-    rows.push({
+    const spouseResult = married
+      ? solveNeedFused(data, "spouse", yearAssumptions, coverEstateTaxes, spouseSeed)
+      : null;
+    if (spouseResult) {
+      spouseSeed = spouseResult.status === "solved" && spouseResult.faceValue > 0
+        ? spouseResult.faceValue
+        : undefined;
+    }
+
+    const row: NeedOverTimeRow = {
       year,
       clientNeed: clientResult.faceValue,
       spouseNeed: spouseResult ? spouseResult.faceValue : null,
       clientStatus: clientResult.status,
       spouseStatus: spouseResult ? spouseResult.status : null,
-    });
+    };
+    rows.push(row);
 
-    onProgress?.(rows.length, total);
+    onProgress?.(rows.length, total, row);
   }
 
   return rows;
