@@ -62,6 +62,18 @@ describe("resolveReportLayout", () => {
     expect(out.some((e) => e.visible)).toBe(true);
     expect(out[0].visible).toBe(true);
   });
+
+  it("treats a corrupted non-array stored value as empty → canonical defaults", () => {
+    // A jsonb row that somehow isn't an array must not throw the for…of.
+    const out = resolveReportLayout({ nope: true } as never);
+    expect(out.map((e) => e.id)).toEqual([...REPORT_KEYS]);
+    expect(out.every((e) => e.visible)).toBe(true);
+  });
+
+  it("coerces a missing/non-boolean visible flag to a boolean", () => {
+    const out = resolveReportLayout([{ id: "portfolio" }] as never);
+    expect(out.find((e) => e.id === "portfolio")!.visible).toBe(false);
+  });
 });
 
 describe("layout helpers", () => {

@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { userSolverReportLayout } from "@/db/schema";
 import {
   resolveReportLayout,
-  REPORT_KEYS,
   type ReportLayoutEntry,
 } from "@/lib/solver/report-layout";
 
@@ -19,5 +18,5 @@ export async function loadReportLayout(userId: string): Promise<ReportLayoutEntr
     .from(userSolverReportLayout)
     .where(eq(userSolverReportLayout.clerkUserId, userId))
     .limit(1);
-  return resolveReportLayout(rows[0]?.layout ?? null, REPORT_KEYS);
+  return resolveReportLayout(rows[0]?.layout ?? null);
 }

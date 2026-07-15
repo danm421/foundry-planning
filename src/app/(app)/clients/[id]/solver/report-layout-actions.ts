@@ -6,9 +6,11 @@ import { db } from "@/db";
 import { userSolverReportLayout } from "@/db/schema";
 import { resolveReportLayout, REPORT_KEYS } from "@/lib/solver/report-layout";
 
-const SaveInput = z.array(
-  z.object({ id: z.string(), visible: z.boolean() }),
-);
+const SaveInput = z
+  .array(z.object({ id: z.string(), visible: z.boolean() }))
+  // Bound the payload before parsing: the reconcile step keeps only known ids,
+  // but there's no reason to accept an arbitrarily long array off the wire.
+  .max(REPORT_KEYS.length);
 
 /**
  * Upsert the acting advisor's solver report layout. Reconciles the incoming
@@ -23,7 +25,7 @@ export async function saveReportLayout(layout: unknown): Promise<{ ok: boolean }
   const parsed = SaveInput.safeParse(layout);
   if (!parsed.success) return { ok: false };
 
-  const clean = resolveReportLayout(parsed.data, REPORT_KEYS);
+  const clean = resolveReportLayout(parsed.data);
 
   try {
     await db

@@ -215,7 +215,8 @@ export function LiveSolverWorkspace({
 
   const { showToast } = useToast();
   // Advisor's report order + visibility. Loaded server-side (no flash) and
-  // saved optimistically; reverted with a toast if the save fails.
+  // saved optimistically via a coalescing single-flight upsert (see
+  // handleLayoutChange); a persistent save failure rolls back with a toast.
   const [reportLayout, setReportLayout] = useState<ReportLayoutEntry[]>(initialReportLayout);
 
   // The right-pane report is linked to the left input tab: selecting an input
@@ -235,27 +236,66 @@ export function LiveSolverWorkspace({
     [reportLayout],
   );
 
-  // Optimistically apply a layout change, persist it, and revert + toast if
-  // the save fails. If the active report was just hidden, jump to the first
-  // visible one so the panel never renders a hidden report.
+  // Coalescing single-flight persistence of the report layout. `savedLayoutRef`
+  // holds the last layout the server confirmed — the rollback target on a
+  // persistent failure. `pendingLayoutRef` holds the newest layout still to be
+  // written; `savingLayoutRef` guards against a second concurrent flush;
+  // `revertActiveRef` remembers the active report from before a save burst so a
+  // rollback can also undo a hidden-active tab jump.
+  const savedLayoutRef = useRef(initialReportLayout);
+  const pendingLayoutRef = useRef<ReportLayoutEntry[] | null>(null);
+  const savingLayoutRef = useRef(false);
+  const revertActiveRef = useRef<ReportKey | null>(null);
+
+  // Drain the pending-layout queue one save at a time. At most one upsert is in
+  // flight and it always writes the LATEST layout, so a burst of drags/toggles
+  // can't land out of order or persist a stale layout. On a failure with nothing
+  // newer queued, roll the client back to the last confirmed layout + the
+  // pre-burst active report and toast; a failure that's already superseded is
+  // ignored (the newer save drives the UI).
+  const flushReportLayoutSaves = useCallback(async () => {
+    if (savingLayoutRef.current) return;
+    savingLayoutRef.current = true;
+    try {
+      while (pendingLayoutRef.current) {
+        const target = pendingLayoutRef.current;
+        pendingLayoutRef.current = null;
+        let ok = false;
+        try {
+          ok = (await saveReportLayout(target)).ok;
+        } catch {
+          ok = false;
+        }
+        if (ok) {
+          savedLayoutRef.current = target;
+        } else if (!pendingLayoutRef.current) {
+          const restored = savedLayoutRef.current;
+          const restoredActive = revertActiveRef.current;
+          setReportLayout(restored);
+          if (restoredActive !== null) {
+            setActiveReport(resolveActiveReport(restoredActive, restored));
+          }
+          showToast({ message: "Couldn't save report layout", durationMs: 4000 });
+        }
+      }
+    } finally {
+      savingLayoutRef.current = false;
+      revertActiveRef.current = null; // queue drained → next edit is a fresh burst
+    }
+  }, [showToast]);
+
+  // Optimistically apply a layout change, then persist it single-flight (above).
+  // Hiding the active report jumps to the first visible one so the panel never
+  // renders a hidden report; a persistent save failure rolls both back.
   const handleLayoutChange = useCallback(
     (next: ReportLayoutEntry[]) => {
-      const prev = reportLayout;
+      if (revertActiveRef.current === null) revertActiveRef.current = activeReport;
       setReportLayout(next);
       setActiveReport((cur) => (isReportVisible(cur, next) ? cur : firstVisibleReport(next)));
-      void saveReportLayout(next)
-        .then((res) => {
-          if (!res.ok) {
-            setReportLayout(prev);
-            showToast({ message: "Couldn't save report layout", durationMs: 4000 });
-          }
-        })
-        .catch(() => {
-          setReportLayout(prev);
-          showToast({ message: "Couldn't save report layout", durationMs: 4000 });
-        });
+      pendingLayoutRef.current = next;
+      void flushReportLayoutSaves();
     },
-    [reportLayout, showToast],
+    [activeReport, flushReportLayoutSaves],
   );
 
   // LI assumptions live here so both the left-pane inputs view and the right-

@@ -59,10 +59,10 @@ export const REPORT_TABS: {
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
 ];
 
-// Shared by the tab strip and the customize popover — one label/icon lookup
-// keyed by ReportKey, derived from REPORT_TABS so the two never drift.
+// Shared by the tab strip and the customize popover — one label/short/icon
+// lookup keyed by ReportKey, derived from REPORT_TABS so the two never drift.
 const REPORT_TAB_META: Record<ReportKey, ReportMeta> = Object.fromEntries(
-  REPORT_TABS.map((t) => [t.id, { label: t.label, icon: t.icon }]),
+  REPORT_TABS.map((t) => [t.id, { label: t.label, short: t.short, icon: t.icon }]),
 ) as Record<ReportKey, ReportMeta>;
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
@@ -304,9 +304,7 @@ export function SolverChartPanel({
               }
             >
               <Icon className="h-4 w-4 shrink-0" />
-              <span className="max-w-full truncate">
-                {REPORT_TABS.find((t) => t.id === id)!.short}
-              </span>
+              <span className="max-w-full truncate">{m.short}</span>
             </button>
           );
         })}

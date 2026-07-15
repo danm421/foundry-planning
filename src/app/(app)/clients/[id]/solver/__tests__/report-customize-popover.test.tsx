@@ -11,8 +11,8 @@ import {
 
 const Dot = () => <svg />;
 const meta = Object.fromEntries(
-  REPORT_KEYS.map((id) => [id, { label: id, icon: Dot }]),
-) as Record<ReportKey, { label: string; icon: typeof Dot }>;
+  REPORT_KEYS.map((id) => [id, { label: id, short: id, icon: Dot }]),
+) as Record<ReportKey, { label: string; short: string; icon: typeof Dot }>;
 
 function setup(overrides?: {
   layout?: ReturnType<typeof resolveReportLayout>;

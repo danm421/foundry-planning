@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 import { resolveReportLayout } from "@/lib/solver/report-layout";
 
@@ -10,12 +10,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
 }));
 
-// The workspace now calls useToast() for the report-layout save-failure
-// toast. Real usage is under the root <ToastProvider>; here (no provider in
-// the tree) the real hook throws, so stub it — same pattern as
-// balance-sheet-view-529.test.tsx.
+// The workspace calls useToast() for the report-layout save-failure toast and
+// saveReportLayout() to persist a layout change. Real usage is under the root
+// <ToastProvider> plus a Clerk/DB server action; here we stub both with hoisted
+// spies so the layout tests can drive + assert them (toast pattern mirrors
+// balance-sheet-view-529.test.tsx).
+const { showToastMock, saveReportLayoutMock } = vi.hoisted(() => ({
+  showToastMock: vi.fn(),
+  saveReportLayoutMock: vi.fn(),
+}));
 vi.mock("@/components/toast", () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: showToastMock }),
+}));
+vi.mock("../report-layout-actions", () => ({
+  saveReportLayout: saveReportLayoutMock,
 }));
 
 // Mock the cached-endpoint MC hook so the workspace's auto-run never hits the
@@ -69,6 +77,17 @@ vi.mock("@/components/charts/portfolio-bars-chart", () => ({
     y.portfolioAssets.total,
 }));
 
+// Stubbed like PortfolioBarsChart: the report-layout tests switch the active
+// report to Cash Flow, whose chart + year-detail panel read income/expense
+// fields these minimal fixtures don't carry. Wiring, not the cash-flow report
+// content, is under test here (each has its own dedicated tests).
+vi.mock("@/components/charts/solver-cash-flow-chart", () => ({
+  SolverCashFlowChart: () => <div data-testid="chart-cashflow" />,
+}));
+vi.mock("../solver-year-detail-panel", () => ({
+  SolverYearDetailPanel: () => <div data-testid="year-detail" />,
+}));
+
 const fetchMock = vi.fn();
 beforeEach(() => {
   // Clear the working-state draft so a mutation persisted by one test can't be
@@ -84,6 +103,9 @@ beforeEach(() => {
     baseSuccessRate: null,
     workingSuccessRate: null,
   };
+  showToastMock.mockReset();
+  saveReportLayoutMock.mockReset();
+  saveReportLayoutMock.mockResolvedValue({ ok: true });
 });
 
 const baseProps = {
@@ -526,5 +548,87 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
       const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
       expect(launched?.includeBase).toBe(true);
     });
+  });
+});
+
+describe("LiveSolverWorkspace — report layout customization", () => {
+  // Portfolio is the default active report (defaultReportForTab("retirement")).
+  // The report tabs and the popover switches share accessible names, so queries
+  // disambiguate by role ("tab" vs "switch").
+
+  it("rolls back the layout + active report and toasts when the save fails", async () => {
+    saveReportLayoutMock.mockResolvedValue({ ok: false });
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    expect(screen.getByRole("tab", { name: "Portfolio" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // Hide the active report (Portfolio) via the customize popover.
+    fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
+    fireEvent.click(screen.getByRole("switch", { name: "Portfolio" }));
+
+    // Optimistically Portfolio's tab is gone (active jumps to the next visible).
+    expect(screen.queryByRole("tab", { name: "Portfolio" })).toBeNull();
+
+    // The save fails → roll back: Portfolio returns AND is active again, + toast.
+    await waitFor(() => expect(showToastMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("tab", { name: "Portfolio" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("switches the active report to the first visible when the active is hidden", async () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
+    fireEvent.click(screen.getByRole("switch", { name: "Portfolio" }));
+
+    // Portfolio (active) hidden → Cash Flow becomes active; the save succeeds so
+    // the switch sticks and no failure toast fires.
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: "Portfolio" })).toBeNull();
+      expect(screen.getByRole("tab", { name: "Cash Flow" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it("coalesces rapid saves single-flight so the latest layout wins", async () => {
+    // First save hangs until we resolve it; the second edit must queue, not fire
+    // a concurrent, potentially out-of-order upsert.
+    let resolveFirst: (v: { ok: boolean }) => void = () => {};
+    saveReportLayoutMock.mockImplementationOnce(
+      () => new Promise<{ ok: boolean }>((r) => (resolveFirst = r)),
+    );
+    saveReportLayoutMock.mockResolvedValue({ ok: true });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
+
+    // Two rapid hides of non-active reports (active stays Portfolio throughout).
+    fireEvent.click(screen.getByRole("switch", { name: "Estate" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Education" }));
+
+    // Single-flight: only the first save is in flight; the second is queued.
+    expect(saveReportLayoutMock).toHaveBeenCalledTimes(1);
+
+    // Resolve the first → the queued (latest) layout flushes.
+    await act(async () => {
+      resolveFirst({ ok: true });
+    });
+    await waitFor(() => expect(saveReportLayoutMock).toHaveBeenCalledTimes(2));
+
+    // The last write carries BOTH hides — the coalesced latest state.
+    const lastArg = saveReportLayoutMock.mock.calls.at(-1)![0] as Array<{
+      id: string;
+      visible: boolean;
+    }>;
+    expect(lastArg.find((e) => e.id === "estate")!.visible).toBe(false);
+    expect(lastArg.find((e) => e.id === "education")!.visible).toBe(false);
   });
 });

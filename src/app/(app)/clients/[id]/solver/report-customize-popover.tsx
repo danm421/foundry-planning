@@ -25,6 +25,8 @@ import {
 
 export interface ReportMeta {
   label: string;
+  /** Compact label rendered under the tab icon (the popover uses `label`). */
+  short: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
 }
 
@@ -103,7 +105,7 @@ export function ReportCustomizePopover({ layout, meta, onChange, onClose }: Prop
                 key={entry.id}
                 entry={entry}
                 meta={meta[entry.id]}
-                canHide={!(entry.visible && visibleCount <= 1)}
+                disabled={entry.visible && visibleCount <= 1}
                 onToggle={() => toggle(entry.id)}
               />
             ))}
@@ -133,12 +135,12 @@ export function ReportCustomizePopover({ layout, meta, onChange, onClose }: Prop
 function ReportRow({
   entry,
   meta,
-  canHide,
+  disabled,
   onToggle,
 }: {
   entry: ReportLayoutEntry;
   meta: ReportMeta;
-  canHide: boolean;
+  disabled: boolean;
   onToggle: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -175,7 +177,7 @@ function ReportRow({
         role="switch"
         aria-checked={entry.visible}
         aria-label={meta.label}
-        disabled={!canHide}
+        disabled={disabled}
         onClick={onToggle}
         className={
           entry.visible

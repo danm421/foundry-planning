@@ -57,7 +57,7 @@ export function resolveReportLayout(
   const seen = new Set<ReportKey>();
   const out: ReportLayoutEntry[] = [];
 
-  if (stored) {
+  if (Array.isArray(stored)) {
     for (const e of stored) {
       if (!canonicalSet.has(e.id)) continue;
       const id = e.id as ReportKey;
