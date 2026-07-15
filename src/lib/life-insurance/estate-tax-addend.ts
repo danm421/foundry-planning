@@ -36,6 +36,16 @@ function irdTax(year: ProjectionYear): number {
 // remains a known accepted approximation. A future refinement could filter to
 // the survivor's final-death year only — see future-work/engine.md.
 
+/** Sum of federal + state estate tax + IRD income tax across a what-if
+ *  projection's death-event years. Pure — lets a caller reuse a face-0
+ *  projection it already ran (see need-over-time's fused solve). */
+export function estateTaxAddendFromProjection(projection: ProjectionYear[]): number {
+  return projection.reduce((sum, year) => {
+    if (!year.estateTax) return sum;
+    return sum + year.estateTax.totalEstateTax + irdTax(year);
+  }, 0);
+}
+
 /**
  * Total estate taxes — federal + state estate tax + IRD income tax — owed
  * across the death-event years of `deceased`'s what-if projection (the
@@ -61,8 +71,5 @@ export function computeEstateTaxAddend(
     livingExpenseAtDeath: a.livingExpenseAtDeath,
     payoffLiabilityIds: a.payoffLiabilityIds,
   });
-  return projection.reduce((sum, year) => {
-    if (!year.estateTax) return sum;
-    return sum + year.estateTax.totalEstateTax + irdTax(year);
-  }, 0);
+  return estateTaxAddendFromProjection(projection);
 }

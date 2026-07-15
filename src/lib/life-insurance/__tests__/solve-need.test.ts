@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { solveLifeInsuranceNeed, TOLERANCE_FOR_TEST } from "../solve-need";
+import { solveLifeInsuranceNeed, TOLERANCE_FOR_TEST, CAP } from "../solve-need";
 import { marriedBase, assumptions, highNetWorthBase, hnwAssumptions } from "./test-helpers";
 import { computeEstateTaxAddend } from "../estate-tax-addend";
 
@@ -76,4 +76,57 @@ describe("solveLifeInsuranceNeed — cover estate taxes", () => {
     );
   });
 
+});
+
+describe("solveLifeInsuranceNeed — reference-probe seeding (speedup v2)", () => {
+  it("converges to the same root when given a warm-start seed", () => {
+    const cold = solveLifeInsuranceNeed(marriedBase(), "client", assumptions);
+    const warm = solveLifeInsuranceNeed(marriedBase(), "client", assumptions, {
+      seedFace: cold.faceValue, // previous-year answer as the seed
+    });
+    expect(warm.status).toBe("solved");
+    // Same unique root within the solver's tolerance band.
+    const rel = Math.abs(warm.faceValue - cold.faceValue) / cold.faceValue;
+    expect(rel).toBeLessThanOrEqual(0.01);
+    const err =
+      Math.abs(warm.achievedEndingPortfolio - assumptions.leaveToHeirsAmount) /
+      assumptions.leaveToHeirsAmount;
+    expect(err).toBeLessThanOrEqual(TOLERANCE_FOR_TEST);
+  });
+
+  it("converges with an overshooting seed (bracket [0, seed])", () => {
+    const r = solveLifeInsuranceNeed(marriedBase(), "client", assumptions, {
+      seedFace: 18_000_000, // far above the true root → eRef >= target branch
+    });
+    expect(r.status).toBe("solved");
+    const err =
+      Math.abs(r.achievedEndingPortfolio - assumptions.leaveToHeirsAmount) /
+      assumptions.leaveToHeirsAmount;
+    expect(err).toBeLessThanOrEqual(TOLERANCE_FOR_TEST);
+  });
+
+  it("converges with an undershooting seed (CAP fallback branch)", () => {
+    const r = solveLifeInsuranceNeed(marriedBase(), "client", assumptions, {
+      seedFace: 1_000, // far below the true root → eRef < target → CAP fallback
+    });
+    expect(r.status).toBe("solved");
+    const err =
+      Math.abs(r.achievedEndingPortfolio - assumptions.leaveToHeirsAmount) /
+      assumptions.leaveToHeirsAmount;
+    expect(err).toBeLessThanOrEqual(TOLERANCE_FOR_TEST);
+  });
+
+  it("skips the internal face-0 probe when atZero is supplied", () => {
+    // atZero provided ⇒ zero-need short-circuit fires without any projection.
+    const r = solveLifeInsuranceNeed(marriedBase(), "client",
+      { ...assumptions, leaveToHeirsAmount: 100 }, { atZero: 5_000 });
+    expect(r).toEqual({ status: "solved", faceValue: 0, achievedEndingPortfolio: 5_000 });
+  });
+
+  it("still reports exceeds-cap for an unreachable target", () => {
+    const r = solveLifeInsuranceNeed(marriedBase(), "client",
+      { ...assumptions, leaveToHeirsAmount: 10_000_000_000 });
+    expect(r.status).toBe("exceeds-cap");
+    expect(r.faceValue).toBe(CAP);
+  });
 });

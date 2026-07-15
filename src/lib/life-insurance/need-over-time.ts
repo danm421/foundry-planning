@@ -1,10 +1,14 @@
 import type { ClientData } from "@/engine/types";
 import {
+  runLifeInsuranceWhatIf,
+  survivorEndingPortfolio,
+} from "@/engine/what-if/life-insurance-need";
+import {
   solveLifeInsuranceNeed,
   type LifeInsuranceAssumptions,
   type NeedResult,
 } from "./solve-need";
-import { computeEstateTaxAddend } from "./estate-tax-addend";
+import { estateTaxAddendFromProjection } from "./estate-tax-addend";
 
 /**
  * One straight-line life-insurance need value per plan year, per decedent.
@@ -19,8 +23,13 @@ export interface NeedOverTimeRow {
   spouseStatus: NeedResult["status"] | null;
 }
 
-/** Progress callback fired once per year after that year's solve(s) complete. */
-export type NeedOverTimeProgress = (done: number, total: number) => void;
+/** Progress callback fired once per year after that year's solve(s) complete,
+ *  carrying that year's solved row so a streaming caller can paint it live. */
+export type NeedOverTimeProgress = (
+  done: number,
+  total: number,
+  row: NeedOverTimeRow,
+) => void;
 
 /**
  * Whether the spouse-death solve can run for this client.
@@ -37,26 +46,40 @@ export function hasSpouse(data: ClientData): boolean {
 }
 
 /**
- * Solve one decedent's straight-line need, folding the household's estate-tax
- * addend into the target when `coverEstateTaxes` is on. Mirrors `solveCase` in
- * the /life-insurance/solve route so the over-time curve and the single-point
- * solve agree at any given death year. The addend depends on `a.deathYear`
- * (later deaths grow the estate), so it is recomputed per year per decedent.
+ * Solve one decedent's straight-line need. One face-value-0 what-if projection
+ * powers BOTH the estate-tax addend (when enabled) AND the solver's `atZero`
+ * anchor, so the zero probe is never run twice. `seedFace` warm-starts the
+ * solver's reference probe from the previous year's answer.
+ *
+ * Mirrors `solveCase` in the /life-insurance/solve route so the over-time
+ * curve and the single-point solve agree at any given death year. The addend
+ * depends on `a.deathYear` (later deaths grow the estate), so it is
+ * recomputed per year per decedent.
  */
-function solveNeedWithEstateTax(
+function solveNeedFused(
   data: ClientData,
   deceased: "client" | "spouse",
   a: LifeInsuranceAssumptions,
   coverEstateTaxes: boolean,
+  seedFace: number | undefined,
 ): NeedResult {
-  const estateTaxAddend = coverEstateTaxes
-    ? computeEstateTaxAddend(data, deceased, a)
-    : 0;
+  const proj0 = runLifeInsuranceWhatIf({
+    data,
+    deceased,
+    deathYear: a.deathYear,
+    faceValue: 0,
+    proceedsGrowthRate: a.proceedsGrowthRate,
+    proceedsRealization: a.proceedsRealization,
+    livingExpenseAtDeath: a.livingExpenseAtDeath,
+    payoffLiabilityIds: a.payoffLiabilityIds,
+  });
+  const atZero = survivorEndingPortfolio(proj0, deceased, data);
+  const estateTaxAddend = coverEstateTaxes ? estateTaxAddendFromProjection(proj0) : 0;
   const augmented: LifeInsuranceAssumptions = {
     ...a,
     leaveToHeirsAmount: a.leaveToHeirsAmount + estateTaxAddend,
   };
-  return solveLifeInsuranceNeed(data, deceased, augmented);
+  return solveLifeInsuranceNeed(data, deceased, augmented, { atZero, seedFace });
 }
 
 /**
@@ -73,6 +96,13 @@ function solveNeedWithEstateTax(
  * `onProgress` is invoked once per year with the cumulative count of years
  * solved and the total number of years, so a caller (e.g. an SSE route) can
  * stream progress to the UI.
+ *
+ * Each decedent's solve is warm-started from that decedent's own previous
+ * year's solved face value (an optimization input only — it narrows the
+ * solver's reference-probe bracket, it never changes the converged root).
+ * The seed resets to `undefined` whenever the prior year didn't land on a
+ * positive solved face value (unsolved, exceeds-cap, or a genuine $0 need),
+ * so a stale or inapplicable seed never leaks into the next year's solve.
  */
 export function computeNeedOverTime(
   data: ClientData,
@@ -85,26 +115,39 @@ export function computeNeedOverTime(
   const rows: NeedOverTimeRow[] = [];
   const total = planEndYear - planStartYear + 1;
 
+  let clientSeed: number | undefined;
+  let spouseSeed: number | undefined;
+
   for (let year = planStartYear; year <= planEndYear; year++) {
     const yearAssumptions: LifeInsuranceAssumptions = {
       ...assumptions,
       deathYear: year,
     };
 
-    const clientResult = solveNeedWithEstateTax(data, "client", yearAssumptions, coverEstateTaxes);
-    const spouseResult = married
-      ? solveNeedWithEstateTax(data, "spouse", yearAssumptions, coverEstateTaxes)
-      : null;
+    const clientResult = solveNeedFused(data, "client", yearAssumptions, coverEstateTaxes, clientSeed);
+    clientSeed = clientResult.status === "solved" && clientResult.faceValue > 0
+      ? clientResult.faceValue
+      : undefined;
 
-    rows.push({
+    const spouseResult = married
+      ? solveNeedFused(data, "spouse", yearAssumptions, coverEstateTaxes, spouseSeed)
+      : null;
+    if (spouseResult) {
+      spouseSeed = spouseResult.status === "solved" && spouseResult.faceValue > 0
+        ? spouseResult.faceValue
+        : undefined;
+    }
+
+    const row: NeedOverTimeRow = {
       year,
       clientNeed: clientResult.faceValue,
       spouseNeed: spouseResult ? spouseResult.faceValue : null,
       clientStatus: clientResult.status,
       spouseStatus: spouseResult ? spouseResult.status : null,
-    });
+    };
+    rows.push(row);
 
-    onProgress?.(rows.length, total);
+    onProgress?.(rows.length, total, row);
   }
 
   return rows;

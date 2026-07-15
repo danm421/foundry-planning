@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { DrainAttribution, ProjectionYear } from "@/engine/types";
 import { runLifeInsuranceWhatIf } from "@/engine/what-if/life-insurance-need";
-import { computeEstateTaxAddend } from "../estate-tax-addend";
+import {
+  computeEstateTaxAddend,
+  estateTaxAddendFromProjection,
+} from "../estate-tax-addend";
 import { highNetWorthBase, hnwAssumptions } from "./test-helpers";
 
 /** Independent re-derivation: sum totalEstateTax + IRD over death-event years. */
@@ -40,5 +43,22 @@ describe("computeEstateTaxAddend", () => {
   it("returns a positive addend for a high-net-worth estate", () => {
     const addend = computeEstateTaxAddend(highNetWorthBase(), "client", hnwAssumptions);
     expect(addend).toBeGreaterThan(0);
+  });
+
+  it("estateTaxAddendFromProjection equals computeEstateTaxAddend on the same face-0 projection", () => {
+    const tree = highNetWorthBase();
+    const projection = runLifeInsuranceWhatIf({
+      data: tree,
+      deceased: "client",
+      deathYear: hnwAssumptions.deathYear,
+      faceValue: 0,
+      proceedsGrowthRate: hnwAssumptions.proceedsGrowthRate,
+      proceedsRealization: hnwAssumptions.proceedsRealization,
+      livingExpenseAtDeath: hnwAssumptions.livingExpenseAtDeath,
+      payoffLiabilityIds: hnwAssumptions.payoffLiabilityIds,
+    });
+    expect(estateTaxAddendFromProjection(projection)).toBe(
+      computeEstateTaxAddend(tree, "client", hnwAssumptions),
+    );
   });
 });

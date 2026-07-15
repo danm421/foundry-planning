@@ -100,7 +100,10 @@ beforeEach(() => {
   vi.mocked(requireOrgId).mockResolvedValue(FIRM_ID);
   vi.mocked(findClientInFirm).mockResolvedValue({ id: CLIENT_ID } as never);
   vi.mocked(loadEffectiveTree).mockResolvedValue({
-    effectiveTree: { client: { filingStatus: "single" } },
+    effectiveTree: {
+      client: { filingStatus: "single" },
+      planSettings: { planStartYear: 2026, planEndYear: 2027 },
+    },
     warnings: [],
   } as never);
   vi.mocked(loadLiProceedsGrowth).mockResolvedValue({
@@ -172,5 +175,73 @@ describe("POST /api/clients/[id]/life-insurance/over-time — honors edited scen
     expect(res.status).toBe(200);
     await drain(res);
     expect(loadEffectiveTree).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, "base", {});
+  });
+});
+
+describe("POST /api/clients/[id]/life-insurance/over-time — SSE event shape", () => {
+  beforeEach(() => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true } as never);
+  });
+
+  it("emits a meta event, a row per progress event, then a terminal result", async () => {
+    vi.mocked(computeNeedOverTime).mockImplementation(
+      (_tree, _a, _cover, onProgress) => {
+        const rows = [
+          { year: 2026, clientNeed: 100, spouseNeed: 50, clientStatus: "solved", spouseStatus: "solved" },
+          { year: 2027, clientNeed: 120, spouseNeed: 60, clientStatus: "solved", spouseStatus: "solved" },
+        ] as never[];
+        rows.forEach((r, i) => onProgress?.(i + 1, rows.length, r as never));
+        return rows as never;
+      },
+    );
+
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+
+    expect(text).toContain("event: meta");
+    expect(text).toContain('"planStartYear"');
+    expect(text).toContain("event: progress");
+    expect(text).toMatch(/"row":\s*\{/);
+    expect(text).toContain("event: result");
+
+    // Order: meta before any progress, all progress before the terminal result.
+    const metaIdx = text.indexOf("event: meta");
+    const firstProgressIdx = text.indexOf("event: progress");
+    const resultIdx = text.indexOf("event: result");
+    expect(metaIdx).toBeGreaterThanOrEqual(0);
+    expect(metaIdx).toBeLessThan(firstProgressIdx);
+    expect(firstProgressIdx).toBeLessThan(resultIdx);
+  });
+});
+
+describe("POST /api/clients/[id]/life-insurance/over-time — meta tracks the mutated working tree", () => {
+  beforeEach(() => {
+    vi.mocked(checkProjectionRateLimit).mockResolvedValue({ allowed: true } as never);
+  });
+
+  it("emits meta from the WORKING tree's plan range, not the effective tree's", async () => {
+    // The top-level beforeEach's loadEffectiveTree mock has planEndYear 2027 and
+    // no resolutionContext, so resolveTechniqueMutations never runs — only
+    // applyMutations's return value determines the working tree here. Make it
+    // diverge from the effective tree (2030 vs 2027) so this test can tell
+    // whether `meta` is sourced from the working tree (correct) or the
+    // effective tree (regression).
+    vi.mocked(applyMutations).mockReturnValue({
+      client: { filingStatus: "single" },
+      planSettings: { planStartYear: 2026, planEndYear: 2030 },
+    } as never);
+
+    const res = await POST(makeRequest(VALID_BODY), ctx as never);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+
+    const metaChunk = text.split("\n\n").find((chunk) => chunk.startsWith("event: meta"));
+    expect(metaChunk).toBeDefined();
+    const metaPayload = JSON.parse(metaChunk!.split("\ndata: ")[1]);
+
+    // Working tree's horizon (2030) — not the effective tree's (2027).
+    expect(metaPayload.planEndYear).toBe(2030);
+    expect(metaPayload.planEndYear).not.toBe(2027);
   });
 });

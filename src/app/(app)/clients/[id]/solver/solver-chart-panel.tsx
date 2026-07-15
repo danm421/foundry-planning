@@ -409,6 +409,7 @@ export function SolverChartPanel({
         {tab === "lifeInsurance" ? (
           <LiNeedOverTimeView
             rows={overTime.rows}
+            yearRange={overTime.yearRange}
             isRunning={overTime.isRunning}
             progress={overTime.progress}
             errorMessage={overTime.errorMessage}
