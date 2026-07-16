@@ -18,7 +18,7 @@ describe("SidebarNav", () => {
     expect(container.textContent).toContain("FIRM");
   });
 
-  it("renders all 6 nav items in order", () => {
+  it("renders Home, Clients, CMA's, Tasks, Settings in order", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} />);
     const text = container.textContent ?? "";
