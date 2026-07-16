@@ -62,7 +62,7 @@ export async function computeLiSolved(args: {
     livingExpenseAtDeath: assumptions.livingExpenseAtDeath,
     payoffLiabilityIds: assumptions.payoffLiabilityIds,
   };
-  const rows = computeNeedOverTime(
+  const rows = await computeNeedOverTime(
     tree,
     overTimeAssumptions,
     assumptions.coverEstateTaxes,
