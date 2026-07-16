@@ -456,7 +456,7 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     });
   });
 
-  it("shows the Recalculate overlay after an edit and re-runs the working plan only", async () => {
+  it("auto-runs the working plan only after an edit, with no Recalculate click", async () => {
     // Hook reports a ready result so the Scenario gauge starts fresh.
     mcStateRef.current = {
       status: "ready",
@@ -472,25 +472,24 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // No overlay while fresh.
-    expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
+    // The mount auto-run includes Base; a working-only run is the signal that
+    // the edit-driven auto-run fired.
+    const workingOnlyRan = () =>
+      mcCalls.some((c) => c.enabled && c.includeBase === false);
+    expect(workingOnlyRan()).toBe(false);
 
-    // Edit a value below → Scenario goes stale → overlay appears.
     setCooperRetirementAge(67);
 
-    const recalc = await screen.findByRole("button", { name: /recalculate/i });
-    const callsBefore = mcCalls.length;
-    fireEvent.click(recalc);
+    // The debounce is real: nothing launches on the edit itself.
+    expect(workingOnlyRan()).toBe(false);
+    // And no button is offered — the gauge re-runs on its own.
+    expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
 
-    // The Recalculate launch is working-only — Base is already cached, so it
-    // refetches the Scenario column without re-including Base.
-    await waitFor(() => {
-      const launched = mcCalls.slice(callsBefore).find((c) => c.enabled);
-      expect(launched?.includeBase).toBe(false);
-    });
+    // AUTO_RUN_DEBOUNCE_MS is 2s; allow 4s to avoid flakiness (real timers).
+    await waitFor(() => expect(workingOnlyRan()).toBe(true), { timeout: 4000 });
   });
 
-  it("cached Base % survives a working-only Recalculate", async () => {
+  it("cached Base % survives the edit-driven auto-run", async () => {
     // Seed a ready result so the component's cached-base effect fires on mount
     // and sets cachedBaseSuccess=0.8. The two-pane design shows the base value
     // as a sub-hint beneath the scenario gauge: "↑ from 80%".
@@ -507,21 +506,17 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     });
 
     render(<LiveSolverWorkspace {...baseProps} />);
-
-    // The scenario gauge shows "85%" as the main value. The base value (80%)
-    // is rendered as a sub-hint "↑ from 80%" below it (since 85 > 80).
     expect(screen.getByText(/from 80%/)).toBeTruthy();
 
-    // Edit a value → Scenario goes stale → Recalculate overlay appears.
     setCooperRetirementAge(67);
 
-    const recalc = await screen.findByRole("button", { name: /recalculate/i });
-    fireEvent.click(recalc);
-
-    // After a working-only Recalculate the cached base sub-hint must still be
+    // After the working-only auto-run the cached base sub-hint must still be
     // present — cachedBaseSuccess was set on the first ready run and must not
-    // be cleared. The sub-hint "↑ from 80%" remains visible (state is stale,
-    // which is one of the conditions for rendering the sub-hint).
+    // be cleared.
+    await waitFor(
+      () => expect(mcCalls.some((c) => c.enabled && c.includeBase === false)).toBe(true),
+      { timeout: 4000 },
+    );
     expect(screen.getByText(/from 80%/)).toBeTruthy();
   });
 

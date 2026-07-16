@@ -18,6 +18,7 @@ import { useSolverSolve } from "./use-solver-solve";
 import { useSolverMc } from "./use-solver-mc";
 import { useSolverDraft, mutationMapFromDraft, type SolverDraft } from "./use-solver-draft";
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
+import { shouldAutoRunMc, AUTO_RUN_DEBOUNCE_MS } from "./auto-run-mc";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
@@ -673,11 +674,44 @@ export function LiveSolverWorkspace({
     launchMc(cachedBaseSuccess === null);
   }, [launchMc, activeSolve, cachedBaseSuccess]);
 
+  // Auto-recalculate: an edit that marks the Scenario gauge stale launches a
+  // fresh MC run on its own, so the advisor never presses Recalculate.
+  //
+  // Single-in-flight and queue-the-latest need no bookkeeping here — they fall
+  // out of the gauge state machine. A run in flight reports "computing", not
+  // "stale", so this effect no-ops until it lands; if edits arrived meanwhile,
+  // mcEditNonce (snapshotted at launch) no longer matches editNonce, the gauge
+  // returns to "stale", and the next run picks up the newest tree.
+  //
+  // LOAD-BEARING: `launchMc` is keyed to `editNonce`, so its identity changes on
+  // every edit — that is what re-arms the debounce below into a trailing one.
+  // If launchMc is ever memoized against a ref instead, this silently degrades
+  // to firing 2s after the FIRST edit of a burst rather than the last.
+  const autoRunRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (
+      !shouldAutoRunMc({
+        state: scenarioGauge.state,
+        solveActive: activeSolve !== null,
+      })
+    ) {
+      return;
+    }
+    if (autoRunRef.current) clearTimeout(autoRunRef.current);
+    autoRunRef.current = setTimeout(() => {
+      // Mirror handleRecalculate: re-include Base only while it is uncached.
+      launchMc(cachedBaseSuccess === null);
+    }, AUTO_RUN_DEBOUNCE_MS);
+    return () => {
+      if (autoRunRef.current) clearTimeout(autoRunRef.current);
+    };
+  }, [scenarioGauge.state, activeSolve, launchMc, cachedBaseSuccess]);
+
   // Auto-run MC once on first entry so both gauges populate without a click.
   // Fired by the draft-restore pass (onReady below) — after any restored
   // mutations are applied — so the first run reflects the restored working tree
   // rather than the clean source. Never re-fires; after this, edits mark the
-  // Scenario stale and the user presses Recalculate.
+  // Scenario stale and the auto-run effect above relaunches it.
   const didAutoRunMc = useRef(false);
   const handleDraftReady = useCallback(() => {
     if (didAutoRunMc.current) return;
