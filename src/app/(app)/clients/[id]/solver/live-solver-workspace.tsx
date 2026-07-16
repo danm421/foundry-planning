@@ -416,7 +416,7 @@ export function LiveSolverWorkspace({
         // Deterministic SS claim-age solve. Apply the winning age, forcing
         // `years` mode so it takes effect even if the row was in FRA /
         // at-retirement mode. Leave the PoS gauge stale — exactly like a manual
-        // edit; the advisor re-runs MC on demand for a fresh PoS.
+        // edit; the auto-run effect below picks it up and refreshes the PoS.
         if (prev.target.kind !== "ss-claim-age") return;
         const person = prev.target.person;
         const modeMutation: SolverMutation = {

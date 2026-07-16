@@ -30,7 +30,13 @@ vi.mock("../report-layout-actions", () => ({
 // network in tests. `mcStateRef.current` lets individual tests drive the gauge
 // state; `mcCalls` records every invocation's enabled flag + includeBase, which
 // (post-refactor) is how a first/auto run — Base + Scenario — is distinguished
-// from a working-only Recalculate.
+// from a working-only Recalculate. `mcCalls` is a RENDER log, not a launch
+// log — the hook re-renders (and re-pushes) on every parent render, so a burst
+// of edits that produces one launch still yields many entries sharing that
+// launch's nonce. `nonce` (the component's `mcVersion`, bumped once per
+// `launchMc` call) is what turns a render log into a launch-accurate one: the
+// number of DISTINCT nonces among working-only calls is the number of
+// distinct launches, no matter how many renders each one causes.
 const { mcStateRef, mcCalls } = vi.hoisted(() => ({
   mcStateRef: {
     current: {
@@ -43,11 +49,11 @@ const { mcStateRef, mcCalls } = vi.hoisted(() => ({
       workingSuccessRate: number | null;
     },
   },
-  mcCalls: [] as Array<{ enabled: boolean; includeBase: boolean }>,
+  mcCalls: [] as Array<{ enabled: boolean; includeBase: boolean; nonce: number }>,
 }));
 vi.mock("../use-solver-mc", () => ({
-  useSolverMc: (args: { enabled: boolean; includeBase: boolean }) => {
-    mcCalls.push({ enabled: args.enabled, includeBase: args.includeBase });
+  useSolverMc: (args: { enabled: boolean; includeBase: boolean; nonce: number }) => {
+    mcCalls.push({ enabled: args.enabled, includeBase: args.includeBase, nonce: args.nonce });
     return mcStateRef.current;
   },
 }));
@@ -471,13 +477,25 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     });
 
     render(<LiveSolverWorkspace {...baseProps} />);
+    // Real timers: this test waits out the 2s debounce plus a margin past the
+    // ~4s mark where a degraded relaunch would land — extend past the default
+    // 5s test timeout so that wait isn't itself the failure.
 
     // The mount auto-run includes Base; a working-only run is the signal that
     // the edit-driven auto-run fired.
     const workingOnlyRan = () =>
       mcCalls.some((c) => c.enabled && c.includeBase === false);
+    // Distinct nonces among working-only calls == distinct working-only
+    // launches (see the mock's comment above) — this is what actually pins
+    // the trailing-debounce invariant; `workingOnlyRan()` alone can't tell one
+    // launch from two.
+    const workingOnlyNonces = () =>
+      new Set(
+        mcCalls.filter((c) => c.enabled && c.includeBase === false).map((c) => c.nonce),
+      );
     expect(workingOnlyRan()).toBe(false);
 
+    // Two keyDowns (65→67) land as one burst — a single stale streak, not two.
     setCooperRetirementAge(67);
 
     // The debounce is real: nothing launches on the edit itself.
@@ -487,7 +505,13 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
 
     // AUTO_RUN_DEBOUNCE_MS is 2s; allow 4s to avoid flakiness (real timers).
     await waitFor(() => expect(workingOnlyRan()).toBe(true), { timeout: 4000 });
-  });
+    // Keep waiting past the ~4s mark where a degraded (leading, not trailing)
+    // debounce would fire a second working-only run off the first edit of the
+    // burst instead of the last — see the LOAD-BEARING comment on the auto-run
+    // effect in live-solver-workspace.tsx.
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(workingOnlyNonces().size).toBe(1);
+  }, 10_000);
 
   it("cached Base % survives the edit-driven auto-run", async () => {
     // Seed a ready result so the component's cached-base effect fires on mount
@@ -544,6 +568,51 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
       expect(launched?.includeBase).toBe(true);
     });
   });
+
+  it("does not auto-run while a solve is in flight (the solveActive guard)", async () => {
+    // Seed a ready result — like the burst test above — so the mount auto-run
+    // sets mcEditNonce and the gauge can actually reach "stale" once we edit.
+    // Without this, mc.status stays the beforeEach default "idle" forever and
+    // shouldAutoRunMc is false for an unrelated reason, which is exactly the
+    // blind spot that let the pre-fix solve test pass with the guard deleted.
+    mcStateRef.current = {
+      status: "ready",
+      baseSuccessRate: 0.8,
+      workingSuccessRate: 0.85,
+    };
+    // The solve's request never resolves, so the solve stays in flight
+    // (activeSolve non-null) for the life of the test: handleSolveStart sets
+    // activeSolve synchronously, before the awaited fetch.
+    fetchMock.mockImplementation(() => new Promise<never>(() => {}));
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Start a retirement-age solve and leave it stalled.
+    const solveIcon = await screen.findByLabelText(/Solve .* Retirement Age/i);
+    fireEvent.click(solveIcon);
+    const submit = await screen.findByRole("button", { name: /^Solve$/ });
+    fireEvent.click(submit);
+    // The retirement-age row swaps its slider for a progress strip
+    // (role="status") while the solve owns that lever — confirms the solve is
+    // genuinely in flight rather than having errored out synchronously.
+    await screen.findByRole("status");
+
+    // Edit a DIFFERENT lever — Life Expectancy isn't disabled by a
+    // retirement-age solve — so the gauge has a real reason to go "stale".
+    // (Cooper's Retirement Age itself is unusable here: mid-solve its slider
+    // is replaced by the progress strip above.)
+    const leSlider = screen.getByRole("slider", { name: /Cooper's Life Expectancy/i });
+    leSlider.focus();
+    fireEvent.keyDown(leSlider, { key: "ArrowRight" });
+
+    const workingOnlyRan = () =>
+      mcCalls.some((c) => c.enabled && c.includeBase === false);
+
+    // Real timers, well past AUTO_RUN_DEBOUNCE_MS (2s): the guard must hold
+    // for the solve's whole lifetime, not just the debounce window.
+    await new Promise((r) => setTimeout(r, 3000));
+    expect(workingOnlyRan()).toBe(false);
+  }, 10_000);
 });
 
 describe("LiveSolverWorkspace — report vs input tab independence", () => {
