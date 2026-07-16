@@ -24,6 +24,7 @@ const baseRow: typeof accounts.$inferSelect = {
   hsaCoverage: null,
   growthRate: "0.05",
   rmdEnabled: false,
+  countsTowardAum: false,
   priorYearEndValue: null,
   activationYear: null,
   activationYearRef: null,
