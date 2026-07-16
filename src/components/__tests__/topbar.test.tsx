@@ -22,10 +22,22 @@ beforeEach(() => {
   );
 });
 
+/**
+ * `Topbar` renders `BackButton`, whose `useBackNav` throws outside the
+ * provider. Every case must render through this helper.
+ */
+function renderTopbar() {
+  return render(
+    <BackNavProvider>
+      <Topbar />
+    </BackNavProvider>,
+  );
+}
+
 describe("Topbar", () => {
   it("renders a sticky header", () => {
     vi.mocked(usePathname).mockReturnValue("/clients");
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     const el = container.firstChild as HTMLElement;
     expect(el.className).toContain("sticky");
     expect(el.className).toContain("top-0");
@@ -33,23 +45,19 @@ describe("Topbar", () => {
 
   it("renders the breadcrumb in the left slot", () => {
     vi.mocked(usePathname).mockReturnValue("/clients");
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     expect(container.textContent).toContain("Clients");
   });
 
   it("does not render report tabs outside a client route", () => {
     vi.mocked(usePathname).mockReturnValue("/cma");
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     expect(container.querySelector("nav[role='tablist']")).toBeNull();
   });
 
   it("renders the top-level tabs in order on a client route", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
-    const { container } = render(
-      <BackNavProvider>
-        <Topbar />
-      </BackNavProvider>,
-    );
+    const { container } = renderTopbar();
     const text = container.textContent ?? "";
     // Overview is intentionally hidden for now (see topbar TABS); planning
     // lands on Details instead.
@@ -72,7 +80,7 @@ describe("Topbar", () => {
 
   it("marks the active tab based on pathname", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow");
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     const cashflow = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.trim() === "Cash Flow",
     );
@@ -85,17 +93,20 @@ describe("Topbar", () => {
     vi.mocked(useSearchParams).mockReturnValue(
       new URLSearchParams("scenario=sc-1") as unknown as ReturnType<typeof useSearchParams>,
     );
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     const links = Array.from(container.querySelectorAll("a"));
     expect(links.length).toBeGreaterThanOrEqual(7);
     for (const a of links) {
-      expect(a.getAttribute("href")).toContain("?scenario=sc-1");
+      // Parse rather than substring-match: a link that already carries its own
+      // query (e.g. ?view=household) gets "&scenario=", never "?scenario=".
+      const [, query = ""] = (a.getAttribute("href") ?? "").split("?");
+      expect(new URLSearchParams(query).get("scenario")).toBe("sc-1");
     }
   });
 
   it("renders sub-tab links in a hover menu for tabs that have sub-reports", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
-    const { container } = render(<Topbar />);
+    const { container } = renderTopbar();
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href") ?? "",
     );
@@ -109,20 +120,15 @@ describe("Topbar", () => {
         expect.stringContaining("/clients/c1/estate-planning/estate-tax"),
       ]),
     );
-    const menus = container.querySelectorAll("[role='menu']");
-    // Assets, Cash Flow, Analysis, Estate Planning each render a sub-tab menu.
-    expect(menus.length).toBe(4);
+    // Exactly three top-level tabs own a sub-tab menu. Nested "<sub> views"
+    // menus are asserted by the flyout tests and deliberately excluded here.
+    const sectionMenus = container.querySelectorAll("[role='menu'][aria-label$=' sections']");
+    expect(sectionMenus.length).toBe(3);
   });
 
   it("exposes a sub-report's views in a nested flyout (Ledgers → Asset/Tax Ledger)", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow/ledgers/asset-ledger");
-    // Wrapped in BackNavProvider so BackButton's useBackNav resolves; the rest of
-    // this suite predates that provider and is independently stale.
-    const { container } = render(
-      <BackNavProvider>
-        <Topbar />
-      </BackNavProvider>,
-    );
+    const { container } = renderTopbar();
     const byText = (label: string) =>
       Array.from(container.querySelectorAll("a")).find((a) => a.textContent?.trim() === label);
 
@@ -152,11 +158,7 @@ describe("Topbar", () => {
     vi.mocked(useSearchParams).mockReturnValue(
       new URLSearchParams("view=state") as unknown as ReturnType<typeof useSearchParams>,
     );
-    const { container } = render(
-      <BackNavProvider>
-        <Topbar />
-      </BackNavProvider>,
-    );
+    const { container } = renderTopbar();
 
     // The nested view menu carries both views with their `?view=` hrefs. Scope to the
     // menu so the default view's "Estate Tax" link isn't confused with the parent trigger.
@@ -179,11 +181,7 @@ describe("Topbar", () => {
 
   it("renders Portal tab linking to /clients/:id/portal", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
-    const { container } = render(
-      <BackNavProvider>
-        <Topbar />
-      </BackNavProvider>,
-    );
+    const { container } = renderTopbar();
     const link = Array.from(container.querySelectorAll("a[role='tab']")).find(
       (a) => a.textContent?.trim() === "Portal",
     );
@@ -196,11 +194,7 @@ describe("Topbar", () => {
     vi.mocked(useSearchParams).mockReturnValue(
       new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>,
     );
-    const { container } = render(
-      <BackNavProvider>
-        <Topbar />
-      </BackNavProvider>,
-    );
+    const { container } = renderTopbar();
     const viewsMenu = container.querySelector("[role='menu'][aria-label='Estate Tax views']")!;
     const viewLink = (label: string) =>
       Array.from(viewsMenu.querySelectorAll("a")).find((a) => a.textContent?.trim() === label);
