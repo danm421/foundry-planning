@@ -34,6 +34,17 @@ function renderTopbar() {
   );
 }
 
+/**
+ * Find a planning tab by its visible label. Callers pass the nav rather than the
+ * container: the Portal link also carries role="tab" but renders in the header's
+ * right slot, so an unscoped query would reach it too.
+ */
+function findTab(nav: Element, label: string): HTMLElement {
+  return Array.from(nav.querySelectorAll("[role='tab']")).find(
+    (a) => a.textContent?.trim() === label,
+  ) as HTMLElement;
+}
+
 describe("Topbar", () => {
   it("renders a sticky header", () => {
     vi.mocked(usePathname).mockReturnValue("/clients");
@@ -90,9 +101,7 @@ describe("Topbar", () => {
     expect(dividers[0].getAttribute("aria-hidden")).toBe("true");
 
     // It sits after the three primary tabs, not anywhere else in the row.
-    const kids = Array.from(nav.children);
-    const dividerIdx = kids.findIndex((el) => el.className.includes("w-px"));
-    expect(dividerIdx).toBe(3);
+    expect(Array.from(nav.children).indexOf(dividers[0])).toBe(3);
   });
 
   it("gives the primary trio 13px and the secondary trio 12px", () => {
@@ -101,10 +110,7 @@ describe("Topbar", () => {
     const nav = container.querySelector("nav[role='tablist']")!;
     // Exact-token match on the class list: `toContain` on the raw string would
     // also match text-ink-2 / text-ink-3, so it could never fail.
-    const classes = (label: string) =>
-      Array.from(nav.querySelectorAll("[role='tab']"))
-        .find((a) => a.textContent?.trim() === label)!
-        .className.split(/\s+/);
+    const classes = (label: string) => findTab(nav, label).className.split(/\s+/);
 
     // Details is active on this route, so assert the inactive primaries.
     expect(classes("Solver")).toContain("text-[13px]");
@@ -122,9 +128,7 @@ describe("Topbar", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow");
     const { container } = renderTopbar();
     const nav = container.querySelector("nav[role='tablist']")!;
-    const cashflow = Array.from(nav.querySelectorAll("[role='tab']")).find(
-      (a) => a.textContent?.trim() === "Cash Flow",
-    )!;
+    const cashflow = findTab(nav, "Cash Flow");
 
     expect(cashflow.className).toContain("border-accent");
     expect(cashflow.className).toContain("text-accent");
@@ -137,10 +141,7 @@ describe("Topbar", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
     const { container } = renderTopbar();
     const nav = container.querySelector("nav[role='tablist']")!;
-    const chevron = (label: string) =>
-      Array.from(nav.querySelectorAll("[role='tab']"))
-        .find((a) => a.textContent?.trim() === label)!
-        .querySelector("svg");
+    const chevron = (label: string) => findTab(nav, label).querySelector("svg");
 
     for (const label of ["Assets", "Cash Flow", "Estate"]) {
       expect(chevron(label)).not.toBeNull();
