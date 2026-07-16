@@ -613,6 +613,47 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     await new Promise((r) => setTimeout(r, 3000));
     expect(workingOnlyRan()).toBe(false);
   }, 10_000);
+
+  it("does not auto-run while a run is already in flight (the single-in-flight guard)", async () => {
+    // Seed "ready" first — like the solveActive-guard test above — so the
+    // mount auto-run caches Base success (cachedBaseSuccess=0.8). That
+    // caching is what makes a stray launch detectable below: once cached, any
+    // further auto-run is working-only (includeBase:false), which is exactly
+    // what a real in-flight-then-edit sequence would produce, and exactly
+    // what the workingOnlyRan() check is watching for.
+    mcStateRef.current = {
+      status: "ready",
+      baseSuccessRate: 0.8,
+      workingSuccessRate: 0.85,
+    };
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+      }),
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Now put the hook into "loading" — mcStateRef is read fresh on every
+    // render, so this takes effect on the next render, which the edit below
+    // triggers. deriveScenarioGaugeState's first branch forces "computing"
+    // whenever mcStatus is "loading", regardless of editNonce bookkeeping —
+    // this is the single-in-flight guard's own state, distinct from the
+    // solveActive guard exercised above.
+    mcStateRef.current = { ...mcStateRef.current, status: "loading" };
+
+    // Edit a lever while the (mocked) run is in flight.
+    setCooperRetirementAge(67);
+
+    const workingOnlyRan = () =>
+      mcCalls.some((c) => c.enabled && c.includeBase === false);
+
+    // Real timers, well past AUTO_RUN_DEBOUNCE_MS (2s): a run already in
+    // flight must not trigger another.
+    await new Promise((r) => setTimeout(r, 3000));
+    expect(workingOnlyRan()).toBe(false);
+  }, 10_000);
 });
 
 describe("LiveSolverWorkspace — report vs input tab independence", () => {

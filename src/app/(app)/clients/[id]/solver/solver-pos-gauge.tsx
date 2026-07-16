@@ -5,7 +5,7 @@ import { FanMark } from "@/components/fan-mark";
 interface Props {
   state: "idle" | "computing" | "ready" | "stale" | "error";
   successPct: number | null;
-  /** When provided (Scenario column only), a stale/error gauge renders a
+  /** When provided (Scenario column only), an error gauge renders a
    *  centered Recalculate overlay that calls this. Omitted on the Base column. */
   onRegenerate?: () => void;
   /** Disables the overlay button while a deterministic solve owns the run. */

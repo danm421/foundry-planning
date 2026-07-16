@@ -21,11 +21,11 @@ interface Input {
 /**
  * Derive the Scenario (right-column) PoS gauge's display state.
  *
- * The gauge is "stale" — and the Recalculate overlay shows — when the user has
- * edited inputs since the last working-MC run (`editNonce !== mcEditNonce`) and
- * there is no fresh solve result covering the current tree. A loading run is
- * "computing"; a fresh `solvedPoS` (cleared on every edit, so always current)
- * is authoritative "ready".
+ * The gauge is "stale" — and auto-runs a fresh Monte Carlo (see auto-run-mc.ts)
+ * — when the user has edited inputs since the last working-MC run
+ * (`editNonce !== mcEditNonce`) and there is no fresh solve result covering the
+ * current tree. A loading run is "computing"; a fresh `solvedPoS` (cleared on
+ * every edit, so always current) is authoritative "ready".
  */
 export function deriveScenarioGaugeState(input: Input): {
   state: ScenarioGaugeDisplayState;
