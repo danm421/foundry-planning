@@ -71,11 +71,13 @@ export function milestonesWithin(
   const end = addDays(t0, windowDays);
   const hits: MilestoneHit[] = [];
   for (const m of MILESTONES) {
-    // Calendar-month add; JS Date normalizes overflow (e.g. Aug 31 + 6mo).
+    // Anchor on the age-anniversary (Feb-29 DOBs land on Feb 28 in non-leap
+    // years), then add calendar months; JS Date normalizes month overflow.
+    const anniversary = birthdayInYear(dob, dob.getFullYear() + m.years);
     const date = new Date(
-      dob.getFullYear() + m.years,
-      dob.getMonth() + m.months,
-      dob.getDate(),
+      anniversary.getFullYear(),
+      anniversary.getMonth() + m.months,
+      anniversary.getDate(),
     );
     if (date >= t0 && date <= end) {
       hits.push({ key: m.key, date, label: m.label, why: m.why });

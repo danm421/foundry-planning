@@ -73,6 +73,19 @@ describe("milestonesWithin", () => {
     expect(milestonesWithin("1964-07-01", new Date(2026, 6, 16), 90)).toEqual([]);
   });
 
+  it("lands Feb-29 DOB milestones on Feb 28 in non-leap years", () => {
+    // DOB 1980-02-29 turns 50 in 2030 (non-leap) → milestone on 2030-02-28,
+    // not a silent normalization to March 1.
+    const hits = milestonesWithin("1980-02-29", new Date(2030, 1, 10), 30);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].key).toBe("50");
+    expect([
+      hits[0].date.getFullYear(),
+      hits[0].date.getMonth(),
+      hits[0].date.getDate(),
+    ]).toEqual([2030, 1, 28]);
+  });
+
   it("can return two milestones when windows overlap", () => {
     // Contrived: none of the defined ages are <6mo apart, so verify a
     // single DOB never yields duplicates instead.
