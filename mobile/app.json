@@ -1,15 +1,16 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Foundry Portal",
+    "slug": "foundry-portal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "foundryportal",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.foundryplanning.portal",
+      "buildNumber": "1",
       "associatedDomains": ["applinks:app.foundryplanning.com"],
       "infoPlist": {
         "NSFaceIDUsageDescription": "Foundry Planning uses Face ID to unlock the app."
