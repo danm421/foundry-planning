@@ -44,6 +44,7 @@ import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+import { isAumEligible } from "@/lib/accounts/aum";
 import { FieldTooltip } from "./field-tooltip";
 
 const isRetirementSubType = (st: string) =>
@@ -406,6 +407,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
     )
   );
+  const [countsTowardAum, setCountsTowardAum] = useState<boolean>(
+    initial?.countsTowardAum ?? false,
+  );
   const [hsaCoverage, setHsaCoverage] = useState<"self" | "family">(
     (initial?.hsaCoverage as "self" | "family") ?? "self"
   );
@@ -648,6 +652,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     modelPortfolioId,
     tickerPortfolioId,
     rmdEnabled,
+    countsTowardAum,
     priorYearEndValue,
     annualPropertyTax,
     propertyTaxGrowthRate,
@@ -688,7 +693,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }), [
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
-    realEstateGrowthRatePct, modelPortfolioId, tickerPortfolioId, rmdEnabled, priorYearEndValue,
+    realEstateGrowthRatePct, modelPortfolioId, tickerPortfolioId, rmdEnabled, countsTowardAum, priorYearEndValue,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     turnoverPct, customAllocations, custodian, accountNumberLast4,
@@ -1009,6 +1014,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       basis: isMixedDeferral ? "0" : accountBasis,
       rothValue: isMixedDeferral ? (accountRothValue || "0") : "0",
       growthRate,
+      countsTowardAum,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
       growthSource: usesGrowthDropdown
@@ -1138,7 +1144,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }, [
     canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
-    rmdEnabled, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
+    rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
@@ -1230,6 +1236,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         ? ((data.get("rothValue") as string) || "0")
         : "0",
       growthRate,
+      countsTowardAum,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
       growthSource: usesGrowthDropdown
@@ -1605,6 +1612,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
                     setSubType(firstSub);
                     setRmdEnabled(isRmdEligibleSubType(firstSub));
+                    // An ineligible category can't carry the flag. Clear it
+                    // rather than leave a stale true the KPI would filter out
+                    // anyway — the checkbox is about to disappear.
+                    if (!isAumEligible(newCat)) setCountsTowardAum(false);
                     if (!userEditedName) {
                       setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                     }
@@ -2020,6 +2031,23 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 </p>
               )}
             </div>
+            )}
+
+            {isAumEligible(category) && (
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={countsTowardAum}
+                    onChange={(e) => setCountsTowardAum(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                  />
+                  <span className="text-sm font-medium text-gray-300">Counts toward AUM</span>
+                </label>
+                <p className="mt-1 ml-6 text-xs text-gray-400">
+                  Include this balance in Total book value on the home screen.
+                </p>
+              </div>
             )}
 
             {category !== "stock_options" && (category === "retirement" && (subType === "401k" || subType === "403b") ? (

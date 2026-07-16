@@ -486,3 +486,81 @@ describe("AddAccountForm — 529 beneficiary submit gate", () => {
     expect(body).not.toHaveProperty("owners");
   });
 });
+
+// ── AUM flag ─────────────────────────────────────────────────────────────────
+
+describe("AddAccountForm — counts toward AUM", () => {
+  it("renders the checkbox for an AUM-eligible category, unchecked by default", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    const box = screen.getByRole("checkbox", { name: /counts toward aum/i });
+    expect(box).not.toBeChecked();
+  });
+
+  it("reflects a persisted true when editing", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, countsTowardAum: true }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).toBeChecked();
+  });
+
+  it("does not render the checkbox for an ineligible category", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="real_estate"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("checkbox", { name: /counts toward aum/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears a set flag when the category switches to an ineligible one", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, countsTowardAum: true }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).toBeChecked();
+
+    fireEvent.change(screen.getByLabelText(/^category/i), {
+      target: { value: "real_estate" },
+    });
+    expect(
+      screen.queryByRole("checkbox", { name: /counts toward aum/i }),
+    ).not.toBeInTheDocument();
+
+    // Switching back must NOT resurrect the old true — the flag was cleared.
+    fireEvent.change(screen.getByLabelText(/^category/i), {
+      target: { value: "taxable" },
+    });
+    expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).not.toBeChecked();
+  });
+});
