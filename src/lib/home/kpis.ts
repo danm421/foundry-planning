@@ -3,11 +3,11 @@ import { db } from "@/db";
 import {
   accounts,
   clients,
-  crmHouseholdAccounts,
   crmHouseholds,
   crmTasks,
   scenarios,
 } from "@/db/schema";
+import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 import { toIsoDate } from "./dates";
 import { OPEN_TASK_STATUSES, visibleHouseholdConditions } from "./scope";
 import type { BookKpis } from "./types";
@@ -30,24 +30,6 @@ async function fetchOpenTaskCounts(firmId: string, weekEnd: Date) {
     .groupBy(crmTasks.assigneeUserId);
 }
 
-/**
- * Hybrid AUM: households WITH a planning client count only their base-case
- * planning accounts (0 if none); households WITHOUT one fall back to their
- * CRM account balances. Never both.
- */
-export function mergeAum(
-  planningHouseholdIds: Set<string>,
-  planningSums: Map<string, number>,
-  crmSums: Map<string, number>,
-): number {
-  let total = 0;
-  for (const v of planningSums.values()) total += v;
-  for (const [householdId, v] of crmSums) {
-    if (!planningHouseholdIds.has(householdId)) total += v;
-  }
-  return total;
-}
-
 export async function getBookKpis(
   firmId: string,
   userId: string,
@@ -63,50 +45,44 @@ export async function getBookKpis(
 
   const hhConditions = await conditionsPromise;
 
-  const [statusRows, planningRows, planningSumRows, crmSumRows, taskRows] =
-    await Promise.all([
-      db
-        .select({ status: crmHouseholds.status, count: sql<number>`count(*)::int` })
-        .from(crmHouseholds)
-        .where(and(...hhConditions))
-        .groupBy(crmHouseholds.status),
-      db
-        .select({ householdId: clients.crmHouseholdId })
-        .from(clients)
-        .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
-        .where(and(...hhConditions)),
-      db
-        .select({
-          householdId: clients.crmHouseholdId,
-          total: sql<string>`coalesce(sum(${accounts.value}), 0)`,
-        })
-        .from(accounts)
-        .innerJoin(
-          scenarios,
-          and(eq(accounts.scenarioId, scenarios.id), eq(scenarios.isBaseCase, true)),
-        )
-        .innerJoin(clients, eq(accounts.clientId, clients.id))
-        .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
-        .where(and(...hhConditions))
-        .groupBy(clients.crmHouseholdId),
-      db
-        .select({
-          householdId: crmHouseholdAccounts.householdId,
-          total: sql<string>`coalesce(sum(${crmHouseholdAccounts.balance}), 0)`,
-        })
-        .from(crmHouseholdAccounts)
-        .innerJoin(crmHouseholds, eq(crmHouseholdAccounts.householdId, crmHouseholds.id))
-        .where(and(...hhConditions))
-        .groupBy(crmHouseholdAccounts.householdId),
-      taskPromise,
-    ]);
+  const [statusRows, planningRows, aumRows, taskRows] = await Promise.all([
+    db
+      .select({ status: crmHouseholds.status, count: sql<number>`count(*)::int` })
+      .from(crmHouseholds)
+      .where(and(...hhConditions))
+      .groupBy(crmHouseholds.status),
+    db
+      .select({ householdId: clients.crmHouseholdId })
+      .from(clients)
+      .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
+      .where(and(...hhConditions)),
+    // Total book value: base-case accounts the advisor flagged as AUM, in the
+    // billable categories only. No grouping — with the CRM fallback gone this
+    // is a single firm-wide sum. Category is filtered as well as the flag so an
+    // account flagged while taxable and later switched to real estate can't leak in.
+    db
+      .select({ total: sql<string>`coalesce(sum(${accounts.value}), 0)` })
+      .from(accounts)
+      .innerJoin(
+        scenarios,
+        and(eq(accounts.scenarioId, scenarios.id), eq(scenarios.isBaseCase, true)),
+      )
+      .innerJoin(clients, eq(accounts.clientId, clients.id))
+      .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
+      .where(
+        and(
+          ...hhConditions,
+          eq(accounts.countsTowardAum, true),
+          inArray(accounts.category, [...AUM_ELIGIBLE_CATEGORIES]),
+        ),
+      ),
+    taskPromise,
+  ]);
 
+  // planningRows still feeds the separate "Planning clients" tile — it is not
+  // part of the book-value sum.
   const planningHouseholdIds = new Set(planningRows.map((r) => r.householdId));
-  const totalBookValue = mergeAum(
-    planningHouseholdIds,
-    new Map(planningSumRows.map((r) => [r.householdId, Number(r.total)])),
-    new Map(crmSumRows.map((r) => [r.householdId, Number(r.total)])),
-  );
+  const totalBookValue = Number(aumRows[0]?.total ?? 0);
 
   const byStatus = new Map(statusRows.map((r) => [r.status, r.count]));
   const tasksDueThisWeek = taskRows.reduce((sum, r) => sum + r.count, 0);
