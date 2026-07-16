@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { eq, inArray, isNull } from "drizzle-orm";
 import { crmHouseholds } from "@/db/schema";
 import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
@@ -14,7 +15,7 @@ export type HouseholdConditions = Awaited<
  * household-derived feed sources: advisor visibility + firm + not-deleted +
  * active/prospect.
  */
-export async function visibleHouseholdConditions(
+export const visibleHouseholdConditions = cache(async function visibleHouseholdConditions(
   firmId: string,
   userId: string,
   orgRole: string | null | undefined,
@@ -28,4 +29,4 @@ export async function visibleHouseholdConditions(
   ];
   if (scope) conditions.push(scope);
   return conditions;
-}
+});

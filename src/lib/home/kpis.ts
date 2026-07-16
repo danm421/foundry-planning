@@ -36,9 +36,28 @@ export async function getBookKpis(
   orgRole: string | null | undefined,
   today: Date,
 ): Promise<BookKpis> {
-  const hhConditions = await visibleHouseholdConditions(firmId, userId, orgRole);
-
   const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
+
+  // Task query doesn't depend on household visibility, so start it before
+  // awaiting the shared conditions (mirrors getHomeFeed's conditionsPromise pattern).
+  const conditionsPromise = visibleHouseholdConditions(firmId, userId, orgRole);
+  const taskPromise = db
+    .select({
+      assignee: crmTasks.assigneeUserId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(crmTasks)
+    .where(
+      and(
+        eq(crmTasks.firmId, firmId),
+        inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
+        isNotNull(crmTasks.dueDate),
+        lte(crmTasks.dueDate, toIsoDate(weekEnd)),
+      ),
+    )
+    .groupBy(crmTasks.assigneeUserId);
+
+  const hhConditions = await conditionsPromise;
 
   const [statusRows, planningRows, planningSumRows, crmSumRows, taskRows] =
     await Promise.all([
@@ -75,21 +94,7 @@ export async function getBookKpis(
         .innerJoin(crmHouseholds, eq(crmHouseholdAccounts.householdId, crmHouseholds.id))
         .where(and(...hhConditions))
         .groupBy(crmHouseholdAccounts.householdId),
-      db
-        .select({
-          assignee: crmTasks.assigneeUserId,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(crmTasks)
-        .where(
-          and(
-            eq(crmTasks.firmId, firmId),
-            inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
-            isNotNull(crmTasks.dueDate),
-            lte(crmTasks.dueDate, toIsoDate(weekEnd)),
-          ),
-        )
-        .groupBy(crmTasks.assigneeUserId),
+      taskPromise,
     ]);
 
   const planningHouseholdIds = new Set(planningRows.map((r) => r.householdId));
