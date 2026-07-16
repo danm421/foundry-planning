@@ -57,6 +57,7 @@ export interface TasksPageProps {
   households: { id: string; name: string }[];
   firmTags: { id: string; label: string; color: string }[];
   initialTaskDetail?: TaskDetailBundle | null;
+  initialNewTaskOpen?: boolean;
 }
 
 /**
@@ -76,12 +77,13 @@ export function TasksPage({
   households,
   firmTags,
   initialTaskDetail,
+  initialNewTaskOpen,
 }: TasksPageProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTaskId = searchParams.get("task") ?? null;
 
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(initialNewTaskOpen ?? false);
   const [detail, setDetail] = useState<TaskDetailBundle | null>(
     initialTaskId && initialTaskDetail && initialTaskDetail.task.id === initialTaskId
       ? initialTaskDetail
