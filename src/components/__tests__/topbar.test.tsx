@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, fireEvent, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   usePathname: vi.fn(),
@@ -251,6 +251,30 @@ describe("Topbar", () => {
     // `?view=state` → State Death Tax is the active view; the default (estate) is not.
     expect(viewLink("State Death Tax")?.className).toContain("text-accent");
     expect(viewLink("Estate Tax")?.className).not.toContain("text-accent");
+  });
+
+  it("reopens a dismissed flyout when its tab is focused again", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = renderTopbar();
+    const nav = container.querySelector("nav[role='tablist']")!;
+    const assets = findTab(nav, "Assets");
+    const menu = container.querySelector("[role='menu'][aria-label='Assets sections']")!;
+
+    // Visibility is CSS-driven, so the class list is what the component controls:
+    // focus-within is what opens the flyout for a keyboard user.
+    expect(menu.className).toContain("group-focus-within/tab:visible");
+
+    // Activating the tab dismisses its own flyout so it doesn't linger after nav.
+    fireEvent.click(assets);
+    expect(menu.className).not.toContain("group-focus-within/tab:visible");
+
+    // Returning to the tab must restore it. onMouseLeave is the only other reset
+    // and never fires for a keyboard-only user, which would strand it closed.
+    // A real .focus() dispatches focusin — what React's onFocus actually binds.
+    // act() because, unlike fireEvent, a raw .focus() is not auto-wrapped, so
+    // the resulting state update would not flush before the assertion.
+    act(() => assets.focus());
+    expect(menu.className).toContain("group-focus-within/tab:visible");
   });
 
   it("renders Portal tab linking to /clients/:id/portal", () => {

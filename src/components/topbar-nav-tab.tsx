@@ -82,7 +82,15 @@ export function NavTab({
     : "invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0 transition-opacity duration-100 group-hover/tab:visible group-hover/tab:opacity-100 group-focus-within/tab:visible group-focus-within/tab:opacity-100";
 
   return (
-    <div className="group/tab relative" onMouseLeave={() => setDismissed(false)}>
+    // Focus clears the dismissal alongside mouseleave: a keyboard-only user
+    // never fires mouseleave, so without this the flyout stays shut for good.
+    // Safe because every click path blurs first — a focus event here means the
+    // user deliberately came back.
+    <div
+      className="group/tab relative"
+      onMouseLeave={() => setDismissed(false)}
+      onFocus={() => setDismissed(false)}
+    >
       {tabLink}
       <div role="menu" aria-label={`${tab.label} sections`} className={menuClassName}>
         <div className="min-w-[160px] rounded-md border border-hair bg-paper py-1 shadow-lg">
