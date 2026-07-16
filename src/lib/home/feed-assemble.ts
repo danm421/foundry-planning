@@ -8,7 +8,7 @@ export const GROUP_CAP = 15;
  * naturally lead); recent sorts newest-first. Ties break by id so the
  * output is stable across renders.
  */
-export function assembleFeed(items: FeedItem[], _now: Date): HomeFeed {
+export function assembleFeed(items: FeedItem[]): HomeFeed {
   const comingUp = items
     .filter((i) => COMING_UP_KINDS.has(i.kind))
     .sort(

@@ -5,7 +5,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { listRecentlyOpenedHouseholds } from "@/lib/crm/households";
 import { getBookKpis } from "@/lib/home/kpis";
 import { getHomeFeed } from "@/lib/home/feed-sources";
-import type { RecentHousehold } from "@/lib/home/types";
+import type { HomeFeed, RecentHousehold } from "@/lib/home/types";
 import { WelcomeBanner } from "./_components/welcome-banner";
 import { KpiRow } from "./_components/kpi-row";
 import { HomeFeedCard } from "./_components/home-feed";
@@ -13,23 +13,19 @@ import { RecentHouseholds } from "./_components/recent-households";
 import { Card } from "@/components/card";
 import { SkeletonText } from "@/components/skeleton";
 
-async function FeedSection({
-  firmId,
-  userId,
-  orgRole,
-}: {
-  firmId: string;
-  userId: string;
-  orgRole: string | null | undefined;
-}): Promise<ReactElement> {
-  const feed = await getHomeFeed(firmId, userId, orgRole, new Date());
-  return <HomeFeedCard feed={feed} />;
+async function FeedSection({ feed }: { feed: Promise<HomeFeed> }): Promise<ReactElement> {
+  return <HomeFeedCard feed={await feed} />;
 }
 
 export default async function HomePage(): Promise<ReactElement> {
   const { orgId, userId } = await requireOrgAndUser();
   const [{ orgRole }, user] = await Promise.all([auth(), currentUser()]);
   const today = new Date();
+
+  // Start the feed now so it loads in parallel with the awaited sections
+  // below and streams in via Suspense. getHomeFeed never rejects — each
+  // source settles individually.
+  const feedPromise = getHomeFeed(orgId, userId, orgRole, today);
 
   // Section-level degradation: a failing helper blanks its section only.
   const [kpis, recentRows] = await Promise.all([
@@ -58,7 +54,7 @@ export default async function HomePage(): Promise<ReactElement> {
               </Card>
             }
           >
-            <FeedSection firmId={orgId} userId={userId} orgRole={orgRole} />
+            <FeedSection feed={feedPromise} />
           </Suspense>
         </div>
         <RecentHouseholds households={recent} />

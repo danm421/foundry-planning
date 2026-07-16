@@ -4,6 +4,14 @@ export function parseDateOnly(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/** Local Date → "YYYY-MM-DD". Inverse of `parseDateOnly`. */
+export function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }

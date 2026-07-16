@@ -3,59 +3,60 @@ import { Card } from "@/components/card";
 import MoneyText from "@/components/money-text"; // default export
 import type { BookKpis } from "@/lib/home/types";
 
-function Tile({
-  label,
-  value,
-  sub,
-}: {
+const TILES: {
   label: string;
-  value: ReactElement | string;
-  sub: string | null;
-}): ReactElement {
-  return (
-    <Card className="px-[var(--pad-card)] py-4">
-      <div className="text-xs uppercase tracking-wide text-ink-3 tabular">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-ink tabular">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-ink-3">{sub}</div>}
-    </Card>
-  );
-}
+  format: "currency" | "int";
+  value: (k: BookKpis) => number;
+  sub: ((k: BookKpis) => string) | null;
+}[] = [
+  {
+    label: "Total book value",
+    format: "currency",
+    value: (k) => k.totalBookValue,
+    sub: () => "as of today",
+  },
+  {
+    label: "Households",
+    format: "int",
+    value: (k) => k.activeHouseholds,
+    sub: (k) => `+${k.prospectHouseholds} prospects`,
+  },
+  {
+    label: "Planning clients",
+    format: "int",
+    value: (k) => k.planningClients,
+    sub: null,
+  },
+  {
+    label: "Tasks due this week",
+    format: "int",
+    value: (k) => k.tasksDueThisWeek,
+    sub: (k) => `${k.tasksDueThisWeekMine} assigned to me`,
+  },
+];
 
 export function KpiRow({ kpis }: { kpis: BookKpis | null }): ReactElement {
-  if (!kpis) {
-    // Section-level degradation: keep layout, show em-dashes.
-    return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {["Total book value", "Households", "Planning clients", "Tasks due this week"].map(
-          (label) => (
-            <Tile key={label} label={label} value="—" sub={null} />
-          ),
-        )}
-      </div>
-    );
-  }
+  // Section-level degradation: with kpis null each tile keeps its label and
+  // MoneyText renders the nullish value as an em-dash.
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Tile
-        label="Total book value"
-        value={<MoneyText value={kpis.totalBookValue} format="currency" size="kpi" />}
-        sub="as of today"
-      />
-      <Tile
-        label="Households"
-        value={String(kpis.activeHouseholds)}
-        sub={`+${kpis.prospectHouseholds} prospects`}
-      />
-      <Tile
-        label="Planning clients"
-        value={String(kpis.planningClients)}
-        sub={null}
-      />
-      <Tile
-        label="Tasks due this week"
-        value={String(kpis.tasksDueThisWeek)}
-        sub={`${kpis.tasksDueThisWeekMine} assigned to me`}
-      />
+      {TILES.map((t) => (
+        <Card key={t.label} className="px-[var(--pad-card)] py-4">
+          <div className="text-xs uppercase tracking-wide text-ink-3 tabular">
+            {t.label}
+          </div>
+          <div className="mt-1 text-ink">
+            <MoneyText
+              value={kpis ? t.value(kpis) : null}
+              format={t.format}
+              size="kpi"
+            />
+          </div>
+          {kpis && t.sub && (
+            <div className="mt-0.5 text-xs text-ink-3">{t.sub(kpis)}</div>
+          )}
+        </Card>
+      ))}
     </div>
   );
 }

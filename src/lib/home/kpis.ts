@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
@@ -8,7 +8,8 @@ import {
   crmTasks,
   scenarios,
 } from "@/db/schema";
-import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import { toIsoDate } from "./dates";
+import { OPEN_TASK_STATUSES, visibleHouseholdConditions } from "./scope";
 import type { BookKpis } from "./types";
 
 /**
@@ -29,30 +30,13 @@ export function mergeAum(
   return total;
 }
 
-function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-const OPEN_TASK_STATUSES = ["open", "in_progress", "blocked"] as const;
-
 export async function getBookKpis(
   firmId: string,
   userId: string,
   orgRole: string | null | undefined,
   today: Date,
 ): Promise<BookKpis> {
-  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
-  const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
-
-  const hhConditions = [
-    eq(crmHouseholds.firmId, firmId),
-    isNull(crmHouseholds.deletedAt),
-    inArray(crmHouseholds.status, ["active", "prospect"]),
-  ];
-  if (scope) hhConditions.push(scope);
+  const hhConditions = await visibleHouseholdConditions(firmId, userId, orgRole);
 
   const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
 

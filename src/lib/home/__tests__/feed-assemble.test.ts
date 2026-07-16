@@ -27,7 +27,6 @@ describe("assembleFeed", () => {
         item({ id: "e", kind: "intake-submitted" }),
         item({ id: "f", kind: "import-committed" }),
       ],
-      NOW,
     );
     expect(feed.comingUp.map((i) => i.id).sort()).toEqual(["a", "b", "c"]);
     expect(feed.recent.map((i) => i.id).sort()).toEqual(["d", "e", "f"]);
@@ -40,7 +39,6 @@ describe("assembleFeed", () => {
         item({ id: "overdue", when: new Date(2026, 6, 10), overdue: true }),
         item({ id: "soon", when: new Date(2026, 6, 17) }),
       ],
-      NOW,
     );
     expect(feed.comingUp.map((i) => i.id)).toEqual(["overdue", "soon", "later"]);
   });
@@ -51,7 +49,6 @@ describe("assembleFeed", () => {
         item({ id: "old", kind: "mention", when: new Date(2026, 6, 2) }),
         item({ id: "new", kind: "mention", when: new Date(2026, 6, 15) }),
       ],
-      NOW,
     );
     expect(feed.recent.map((i) => i.id)).toEqual(["new", "old"]);
   });
@@ -60,14 +57,13 @@ describe("assembleFeed", () => {
     const many = Array.from({ length: 40 }, (_, i) =>
       item({ id: `t${i}`, when: new Date(2026, 6, 17) }),
     );
-    const feed = assembleFeed(many, NOW);
+    const feed = assembleFeed(many);
     expect(feed.comingUp).toHaveLength(GROUP_CAP);
   });
 
   it("ties in coming-up break deterministically by id", () => {
     const feed = assembleFeed(
       [item({ id: "b", when: NOW }), item({ id: "a", when: NOW })],
-      NOW,
     );
     expect(feed.comingUp.map((i) => i.id)).toEqual(["a", "b"]);
   });

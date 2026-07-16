@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, isNotNull, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   clientImports,
@@ -10,9 +10,13 @@ import {
   crmTasks,
   intakeForms,
 } from "@/db/schema";
-import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
 import { assembleFeed } from "./feed-assemble";
-import { milestonesWithin, nextBirthdayWithin, parseDateOnly } from "./dates";
+import { milestonesWithin, nextBirthdayWithin, parseDateOnly, toIsoDate } from "./dates";
+import {
+  OPEN_TASK_STATUSES,
+  visibleHouseholdConditions,
+  type HouseholdConditions,
+} from "./scope";
 import type { FeedItem, HomeFeed } from "./types";
 
 const SOURCE_LIMIT = 20;
@@ -60,36 +64,8 @@ export function contactToFeedItems(contact: ContactRow, today: Date): FeedItem[]
   return items;
 }
 
-function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function daysAgo(today: Date, days: number): Date {
   return new Date(today.getFullYear(), today.getMonth(), today.getDate() - days);
-}
-
-/**
- * Household-scoped WHERE conditions shared by the birthday/milestone and import
- * sources. Applies advisor visibility + firm + not-deleted + active/prospect,
- * mirroring `kpis.ts`. Household-derived sources only.
- */
-async function scopedHouseholdConditions(
-  firmId: string,
-  userId: string,
-  orgRole: string | null | undefined,
-) {
-  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
-  const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
-  const conditions = [
-    eq(crmHouseholds.firmId, firmId),
-    isNull(crmHouseholds.deletedAt),
-    inArray(crmHouseholds.status, ["active", "prospect"]),
-  ];
-  if (scope) conditions.push(scope);
-  return conditions;
 }
 
 async function fetchMyTaskItems(
@@ -114,7 +90,7 @@ async function fetchMyTaskItems(
       and(
         eq(crmTasks.firmId, firmId),
         eq(crmTasks.assigneeUserId, userId),
-        inArray(crmTasks.status, ["open", "in_progress", "blocked"]),
+        inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
         isNotNull(crmTasks.dueDate),
         lte(crmTasks.dueDate, weekEndIso),
       ),
@@ -133,12 +109,10 @@ async function fetchMyTaskItems(
 }
 
 async function fetchBirthdayAndMilestoneItems(
-  firmId: string,
-  userId: string,
-  orgRole: string | null | undefined,
+  conditionsPromise: Promise<HouseholdConditions>,
   today: Date,
 ): Promise<FeedItem[]> {
-  const conditions = await scopedHouseholdConditions(firmId, userId, orgRole);
+  const conditions = await conditionsPromise;
   const rows = await db
     .select({
       id: crmHouseholdContacts.id,
@@ -247,12 +221,11 @@ async function fetchIntakeItems(firmId: string, today: Date): Promise<FeedItem[]
 }
 
 async function fetchImportItems(
+  conditionsPromise: Promise<HouseholdConditions>,
   firmId: string,
-  userId: string,
-  orgRole: string | null | undefined,
   today: Date,
 ): Promise<FeedItem[]> {
-  const conditions = await scopedHouseholdConditions(firmId, userId, orgRole);
+  const conditions = await conditionsPromise;
   const rows = await db
     .select({
       id: clientImports.id,
@@ -290,15 +263,18 @@ export async function getHomeFeed(
   orgRole: string | null | undefined,
   today: Date,
 ): Promise<HomeFeed> {
+  // One shared visibility resolve; awaited inside the household-derived
+  // sources so a failure there still only drops those sources.
+  const conditionsPromise = visibleHouseholdConditions(firmId, userId, orgRole);
   const settled = await Promise.allSettled([
     fetchMyTaskItems(firmId, userId, today),
-    fetchBirthdayAndMilestoneItems(firmId, userId, orgRole, today),
+    fetchBirthdayAndMilestoneItems(conditionsPromise, today),
     fetchMentionItems(firmId, userId, today),
     fetchIntakeItems(firmId, today),
-    fetchImportItems(firmId, userId, orgRole, today),
+    fetchImportItems(conditionsPromise, firmId, today),
   ]);
   const items = settled
     .filter((s): s is PromiseFulfilledResult<FeedItem[]> => s.status === "fulfilled")
     .flatMap((s) => s.value);
-  return assembleFeed(items, today);
+  return assembleFeed(items);
 }

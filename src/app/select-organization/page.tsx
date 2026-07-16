@@ -1,4 +1,5 @@
 import { OrganizationList } from "@clerk/nextjs";
+import { LANDING_PATH } from "@/lib/routes";
 
 // Landing page signed-in users hit when they have no active Clerk org.
 // Without this, requireOrgId() would 401 them on every API route and
@@ -17,8 +18,8 @@ export default function SelectOrganizationPage() {
           </p>
         </div>
         <OrganizationList
-          afterCreateOrganizationUrl="/home"
-          afterSelectOrganizationUrl="/home"
+          afterCreateOrganizationUrl={LANDING_PATH}
+          afterSelectOrganizationUrl={LANDING_PATH}
           hidePersonal
           skipInvitationScreen
         />
