@@ -133,7 +133,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
         />
         <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
         <ScenarioDrawerProvider>
-          <section className="flex min-h-0 flex-1 flex-col px-[var(--pad-card)] pb-6">
+          <section className="flex min-h-0 flex-1 flex-col px-[var(--pad-card)] pb-6 has-[[data-fills-viewport]]:lg:pb-0">
             {children}
           </section>
           <ForgeMount

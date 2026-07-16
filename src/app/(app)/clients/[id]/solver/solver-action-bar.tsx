@@ -38,7 +38,7 @@ export function SolverActionBar({
   onUpdateScenario,
 }: Props) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-hair pt-4">
+    <div className="flex items-center justify-between gap-3 border-t border-hair py-4">
       <div className="flex gap-2">
         <button
           type="button"

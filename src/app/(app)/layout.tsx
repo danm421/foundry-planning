@@ -53,7 +53,17 @@ export default async function AppLayout({
             <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
           </SidebarFrame>
           <BackNavProvider>
-            <div className="col-start-2 flex min-h-screen min-w-0 flex-col">
+            {/* A route opts into an app-like, viewport-filling surface (the
+                solver) by marking its root [data-fills-viewport]. min-h-screen
+                alone is height:auto, so a flex child's min-h-0 has nothing to
+                shrink against and the chain grows to fit content — the window
+                scrolls instead of the surface's own panes (see 2b523c7cd). A
+                definite height makes that chain resolve, and the trailing
+                footer margin goes with it so the surface sits flush against the
+                footer. min-h-0 is required alongside: min-h-screen is 100vh and
+                would out-vote height:100dvh wherever browser chrome collapses.
+                lg-only: below that the panes stack and the page scrolls. */}
+            <div className="col-start-2 flex min-h-screen min-w-0 flex-col has-[[data-fills-viewport]]:lg:h-dvh has-[[data-fills-viewport]]:lg:min-h-0 has-[[data-fills-viewport]]:lg:[&>footer]:mt-0">
               {impersonatedName && <ImpersonationBanner advisorName={impersonatedName} />}
               <Topbar />
               <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">

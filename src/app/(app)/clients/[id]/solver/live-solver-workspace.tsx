@@ -1135,16 +1135,17 @@ export function LiveSolverWorkspace({
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col lg:h-[calc(100dvh-100px)] lg:flex-none">
-      {/* On desktop the workspace is pinned to the viewport height. The app
-          shell scrolls the whole page (min-h-screen), so without a definite
-          height the grid grows to fit content and the *window* scrolls — which
-          drags the inputs down whenever the report side is scrolled. The 100px
-          is the sticky chrome above (topbar h-14 = 56px + client header 44px),
-          matching details/layout.tsx. With a fixed height here, each pane's own
-          overflow-y-auto finally engages, so the two panes scroll independently
-          and the action bar stays pinned below. On mobile (<lg) the panes stack
-          and the page scrolls normally. */}
+    <div data-fills-viewport className="flex min-h-0 flex-1 flex-col">
+      {/* data-fills-viewport tells the app shell to take a definite height on
+          desktop (see AppLayout). That's what makes flex-1/min-h-0 resolve here
+          instead of growing to fit content, so each pane's own overflow-y-auto
+          engages and the two sides scroll independently with the action bar
+          pinned below. Sizing off the flex chain rather than a viewport-minus-
+          chrome calc means the footer, and anything else the shell adds (the
+          scenario-mode banner), is accounted for automatically — a hardcoded
+          offset can't see them and leaves a dead gap below the workspace.
+          On mobile (<lg) the shell stays min-h-screen: the panes stack and the
+          page scrolls normally. */}
       <div
         ref={workspaceRef}
         style={{ "--solver-left": `${leftPct}%` } as React.CSSProperties}
