@@ -18,11 +18,12 @@ describe("SidebarNav", () => {
     expect(container.textContent).toContain("FIRM");
   });
 
-  it("renders all 4 nav items in order", () => {
+  it("renders all 5 nav items in order", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} />);
     const text = container.textContent ?? "";
     const expectedLabels = [
+      "Home",
       "Clients",
       "CMA's",
       "Tasks",
@@ -34,6 +35,24 @@ describe("SidebarNav", () => {
       expect(idx).toBeGreaterThan(lastIndex);
       lastIndex = idx;
     }
+  });
+
+  it("marks the Home item active when pathname is /home", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/home");
+    const { container } = render(<SidebarNav clientsCount={0} />);
+    const homeLink = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("Home")
+    );
+    expect(homeLink?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("does NOT mark Home active on /clients", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
+    const { container } = render(<SidebarNav clientsCount={0} />);
+    const homeLink = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("Home")
+    );
+    expect(homeLink?.getAttribute("aria-current")).toBeNull();
   });
 
   it("passes clientsCount to the Clients item", () => {

@@ -17,8 +17,8 @@ export default function SelectOrganizationPage() {
           </p>
         </div>
         <OrganizationList
-          afterCreateOrganizationUrl="/clients"
-          afterSelectOrganizationUrl="/clients"
+          afterCreateOrganizationUrl="/home"
+          afterSelectOrganizationUrl="/home"
           hidePersonal
           skipInvitationScreen
         />

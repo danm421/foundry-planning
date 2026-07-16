@@ -38,7 +38,7 @@ export function RedeemRunner() {
       setPending(false);
       return;
     }
-    router.push("/clients");
+    router.push("/home");
   }
 
   // Auto-attempt once from the cookie when Clerk is ready.

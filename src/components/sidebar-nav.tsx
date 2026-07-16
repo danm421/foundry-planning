@@ -8,6 +8,7 @@ import {
   ClientsIcon,
   DataCollectionIcon,
   FolderIcon,
+  HomeIcon,
   ListCheckIcon,
   SettingsIcon,
 } from "./icons";
@@ -28,6 +29,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "WORKSPACE",
     items: [
+      { icon: <HomeIcon />, label: "Home", href: "/home" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
