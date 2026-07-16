@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { createRef } from "react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
 import AddAccountForm, {
   type AccountFormInitial,
+  type AccountFormAutoSaveHandle,
 } from "../add-account-form";
 import type { AccountOwner } from "@/engine/ownership";
 
@@ -642,6 +644,60 @@ describe("AddAccountForm — counts toward AUM submit payload", () => {
 
     // Submit without making any changes.
     fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts/acct-1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts/acct-1",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.countsTowardAum).toBe(true);
+  });
+
+  // saveAsyncImpl (~:1017) builds its own accountBody independently of
+  // handleSubmit's (~:1239) — it's the payload used by tab-switch autosave,
+  // reached only through the imperative ref (useImperativeHandle at ~:1158),
+  // never through fireEvent.submit. Exercise it directly so a regression on
+  // that path (e.g. countsTowardAum dropped from saveAsyncImpl only) fails
+  // here even though the two submit-payload tests above stay green.
+  it("carries countsTowardAum: true in the PUT body when saveAsync is invoked directly via the imperative ref (tab-switch autosave path)", async () => {
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+
+    render(
+      <AddAccountForm
+        ref={formRef}
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, countsTowardAum: true }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).toBeChecked();
+
+    // Bypass handleSubmit entirely — call the imperative handle the way
+    // useTabAutoSave does on a tab switch, NOT fireEvent.submit.
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
