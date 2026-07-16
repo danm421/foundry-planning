@@ -160,6 +160,29 @@ async function fetchBirthdayAndMilestoneItems(
   return rows.flatMap((r) => contactToFeedItems(r, today));
 }
 
+interface MentionRow {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  body: string;
+  createdAt: Date;
+}
+
+/** Pure: one mention row → its feed item. */
+export function mentionToFeedItem(row: MentionRow): FeedItem {
+  return {
+    id: `mention:${row.id}`,
+    kind: "mention",
+    title: `You were mentioned on “${row.taskTitle}”`,
+    subtitle:
+      row.body.length > MENTION_SUBTITLE_MAX
+        ? `${row.body.slice(0, MENTION_SUBTITLE_MAX)}…`
+        : row.body,
+    href: `/tasks?task=${row.taskId}`,
+    when: row.createdAt,
+  };
+}
+
 async function fetchMentionItems(
   firmId: string,
   userId: string,
@@ -192,17 +215,7 @@ async function fetchMentionItems(
     )
     .orderBy(desc(crmTaskCommentMentions.createdAt))
     .limit(SOURCE_LIMIT);
-  return rows.map((r) => ({
-    id: `mention:${r.id}`,
-    kind: "mention" as const,
-    title: r.taskTitle,
-    subtitle:
-      r.body.length > MENTION_SUBTITLE_MAX
-        ? `${r.body.slice(0, MENTION_SUBTITLE_MAX)}…`
-        : r.body,
-    href: `/tasks?task=${r.taskId}`,
-    when: r.createdAt,
-  }));
+  return rows.map(mentionToFeedItem);
 }
 
 async function fetchIntakeItems(firmId: string, today: Date): Promise<FeedItem[]> {

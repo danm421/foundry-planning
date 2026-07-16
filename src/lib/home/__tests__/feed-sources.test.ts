@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contactToFeedItems } from "../feed-sources";
+import { contactToFeedItems, mentionToFeedItem } from "../feed-sources";
 
 const TODAY = new Date(2026, 6, 16);
 
@@ -55,5 +55,23 @@ describe("contactToFeedItems", () => {
         TODAY,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("mentionToFeedItem", () => {
+  it("self-describes the mention with the task title in curly quotes", () => {
+    const when = new Date(2026, 6, 15, 9, 30);
+    const item = mentionToFeedItem({
+      id: "m1",
+      taskId: "t1",
+      taskTitle: "Review Cooper IRA rollover",
+      body: "ping",
+      createdAt: when,
+    });
+    expect(item.title).toBe("You were mentioned on “Review Cooper IRA rollover”");
+    expect(item.id).toBe("mention:m1");
+    expect(item.kind).toBe("mention");
+    expect(item.href).toBe("/tasks?task=t1");
+    expect(item.when).toBe(when);
   });
 });
