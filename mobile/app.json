@@ -8,7 +8,6 @@
     "scheme": "foundryportal",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.foundryplanning.portal",
       "buildNumber": "1",
       "associatedDomains": ["applinks:app.foundryplanning.com"],
@@ -34,9 +33,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#0f131b",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 200
         }
       ],
       "expo-secure-store",
