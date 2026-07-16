@@ -126,6 +126,7 @@ export default async function TasksRoute({
           households={households}
           firmTags={firmTags}
           initialTaskDetail={initialTaskDetail}
+          initialNewTaskOpen={sp.new === "1"}
         />
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { SignIn } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
+import { LANDING_PATH } from "@/lib/routes";
 
 export default function SignInPage() {
   return (
@@ -27,7 +28,7 @@ export default function SignInPage() {
 
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignIn
-          forceRedirectUrl="/clients"
+          forceRedirectUrl={LANDING_PATH}
           appearance={{
             theme: dark,
             variables: {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOrganizationList } from "@clerk/nextjs";
 import { redeemBetaCode } from "./actions";
+import { LANDING_PATH } from "@/lib/routes";
 
 export function RedeemRunner() {
   const { isLoaded, setActive } = useOrganizationList();
@@ -38,7 +39,7 @@ export function RedeemRunner() {
       setPending(false);
       return;
     }
-    router.push("/clients");
+    router.push(LANDING_PATH);
   }
 
   // Auto-attempt once from the cookie when Clerk is ready.
