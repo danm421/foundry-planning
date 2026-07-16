@@ -81,6 +81,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
         annualPropertyTax: accounts.annualPropertyTax,
         propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
         propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
+        countsTowardAum: accounts.countsTowardAum,
       })
       .from(accounts)
       .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id))),
@@ -186,6 +187,8 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
       ownerEntityId: controllingEntity(a) ?? null,
+      // From meta, not from `a` — the engine Account type never carries this.
+      countsTowardAum: meta?.countsTowardAum ?? false,
       growthSource: meta?.growthSource ?? "default",
       modelPortfolioId: meta?.modelPortfolioId ?? null,
       turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),

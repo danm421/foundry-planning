@@ -123,4 +123,34 @@ describe("overlayAccountMeta (F11)", () => {
     );
     expect(map.get("a2")!.countsTowardAum).toBe(false);
   });
+
+  it("overlays countsTowardAum: false as a real boolean, not the truthy string \"false\"", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: true })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { countsTowardAum: { from: true, to: false } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(false);
+  });
+
+  it("coerces the JSON string \"false\" payload value to the boolean false", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: true })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { countsTowardAum: { from: true, to: "false" } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(false);
+  });
 });
