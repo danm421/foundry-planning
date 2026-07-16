@@ -41,7 +41,16 @@ export function contactToFeedItems(contact: ContactRow, today: Date): FeedItem[]
   const href = `/crm/households/${contact.householdId}`;
   const items: FeedItem[] = [];
   const bday = nextBirthdayWithin(contact.dateOfBirth, today, BIRTHDAY_WINDOW_DAYS);
-  if (bday) {
+  const milestones = milestonesWithin(contact.dateOfBirth, today, MILESTONE_WINDOW_DAYS);
+  // Zero-offset milestones (50/62/65/73) land exactly on the birthday date;
+  // when that happens, the milestone's why-copy row replaces the plain
+  // birthday row instead of duplicating it in "Coming up". The 59½ milestone
+  // (birthday + 6 months) always falls on a different date, so it keeps
+  // coexisting with the birthday row.
+  const milestoneSameDay = bday
+    ? milestones.some((m) => m.date.getTime() === bday.date.getTime())
+    : false;
+  if (bday && !milestoneSameDay) {
     items.push({
       id: `birthday:${contact.id}:${bday.date.getFullYear()}`,
       kind: "birthday",
@@ -51,7 +60,7 @@ export function contactToFeedItems(contact: ContactRow, today: Date): FeedItem[]
       when: bday.date,
     });
   }
-  for (const m of milestonesWithin(contact.dateOfBirth, today, MILESTONE_WINDOW_DAYS)) {
+  for (const m of milestones) {
     items.push({
       id: `milestone:${contact.id}:${m.key}`,
       kind: "milestone",
