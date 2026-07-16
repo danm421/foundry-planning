@@ -8,6 +8,8 @@ import {
   Title,
   Tooltip,
   Legend,
+  type ChartOptions,
+  type ScriptableContext,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { useMemo } from "react";
@@ -18,6 +20,7 @@ import {
   liquidPortfolioTotal,
 } from "./portfolio-bars-data";
 import { chartChrome, useThemeName } from "@/lib/chart-colors";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { data as brandData, dataLight as brandDataLight } from "@/brand";
 
 // Re-exported for existing importers (solver, monte-carlo report, etc.).
@@ -114,6 +117,7 @@ export function PortfolioBarsChart({
   yearRange,
 }: PortfolioBarsChartProps) {
   const theme = useThemeName();
+  const reducedMotion = usePrefersReducedMotion();
 
   // Apply yearRange filter when provided.
   const visibleYears = useMemo(() => {
@@ -193,9 +197,30 @@ export function PortfolioBarsChart({
 
   const chartOptions = useMemo(() => {
     const chrome = chartChrome(theme);
+
+    // Scenario changes sweep left→right: each year's bar starts a beat after
+    // the previous one, so the green/grey deltas read as the change
+    // propagating through the plan rather than every bar lurching at once.
+    // All three stacked segments of a bar share one delay — staggering by
+    // dataset would detach the caps from the floor mid-flight. The sweep is
+    // normalized to ~250ms end-to-end regardless of how many years are on
+    // screen, and it re-fires on every recompute, so it stays quick.
+    const animation: ChartOptions<"bar">["animation"] = reducedMotion
+      ? false
+      : {
+          duration: 550,
+          easing: "easeOutQuart",
+          delay: (ctx: ScriptableContext<"bar">) => {
+            if (ctx.type !== "data" || ctx.mode !== "default") return 0;
+            const n = ctx.chart.data.labels?.length ?? 1;
+            return n > 1 ? (ctx.dataIndex / (n - 1)) * 250 : 0;
+          },
+        };
+
     return {
       responsive: true,
       maintainAspectRatio: false,
+      animation,
       // Top padding only exists to clear the timeline-marker labels drawn above
       // the plot. With no markers (e.g. the solver chart) that 20px is dead
       // space — drop it so the chart sits tight under the header when pinned.
@@ -262,7 +287,7 @@ export function PortfolioBarsChart({
         },
       },
     };
-  }, [theme, showDelta, scenarioTotals, timelineMarkers]);
+  }, [theme, reducedMotion, showDelta, scenarioTotals, timelineMarkers]);
 
   return <Bar data={chartData} options={chartOptions} />;
 }
