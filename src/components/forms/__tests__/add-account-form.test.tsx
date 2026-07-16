@@ -564,3 +564,97 @@ describe("AddAccountForm — counts toward AUM", () => {
     expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).not.toBeChecked();
   });
 });
+
+// ── AUM flag — submit payload ───────────────────────────────────────────────
+// Discrimination test: the checkbox rendering/checked-state tests above would
+// still pass even if the flag never made it into the request body (e.g. the
+// save-payload edit was omitted or typo'd). These assert on the actual
+// outgoing fetch body, mirroring the "529 beneficiary submit gate" pattern
+// above (fireEvent.submit → grab the fetch mock call → JSON.parse the body).
+
+describe("AddAccountForm — counts toward AUM submit payload", () => {
+  it("carries countsTowardAum: true in the POST body when creating an account with the box ticked", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    const box = screen.getByRole("checkbox", { name: /counts toward aum/i });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    expect(box).toBeChecked();
+
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.countsTowardAum).toBe(true);
+  });
+
+  it("carries countsTowardAum: true in the PUT body when saving an existing flagged account unchanged", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="taxable"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, countsTowardAum: true }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={{
+          taxable: "0.07",
+          cash: "0.02",
+          retirement: "0.07",
+          annuity: "0.04",
+          real_estate: "0.04",
+          business: "0.05",
+          life_insurance: "0.03",
+          notes_receivable: "0",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: /counts toward aum/i })).toBeChecked();
+
+    // Submit without making any changes.
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts/acct-1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts/acct-1",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.countsTowardAum).toBe(true);
+  });
+});
