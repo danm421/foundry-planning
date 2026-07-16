@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "counts_toward_aum" boolean DEFAULT false NOT NULL;
