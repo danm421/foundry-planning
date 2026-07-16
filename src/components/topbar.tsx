@@ -10,10 +10,17 @@ import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href"
 import { QuickNoteButton } from "./quick-note-button";
 import { NavTab, type Tab } from "./topbar-nav-tab";
 
-const TABS: ReadonlyArray<Tab> = [
-  // Overview is hidden for now (default planning lands on Details). The route
-  // still lives at /clients/[id]/overview — re-add this tab to bring it back.
+// Overview is hidden for now (default planning lands on Details). The route
+// still lives at /clients/[id]/overview — re-add this tab to bring it back.
+const PRIMARY_TABS: ReadonlyArray<Tab> = [
   { label: "Details", href: "details" },
+  { label: "Solver", href: "solver" },
+  { label: "Presentations", href: "presentations" },
+];
+
+// Report groups: quieter tier, always visible, each owns a hover flyout.
+// Ordered as the planning narrative — what you own, what flows, what transfers.
+const SECONDARY_TABS: ReadonlyArray<Tab> = [
   {
     label: "Assets",
     href: "assets",
@@ -80,9 +87,9 @@ const TABS: ReadonlyArray<Tab> = [
       },
     ],
   },
-  { label: "Solver", href: "solver" },
+  // Label only — the route stays /clients/[id]/estate-planning.
   {
-    label: "Estate Planning",
+    label: "Estate",
     href: "estate-planning",
     subTabs: [
       {
@@ -117,7 +124,6 @@ const TABS: ReadonlyArray<Tab> = [
       { label: "Gift Tax", path: "/gift-tax" },
     ],
   },
-  { label: "Presentations", href: "presentations" },
 ];
 
 // Portal is rendered separately on the right side of the header (next to the
@@ -142,8 +148,12 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
       </div>
       {clientId ? (
         <nav role="tablist" className="flex items-center gap-1 justify-self-center">
-          {TABS.map((tab) => (
-            <NavTab key={tab.href} tab={tab} clientId={clientId} />
+          {PRIMARY_TABS.map((tab) => (
+            <NavTab key={tab.href} tab={tab} tier="primary" clientId={clientId} />
+          ))}
+          <span aria-hidden className="mx-2 h-4 w-px bg-hair" />
+          {SECONDARY_TABS.map((tab) => (
+            <NavTab key={tab.href} tab={tab} tier="secondary" clientId={clientId} />
           ))}
         </nav>
       ) : (

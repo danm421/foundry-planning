@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState, type ReactElement } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
-import { ChevronRightIcon } from "./icons";
+import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 
 /** A `view` is the third tier: an alternate presentation within one sub-report. */
 export type View = { label: string; path: string };
@@ -27,7 +27,15 @@ export type Tab = {
   subTabs?: ReadonlyArray<SubTab>;
 };
 
-export function NavTab({ tab, clientId }: { tab: Tab; clientId: string }): ReactElement {
+export function NavTab({
+  tab,
+  tier,
+  clientId,
+}: {
+  tab: Tab;
+  tier: "primary" | "secondary";
+  clientId: string;
+}): ReactElement {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const withScenario = useScenarioPreservingHref();
@@ -35,9 +43,16 @@ export function NavTab({ tab, clientId }: { tab: Tab; clientId: string }): React
 
   const href = `/clients/${clientId}/${tab.href}`;
   const active = pathname.startsWith(href);
-  const className = active
-    ? "inline-flex items-center rounded-md border border-accent bg-card-2 px-3 py-1.5 text-[13px] font-medium text-accent"
-    : "inline-flex items-center rounded-md border border-transparent px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 hover:text-ink";
+  // Two axes, kept separate so no class is emitted twice: size is the tier's
+  // alone; tone carries colour + weight + border. The size tier deliberately
+  // persists when active — if active jumped to 13px the row would reflow.
+  const sizeClass = tier === "primary" ? "text-[13px]" : "text-[12px]";
+  const toneClass = active
+    ? "border-accent bg-card-2 text-accent font-medium"
+    : tier === "primary"
+      ? "border-transparent text-ink font-medium hover:bg-card-2"
+      : "border-transparent text-ink-3 hover:bg-card-2 hover:text-ink";
+  const className = `inline-flex items-center gap-1 rounded-md border px-3 py-1.5 ${sizeClass} ${toneClass}`;
 
   const tabLink = (
     <Link
@@ -54,6 +69,7 @@ export function NavTab({ tab, clientId }: { tab: Tab; clientId: string }): React
       }}
     >
       {tab.label}
+      {tab.subTabs ? <ChevronDownIcon width={12} height={12} aria-hidden /> : null}
     </Link>
   );
 

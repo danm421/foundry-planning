@@ -55,27 +55,100 @@ describe("Topbar", () => {
     expect(container.querySelector("nav[role='tablist']")).toBeNull();
   });
 
-  it("renders the top-level tabs in order on a client route", () => {
+  it("renders the primary trio, a divider, then the secondary trio", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
     const { container } = renderTopbar();
-    const text = container.textContent ?? "";
-    // Overview is intentionally hidden for now (see topbar TABS); planning
-    // lands on Details instead.
-    const expected = [
+    const nav = container.querySelector("nav[role='tablist']")!;
+
+    // Scope to the nav: the Portal link also carries role="tab" but renders in
+    // the header's right slot, so an unscoped query trails "Portal" onto this list.
+    const labels = Array.from(nav.querySelectorAll("[role='tab']")).map((a) =>
+      a.textContent?.trim(),
+    );
+    expect(labels).toEqual([
       "Details",
+      "Solver",
+      "Presentations",
       "Assets",
       "Cash Flow",
-      "Estate Planning",
-      "Comparison",
-    ];
-    let last = -1;
-    for (const label of expected) {
-      const idx = text.indexOf(label);
-      expect(idx).toBeGreaterThan(last);
-      last = idx;
+      "Estate",
+    ]);
+
+    // Overview is intentionally hidden (see topbar PRIMARY_TABS); planning
+    // lands on Details instead.
+    expect(container.textContent).not.toContain("Overview");
+  });
+
+  it("separates the two groups with exactly one hairline divider", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = renderTopbar();
+    const nav = container.querySelector("nav[role='tablist']")!;
+
+    const dividers = nav.querySelectorAll("span[class~='w-px']");
+    expect(dividers.length).toBe(1);
+    expect(dividers[0].className).toContain("bg-hair");
+    expect(dividers[0].getAttribute("aria-hidden")).toBe("true");
+
+    // It sits after the three primary tabs, not anywhere else in the row.
+    const kids = Array.from(nav.children);
+    const dividerIdx = kids.findIndex((el) => el.className.includes("w-px"));
+    expect(dividerIdx).toBe(3);
+  });
+
+  it("gives the primary trio 13px and the secondary trio 12px", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = renderTopbar();
+    const nav = container.querySelector("nav[role='tablist']")!;
+    // Exact-token match on the class list: `toContain` on the raw string would
+    // also match text-ink-2 / text-ink-3, so it could never fail.
+    const classes = (label: string) =>
+      Array.from(nav.querySelectorAll("[role='tab']"))
+        .find((a) => a.textContent?.trim() === label)!
+        .className.split(/\s+/);
+
+    // Details is active on this route, so assert the inactive primaries.
+    expect(classes("Solver")).toContain("text-[13px]");
+    expect(classes("Solver")).toContain("text-ink");
+    expect(classes("Solver")).toContain("font-medium");
+    expect(classes("Presentations")).toContain("text-[13px]");
+
+    expect(classes("Assets")).toContain("text-[12px]");
+    expect(classes("Assets")).toContain("text-ink-3");
+    expect(classes("Cash Flow")).toContain("text-[12px]");
+    expect(classes("Estate")).toContain("text-[12px]");
+  });
+
+  it("keeps an active secondary tab at 12px so the row does not reflow", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/cashflow");
+    const { container } = renderTopbar();
+    const nav = container.querySelector("nav[role='tablist']")!;
+    const cashflow = Array.from(nav.querySelectorAll("[role='tab']")).find(
+      (a) => a.textContent?.trim() === "Cash Flow",
+    )!;
+
+    expect(cashflow.className).toContain("border-accent");
+    expect(cashflow.className).toContain("text-accent");
+    // The active pill must not jump to the primary size tier.
+    expect(cashflow.className).toContain("text-[12px]");
+    expect(cashflow.className).not.toContain("text-[13px]");
+  });
+
+  it("marks only the flyout-owning tabs with a chevron", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = renderTopbar();
+    const nav = container.querySelector("nav[role='tablist']")!;
+    const chevron = (label: string) =>
+      Array.from(nav.querySelectorAll("[role='tab']"))
+        .find((a) => a.textContent?.trim() === label)!
+        .querySelector("svg");
+
+    for (const label of ["Assets", "Cash Flow", "Estate"]) {
+      expect(chevron(label)).not.toBeNull();
+      expect(chevron(label)?.getAttribute("aria-hidden")).toBe("true");
     }
-    // Overview must not appear as a tab anywhere in the header.
-    expect(text).not.toContain("Overview");
+    for (const label of ["Details", "Solver", "Presentations"]) {
+      expect(chevron(label)).toBeNull();
+    }
   });
 
   it("marks the active tab based on pathname", () => {
