@@ -27,7 +27,9 @@ vi.mock("@/lib/life-insurance/load-li-portfolio", () => ({
   DEFAULT_LI_GROWTH: 0.05,
 }));
 vi.mock("@/lib/life-insurance/need-over-time", () => ({
-  computeNeedOverTime: vi.fn(() => []),
+  // Async, matching the real signature — the route must await it, or the
+  // terminal `result` event would carry a serialized Promise instead of rows.
+  computeNeedOverTime: vi.fn(async () => []),
 }));
 
 // Phase 1b: routes gate via verifyClientAccess → auth() from @clerk/nextjs/server.
@@ -185,7 +187,7 @@ describe("POST /api/clients/[id]/life-insurance/over-time — SSE event shape", 
 
   it("emits a meta event, a row per progress event, then a terminal result", async () => {
     vi.mocked(computeNeedOverTime).mockImplementation(
-      (_tree, _a, _cover, onProgress) => {
+      async (_tree, _a, _cover, onProgress) => {
         const rows = [
           { year: 2026, clientNeed: 100, spouseNeed: 50, clientStatus: "solved", spouseStatus: "solved" },
           { year: 2027, clientNeed: 120, spouseNeed: 60, clientStatus: "solved", spouseStatus: "solved" },
@@ -204,6 +206,16 @@ describe("POST /api/clients/[id]/life-insurance/over-time — SSE event shape", 
     expect(text).toContain("event: progress");
     expect(text).toMatch(/"row":\s*\{/);
     expect(text).toContain("event: result");
+
+    // The result payload carries the actual rows — a route that forgets to
+    // await the (async) compute would serialize a Promise to `{}` here.
+    const resultChunk = text
+      .split("\n\n")
+      .find((chunk) => chunk.startsWith("event: result"));
+    expect(resultChunk).toBeDefined();
+    const resultPayload = JSON.parse(resultChunk!.split("\ndata: ")[1]);
+    expect(resultPayload.rows).toHaveLength(2);
+    expect(resultPayload.rows[0].year).toBe(2026);
 
     // Order: meta before any progress, all progress before the terminal result.
     const metaIdx = text.indexOf("event: meta");

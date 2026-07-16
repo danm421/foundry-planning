@@ -6,9 +6,9 @@ import { computeEstateTaxAddend } from "../estate-tax-addend";
 import { marriedBase, highNetWorthBase, hnwAssumptions } from "./test-helpers";
 
 describe("computeNeedOverTime", () => {
-  it("returns a client and spouse need value for each plan year", () => {
+  it("returns a client and spouse need value for each plan year", async () => {
     const data = marriedBase();
-    const rows = computeNeedOverTime(data, {
+    const rows = await computeNeedOverTime(data, {
       proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
@@ -22,9 +22,9 @@ describe("computeNeedOverTime", () => {
     expect(rows[0]).toHaveProperty("spouseNeed");
   });
 
-  it("uses each plan year as the deathYear and reports the year on each row", () => {
+  it("uses each plan year as the deathYear and reports the year on each row", async () => {
     const data = marriedBase();
-    const rows = computeNeedOverTime(data, {
+    const rows = await computeNeedOverTime(data, {
       proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
@@ -41,10 +41,10 @@ describe("computeNeedOverTime", () => {
     }
   });
 
-  it("returns null spouse values when the client is not married", () => {
+  it("returns null spouse values when the client is not married", async () => {
     const data = marriedBase();
     data.client.filingStatus = "single";
-    const rows = computeNeedOverTime(data, {
+    const rows = await computeNeedOverTime(data, {
       proceedsGrowthRate: 0.05,
       leaveToHeirsAmount: 500_000,
       livingExpenseAtDeath: null,
@@ -56,7 +56,7 @@ describe("computeNeedOverTime", () => {
     }
   });
 
-  it("does not run the spouse solve when filingStatus is married but spouseDob is absent", () => {
+  it("does not run the spouse solve when filingStatus is married but spouseDob is absent", async () => {
     // filingStatus and spouseDob disagree: the engine's whatIf throws on a
     // spouse death when spouseDob is missing, so the spouse solve must be
     // gated on spouseDob presence, not filingStatus alone. Accounts are
@@ -76,18 +76,18 @@ describe("computeNeedOverTime", () => {
       livingExpenseAtDeath: null,
       payoffLiabilityIds: [],
     };
-    expect(() => computeNeedOverTime(data, opts, false)).not.toThrow();
-    const rows = computeNeedOverTime(data, opts, false);
+    await expect(computeNeedOverTime(data, opts, false)).resolves.toBeDefined();
+    const rows = await computeNeedOverTime(data, opts, false);
     for (const row of rows) {
       expect(row.spouseNeed).toBeNull();
       expect(row.spouseStatus).toBeNull();
     }
   });
 
-  it("invokes onProgress once per year with a cumulative done count", () => {
+  it("invokes onProgress once per year with a cumulative done count", async () => {
     const data = marriedBase();
     const calls: Array<{ done: number; total: number }> = [];
-    const rows = computeNeedOverTime(
+    const rows = await computeNeedOverTime(
       data,
       {
         proceedsGrowthRate: 0.05,
@@ -106,6 +106,41 @@ describe("computeNeedOverTime", () => {
     });
   });
 
+  it("yields to the event loop between years so a streaming caller can flush", async () => {
+    const data = marriedBase();
+    // A setImmediate chain only advances when the solve loop lets the event
+    // loop breathe — exactly what the SSE route needs for enqueued progress
+    // chunks to reach the socket mid-solve instead of all at once at the end.
+    let turns = 0;
+    let stop = false;
+    const tick = () => {
+      turns++;
+      if (!stop) setImmediate(tick);
+    };
+    setImmediate(tick);
+
+    const turnsAtProgress: number[] = [];
+    await computeNeedOverTime(
+      data,
+      {
+        proceedsGrowthRate: 0.05,
+        leaveToHeirsAmount: 500_000,
+        livingExpenseAtDeath: null,
+        payoffLiabilityIds: [],
+      },
+      false,
+      () => turnsAtProgress.push(turns),
+    );
+    stop = true;
+
+    expect(turnsAtProgress.length).toBeGreaterThan(1);
+    // Every year's progress callback must observe at least one event-loop turn
+    // since the previous one.
+    for (let i = 1; i < turnsAtProgress.length; i++) {
+      expect(turnsAtProgress[i]).toBeGreaterThan(turnsAtProgress[i - 1]);
+    }
+  });
+
   describe("coverEstateTaxes (#9)", () => {
     // Death-year 2030 addend on the HNW fixture (probed): client ≈ $12.6M,
     // spouse ≈ $8.2M. leaveToHeirs is set to $90M so the survivor's ending
@@ -121,9 +156,9 @@ describe("computeNeedOverTime", () => {
       payoffLiabilityIds: hnwAssumptions.payoffLiabilityIds,
     };
 
-    it("leaves the curve unchanged when the toggle is off", () => {
+    it("leaves the curve unchanged when the toggle is off", async () => {
       const data = highNetWorthBase();
-      const rows = computeNeedOverTime(data, overTime, false);
+      const rows = await computeNeedOverTime(data, overTime, false);
       const deathYear = hnwAssumptions.deathYear;
       const row = rows.find((r) => r.year === deathYear)!;
       // Parity with the raw (no-addend) single-point solve.
@@ -134,11 +169,11 @@ describe("computeNeedOverTime", () => {
       expect(row.clientNeed).toBe(expected.faceValue);
     });
 
-    it("folds the per-year estate-tax addend into the need when the toggle is on", () => {
+    it("folds the per-year estate-tax addend into the need when the toggle is on", async () => {
       const data = highNetWorthBase();
       const deathYear = hnwAssumptions.deathYear;
 
-      const withTax = computeNeedOverTime(data, overTime, true);
+      const withTax = await computeNeedOverTime(data, overTime, true);
       const rowOn = withTax.find((r) => r.year === deathYear)!;
 
       // The addend is genuinely positive at this death year for both decedents,

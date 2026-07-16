@@ -9,8 +9,9 @@
 // followed by exactly one terminal `result` (or `error`) event carrying the
 // full rows array.
 //
-// `computeNeedOverTime` is synchronous and deterministic — no Monte Carlo — so
-// the stream simply drains its `onProgress` callback as it runs.
+// `computeNeedOverTime` is deterministic — no Monte Carlo — and yields one
+// macrotask per year, which is what lets each enqueued `progress` chunk reach
+// the socket while the (otherwise synchronous, CPU-bound) solve loop runs.
 //
 // Pure COMPUTE route — loads the client tree, runs projections, never mutates
 // the database. Allowlisted in the active-subscription lint for parity with
@@ -148,7 +149,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           planEndYear: workingTree.planSettings.planEndYear,
         });
 
-        const rows = computeNeedOverTime(
+        const rows = await computeNeedOverTime(
           workingTree,
           overTimeAssumptions,
           assumptions.coverEstateTaxes,

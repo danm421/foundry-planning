@@ -31,6 +31,11 @@ export type NeedOverTimeProgress = (
   row: NeedOverTimeRow,
 ) => void;
 
+/** One macrotask hop. setImmediate (not a microtask): the runtime needs a real
+ *  event-loop turn to pull enqueued stream chunks and write them to the socket. */
+const yieldToEventLoop = () =>
+  new Promise<void>((resolve) => setImmediate(resolve));
+
 /**
  * Whether the spouse-death solve can run for this client.
  *
@@ -95,7 +100,10 @@ function solveNeedFused(
  *
  * `onProgress` is invoked once per year with the cumulative count of years
  * solved and the total number of years, so a caller (e.g. an SSE route) can
- * stream progress to the UI.
+ * stream progress to the UI. The loop yields one macrotask before each year's
+ * solve — the solves are synchronous CPU work that would otherwise starve the
+ * event loop, leaving a streaming caller's enqueued bytes stuck in memory
+ * until the entire curve finished (the UI would see every event at once).
  *
  * Each decedent's solve is warm-started from that decedent's own previous
  * year's solved face value (an optimization input only — it narrows the
@@ -104,12 +112,12 @@ function solveNeedFused(
  * positive solved face value (unsolved, exceeds-cap, or a genuine $0 need),
  * so a stale or inapplicable seed never leaks into the next year's solve.
  */
-export function computeNeedOverTime(
+export async function computeNeedOverTime(
   data: ClientData,
   assumptions: Omit<LifeInsuranceAssumptions, "deathYear">,
   coverEstateTaxes: boolean,
   onProgress?: NeedOverTimeProgress,
-): NeedOverTimeRow[] {
+): Promise<NeedOverTimeRow[]> {
   const { planStartYear, planEndYear } = data.planSettings;
   const married = hasSpouse(data);
   const rows: NeedOverTimeRow[] = [];
@@ -119,6 +127,7 @@ export function computeNeedOverTime(
   let spouseSeed: number | undefined;
 
   for (let year = planStartYear; year <= planEndYear; year++) {
+    await yieldToEventLoop();
     const yearAssumptions: LifeInsuranceAssumptions = {
       ...assumptions,
       deathYear: year,

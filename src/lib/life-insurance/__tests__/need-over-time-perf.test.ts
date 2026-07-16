@@ -28,9 +28,9 @@ const overTime = {
 };
 
 describe("computeNeedOverTime — speedup v2", () => {
-  it("solves every year within tolerance of the target (numbers unchanged)", () => {
+  it("solves every year within tolerance of the target (numbers unchanged)", async () => {
     const data = marriedBase();
-    const rows = computeNeedOverTime(data, overTime, false);
+    const rows = await computeNeedOverTime(data, overTime, false);
     for (const row of rows) {
       // Re-derive the achieved portfolio via a single-point solve at this year
       // and confirm it lands within the solver tolerance of the target — the
@@ -48,12 +48,12 @@ describe("computeNeedOverTime — speedup v2", () => {
     }
   });
 
-  it("runs well under 5 projections per solve across the full curve", () => {
+  it("runs well under 5 projections per solve across the full curve", async () => {
     const data = marriedBase();
     const years = data.planSettings.planEndYear - data.planSettings.planStartYear + 1;
     const solves = years * 2; // married ⇒ client + spouse per year
     projectionCalls = 0;
-    computeNeedOverTime(data, overTime, false);
+    await computeNeedOverTime(data, overTime, false);
     // Pre-change baseline was ~6–8 projections/solve; assert the new path is
     // comfortably under 5/solve (target ~2–3).
     expect(projectionCalls).toBeLessThan(solves * 5);
