@@ -14,7 +14,7 @@ function Tile({
 }): ReactElement {
   return (
     <Card className="px-[var(--pad-card)] py-4">
-      <div className="text-xs uppercase tracking-wide text-ink-3">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-ink-3 tabular">{label}</div>
       <div className="mt-1 text-xl font-semibold text-ink tabular">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-ink-3">{sub}</div>}
     </Card>

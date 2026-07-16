@@ -42,7 +42,7 @@ function Group({
 }): ReactElement {
   return (
     <div className="px-[var(--pad-card)] py-3">
-      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3">
+      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-3 tabular">
         {title}
       </h3>
       {items.length === 0 ? (
