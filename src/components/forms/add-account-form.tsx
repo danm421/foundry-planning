@@ -65,6 +65,9 @@ export interface AccountFormInitial {
   // null means "use the default for this category" from plan_settings
   growthRate: string | null;
   rmdEnabled?: boolean | null;
+  /** Advisor-set AUM flag. Absent → false. Only ever surfaced in the form for
+   *  the AUM-eligible categories (src/lib/accounts/aum.ts). */
+  countsTowardAum?: boolean | null;
   /** Optional Dec-31 prior balance used for Year-1 RMD calculation. Stored as
    * a decimal string (or null when unset). Only meaningful for RMD-eligible
    * retirement accounts. */

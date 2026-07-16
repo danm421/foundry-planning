@@ -35,9 +35,16 @@ export interface AccountMeta {
   annualPropertyTax: string | null;
   propertyTaxGrowthRate: string | null;
   propertyTaxGrowthSource: string | null;
+  /** Advisor-set AUM flag. Boolean, not string|null — it must not go through
+   *  the String() coercion the other meta keys use. */
+  countsTowardAum: boolean;
 }
 
-const META_KEYS: ReadonlyArray<Exclude<keyof AccountMeta, "id">> = [
+/** The string-valued meta keys. `countsTowardAum` is excluded deliberately —
+ *  it is coerced by BOOL_META_KEYS below, not by String(). */
+type StringMetaKey = Exclude<keyof AccountMeta, "id" | "countsTowardAum">;
+
+const META_KEYS: ReadonlyArray<StringMetaKey> = [
   "growthSource",
   "modelPortfolioId",
   "tickerPortfolioId",
@@ -51,6 +58,10 @@ const META_KEYS: ReadonlyArray<Exclude<keyof AccountMeta, "id">> = [
   "propertyTaxGrowthSource",
 ];
 
+/** Boolean meta keys — coerced separately from META_KEYS, whose String()
+ *  coercion would turn `false` into the truthy string "false". */
+const BOOL_META_KEYS: ReadonlyArray<"countsTowardAum"> = ["countsTowardAum"];
+
 /** Pull only the metadata keys out of a raw change payload, coercing to the
  *  string|null shape the base rows use. Unknown/absent keys are skipped so a
  *  partial edit diff only overrides the fields it actually changed. */
@@ -63,6 +74,12 @@ function metaFromPayload(
     if (!(k in payload)) continue;
     const v = payload[k];
     out[k] = v == null ? null : String(v);
+  }
+  for (const k of BOOL_META_KEYS) {
+    if (!(k in payload)) continue;
+    // scenario_changes payloads are JSON, so the value may arrive as a real
+    // boolean or as the string "true" — accept both, treat anything else as false.
+    out[k] = payload[k] === true || payload[k] === "true";
   }
   return out;
 }
@@ -80,6 +97,7 @@ function emptyMeta(): Omit<AccountMeta, "id"> {
     annualPropertyTax: null,
     propertyTaxGrowthRate: null,
     propertyTaxGrowthSource: null,
+    countsTowardAum: false,
   };
 }
 

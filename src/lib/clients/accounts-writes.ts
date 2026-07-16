@@ -236,6 +236,7 @@ export async function createAccountForClient(args: {
         // null = inherit the default growth rate for this category from plan_settings.
         growthRate: p.growthRate == null ? null : String(p.growthRate),
         rmdEnabled: p.rmdEnabled,
+        countsTowardAum: p.countsTowardAum,
         priorYearEndValue: p.priorYearEndValue == null ? null : String(p.priorYearEndValue),
         growthSource: p.growthSource as AccountRow["growthSource"],
         modelPortfolioId: p.modelPortfolioId ?? null,
