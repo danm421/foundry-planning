@@ -1,0 +1,48 @@
+# Dependabot version updates. Alerts + security PRs are separate repo settings
+# (Settings → Advanced Security) — this file only controls scheduled updates.
+#
+# Cooldown is the supply-chain guardrail: never pick up a release in its first
+# week (21 days for majors). Compromised packages (chalk/debug 2025, Shai-Hulud
+# worm) are typically detected and unpublished within days of publish, so lagging
+# fresh releases avoids the whole class. Security-advisory PRs bypass cooldown.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 21
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/mobile"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 21
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7

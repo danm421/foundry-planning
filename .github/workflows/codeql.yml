@@ -1,0 +1,35 @@
+name: CodeQL
+
+# Static analysis (SAST) over the TS/JS codebase — the same scanner GitHub runs
+# on its own code. Free for public repos; findings land in the Security tab.
+# Weekly cron re-analyzes with updated query packs even when the code is idle.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "43 7 * * 1" # Mondays 07:43 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: "/language:javascript-typescript"

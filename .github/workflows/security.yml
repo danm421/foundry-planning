@@ -1,0 +1,81 @@
+name: Security
+
+# Supply-chain + secret gates. Three lanes:
+#
+#   audit-gate (BLOCKING)  — high/critical advisories on production deps fail the
+#                            build (scripts/audit-gate.mjs, allowlist documented
+#                            there). Lockfile lint blocks tampered/off-registry
+#                            lockfile entries; `npm audit signatures` verifies
+#                            registry signatures + provenance attestations.
+#   gitleaks   (BLOCKING)  — secrets in commits. False positives get a fingerprint
+#                            line in .gitleaksignore.
+#   osv-scan   (advisory)  — Google's OSV scanner, includes MAL-* malicious-package
+#                            advisories npm audit can lag on. Non-blocking so a
+#                            noisy new advisory can't red-line unrelated PRs;
+#                            results land in the Security tab (SARIF).
+#
+# The weekly cron re-runs the gates with NO code change — new advisories against
+# existing pins surface within a week instead of at the next push.
+#
+# All actions are pinned to commit SHAs (tag-hijack hardening — see tj-actions).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-gate:
+    name: Dependency audit gate (prod, high+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      # The gate reads package-lock.json + the registry advisory DB — no install needed.
+      - name: Audit gate (blocks high/critical in prod deps)
+        run: node scripts/audit-gate.mjs
+      # --validate-package-names is intentionally absent: legitimate npm aliases
+      # (string-width-cjs, promptfoo's bundled platform binaries) false-positive it.
+      - name: Lockfile lint (registry-only sources, https, sha512 integrity)
+        run: |
+          npx --yes lockfile-lint@5.0.0 --path package-lock.json --type npm \
+            --allowed-hosts npm --validate-https --validate-integrity
+          npx --yes lockfile-lint@5.0.0 --path mobile/package-lock.json --type npm \
+            --allowed-hosts npm --validate-https --validate-integrity
+      # Signature/provenance verification needs the tree on disk; --ignore-scripts
+      # keeps third-party install hooks from executing in this lane.
+      - name: Verify registry signatures + provenance
+        run: |
+          npm ci --ignore-scripts
+          npm audit signatures
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  osv-scan:
+    name: OSV / malicious-package scan (advisory)
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      fail-on-vuln: false
