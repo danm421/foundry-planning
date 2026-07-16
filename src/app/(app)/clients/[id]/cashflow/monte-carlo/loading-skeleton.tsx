@@ -4,48 +4,8 @@ import {
   SkeletonTable,
   Skeleton,
 } from "@/components/skeleton";
-import { MarkLoader, drawStyle } from "@/components/mark-loader";
-
-// The Monte Carlo "simulating" mark — five verdigris strokes fanning from a
-// left origin dot into the probability cone, echoing the report's hero
-// fan-chart. Each stroke draws itself in via the shared `.mark-draw` class,
-// staggered so the median anchors first and the cone opens outward; the outer
-// pairs sit fainter for depth. A soft verdigris halo breathes behind it (see
-// `MarkLoader`). Under `prefers-reduced-motion` every stroke settles fully
-// drawn and the halo holds steady — handled by the `.mark-*` utilities.
-function FanMark() {
-  const strokes = [
-    { d: "M 6 17 C 24 17, 30 17, 43 17", opacity: 1, delay: "0.15s" }, // median
-    { d: "M 6 17 C 22 17, 28 9, 43 9", opacity: 0.6, delay: "0.35s" }, // upper inner
-    { d: "M 6 17 C 22 17, 28 25, 43 25", opacity: 0.6, delay: "0.35s" }, // lower inner
-    { d: "M 6 17 C 22 17, 28 3, 43 3", opacity: 0.3, delay: "0.55s" }, // upper outer
-    { d: "M 6 17 C 22 17, 28 31, 43 31", opacity: 0.3, delay: "0.55s" }, // lower outer
-  ];
-  return (
-    <svg
-      viewBox="0 0 48 34"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      className="relative h-14 w-20 text-accent"
-      aria-hidden
-    >
-      {strokes.map((s, i) => (
-        <path
-          key={i}
-          className="mark-draw"
-          pathLength={100}
-          d={s.d}
-          opacity={s.opacity}
-          style={drawStyle("0.9s", s.delay)}
-        />
-      ))}
-      {/* Origin dot — the common source the paths fan out from. */}
-      <circle cx={6} cy={17} r={2.4} fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
+import { MarkLoader } from "@/components/mark-loader";
+import { FanMark } from "@/components/fan-mark";
 
 /**
  * Loading state for BOTH Monte Carlo surfaces — the solver's MC tab and the

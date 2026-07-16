@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverPosGauge } from "../solver-pos-gauge";
 
-describe("SolverPosGauge — Recalculate overlay", () => {
+describe("SolverPosGauge — overlay", () => {
   it("shows no overlay button when ready", () => {
     render(
       <SolverPosGauge state="ready" successPct={0.88} onRegenerate={vi.fn()} />,
@@ -12,30 +12,30 @@ describe("SolverPosGauge — Recalculate overlay", () => {
     expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
   });
 
-  it("shows the overlay button when stale and calls onRegenerate on click", () => {
-    const onRegenerate = vi.fn();
-    render(
-      <SolverPosGauge state="stale" successPct={0.88} onRegenerate={onRegenerate} />,
+  it("shows no overlay when stale — the run fires automatically", () => {
+    const { container } = render(
+      <SolverPosGauge state="stale" successPct={0.88} onRegenerate={vi.fn()} />,
     );
-    // last value still rendered (dimmed) behind the overlay
+    expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
+    // The prior value stays on screen, dimmed, through the auto-run debounce.
     expect(screen.getByText("88%")).toBeTruthy();
-    const btn = screen.getByRole("button", { name: /recalculate/i });
-    fireEvent.click(btn);
-    expect(onRegenerate).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".opacity-40")).toBeTruthy();
   });
 
-  it("shows the overlay button on error (acts as retry)", () => {
+  it("shows the overlay button on error (acts as retry) and calls onRegenerate", () => {
+    const onRegenerate = vi.fn();
     render(
-      <SolverPosGauge state="error" successPct={null} onRegenerate={vi.fn()} />,
+      <SolverPosGauge state="error" successPct={null} onRegenerate={onRegenerate} />,
     );
-    expect(screen.getByRole("button", { name: /recalculate/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /recalculate/i }));
+    expect(onRegenerate).toHaveBeenCalledTimes(1);
   });
 
   it("disables the overlay button while a solve is active", () => {
     render(
       <SolverPosGauge
-        state="stale"
-        successPct={0.88}
+        state="error"
+        successPct={null}
         onRegenerate={vi.fn()}
         solveActive
       />,
@@ -44,7 +44,25 @@ describe("SolverPosGauge — Recalculate overlay", () => {
   });
 
   it("never shows an overlay without an onRegenerate handler (base column)", () => {
-    render(<SolverPosGauge state="stale" successPct={0.88} />);
+    render(<SolverPosGauge state="error" successPct={null} />);
     expect(screen.queryByRole("button", { name: /recalculate/i })).toBeNull();
+  });
+});
+
+describe("SolverPosGauge — computing state", () => {
+  it("renders the branded fan mark instead of a value", () => {
+    const { container } = render(
+      <SolverPosGauge state="computing" successPct={null} onRegenerate={vi.fn()} />,
+    );
+    expect(container.querySelectorAll("svg .mark-draw")).toHaveLength(5);
+  });
+
+  it("announces the run to screen readers", () => {
+    render(
+      <SolverPosGauge state="computing" successPct={null} onRegenerate={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("status", { name: /calculating probability of success/i }),
+    ).toBeTruthy();
   });
 });
