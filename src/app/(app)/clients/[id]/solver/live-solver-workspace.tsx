@@ -22,7 +22,7 @@ import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { SolverPaneDivider } from "./solver-pane-divider";
-import { defaultReportForTab, type InputTab, type ReportKey } from "./report-tab-link";
+import { type InputTab, type ReportKey } from "./report-tab-link";
 import {
   resolveActiveReport,
   isReportVisible,
@@ -219,22 +219,14 @@ export function LiveSolverWorkspace({
   // handleLayoutChange); a persistent save failure rolls back with a toast.
   const [reportLayout, setReportLayout] = useState<ReportLayoutEntry[]>(initialReportLayout);
 
-  // The right-pane report is linked to the left input tab: selecting an input
-  // tab applies that tab's default report; clicking a report tab overrides it
-  // until the next input-tab change. Both the initial value and every tab
-  // change are reconciled against the layout, so a hidden report is never
-  // selected.
+  // The right-pane report is the advisor's own choice: it only changes when they
+  // click a report tab, never as a side effect of switching input tabs. Portfolio
+  // is the landing report, reconciled against the layout so a hidden report is
+  // never selected.
   const [activeReport, setActiveReport] = useState<ReportKey>(() =>
-    resolveActiveReport(defaultReportForTab("retirement"), initialReportLayout),
+    resolveActiveReport("portfolio", initialReportLayout),
   );
   const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
-  const handleTabChange = useCallback(
-    (tab: InputTab) => {
-      setActiveTab(tab);
-      setActiveReport(resolveActiveReport(defaultReportForTab(tab), reportLayout));
-    },
-    [reportLayout],
-  );
 
   // Coalescing single-flight persistence of the report layout. `savedLayoutRef`
   // holds the last layout the server confirmed — the rollback target on a
@@ -1170,7 +1162,7 @@ export function LiveSolverWorkspace({
                   aria-selected={active}
                   aria-label={t.label}
                   title={t.label}
-                  onClick={() => handleTabChange(t.id)}
+                  onClick={() => setActiveTab(t.id)}
                   className={
                     active
                       ? "flex min-w-0 flex-1 flex-col items-center gap-1 border-b-2 border-accent px-1 py-1.5 text-[11px] font-medium text-accent"

@@ -551,10 +551,55 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
   });
 });
 
+describe("LiveSolverWorkspace — report vs input tab independence", () => {
+  it("leaves the active report alone when the input tab changes", async () => {
+    // The Life Insurance input tab enables the LI solve hook, which fetches.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        isMarried: false,
+        client: {
+          status: "solved",
+          faceValue: 500_000,
+          achievedEndingPortfolio: 0,
+          projection: [],
+          existingPolicies: [],
+          existingCoverageTotal: 0,
+          estateTaxAddend: 0,
+        },
+        spouse: null,
+      }),
+    });
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // The advisor picks a report themselves.
+    fireEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
+    expect(screen.getByRole("tab", { name: "Cash Flow" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // Switching input tabs used to force that tab's default report on the right
+    // pane (Life Insurance → "Life Insurance Need"), blowing away the advisor's
+    // choice. Anchor the name to the input tab so it doesn't match the report tab.
+    fireEvent.click(screen.getByRole("tab", { name: /^Life Insurance$/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /^Life Insurance$/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(screen.getByRole("tab", { name: "Cash Flow" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+});
+
 describe("LiveSolverWorkspace — report layout customization", () => {
-  // Portfolio is the default active report (defaultReportForTab("retirement")).
-  // The report tabs and the popover switches share accessible names, so queries
-  // disambiguate by role ("tab" vs "switch").
+  // Portfolio is the report the workspace lands on. The report tabs and the
+  // popover switches share accessible names, so queries disambiguate by role
+  // ("tab" vs "switch").
 
   it("rolls back the layout + active report and toasts when the save fails", async () => {
     saveReportLayoutMock.mockResolvedValue({ ok: false });
