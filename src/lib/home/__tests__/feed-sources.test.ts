@@ -56,6 +56,72 @@ describe("contactToFeedItems", () => {
       ),
     ).toEqual([]);
   });
+
+  it("suppresses the plain birthday row when a milestone lands on the same date", () => {
+    // Turns 62 (Social Security eligibility) on 2026-07-25 -- the milestone
+    // has no calendar offset, so its date is identical to the birthday's.
+    // Only the richer milestone row should survive; the plain birthday row
+    // for the same date is a duplicate and must be dropped.
+    const items = contactToFeedItems(
+      {
+        id: "c6",
+        firstName: "Nora",
+        lastName: "Vance",
+        dateOfBirth: "1964-07-25",
+        householdId: "h6",
+        householdName: "Vance Household",
+      },
+      TODAY,
+    );
+    const sameDate = items.filter(
+      (i) => i.when.getTime() === new Date(2026, 6, 25).getTime(),
+    );
+    expect(sameDate).toHaveLength(1);
+    expect(sameDate[0].kind).toBe("milestone");
+    expect(sameDate[0].title).toBe("Nora Vance turns 62");
+    expect(sameDate[0].subtitle).toBe("Social Security eligibility");
+  });
+
+  it("keeps the birthday row and an unrelated milestone row when their dates differ", () => {
+    // The 59½ milestone (birthday + 6 calendar months) can never land in the
+    // 90-day milestone window for the SAME contact whose annual birthday is
+    // also in the 30-day birthday window -- the ~6-month offset always
+    // pushes it outside that combined range (verified by brute-force search
+    // across DOBs/today values: no combination produces an overlap). So this
+    // uses two contacts to prove the same-date suppression is scoped to
+    // (contact, date) and doesn't leak into suppressing an unrelated
+    // birthday row elsewhere in the feed.
+    const birthdayItems = contactToFeedItems(
+      {
+        id: "c7",
+        firstName: "Alex",
+        lastName: "Storm",
+        dateOfBirth: "1980-07-20",
+        householdId: "h7",
+        householdName: "Storm Household",
+      },
+      TODAY,
+    );
+    const milestoneItems = contactToFeedItems(
+      {
+        id: "c8",
+        firstName: "Priya",
+        lastName: "Chandra",
+        dateOfBirth: "1967-02-01",
+        householdId: "h8",
+        householdName: "Chandra Household",
+      },
+      TODAY,
+    );
+    expect(birthdayItems).toHaveLength(1);
+    expect(birthdayItems[0].kind).toBe("birthday");
+    expect(milestoneItems).toHaveLength(1);
+    expect(milestoneItems[0].kind).toBe("milestone");
+    expect(milestoneItems[0].title).toBe("Priya Chandra turns 59½");
+    expect(milestoneItems[0].when.getTime()).not.toBe(
+      birthdayItems[0].when.getTime(),
+    );
+  });
 });
 
 describe("mentionToFeedItem", () => {

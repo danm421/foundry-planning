@@ -12,6 +12,24 @@ import { toIsoDate } from "./dates";
 import { OPEN_TASK_STATUSES, visibleHouseholdConditions } from "./scope";
 import type { BookKpis } from "./types";
 
+async function fetchOpenTaskCounts(firmId: string, weekEnd: Date) {
+  return await db
+    .select({
+      assignee: crmTasks.assigneeUserId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(crmTasks)
+    .where(
+      and(
+        eq(crmTasks.firmId, firmId),
+        inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
+        isNotNull(crmTasks.dueDate),
+        lte(crmTasks.dueDate, toIsoDate(weekEnd)),
+      ),
+    )
+    .groupBy(crmTasks.assigneeUserId);
+}
+
 /**
  * Hybrid AUM: households WITH a planning client count only their base-case
  * planning accounts (0 if none); households WITHOUT one fall back to their
@@ -41,21 +59,7 @@ export async function getBookKpis(
   // Task query doesn't depend on household visibility, so start it before
   // awaiting the shared conditions (mirrors getHomeFeed's conditionsPromise pattern).
   const conditionsPromise = visibleHouseholdConditions(firmId, userId, orgRole);
-  const taskPromise = db
-    .select({
-      assignee: crmTasks.assigneeUserId,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(crmTasks)
-    .where(
-      and(
-        eq(crmTasks.firmId, firmId),
-        inArray(crmTasks.status, [...OPEN_TASK_STATUSES]),
-        isNotNull(crmTasks.dueDate),
-        lte(crmTasks.dueDate, toIsoDate(weekEnd)),
-      ),
-    )
-    .groupBy(crmTasks.assigneeUserId);
+  const taskPromise = fetchOpenTaskCounts(firmId, weekEnd);
 
   const hhConditions = await conditionsPromise;
 
