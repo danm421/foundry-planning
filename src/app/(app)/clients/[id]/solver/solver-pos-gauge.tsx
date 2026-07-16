@@ -1,5 +1,7 @@
 "use client";
 
+import { FanMark } from "@/components/fan-mark";
+
 interface Props {
   state: "idle" | "computing" | "ready" | "stale" | "error";
   successPct: number | null;
@@ -30,13 +32,18 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
           ? "text-warn"
           : "text-crit";
 
-  const showOverlay =
-    onRegenerate != null && (state === "stale" || state === "error");
+  // The overlay is a retry affordance only. A stale gauge re-runs on its own
+  // (see auto-run-mc.ts), so a button there would race the pending auto-run.
+  const showOverlay = onRegenerate != null && state === "error";
+  // `stale` keeps the prior value dimmed through the auto-run debounce — the
+  // dim is deliberately NOT tied to the overlay, which stale no longer shows.
   const contentDim = showOverlay
     ? "opacity-40 pointer-events-none"
-    : state === "idle"
-      ? "opacity-70"
-      : "";
+    : state === "stale"
+      ? "opacity-40"
+      : state === "idle"
+        ? "opacity-70"
+        : "";
 
   return (
     <div className="relative">
@@ -48,11 +55,9 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
           className={`mt-0.5 flex h-5 items-center text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
         >
           {state === "computing" ? (
-            <span
-              role="status"
-              aria-label="Calculating probability of success"
-              className="inline-block h-4 w-4 rounded-full border-2 border-hair border-t-accent motion-safe:animate-spin"
-            />
+            <span role="status" aria-label="Calculating probability of success">
+              <FanMark className="h-5 w-7 text-accent" strokeWidth={3} duration="0.8s" />
+            </span>
           ) : (
             display
           )}
