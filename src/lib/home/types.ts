@@ -33,6 +33,10 @@ export interface HomeFeed {
 
 export interface BookKpis {
   totalBookValue: number;
+  /** AUM-eligible accounts the advisor has NOT flagged as counting toward AUM. */
+  assetsHeldAway: number;
+  /** How many accounts make up `assetsHeldAway`. */
+  heldAwayAccounts: number;
   activeHouseholds: number;
   prospectHouseholds: number;
   planningClients: number;

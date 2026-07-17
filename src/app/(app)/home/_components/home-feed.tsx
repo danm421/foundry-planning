@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { Card, CardHeader } from "@/components/card";
+import { FeedIcon } from "./feed-icon";
 import type { FeedItem, HomeFeed } from "@/lib/home/types";
 
 const WHEN_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
@@ -10,9 +11,12 @@ function FeedRow({ item }: { item: FeedItem }): ReactElement {
     <li>
       <Link
         href={item.href}
-        className="flex items-baseline justify-between gap-3 rounded px-2 py-2 hover:bg-paper"
+        className="flex items-start gap-2.5 rounded px-2 py-2 hover:bg-paper"
       >
-        <span className="min-w-0">
+        <span className="mt-0.5">
+          <FeedIcon kind={item.kind} overdue={item.overdue} />
+        </span>
+        <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-ink">
             {item.overdue && (
               <span className="mr-1.5 text-xs font-medium text-crit">Overdue</span>

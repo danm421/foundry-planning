@@ -87,3 +87,17 @@ describe("MoneyText", () => {
     });
   });
 });
+
+describe("MoneyText sizes", () => {
+  it("renders kpiSm one step below kpi", () => {
+    const { container } = render(<MoneyText value={5} format="int" size="kpiSm" />);
+    const span = container.querySelector("span")!;
+    expect(span.className).toContain("text-[22px]");
+    expect(span.className).toContain("tabular");
+  });
+
+  it("leaves kpi at 30px", () => {
+    const { container } = render(<MoneyText value={5} format="int" size="kpi" />);
+    expect(container.querySelector("span")!.className).toContain("text-[30px]");
+  });
+});
