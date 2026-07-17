@@ -11,7 +11,7 @@ import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
 import { explainChange } from "@/lib/projection-explain/explain";
 import { buildDrillContext } from "@/lib/projection-explain/context";
-import { taxAdapter } from "@/lib/projection-explain/subjects/tax";
+import { ADAPTERS, SUBJECT_KEYS } from "@/lib/projection-explain/registry";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
@@ -71,7 +71,7 @@ const RunProjectionResultSchema = z.looseObject({
   years: z.array(z.unknown()),
 });
 const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
-const ExplainTaxChangeResultSchema = z.looseObject({ available: z.boolean() });
+const ExplainProjectionChangeResultSchema = z.looseObject({ available: z.boolean() });
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -132,11 +132,13 @@ export function buildComputeTools(
     },
   );
 
-  const explainTaxChangeTool = tool(
-    async ({ clientId, year, compareYear }) =>
+  const explainProjectionChangeTool = tool(
+    async ({ clientId, subject, year, compareYear }) =>
       withOutputRetry(async () => {
         const firmId = await requireOrgId();
         await assertClientReadable(ctx, clientId);
+
+        const adapter = ADAPTERS[subject];
 
         const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
         const result = runProjectionWithEvents(effectiveTree);
@@ -145,7 +147,7 @@ export function buildComputeTools(
         return {
           scenarioId: ctx.scenarioId,
           ...explainChange({
-            adapter: taxAdapter,
+            adapter,
             years: result.years,
             firstDeathYear: result.firstDeathEvent?.year ?? null,
             secondDeathYear: result.secondDeathEvent?.year ?? null,
@@ -154,21 +156,24 @@ export function buildComputeTools(
             ctx: drillCtx,
           }),
         };
-      }, ExplainTaxChangeResultSchema),
+      }, ExplainProjectionChangeResultSchema),
     {
-      name: "explain_tax_change",
+      name: "explain_projection_change",
       description:
-        "Explain WHY total tax changed between two projection years for the ACTIVE scenario. " +
-        "Use whenever the advisor asks why taxes jumped, spiked, dropped, or differ year-over-year. " +
-        "Returns federal+state tax-line deltas, income-composition deltas, per-source recognized-income " +
-        "deltas, the per-account withdrawal/depletion picture, and ranked root-cause findings " +
-        "(e.g. a taxable account ran dry so draws shifted to pre-tax, RMD onset, Roth conversion, " +
-        "Social Security taxability, realized gains, a death changing filing status, deduction changes, " +
-        "a state move). estimatedTaxImpact values are approximations — present them as estimates; " +
-        "exact movement is in taxLineDeltas. All numbers are the engine's own; narrate, never recompute.",
+        "Explain WHY a projection figure changed between two years for the ACTIVE scenario. " +
+        "subject selects the figure: use 'tax' when the advisor asks why taxes/the tax bill jumped, spiked, " +
+        "dropped, or differ year-over-year. Returns the from→to→Δ headline, federal+state tax-line deltas, " +
+        "income-composition deltas, per-source recognized-income deltas, the per-account withdrawal/funding " +
+        "picture, ranked root-cause findings, and analysisContext (which scenario + boundary was analyzed, and " +
+        "a probableIntendedBoundary when the asked year is one row off the real cliff). estimatedImpact values " +
+        "are approximations — present them as estimates; exact movement is in taxLineDeltas. All numbers are the " +
+        "engine's own; narrate, never recompute.",
       schema: z.object({
         clientId: z.string().describe("the active client uuid"),
-        year: z.number().int().describe("the year whose tax change to explain"),
+        subject: z
+          .enum(SUBJECT_KEYS)
+          .describe("which projection figure changed. Use 'tax' for the tax bill / taxes owed."),
+        year: z.number().int().describe("the year whose change to explain"),
         compareYear: z
           .number()
           .int()
@@ -394,5 +399,5 @@ export function buildComputeTools(
     },
   );
 
-  return [runProjection, explainTaxChangeTool, runMonteCarlo, compareScenarios, explainReport];
+  return [runProjection, explainProjectionChangeTool, runMonteCarlo, compareScenarios, explainReport];
 }

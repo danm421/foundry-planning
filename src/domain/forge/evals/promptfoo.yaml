@@ -39,7 +39,7 @@ tests:
         value: file://./assertions.ts:noInventedNumbers
   - vars:
       message: "In 2063 why do the taxes jump up so much from the previous year?"
-      expectTool: "explain_tax_change"
+      expectTool: "explain_projection_change"
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool

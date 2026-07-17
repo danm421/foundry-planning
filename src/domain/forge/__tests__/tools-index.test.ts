@@ -114,7 +114,7 @@ const EXPECTED_PHASE1 = [
   "run_monte_carlo",
   "compare_scenarios",
   "explain_report",
-  "explain_tax_change",
+  "explain_projection_change",
   // whatif + solvers
   "whatif_roth",
   "whatif_social_security",
@@ -319,11 +319,11 @@ describe("buildTools (Phase 4 report tool)", () => {
     expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
   });
 
-  it("explain_tax_change is present, read-only, and routes to tools (not approval)", () => {
+  it("explain_projection_change is present, read-only, and routes to tools (not approval)", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
-    expect(names.has("explain_tax_change")).toBe(true);
-    expect(WRITE_TOOL_NAMES.has("explain_tax_change")).toBe(false);
-    expect(routeAfterAgent([{ name: "explain_tax_change" }], WRITE_TOOL_NAMES)).toBe("tools");
+    expect(names.has("explain_projection_change")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("explain_projection_change")).toBe(false);
+    expect(routeAfterAgent([{ name: "explain_projection_change" }], WRITE_TOOL_NAMES)).toBe("tools");
   });
 });
 
