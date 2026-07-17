@@ -126,10 +126,10 @@ function HouseholdRows({
               <span className="ml-2 text-xs text-ink-3">{CATEGORY_LABEL[a.category] ?? a.category}</span>
             </td>
             <td className="px-3 py-1.5 text-right">
-              {a.countsTowardAum ? <MoneyText value={a.value} format="currency" /> : <span className="text-ink-4">—</span>}
+              <MoneyText value={a.countsTowardAum ? a.value : null} format="currency" />
             </td>
             <td className="px-3 py-1.5 text-right">
-              {a.countsTowardAum ? <span className="text-ink-4">—</span> : <MoneyText value={a.value} format="currency" />}
+              <MoneyText value={a.countsTowardAum ? null : a.value} format="currency" />
             </td>
             <td className="px-3 py-1.5 text-right">
               <span className={`text-[10px] uppercase tracking-wide ${a.countsTowardAum ? "text-data-blue" : "text-data-orange"}`}>

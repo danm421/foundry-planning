@@ -101,10 +101,10 @@ export function aggregateBookBreakdown(rows: BookQueryRow[]): BookBreakdown {
   const bookCentsTotal = [...byHousehold.values()].reduce((s, h) => s + h.bookCents, 0);
   const heldAwayCentsTotal = [...byHousehold.values()].reduce((s, h) => s + h.heldAwayCents, 0);
 
-  const top5BookCents = [...households]
-    .sort((a, b) => b.bookValue - a.bookValue)
+  const top5BookCents = [...byHousehold.values()]
+    .sort((a, b) => b.bookCents - a.bookCents)
     .slice(0, 5)
-    .reduce((s, h) => s + Math.round(h.bookValue * 100), 0);
+    .reduce((s, h) => s + h.bookCents, 0);
 
   const largest = households
     .filter((h) => h.heldAway > 0)
