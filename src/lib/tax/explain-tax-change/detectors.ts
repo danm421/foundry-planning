@@ -39,13 +39,17 @@ export function detectWithdrawalShift(a: DetectorArgs): TaxChangeFinding | null 
   if (incomeDelta < LINE_FLOOR) return null;
 
   const grossUp = a.diff.withdrawalPicture.totalWithdrawals.delta;
+  const grossUpClause =
+    grossUp >= 0
+      ? `Total gross withdrawals rose ${money(grossUp)} to fund the same need plus the extra tax.`
+      : `Total gross withdrawals actually fell ${money(grossUp)} even as draws shifted to the ` +
+        `more heavily taxed source.`;
   return {
     kind: "withdrawal_shift",
     summary:
       `${names(depleted)} was depleted in ${a.prev.year} (ended near $0), so ` +
       `${a.next.year} withdrawals shifted to ${names(risers)} — recognizing ` +
-      `${money(incomeDelta)} more taxable income from draws. Total gross ` +
-      `withdrawals rose ${money(grossUp)} to fund the same need plus the extra tax.`,
+      `${money(incomeDelta)} more taxable income from draws. ${grossUpClause}`,
     incomeDelta,
     evidence: {
       depletedAccounts: names(depleted),

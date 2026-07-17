@@ -47,4 +47,43 @@ describe("detectWithdrawalShift", () => {
     const next = makeYear({ year: 2063, withdrawals: { byAccount: {}, total: 0 } });
     expect(detectWithdrawalShift(args(depletedPrev(), next))).toBeNull();
   });
+
+  it("states the direction correctly when total gross withdrawals fell despite the shift", () => {
+    // A third account's draws fall by more than the riser gained, so
+    // totalWithdrawals.delta goes negative even though the depleted->riser
+    // shift still recognizes more taxable income.
+    const prev = makeYear({
+      year: 2062,
+      withdrawals: { byAccount: { brok: 120_000, third: 200_000 }, total: 320_000 },
+      accountLedgers: {
+        brok: makeLedger({ beginningValue: 118_000, endingValue: 0 }),
+        third: makeLedger({ beginningValue: 3_200_000, endingValue: 3_000_000 }),
+      },
+      taxDetail: makeTaxDetail({ "withdrawal:brok": { type: "capGains", amount: 20_000 } }),
+    });
+    const next = makeYear({
+      year: 2063,
+      withdrawals: { byAccount: { ira: 190_000, third: 50_000 }, total: 240_000 },
+      accountLedgers: {
+        ira: makeLedger({ beginningValue: 900_000, endingValue: 750_000 }),
+        third: makeLedger({ beginningValue: 3_000_000, endingValue: 2_950_000 }),
+      },
+      taxDetail: makeTaxDetail({ "withdrawal:ira": { type: "ordinary", amount: 190_000 } }),
+    });
+
+    const f = detectWithdrawalShift(args(prev, next));
+    expect(f?.kind).toBe("withdrawal_shift");
+    expect(f?.evidence.grossWithdrawalDelta).toBe(-80_000);
+    expect(f?.summary).toContain("fell");
+    expect(f?.summary).not.toContain("rose");
+  });
+
+  it("returns null when recognized income delta is below LINE_FLOOR despite a depleted account and a riser", () => {
+    const next = makeYear({
+      year: 2063,
+      withdrawals: { byAccount: { ira: 15_000 }, total: 15_000 },
+      taxDetail: makeTaxDetail({ "withdrawal:ira": { type: "ordinary", amount: 20_050 } }),
+    });
+    expect(detectWithdrawalShift(args(depletedPrev(), next))).toBeNull();
+  });
 });
