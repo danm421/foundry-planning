@@ -18,6 +18,10 @@ vi.mock("react-chartjs-2", () => ({
 
 import { BookSplitChart } from "../book-split-chart";
 import type { BookBreakdown } from "@/lib/home/book-breakdown";
+// jsdom leaves document.documentElement.dataset.theme unset, so useThemeName()
+// resolves to "dark" and the component paints from the `data` palette (not
+// `dataLight`). Assert against the real brand colors instead of hardcoded hex.
+import { data as brandData } from "@/brand";
 
 const DATA: BookBreakdown = {
   households: [
@@ -33,5 +37,26 @@ describe("BookSplitChart", () => {
     const { getByTestId } = render(<BookSplitChart data={DATA} />);
     expect(getByTestId("chart")).toBeInTheDocument();
     expect(seen.data).toBeDefined();
+  });
+
+  it("passes two datasets ranked top-N by total, blue=book / orange=held-away", () => {
+    render(<BookSplitChart data={DATA} />);
+    const chartData = seen.data as {
+      labels: string[];
+      datasets: { label: string; backgroundColor: string; data: number[] }[];
+    };
+
+    // Top-N by total desc: Baxter (400000) before Anderson (250000).
+    expect(chartData.labels).toEqual(["Baxter", "Anderson"]);
+
+    expect(chartData.datasets).toHaveLength(2);
+
+    expect(chartData.datasets[0].label).toBe("Book value");
+    expect(chartData.datasets[0].backgroundColor).toBe(brandData.blue);
+    expect(chartData.datasets[0].data).toEqual([400000, 200000]);
+
+    expect(chartData.datasets[1].label).toBe("Held away");
+    expect(chartData.datasets[1].backgroundColor).toBe(brandData.orange);
+    expect(chartData.datasets[1].data).toEqual([0, 50000]);
   });
 });
