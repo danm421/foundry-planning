@@ -435,6 +435,36 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   rebuildEntityMap();
 
   /**
+   * Was each split-interest trust a GRANTOR trust in its own inception year?
+   * Snapshotted once, from the immutable `data.entities`, before any death-event
+   * grantor-succession flip can occur.
+   *
+   * ⚠️ Do NOT re-derive this as `effectiveIsGrantor(id, si.inceptionYear)`.
+   * That predicate reads `entityMap[id].isGrantor` — i.e. "as of NOW" — and only
+   * its grantorStatusEndYear comparison consumes the year argument. Grantor
+   * succession reassigns currentEntities and calls rebuildEntityMap() with
+   * isGrantor:false at the grantor's death, so in the death year — exactly when
+   * §170(f)(2)(B) recapture must fire — the naive gate would return false and
+   * recapture would silently never fire. (audit F5)
+   *
+   * Also correct when inceptionYear predates planStartYear (a pre-existing CLT),
+   * where no runtime observation of the deduction is possible at all.
+   *
+   * Gates BOTH the CLT inception deduction and its recapture, so the invariant
+   * "recapture iff deducted" holds by construction.
+   */
+  const grantorAtInception = new Map<string, boolean>();
+  for (const e of data.entities ?? []) {
+    if (!e.splitInterest) continue;
+    grantorAtInception.set(
+      e.id,
+      e.isGrantor === true &&
+        (e.grantorStatusEndYear == null ||
+          e.splitInterest.inceptionYear <= e.grantorStatusEndYear),
+    );
+  }
+
+  /**
    * Year-aware "is this entity currently a grantor trust" predicate. A trust
    * is "effectively grantor" only when {@link EntitySummary.isGrantor} is
    * still true AND the grantor-status window has not elapsed
@@ -3029,6 +3059,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       };
       for (const trust of currentEntities) {
         if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
+        // Recapture iff deducted — the SAME predicate that gated the inception
+        // deduction. A non-grantor CLT never took one, so there is nothing to
+        // recapture and doing so would be phantom income. (F5)
+        if (!grantorAtInception.get(trust.id)) continue;
         if (trust.grantor !== decedentRoleThisYear) continue;
         const si = trust.splitInterest;
         const grantorFmId =
@@ -3480,6 +3514,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const e of data.entities ?? []) {
       if (e.trustSubType !== "clt" || !e.splitInterest) continue;
       if (e.splitInterest.inceptionYear !== year) continue;
+      // §170(f)(2)(B) is a GRANTOR-CLT deduction only. A non-grantor CLT deducts
+      // each year's payment under §642(c) inside the 1041 pass instead
+      // (nonGrantorTrustsWithDeductions) — granting both is a double
+      // deduction. (F5)
+      if (!grantorAtInception.get(e.id)) continue;
       const charity = (data.externalBeneficiaries ?? []).find(
         (eb) => eb.id === e.splitInterest!.charityId,
       );
