@@ -102,8 +102,9 @@ interface BuildSplitInterestTrustEntityArgs {
 /**
  * Build the EntitySummary for a solver-created CRT/CLT: the same base trust
  * fields as Phase 3a's buildTrustEntity (out of estate, survivorship end,
- * non-grantor / non-crummey for crt|clt) plus the frozen split-interest
- * snapshot. Beneficiary arrays are intentionally omitted — the CRT/CLT payout
+ * non-crummey; isGrantor per defaultIsGrantorFor — crt non-grantor, clt
+ * grantor) plus the frozen split-interest snapshot. Beneficiary arrays are
+ * intentionally omitted — the CRT/CLT payout
  * passes read only entity.splitInterest + entity.trustSubType, and the loader
  * defaults those arrays to [] for DB-created split-interest trusts.
  */
