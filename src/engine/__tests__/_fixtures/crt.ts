@@ -10,6 +10,15 @@ const CRT_ENTITY_ID = "00000000-0000-0000-0000-0000000000c1";
 const CRT_CHECKING_ID = "00000000-0000-0000-0000-0000000000c2";
 const HOUSEHOLD_CHECKING_ID = "00000000-0000-0000-0000-0000000000c3";
 const CRT_TAXABLE_ID = "00000000-0000-0000-0000-0000000000c4";
+const CRT_IRA_ID = "00000000-0000-0000-0000-0000000000c5";
+const CRT_INCOME_ID = "00000000-0000-0000-0000-0000000000c6";
+const CRT_SALE_TXN_ID = "00000000-0000-0000-0000-0000000000c7";
+const CRT_LOWBASIS_ID = "00000000-0000-0000-0000-0000000000cc";
+const CRT_EXPENSE_ID = "00000000-0000-0000-0000-0000000000cd";
+const SIBLING_TRUST_ID = "00000000-0000-0000-0000-0000000000c8";
+const SIBLING_CHECKING_ID = "00000000-0000-0000-0000-0000000000c9";
+const HOUSEHOLD_TAXABLE_ID = "00000000-0000-0000-0000-0000000000ca";
+const HOUSEHOLD_SALE_TXN_ID = "00000000-0000-0000-0000-0000000000cb";
 
 export interface CrtLifecycleOpts {
   inceptionYear: number;
@@ -57,6 +66,70 @@ export interface CrtLifecycleOpts {
    * assertions; use it for TAX assertions.
    */
   realizationCorpus?: boolean;
+  /**
+   * Adds a CRT-owned income row ($40k/yr ordinary, `ownerEntityId` = the CRT).
+   *
+   * The base fixture has `incomes: []`, which leaves the grantorIncome filter
+   * and the household-1040 trust-income loop UNEXECUTED — their §664(c) guards
+   * are unreachable, so the suite cannot detect them being removed. Requires
+   * `realizationCorpus` for bracket mode to be live.
+   */
+  crtIncomeRow?: boolean;
+  /**
+   * Adds a CRT-owned, RMD-enabled traditional IRA AND moves the grantor's DOB
+   * back so the client is past RMD start age at inception.
+   *
+   * Both halves are required: the entity-RMD fork routes on the CLIENT's birth
+   * year (projection.ts `ownerBirthYear` falls back to `clientBirthYear` for
+   * entity-owned accounts), and the default 1966 DOB puts the client at age 60
+   * — under the age-75 start (§ SECURE 2.0, born >= 1960), so `calculateRMD`
+   * returns 0 and the fork is never reached. A CRT named as an IRA beneficiary
+   * is a standard structure.
+   */
+  crtIra?: boolean;
+  /**
+   * Adds a sell transaction for the CRT brokerage in `inceptionYear + 1` with a
+   * $1M built-in gain. Requires `realizationCorpus` (that opt creates the
+   * account being sold).
+   *
+   * This is the canonical CRT structure: contribute low-basis stock, let the
+   * trust sell it tax-free under §664(c), diversify the proceeds.
+   */
+  crtSale?: boolean;
+  /**
+   * Adds an ORDINARY (non-CRT) irrevocable non-grantor trust with its own
+   * checking, plus a household-owned brokerage sold the same year as `crtSale`
+   * for a $500k gain.
+   *
+   * Without a sibling non-grantor trust the whole `nonGrantorTrusts.length > 0`
+   * block never runs, so the §664(c) guard on the sale-gain → 1041 hand-off is
+   * unreachable and cannot be mutation-tested. The household gain is the
+   * observable: if the CRT's exempt gain wrongly enters `assetTransactionGains`
+   * it gets subtracted from a household total it was never added to, silently
+   * wiping out tax on the household's OWN gain.
+   *
+   * Combine with `crtSale` + `realizationCorpus`.
+   */
+  siblingNonGrantorTrust?: boolean;
+  /**
+   * Adds a CRT-owned ZERO-basis brokerage plus a CRT-owned expense large enough
+   * to drive the CRT's checking negative in `inceptionYear`.
+   *
+   * That forces the step-12c entity gap-fill to liquidate the zero-basis
+   * brokerage, which defers the realized gain to the FOLLOWING year's
+   * carry-in drain — the only producer of `deferredEntityLiquidationGains`, and
+   * therefore the only way to reach the §664(c) guard on that fork. (A plain
+   * sale does NOT reach it: sales flow through `saleResult`, not the gap-fill.)
+   *
+   * The zero basis is load-bearing: `realizationCorpus`'s brokerage has
+   * basis == value and its 100%-ordinary realization raises basis in lockstep
+   * with growth, so liquidating it realizes no gain and the carry-in is never
+   * pushed. For the same reason do NOT combine this with `realizationCorpus`:
+   * the entity withdrawal strategy drains that basis==value brokerage first and
+   * absorbs the whole shortfall at zero gain. This opt seeds `taxYearRows` on
+   * its own so it doesn't need `realizationCorpus` to reach bracket mode.
+   */
+  crtGapFill?: boolean;
 }
 
 /**
@@ -108,6 +181,19 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
     originalIncome = round2(opts.inceptionValue - originalRemainder);
   }
 
+  // Grantor DOB: 1966-01-01 → age 60 at inception=2026. If grantorDeathYear
+  // is set, configure lifeExpectancy so the death-event fires that year.
+  //
+  // crtIra moves the DOB back so the client is age 75 at inception — the
+  // entity-RMD fork reads the CLIENT's birth year even for a trust-owned
+  // account, and at age 60 calculateRMD returns 0 and the fork never runs.
+  const grantorBirthYear = opts.crtIra ? opts.inceptionYear - 75 : 1966;
+  const grantorDob = `${grantorBirthYear}-01-01`;
+  const lifeExpectancy =
+    opts.grantorDeathYear != null
+      ? opts.grantorDeathYear - grantorBirthYear
+      : undefined;
+
   const familyMembers: FamilyMember[] = [
     {
       id: CLIENT_FM_ID,
@@ -115,18 +201,9 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
       lastName: "Grantor",
       relationship: "other",
       role: "client",
-      dateOfBirth: "1966-01-01",
+      dateOfBirth: grantorDob,
     } as FamilyMember,
   ];
-
-  // Grantor DOB: 1966-01-01 → age 60 at inception=2026. If grantorDeathYear
-  // is set, configure lifeExpectancy so the death-event fires that year.
-  const grantorDob = "1966-01-01";
-  const grantorBirthYear = 1966;
-  const lifeExpectancy =
-    opts.grantorDeathYear != null
-      ? opts.grantorDeathYear - grantorBirthYear
-      : undefined;
 
   return {
     client: {
@@ -190,9 +267,102 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
             } as ClientData["accounts"][number],
           ]
         : []),
+      ...(opts.crtIra
+        ? [
+            {
+              id: CRT_IRA_ID,
+              name: "CRT Inherited IRA",
+              category: "retirement",
+              subType: "traditional_ira",
+              value: 500_000,
+              basis: 0,
+              growthRate: 0,
+              rmdEnabled: true,
+              isDefaultChecking: false,
+              owners: [{ kind: "entity", entityId: CRT_ENTITY_ID, percent: 1 }],
+            } as ClientData["accounts"][number],
+          ]
+        : []),
+      ...(opts.crtGapFill
+        ? [
+            {
+              id: CRT_LOWBASIS_ID,
+              name: "CRT Concentrated Stock",
+              category: "taxable",
+              subType: "brokerage",
+              value: 1_000_000,
+              basis: 0,
+              growthRate: 0,
+              rmdEnabled: false,
+              isDefaultChecking: false,
+              owners: [{ kind: "entity", entityId: CRT_ENTITY_ID, percent: 1 }],
+            } as ClientData["accounts"][number],
+          ]
+        : []),
+      ...(opts.siblingNonGrantorTrust
+        ? [
+            {
+              id: SIBLING_CHECKING_ID,
+              name: "Family Trust Checking",
+              category: "cash",
+              subType: "checking",
+              value: 100_000,
+              basis: 100_000,
+              growthRate: 0,
+              rmdEnabled: false,
+              isDefaultChecking: true,
+              owners: [{ kind: "entity", entityId: SIBLING_TRUST_ID, percent: 1 }],
+            } as ClientData["accounts"][number],
+            {
+              id: HOUSEHOLD_TAXABLE_ID,
+              name: "Personal Brokerage",
+              category: "taxable",
+              subType: "brokerage",
+              value: 1_000_000,
+              basis: 500_000,
+              growthRate: 0,
+              rmdEnabled: false,
+              isDefaultChecking: false,
+              owners: [
+                { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 },
+              ],
+            } as ClientData["accounts"][number],
+          ]
+        : []),
     ],
-    incomes: [],
-    expenses: [],
+    incomes: opts.crtIncomeRow
+      ? ([
+          {
+            id: CRT_INCOME_ID,
+            name: "CRT royalty stream",
+            type: "other",
+            taxType: "ordinary_income",
+            annualAmount: 40_000,
+            growthRate: 0,
+            startYear: opts.inceptionYear,
+            endYear: planEnd,
+            ownerEntityId: CRT_ENTITY_ID,
+          },
+        ] as unknown as ClientData["incomes"])
+      : [],
+    expenses: opts.crtGapFill
+      ? ([
+          {
+            id: CRT_EXPENSE_ID,
+            type: "other",
+            name: "CRT trustee + settlement costs",
+            // Exceeds the CRT checking (= inceptionValue) on its own, so the
+            // checking goes negative in inceptionYear and step-12c liquidates
+            // the zero-basis brokerage to refill it.
+            annualAmount: opts.inceptionValue + 500_000,
+            startYear: opts.inceptionYear,
+            endYear: opts.inceptionYear,
+            growthRate: 0,
+            ownerEntityId: CRT_ENTITY_ID,
+            cashAccountId: CRT_CHECKING_ID,
+          },
+        ] as unknown as ClientData["expenses"])
+      : [],
     liabilities: [],
     savingsRules: [],
     withdrawalStrategy: [],
@@ -233,11 +403,58 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
           originalRemainderInterest: originalRemainder,
         },
       },
+      ...(opts.siblingNonGrantorTrust
+        ? [
+            {
+              id: SIBLING_TRUST_ID,
+              name: "Family Trust",
+              entityType: "trust",
+              isIrrevocable: true,
+              isGrantor: false,
+              includeInPortfolio: false,
+              grantor: "client",
+            } as unknown as NonNullable<ClientData["entities"]>[number],
+          ]
+        : []),
     ],
     deductions: [],
-    ...(opts.realizationCorpus ? { taxYearRows: [TAX_YEAR_2026] } : {}),
+    // Bracket mode must be live for any §664(c) tax assertion — without
+    // taxYearRows the engine silently falls back to flat-0 and computes no tax
+    // at all, which reads identically to an exemption that works.
+    ...(opts.realizationCorpus || opts.crtGapFill
+      ? { taxYearRows: [TAX_YEAR_2026] }
+      : {}),
     transfers: [],
-    assetTransactions: [],
+    assetTransactions: [
+      ...(opts.crtSale
+        ? [
+            {
+              id: CRT_SALE_TXN_ID,
+              name: "CRT diversifying sale",
+              type: "sell",
+              year: opts.inceptionYear + 1,
+              accountId: CRT_TAXABLE_ID,
+              overrideSaleValue: 2_000_000,
+              overrideBasis: 1_000_000,
+              proceedsAccountId: CRT_CHECKING_ID,
+            },
+          ]
+        : []),
+      ...(opts.siblingNonGrantorTrust
+        ? [
+            {
+              id: HOUSEHOLD_SALE_TXN_ID,
+              name: "Personal brokerage sale",
+              type: "sell",
+              year: opts.inceptionYear + 1,
+              accountId: HOUSEHOLD_TAXABLE_ID,
+              overrideSaleValue: 1_000_000,
+              overrideBasis: 500_000,
+              proceedsAccountId: HOUSEHOLD_CHECKING_ID,
+            },
+          ]
+        : []),
+    ] as unknown as ClientData["assetTransactions"],
     gifts: [],
     giftEvents: [],
     wills: [],
@@ -260,4 +477,13 @@ export const CRT_FIXTURE_IDS = {
   CRT_CHECKING_ID,
   CRT_TAXABLE_ID,
   HOUSEHOLD_CHECKING_ID,
+  CRT_IRA_ID,
+  CRT_INCOME_ID,
+  CRT_SALE_TXN_ID,
+  CRT_LOWBASIS_ID,
+  CRT_EXPENSE_ID,
+  SIBLING_TRUST_ID,
+  SIBLING_CHECKING_ID,
+  HOUSEHOLD_TAXABLE_ID,
+  HOUSEHOLD_SALE_TXN_ID,
 } as const;
