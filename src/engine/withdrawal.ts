@@ -139,6 +139,37 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   return empty;
 }
 
+/** taxDetail.bySource entries that supplemental draws contribute, keyed
+ *  `withdrawal:<acctId>` (recognized income) and `withdrawal_tax_free:<acctId>`
+ *  (display-only non-taxable slice). ACCUMULATES per account: when one account
+ *  is drawn twice in a year (same accountId in two WithdrawalPriority rows), a
+ *  naive assignment would let the 2nd draw overwrite the 1st while the income
+ *  totals sum both — a silent grossSubtotal drift, since `non_taxable` isn't in
+ *  the ledger's reconciled character set. `taxFreeSlice` returns the untaxed
+ *  retirement slice of a draw (0 for taxable/cash sources). */
+export function supplementalDrawSources(
+  draws: SupplementalDraw[],
+  taxFreeSlice: (draw: SupplementalDraw) => number,
+): Record<string, { type: string; amount: number }> {
+  const out: Record<string, { type: string; amount: number }> = {};
+  // `??=` locks `type` to the first draw seen for a key; a repeat draw on the
+  // same account only accumulates `amount` (both draws share the account's tax
+  // treatment, so the type never conflicts).
+  const add = (key: string, type: string, amount: number) => {
+    (out[key] ??= { type, amount: 0 }).amount += amount;
+  };
+  for (const draw of draws) {
+    const recognized = draw.ordinaryIncome + draw.capitalGains;
+    if (recognized > 0) {
+      add(`withdrawal:${draw.accountId}`, draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains", recognized);
+    }
+    // Separate key so a mixed draw can carry both a taxable and a tax-free row.
+    const taxFree = taxFreeSlice(draw);
+    if (taxFree > 0) add(`withdrawal_tax_free:${draw.accountId}`, "tax_free", taxFree);
+  }
+  return out;
+}
+
 export interface PlanSupplementalWithdrawalInput {
   shortfall: number;
   strategy: WithdrawalPriority[];

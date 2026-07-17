@@ -233,6 +233,22 @@ describe("buildIncomeCellDrill — Non-Taxable Income", () => {
     expect(Math.abs(sum - 4_500)).toBeLessThanOrEqual(1);
   });
 
+  it("renders a Tax-Free Retirement Distributions group for tax_free draws", () => {
+    const year = makeYear();
+    year.taxDetail!.bySource["withdrawal_tax_free:acc_3"] = { type: "tax_free", amount: 289_366 };
+    (year.taxResult!.income as { nonTaxableIncome: number }).nonTaxableIncome = 293_866; // 4,500 + 289,366
+    const props = buildIncomeCellDrill({ year, columnKey: "nonTaxableIncome", ctx });
+
+    const group = props.groups.find((g) => g.label === "Tax-Free Retirement Distributions");
+    expect(group).toBeDefined();
+    expect(group!.rows).toEqual([
+      { id: "withdrawal_tax_free:acc_3", label: "Roth IRA — Withdrawal (tax-free)", amount: 289_366 },
+    ]);
+    // Reconciliation: all groups still sum to the cell.
+    const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(sum - 293_866)).toBeLessThanOrEqual(1);
+  });
+
   it("omits a group when it has no rows", () => {
     // No tax-exempt items, no SS.
     const year = makeYear({

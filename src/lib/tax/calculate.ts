@@ -42,7 +42,8 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     filingStatus: fs,
   });
   const nonTaxableSs = input.socialSecurityGross - taxableSocialSecurity;
-  const nonTaxableIncome = input.taxExemptIncome + nonTaxableSs;
+  const nonTaxableIncome =
+    input.taxExemptIncome + (input.taxFreeRetirementIncome ?? 0) + nonTaxableSs;
 
   const totalIncome =
     earnedIncome +

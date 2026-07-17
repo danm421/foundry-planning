@@ -60,6 +60,9 @@ export interface YearTaxInput {
   spouseAge?: number;
   /** ISO exercise bargain element for the year — flows to AMTI (bracket mode). */
   isoSpread?: number;
+  /** Tax-free retirement draw slices (Roth IRA, 401k/403b Roth, HSA) —
+   *  display-only, rolls into nonTaxableIncome/grossTotalIncome. */
+  taxFreeRetirementIncome?: number;
 }
 
 export interface YearTaxOutput {
@@ -187,6 +190,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         // Narrow muni-only subset for the §86 SS combined-income test (mirrors the
         // IRMAA-MAGI bucket); the broad taxExempt total still feeds income display.
         taxExemptInterest: taxDetail.taxExemptInterest,
+        taxFreeRetirementIncome: input.taxFreeRetirementIncome,
         socialSecurityGross,
         aboveLineDeductions: aboveLineWithSeca,
         itemizedDeductions,
@@ -209,7 +213,8 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         flatFederalRate: planSettings.flatFederalRate,
         flatStateRate: planSettings.flatStateRate,
         taxParams: resolved?.params ?? makeEmptyTaxParams(year),
-        nonTaxableIncome: Math.max(0, totalIncome - taxableIncome),
+        nonTaxableIncome:
+          Math.max(0, totalIncome - taxableIncome) + (input.taxFreeRetirementIncome ?? 0),
       });
 
   // Add transfer early-withdrawal penalty

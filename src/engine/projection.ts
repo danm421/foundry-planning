@@ -65,10 +65,10 @@ import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } fr
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeIraLimit, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
-import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
-import { applyTransfers } from "./transfers";
+import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import { applyRothConversions } from "./roth-conversions";
 import { applyMarketShock } from "./market-shock";
@@ -1797,11 +1797,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers);
 
     // ── Apply Transfers ─────────────────────────────────────────────────────
-    let transferResult = {
+    let transferResult: TransfersResult = {
       taxableOrdinaryIncome: 0,
       capitalGains: 0,
       earlyWithdrawalPenalty: 0,
-      byTransfer: {} as Record<string, { amount: number; label: string }>,
+      byTransfer: {},
     };
     if (data.transfers && data.transfers.length > 0) {
       transferResult = applyTransfers({
@@ -1845,12 +1845,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // the first projection year only — Year 2+ uses the engine's own
       // year-end balances.
       const isFirstProjectionYear = year === planSettings.planStartYear;
-      const rmdBasis =
+      const grossBasis =
         isFirstProjectionYear && acct.priorYearEndValue != null
           ? acct.priorYearEndValue
           : accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+      // SECURE 2.0 §325 (2024+): designated Roth 401(k)/403(b) balances are
+      // exempt from lifetime RMDs, so the basis is the pre-tax slice only.
+      // rothValueBoY is stamped alongside beginningValue (before growth) —
+      // the live rothValueMap has already grown and would over-subtract.
+      const rothValueBoY = accountLedgers[acct.id]?.rothValueBoY ?? 0;
+      let rmdBasis: number;
+      if (isFirstProjectionYear && acct.priorYearEndValue != null) {
+        // `grossBasis` here is `priorYearEndValue` — a prior-Dec-31 custodian
+        // snapshot on a different scale than the current-snapshot rothValueBoY.
+        // Subtracting raw Roth dollars mixes scales (and can zero a real RMD),
+        // so apply the current Roth *fraction* to the prior-year gross instead.
+        const beginningGross = accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+        const rothFraction = beginningGross > 0 ? Math.min(1, rothValueBoY / beginningGross) : 0;
+        rmdBasis = grossBasis * (1 - rothFraction);
+      } else {
+        rmdBasis = Math.max(0, grossBasis - rothValueBoY);
+      }
       const currentBalance = accountBalances[acct.id] ?? 0;
-      const rmd = Math.min(currentBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+      // Cap at the current pre-tax balance so an RMD never forces out Roth
+      // dollars (the distribution is booked 100% pre-tax below).
+      const preTaxBalance = Math.max(0, currentBalance - (rothValueMap[acct.id] ?? 0));
+      const rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
       if (rmd <= 0) continue;
 
       accountBalances[acct.id] = currentBalance - rmd;
@@ -2363,10 +2383,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       };
     }
 
-    // Track sources for drill-down
+    // Track sources for drill-down. R3: key off the recognized ORDINARY slice,
+    // not the gross transfer — a qualified Roth/HSA move (or a taxable-source
+    // liquidation) has $0 ordinary income, so it must not book a phantom taxable
+    // Transfer row. A transfer is an internal asset move, not a cash-flow income
+    // event, and never feeds taxFreeRetirementIncome, so there is no tax-free row.
     for (const [tid, info] of Object.entries(transferResult.byTransfer)) {
-      if (info.amount > 0) {
-        taxDetail.bySource[`transfer:${tid}`] = { type: "ordinary_income", amount: info.amount };
+      if (info.taxableOrdinaryIncome > 0) {
+        taxDetail.bySource[`transfer:${tid}`] = { type: "ordinary_income", amount: info.taxableOrdinaryIncome };
       }
     }
     for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
@@ -4432,6 +4456,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // snapshotted (below) so any taxable draw components (non-529 dedicated
     // accounts) reach the year's tax convergence; and BEFORE the step-11
     // cashDelta flush so an out-of-pocket spill lands on checking this year.
+    // Tax-free retirement slice (qualified Roth, 401k/403b Roth share, HSA) of a
+    // supplemental or education draw — display-only nonTaxableIncome. Taxable/cash
+    // (and 529) draws excluded: their untaxed share is return of principal, not
+    // income. Shared by the education pass below and the supplemental loop later.
+    const taxFreeRetirementSlice = (draw: SupplementalDraw): number =>
+      accountById.get(draw.accountId)?.category === "retirement"
+        ? Math.max(0, draw.amount - draw.ordinaryIncome)
+        : 0;
+    const sumTaxFreeSlice = (draws: SupplementalDraw[]): number =>
+      draws.reduce((sum, d) => sum + taxFreeRetirementSlice(d), 0);
+
+    // R4: non-taxable retirement income from Roth/HSA education draws, accumulated
+    // across goals and folded into taxFreeRetirementIncome (same as supplemental).
+    let educationTaxFreeIncome = 0;
+
     const educationGoalYears: EducationGoalYear[] = [];
     for (const { goal, gate } of educationGoalsThisYear) {
       const inflateFrom = goal.inflationStartYear ?? goal.startYear;
@@ -4503,6 +4542,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           type: drawResult.capitalGains > 0 ? "capital_gains" : "ordinary_income",
           amount: drawResult.capitalGains > 0 ? drawResult.capitalGains : drawResult.ordinaryIncome,
         };
+      }
+
+      // R4: a Roth/HSA dedicated account surfaces its untaxed slice as non-taxable
+      // retirement income — the same treatment a supplemental Roth/HSA draw gets.
+      // 529/taxable draws contribute 0 (return of principal, not income).
+      const eduTaxFree = sumTaxFreeSlice(drawResult.draws);
+      if (eduTaxFree > 0) {
+        taxDetail.bySource[`education_tax_free:${goal.id}`] = { type: "tax_free", amount: eduTaxFree };
+        educationTaxFreeIncome += eduTaxFree;
       }
 
       // Out-of-pocket: spill the shortfall to household cash (→ normal
@@ -4925,6 +4973,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Tracks the EXACT input that produced the latest taxOutForIter, so the
     // equity tax counterfactual (below) re-runs from the same baseline.
     let finalTaxInput: YearTaxInput = baseTaxInput;
+    // R4: fold Roth/HSA education draws' non-taxable slice into the base result so a
+    // surplus year (no supplemental draw → the convergence loops below never rebuild
+    // the tax input) still reports it. taxFreeRetirementIncome only affects display
+    // totals (nonTaxableIncome / grossTotalIncome), never taxes / AGI / MAGI — so the
+    // pre-supplemental `taxes` and Medicare MAGI already computed above are unchanged.
+    if (educationTaxFreeIncome > 0) {
+      finalTaxInput = { ...baseTaxInput, taxFreeRetirementIncome: educationTaxFreeIncome };
+      taxOutForIter = computeTaxForYear(finalTaxInput);
+    }
     let convergenceWarning: TrustWarning | null = null;
     // Converged draw target for the legacy no-checking branch (base deficit +
     // recomputed tax + penalty). Sized in phase 12 below; the application
@@ -5104,6 +5161,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
         }
 
+        const supplementalTaxFree = educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
+
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
           socialSecurityGross: income.socialSecurity,
@@ -5131,6 +5190,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
+          taxFreeRetirementIncome: supplementalTaxFree,
         };
         taxOutForIter = computeTaxForYear(supplementalTaxInput);
         finalTaxInput = supplementalTaxInput;
@@ -5265,6 +5325,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             primaryAge: ages.client,
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,
+            taxFreeRetirementIncome: educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
           };
           taxOutForIter = computeTaxForYear(legacyTaxInput);
           finalTaxInput = legacyTaxInput;
@@ -5363,15 +5424,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         : taxDetail;
 
     // Audit F5/F6: drill-down reconciliation. Each draw with non-zero recognized
-    // income gets a `withdrawal:<acctId>` bySource entry so taxDetail.bySource sums
-    // to the bucket totals.
-    for (const draw of supplementalPlan.draws) {
-      const recognized = draw.ordinaryIncome + draw.capitalGains;
-      if (recognized <= 0) continue;
-      const type: "ordinary_income" | "capital_gains" =
-        draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
-      finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
-    }
+    // income gets a `withdrawal:<acctId>` bySource entry (plus a
+    // `withdrawal_tax_free:<acctId>` entry for the untaxed retirement slice) so
+    // taxDetail.bySource sums to the bucket totals. R2: accumulates per account
+    // so a second draw on the same account doesn't overwrite the first.
+    Object.assign(
+      finalTaxDetail.bySource,
+      supplementalDrawSources(supplementalPlan.draws, taxFreeRetirementSlice),
+    );
 
     // === Equity tax impact (counterfactual) =================================
     // "Additional tax because of stock options" = tax(actual) − tax(equity

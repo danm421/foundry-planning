@@ -185,6 +185,21 @@ describe("classifyTransferTax", () => {
     expect(result.earlyWithdrawalPenalty).toBe(0);
   });
 
+  it("Roth → cash: qualified (59.5+) distribution is entirely tax-free, earnings included", () => {
+    const result = classifyTransferTax({
+      ...baseArgs,
+      sourceSubType: "roth_ira",
+      targetCategory: "cash",
+      targetSubType: "checking",
+      ownerAge: 60,
+      rothBasis: 30000,
+      sourceAccountValue: 80000,
+      amount: 50000,
+    });
+    expect(result.taxableOrdinaryIncome).toBe(0);
+    expect(result.earlyWithdrawalPenalty).toBe(0);
+  });
+
   it("no penalty for Roth conversion (IRA → Roth) regardless of age", () => {
     const result = classifyTransferTax({
       ...baseArgs,

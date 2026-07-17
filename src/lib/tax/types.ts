@@ -120,6 +120,12 @@ export interface CalcInput {
    *  back-compat — callers that omit it fall back to taxExemptIncome (the old,
    *  over-inclusive behaviour that over-taxes SS). */
   taxExemptInterest?: number;
+  /** Tax-free retirement distributions this year — qualified Roth IRA draws,
+   *  the Roth slice of 401(k)/403(b) draws, HSA draws. Display-only: rolls
+   *  into `nonTaxableIncome` / `grossTotalIncome` but never into §86 combined
+   *  income, AGI, or state GTI. Excludes return-of-basis on taxable-account
+   *  draws (principal, not income). */
+  taxFreeRetirementIncome?: number;
   // Other inputs:
   socialSecurityGross: number;     // pre-taxability gross SS
   aboveLineDeductions: number;     // v1: 0

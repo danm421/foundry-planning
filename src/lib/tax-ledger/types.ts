@@ -39,6 +39,12 @@ export interface TaxLedgerSection {
   characterSubtotals: Partial<Record<TaxCharacter, number>>;
   /** Net amount for the section (income rows minus deduction/offset rows). */
   subtotal: number;
+  /** Sum of taxable-character income rows — ties to the income-tax report's
+   *  "Total Income" column. Household section only. */
+  taxableSubtotal?: number;
+  /** Sum of all income rows incl. tax-exempt/non-taxable — ties to the
+   *  report's "Gross Total Income" column. Household section only. */
+  grossSubtotal?: number;
   /** True when an "Unattributed" reconciliation row was added. */
   unreconciled: boolean;
 }

@@ -22,6 +22,26 @@ function CharacterTag({ row }: { row: TaxLedgerRow }) {
   );
 }
 
+function SubtotalRow({ label, value, unreconciled, muted, last }: {
+  label: string;
+  value: number;
+  unreconciled?: boolean;
+  muted?: boolean;
+  /** Last footer row of the section — uses the stronger hairline. */
+  last?: boolean;
+}) {
+  const border = last ? "border-hair-2" : "border-hair";
+  return (
+    <tr>
+      <td colSpan={4} className={`border-b ${border} bg-card-2 px-3 py-1.5 text-right text-xs font-medium ${muted ? "text-ink-3" : "text-ink-2"}`}>
+        {label}
+        {unreconciled ? <span className="ml-2 text-crit">⚠ includes unattributed amounts</span> : null}
+      </td>
+      <td className={`border-b ${border} bg-card-2 px-3 py-1.5 text-right text-sm tabular-nums ${muted ? "font-medium text-ink-2" : "font-semibold"}`}><MoneyText value={value} /></td>
+    </tr>
+  );
+}
+
 function Section({ section, f }: { section: TaxLedgerSection; f: LedgerFilterState }) {
   const rows = visibleRows(section, f);
   if (rows.length === 0) return null;
@@ -55,13 +75,14 @@ function Section({ section, f }: { section: TaxLedgerSection; f: LedgerFilterSta
           </div>
         </td>
       </tr>
-      <tr>
-        <td colSpan={4} className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-xs font-medium text-ink-2">
-          {section.label} net taxable
-          {section.unreconciled ? <span className="ml-2 text-crit">⚠ includes unattributed amounts</span> : null}
-        </td>
-        <td className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-sm font-semibold tabular-nums"><MoneyText value={section.subtotal} /></td>
-      </tr>
+      {section.kind === "household" && section.taxableSubtotal != null && section.grossSubtotal != null ? (
+        <>
+          <SubtotalRow label={`${section.label} taxable income`} value={section.taxableSubtotal} unreconciled={section.unreconciled} />
+          <SubtotalRow label={`${section.label} gross income`} value={section.grossSubtotal} muted last />
+        </>
+      ) : (
+        <SubtotalRow label={`${section.label} net taxable`} value={section.subtotal} unreconciled={section.unreconciled} last />
+      )}
     </>
   );
 }

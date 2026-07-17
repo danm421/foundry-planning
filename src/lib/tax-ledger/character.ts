@@ -19,6 +19,8 @@ export function rawTypeToCharacter(rawType: string): TaxCharacter {
       return "ordinary";
     case "tax_exempt":
       return "tax_exempt";
+    case "tax_free":
+      return "non_taxable";
     default:
       return "ordinary";
   }

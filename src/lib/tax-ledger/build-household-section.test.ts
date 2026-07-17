@@ -63,6 +63,54 @@ describe("buildHouseholdSection", () => {
     expect(s.unreconciled).toBe(true);
   });
 
+  it("keeps tax-free withdrawal rows out of the reconciled buckets", () => {
+    const year = fixtureYear();
+    year.taxDetail!.bySource["withdrawal_tax_free:ira"] = { type: "tax_free", amount: 20000 };
+    const s = buildHouseholdSection(year, ctx, "Household");
+
+    const row = s.rows.find((r) => r.type === "Withdrawal" && r.character === "non_taxable");
+    expect(row).toMatchObject({ amount: 20000, taxable: false });
+    // 20,000 tax-free draw + 4,500 non-taxable SS (split row).
+    expect(s.characterSubtotals.non_taxable).toBe(24_500);
+    // The non-taxable row must not create drift in any reconciled character —
+    // the only Unattributed row is still the pre-existing LTCG gap.
+    const unattributed = s.rows.filter((r) => r.type === "Unattributed");
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].character).toBe("long_term_gain");
+  });
+
+  it("renders a Roth/HSA education funding draw as a non-taxable Education Funding row (R4)", () => {
+    const year = fixtureYear();
+    year.taxDetail!.bySource["education_tax_free:edu"] = { type: "tax_free", amount: 15000 };
+    const s = buildHouseholdSection(year, ctx, "Household");
+
+    const row = s.rows.find((r) => r.type === "Education Funding");
+    expect(row).toMatchObject({ character: "non_taxable", amount: 15000, taxable: false });
+    // Non-taxable → not in the reconciled buckets, so no new Unattributed drift.
+    const unattributed = s.rows.filter((r) => r.type === "Unattributed");
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].character).toBe("long_term_gain");
+  });
+
+  it("splits Social Security into taxable and non-taxable rows", () => {
+    const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
+    const ssRows = s.rows.filter((r) => r.type === "Social Security");
+    expect(ssRows).toHaveLength(2);
+    const taxable = ssRows.find((r) => r.character === "social_security");
+    const nonTaxable = ssRows.find((r) => r.character === "non_taxable");
+    expect(taxable).toMatchObject({ amount: 25_500, taxable: true });
+    expect(nonTaxable).toMatchObject({ amount: 4_500, taxable: false });
+  });
+
+  it("exposes taxable + gross subtotals that tie to the income report columns", () => {
+    const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
+    // Taxable == report "Total Income": RMD 52,000 + qdiv 8,200 + LTCG bucket
+    // 45,000 (30k attributed + 15k unattributed) + taxable SS 25,500.
+    expect(s.taxableSubtotal).toBe(130_700);
+    // Gross == report "Gross Total Income": adds the non-taxable SS remainder.
+    expect(s.grossSubtotal).toBe(135_200);
+  });
+
   it("sorts rows by descending magnitude", () => {
     const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
     const mags = s.rows.map((r) => Math.abs(r.amount));

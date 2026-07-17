@@ -107,7 +107,7 @@ export const INCOME_COLUMNS: Column[] = [
     key: "nonTaxableIncome",
     label: "Non-Taxable",
     tooltip:
-      "Muni bond interest, Roth distributions, non-taxable SS portion. Informational only.",
+      "Muni bond interest, Roth/HSA distributions, non-taxable SS portion. Informational only.",
     value: (y) => y.taxResult?.income.nonTaxableIncome ?? 0,
   },
   {

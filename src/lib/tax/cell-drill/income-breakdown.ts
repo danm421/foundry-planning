@@ -97,6 +97,11 @@ function nonTaxableGroups(
     groups.push({ label: "Tax-Exempt Income", rows: exemptRows });
   }
 
+  const taxFreeRows = directRows(year, "tax_free", ctx);
+  if (taxFreeRows.length > 0) {
+    groups.push({ label: "Tax-Free Retirement Distributions", rows: taxFreeRows });
+  }
+
   const ssRows = socialSecurityRows(year, ctx, "non_taxable");
   if (ssRows.length > 0) {
     groups.push({ label: "Non-Taxable Social Security", rows: ssRows });
