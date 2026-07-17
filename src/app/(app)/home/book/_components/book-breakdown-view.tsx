@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 import { Card } from "@/components/card";
 import MoneyText from "@/components/money-text";
 import type { BookBreakdown, BookFocus, BookHouseholdRow } from "@/lib/home/book-breakdown";
+import { BookSplitChart } from "./book-split-chart";
 
 type SortKey = "householdName" | "bookValue" | "heldAway" | "total";
 type SortDir = "asc" | "desc";
@@ -205,7 +206,9 @@ export function BookBreakdownView({
 
       <Insights data={data} />
 
-      {/* CHART SLOT — Task 4 inserts <BookSplitChart data={data} /> here. */}
+      <Card className="px-[var(--pad-card)] py-4">
+        <BookSplitChart data={data} />
+      </Card>
 
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">

@@ -1,7 +1,15 @@
 // src/app/(app)/home/book/_components/__tests__/book-breakdown-view.test.tsx
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+
+// react-chartjs-2 needs canvas, which jsdom doesn't implement; stub it so the
+// view can render its embedded BookSplitChart without touching a real canvas.
+vi.mock("react-chartjs-2", () => ({
+  Chart: () => <div data-testid="chart" />,
+  Bar: () => <div data-testid="chart" />,
+}));
+
 import { BookBreakdownView } from "../book-breakdown-view";
 import type { BookBreakdown } from "@/lib/home/book-breakdown";
 
