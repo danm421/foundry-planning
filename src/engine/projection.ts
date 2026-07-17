@@ -2432,6 +2432,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // F8: received trust cash fold. Accumulate the trust cash that physically
+    // reaches the household default checking across the passes below (CRT
+    // payments + non-grantor DNI distributions), so `totalIncome` — and thus
+    // Net Cash Flow and the surplus base — reflect cash received. The tax side
+    // already exists (CRT ordinaryIncome, DNI householdIncomeDelta); this is the
+    // missing income/cash-flow line. Mirrors householdNoteCashIn (audit F8).
+    let householdTrustCashIn = 0;
+
+    // F2: grantor-trust cash actually distributed to the household. The surplus
+    // base counts grantor gross via grantorIncome (cash routes to TRUST checking),
+    // so replace gross with cash-received below by subtracting
+    // (grantorGrossFolded − grantorTrustDistToHousehold). A retained trust then
+    // contributes 0 to discretionary surplus (audit F2).
+    let grantorTrustDistToHousehold = 0;
+
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
     //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
@@ -2645,11 +2660,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           .filter((b) => b.householdRole === "client" || b.householdRole === "spouse")
           .reduce((sum, b) => sum + b.percentage, 0);
         if (distAmount > 0 && householdSharePct > 0) {
-          creditCash(defaultChecking?.id, (distAmount * householdSharePct) / 100, {
+          const householdDistCash = (distAmount * householdSharePct) / 100;
+          creditCash(defaultChecking?.id, householdDistCash, {
             category: "income",
             label: `Non-grantor trust distribution`,
             sourceId: trust.entityId,
           });
+          householdTrustCashIn += householdDistCash; // F8
         }
       }
     }
@@ -2738,6 +2755,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: `Grantor trust distribution`,
             sourceId: gt.entityId,
           });
+          grantorTrustDistToHousehold += dist.actualAmount; // F2
         }
       }
     }
@@ -2901,6 +2919,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: paymentLabel,
         sourceId: trust.id,
       });
+      householdTrustCashIn += annualPayment; // F8
 
       // Tag as ordinary income on the household 1040 with a stable per-trust
       // source key so report consumers can attribute it.
@@ -6063,6 +6082,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // displayed income buckets. Business is special: it shows distributions
     // (cash received), not the gross entity income that grantorIncome.business
     // contains. See spec 2026-05-11-business-distribution-passthrough-design.
+    // Grantor-trust gross folded into display income: total minus business
+    // gross (business is shown via businessDistributions instead, avoiding a
+    // double-count). Also the gross side of the F2 surplus correction below.
+    const grantorGrossFolded = grantorIncome.total - grantorIncome.business;
     const displayIncome = {
       salaries: income.salaries + grantorIncome.salaries,
       socialSecurity: income.socialSecurity + grantorIncome.socialSecurity,
@@ -6071,11 +6094,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       deferred: income.deferred + grantorIncome.deferred,
       capitalGains: income.capitalGains + grantorIncome.capitalGains,
       other: income.other + grantorIncome.other,
-      total:
-        income.total
-        + grantorIncome.total
-        - grantorIncome.business // subtract gross to avoid double-count with businessDistributions
-        + businessDistributions,
+      total: income.total + grantorGrossFolded + businessDistributions,
       bySource: {
         ...income.bySource,
         ...grantorIncome.bySource,
@@ -6101,7 +6120,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // also carry a per-plan income.bySource key for the Other Inflows drill-
     // down; the fold here is what counts them in the Total Income scalar.
     const totalIncome =
-      displayIncome.total + householdRmdIncome + householdNoteCashIn + householdEquityCashIn;
+      displayIncome.total + householdRmdIncome + householdNoteCashIn
+      + householdEquityCashIn + householdTrustCashIn; // householdTrustCashIn: audit F8
 
     // ── 14. Surplus allocation (H5) ──
     // Size the discretionary/saved split from the resolved Net Cash Flow, taken
@@ -6127,9 +6147,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           checkingLedger.entries.push(entry);
         }
       };
+      // F2: the surplus base must count grantor-trust CASH RECEIVED, not gross
+      // income attributed. grantorGrossFolded is in totalIncome but its cash
+      // routes to TRUST checking — reaching the household only via the grantor
+      // distribution pass. Replace gross with cash received by subtracting the
+      // retained (undistributed) portion. Negative when the trust distributes
+      // principal in excess of income — correctly adding that cash.
+      const grantorTrustSurplusCorrection =
+        grantorGrossFolded - grantorTrustDistToHousehold;
       const surplusForSplit = Math.max(
         0,
-        totalIncome - expenses.total - savings.total - hypoContribution
+        totalIncome
+          - expenses.total
+          - savings.total
+          - hypoContribution
+          - grantorTrustSurplusCorrection
       );
       if (surplusForSplit > 0) {
         const rawPct = data.planSettings.surplusSpendPct ?? 0;
