@@ -94,6 +94,30 @@ describe("tax-free retirement draws surface as non-taxable income", () => {
     expect(year.taxResult!.income.nonTaxableIncome).toBeCloseTo(drawn * 0.4, 4);
   });
 
+  it("surfaces Roth draws on the legacy no-default-checking path too", () => {
+    const roth: Account = {
+      id: "acct-roth", name: "Roth IRA", category: "retirement", subType: "roth_ira",
+      titlingType: "jtwros",
+      value: 500000, basis: 100000, growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseName: undefined, spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [roth], // no default checking → legacy shortfall path
+      incomes: [], expenses: [livingExpense], liabilities: [], savingsRules: [],
+      withdrawalStrategy: strategy("acct-roth"),
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2027, taxEngineMode: "bracket" },
+      taxYearRows: [TAX_YEAR_2026],
+    });
+    const year = runProjection(data)[0];
+
+    const drawn = year.withdrawals.byAccount["acct-roth"] ?? 0;
+    expect(drawn).toBeGreaterThan(0);
+    expect(year.taxResult!.income.nonTaxableIncome).toBeCloseTo(drawn, 4);
+    expect(year.taxDetail!.bySource["withdrawal_tax_free:acct-roth"]?.amount).toBeCloseTo(drawn, 4);
+  });
+
   it("a traditional IRA draw produces no tax-free entry", () => {
     const year = runYearOne({
       id: "acct-ira", name: "Trad IRA", category: "retirement", subType: "traditional_ira",

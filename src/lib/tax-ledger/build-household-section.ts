@@ -108,13 +108,14 @@ export function buildHouseholdSection(
   //    income report's "Total Income"; grossSubtotal to "Gross Total Income".
   rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   const characterSubtotals = subtotalByCharacter(rows);
-  const subtotal = rows.reduce((s, r) => s + r.amount, 0);
-  const taxableSubtotal = rows
-    .filter((r) => isTaxableCharacter(r.character))
-    .reduce((s, r) => s + r.amount, 0);
-  const grossSubtotal = rows
-    .filter((r) => r.character !== "deduction")
-    .reduce((s, r) => s + r.amount, 0);
+  const characterEntries = Object.entries(characterSubtotals) as [TaxCharacter, number][];
+  const subtotal = characterEntries.reduce((s, [, v]) => s + v, 0);
+  const taxableSubtotal = characterEntries
+    .filter(([c]) => isTaxableCharacter(c))
+    .reduce((s, [, v]) => s + v, 0);
+  const grossSubtotal = characterEntries
+    .filter(([c]) => c !== "deduction")
+    .reduce((s, [, v]) => s + v, 0);
 
   return { id: "household", label: householdLabel, kind: "household", passThrough: false, rows, characterSubtotals, subtotal, taxableSubtotal, grossSubtotal, unreconciled };
 }

@@ -65,7 +65,7 @@ import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } fr
 import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeIraLimit, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
-import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
@@ -4779,6 +4779,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return poolExhausted && baseAtTarget <= ceiling + TOLERANCE;
     };
 
+    // Tax-free retirement slice (qualified Roth, 401k/403b Roth share, HSA) of
+    // a supplemental draw — display-only nonTaxableIncome. Taxable/cash draws
+    // excluded: their untaxed share is return of principal, not income.
+    const taxFreeRetirementSlice = (draw: SupplementalDraw): number =>
+      accountById.get(draw.accountId)?.category === "retirement"
+        ? Math.max(0, draw.amount - draw.ordinaryIncome)
+        : 0;
+
     let cumulativeShortfall = 0;
     let supplementalPlan: ReturnType<typeof planSupplementalWithdrawal> = {
       byAccount: {},
@@ -4969,13 +4977,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
         }
 
-        // Tax-free retirement slices (qualified Roth, 401k/403b Roth share,
-        // HSA) — display-only nonTaxableIncome. Taxable/cash draws excluded:
-        // their untaxed share is return of principal, not income.
-        const supplementalTaxFree = supplementalPlan.draws.reduce((sum, draw) => {
-          if (accountById.get(draw.accountId)?.category !== "retirement") return sum;
-          return sum + Math.max(0, draw.amount - draw.ordinaryIncome);
-        }, 0);
+        const supplementalTaxFree = supplementalPlan.draws.reduce(
+          (sum, draw) => sum + taxFreeRetirementSlice(draw), 0,
+        );
 
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
@@ -5139,6 +5143,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             primaryAge: ages.client,
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,
+            taxFreeRetirementIncome: supplementalPlan.draws.reduce(
+              (sum, draw) => sum + taxFreeRetirementSlice(draw), 0,
+            ),
           };
           taxOutForIter = computeTaxForYear(legacyTaxInput);
           finalTaxInput = legacyTaxInput;
@@ -5246,17 +5253,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
         finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
       }
-      // Tax-free retirement slice (qualified Roth / 401k Roth share / HSA) —
-      // separate key so a mixed draw can carry both a taxable and a tax-free
-      // row. Mirrors the supplementalTaxFree sum inside the convergence loop.
-      if (accountById.get(draw.accountId)?.category === "retirement") {
-        const taxFree = Math.max(0, draw.amount - draw.ordinaryIncome);
-        if (taxFree > 0) {
-          finalTaxDetail.bySource[`withdrawal_tax_free:${draw.accountId}`] = {
-            type: "tax_free",
-            amount: taxFree,
-          };
-        }
+      // Separate key so a mixed draw can carry both a taxable and a tax-free row.
+      const taxFree = taxFreeRetirementSlice(draw);
+      if (taxFree > 0) {
+        finalTaxDetail.bySource[`withdrawal_tax_free:${draw.accountId}`] = {
+          type: "tax_free",
+          amount: taxFree,
+        };
       }
     }
 
