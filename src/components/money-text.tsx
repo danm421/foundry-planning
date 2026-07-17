@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 
 type Format = "currency" | "pct" | "int" | "accounting";
-type Size = "body" | "kpi";
+type Size = "body" | "kpi" | "kpiSm";
 
 interface MoneyTextProps {
   value: number | null | undefined;
@@ -59,7 +59,9 @@ export default function MoneyText({
   const sizeClass =
     size === "kpi"
       ? "text-[30px] font-medium tracking-[-0.03em]"
-      : "text-[13px]";
+      : size === "kpiSm"
+        ? "text-[22px] font-medium tracking-[-0.02em]"
+        : "text-[13px]";
 
   const tone = text === EM_DASH ? "text-ink-4" : "";
 
