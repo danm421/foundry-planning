@@ -1,3 +1,8 @@
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { accounts, clients, crmHouseholds, scenarios } from "@/db/schema";
+import { aumBookWhere, visibleHouseholdConditions } from "./scope";
+
 /** Which tile the advisor clicked to reach the page. */
 export type BookFocus = "book" | "held-away";
 
@@ -125,4 +130,37 @@ export function aggregateBookBreakdown(rows: BookQueryRow[]): BookBreakdown {
       heldAwayHouseholdCount: households.filter((h) => h.heldAway > 0).length,
     },
   };
+}
+
+/**
+ * Per-household book value + held-away breakdown for the advisor's visible book.
+ * One query (all base-case, AUM-eligible accounts joined to household), then the
+ * pure aggregator. Shares `aumBookWhere` + the base-case join with getBookKpis,
+ * so `totals.bookValue` / `totals.heldAway` equal the /home tiles by construction.
+ */
+export async function getBookBreakdown(
+  firmId: string,
+  userId: string,
+  orgRole: string | null | undefined,
+): Promise<BookBreakdown> {
+  const hhConditions = await visibleHouseholdConditions(firmId, userId, orgRole);
+  const rows = await db
+    .select({
+      householdId: crmHouseholds.id,
+      householdName: crmHouseholds.name,
+      accountId: accounts.id,
+      accountName: accounts.name,
+      category: accounts.category,
+      value: accounts.value,
+      countsTowardAum: accounts.countsTowardAum,
+    })
+    .from(accounts)
+    .innerJoin(
+      scenarios,
+      and(eq(accounts.scenarioId, scenarios.id), eq(scenarios.isBaseCase, true)),
+    )
+    .innerJoin(clients, eq(accounts.clientId, clients.id))
+    .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
+    .where(aumBookWhere(hhConditions));
+  return aggregateBookBreakdown(rows);
 }
