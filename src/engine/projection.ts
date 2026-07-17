@@ -6082,6 +6082,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // displayed income buckets. Business is special: it shows distributions
     // (cash received), not the gross entity income that grantorIncome.business
     // contains. See spec 2026-05-11-business-distribution-passthrough-design.
+    // Grantor-trust gross folded into display income: total minus business
+    // gross (business is shown via businessDistributions instead, avoiding a
+    // double-count). Also the gross side of the F2 surplus correction below.
+    const grantorGrossFolded = grantorIncome.total - grantorIncome.business;
     const displayIncome = {
       salaries: income.salaries + grantorIncome.salaries,
       socialSecurity: income.socialSecurity + grantorIncome.socialSecurity,
@@ -6090,11 +6094,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       deferred: income.deferred + grantorIncome.deferred,
       capitalGains: income.capitalGains + grantorIncome.capitalGains,
       other: income.other + grantorIncome.other,
-      total:
-        income.total
-        + grantorIncome.total
-        - grantorIncome.business // subtract gross to avoid double-count with businessDistributions
-        + businessDistributions,
+      total: income.total + grantorGrossFolded + businessDistributions,
       bySource: {
         ...income.bySource,
         ...grantorIncome.bySource,
@@ -6148,13 +6148,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       };
       // F2: the surplus base must count grantor-trust CASH RECEIVED, not gross
-      // income attributed. grantorIncome (grantor-trust income only; business is
-      // handled via businessDistributions) is folded into totalIncome but its
-      // cash routes to TRUST checking — reaching the household only via the
-      // grantor distribution pass. Replace gross with cash received by
-      // subtracting the retained (undistributed) portion. Negative when the trust
-      // distributes principal in excess of income — correctly adding that cash.
-      const grantorGrossFolded = grantorIncome.total - grantorIncome.business;
+      // income attributed. grantorGrossFolded is in totalIncome but its cash
+      // routes to TRUST checking — reaching the household only via the grantor
+      // distribution pass. Replace gross with cash received by subtracting the
+      // retained (undistributed) portion. Negative when the trust distributes
+      // principal in excess of income — correctly adding that cash.
       const grantorTrustSurplusCorrection =
         grantorGrossFolded - grantorTrustDistToHousehold;
       const surplusForSplit = Math.max(

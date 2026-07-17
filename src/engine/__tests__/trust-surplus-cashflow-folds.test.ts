@@ -8,7 +8,6 @@ import type {
   FamilyMember,
   PlanSettings,
 } from "../types";
-import type { TaxYearParameters } from "../../lib/tax/types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── F8: received trust cash folds into totalIncome / netCashFlow ──────────────
