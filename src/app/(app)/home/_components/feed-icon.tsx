@@ -57,7 +57,19 @@ const PATHS: Record<FeedItemKind, ReactNode> = {
   ),
 };
 
-const HUES: Record<FeedItemKind, string> = {
+// The only admissible hues: --data-* anchors, never data-teal (reads as accent)
+// and never accent itself. A literal union makes the compiler enforce that,
+// instead of leaving the rule to the comment above.
+type DataHue =
+  | "text-data-blue"
+  | "text-data-pink"
+  | "text-data-yellow"
+  | "text-data-purple"
+  | "text-data-green"
+  | "text-data-grey"
+  | "text-data-red";
+
+const HUES: Record<FeedItemKind, DataHue> = {
   "task-due": "text-data-blue",
   birthday: "text-data-pink",
   milestone: "text-data-yellow",
@@ -73,7 +85,7 @@ export function FeedIcon({
   kind: FeedItemKind;
   overdue?: boolean;
 }): ReactElement {
-  const hue = overdue ? "text-data-red" : HUES[kind];
+  const hue: DataHue = overdue ? "text-data-red" : HUES[kind];
   return (
     <svg
       className={`h-4 w-4 shrink-0 ${hue}`}

@@ -6,11 +6,14 @@ import type { BookKpis } from "@/lib/home/types";
 // The money pair leads: wider cell, 30px figure, a data-palette left rule.
 // Rules are --data-* and never accent — accent means "action", and a KPI is
 // not an action. Blue = the book we manage, orange = the opportunity.
+// Left-rule colours are --data-* only — never accent (accent means "action"),
+// never data-teal (reads as accent). A literal union makes the compiler enforce
+// the brand rule instead of leaving it to the comment above.
 const MONEY_TILES: {
   label: string;
   value: (k: BookKpis) => number;
   sub: (k: BookKpis) => string;
-  rule: string;
+  rule: "bg-data-blue" | "bg-data-orange";
 }[] = [
   {
     label: "Total book value",
