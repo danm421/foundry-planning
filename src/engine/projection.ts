@@ -2432,6 +2432,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // F8: received trust cash fold. Accumulate the trust cash that physically
+    // reaches the household default checking across the passes below (CRT
+    // payments + non-grantor DNI distributions), so `totalIncome` — and thus
+    // Net Cash Flow and the surplus base — reflect cash received. The tax side
+    // already exists (CRT ordinaryIncome, DNI householdIncomeDelta); this is the
+    // missing income/cash-flow line. Mirrors householdNoteCashIn (audit F8).
+    let householdTrustCashIn = 0;
+
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
     //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
@@ -2645,11 +2653,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           .filter((b) => b.householdRole === "client" || b.householdRole === "spouse")
           .reduce((sum, b) => sum + b.percentage, 0);
         if (distAmount > 0 && householdSharePct > 0) {
-          creditCash(defaultChecking?.id, (distAmount * householdSharePct) / 100, {
+          const householdDistCash = (distAmount * householdSharePct) / 100;
+          creditCash(defaultChecking?.id, householdDistCash, {
             category: "income",
             label: `Non-grantor trust distribution`,
             sourceId: trust.entityId,
           });
+          householdTrustCashIn += householdDistCash; // F8
         }
       }
     }
@@ -2901,6 +2911,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: paymentLabel,
         sourceId: trust.id,
       });
+      householdTrustCashIn += annualPayment; // F8
 
       // Tag as ordinary income on the household 1040 with a stable per-trust
       // source key so report consumers can attribute it.
@@ -6101,7 +6112,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // also carry a per-plan income.bySource key for the Other Inflows drill-
     // down; the fold here is what counts them in the Total Income scalar.
     const totalIncome =
-      displayIncome.total + householdRmdIncome + householdNoteCashIn + householdEquityCashIn;
+      displayIncome.total + householdRmdIncome + householdNoteCashIn
+      + householdEquityCashIn + householdTrustCashIn; // householdTrustCashIn: audit F8
 
     // ── 14. Surplus allocation (H5) ──
     // Size the discretionary/saved split from the resolved Net Cash Flow, taken
