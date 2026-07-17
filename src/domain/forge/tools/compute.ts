@@ -9,6 +9,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
+import { explainTaxChange } from "@/lib/tax/explain-tax-change/explain";
+import { buildTaxDrillContext } from "@/lib/tax/explain-tax-change/context";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
@@ -68,6 +70,7 @@ const RunProjectionResultSchema = z.looseObject({
   years: z.array(z.unknown()),
 });
 const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
+const ExplainTaxChangeResultSchema = z.looseObject({ available: z.boolean() });
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -124,6 +127,51 @@ export function buildComputeTools(
         "All numbers are the engine's own; narrate them, never recompute.",
       schema: z.object({
         clientId: z.string().describe("the active client uuid"),
+      }),
+    },
+  );
+
+  const explainTaxChangeTool = tool(
+    async ({ clientId, year, compareYear }) =>
+      withOutputRetry(async () => {
+        const firmId = await requireOrgId();
+        await assertClientReadable(ctx, clientId);
+
+        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
+        const result = runProjectionWithEvents(effectiveTree);
+        const drillCtx = buildTaxDrillContext(effectiveTree, result.years);
+
+        return {
+          scenarioId: ctx.scenarioId,
+          ...explainTaxChange({
+            years: result.years,
+            firstDeathYear: result.firstDeathEvent?.year ?? null,
+            secondDeathYear: result.secondDeathEvent?.year ?? null,
+            year,
+            compareYear,
+            ctx: drillCtx,
+          }),
+        };
+      }, ExplainTaxChangeResultSchema),
+    {
+      name: "explain_tax_change",
+      description:
+        "Explain WHY total tax changed between two projection years for the ACTIVE scenario. " +
+        "Use whenever the advisor asks why taxes jumped, spiked, dropped, or differ year-over-year. " +
+        "Returns federal+state tax-line deltas, income-composition deltas, per-source recognized-income " +
+        "deltas, the per-account withdrawal/depletion picture, and ranked root-cause findings " +
+        "(e.g. a taxable account ran dry so draws shifted to pre-tax, RMD onset, Roth conversion, " +
+        "Social Security taxability, realized gains, a death changing filing status, deduction changes, " +
+        "a state move). estimatedTaxImpact values are approximations — present them as estimates; " +
+        "exact movement is in taxLineDeltas. All numbers are the engine's own; narrate, never recompute.",
+      schema: z.object({
+        clientId: z.string().describe("the active client uuid"),
+        year: z.number().int().describe("the year whose tax change to explain"),
+        compareYear: z
+          .number()
+          .int()
+          .optional()
+          .describe("baseline year (defaults to year − 1)"),
       }),
     },
   );
@@ -344,5 +392,5 @@ export function buildComputeTools(
     },
   );
 
-  return [runProjection, runMonteCarlo, compareScenarios, explainReport];
+  return [runProjection, explainTaxChangeTool, runMonteCarlo, compareScenarios, explainReport];
 }
