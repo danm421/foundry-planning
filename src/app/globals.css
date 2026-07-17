@@ -542,11 +542,31 @@ html {
 /* one recipe serves both the LI shield-check and the Monte Carlo fan  */
 /* mark. Under reduced motion every stroke settles fully drawn and the */
 /* halo holds steady. Driven by `components/mark-loader.tsx`.          */
+/*                                                                     */
+/* PICKING A DRAW: `.mark-draw` is ONE-SHOT and holds its final drawn  */
+/* frame, so it only reads as "working" while something else loops     */
+/* beside it — in practice the `.mark-halo` that `MarkLoader` renders. */
+/* A mark placed OUTSIDE `MarkLoader` has no halo, so a `.mark-draw`   */
+/* there goes fully static once its draw lands and reads as an icon,   */
+/* not a loader. Those callers want `.mark-draw-loop`.                 */
 /* ------------------------------------------------------------------ */
 
 /* Draw-in: offset the normalised (pathLength=100) stroke to 0. */
 @keyframes markDraw {
   to { stroke-dashoffset: 0; }
+}
+
+/* Looping draw — the perpetual-motion variant for haloless marks: the
+   stroke sweeps in from its start, holds fully drawn, then lifts off
+   and exits the far end. With `stroke-dasharray: 100` over a
+   pathLength=100 path, offsets 100 and -100 both park the gap over the
+   whole stroke AND are congruent (the pattern repeats every 200), so
+   the wrap from -100 back to 100 is a no-op — the loop has no seam. */
+@keyframes markDrawLoop {
+  0%   { stroke-dashoffset: 100; }
+  40%  { stroke-dashoffset: 0; }
+  70%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -100; }
 }
 
 /* Halo breath — a calm pulse of glow behind the mark. */
@@ -568,7 +588,20 @@ html {
     var(--mark-draw-delay, 0s) forwards;
 }
 
+/* `--mark-draw-dur` is one full sweep-hold-exit cycle here, not just the
+   draw-in, so it wants a calmer value than `.mark-draw` — near the halo's
+   2.8s breath. `--mark-draw-delay` still only offsets the first cycle, but
+   since every stroke shares one duration the offsets persist, and the
+   stagger holds for the life of the loop. */
+.mark-draw-loop {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: markDrawLoop var(--mark-draw-dur, 2.6s) ease-in-out
+    var(--mark-draw-delay, 0s) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mark-halo { animation: none; opacity: 0.5; transform: scale(1); }
   .mark-draw { animation: none; stroke-dashoffset: 0; }
+  .mark-draw-loop { animation: none; stroke-dashoffset: 0; }
 }
