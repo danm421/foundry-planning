@@ -29,7 +29,7 @@ export function RecentHouseholds({
                 className="flex items-center justify-between gap-2 rounded px-2 py-2 hover:bg-paper"
               >
                 <span className="truncate text-sm text-ink">{h.name}</span>
-                <span className="shrink-0 text-xs capitalize text-ink-3">{h.status}</span>
+                <span className="chip shrink-0">{h.status}</span>
               </Link>
             </li>
           ))}
