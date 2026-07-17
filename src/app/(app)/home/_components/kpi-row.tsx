@@ -3,53 +3,91 @@ import { Card } from "@/components/card";
 import MoneyText from "@/components/money-text"; // default export
 import type { BookKpis } from "@/lib/home/types";
 
-const TILES: {
+// The money pair leads: wider cell, 30px figure, a data-palette left rule.
+// Rules are --data-* and never accent — accent means "action", and a KPI is
+// not an action. Blue = the book we manage, orange = the opportunity.
+const MONEY_TILES: {
   label: string;
-  format: "currency" | "int";
+  value: (k: BookKpis) => number;
+  sub: (k: BookKpis) => string;
+  rule: string;
+}[] = [
+  {
+    label: "Total book value",
+    value: (k) => k.totalBookValue,
+    sub: () => "as of today",
+    rule: "bg-data-blue",
+  },
+  {
+    label: "Assets held away",
+    value: (k) => k.assetsHeldAway,
+    sub: (k) =>
+      k.heldAwayAccounts === 1
+        ? "across 1 account"
+        : `across ${k.heldAwayAccounts} accounts`,
+    rule: "bg-data-orange",
+  },
+];
+
+const COUNT_TILES: {
+  label: string;
   value: (k: BookKpis) => number;
   sub: ((k: BookKpis) => string) | null;
 }[] = [
   {
-    label: "Total book value",
-    format: "currency",
-    value: (k) => k.totalBookValue,
-    sub: () => "as of today",
-  },
-  {
     label: "Households",
-    format: "int",
     value: (k) => k.activeHouseholds,
     sub: (k) => `+${k.prospectHouseholds} prospects`,
   },
-  {
-    label: "Planning clients",
-    format: "int",
-    value: (k) => k.planningClients,
-    sub: null,
-  },
+  { label: "Planning clients", value: (k) => k.planningClients, sub: null },
   {
     label: "Tasks due this week",
-    format: "int",
     value: (k) => k.tasksDueThisWeek,
     sub: (k) => `${k.tasksDueThisWeekMine} assigned to me`,
   },
 ];
 
+function TileLabel({ children }: { children: string }): ReactElement {
+  return (
+    <div className="text-xs uppercase tracking-wide text-ink-3 tabular">
+      {children}
+    </div>
+  );
+}
+
 export function KpiRow({ kpis }: { kpis: BookKpis | null }): ReactElement {
   // Section-level degradation: with kpis null each tile keeps its label and
   // MoneyText renders the nullish value as an em-dash.
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {TILES.map((t) => (
-        <Card key={t.label} className="px-[var(--pad-card)] py-4">
-          <div className="text-xs uppercase tracking-wide text-ink-3 tabular">
-            {t.label}
+    <div className="grid grid-cols-6 gap-3 lg:grid-cols-12">
+      {MONEY_TILES.map((t) => (
+        <Card
+          key={t.label}
+          className="relative col-span-3 overflow-hidden px-[var(--pad-card)] py-5"
+        >
+          <span
+            aria-hidden
+            className={`absolute inset-y-0 left-0 w-[3px] ${t.rule}`}
+          />
+          <TileLabel>{t.label}</TileLabel>
+          <div className="mt-1.5 text-ink">
+            <MoneyText
+              value={kpis ? t.value(kpis) : null}
+              format="currency"
+              size="kpi"
+            />
           </div>
+          {kpis && <div className="mt-1 text-xs text-ink-3">{t.sub(kpis)}</div>}
+        </Card>
+      ))}
+      {COUNT_TILES.map((t) => (
+        <Card key={t.label} className="col-span-2 px-4 py-4">
+          <TileLabel>{t.label}</TileLabel>
           <div className="mt-1 text-ink">
             <MoneyText
               value={kpis ? t.value(kpis) : null}
-              format={t.format}
-              size="kpi"
+              format="int"
+              size="kpiSm"
             />
           </div>
           {kpis && t.sub && (
