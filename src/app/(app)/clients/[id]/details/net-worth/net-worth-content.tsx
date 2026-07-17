@@ -97,6 +97,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
         annualPropertyTax: accounts.annualPropertyTax,
         propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
         propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
+        countsTowardAum: accounts.countsTowardAum,
         // Linked-account indicator: identify integration-fed rows.
         source: accounts.source,
         plaidItemId: accounts.plaidItemId,
@@ -255,6 +256,8 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
       ownerEntityId: controllingEntity(a) ?? null,
+      // From meta, not from `a` — the engine Account type never carries this.
+      countsTowardAum: meta?.countsTowardAum ?? false,
       growthSource: meta?.growthSource ?? "default",
       modelPortfolioId: meta?.modelPortfolioId ?? null,
       tickerPortfolioId: meta?.tickerPortfolioId ?? null,

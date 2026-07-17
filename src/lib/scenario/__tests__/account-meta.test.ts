@@ -14,6 +14,7 @@ const baseRow = (over: Partial<AccountMeta> = {}): AccountMeta => ({
   annualPropertyTax: null,
   propertyTaxGrowthRate: null,
   propertyTaxGrowthSource: null,
+  countsTowardAum: false,
   ...over,
 });
 
@@ -76,5 +77,80 @@ describe("overlayAccountMeta (F11)", () => {
       },
     ]);
     expect(map.get("a1")!.growthSource).toBe("default");
+  });
+
+  it("overlays countsTowardAum as a real boolean, not the string \"true\"", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: false })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { countsTowardAum: { from: false, to: true } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(true);
+  });
+
+  it("preserves countsTowardAum when an unrelated field is edited", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: true })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { turnoverPct: { from: null, to: "0.05" } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(true);
+  });
+
+  it("defaults countsTowardAum to false for a scenario-added account", () => {
+    const map = overlayAccountMeta(
+      [],
+      [
+        {
+          targetKind: "account",
+          opType: "add",
+          targetId: "a2",
+          payload: { growthSource: "default" },
+        },
+      ],
+    );
+    expect(map.get("a2")!.countsTowardAum).toBe(false);
+  });
+
+  it("overlays countsTowardAum: false as a real boolean, not the truthy string \"false\"", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: true })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { countsTowardAum: { from: true, to: false } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(false);
+  });
+
+  it("coerces the JSON string \"false\" payload value to the boolean false", () => {
+    const map = overlayAccountMeta(
+      [baseRow({ countsTowardAum: true })],
+      [
+        {
+          targetKind: "account",
+          opType: "edit",
+          targetId: "a1",
+          payload: { countsTowardAum: { from: true, to: "false" } },
+        },
+      ],
+    );
+    expect(map.get("a1")!.countsTowardAum).toBe(false);
   });
 });

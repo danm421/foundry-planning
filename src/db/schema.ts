@@ -1857,6 +1857,12 @@ export const accounts = pgTable("accounts", {
   // Null means: inherit the default for this category from plan_settings.
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),
+  // Advisor-set: does this account's balance count toward the firm's "Total
+  // book value" KPI on /home? Default false — held-away and unmanaged accounts
+  // must not inflate the book. Only meaningful for the AUM-eligible categories
+  // (taxable/cash/retirement — see src/lib/accounts/aum.ts); the KPI filters on
+  // category regardless, so a stale true on an ineligible row can never leak in.
+  countsTowardAum: boolean("counts_toward_aum").notNull().default(false),
   // Optional override of the prior calendar-year-end balance used for the
   // first projection year's RMD calculation. The IRS requires RMDs to be
   // computed off the Dec-31 balance; if `value` was entered mid-year (so it

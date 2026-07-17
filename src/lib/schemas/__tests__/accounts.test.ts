@@ -209,6 +209,26 @@ describe("accountCreateSchema parity with inline route coercion", () => {
     expect(accountCreateSchema.parse(base).rmdEnabled).toBe(false);
   });
 
+  it("countsTowardAum defaults false on create", () => {
+    expect(accountCreateSchema.parse(base).countsTowardAum).toBe(false);
+  });
+
+  it("countsTowardAum is honored when explicitly set on create", () => {
+    expect(
+      accountCreateSchema.parse({ ...base, countsTowardAum: true }).countsTowardAum,
+    ).toBe(true);
+  });
+
+  it("countsTowardAum round-trips both booleans through update", () => {
+    expect(accountUpdateSchema.parse({ countsTowardAum: true }).countsTowardAum).toBe(true);
+    // false must survive — this is how an advisor un-flags an account.
+    expect(accountUpdateSchema.parse({ countsTowardAum: false }).countsTowardAum).toBe(false);
+  });
+
+  it("countsTowardAum stays absent on update when omitted (no default injected)", () => {
+    expect(accountUpdateSchema.parse({ name: "Renamed" }).countsTowardAum).toBeUndefined();
+  });
+
   it("loose passthrough fields are accepted but not required for non-business", () => {
     const r = accountCreateSchema.safeParse({
       ...base,

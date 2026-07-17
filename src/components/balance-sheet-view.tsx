@@ -60,6 +60,10 @@ export interface AccountRow {
   hsaCoverage?: "self" | "family" | null;
   growthRate: string | null;
   rmdEnabled?: boolean | null;
+  /** Advisor-set AUM flag, hydrated from `accounts.counts_toward_aum` via
+   *  AccountMeta so the edit form round-trips it instead of silently clearing
+   *  it on save. Only meaningful for taxable/cash/retirement. */
+  countsTowardAum?: boolean | null;
   priorYearEndValue?: string | null;
   ownerEntityId?: string | null;
   growthSource?: string;
@@ -312,6 +316,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     hsaCoverage: a.hsaCoverage ?? null,
     growthRate: a.growthRate,
     rmdEnabled: a.rmdEnabled ?? null,
+    countsTowardAum: a.countsTowardAum ?? false,
     priorYearEndValue: a.priorYearEndValue ?? null,
     ownerEntityId: a.ownerEntityId ?? null,
     growthSource: a.growthSource,
