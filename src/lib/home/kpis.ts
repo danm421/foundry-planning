@@ -7,9 +7,8 @@ import {
   crmTasks,
   scenarios,
 } from "@/db/schema";
-import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 import { toIsoDate } from "./dates";
-import { OPEN_TASK_STATUSES, visibleHouseholdConditions } from "./scope";
+import { OPEN_TASK_STATUSES, aumBookWhere, visibleHouseholdConditions } from "./scope";
 import type { BookKpis } from "./types";
 
 async function fetchOpenTaskCounts(firmId: string, weekEnd: Date) {
@@ -77,12 +76,7 @@ export async function getBookKpis(
       )
       .innerJoin(clients, eq(accounts.clientId, clients.id))
       .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
-      .where(
-        and(
-          ...hhConditions,
-          inArray(accounts.category, [...AUM_ELIGIBLE_CATEGORIES]),
-        ),
-      ),
+      .where(aumBookWhere(hhConditions)),
     taskPromise,
   ]);
 

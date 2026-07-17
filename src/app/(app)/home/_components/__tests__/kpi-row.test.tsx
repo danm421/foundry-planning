@@ -45,4 +45,17 @@ describe("KpiRow", () => {
     expect(screen.getByText("Assets held away")).toBeInTheDocument();
     expect(screen.getAllByText("—")).toHaveLength(5);
   });
+
+  it("links each money tile to its focused breakdown", () => {
+    render(<KpiRow kpis={KPIS} />);
+    const book = screen.getByRole("link", { name: /Total book value/i });
+    const held = screen.getByRole("link", { name: /Assets held away/i });
+    expect(book).toHaveAttribute("href", "/home/book?focus=book");
+    expect(held).toHaveAttribute("href", "/home/book?focus=held-away");
+  });
+
+  it("does not link the money tiles when kpis is null", () => {
+    render(<KpiRow kpis={null} />);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
 });

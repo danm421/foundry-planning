@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import Link from "next/link";
 import { Card } from "@/components/card";
 import MoneyText from "@/components/money-text"; // default export
 import type { BookKpis } from "@/lib/home/types";
@@ -14,12 +15,14 @@ const MONEY_TILES: {
   value: (k: BookKpis) => number;
   sub: (k: BookKpis) => string;
   rule: "bg-data-blue" | "bg-data-orange";
+  href: string;
 }[] = [
   {
     label: "Total book value",
     value: (k) => k.totalBookValue,
     sub: () => "as of today",
     rule: "bg-data-blue",
+    href: "/home/book?focus=book",
   },
   {
     label: "Assets held away",
@@ -29,6 +32,7 @@ const MONEY_TILES: {
         ? "across 1 account"
         : `across ${k.heldAwayAccounts} accounts`,
     rule: "bg-data-orange",
+    href: "/home/book?focus=held-away",
   },
 ];
 
@@ -63,26 +67,41 @@ export function KpiRow({ kpis }: { kpis: BookKpis | null }): ReactElement {
   // MoneyText renders the nullish value as an em-dash.
   return (
     <div className="grid grid-cols-6 gap-3 lg:grid-cols-12">
-      {MONEY_TILES.map((t) => (
-        <Card
-          key={t.label}
-          className="relative col-span-3 overflow-hidden px-[var(--pad-card)] py-5"
-        >
-          <span
-            aria-hidden
-            className={`absolute inset-y-0 left-0 w-[3px] ${t.rule}`}
-          />
-          <TileLabel>{t.label}</TileLabel>
-          <div className="mt-1.5 text-ink">
-            <MoneyText
-              value={kpis ? t.value(kpis) : null}
-              format="currency"
-              size="kpi"
+      {MONEY_TILES.map((t) => {
+        const body = (
+          <Card className="relative col-span-3 overflow-hidden px-[var(--pad-card)] py-5 transition-colors group-hover:bg-card-2">
+            <span
+              aria-hidden
+              className={`absolute inset-y-0 left-0 w-[3px] ${t.rule}`}
             />
+            <TileLabel>{t.label}</TileLabel>
+            <div className="mt-1.5 text-ink">
+              <MoneyText
+                value={kpis ? t.value(kpis) : null}
+                format="currency"
+                size="kpi"
+              />
+            </div>
+            {kpis && (
+              <div className="mt-1 text-xs text-ink-3">{t.sub(kpis)}</div>
+            )}
+          </Card>
+        );
+        return kpis ? (
+          <Link
+            key={t.label}
+            href={t.href}
+            className="group col-span-3 block"
+            aria-label={t.label}
+          >
+            {body}
+          </Link>
+        ) : (
+          <div key={t.label} className="col-span-3">
+            {body}
           </div>
-          {kpis && <div className="mt-1 text-xs text-ink-3">{t.sub(kpis)}</div>}
-        </Card>
-      ))}
+        );
+      })}
       {COUNT_TILES.map((t) => (
         <Card key={t.label} className="col-span-2 px-4 py-4">
           <TileLabel>{t.label}</TileLabel>
