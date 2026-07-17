@@ -76,6 +76,9 @@ export function parseHouseholdSource(
     const acctId = key.slice("withdrawal_tax_free:".length);
     return { type: "Withdrawal", description: "Non-taxable distribution", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
   }
+  if (key.startsWith("education_tax_free:")) {
+    return { type: "Education Funding", description: "Non-taxable distribution", character, account: null, amount, taxable };
+  }
   if (key.startsWith("transfer:")) {
     return { type: "Transfer", description: "Taxable in-kind transfer", character, account: null, amount, taxable };
   }

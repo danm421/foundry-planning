@@ -79,6 +79,19 @@ describe("buildHouseholdSection", () => {
     expect(unattributed[0].character).toBe("long_term_gain");
   });
 
+  it("renders a Roth/HSA education funding draw as a non-taxable Education Funding row (R4)", () => {
+    const year = fixtureYear();
+    year.taxDetail!.bySource["education_tax_free:edu"] = { type: "tax_free", amount: 15000 };
+    const s = buildHouseholdSection(year, ctx, "Household");
+
+    const row = s.rows.find((r) => r.type === "Education Funding");
+    expect(row).toMatchObject({ character: "non_taxable", amount: 15000, taxable: false });
+    // Non-taxable → not in the reconciled buckets, so no new Unattributed drift.
+    const unattributed = s.rows.filter((r) => r.type === "Unattributed");
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].character).toBe("long_term_gain");
+  });
+
   it("splits Social Security into taxable and non-taxable rows", () => {
     const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
     const ssRows = s.rows.filter((r) => r.type === "Social Security");

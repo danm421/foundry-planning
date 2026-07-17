@@ -32,7 +32,11 @@ export interface TransfersResult {
   taxableOrdinaryIncome: number;
   capitalGains: number;
   earlyWithdrawalPenalty: number;
-  byTransfer: Record<string, { amount: number; label: string }>;
+  /** Per-transfer drill-down. `amount` is the GROSS transfer; `taxableOrdinaryIncome`
+   *  is the recognized ordinary-income slice (0 for a qualified Roth/HSA move or a
+   *  taxable-source liquidation) — the tax ledger must key off the taxable slice,
+   *  not the gross, or an internal asset move shows a phantom taxable row. */
+  byTransfer: Record<string, { amount: number; label: string; taxableOrdinaryIncome: number }>;
 }
 
 // ============================================================================
@@ -179,7 +183,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     result.taxableOrdinaryIncome += taxResult.taxableOrdinaryIncome;
     result.capitalGains += taxResult.capitalGain;
     result.earlyWithdrawalPenalty += taxResult.earlyWithdrawalPenalty;
-    result.byTransfer[transfer.id] = { amount: actualAmount, label: taxResult.label };
+    result.byTransfer[transfer.id] = { amount: actualAmount, label: taxResult.label, taxableOrdinaryIncome: taxResult.taxableOrdinaryIncome };
   }
 
   return result;

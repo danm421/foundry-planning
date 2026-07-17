@@ -19,6 +19,9 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const name = ctx.accountNames[acctId] ?? acctId;
     return `${name} — Withdrawal (tax-free)`;
   }
+  if (sourceId.startsWith("education_tax_free:")) {
+    return "Education funding — non-taxable distribution";
+  }
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];
