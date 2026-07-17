@@ -27,9 +27,7 @@ const buildClt = (opts: { isGrantor: boolean; grantorDeathYear?: number }) =>
     charityType: "public",
     grantorAgi: LOW_AGI,
     isGrantor: opts.isGrantor,
-    ...(opts.grantorDeathYear != null
-      ? { grantorDeathYear: opts.grantorDeathYear }
-      : {}),
+    grantorDeathYear: opts.grantorDeathYear,
   });
 
 describe("CLT inception deduction gating (F5)", () => {

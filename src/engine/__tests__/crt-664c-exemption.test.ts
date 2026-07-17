@@ -2,14 +2,19 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { buildCrtLifecycleFixture, CRT_FIXTURE_IDS } from "./_fixtures/crt";
 
+// The base CRUT scenario every test in this file starts from (6% payout, 5-year
+// term, $1M inception). It's incidental scaffolding — each test spreads it and
+// adds only the opts it actually exercises, so the distinct config stays visible.
+const BASE_CRT = {
+  inceptionYear: 2026,
+  payoutPercent: 0.06,
+  termYears: 5,
+  inceptionValue: 1_000_000,
+} as const;
+
 describe("CRT realizationCorpus fixture", () => {
   it("defaults leave the fixture untouched (no taxable account, no taxYearRows)", () => {
-    const data = buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
-    });
+    const data = buildCrtLifecycleFixture({ ...BASE_CRT });
     expect(
       data.accounts.find((a) => a.id === CRT_FIXTURE_IDS.CRT_TAXABLE_ID),
     ).toBeUndefined();
@@ -20,13 +25,7 @@ describe("CRT realizationCorpus fixture", () => {
   });
 
   it("realizationCorpus adds a CRT-owned taxable account that actually grows, and seeds bracket-mode tax params", () => {
-    const data = buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
-      realizationCorpus: true,
-    });
+    const data = buildCrtLifecycleFixture({ ...BASE_CRT, realizationCorpus: true });
 
     const taxable = data.accounts.find(
       (a) => a.id === CRT_FIXTURE_IDS.CRT_TAXABLE_ID,
@@ -52,13 +51,7 @@ describe("CRT realizationCorpus fixture", () => {
   });
 
   it("isGrantor opt overrides the entity flag", () => {
-    const data = buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
-      isGrantor: false,
-    });
+    const data = buildCrtLifecycleFixture({ ...BASE_CRT, isGrantor: false });
     expect(
       data.entities!.find((e) => e.id === CRT_FIXTURE_IDS.CRT_ENTITY_ID)!.isGrantor,
     ).toBe(false);
@@ -95,14 +88,7 @@ describe("CRT realizationCorpus fixture", () => {
  */
 describe("CRT §664(c) exemption", () => {
   const build = (isGrantor: boolean) =>
-    buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
-      realizationCorpus: true,
-      isGrantor,
-    });
+    buildCrtLifecycleFixture({ ...BASE_CRT, realizationCorpus: true, isGrantor });
 
   it("grantor-flagged CRT: internal realization income never reaches the household 1040", () => {
     const years = runProjection(build(true));
@@ -157,10 +143,7 @@ describe("CRT §664(c) exemption", () => {
 describe("CRT §664(c) exemption — internal income surfaces", () => {
   const buildFull = (isGrantor: boolean) =>
     buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
+      ...BASE_CRT,
       realizationCorpus: true,
       crtIncomeRow: true,
       crtIra: true,
@@ -203,14 +186,7 @@ describe("CRT §664(c) exemption — internal income surfaces", () => {
    */
   it("grantor-flagged CRT: a prior-year gap-fill liquidation gain never drains onto the household 1040", () => {
     const years = runProjection(
-      buildCrtLifecycleFixture({
-        inceptionYear: 2026,
-        payoutPercent: 0.06,
-        termYears: 5,
-        inceptionValue: 1_000_000,
-        crtGapFill: true,
-        isGrantor: true,
-      }),
+      buildCrtLifecycleFixture({ ...BASE_CRT, crtGapFill: true, isGrantor: true }),
     );
     // The liquidation happens in 2026; the realized gain drains the year after.
     const drainYear = years.find((y) => y.year === 2027)!;
@@ -250,10 +226,7 @@ describe("CRT §664(c) exemption — internal income surfaces", () => {
 describe("CRT §664(c) exemption — sale of appreciated corpus", () => {
   const buildSale = (isGrantor: boolean) =>
     buildCrtLifecycleFixture({
-      inceptionYear: 2026,
-      payoutPercent: 0.06,
-      termYears: 5,
-      inceptionValue: 1_000_000,
+      ...BASE_CRT,
       realizationCorpus: true,
       crtSale: true,
       isGrantor,
@@ -299,10 +272,7 @@ describe("CRT §664(c) exemption — sale of appreciated corpus", () => {
   it("a CRT next to an ordinary non-grantor trust does not erase tax on the household's OWN gain", () => {
     const years = runProjection(
       buildCrtLifecycleFixture({
-        inceptionYear: 2026,
-        payoutPercent: 0.06,
-        termYears: 5,
-        inceptionValue: 1_000_000,
+        ...BASE_CRT,
         realizationCorpus: true,
         crtSale: true,
         siblingNonGrantorTrust: true,

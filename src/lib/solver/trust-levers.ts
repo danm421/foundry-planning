@@ -11,16 +11,16 @@ interface BuildTrustEntityArgs {
   id: string;
   name: string;
   /** Full TrustSubType: 3a (ilit|idgt|irrevocable) + 3b split-interest (crt|clt).
-   *  crt/clt fall through to non-grantor / non-crummey, matching DB-created trusts. */
+   *  Non-crummey; isGrantor comes from defaultIsGrantorFor (crt→false, clt→true). */
   subType: TrustSubType;
   grantor: "client" | "spouse";
 }
 
 /**
  * Build the EntitySummary for a solver-created irrevocable trust. Defaults
- * replicate AddTrustForm create-mode (add-trust-form.tsx:605-626): every trust is
- * out of estate (isIrrevocable true, includeInPortfolio false); ILIT carries
- * Crummey powers; IDGT is a grantor trust.
+ * replicate AddTrustForm create-mode: every trust is out of estate
+ * (isIrrevocable true, includeInPortfolio false); ILIT carries Crummey powers;
+ * IDGT and CLT are grantor trusts.
  *
  * Note: crummeyPowers is ILIT-defaulted here (the form toggles it). isGrantor now
  * comes from the shared defaultIsGrantorFor() used by BOTH surfaces — idgt and clt
