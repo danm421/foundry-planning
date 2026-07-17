@@ -9,6 +9,12 @@ import {
   type AnalysisContext, type Cause, type DollarDelta, type DrillContext,
   type Explanation, type Finding, type SubjectAdapter, type Unavailable,
 } from "./types";
+// Subject-honest branch (see the reversal cross-check below): gated on
+// `adapter.key === "tax"`, mirroring the state_move special-case. The mirror's
+// ratio direction reuses the Task-4 detector verbatim rather than re-deriving
+// the prior-funder-set ratio logic here.
+import { detectFundingCharacterShift } from "./subjects/tax-detectors";
+import type { TaxYearDiff } from "./subjects/tax-diff";
 
 export interface ExplainChangeArgs {
   adapter: SubjectAdapter;
@@ -133,6 +139,53 @@ export function explainChange(args: ExplainChangeArgs): Explanation | Unavailabl
     notes.push(
       `Second-order effect: Medicare IRMAA uses a 2-year MAGI lookback — ${args.year}'s income affects premiums in ${args.year + 2}, where the projected IRMAA surcharge rises ${money(irmaaRise)}.`,
     );
+  }
+
+  // Reversal cross-check (refinement E): when the top cause is a funding-character
+  // shift — draws moving toward taxable sources, spiking tax — a genuine mechanism
+  // reverses when its driver reverses. Scan the whole projection for the largest
+  // opposite-sign (tax-falling) boundary and confirm its blended funding ratio
+  // swings back toward tax-free before citing it as confirmation. Subject-honest:
+  // tax-only, and silent when no such mirror exists. Runs AFTER the degrade guard,
+  // so `causes` reflect a real diff.
+  const cliff = causes[0];
+  if (
+    adapter.key === "tax" &&
+    cliff?.kind === "funding_character_shift" &&
+    totalDelta > 0 &&
+    Number(cliff.evidence.blendedRatioYear) > Number(cliff.evidence.blendedRatioPriorYear)
+  ) {
+    let mirror: { prevYear: ProjectionYear; nextYear: ProjectionYear; figure: number; delta: number } | null = null;
+    for (let i = 0; i + 1 < args.years.length; i++) {
+      const py = args.years[i];
+      const ny = args.years[i + 1];
+      if (py.year === compareYear && ny.year === args.year) continue; // the cliff isn't its own mirror
+      const pf = adapter.figure(py);
+      const nf = adapter.figure(ny);
+      if (pf == null || nf == null) continue; // skip degraded (figure-less) years
+      const delta = nf - pf;
+      if (delta >= 0) continue; // opposite the rising cliff ⇒ a tax fall
+      if (!mirror || delta < mirror.delta) mirror = { prevYear: py, nextYear: ny, figure: nf, delta };
+    }
+    if (mirror) {
+      const mirrorFinding = detectFundingCharacterShift({
+        prev: mirror.prevYear,
+        next: mirror.nextYear,
+        diff: adapter.buildDiff(mirror.prevYear, mirror.nextYear, args.ctx) as TaxYearDiff,
+        ctx: args.ctx,
+        firstDeathYear: args.firstDeathYear,
+        secondDeathYear: args.secondDeathYear,
+      });
+      if (
+        mirrorFinding &&
+        Number(mirrorFinding.evidence.blendedRatioYear) < Number(mirrorFinding.evidence.blendedRatioPriorYear)
+      ) {
+        notes.push(
+          `Mechanism confirmed by the ${mirror.prevYear.year}–${mirror.nextYear.year} reversal ` +
+            `(draws shift back toward tax-free sources; total tax falls to ${money(mirror.figure)}).`,
+        );
+      }
+    }
   }
 
   return {

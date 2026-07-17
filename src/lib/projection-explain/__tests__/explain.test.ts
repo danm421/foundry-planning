@@ -4,10 +4,65 @@ import { explainChange } from "../explain";
 import { buildDrillContext } from "../context";
 import { taxAdapter } from "../subjects/tax";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
-import type { ClientData } from "@/engine/types";
+import type { AccountLedger, ClientData, ProjectionYear } from "@/engine/types";
+import type { DrillContext } from "../types";
 
 const base = (year: number, totalTax: number) =>
   makeYear({ year, taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome: totalTax * 4 } }) });
+
+// ── Reversal cross-check fixture (Task 6) ────────────────────────────────────
+// Draws sit in a tax-free Roth IRA in 2060–2061, jump to a pre-tax IRA in 2062
+// (the cliff — blended recognition 0 → 1.0, tax spikes 22k → 45k), then swing
+// back to the Roth IRA in 2063 (the mirror — ratio 1.0 → 0, tax falls 45k → 20k).
+function reversalCtx(): DrillContext {
+  return {
+    ...DRILL_CTX,
+    accountNames: { rira: "Client Roth IRA", tira: "Client IRA" },
+    accounts: [
+      { id: "rira", name: "Client Roth IRA", category: "retirement", subType: "roth_ira" },
+      { id: "tira", name: "Client IRA", category: "retirement", subType: "traditional_ira" },
+    ] as unknown as DrillContext["accounts"],
+  };
+}
+
+const rothDrawYear = (
+  year: number,
+  totalTax: number,
+  taxableIncome: number,
+  rira: Partial<AccountLedger>,
+  tira: Partial<AccountLedger>,
+): ProjectionYear =>
+  makeYear({
+    year,
+    withdrawals: { byAccount: { rira: 100_000 }, total: 100_000 },
+    accountLedgers: { rira: makeLedger(rira), tira: makeLedger(tira) },
+    taxDetail: makeTaxDetail({}),
+    taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome } }),
+  });
+
+const preTaxDrawYear = (
+  year: number,
+  totalTax: number,
+  taxableIncome: number,
+  rira: Partial<AccountLedger>,
+  tira: Partial<AccountLedger>,
+): ProjectionYear =>
+  makeYear({
+    year,
+    withdrawals: { byAccount: { tira: 120_000 }, total: 120_000 },
+    accountLedgers: { rira: makeLedger(rira), tira: makeLedger(tira) },
+    taxDetail: makeTaxDetail({ "withdrawal:tira": { type: "ordinary", amount: 120_000 } }),
+    taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome } }),
+  });
+
+function reversalFixtureYears(): ProjectionYear[] {
+  return [
+    rothDrawYear(2060, 20_000, 80_000, { beginningValue: 600_000, endingValue: 500_000 }, { beginningValue: 600_000, endingValue: 600_000 }),
+    rothDrawYear(2061, 22_000, 90_000, { beginningValue: 500_000, endingValue: 400_000 }, { beginningValue: 600_000, endingValue: 600_000 }),
+    preTaxDrawYear(2062, 45_000, 250_000, { beginningValue: 400_000, endingValue: 400_000 }, { beginningValue: 600_000, endingValue: 480_000 }),
+    rothDrawYear(2063, 20_000, 80_000, { beginningValue: 400_000, endingValue: 300_000 }, { beginningValue: 480_000, endingValue: 480_000 }),
+  ];
+}
 
 describe("explainChange", () => {
   it("rejects years outside the projection range with the available range", () => {
@@ -137,6 +192,41 @@ describe("explainChange", () => {
     if (out.available) {
       expect(out.notes.some((n) => n.includes("IRMAA") && n.includes("2065"))).toBe(true);
     }
+  });
+
+  it("cites the reversal boundary as confirmation when a mirror exists", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: reversalFixtureYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2062, ctx: reversalCtx(),
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.causes?.[0]?.kind).toBe("funding_character_shift");
+    expect(res.notes.some((n) => /reversal|confirmed by/i.test(n))).toBe(true);
+    // Names the 2062–2063 boundary and the tax it falls to.
+    expect(res.notes.some((n) => n.includes("2062–2063") && n.includes("$20,000"))).toBe(true);
+  });
+
+  it("stays silent when a tax fall isn't a funding-character reversal", () => {
+    // Same cliff, but 2063 keeps drawing from the pre-tax IRA (blended ratio holds
+    // at ~1.0) while a deduction jump drops the tax — a fall, not a reversal of the
+    // mechanism. The falling boundary IS selected, but its ratio never swings back.
+    const years = reversalFixtureYears();
+    years[3] = preTaxDrawYear(
+      2063, 25_000, 120_000,
+      { beginningValue: 400_000, endingValue: 400_000 },
+      { beginningValue: 480_000, endingValue: 360_000 },
+    );
+    const res = explainChange({
+      adapter: taxAdapter,
+      years,
+      firstDeathYear: null, secondDeathYear: null, year: 2062, ctx: reversalCtx(),
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.causes?.[0]?.kind).toBe("funding_character_shift");
+    expect(res.notes.some((n) => /reversal|confirmed by/i.test(n))).toBe(false);
   });
 });
 
