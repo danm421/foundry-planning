@@ -206,8 +206,18 @@ export function diffTaxYears(
 
   const totalFundingNext = byAccount.reduce((s, r) => s + r.cashOut, 0);
   const totalFundingPrev = [...fundingIds].reduce((s, id) => s + cashOutForAccount(prev, id), 0);
-  // Net need excluding portfolio draws: expenses − non-withdrawal income.
-  const netNeed = (y: ProjectionYear) => Math.round(y.totalExpenses - y.totalIncome);
+  // Net need excluding portfolio draws. IMPORTANT: the engine folds household
+  // RMD income into totalIncome (projection.ts assembles
+  // `totalIncome = displayIncome.total + householdRmdIncome + …`), and
+  // cashOutForAccount counts that same RMD on the funding side. Add RMD back here
+  // so both sides count it consistently — subtracting a raw totalIncome would
+  // double-count RMD and fire a false funding≠need residual on every real RMD
+  // decumulation year. Sum over ALL ledgers to match the funding side's RMD set
+  // (which includes entity-owned RMDs that don't reach householdRmdIncome).
+  const totalRmd = (y: ProjectionYear) =>
+    Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+  const netNeed = (y: ProjectionYear) =>
+    Math.round(y.totalExpenses - (y.totalIncome - totalRmd(y)));
   const netNeedNext = netNeed(next);
   const netNeedPrev = netNeed(prev);
   const residualNote =

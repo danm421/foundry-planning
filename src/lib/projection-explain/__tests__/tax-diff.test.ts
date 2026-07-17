@@ -8,9 +8,13 @@ import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from ".
  * Cooper-shaped decumulation boundary: the Client 401k depletes funding 2061,
  * so in 2062 the Spouse 401k carries the load — a $90k RMD (from the ledger,
  * NOT withdrawals.byAccount) plus a $400k supplemental draw. Both are fully
- * pre-tax, so recognized == cashOut and the ratio pins to 1.0. Expenses and
- * non-withdrawal income are set so net need exactly equals total funding
- * ($490k), leaving no residual.
+ * pre-tax, so recognized == cashOut and the ratio pins to 1.0.
+ *
+ * Real engine state: `totalIncome` already folds in the RMD
+ * (projection.ts: totalIncome = displayIncome.total + householdRmdIncome + …),
+ * so 2062's totalIncome is $190k = $100k non-portfolio income + $90k RMD. Net
+ * need = totalExpenses − (totalIncome − RMD) = 590k − 100k = 490k, which equals
+ * total funding, so residualNote stays undefined for the RIGHT reason.
  */
 function cooperFundingFixture() {
   const prev = makeYear({
@@ -35,7 +39,7 @@ function cooperFundingFixture() {
       "withdrawal:spouse401k": { type: "ordinary", amount: 400_000 },
       "spouse401k:rmd": { type: "ordinary", amount: 90_000 },
     }),
-    totalIncome: 100_000,
+    totalIncome: 190_000, // $100k non-portfolio income + $90k RMD (engine folds RMD into totalIncome)
     totalExpenses: 590_000,
   });
   const ctx: DrillContext = {
