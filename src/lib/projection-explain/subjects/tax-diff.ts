@@ -8,7 +8,6 @@ import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, money, type DollarDelta, type Dri
 // ── Tax-specific delta shapes (relocated from the Phase-0 types.ts; owned here) ──
 
 export type TaxChangeCauseKind =
-  | "withdrawal_shift"
   | "rmd"
   | "roth_conversion"
   | "social_security"

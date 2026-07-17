@@ -63,7 +63,7 @@ describe("explainChange", () => {
     }
   });
 
-  it("end-to-end: depletion-shift fixture yields withdrawal_shift as the top cause with an estimate", () => {
+  it("end-to-end: depletion-shift fixture yields funding_character_shift as the top cause with an estimate", () => {
     const prev = makeYear({
       year: 2062,
       withdrawals: { byAccount: { brok: 120_000 }, total: 120_000 },
@@ -81,9 +81,10 @@ describe("explainChange", () => {
     const out = explainChange({ adapter: taxAdapter, years: [prev, next], firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX });
     expect(out.available).toBe(true);
     if (out.available) {
-      expect(out.causes?.[0]?.kind).toBe("withdrawal_shift");
-      // blendedRate = 86,200 / 250,000 = 0.3448 → estimate = 170,000 × 0.3448 ≈ 58,616
-      expect(out.causes?.[0]?.estimatedImpact).toBe(Math.round(170_000 * (86_200 / 250_000)));
+      expect(out.causes?.[0]?.kind).toBe("funding_character_shift");
+      // funding recognition ratio 17% → 100% ⇒ implied ordinary income ≈ $158,333;
+      // estimate = 158,333 × blendedRate(86,200 / 250,000 = 0.3448) ≈ 54,593
+      expect(out.causes?.[0]?.estimatedImpact).toBe(Math.round(158_333 * (86_200 / 250_000)));
       expect(out.notes.some((n) => n.includes("approximation"))).toBe(true);
     }
   });
