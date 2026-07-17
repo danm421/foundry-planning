@@ -56,12 +56,20 @@ export async function getBookKpis(
       .from(clients)
       .innerJoin(crmHouseholds, eq(clients.crmHouseholdId, crmHouseholds.id))
       .where(and(...hhConditions)),
-    // Total book value: base-case accounts the advisor flagged as AUM, in the
-    // billable categories only. No grouping — with the CRM fallback gone this
-    // is a single firm-wide sum. Category is filtered as well as the flag so an
-    // account flagged while taxable and later switched to real estate can't leak in.
+    // Book split: base-case accounts in the billable categories, split by the
+    // advisor's counts_toward_aum flag. One round trip, two sums + a count.
+    //
+    // Category is filtered in WHERE, NOT in the FILTER clauses, so it guards
+    // BOTH sides: held-away must mean "eligible but unflagged", never
+    // "everything unflagged" (or real estate floods the tile). The form's
+    // category guard is client-side only, so an account flagged while taxable
+    // and later switched to real estate would otherwise leak into book value.
     db
-      .select({ total: sql<string>`coalesce(sum(${accounts.value}), 0)` })
+      .select({
+        aum: sql<string>`coalesce(sum(${accounts.value}) filter (where ${accounts.countsTowardAum}), 0)`,
+        heldAway: sql<string>`coalesce(sum(${accounts.value}) filter (where not ${accounts.countsTowardAum}), 0)`,
+        heldAwayAccounts: sql<number>`count(*) filter (where not ${accounts.countsTowardAum})::int`,
+      })
       .from(accounts)
       .innerJoin(
         scenarios,
@@ -72,7 +80,6 @@ export async function getBookKpis(
       .where(
         and(
           ...hhConditions,
-          eq(accounts.countsTowardAum, true),
           inArray(accounts.category, [...AUM_ELIGIBLE_CATEGORIES]),
         ),
       ),
@@ -82,7 +89,9 @@ export async function getBookKpis(
   // planningRows still feeds the separate "Planning clients" tile — it is not
   // part of the book-value sum.
   const planningHouseholdIds = new Set(planningRows.map((r) => r.householdId));
-  const totalBookValue = Number(aumRows[0]?.total ?? 0);
+  const totalBookValue = Number(aumRows[0]?.aum ?? 0);
+  const assetsHeldAway = Number(aumRows[0]?.heldAway ?? 0);
+  const heldAwayAccounts = aumRows[0]?.heldAwayAccounts ?? 0;
 
   const byStatus = new Map(statusRows.map((r) => [r.status, r.count]));
   const tasksDueThisWeek = taskRows.reduce((sum, r) => sum + r.count, 0);
@@ -91,6 +100,8 @@ export async function getBookKpis(
 
   return {
     totalBookValue,
+    assetsHeldAway,
+    heldAwayAccounts,
     activeHouseholds: byStatus.get("active") ?? 0,
     prospectHouseholds: byStatus.get("prospect") ?? 0,
     planningClients: planningHouseholdIds.size,
