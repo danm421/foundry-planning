@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   FORGE_SYSTEM_PREFIX,
+  FORGE_PREFIX_CLAUSES,
   GROUNDING_RULES,
   RESPONSE_STYLE,
   buildSystemPrompt,
@@ -119,6 +120,17 @@ describe("CRM system-prompt block", () => {
     expect(FORGE_SYSTEM_PREFIX).toMatch(/reversible CRM (actions|writes).*apply immediately/i);
     expect(FORGE_SYSTEM_PREFIX).toMatch(/delete.*require.*approval/i);
     expect(FORGE_SYSTEM_PREFIX).toMatch(/note.*(bodies|content).*UNTRUSTED|untrusted data/i);
+  });
+});
+
+describe("DECOMPOSITION routing clause", () => {
+  it("carries the decomposition routing clause", () => {
+    expect(FORGE_SYSTEM_PREFIX).toContain("explain_projection_change");
+    expect(FORGE_SYSTEM_PREFIX).toContain("break_down_projection_figure");
+    expect(FORGE_SYSTEM_PREFIX).toMatch(/one deterministic tool call/i);
+  });
+  it("prefix is a deterministic join (cache-stable)", () => {
+    expect(FORGE_SYSTEM_PREFIX).toBe(FORGE_PREFIX_CLAUSES.join("\n"));
   });
 });
 
