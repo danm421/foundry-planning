@@ -1,5 +1,6 @@
 import { termCertainAnnuityFactor } from "@/engine/actuarial/annuity-factors";
 import type { ClientData, FamilyMember } from "@/engine/types";
+import { TAX_YEAR_2026 } from "./tax-year-2026";
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -8,6 +9,7 @@ const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
 const CRT_ENTITY_ID = "00000000-0000-0000-0000-0000000000c1";
 const CRT_CHECKING_ID = "00000000-0000-0000-0000-0000000000c2";
 const HOUSEHOLD_CHECKING_ID = "00000000-0000-0000-0000-0000000000c3";
+const CRT_TAXABLE_ID = "00000000-0000-0000-0000-0000000000c4";
 
 export interface CrtLifecycleOpts {
   inceptionYear: number;
@@ -33,6 +35,28 @@ export interface CrtLifecycleOpts {
    *  triggers a death event in this year. Used to verify NO §170(f)(2)(B)
    *  recapture fires for CRT (Spec A behavior). */
   grantorDeathYear?: number;
+  /**
+   * Grantor-trust flag on the CRT entity. Defaults to TRUE to preserve every
+   * pre-existing test. Set false to exercise the DEFAULT config the form and
+   * solver actually produce (audit F1).
+   */
+  isGrantor?: boolean;
+  /**
+   * Adds a taxable brokerage account (100% CRT-owned, 5% growth, 100%-ordinary
+   * realization model) ALONGSIDE the CRT checking, and seeds `taxYearRows` so
+   * the engine runs in real bracket mode instead of silently falling back to
+   * flat-0.
+   *
+   * Both halves are required to observe §664(c): without the realization model
+   * there is no internal income; without taxYearRows there is no tax on it, and
+   * a "CRT pays no tax" assertion would pass for the wrong reason.
+   *
+   * NOTE: this is an ADDITIONAL account — the splitInterest snapshot still
+   * reflects `inceptionValue` alone, so the trust's actual corpus is larger than
+   * its stated inceptionValue. Don't combine with payment/deduction-amount
+   * assertions; use it for TAX assertions.
+   */
+  realizationCorpus?: boolean;
 }
 
 /**
@@ -143,6 +167,29 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
           { kind: "entity", entityId: CRT_ENTITY_ID, percent: 1 },
         ],
       } as ClientData["accounts"][number],
+      ...(opts.realizationCorpus
+        ? [
+            {
+              id: CRT_TAXABLE_ID,
+              name: "CRT Brokerage",
+              category: "taxable",
+              subType: "brokerage",
+              value: opts.inceptionValue,
+              basis: opts.inceptionValue,
+              growthRate: 0.05,
+              rmdEnabled: false,
+              isDefaultChecking: false,
+              realization: {
+                pctOrdinaryIncome: 1,
+                pctLtCapitalGains: 0,
+                pctQualifiedDividends: 0,
+                pctTaxExempt: 0,
+                turnoverPct: 0,
+              },
+              owners: [{ kind: "entity", entityId: CRT_ENTITY_ID, percent: 1 }],
+            } as ClientData["accounts"][number],
+          ]
+        : []),
     ],
     incomes: [],
     expenses: [],
@@ -167,7 +214,7 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
         entityType: "trust",
         trustSubType: "crt",
         isIrrevocable: true,
-        isGrantor: true,
+        isGrantor: opts.isGrantor ?? true,
         includeInPortfolio: false,
         grantor: "client",
         splitInterest: {
@@ -188,6 +235,7 @@ export function buildCrtLifecycleFixture(opts: CrtLifecycleOpts): ClientData {
       },
     ],
     deductions: [],
+    ...(opts.realizationCorpus ? { taxYearRows: [TAX_YEAR_2026] } : {}),
     transfers: [],
     assetTransactions: [],
     gifts: [],
@@ -210,5 +258,6 @@ export const CRT_FIXTURE_IDS = {
   CLIENT_FM_ID,
   CRT_ENTITY_ID,
   CRT_CHECKING_ID,
+  CRT_TAXABLE_ID,
   HOUSEHOLD_CHECKING_ID,
 } as const;
