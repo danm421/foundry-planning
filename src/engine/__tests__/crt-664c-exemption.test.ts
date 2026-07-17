@@ -64,3 +64,60 @@ describe("CRT realizationCorpus fixture", () => {
     ).toBe(false);
   });
 });
+
+/**
+ * IRC §664(c)(1): a CRT is exempt from income tax. Internal income accumulates
+ * untaxed; only the annuity/unitrust PAYMENT is taxed to the recipient.
+ *
+ * This is the load-bearing guard for audit F1: it asserts zero tax attributable
+ * to CRT internal income in BOTH isGrantor configs, so it catches any of the
+ * seven tax forks being missed — now or by future work that adds an eighth.
+ */
+describe("CRT §664(c) exemption", () => {
+  const build = (isGrantor: boolean) =>
+    buildCrtLifecycleFixture({
+      inceptionYear: 2026,
+      payoutPercent: 0.06,
+      termYears: 5,
+      inceptionValue: 1_000_000,
+      realizationCorpus: true,
+      isGrantor,
+    });
+
+  it("grantor-flagged CRT: internal realization income never reaches the household 1040", () => {
+    const years = runProjection(build(true));
+    const y1 = years.find((y) => y.year === 2026)!;
+    const sources = y1.taxDetail?.bySource ?? {};
+
+    const leaked = Object.keys(sources).filter((k) =>
+      k.startsWith(`${CRT_FIXTURE_IDS.CRT_TAXABLE_ID}:`),
+    );
+    expect(
+      leaked,
+      `CRT internal income leaked onto the household 1040: ${leaked.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("default (non-grantor) CRT: never enters the compressed-bracket 1041 pass", () => {
+    const years = runProjection(build(false));
+    for (const y of years) {
+      const breakdown = y.trustTaxByEntity?.get(CRT_FIXTURE_IDS.CRT_ENTITY_ID);
+      expect(
+        breakdown?.total ?? 0,
+        `CRT was taxed $${breakdown?.total} in the 1041 pass in ${y.year}`,
+      ).toBe(0);
+    }
+  });
+
+  it("the annuity/unitrust payment IS still taxed as ordinary income (Spec A simplification retained)", () => {
+    const years = runProjection(build(true));
+    const y1 = years.find((y) => y.year === 2026)!;
+    const entry =
+      y1.taxDetail?.bySource?.[
+        `crt_distribution:${CRT_FIXTURE_IDS.CRT_ENTITY_ID}`
+      ];
+    expect(entry).toBeDefined();
+    expect(entry!.type).toBe("ordinary_income");
+    expect(entry!.amount).toBeGreaterThan(0);
+  });
+});

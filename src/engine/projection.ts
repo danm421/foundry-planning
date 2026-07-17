@@ -458,6 +458,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     return true;
   };
 
+  /**
+   * IRC §664(c)(1): a charitable remainder trust is exempt from income tax for
+   * its entire life — internal income accumulates untaxed and only the
+   * annuity/unitrust payment is taxed, to the recipient. No year parameter:
+   * the exemption never turns on or off.
+   *
+   * ⚠️ This is NOT expressible as "not a grantor trust". Every tax fork in this
+   * file is binary — `if (effectiveIsGrantor(x)) → household 1040; else → trust
+   * 1041` — so routing a CRT down the `else` branch lands it in the
+   * compressed-bracket 1041 pass, which IS the bug (audit F1). Always test
+   * isTaxExemptTrust BEFORE the grantor fork, never instead of it.
+   *
+   * Keyed on trustSubType alone (not `&& splitInterest`): a malformed CRT with
+   * no splitInterest snapshot still must not be taxed as an ordinary trust.
+   */
+  const isTaxExemptTrust = (entityId: string | undefined): boolean =>
+    entityId != null && entityMap[entityId]?.trustSubType === "crt";
+
   // Effective withdrawal strategy. If the user hasn't configured anything, fall back
   // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
   // categories (real estate, business, life insurance) and default-checking accounts
@@ -523,7 +541,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (e) =>
           e.entityType === "trust" &&
           e.isIrrevocable === true &&
-          e.isGrantor === false
+          e.isGrantor === false &&
+          // §664(c): a CRT is exempt — it must never enter the 1041 pass. (F1)
+          !isTaxExemptTrust(e.id)
       )
       .map((e) => ({
         entityId: e.id,
@@ -923,6 +943,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const nonGrantorCarryInGains: AssetTransactionGain[] = [];
     for (const g of deferredEntityLiquidationGains.splice(0)) {
       if (g.gain <= 0) continue;
+      // §664(c): CRT gains are exempt — neither deferred to the household 1040
+      // nor routed to the 1041 pass. Drop them outright. (F1)
+      if (isTaxExemptTrust(g.entityId)) continue;
       if (effectiveIsGrantor(g.entityId, year)) {
         grantorCarryInCapGains += g.gain;
       } else {
@@ -962,6 +985,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       client,
       (inc) => {
         if (inc.ownerEntityId == null) return false;
+        // §664(c): CRT-owned income rows are exempt — never on the household
+        // 1040. Cash still routes to the trust's checking via
+        // resolveEntityFlowAmount, which does not consult grantorIncome. (F1)
+        if (isTaxExemptTrust(inc.ownerEntityId)) return false;
         if (!effectiveIsGrantor(inc.ownerEntityId, year)) return false;
         return entityMap[inc.ownerEntityId]?.entityType === "trust";
       }
@@ -1610,6 +1637,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           let grantorShare = 0;
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
+            if (isTaxExemptTrust(owner.entityId)) continue;
             if (effectiveIsGrantor(owner.entityId, year)) grantorShare += owner.percent;
           }
           const householdLikeShare = householdShare + grantorShare;
@@ -1629,6 +1658,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // Per grantor-entity owner: track its share for pct_income distribution.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            if (isTaxExemptTrust(owner.entityId)) continue; // §664(c) (F1)
             if (!effectiveIsGrantor(owner.entityId, year)) continue;
             const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
             if (bucket) {
@@ -1647,6 +1677,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           //                   See spec 2026-05-11-business-distribution-passthrough-design.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            // §664(c): CRT shares never reach the 1041 pass. Without this the
+            // exemption above would push them down the non-grantor branch. (F1)
+            if (isTaxExemptTrust(owner.entityId)) continue;
             if (effectiveIsGrantor(owner.entityId, year)) continue;
             const ownerEntity = entityMap[owner.entityId];
             const isTrust = ownerEntity?.entityType === "trust";
@@ -1805,7 +1838,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           sourceId: acct.id,
           basis: rmd, // cash inflow into entity checking: basis == amount (1:1)
         });
-        if (effectiveIsGrantor(entityOwner.entityId, year)) {
+        if (
+          // §664(c): CRT-owned RMDs are exempt. (F1)
+          !isTaxExemptTrust(entityOwner.entityId) &&
+          effectiveIsGrantor(entityOwner.entityId, year)
+        ) {
           grantorRmdTaxable += rmd;
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         }
@@ -1895,6 +1932,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows
         // also flow through Phase 3 K-1 below — only grantor trust rows fall
         // through to the household 1040 here.
+        // §664(c): CRT-owned rows are exempt. (F1)
+        if (isTaxExemptTrust(inc.ownerEntityId)) continue;
         if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue;
         if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
       }
