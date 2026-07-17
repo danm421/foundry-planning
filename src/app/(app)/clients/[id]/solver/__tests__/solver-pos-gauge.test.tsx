@@ -50,11 +50,16 @@ describe("SolverPosGauge — overlay", () => {
 });
 
 describe("SolverPosGauge — computing state", () => {
-  it("renders the branded fan mark instead of a value", () => {
+  it("renders the branded fan mark, looping, instead of a value", () => {
     const { container } = render(
       <SolverPosGauge state="computing" successPct={null} onRegenerate={vi.fn()} />,
     );
-    expect(container.querySelectorAll("svg .mark-draw")).toHaveLength(5);
+    expect(container.querySelectorAll("svg .mark-draw-loop")).toHaveLength(5);
+    // Never the one-shot `.mark-draw`: it holds its final frame ~1.35s in, and
+    // this mark has no MarkLoader halo beside it to keep the wait alive. jsdom
+    // runs no CSS, so the class is all a unit test can pin here — that the
+    // strokes actually sweep is browser-verified.
+    expect(container.querySelector(".mark-draw")).toBeNull();
   });
 
   it("announces the run to screen readers", () => {

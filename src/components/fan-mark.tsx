@@ -16,22 +16,34 @@ const STROKES = [
 
 /**
  * The Monte Carlo "simulating" mark. Each stroke draws itself in via the shared
- * `.mark-draw` class (see globals.css); under `prefers-reduced-motion` every
- * stroke settles fully drawn. Decorative — callers own the accessible name.
+ * `.mark-draw` / `.mark-draw-loop` classes (see globals.css); under
+ * `prefers-reduced-motion` every stroke settles fully drawn. Decorative —
+ * callers own the accessible name.
  *
  * `strokeWidth` is viewBox-relative and therefore scales with the rendered
  * size: the default 1.5 reads correctly at the report's `h-14`, but shrinks to
  * a hairline at gauge size, so small callers pass a larger value.
+ *
+ * `loop` has no default on purpose. `false` draws once and holds the final
+ * frame, which only reads as "working" while `MarkLoader`'s halo breathes
+ * alongside it; `true` sweeps the fan out from the origin dot forever, for
+ * marks rendered bare. Getting it wrong is silent — a mark that quietly stops
+ * moving mid-run — so every caller states which it is rather than inheriting a
+ * default that happens to suit the other one. `duration` follows from it (a
+ * full cycle wants longer than a lone draw-in), so callers rarely set it.
  */
 export function FanMark({
   className = "relative h-14 w-20 text-accent",
   strokeWidth = 1.5,
-  duration = "0.9s",
+  loop,
+  duration,
 }: {
   className?: string;
   strokeWidth?: number;
+  loop: boolean;
   duration?: string;
 }) {
+  const cycle = duration ?? (loop ? "2.6s" : "0.9s");
   return (
     <svg
       viewBox="0 0 48 34"
@@ -45,11 +57,11 @@ export function FanMark({
       {STROKES.map((s, i) => (
         <path
           key={i}
-          className="mark-draw"
+          className={loop ? "mark-draw-loop" : "mark-draw"}
           pathLength={100}
           d={s.d}
           opacity={s.opacity}
-          style={drawStyle(duration, s.delay)}
+          style={drawStyle(cycle, s.delay)}
         />
       ))}
       {/* Origin dot — the common source the paths fan out from. */}

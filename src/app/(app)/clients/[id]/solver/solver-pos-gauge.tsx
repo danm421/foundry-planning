@@ -56,7 +56,9 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
         >
           {state === "computing" ? (
             <span role="status" aria-label="Calculating probability of success">
-              <FanMark className="h-5 w-7 text-accent" strokeWidth={3} duration="0.8s" />
+              {/* Bare mark — no room for MarkLoader's halo at 20px — so the
+                  strokes carry the motion themselves; a run can last a minute. */}
+              <FanMark className="h-5 w-7 text-accent" strokeWidth={3} loop />
             </span>
           ) : (
             display
