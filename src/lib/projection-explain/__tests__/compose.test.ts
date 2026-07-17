@@ -39,6 +39,30 @@ function compositionFixture(): { year: ProjectionYear; ctx: DrillContext } {
   return { year, ctx };
 }
 
+// Self-employed variant: the engine folds SECA self-employment tax straight into
+// flow.totalTax with NO line field (year-tax.ts), so the eight line fields
+// (47k here) fall $18,360 short of the reported totalTax (65,360). The residual
+// guard must surface that gap as its own tax_line so the sum still reconciles.
+function secaFixture(): { year: ProjectionYear; ctx: DrillContext } {
+  const { ctx } = compositionFixture();
+  const year = makeYear({
+    year: 2062,
+    taxDetail: makeTaxDetail({ "withdrawal:k401": { type: "ordinary", amount: 120_000 } }),
+    taxResult: makeTaxResult({
+      flow: {
+        regularFederalIncomeTax: 30_000,
+        capitalGainsTax: 8_000,
+        niit: 2_000,
+        additionalMedicare: 1_000,
+        stateTax: 6_000,
+        totalFederalTax: 59_360, // 41k federal lines + 18,360 SECA folded in
+        totalTax: 65_360, // 47k lines + 18,360 SECA (no line field for seTax)
+      },
+    }),
+  });
+  return { year, ctx };
+}
+
 describe("taxAdapter.components (COMPOSITION)", () => {
   it("decomposes a tax year into labeled, source-keyed components", () => {
     const { year, ctx } = compositionFixture();
@@ -64,6 +88,21 @@ describe("taxAdapter.components (COMPOSITION)", () => {
     expect(sources.map((p) => p.label)).toEqual(
       expect.arrayContaining(["Dan 401k — Withdrawal", "Dan IRA — RMD"]),
     );
+    // No-SECA client: the eight lines already reconcile, so NO residual line.
+    expect(taxLines.some((p) => p.label.includes("Self-employment"))).toBe(false);
+  });
+
+  it("emits a residual tax_line so the sum invariant holds for self-employed clients", () => {
+    const { year, ctx } = secaFixture();
+    const parts = taxAdapter.components(year, ctx);
+    const taxLines = parts.filter((p) => p.type === "tax_line");
+    // The residual line appears with the honest SECA-inclusive label…
+    const residual = taxLines.find((p) => p.label === "Self-employment tax and other federal adjustments");
+    expect(residual).toBeDefined();
+    expect(residual!.amount).toBe(18_360);
+    // …and the tax_line parts (eight lines + residual) reconcile to totalTax.
+    expect(Math.round(parts.reduce((s, p) => s + (p.type === "tax_line" ? p.amount : 0), 0)))
+      .toBe(Math.round(year.taxResult!.flow.totalTax));
   });
 
   it("degrades to a single Total tax component when taxResult is absent", () => {
