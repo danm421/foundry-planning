@@ -46,6 +46,14 @@ tests:
       - type: javascript
         value: file://./assertions.ts:noInventedNumbers
   - vars:
+      message: "What makes up the tax bill in 2062 — where is it all coming from?"
+      expectTool: "break_down_projection_figure"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noInventedNumbers
+  - vars:
       message: "What if they do a Roth conversion of $50,000 this year?"
       expectTool: "whatif_roth"
     assert:

@@ -123,6 +123,21 @@ export interface Explanation {
   /** Subject-specific pictures merged from adapter.deltaExtras (tax: taxLineDeltas, …). */
   [k: string]: unknown;
 }
+/** COMPOSITION payload (Task 8): a single year's figure decomposed into labeled,
+ *  source-keyed parts. A level, not a delta — `figure` is the scalar year value
+ *  (degradedFigure when the substrate is missing), `boundaryAnalyzed` names the
+ *  one year, and there is no compareYear. */
+export interface Composition {
+  available: true;
+  /** True when the year lacks the figure substrate — a single degraded total, no parts. */
+  degraded?: boolean;
+  subject: SubjectKey;
+  year: number;
+  figure: number;
+  componentBreakdown: Component[];
+  analysisContext: AnalysisContext;
+  notes: string[];
+}
 export interface Unavailable {
   available: false;
   reason: string;

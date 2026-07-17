@@ -9,7 +9,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
-import { explainChange } from "@/lib/projection-explain/explain";
+import { explainChange, explainComposition } from "@/lib/projection-explain/explain";
 import { buildDrillContext } from "@/lib/projection-explain/context";
 import { ADAPTERS, SUBJECT_KEYS } from "@/lib/projection-explain/registry";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
@@ -72,6 +72,7 @@ const RunProjectionResultSchema = z.looseObject({
 });
 const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
 const ExplainProjectionChangeResultSchema = z.looseObject({ available: z.boolean() });
+const BreakDownProjectionFigureResultSchema = z.looseObject({ available: z.boolean() });
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -184,6 +185,51 @@ export function buildComputeTools(
           .int()
           .optional()
           .describe("baseline year (defaults to year − 1)"),
+      }),
+    },
+  );
+
+  const breakDownProjectionFigureTool = tool(
+    async ({ clientId, subject, year, compareTo }) =>
+      withOutputRetry(async () => {
+        const firmId = await requireOrgId();
+        await assertClientReadable(ctx, clientId);
+
+        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
+        const result = runProjectionWithEvents(effectiveTree);
+        const drillCtx = buildDrillContext(effectiveTree, result.years);
+
+        const composition = explainComposition({
+          adapter: ADAPTERS[subject],
+          years: result.years,
+          year,
+          compareTo: compareTo ?? "none",
+          ctx: drillCtx,
+        });
+        // Pure engine can't know the scenario identity — fill it from the tool
+        // context (mirrors explain_projection_change).
+        if (composition.available) {
+          composition.analysisContext.scenarioId = ctx.scenarioId;
+        }
+
+        return { scenarioId: ctx.scenarioId, ...composition };
+      }, BreakDownProjectionFigureResultSchema),
+    {
+      name: "break_down_projection_figure",
+      description:
+        "Break down WHAT MAKES UP a projection figure in one year for the ACTIVE scenario, with labeled, " +
+        "source-attributed parts. subject selects the figure ('tax' = the tax bill). Set compareTo to also " +
+        "explain why the level is high/low vs a reference: 'prior_year', 'plan_average', 'working_years', or a " +
+        "specific year number; omit (or 'none') for a pure composition. Returns componentBreakdown + " +
+        "analysisContext. All numbers are the engine's own; narrate, never recompute.",
+      schema: z.object({
+        clientId: z.string().describe("the active client uuid"),
+        subject: z.enum(SUBJECT_KEYS).describe("which figure to break down. 'tax' = the tax bill."),
+        year: z.number().int().describe("the projection year to decompose"),
+        compareTo: z
+          .union([z.enum(["none", "prior_year", "plan_average", "working_years"]), z.number().int()])
+          .optional()
+          .describe("reference for LEVEL; omit for pure composition"),
       }),
     },
   );
@@ -404,5 +450,12 @@ export function buildComputeTools(
     },
   );
 
-  return [runProjection, explainProjectionChangeTool, runMonteCarlo, compareScenarios, explainReport];
+  return [
+    runProjection,
+    explainProjectionChangeTool,
+    breakDownProjectionFigureTool,
+    runMonteCarlo,
+    compareScenarios,
+    explainReport,
+  ];
 }

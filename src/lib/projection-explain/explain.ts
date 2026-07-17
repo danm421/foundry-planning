@@ -6,9 +6,10 @@
 import type { ProjectionYear } from "@/engine/types";
 import {
   LINE_FLOOR, MATERIALITY, money,
-  type AnalysisContext, type Cause, type DollarDelta, type DrillContext,
+  type AnalysisContext, type Cause, type Composition, type DollarDelta, type DrillContext,
   type Explanation, type Finding, type SubjectAdapter, type Unavailable,
 } from "./types";
+import { composeYear } from "./operations";
 // Subject-honest branch (see the reversal cross-check below): gated on
 // `adapter.key === "tax"`, mirroring the state_move special-case. The mirror's
 // ratio direction reuses the Task-4 detector verbatim rather than re-deriving
@@ -249,4 +250,93 @@ export function explainChange(
   }
 
   return result;
+}
+
+/** A LEVEL reference the COMPOSITION tool can carry. Only `"none"` (pure
+ *  composition) is in scope for Task 8; the other references — prior_year,
+ *  plan_average, working_years, or a specific year — are Task 9's LEVEL branch. */
+export type CompareTo = "none" | "prior_year" | "plan_average" | "working_years" | number;
+
+export interface ExplainCompositionArgs {
+  adapter: SubjectAdapter;
+  years: ProjectionYear[];
+  year: number;
+  compareTo?: CompareTo;
+  ctx: DrillContext;
+}
+
+/** COMPOSITION assembly: decompose ONE year's figure into labeled, source-keyed
+ *  parts. Metric-agnostic — the adapter supplies figure, degradedFigure, and
+ *  components. Unavailable when the year is outside the projection.
+ *
+ *  compareTo staging (Task 8): only the pure-composition path (`"none"`/omitted)
+ *  is implemented. A non-none `compareTo` is a LEVEL request (Task 9); rather than
+ *  crash or silently ignore, run the composition and push a note that
+ *  level-comparison isn't available yet. Task 9 replaces this branch. */
+export function explainComposition(args: ExplainCompositionArgs): Composition | Unavailable {
+  const { adapter } = args;
+  const target = args.years.find((y) => y.year === args.year);
+  const first = args.years[0]?.year;
+  const last = args.years[args.years.length - 1]?.year;
+
+  if (!target) {
+    return {
+      available: false,
+      reason: `Year ${args.year} is outside the projection (${first}–${last}). Ask about a year in that range.`,
+      availableYears: first != null && last != null ? { first, last } : undefined,
+    };
+  }
+
+  const analysisContext: AnalysisContext = {
+    scenarioId: null,
+    subject: adapter.key,
+    boundaryAnalyzed: `${args.year}`, // single year — a level, not a "prev→next" delta
+    planYearRange: { first: first ?? args.year, last: last ?? args.year },
+    materialityThreshold: MATERIALITY,
+  };
+
+  const componentBreakdown = composeYear(adapter, target, args.ctx);
+  const figureVal = adapter.figure(target);
+  const degraded = figureVal == null;
+
+  const notes: string[] = [];
+  if (degraded) {
+    notes.push(
+      "Detailed tax breakdown is unavailable for this year (flat-mode fallback or missing tax detail); the total comes from expenses.taxes and is not decomposed into tax lines or income sources.",
+    );
+  } else {
+    notes.push(
+      "componentBreakdown has two families: tax_line parts (the pieces of the tax bill — they sum to Total tax) and income_source parts (the recognized income DRIVING the tax — never add these to the tax total).",
+    );
+  }
+
+  // compareTo staging — the LEVEL branch (why the level is high/low vs a
+  // reference) lands in Task 9. Degrade honestly for a non-none request.
+  if (args.compareTo != null && args.compareTo !== "none") {
+    notes.push(
+      `Level comparison (compareTo: ${JSON.stringify(args.compareTo)}) is not yet available for this request; returning the pure composition of ${args.year} only.`,
+    );
+  }
+
+  // Second-order effect: this year's income also drives Medicare IRMAA two years
+  // out (2-year MAGI lookback). Emit only from engine-emitted data — the projected
+  // year+2 surcharge — and only when it's material and the year isn't degraded.
+  const nPlus2 = args.years.find((y) => y.year === args.year + 2);
+  const irmaaN2 = nPlus2?.medicare?.totalIrmaaSurcharge ?? 0;
+  if (!degraded && nPlus2 && irmaaN2 >= LINE_FLOOR) {
+    notes.push(
+      `Second-order effect: Medicare IRMAA uses a 2-year MAGI lookback — ${args.year}'s income also drives the projected ${money(irmaaN2)} IRMAA surcharge in ${args.year + 2}.`,
+    );
+  }
+
+  return {
+    available: true,
+    degraded: degraded || undefined,
+    subject: adapter.key,
+    year: args.year,
+    figure: degraded ? adapter.degradedFigure(target) : figureVal,
+    componentBreakdown,
+    analysisContext,
+    notes,
+  };
 }
