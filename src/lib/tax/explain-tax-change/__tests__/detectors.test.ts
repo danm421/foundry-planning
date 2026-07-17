@@ -163,6 +163,22 @@ describe("detectRealizedGains", () => {
     const f = detectRealizedGains(args(prev, next));
     expect(f?.incomeDelta).toBe(80_000);
   });
+
+  it("includes business_sale gains from a business-cascade sale", () => {
+    // The engine writes `business_sale:${transactionId}` capital-gain entries
+    // into taxDetail.bySource (src/engine/projection.ts) for a business-cascade
+    // sale — isGainKey must recognize this prefix, not just `sale:`.
+    const prev = makeYear({ year: 2062 });
+    const next = makeYear({
+      year: 2063,
+      taxDetail: makeTaxDetail({
+        "business_sale:tx9": { type: "capGains", amount: 120_000 },
+      }),
+    });
+    const f = detectRealizedGains(args(prev, next));
+    expect(f?.kind).toBe("realized_gains");
+    expect(f?.incomeDelta).toBe(120_000);
+  });
 });
 
 describe("detectFilingStatusChange", () => {

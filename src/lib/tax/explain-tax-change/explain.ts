@@ -87,6 +87,14 @@ export function explainTaxChange(
   const notes: string[] = [
     `estimatedTaxImpact values are approximations (income-side delta × ~${Math.round(diff.blendedRate * 100)}% blended incremental rate); exact tax-side changes are in taxLineDeltas, exact income-side dollars in sourceDeltas.`,
   ];
+  if (fs) {
+    notes.push(
+      "The filing_status_change cause's estimatedTaxImpact is an unattributed residual " +
+        "(total tax change minus the income-side cause estimates), not a direct bracket " +
+        "calculation — it can be small, large, or even negative, and may absorb income " +
+        "movements no specific cause detected.",
+    );
+  }
   const noSignificantChange = Math.abs(totalDelta) < MATERIALITY;
   if (noSignificantChange) {
     notes.push(`Total tax changed by only ${money(totalDelta)} between ${compareYear} and ${args.year} — no significant change to explain.`);

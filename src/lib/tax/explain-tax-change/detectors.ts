@@ -126,7 +126,8 @@ export function detectSocialSecurity(a: DetectorArgs): TaxChangeFinding | null {
 /** Gain-flavored bySource keys — deliberately excludes `withdrawal:` keys,
  *  which belong to detectWithdrawalShift. */
 const isGainKey = (k: string) =>
-  k.startsWith("sale:") || k.startsWith("equity-ltcg:") || k.startsWith("equity-stcg:") ||
+  k.startsWith("sale:") || k.startsWith("business_sale:") ||
+  k.startsWith("equity-ltcg:") || k.startsWith("equity-stcg:") ||
   k.startsWith("transfer:") || (k.startsWith("note:") && k.endsWith(":ltcg"));
 
 const gainIncome = (y: ProjectionYear) =>
@@ -160,7 +161,8 @@ export function detectFilingStatusChange(a: DetectorArgs): TaxChangeFinding | nu
     kind: "filing_status_change",
     summary:
       `A death occurs in ${deathYear}; the survivor moves to narrower single-filer ` +
-      `brackets (marginal federal rate ${pct(from)} → ${pct(to)}), so similar income is taxed harder.`,
+      `brackets (marginal federal rate ${pct(from)} → ${pct(to)}), changing how the same ` +
+      `income is taxed.`,
     incomeDelta: 0,
     evidence: { deathYear, marginalRateFrom: from, marginalRateTo: to },
   };

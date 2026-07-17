@@ -83,6 +83,42 @@ describe("explainTaxChange", () => {
     }
   });
 
+  it("keeps filing-status narration honest when its residual estimate goes negative", () => {
+    // Death year triggers filing_status_change. taxableIncome FALLS year over
+    // year (taxableDelta <= 0), so blendedRate falls back to next year's flat
+    // marginalFederalRate (0.35) rather than the actual (small) tax/taxable
+    // ratio. Applying that rate to a large realized-gain incomeDelta overshoots
+    // the real total-tax delta, driving the filing_status_change residual
+    // (totalDelta − attributed) deeply negative — while a death year with a
+    // materially higher marginal rate would otherwise read as "taxed harder".
+    const prev = makeYear({
+      year: 2062,
+      taxResult: makeTaxResult({
+        flow: { totalTax: 200_000, totalFederalTax: 180_000, stateTax: 20_000, taxableIncome: 700_000 },
+        marginalFederalRate: 0.24,
+      }),
+    });
+    const next = makeYear({
+      year: 2063,
+      taxDetail: makeTaxDetail({ "sale:tx1": { type: "capGains", amount: 800_000 } }),
+      taxResult: makeTaxResult({
+        flow: { totalTax: 220_000, totalFederalTax: 195_000, stateTax: 25_000, taxableIncome: 690_000 },
+        marginalFederalRate: 0.35,
+      }),
+    });
+    const out = explainTaxChange({
+      years: [prev, next],
+      firstDeathYear: 2063, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
+    });
+    expect(out.available).toBe(true);
+    if (!out.available) return;
+    const fsCause = out.causes?.find((c) => c.kind === "filing_status_change");
+    expect(fsCause).toBeDefined();
+    expect(fsCause!.estimatedTaxImpact).toBeLessThan(0);
+    expect(JSON.stringify(out.causes)).not.toContain("taxed harder");
+    expect(out.notes.some((n) => n.toLowerCase().includes("residual"))).toBe(true);
+  });
+
   it("adds the IRMAA 2-year-lookback note when N+2 surcharge rises", () => {
     const y64 = makeYear({ year: 2064, medicare: { totalAnnualCost: 8_000, totalIrmaaSurcharge: 0 } });
     const y65 = makeYear({ year: 2065, medicare: { totalAnnualCost: 12_000, totalIrmaaSurcharge: 3_400 } });
