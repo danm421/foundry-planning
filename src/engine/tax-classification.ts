@@ -204,7 +204,9 @@ function _classify401kDistribution(
 /**
  * Classifies a Roth distribution using ordering rules:
  * contributions (basis) come out first, tax-free and penalty-free;
- * earnings above basis are taxable and subject to early withdrawal penalty.
+ * earnings above basis are taxable and penalized only pre-59.5 — a
+ * qualified (59.5+) distribution is entirely tax-free (mirrors
+ * categorizeDraw's Roth branch).
  */
 function _classifyRothDistribution(
   amount: number,
@@ -215,7 +217,7 @@ function _classifyRothDistribution(
   const taxFreeAmount = Math.min(amount, rothBasis);
   const earningsWithdrawn = Math.max(0, amount - taxFreeAmount);
 
-  const taxableOrdinaryIncome = earningsWithdrawn;
+  const taxableOrdinaryIncome = isEarly ? earningsWithdrawn : 0;
   const earlyWithdrawalPenalty = isEarly ? earningsWithdrawn * EARLY_WITHDRAWAL_PENALTY_RATE : 0;
   const label = isEarly && earningsWithdrawn > 0 ? "early_distribution" : "taxable_distribution";
 
