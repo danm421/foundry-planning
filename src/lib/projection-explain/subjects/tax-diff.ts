@@ -3,7 +3,7 @@
 // Callers guarantee taxResult on both years (explain.ts handles the degrade path).
 import type { ProjectionYear } from "@/engine/types";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, type DollarDelta, type DrillContext } from "../types";
+import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, money, type DollarDelta, type DrillContext } from "../types";
 
 // ── Tax-specific delta shapes (relocated from the Phase-0 types.ts; owned here) ──
 
@@ -32,13 +32,35 @@ export interface TaxChangeCause extends TaxChangeFinding {
   estimatedTaxImpact: number;
 }
 
-export interface AccountDrawDelta {
+/** One account's funding contribution in the asked year, reconstructed from the
+ *  ledgers (RMD) + supplemental draws, with the taxable slice the engine
+ *  recognized against it. Consumed by Task 4's recognition-ratio detector. */
+export interface FundingRow {
   account: string;
-  from: number;
-  to: number;
-  delta: number;
+  accountId: string;
+  /** rmd + supplemental — total cash leaving the account this year. */
+  cashOut: number;
+  rmd: number;
+  supplemental: number;
+  /** Taxable dollars from bySource (withdrawal:<id> + <id>:rmd). */
+  recognized: number;
+  /** recognized / cashOut, guarded (0 when nothing came out). */
+  ratio: number;
   priorYearEndingBalance: number;
   depleted: boolean;
+}
+
+export interface WithdrawalPicture {
+  /** Asked-year funding rows, union of both years' funding accounts. */
+  byAccount: FundingRow[];
+  totalFundingPrev: number;
+  totalFundingNext: number;
+  /** totalExpenses − non-withdrawal income (portfolio draws excluded). */
+  netNeedPrev: number;
+  netNeedNext: number;
+  /** Set only when |totalFunding − netNeed| exceeds 1% of net need. */
+  residualNote?: string;
+  grossUp: { deltaFunding: number; deltaNetNeedExTax: number; deltaTax: number };
 }
 
 export interface TaxYearDiff {
@@ -46,11 +68,7 @@ export interface TaxYearDiff {
   taxLineDeltas: DollarDelta[];
   incomeDeltas: DollarDelta[];
   sourceDeltas: DollarDelta[];
-  withdrawalPicture: {
-    totalWithdrawals: DollarDelta;
-    netCashFlow: DollarDelta;
-    byAccount: AccountDrawDelta[];
-  };
+  withdrawalPicture: WithdrawalPicture;
   marginalFederalRate: { from: number; to: number };
   /** Δtax/ΔtaxableIncome clamped to [0, 0.6]; falls back to year-N marginal
    *  federal rate when taxable income didn't rise. Used for cause estimates. */
@@ -82,6 +100,25 @@ export interface TaxChangeUnavailable {
 
 function dd(label: string, from: number, to: number): DollarDelta {
   return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
+}
+
+/** Recognized (taxable) dollars for one account, summed from ONLY the named
+ *  taxable bySource keys the engine emits for it: `withdrawal:<id>` (supplemental
+ *  draw) and `<id>:rmd` (required distribution). A future
+ *  `withdrawal_tax_free:<id>` key (from the unmerged tax-ledger branch) is
+ *  intentionally NOT summed here, so tax-free draws correctly lower the ratio. Do
+ *  NOT switch to "any key containing the id". Exported: Task 4's recognition-ratio
+ *  detector imports this rather than re-deriving it. */
+export function recognizedForAccount(y: ProjectionYear, id: string): number {
+  const bs = y.taxDetail?.bySource ?? {};
+  return (bs[`withdrawal:${id}`]?.amount ?? 0) + (bs[`${id}:rmd`]?.amount ?? 0);
+}
+
+/** Total cash leaving an account this year: supplemental draw + RMD. RMDs live in
+ *  `accountLedgers[id].rmdAmount`, NOT `withdrawals.byAccount`, so supplemental
+ *  draws alone would understate funding (trap 4). */
+function cashOutForAccount(y: ProjectionYear, id: string): number {
+  return (y.withdrawals.byAccount[id] ?? 0) + (y.accountLedgers[id]?.rmdAmount ?? 0);
 }
 
 export function diffTaxYears(
@@ -137,26 +174,61 @@ export function diffTaxYears(
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, SOURCE_CAP);
 
-  const drawIds = new Set([
+  // ── Funding reconciliation: rebuild the withdrawal picture from the ledgers ──
+  // Funding accounts = anything with a supplemental draw in either year, plus any
+  // account with an RMD (RMDs never appear in withdrawals.byAccount).
+  const fundingIds = new Set([
     ...Object.keys(prev.withdrawals.byAccount),
     ...Object.keys(next.withdrawals.byAccount),
+    ...Object.keys(prev.accountLedgers).filter((id) => (prev.accountLedgers[id]?.rmdAmount ?? 0) > 0),
+    ...Object.keys(next.accountLedgers).filter((id) => (next.accountLedgers[id]?.rmdAmount ?? 0) > 0),
   ]);
-  const byAccount = [...drawIds]
+  const byAccount: FundingRow[] = [...fundingIds]
     .map((id) => {
-      const from = prev.withdrawals.byAccount[id] ?? 0;
-      const to = next.withdrawals.byAccount[id] ?? 0;
+      const cashOut = cashOutForAccount(next, id);
+      const rmd = next.accountLedgers[id]?.rmdAmount ?? 0;
+      const recognized = recognizedForAccount(next, id);
       const priorEnd = prev.accountLedgers[id]?.endingValue ?? 0;
       return {
         account: ctx.accountNames[id] ?? id,
-        from: Math.round(from),
-        to: Math.round(to),
-        delta: Math.round(to - from),
+        accountId: id,
+        cashOut: Math.round(cashOut),
+        rmd: Math.round(rmd),
+        supplemental: Math.round(cashOut - rmd),
+        recognized: Math.round(recognized),
+        ratio: cashOut > 0 ? recognized / cashOut : 0,
         priorYearEndingBalance: Math.round(priorEnd),
-        depleted: priorEnd < DEPLETED_EPS && from > 0,
+        depleted: priorEnd < DEPLETED_EPS && (next.withdrawals.byAccount[id] ?? 0) > 0,
       };
     })
-    .filter((d) => d.delta !== 0 || d.depleted)
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    .filter((r) => r.cashOut !== 0 || r.depleted)
+    .sort((a, b) => b.cashOut - a.cashOut);
+
+  const totalFundingNext = byAccount.reduce((s, r) => s + r.cashOut, 0);
+  const totalFundingPrev = [...fundingIds].reduce((s, id) => s + cashOutForAccount(prev, id), 0);
+  // Net need excluding portfolio draws: expenses − non-withdrawal income.
+  const netNeed = (y: ProjectionYear) => Math.round(y.totalExpenses - y.totalIncome);
+  const netNeedNext = netNeed(next);
+  const netNeedPrev = netNeed(prev);
+  const residualNote =
+    Math.abs(totalFundingNext - netNeedNext) > 0.01 * Math.max(1, Math.abs(netNeedNext))
+      ? `Funding ${money(totalFundingNext)} vs net need ${money(netNeedNext)} differ by ` +
+        `${money(totalFundingNext - netNeedNext)} — possible engine drift; report the numbers, don't force a story.`
+      : undefined;
+  const deltaTax = nf.totalTax - pf.totalTax;
+  const withdrawalPicture: WithdrawalPicture = {
+    byAccount,
+    totalFundingPrev: Math.round(totalFundingPrev),
+    totalFundingNext: Math.round(totalFundingNext),
+    netNeedPrev,
+    netNeedNext,
+    residualNote,
+    grossUp: {
+      deltaFunding: Math.round(totalFundingNext - totalFundingPrev),
+      deltaNetNeedExTax: Math.round(netNeedNext - netNeedPrev - deltaTax),
+      deltaTax: Math.round(deltaTax),
+    },
+  };
 
   const taxableDelta = nf.taxableIncome - pf.taxableIncome;
   const taxDelta = nf.totalTax - pf.totalTax;
@@ -176,11 +248,7 @@ export function diffTaxYears(
       .map(([l, a, b]) => dd(l, a, b))
       .filter((d) => ALWAYS.has(d.label) || Math.abs(d.delta) >= LINE_FLOOR),
     sourceDeltas,
-    withdrawalPicture: {
-      totalWithdrawals: dd("Total supplemental withdrawals", prev.withdrawals.total, next.withdrawals.total),
-      netCashFlow: dd("Net cash flow", prev.netCashFlow, next.netCashFlow),
-      byAccount,
-    },
+    withdrawalPicture,
     marginalFederalRate: {
       from: prev.taxResult!.diag.marginalFederalRate,
       to: next.taxResult!.diag.marginalFederalRate,

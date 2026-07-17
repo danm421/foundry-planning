@@ -1,7 +1,49 @@
 // src/lib/projection-explain/__tests__/tax-diff.test.ts
 import { describe, expect, it } from "vitest";
 import { diffTaxYears } from "../subjects/tax-diff";
+import type { DrillContext } from "../types";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
+
+/**
+ * Cooper-shaped decumulation boundary: the Client 401k depletes funding 2061,
+ * so in 2062 the Spouse 401k carries the load — a $90k RMD (from the ledger,
+ * NOT withdrawals.byAccount) plus a $400k supplemental draw. Both are fully
+ * pre-tax, so recognized == cashOut and the ratio pins to 1.0. Expenses and
+ * non-withdrawal income are set so net need exactly equals total funding
+ * ($490k), leaving no residual.
+ */
+function cooperFundingFixture() {
+  const prev = makeYear({
+    year: 2061,
+    withdrawals: { byAccount: { client401k: 300_000 }, total: 300_000 },
+    accountLedgers: {
+      client401k: makeLedger({ beginningValue: 300_000, endingValue: 0 }),
+      spouse401k: makeLedger({ beginningValue: 1_500_000, endingValue: 1_450_000 }),
+    },
+    taxDetail: makeTaxDetail({ "withdrawal:client401k": { type: "ordinary", amount: 300_000 } }),
+    totalIncome: 100_000,
+    totalExpenses: 400_000,
+  });
+  const next = makeYear({
+    year: 2062,
+    withdrawals: { byAccount: { spouse401k: 400_000 }, total: 400_000 },
+    accountLedgers: {
+      client401k: makeLedger({ beginningValue: 0, endingValue: 0 }),
+      spouse401k: makeLedger({ beginningValue: 1_450_000, rmdAmount: 90_000, endingValue: 960_000 }),
+    },
+    taxDetail: makeTaxDetail({
+      "withdrawal:spouse401k": { type: "ordinary", amount: 400_000 },
+      "spouse401k:rmd": { type: "ordinary", amount: 90_000 },
+    }),
+    totalIncome: 100_000,
+    totalExpenses: 590_000,
+  });
+  const ctx: DrillContext = {
+    ...DRILL_CTX,
+    accountNames: { client401k: "Client 401k", spouse401k: "Spouse 401k" },
+  };
+  return { prev, next, ctx };
+}
 
 describe("diffTaxYears", () => {
   it("builds the headline and drops sub-$100 tax-line noise", () => {
@@ -52,22 +94,48 @@ describe("diffTaxYears", () => {
     expect(d.sourceDeltas.map((s) => s.label)).toContain("Dan IRA — RMD");
   });
 
-  it("marks an account depleted when it drew in prev year and ended below DEPLETED_EPS", () => {
+  it("funding picture reconciles RMD + supplemental to net need", () => {
+    const { prev, next, ctx } = cooperFundingFixture(); // Client 401k depletes 2061; Spouse 401k RMD $90k + supp $400k in 2062
+    const diff = diffTaxYears(prev, next, ctx);
+    const wp = diff.withdrawalPicture;
+    const spouse = wp.byAccount.find((r) => r.account.includes("Spouse 401k"))!;
+    expect(spouse.rmd).toBe(90_000);
+    expect(spouse.supplemental).toBe(400_000);
+    expect(spouse.cashOut).toBe(490_000);
+    expect(spouse.recognized).toBe(490_000); // fully pre-tax
+    expect(spouse.ratio).toBeCloseTo(1, 2);
+    expect(wp.totalFundingNext).toBe(490_000);
+    expect(wp.residualNote).toBeUndefined(); // balances within 1%
+  });
+
+  it("flags a next-year funding row as depleted when its prior-year balance ended below DEPLETED_EPS", () => {
+    // New (funding) shape: a row is depleted when the account ended the prior
+    // year near $0 yet still draws in the asked year. A healthy account with a
+    // large prior balance is not depleted.
     const prev = makeYear({
       year: 2062,
-      withdrawals: { byAccount: { brok: 120_000 }, total: 120_000 },
-      accountLedgers: { brok: makeLedger({ beginningValue: 118_000, endingValue: 0 }) },
+      accountLedgers: {
+        ira: makeLedger({ beginningValue: 200_000, endingValue: 50 }), // all but drained
+        brok: makeLedger({ beginningValue: 500_000, endingValue: 460_000 }),
+      },
     });
     const next = makeYear({
       year: 2063,
-      withdrawals: { byAccount: { ira: 190_000 }, total: 190_000 },
-      accountLedgers: { ira: makeLedger({ beginningValue: 900_000, endingValue: 750_000 }) },
+      withdrawals: { byAccount: { ira: 190_000, brok: 40_000 }, total: 230_000 },
+      accountLedgers: {
+        ira: makeLedger({ beginningValue: 50, endingValue: 0 }),
+        brok: makeLedger({ beginningValue: 460_000, endingValue: 420_000 }),
+      },
+      taxDetail: makeTaxDetail({
+        "withdrawal:ira": { type: "ordinary", amount: 190_000 },
+        "withdrawal:brok": { type: "capGains", amount: 8_000 },
+      }),
     });
     const rows = diffTaxYears(prev, next, DRILL_CTX).withdrawalPicture.byAccount;
-    const brok = rows.find((r) => r.account === "Joint Brokerage");
     const ira = rows.find((r) => r.account === "Dan IRA");
-    expect(brok).toMatchObject({ depleted: true, from: 120_000, to: 0, delta: -120_000 });
-    expect(ira).toMatchObject({ depleted: false, delta: 190_000 });
+    const brok = rows.find((r) => r.account === "Joint Brokerage");
+    expect(ira).toMatchObject({ depleted: true, cashOut: 190_000, priorYearEndingBalance: 50 });
+    expect(brok).toMatchObject({ depleted: false, cashOut: 40_000, priorYearEndingBalance: 460_000 });
   });
 
   it("blendedRate is Δtax/ΔtaxableIncome clamped, falling back to marginal rate", () => {

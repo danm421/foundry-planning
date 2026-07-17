@@ -4,7 +4,7 @@
 // ledger data; assembly (explain.ts) attaches the estimated tax impact.
 import type { ProjectionYear } from "@/engine/types";
 import type { DrillContext } from "../types";
-import { LINE_FLOOR, money, pct } from "../types";
+import { DEPLETED_EPS, LINE_FLOOR, money, pct } from "../types";
 import type { TaxChangeFinding, TaxYearDiff } from "./tax-diff";
 
 export interface DetectorArgs {
@@ -30,8 +30,22 @@ const names = (rows: Array<{ account: string }>) => rows.map((r) => r.account).j
  *  shifted to other (typically pre-tax) accounts, recognizing more taxable
  *  income — which in turn grosses up the total withdrawal need. */
 export function detectWithdrawalShift(a: DetectorArgs): TaxChangeFinding | null {
-  const depleted = a.diff.withdrawalPicture.byAccount.filter((d) => d.depleted && d.delta <= 0);
-  const risers = a.diff.withdrawalPicture.byAccount.filter((d) => d.delta > 0);
+  // The funding picture's byAccount now holds asked-year funding rows, so a
+  // drained account won't appear there. Derive the "ran dry last year" set and
+  // the risers straight from the two years' ledgers + draws. (Task 4 replaces
+  // this detector with the recognition-ratio one.)
+  const depleted = Object.keys(a.prev.withdrawals.byAccount)
+    .filter(
+      (id) =>
+        (a.prev.withdrawals.byAccount[id] ?? 0) > 0 &&
+        (a.prev.accountLedgers[id]?.endingValue ?? 0) < DEPLETED_EPS,
+    )
+    .map((id) => ({ account: a.ctx.accountNames[id] ?? id }));
+  const risers = [
+    ...new Set([...Object.keys(a.prev.withdrawals.byAccount), ...Object.keys(a.next.withdrawals.byAccount)]),
+  ]
+    .filter((id) => (a.next.withdrawals.byAccount[id] ?? 0) - (a.prev.withdrawals.byAccount[id] ?? 0) > 0)
+    .map((id) => ({ account: a.ctx.accountNames[id] ?? id }));
   if (depleted.length === 0 || risers.length === 0) return null;
 
   const before = withdrawalIncome(a.prev);
@@ -39,7 +53,7 @@ export function detectWithdrawalShift(a: DetectorArgs): TaxChangeFinding | null 
   const incomeDelta = Math.round(after - before);
   if (incomeDelta < LINE_FLOOR) return null;
 
-  const grossUp = a.diff.withdrawalPicture.totalWithdrawals.delta;
+  const grossUp = a.diff.withdrawalPicture.grossUp.deltaFunding;
   const grossUpClause =
     grossUp >= 0
       ? `Total gross withdrawals rose ${money(grossUp)} to fund the same need plus the extra tax.`
