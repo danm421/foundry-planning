@@ -39,6 +39,29 @@ function compositionFixture(): { year: ProjectionYear; ctx: DrillContext } {
   return { year, ctx };
 }
 
+// LEVEL fixture: a full projection where 2055–2060 are working years (real
+// earned income, a modest ~18k tax bill) and 2061–2063 are retirement years
+// (no earned income). 2062 is the high retirement-year bill from
+// compositionFixture (47k) — so a working_years comparison yields a positive
+// delta (47k vs the 18k working-years mean).
+function levelFixture(): { years: ProjectionYear[]; ctx: DrillContext } {
+  const { year: retirementYear, ctx } = compositionFixture(); // 2062, 47k, earnedIncome 0
+  const working = [2055, 2056, 2057, 2058, 2059, 2060].map((y) =>
+    makeYear({
+      year: y,
+      taxResult: makeTaxResult({
+        income: { earnedIncome: 150_000 },
+        flow: { regularFederalIncomeTax: 15_000, totalFederalTax: 15_000, stateTax: 3_000, totalTax: 18_000 },
+      }),
+    }),
+  );
+  const flank = [2061, 2063].map((y) =>
+    makeYear({ year: y, taxResult: makeTaxResult({ flow: { totalTax: 45_000 } }) }),
+  );
+  const years = [...working, flank[0], retirementYear, flank[1]].sort((a, b) => a.year - b.year);
+  return { years, ctx };
+}
+
 // Self-employed variant: the engine folds SECA self-employment tax straight into
 // flow.totalTax with NO line field (year-tax.ts), so the eight line fields
 // (47k here) fall $18,360 short of the reported totalTax (65,360). The residual
@@ -152,6 +175,36 @@ describe("explainComposition", () => {
     if (out.available) return;
     expect(out.availableYears).toEqual({ first: 2062, last: 2062 });
     expect(out.reason).toContain("2099");
+  });
+
+  it("compares a figure to a reference (LEVEL)", () => {
+    const { years, ctx } = levelFixture();
+    const res = explainComposition({ adapter: taxAdapter, years, year: 2062, compareTo: "working_years", ctx });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.level?.reference).toBe("working_years");
+    expect(res.level?.referenceFigure).toBe(18_000); // mean of the six 18k working years
+    expect(res.level?.delta).toBeGreaterThan(0); // 47k − 18k
+    expect(res.level?.delta).toBe(29_000);
+    expect(res.level?.drivers.length).toBeGreaterThan(0);
+    // drivers = componentBreakdown sorted by |amount|, capped — largest first.
+    const amounts = res.level!.drivers.map((d) => Math.abs(d.amount));
+    expect(amounts).toEqual([...amounts].sort((a, b) => b - a));
+  });
+
+  it("falls back to the plan average (with a note) when there are no working years", () => {
+    const { years, ctx } = levelFixture();
+    // Strip earned income from every year → no working-years signal remains.
+    const retired = years.map((y) => ({
+      ...y,
+      taxResult: y.taxResult ? { ...y.taxResult, income: { ...y.taxResult.income, earnedIncome: 0 } } : y.taxResult,
+    }));
+    const res = explainComposition({ adapter: taxAdapter, years: retired, year: 2062, compareTo: "working_years", ctx });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.level?.reference).toBe("working_years");
+    // referenceFigure is now the plan-wide mean, and a note explains the fallback.
+    expect(res.notes.some((n) => /working years/i.test(n) && /average/i.test(n))).toBe(true);
   });
 
   it("degrades honestly (no throw) when compareTo is a LEVEL reference (Task 9)", () => {

@@ -5,11 +5,11 @@
 // figure, degraded figure, detectors, diff, rate, and subject-specific extras.
 import type { ProjectionYear } from "@/engine/types";
 import {
-  LINE_FLOOR, MATERIALITY, money,
+  DRIVER_CAP, LINE_FLOOR, MATERIALITY, money,
   type AnalysisContext, type Cause, type Composition, type DollarDelta, type DrillContext,
   type Explanation, type Finding, type SubjectAdapter, type Unavailable,
 } from "./types";
-import { composeYear } from "./operations";
+import { compareToReference, composeYear } from "./operations";
 // Subject-honest branch (see the reversal cross-check below): gated on
 // `adapter.key === "tax"`, mirroring the state_move special-case. The mirror's
 // ratio direction reuses the Task-4 detector verbatim rather than re-deriving
@@ -252,9 +252,9 @@ export function explainChange(
   return result;
 }
 
-/** A LEVEL reference the COMPOSITION tool can carry. Only `"none"` (pure
- *  composition) is in scope for Task 8; the other references — prior_year,
- *  plan_average, working_years, or a specific year — are Task 9's LEVEL branch. */
+/** A LEVEL reference the COMPOSITION tool can carry. `"none"` is a pure
+ *  composition; prior_year, plan_average, working_years, or a specific year each
+ *  attach a `level` comparison (why the figure is high/low vs that reference). */
 export type CompareTo = "none" | "prior_year" | "plan_average" | "working_years" | number;
 
 export interface ExplainCompositionArgs {
@@ -269,10 +269,10 @@ export interface ExplainCompositionArgs {
  *  parts. Metric-agnostic — the adapter supplies figure, degradedFigure, and
  *  components. Unavailable when the year is outside the projection.
  *
- *  compareTo staging (Task 8): only the pure-composition path (`"none"`/omitted)
- *  is implemented. A non-none `compareTo` is a LEVEL request (Task 9); rather than
- *  crash or silently ignore, run the composition and push a note that
- *  level-comparison isn't available yet. Task 9 replaces this branch. */
+ *  compareTo (Task 9 LEVEL branch): a non-none reference also attaches a `level`
+ *  payload — referenceFigure, signed delta, and the top drivers — explaining why
+ *  the figure is high/low vs that reference. Degrades to a note (no `level`) when
+ *  the target year is degraded or no reference resolves within the projection. */
 export function explainComposition(args: ExplainCompositionArgs): Composition | Unavailable {
   const { adapter } = args;
   const target = args.years.find((y) => y.year === args.year);
@@ -310,12 +310,41 @@ export function explainComposition(args: ExplainCompositionArgs): Composition | 
     );
   }
 
-  // compareTo staging — the LEVEL branch (why the level is high/low vs a
-  // reference) lands in Task 9. Degrade honestly for a non-none request.
+  // LEVEL branch (Task 9): why the level is high/low vs a reference. Resolve the
+  // reference figures from `years`, average them (compareToReference), and attach
+  // the signed delta + the top drivers. Degrade honestly with a note — never a
+  // level payload — when the target year is degraded (no figure to compare) or no
+  // reference resolves within the projection.
+  let level: Composition["level"];
   if (args.compareTo != null && args.compareTo !== "none") {
-    notes.push(
-      `Level comparison (compareTo: ${JSON.stringify(args.compareTo)}) is not yet available for this request; returning the pure composition of ${args.year} only.`,
-    );
+    if (degraded) {
+      notes.push(
+        `Level comparison (compareTo: ${JSON.stringify(args.compareTo)}) is unavailable — ${args.year} has no detailed figure to compare against a reference.`,
+      );
+    } else {
+      const resolved = referenceFiguresFor(args.compareTo, adapter, args.years, args.year);
+      if (!resolved) {
+        notes.push(
+          `Level comparison (compareTo: ${JSON.stringify(args.compareTo)}) is unavailable — no reference figure could be resolved within the projection (${first ?? args.year}–${last ?? args.year}); returning the pure composition of ${args.year}.`,
+        );
+      } else {
+        const cmp = compareToReference(figureVal!, resolved.figures);
+        const drivers = [...componentBreakdown]
+          .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+          .slice(0, DRIVER_CAP);
+        level = {
+          reference: typeof args.compareTo === "number" ? String(args.compareTo) : args.compareTo,
+          referenceFigure: Math.round(cmp.referenceFigure),
+          delta: Math.round(cmp.delta),
+          drivers,
+        };
+        if (resolved.usedFallback) {
+          notes.push(
+            "No working years (with earned income) were found in the projection; the working_years comparison falls back to the plan-wide average.",
+          );
+        }
+      }
+    }
   }
 
   // Second-order effect: this year's income also drives Medicare IRMAA two years
@@ -336,7 +365,54 @@ export function explainComposition(args: ExplainCompositionArgs): Composition | 
     year: args.year,
     figure: degraded ? adapter.degradedFigure(target) : figureVal,
     componentBreakdown,
+    ...(level ? { level } : {}),
     analysisContext,
     notes,
   };
+}
+
+/** Resolve the reference figure set for a LEVEL comparison from the full
+ *  projection. Returns `null` when no reference can be resolved (the caller
+ *  degrades with a note). `usedFallback` flags the working_years → plan_average
+ *  fallback.
+ *
+ *  Degraded years (figure undefined/NaN) are skipped throughout. The
+ *  working_years boundary reads `taxResult.income.earnedIncome` — the engine's
+ *  own earned-income figure (wages + net self-employment), the honest
+ *  "earned income > 0" signal on the row; there is no separate pre-computed
+ *  retirement boundary on ProjectionYear, so a client with no earned income
+ *  anywhere in the projection falls back to the plan-wide average. */
+function referenceFiguresFor(
+  compareTo: Exclude<CompareTo, "none">,
+  adapter: SubjectAdapter,
+  years: ProjectionYear[],
+  year: number,
+): { figures: number[]; usedFallback: boolean } | null {
+  const definedFigure = (y: ProjectionYear): number | null => {
+    const f = adapter.figure(y);
+    return f == null || Number.isNaN(f) ? null : f;
+  };
+  const definedFiguresOf = (rows: ProjectionYear[]): number[] =>
+    rows.map(definedFigure).filter((f): f is number => f != null);
+
+  if (typeof compareTo === "number" || compareTo === "prior_year") {
+    const refYear = typeof compareTo === "number" ? compareTo : year - 1;
+    const row = years.find((y) => y.year === refYear);
+    const f = row ? definedFigure(row) : null;
+    return f == null ? null : { figures: [f], usedFallback: false };
+  }
+
+  if (compareTo === "plan_average") {
+    const figures = definedFiguresOf(years);
+    return figures.length ? { figures, usedFallback: false } : null;
+  }
+
+  // working_years: years with earned income > 0 (pre-retirement). Fall back to
+  // the plan-wide average when the projection carries no earned-income signal.
+  const working = definedFiguresOf(
+    years.filter((y) => (y.taxResult?.income.earnedIncome ?? 0) > 0),
+  );
+  if (working.length) return { figures: working, usedFallback: false };
+  const planWide = definedFiguresOf(years);
+  return planWide.length ? { figures: planWide, usedFallback: true } : null;
 }

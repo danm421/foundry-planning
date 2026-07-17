@@ -8,6 +8,10 @@ import type { ProjectionYear, SavingsRule } from "@/engine/types";
 export const LINE_FLOOR = 100;
 /** Cap on bySource delta rows returned to the model. */
 export const SOURCE_CAP = 12;
+/** Cap on the top LEVEL drivers (componentBreakdown sorted by |amount|). Smaller
+ *  than SOURCE_CAP: a focused "what's driving this level vs the reference" set,
+ *  not the full breakdown (which the payload already carries in full). */
+export const DRIVER_CAP = 6;
 /** An account ledger ending below this is treated as depleted. */
 export const DEPLETED_EPS = 100;
 /** |Δ headline figure| below this ⇒ "no significant change". */
@@ -135,6 +139,19 @@ export interface Composition {
   year: number;
   figure: number;
   componentBreakdown: Component[];
+  /** LEVEL comparison (Task 9): why this year's figure is high/low vs a
+   *  reference. Present only when `compareTo` is not `"none"` and a reference
+   *  resolved (a degraded year or an unresolvable reference emits a note
+   *  instead). `reference` is the reference kind (or the year as a string for a
+   *  named-year comparison); `delta` = figure(year) − referenceFigure; `drivers`
+   *  are the top componentBreakdown parts by |amount|. Typed explicitly (not via
+   *  an index signature) so consumers see the shape. */
+  level?: {
+    reference: string;
+    referenceFigure: number;
+    delta: number;
+    drivers: Component[];
+  };
   analysisContext: AnalysisContext;
   notes: string[];
 }

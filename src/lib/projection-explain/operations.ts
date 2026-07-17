@@ -26,6 +26,17 @@ export function composeYear(
   return adapter.components(year, ctx);
 }
 
-export function compareToReference(): never {
-  throw new Error("compareToReference is implemented in Task 9");
+/** LEVEL primitive: compare a year's figure to a resolved reference set.
+ *  Pure — `explainComposition` resolves WHICH figures form the reference
+ *  (prior year, plan-wide mean, working-years mean, or a named year); this
+ *  averages them and returns the signed delta. `referenceFigures` MUST be
+ *  non-empty (the caller degrades honestly when no reference resolves).
+ *  A reusable seam Phase 2 leans on. */
+export function compareToReference(
+  figure: number,
+  referenceFigures: number[],
+): { figure: number; referenceFigure: number; delta: number } {
+  const referenceFigure =
+    referenceFigures.reduce((sum, v) => sum + v, 0) / referenceFigures.length;
+  return { figure, referenceFigure, delta: figure - referenceFigure };
 }
