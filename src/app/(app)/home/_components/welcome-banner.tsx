@@ -26,28 +26,20 @@ export function WelcomeBanner({ firstName }: { firstName: string | null }): Reac
         <h1 className="text-2xl font-semibold text-ink" suppressHydrationWarning>
           {greetingForHour(now.getHours())}
           {firstName ? `, ${firstName}` : ""}
+          <span className="dot">.</span>
         </h1>
         <p className="mt-1 text-sm text-ink-3 tabular" suppressHydrationWarning>
           {DATE_FMT.format(now)}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link
-          href="/crm/new"
-          className="rounded border border-hair bg-card px-3 py-1.5 text-sm text-ink hover:bg-paper"
-        >
+        <Link href="/crm/new" className="btn-primary text-sm">
           + New household
         </Link>
-        <Link
-          href="/tasks?new=1"
-          className="rounded border border-hair bg-card px-3 py-1.5 text-sm text-ink hover:bg-paper"
-        >
+        <Link href="/tasks?new=1" className="btn-ghost text-sm">
           + New task
         </Link>
-        <Link
-          href="/data-collection"
-          className="rounded border border-hair bg-card px-3 py-1.5 text-sm text-ink hover:bg-paper"
-        >
+        <Link href="/data-collection" className="btn-ghost text-sm">
           Send intake
         </Link>
       </div>
