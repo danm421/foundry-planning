@@ -80,4 +80,30 @@ describe("RMDs on mixed Roth/pre-tax 401(k)s (SECURE 2.0 §325)", () => {
     expect(year.taxDetail!.bySource["acct-401k:rmd"]).toBeUndefined();
     expect(year.taxDetail!.ordinaryIncome).toBe(0);
   });
+
+  // Year-1 override: `priorYearEndValue` is a prior-Dec-31 GROSS custodian
+  // snapshot on a different scale than the current-snapshot `rothValueBoY`.
+  // Subtracting the raw Roth dollars from the prior-year gross is a scale
+  // mismatch — with $600k Roth against a $500k prior-year balance it zeroes the
+  // basis and skips the RMD entirely. The Roth fraction (60% of the current $1M
+  // balance) must be applied to the prior-year gross: $500k × 40% = $200k.
+  it("scales the Roth exclusion to the prior-year-end gross basis on a mixed account", () => {
+    const year = runYearOne(
+      build401k({ value: 1_000_000, rothValue: 600_000, priorYearEndValue: 500_000 }),
+    );
+    const expectedRmd = 200_000 / DIVISOR_AT_75;
+
+    expect(year.accountLedgers["acct-401k"].rmdAmount).toBeCloseTo(expectedRmd, 6);
+    expect(year.taxDetail!.ordinaryIncome).toBeCloseTo(expectedRmd, 6);
+  });
+
+  // Regression guard for the override path with no Roth: a pure pre-tax
+  // account's Year-1 RMD keys off `priorYearEndValue` unchanged (fraction 0).
+  it("uses priorYearEndValue unchanged for a pure pre-tax account", () => {
+    const year = runYearOne(build401k({ value: 1_000_000, priorYearEndValue: 500_000 }));
+    const expectedRmd = 500_000 / DIVISOR_AT_75;
+
+    expect(year.accountLedgers["acct-401k"].rmdAmount).toBeCloseTo(expectedRmd, 6);
+    expect(year.taxDetail!.ordinaryIncome).toBeCloseTo(expectedRmd, 6);
+  });
 });

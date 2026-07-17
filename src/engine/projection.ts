@@ -1767,7 +1767,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // exempt from lifetime RMDs, so the basis is the pre-tax slice only.
       // rothValueBoY is stamped alongside beginningValue (before growth) —
       // the live rothValueMap has already grown and would over-subtract.
-      const rmdBasis = Math.max(0, grossBasis - (accountLedgers[acct.id]?.rothValueBoY ?? 0));
+      const rothValueBoY = accountLedgers[acct.id]?.rothValueBoY ?? 0;
+      let rmdBasis: number;
+      if (isFirstProjectionYear && acct.priorYearEndValue != null) {
+        // `grossBasis` here is `priorYearEndValue` — a prior-Dec-31 custodian
+        // snapshot on a different scale than the current-snapshot rothValueBoY.
+        // Subtracting raw Roth dollars mixes scales (and can zero a real RMD),
+        // so apply the current Roth *fraction* to the prior-year gross instead.
+        const beginningGross = accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+        const rothFraction = beginningGross > 0 ? Math.min(1, rothValueBoY / beginningGross) : 0;
+        rmdBasis = grossBasis * (1 - rothFraction);
+      } else {
+        rmdBasis = Math.max(0, grossBasis - rothValueBoY);
+      }
       const currentBalance = accountBalances[acct.id] ?? 0;
       // Cap at the current pre-tax balance so an RMD never forces out Roth
       // dollars (the distribution is booked 100% pre-tax below).
