@@ -2003,88 +2003,93 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             )}
 
             {category !== "stock_options" && (
-            <div>
-              <label className={fieldLabelClassName} htmlFor="value">
-                Current Value ($)
-              </label>
-              <CurrencyInput
-                id="value"
-                name="value"
-                value={drivenByHoldings ? holdingsTotals!.value : accountValue}
-                disabled={drivenByHoldings}
-                onChange={(raw) => {
-                  setAccountValue(raw);
-                  // Auto-mirror basis from value for plain non-retirement
-                  // accounts. Traditional IRAs almost always have $0 after-
-                  // tax basis (Form 8606 tracks contributions explicitly),
-                  // so they default to 0 — advisor opts in to a non-zero
-                  // basis on accounts with prior nondeductible contributions.
-                  if (!userEditedBasis && subType !== "traditional_ira") {
-                    setAccountBasis(raw);
-                  }
-                }}
-                className={inputClassName}
-              />
-              {drivenByHoldings && (
-                <p className="mt-1 text-xs text-gray-400">
-                  Value &amp; cost basis are derived from this account&apos;s holdings.
-                </p>
-              )}
-            </div>
-            )}
-
-            {isAumEligible(category) && (
-              <div className="col-span-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={countsTowardAum}
-                    onChange={(e) => setCountsTowardAum(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                  />
-                  <span className="text-sm font-medium text-gray-300">Counts toward AUM</span>
-                </label>
-                <p className="mt-1 ml-6 text-xs text-gray-400">
-                  Include this balance in Total book value on the home screen.
-                </p>
-              </div>
-            )}
-
-            {category !== "stock_options" && (category === "retirement" && (subType === "401k" || subType === "403b") ? (
+            <div className={`col-span-2 grid gap-4 ${isAumEligible(category) ? "grid-cols-3" : "grid-cols-2"}`}>
               <div>
-                <label className={fieldLabelClassName} htmlFor="rothValue">
-                  Roth Value ($)
+                <label className={fieldLabelClassName} htmlFor="value">
+                  Current Value ($)
                 </label>
                 <CurrencyInput
-                  id="rothValue"
-                  name="rothValue"
-                  value={accountRothValue}
-                  onChange={(raw) => setAccountRothValue(raw)}
-                  className={inputClassName}
-                />
-                <p className="mt-1 text-xs text-gray-400">
-                  Portion of the balance designated as Roth. Grows with the
-                  account and is excluded from tax on withdrawal.
-                </p>
-              </div>
-            ) : (
-              <div>
-                <label className={fieldLabelClassName} htmlFor="basis">
-                  Cost Basis ($)
-                </label>
-                <CurrencyInput
-                  id="basis"
-                  name="basis"
-                  value={drivenByHoldings ? holdingsTotals!.basis : accountBasis}
+                  id="value"
+                  name="value"
+                  value={drivenByHoldings ? holdingsTotals!.value : accountValue}
                   disabled={drivenByHoldings}
                   onChange={(raw) => {
-                    setAccountBasis(raw);
-                    setUserEditedBasis(true);
+                    setAccountValue(raw);
+                    // Auto-mirror basis from value for plain non-retirement
+                    // accounts. Traditional IRAs almost always have $0 after-
+                    // tax basis (Form 8606 tracks contributions explicitly),
+                    // so they default to 0 — advisor opts in to a non-zero
+                    // basis on accounts with prior nondeductible contributions.
+                    if (!userEditedBasis && subType !== "traditional_ira") {
+                      setAccountBasis(raw);
+                    }
                   }}
                   className={inputClassName}
                 />
+                {drivenByHoldings && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Value &amp; cost basis are derived from this account&apos;s holdings.
+                  </p>
+                )}
               </div>
-            ))}
+
+              {category === "retirement" && (subType === "401k" || subType === "403b") ? (
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="rothValue">
+                    Roth Value ($)
+                  </label>
+                  <CurrencyInput
+                    id="rothValue"
+                    name="rothValue"
+                    value={accountRothValue}
+                    onChange={(raw) => setAccountRothValue(raw)}
+                    className={inputClassName}
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Portion of the balance designated as Roth. Grows with the
+                    account and is excluded from tax on withdrawal.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="basis">
+                    Cost Basis ($)
+                  </label>
+                  <CurrencyInput
+                    id="basis"
+                    name="basis"
+                    value={drivenByHoldings ? holdingsTotals!.basis : accountBasis}
+                    disabled={drivenByHoldings}
+                    onChange={(raw) => {
+                      setAccountBasis(raw);
+                      setUserEditedBasis(true);
+                    }}
+                    className={inputClassName}
+                  />
+                </div>
+              )}
+
+              {isAumEligible(category) && (
+                <div>
+                  {/* Stand-in for the label row, so the checkbox lines up with
+                      the sibling inputs rather than their labels. */}
+                  <span className={fieldLabelClassName} aria-hidden="true">
+                    &nbsp;
+                  </span>
+                  <label className="flex h-9 cursor-pointer items-center gap-2 text-sm text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={countsTowardAum}
+                      onChange={(e) => setCountsTowardAum(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    <span className="whitespace-nowrap">Counts toward AUM</span>
+                    <FieldTooltip text="Include this balance in Total book value on the home screen." />
+                  </label>
+                </div>
+              )}
+            </div>
+            )}
 
             {category !== "stock_options" && <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
               {usesGrowthDropdown ? (
