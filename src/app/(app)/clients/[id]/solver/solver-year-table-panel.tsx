@@ -14,15 +14,15 @@ interface Props {
 
 export function SolverYearTablePanel({ years, hasSpouse, clientData }: Props) {
   return (
-    // overflow-hidden (not -auto) keeps the rounded border from clipping while
-    // leaving the inner table div as the sole scroll container, so its sticky
-    // header locks on scroll.
+    // No inner scroll box: the table renders at full height and scrolls with the
+    // report column (which scrolls "as one document"), matching the Taxes tab.
+    // overflow-hidden clips the table to the rounded corners; the inner table
+    // keeps its own overflow-x-auto for horizontal scroll on narrow viewports.
     <div className="mt-3 overflow-hidden rounded-md border border-hair-2">
       <AnalysisYearTable
         rows={years}
         columns={retirementYearColumns(hasSpouse, clientData)}
         caption="Year-by-year detail (all plan years)"
-        maxHeight={360}
       />
     </div>
   );
