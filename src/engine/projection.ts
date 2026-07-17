@@ -1759,12 +1759,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // the first projection year only — Year 2+ uses the engine's own
       // year-end balances.
       const isFirstProjectionYear = year === planSettings.planStartYear;
-      const rmdBasis =
+      const grossBasis =
         isFirstProjectionYear && acct.priorYearEndValue != null
           ? acct.priorYearEndValue
           : accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+      // SECURE 2.0 §325 (2024+): designated Roth 401(k)/403(b) balances are
+      // exempt from lifetime RMDs, so the basis is the pre-tax slice only.
+      // rothValueBoY is stamped alongside beginningValue (before growth) —
+      // the live rothValueMap has already grown and would over-subtract.
+      const rmdBasis = Math.max(0, grossBasis - (accountLedgers[acct.id]?.rothValueBoY ?? 0));
       const currentBalance = accountBalances[acct.id] ?? 0;
-      const rmd = Math.min(currentBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
+      // Cap at the current pre-tax balance so an RMD never forces out Roth
+      // dollars (the distribution is booked 100% pre-tax below).
+      const preTaxBalance = Math.max(0, currentBalance - (rothValueMap[acct.id] ?? 0));
+      const rmd = Math.min(preTaxBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
       if (rmd <= 0) continue;
 
       accountBalances[acct.id] = currentBalance - rmd;
