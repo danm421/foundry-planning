@@ -5,7 +5,8 @@ import { buildDrillContext } from "../context";
 import { taxAdapter } from "../subjects/tax";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
 import type { AccountLedger, ClientData, ProjectionYear } from "@/engine/types";
-import type { DrillContext } from "../types";
+import type { Cause, DrillContext, Explanation } from "../types";
+import type { RatioAccount } from "../subjects/tax-detectors";
 
 const base = (year: number, totalTax: number) =>
   makeYear({ year, taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome: totalTax * 4 } }) });
@@ -73,6 +74,67 @@ function offByOneFixtureYears(): ProjectionYear[] {
     base(2061, 50_000), // 2060→2061 flat
     base(2062, 90_000), // 2061→2062 CLIFF: +40k
     base(2063, 90_200), // 2062→2063 asked boundary — nearly flat (+200)
+  ];
+}
+
+// ── Cooper full-chain assembly fixture (Task 11) ─────────────────────────────
+// The asked boundary 2062→2063 is nearly flat (+$200); the real jump is the
+// 2061→2062 cliff (total tax 50k → 90k), where funding shifts from a tax-free
+// Roth IRA to a pre-tax Spouse 401(k) that ALSO carries a Roth-designated slice
+// (a data-review prompt). One request exercises the whole chain: cliff
+// auto-location → nested probableIntendedJump → funding_character_shift with a
+// roth_designated_slice row → the hoisted "confirm this savings rule" note.
+function cooperCtx(): DrillContext {
+  return {
+    ...DRILL_CTX,
+    accountNames: { rira: "Client Roth IRA", s401k: "Spouse 401k" },
+    accounts: [
+      { id: "rira", name: "Client Roth IRA", category: "retirement", subType: "roth_ira" },
+      { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
+    ] as unknown as DrillContext["accounts"],
+    // Roth-designated deferral into the Spouse 401k — the provenance of its slice.
+    savingsRules: [
+      { id: "sr1", accountId: "s401k", annualAmount: 20_000, rothPercent: 1, isDeductible: false, startYear: 2026, endYear: 2040 },
+    ],
+    accountSeedRoth: { s401k: 60_000 },
+  };
+}
+
+function cooperFixtureYears(): ProjectionYear[] {
+  // Tax-free Roth-IRA draws in 2060–2061; the riser (Spouse 401k) is present in
+  // every year's ledgers — as real engine output would carry it — so no benign
+  // depleted false-positive names it before it's actually tapped.
+  const rothDraw = (year: number, totalTax: number): ProjectionYear =>
+    makeYear({
+      year,
+      withdrawals: { byAccount: { rira: 100_000 }, total: 100_000 },
+      accountLedgers: {
+        rira: makeLedger({ beginningValue: 500_000, endingValue: 400_000 }),
+        s401k: makeLedger({ beginningValue: 480_000, endingValue: 480_000, rothValueBoY: 100_000 }),
+      },
+      taxDetail: makeTaxDetail({}),
+      taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome: totalTax * 4 } }),
+    });
+  return [
+    rothDraw(2060, 50_000),
+    rothDraw(2061, 50_000), // 2060→2061 flat
+    // 2062 CLIFF: the draw shifts to the pre-tax Spouse 401k (Roth-slice > 5%),
+    // recognition 0 → 1.0, total tax +40k.
+    makeYear({
+      year: 2062,
+      withdrawals: { byAccount: { s401k: 120_000 }, total: 120_000 },
+      accountLedgers: {
+        rira: makeLedger({ beginningValue: 400_000, endingValue: 400_000 }),
+        s401k: makeLedger({ beginningValue: 480_000, endingValue: 360_000, rothValueBoY: 100_000 }),
+      },
+      taxDetail: makeTaxDetail({ "withdrawal:s401k": { type: "ordinary", amount: 120_000 } }),
+      taxResult: makeTaxResult({ flow: { totalTax: 90_000, totalFederalTax: 90_000, taxableIncome: 360_000 } }),
+    }),
+    // 2063 asked boundary: nearly flat (+$200 < materiality) — one row off the cliff.
+    makeYear({
+      year: 2063,
+      taxResult: makeTaxResult({ flow: { totalTax: 90_200, totalFederalTax: 90_200, taxableIncome: 360_800 } }),
+    }),
   ];
 }
 
@@ -255,6 +317,21 @@ describe("explainChange", () => {
     // Its headline carries the real jump, and a note names both boundaries.
     expect(res.probableIntendedJump?.headline.figure.delta).toBe(40_000);
     expect(res.notes.some((n) => n.includes("2062→2063") && n.includes("2061→2062"))).toBe(true);
+  });
+
+  it("assembles the full Cooper causal chain in one payload", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: cooperFixtureYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2063, compareYear: 2062, ctx: cooperCtx(),
+    }) as Explanation;
+    expect(res.probableIntendedJump?.boundary).toBe("2061→2062");
+    const cliff = res.probableIntendedJump!;
+    const shift = (cliff.causes as Cause[]).find((c) => c.kind === "funding_character_shift")!;
+    expect((shift.detail!.accounts as RatioAccount[]).some((r) => r.ratioReason === "roth_designated_slice")).toBe(true);
+    expect(res.analysisContext.subject).toBe("tax");
+    expect(res.analysisContext.planYearRange.first).toBeLessThan(res.analysisContext.planYearRange.last);
+    expect(res.notes.some((n) => /confirming this savings rule/i.test(n))).toBe(true);
   });
 
   it("stays silent when the asked boundary IS the cliff", () => {

@@ -31,6 +31,22 @@ function dd(label: string, from: number, to: number): DollarDelta {
   return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
 }
 
+/** Hoist per-finding advisory notes into a top-level notes array. `detail.notes`
+ *  is the Task-5 convention detectors use to carry a data-review prompt (e.g. the
+ *  Roth-slice "worth confirming this savings rule reflects intent" note); it
+ *  reaches the model ONLY when assembly lifts it here. De-duplicated by exact
+ *  string, so a note raised by both a direct cause AND the nested
+ *  probableIntendedJump re-explain (Task 7) appears exactly once in the payload. */
+function hoistDetailNotes(causes: Cause[] | undefined, into: string[]): void {
+  for (const c of causes ?? []) {
+    const dn = c.detail?.notes;
+    if (!Array.isArray(dn)) continue;
+    for (const n of dn) {
+      if (typeof n === "string" && !into.includes(n)) into.push(n);
+    }
+  }
+}
+
 export function explainChange(
   args: ExplainChangeArgs,
   // Internal recursion guard for cliff auto-location — NOT part of the public
@@ -197,6 +213,10 @@ export function explainChange(
     }
   }
 
+  // Surface per-finding advisory notes (detail.notes) at the top level — this is
+  // the only path by which the Roth-slice data-review prompt reaches the model.
+  hoistDetailNotes(causes, notes);
+
   const result: Explanation = {
     ...adapter.deltaExtras(diff),
     available: true,
@@ -240,6 +260,10 @@ export function explainChange(
           causes: alt.causes,
           withdrawalPicture: alt.withdrawalPicture,
         };
+        // The advisory note may live ONLY on the located cliff (the asked boundary
+        // was flat, so no direct cause carried it). Hoist from the nested causes
+        // too; the dedup in hoistDetailNotes keeps it single if also raised above.
+        hoistDetailNotes(alt.causes, result.notes);
         result.analysisContext.probableIntendedBoundary = `${localMax.from}→${localMax.to}`;
         result.notes.push(
           `The asked boundary ${compareYear}→${args.year} is nearly flat; the real jump is ` +
