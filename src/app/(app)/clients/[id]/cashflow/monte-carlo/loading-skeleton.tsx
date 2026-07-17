@@ -34,11 +34,13 @@ export default function MonteCarloSkeleton() {
             <SkeletonKpi />
           </div>
 
-          {/* Hero chart slot — the branded fan mark carries the wait. */}
+          {/* Hero chart slot — the branded fan mark carries the wait. The mark
+              draws once and settles; MarkLoader's breathing halo is what keeps
+              the slot alive for the rest of the run, so it need not loop. */}
           <MarkLoader
             className="min-h-[300px]"
             markBoxClassName="h-20 w-20"
-            mark={<FanMark />}
+            mark={<FanMark loop={false} />}
             caption="Running your Monte Carlo simulation…"
             status="Running your Monte Carlo simulation. This can take a moment."
           />

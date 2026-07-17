@@ -24,24 +24,26 @@ const STROKES = [
  * size: the default 1.5 reads correctly at the report's `h-14`, but shrinks to
  * a hairline at gauge size, so small callers pass a larger value.
  *
- * `loop` picks perpetual motion over the default one-shot draw: the fan sweeps
- * out from the origin dot, holds, and exits, forever. Pass it wherever the mark
- * renders WITHOUT `MarkLoader` — its breathing halo is what keeps a one-shot
- * mark feeling alive, so a bare mark needs the motion in the strokes instead.
- * `duration` follows suit (a full cycle wants longer than a lone draw-in), so
- * callers rarely set both.
+ * `loop` has no default on purpose. `false` draws once and holds the final
+ * frame, which only reads as "working" while `MarkLoader`'s halo breathes
+ * alongside it; `true` sweeps the fan out from the origin dot forever, for
+ * marks rendered bare. Getting it wrong is silent — a mark that quietly stops
+ * moving mid-run — so every caller states which it is rather than inheriting a
+ * default that happens to suit the other one. `duration` follows from it (a
+ * full cycle wants longer than a lone draw-in), so callers rarely set it.
  */
 export function FanMark({
   className = "relative h-14 w-20 text-accent",
   strokeWidth = 1.5,
-  loop = false,
-  duration = loop ? "2.6s" : "0.9s",
+  loop,
+  duration,
 }: {
   className?: string;
   strokeWidth?: number;
-  loop?: boolean;
+  loop: boolean;
   duration?: string;
 }) {
+  const cycle = duration ?? (loop ? "2.6s" : "0.9s");
   return (
     <svg
       viewBox="0 0 48 34"
@@ -59,7 +61,7 @@ export function FanMark({
           pathLength={100}
           d={s.d}
           opacity={s.opacity}
-          style={drawStyle(duration, s.delay)}
+          style={drawStyle(cycle, s.delay)}
         />
       ))}
       {/* Origin dot — the common source the paths fan out from. */}

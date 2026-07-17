@@ -581,9 +581,15 @@ html {
   animation: markHalo 2.8s ease-in-out infinite;
 }
 
-.mark-draw {
+/* Both draws are the same stroke starting hidden — fully offset over its
+   normalised (pathLength=100) length. They differ only in the animation. */
+.mark-draw,
+.mark-draw-loop {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
+}
+
+.mark-draw {
   animation: markDraw var(--mark-draw-dur, 1s) ease-out
     var(--mark-draw-delay, 0s) forwards;
 }
@@ -594,14 +600,12 @@ html {
    since every stroke shares one duration the offsets persist, and the
    stagger holds for the life of the loop. */
 .mark-draw-loop {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
   animation: markDrawLoop var(--mark-draw-dur, 2.6s) ease-in-out
     var(--mark-draw-delay, 0s) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mark-halo { animation: none; opacity: 0.5; transform: scale(1); }
-  .mark-draw { animation: none; stroke-dashoffset: 0; }
+  .mark-draw,
   .mark-draw-loop { animation: none; stroke-dashoffset: 0; }
 }
