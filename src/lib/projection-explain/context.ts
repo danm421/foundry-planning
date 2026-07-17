@@ -11,11 +11,13 @@ export function buildDrillContext(
 ): DrillContext {
   const accountNames: Record<string, string> = {};
   const accountSeedRoth: Record<string, number> = {};
-  const accountRothRollover: Record<string, boolean> = {};
   for (const a of tree.accounts) {
     accountNames[a.id] = a.name;
+    // Seed Roth = the account's DB rothValue (401k/403b Roth-designated slice at
+    // plan start). This plus the Roth-designated savingsRules is the complete
+    // Roth-slice provenance — the engine has no in-plan Roth-rollover config,
+    // and education529.rothRolloverEnabled is the 529→Roth-IRA flag, unrelated.
     accountSeedRoth[a.id] = a.rothValue ?? 0;
-    accountRothRollover[a.id] = a.education529?.rothRolloverEnabled ?? false;
   }
   for (const y of years) {
     for (const s of y.syntheticAccounts ?? []) accountNames[s.id] ??= s.name;
@@ -35,6 +37,5 @@ export function buildDrillContext(
     noteNames,
     savingsRules: tree.savingsRules ?? [],
     accountSeedRoth,
-    accountRothRollover,
   };
 }

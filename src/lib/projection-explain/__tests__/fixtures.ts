@@ -87,5 +87,4 @@ export const DRILL_CTX: DrillContext = {
   accounts: [],
   savingsRules: [],
   accountSeedRoth: {},
-  accountRothRollover: {},
 };

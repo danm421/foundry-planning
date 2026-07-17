@@ -18,6 +18,7 @@ import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from ".
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income/types";
 import type { Account } from "@/engine/types";
 import type { DrillContext } from "../types";
+import type { RothProvenance } from "../subjects/tax-provenance";
 
 function args(prev: ReturnType<typeof makeYear>, next: ReturnType<typeof makeYear>): DetectorArgs {
   return { prev, next, diff: diffTaxYears(prev, next, DRILL_CTX), ctx: DRILL_CTX, firstDeathYear: null, secondDeathYear: null };
@@ -46,11 +47,17 @@ describe("detectFundingCharacterShift", () => {
   // the asked year shifts to an all-pre-tax Spouse 401k (1.0), while a taxable
   // brokerage that ran to $0 keeps drawing a residual (the depletion flag).
   function cooperDetectorArgs(): DetectorArgs {
-    const ctx = ctxWith([
-      { id: "c401k", name: "Client 401k", category: "retirement", subType: "401k" },
-      { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
-      { id: "brok", name: "Joint Brokerage", category: "taxable", subType: "brokerage" },
-    ]);
+    const ctx: DrillContext = {
+      ...ctxWith([
+        { id: "c401k", name: "Client 401k", category: "retirement", subType: "401k" },
+        { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
+        { id: "brok", name: "Joint Brokerage", category: "taxable", subType: "brokerage" },
+      ]),
+      // A 100%-Roth deferral into the Client 401k — the provenance of its Roth slice.
+      savingsRules: [
+        { id: "sr1", accountId: "c401k", annualAmount: 20_000, rothPercent: 1, isDeductible: false, startYear: 2026, endYear: 2040 },
+      ],
+    };
     const prev = makeYear({
       year: 2062,
       withdrawals: { byAccount: { c401k: 200_000, brok: 100_000 }, total: 300_000 },
@@ -191,6 +198,16 @@ describe("detectFundingCharacterShift", () => {
     // A gross-based ratio would read 100k/100k = 1.0; named-keys-only keeps it lower.
     expect(f.evidence.blendedRatioYear).toBe(0.6);
     expect(f.evidence.blendedRatioYear as number).toBeLessThan(1);
+  });
+
+  it("attaches Roth-slice provenance from savings rules + seed value", () => {
+    const a = cooperDetectorArgs();
+    const f = detectFundingCharacterShift(a)!;
+    const client = (f.detail!.accounts as RatioAccount[]).find((r) => r.ratioReason === "roth_designated_slice")!;
+    const prov = (client as unknown as { provenance: RothProvenance }).provenance;
+    expect(prov.seedRothValue).toBe(0);
+    expect(prov.rothSavingsRules[0].rothPercent).toBe(1);
+    expect(prov.rothSavingsRules[0].years).toBe("2026–2040");
   });
 });
 

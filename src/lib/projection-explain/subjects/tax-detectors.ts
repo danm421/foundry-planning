@@ -7,6 +7,7 @@ import type { ProjectionYear } from "@/engine/types";
 import type { DrillContext, Finding } from "../types";
 import { LINE_FLOOR, RATIO_SHIFT_POINTS, ROTH_SLICE_MIN, money, pct } from "../types";
 import { recognizedForAccount, type FundingRow, type TaxChangeFinding, type TaxYearDiff } from "./tax-diff";
+import { rothSliceProvenance, type RothProvenance } from "./tax-provenance";
 
 export interface DetectorArgs {
   prev: ProjectionYear;
@@ -27,6 +28,9 @@ export interface RatioAccount extends FundingRow {
     | "exempt_529_hsa"
     | "cash_principal"
     | "fully_pretax";
+  /** Attached only to `roth_designated_slice` rows: where the account's
+   *  already-taxed Roth slice came from (seed value + Roth savings rules). */
+  provenance?: RothProvenance;
 }
 
 /** Classify an account's recognition character from its category/subType (+ name
@@ -56,10 +60,18 @@ function classifyRatioReason(
  *  income to fund the same need and grossing up the total draw. */
 export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
   const wp = a.diff.withdrawalPicture;
-  const rows: RatioAccount[] = wp.byAccount.map((r) => ({
-    ...r,
-    ratioReason: classifyRatioReason(r.accountId, a.next, a.ctx),
-  }));
+  const rows: RatioAccount[] = wp.byAccount.map((r) => {
+    const ratioReason = classifyRatioReason(r.accountId, a.next, a.ctx);
+    return {
+      ...r,
+      ratioReason,
+      // A Roth-designated 401k/403b slice is a data-review prompt: surface where
+      // its already-taxed dollars came from (seed value + Roth savings rules).
+      ...(ratioReason === "roth_designated_slice"
+        ? { provenance: rothSliceProvenance(r.accountId, a.ctx) }
+        : {}),
+    };
+  });
 
   const blended = (fundingTotal: number, recognizedTotal: number) =>
     fundingTotal > 0 ? recognizedTotal / fundingTotal : 0;
@@ -89,6 +101,12 @@ export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
 
   const depleted = rows.filter((r) => r.depleted);
   const grossUp = wp.grossUp;
+  // Roth-slice provenance is advisory, not an error — a nudge to confirm the
+  // savings rule matches intent. Attached for downstream note assembly (Task 6/11).
+  const hasRothSlice = rows.some((r) => r.ratioReason === "roth_designated_slice");
+  const notes = hasRothSlice
+    ? ["Roth-slice provenance is a data-review prompt — surface it as 'worth confirming this savings rule reflects intent', not as an error."]
+    : [];
   const grossUpClause =
     grossUp.deltaFunding >= 0
       ? `Total funding rose ${money(grossUp.deltaFunding)}; of that, ${money(grossUp.deltaTax)} is the new tax itself.`
@@ -108,7 +126,7 @@ export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
       totalFunding: wp.totalFundingNext,
       ...(wp.residualNote ? { residualNote: wp.residualNote } : {}),
     },
-    detail: { accounts: rows, grossUp },
+    detail: { accounts: rows, grossUp, ...(notes.length ? { notes } : {}) },
   };
 }
 

@@ -56,10 +56,11 @@ export interface Cause extends Finding {
 /** Shared context for all subjects: source-label lookups + provenance maps. */
 export interface DrillContext extends CellDrillContext {
   savingsRules: SavingsRule[];
-  /** account.id → DB rothValue at plan start (seed Roth). */
+  /** account.id → DB rothValue at plan start (seed Roth). Together with the
+   *  Roth-designated savingsRules, this is the ENTIRE per-account Roth-slice
+   *  provenance the engine tracks for 401k/403b accounts — there is no in-plan
+   *  Roth-rollover flag (see subjects/tax-provenance.ts). */
   accountSeedRoth: Record<string, number>;
-  /** account.id → rothRolloverEnabled config. */
-  accountRothRollover: Record<string, boolean>;
 }
 
 export interface CauseDetector {
