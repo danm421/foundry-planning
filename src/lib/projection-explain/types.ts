@@ -109,6 +109,15 @@ export interface Explanation {
   componentBreakdown?: Component[];
   causes?: Cause[];
   noSignificantChange?: boolean;
+  /** Set by cliff auto-location (Task 7) when the asked boundary is nearly flat
+   *  but a much larger |Δfigure| sits within two years of it — the boundary the
+   *  advisor probably meant, already explained. */
+  probableIntendedJump?: {
+    boundary: string;
+    headline: { figure: DollarDelta };
+    causes?: Cause[];
+    withdrawalPicture?: unknown;
+  };
   analysisContext: AnalysisContext;
   notes: string[];
   /** Subject-specific pictures merged from adapter.deltaExtras (tax: taxLineDeltas, …). */

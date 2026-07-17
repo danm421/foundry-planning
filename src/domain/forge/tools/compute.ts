@@ -144,18 +144,23 @@ export function buildComputeTools(
         const result = runProjectionWithEvents(effectiveTree);
         const drillCtx = buildDrillContext(effectiveTree, result.years);
 
-        return {
-          scenarioId: ctx.scenarioId,
-          ...explainChange({
-            adapter,
-            years: result.years,
-            firstDeathYear: result.firstDeathEvent?.year ?? null,
-            secondDeathYear: result.secondDeathEvent?.year ?? null,
-            year,
-            compareYear,
-            ctx: drillCtx,
-          }),
-        };
+        const explanation = explainChange({
+          adapter,
+          years: result.years,
+          firstDeathYear: result.firstDeathEvent?.year ?? null,
+          secondDeathYear: result.secondDeathEvent?.year ?? null,
+          year,
+          compareYear,
+          ctx: drillCtx,
+        });
+        // The pure engine can't know the scenario identity — fill it from the
+        // tool context. loadEffectiveTree exposes only the ClientData tree (no
+        // scenario name), so scenarioName is left undefined rather than invented.
+        if (explanation.available) {
+          explanation.analysisContext.scenarioId = ctx.scenarioId;
+        }
+
+        return { scenarioId: ctx.scenarioId, ...explanation };
       }, ExplainProjectionChangeResultSchema),
     {
       name: "explain_projection_change",

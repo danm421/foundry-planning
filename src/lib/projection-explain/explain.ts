@@ -30,7 +30,15 @@ function dd(label: string, from: number, to: number): DollarDelta {
   return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
 }
 
-export function explainChange(args: ExplainChangeArgs): Explanation | Unavailable {
+export function explainChange(
+  args: ExplainChangeArgs,
+  // Internal recursion guard for cliff auto-location — NOT part of the public
+  // tool surface. The scan below re-invokes explainChange on the cliff boundary
+  // with depth+1; that inner call must skip the scan (it would land on the same
+  // cliff, whose localMax === requested, so no further recursion, but the guard
+  // makes non-recursion structural rather than incidental).
+  depth = 0,
+): Explanation | Unavailable {
   const { adapter } = args;
   const compareYear = args.compareYear ?? args.year - 1;
   const next = args.years.find((y) => y.year === args.year);
@@ -188,7 +196,7 @@ export function explainChange(args: ExplainChangeArgs): Explanation | Unavailabl
     }
   }
 
-  return {
+  const result: Explanation = {
     ...adapter.deltaExtras(diff),
     available: true,
     subject: adapter.key,
@@ -200,4 +208,45 @@ export function explainChange(args: ExplainChangeArgs): Explanation | Unavailabl
     analysisContext,
     notes,
   };
+
+  // Cliff auto-location (refinement A): the advisor may have asked about a
+  // boundary one row off the real jump — e.g. "why did tax spike in 2063?" when
+  // the spike is actually 2061→2062 and 2062→2063 is flat. Scan the whole range
+  // for the largest |Δfigure| within two years of the asked boundary; if it
+  // dwarfs the asked boundary's delta, explain THAT boundary and attach it as
+  // probableIntendedJump. Runs on BOTH the significant and no-significant-change
+  // paths (this is exactly the flat-asked-boundary case the feature exists for),
+  // but AFTER the degrade guard — the degraded path returned above without
+  // dereferencing subject internals. Depth-guarded so the recursive explain of
+  // the cliff can't itself recurse.
+  if (depth === 0) {
+    // degradedFigure() backfills years whose figure substrate is missing, so a
+    // gap in the middle of the range never derails the scan.
+    const figs = args.years.map((y) => ({ year: y.year, v: adapter.figure(y) ?? adapter.degradedFigure(y) }));
+    const boundaries = figs.slice(1).map((f, i) => ({
+      from: figs[i].year, to: f.year, absDelta: Math.abs(f.v - figs[i].v),
+    }));
+    const requested = boundaries.find((b) => b.from === compareYear && b.to === args.year);
+    const window = boundaries.filter((b) => Math.abs(b.to - args.year) <= 2);
+    const localMax = window.reduce((m, b) => (b.absDelta > m.absDelta ? b : m), window[0]);
+    const requestedDelta = requested?.absDelta ?? 0;
+    if (localMax && localMax !== requested && localMax.absDelta >= Math.max(3 * requestedDelta, 10_000)) {
+      const alt = explainChange({ ...args, year: localMax.to, compareYear: localMax.from }, depth + 1);
+      if (alt.available) {
+        result.probableIntendedJump = {
+          boundary: `${localMax.from}→${localMax.to}`,
+          headline: alt.headline,
+          causes: alt.causes,
+          withdrawalPicture: alt.withdrawalPicture,
+        };
+        result.analysisContext.probableIntendedBoundary = `${localMax.from}→${localMax.to}`;
+        result.notes.push(
+          `The asked boundary ${compareYear}→${args.year} is nearly flat; the real jump is ` +
+            `${localMax.from}→${localMax.to}. Lead with that and name both boundaries.`,
+        );
+      }
+    }
+  }
+
+  return result;
 }

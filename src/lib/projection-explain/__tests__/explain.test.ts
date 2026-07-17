@@ -64,6 +64,18 @@ function reversalFixtureYears(): ProjectionYear[] {
   ];
 }
 
+// ── Off-by-one cliff-location fixture (Task 7) ───────────────────────────────
+// The real jump is 2061→2062 (total tax +40k). The asked boundary 2062→2063 is
+// nearly flat (+200 < materiality), so the request is one row off the cliff.
+function offByOneFixtureYears(): ProjectionYear[] {
+  return [
+    base(2060, 50_000),
+    base(2061, 50_000), // 2060→2061 flat
+    base(2062, 90_000), // 2061→2062 CLIFF: +40k
+    base(2063, 90_200), // 2062→2063 asked boundary — nearly flat (+200)
+  ];
+}
+
 describe("explainChange", () => {
   it("rejects years outside the projection range with the available range", () => {
     const out = explainChange({
@@ -227,6 +239,36 @@ describe("explainChange", () => {
     if (!res.available) return;
     expect(res.causes?.[0]?.kind).toBe("funding_character_shift");
     expect(res.notes.some((n) => /reversal|confirmed by/i.test(n))).toBe(false);
+  });
+
+  it("surfaces the nearby cliff when the asked boundary is off by one", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: offByOneFixtureYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2063, compareYear: 2062, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.noSignificantChange).toBe(true);
+    expect(res.probableIntendedJump?.boundary).toBe("2061→2062");
+    expect(res.analysisContext.probableIntendedBoundary).toBe("2061→2062");
+    // Its headline carries the real jump, and a note names both boundaries.
+    expect(res.probableIntendedJump?.headline.figure.delta).toBe(40_000);
+    expect(res.notes.some((n) => n.includes("2062→2063") && n.includes("2061→2062"))).toBe(true);
+  });
+
+  it("stays silent when the asked boundary IS the cliff", () => {
+    // Ask about the cliff itself — the local max === the requested boundary, so
+    // there is nothing to redirect to.
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: offByOneFixtureYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2062, compareYear: 2061, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.probableIntendedJump).toBeUndefined();
+    expect(res.analysisContext.probableIntendedBoundary).toBeUndefined();
   });
 });
 
