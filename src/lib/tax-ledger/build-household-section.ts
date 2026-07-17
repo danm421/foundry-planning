@@ -1,6 +1,7 @@
 // src/lib/tax-ledger/build-household-section.ts
 import type { ProjectionYear } from "@/engine/types";
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
+import { isTaxableCharacter } from "./character";
 import { parseHouseholdSource } from "./parse-source";
 import { subtotalByCharacter } from "./_shared";
 import type { TaxCharacter, TaxLedgerRow, TaxLedgerSection } from "./types";
@@ -47,18 +48,35 @@ export function buildHouseholdSection(
     rows.push(parseHouseholdSource(key, entry, ctx));
   }
 
-  // 2. Social Security (gross is not in bySource).
+  // 2. Social Security (gross is not in bySource) — split into taxable +
+  //    non-taxable rows so the section subtotals tie to the income report
+  //    (taxable → "Total Income", gross → "Gross Total Income") instead of a
+  //    single gross row that matches neither column.
   const ss = year.income.socialSecurity;
   if (ss > 0) {
-    const taxablePortion = year.taxResult?.income.taxableSocialSecurity ?? 0;
-    rows.push({
-      type: "Social Security",
-      description: taxablePortion > 0 ? `${Math.round((taxablePortion / ss) * 100)}% taxable` : "Not taxable this year",
-      character: "social_security",
-      account: null,
-      amount: ss,
-      taxable: taxablePortion > 0,
-    });
+    const taxablePortion = Math.min(ss, year.taxResult?.income.taxableSocialSecurity ?? 0);
+    const pct = Math.round((taxablePortion / ss) * 100);
+    if (taxablePortion > 0) {
+      rows.push({
+        type: "Social Security",
+        description: `Taxable portion (${pct}% of gross)`,
+        character: "social_security",
+        account: null,
+        amount: taxablePortion,
+        taxable: true,
+      });
+    }
+    const nonTaxablePortion = ss - taxablePortion;
+    if (nonTaxablePortion > 0) {
+      rows.push({
+        type: "Social Security",
+        description: taxablePortion > 0 ? `Non-taxable portion (${100 - pct}% of gross)` : "Not taxable this year",
+        character: "non_taxable",
+        account: null,
+        amount: nonTaxablePortion,
+        taxable: false,
+      });
+    }
   }
 
   // 3. Deductions / contributions (negative rows).
@@ -86,10 +104,17 @@ export function buildHouseholdSection(
     }
   }
 
-  // 5. Sort by magnitude, compute subtotals.
+  // 5. Sort by magnitude, compute subtotals. taxableSubtotal ties to the
+  //    income report's "Total Income"; grossSubtotal to "Gross Total Income".
   rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   const characterSubtotals = subtotalByCharacter(rows);
   const subtotal = rows.reduce((s, r) => s + r.amount, 0);
+  const taxableSubtotal = rows
+    .filter((r) => isTaxableCharacter(r.character))
+    .reduce((s, r) => s + r.amount, 0);
+  const grossSubtotal = rows
+    .filter((r) => r.character !== "deduction")
+    .reduce((s, r) => s + r.amount, 0);
 
-  return { id: "household", label: householdLabel, kind: "household", passThrough: false, rows, characterSubtotals, subtotal, unreconciled };
+  return { id: "household", label: householdLabel, kind: "household", passThrough: false, rows, characterSubtotals, subtotal, taxableSubtotal, grossSubtotal, unreconciled };
 }

@@ -55,13 +55,31 @@ function Section({ section, f }: { section: TaxLedgerSection; f: LedgerFilterSta
           </div>
         </td>
       </tr>
-      <tr>
-        <td colSpan={4} className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-xs font-medium text-ink-2">
-          {section.label} net taxable
-          {section.unreconciled ? <span className="ml-2 text-crit">⚠ includes unattributed amounts</span> : null}
-        </td>
-        <td className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-sm font-semibold tabular-nums"><MoneyText value={section.subtotal} /></td>
-      </tr>
+      {section.taxableSubtotal != null && section.grossSubtotal != null ? (
+        <>
+          <tr>
+            <td colSpan={4} className="border-b border-hair bg-card-2 px-3 py-1.5 text-right text-xs font-medium text-ink-2">
+              {section.label} taxable income
+              {section.unreconciled ? <span className="ml-2 text-crit">⚠ includes unattributed amounts</span> : null}
+            </td>
+            <td className="border-b border-hair bg-card-2 px-3 py-1.5 text-right text-sm font-semibold tabular-nums"><MoneyText value={section.taxableSubtotal} /></td>
+          </tr>
+          <tr>
+            <td colSpan={4} className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-xs font-medium text-ink-3">
+              {section.label} gross income
+            </td>
+            <td className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-sm font-medium tabular-nums text-ink-2"><MoneyText value={section.grossSubtotal} /></td>
+          </tr>
+        </>
+      ) : (
+        <tr>
+          <td colSpan={4} className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-xs font-medium text-ink-2">
+            {section.label} net taxable
+            {section.unreconciled ? <span className="ml-2 text-crit">⚠ includes unattributed amounts</span> : null}
+          </td>
+          <td className="border-b border-hair-2 bg-card-2 px-3 py-1.5 text-right text-sm font-semibold tabular-nums"><MoneyText value={section.subtotal} /></td>
+        </tr>
+      )}
     </>
   );
 }
