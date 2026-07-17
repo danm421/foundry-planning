@@ -4969,6 +4969,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
         }
 
+        // Tax-free retirement slices (qualified Roth, 401k/403b Roth share,
+        // HSA) — display-only nonTaxableIncome. Taxable/cash draws excluded:
+        // their untaxed share is return of principal, not income.
+        const supplementalTaxFree = supplementalPlan.draws.reduce((sum, draw) => {
+          if (accountById.get(draw.accountId)?.category !== "retirement") return sum;
+          return sum + Math.max(0, draw.amount - draw.ordinaryIncome);
+        }, 0);
+
         const supplementalTaxInput: YearTaxInput = {
           taxDetail: taxDetailWithBoth,
           socialSecurityGross: income.socialSecurity,
@@ -4996,6 +5004,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
+          taxFreeRetirementIncome: supplementalTaxFree,
         };
         taxOutForIter = computeTaxForYear(supplementalTaxInput);
         finalTaxInput = supplementalTaxInput;
@@ -5232,10 +5241,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // to the bucket totals.
     for (const draw of supplementalPlan.draws) {
       const recognized = draw.ordinaryIncome + draw.capitalGains;
-      if (recognized <= 0) continue;
-      const type: "ordinary_income" | "capital_gains" =
-        draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
-      finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
+      if (recognized > 0) {
+        const type: "ordinary_income" | "capital_gains" =
+          draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
+        finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
+      }
+      // Tax-free retirement slice (qualified Roth / 401k Roth share / HSA) —
+      // separate key so a mixed draw can carry both a taxable and a tax-free
+      // row. Mirrors the supplementalTaxFree sum inside the convergence loop.
+      if (accountById.get(draw.accountId)?.category === "retirement") {
+        const taxFree = Math.max(0, draw.amount - draw.ordinaryIncome);
+        if (taxFree > 0) {
+          finalTaxDetail.bySource[`withdrawal_tax_free:${draw.accountId}`] = {
+            type: "tax_free",
+            amount: taxFree,
+          };
+        }
+      }
     }
 
     // === Equity tax impact (counterfactual) =================================

@@ -63,6 +63,21 @@ describe("buildHouseholdSection", () => {
     expect(s.unreconciled).toBe(true);
   });
 
+  it("keeps tax-free withdrawal rows out of the reconciled buckets", () => {
+    const year = fixtureYear();
+    year.taxDetail!.bySource["withdrawal_tax_free:ira"] = { type: "tax_free", amount: 20000 };
+    const s = buildHouseholdSection(year, ctx, "Household");
+
+    const row = s.rows.find((r) => r.character === "non_taxable");
+    expect(row).toMatchObject({ type: "Withdrawal", amount: 20000, taxable: false });
+    expect(s.characterSubtotals.non_taxable).toBe(20000);
+    // The non-taxable row must not create drift in any reconciled character —
+    // the only Unattributed row is still the pre-existing LTCG gap.
+    const unattributed = s.rows.filter((r) => r.type === "Unattributed");
+    expect(unattributed).toHaveLength(1);
+    expect(unattributed[0].character).toBe("long_term_gain");
+  });
+
   it("sorts rows by descending magnitude", () => {
     const s = buildHouseholdSection(fixtureYear(), ctx, "Household");
     const mags = s.rows.map((r) => Math.abs(r.amount));

@@ -1,7 +1,7 @@
 // src/lib/tax-ledger/parse-source.ts
 import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import { rawTypeToCharacter } from "./character";
+import { isTaxableCharacter, rawTypeToCharacter } from "./character";
 import type { TaxLedgerRow } from "./types";
 
 interface RawEntry {
@@ -31,7 +31,7 @@ export function parseHouseholdSource(
 ): TaxLedgerRow {
   const character = rawTypeToCharacter(entry.type);
   const amount = entry.amount;
-  const taxable = entry.type !== "tax_exempt";
+  const taxable = isTaxableCharacter(character);
 
   if (key.startsWith("business_passthrough:")) {
     const id = key.slice("business_passthrough:".length);
@@ -71,6 +71,10 @@ export function parseHouseholdSource(
   if (key.startsWith("withdrawal:")) {
     const acctId = key.slice("withdrawal:".length);
     return { type: "Withdrawal", description: "Supplemental withdrawal", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
+  }
+  if (key.startsWith("withdrawal_tax_free:")) {
+    const acctId = key.slice("withdrawal_tax_free:".length);
+    return { type: "Withdrawal", description: "Non-taxable distribution", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
   }
   if (key.startsWith("transfer:")) {
     return { type: "Transfer", description: "Taxable in-kind transfer", character, account: null, amount, taxable };

@@ -50,6 +50,16 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("withdrawal:acct1", { type: "ordinary_income", amount: 10000 }, ctx);
     expect(r).toMatchObject({ type: "Withdrawal", account: "Traditional IRA" });
   });
+  it("parses a tax-free withdrawal slice as a non-taxable row", () => {
+    const r = parseHouseholdSource("withdrawal_tax_free:acct1", { type: "tax_free", amount: 289366 }, ctx);
+    expect(r).toMatchObject({
+      type: "Withdrawal",
+      account: "Traditional IRA",
+      character: "non_taxable",
+      amount: 289366,
+      taxable: false,
+    });
+  });
   it("parses an equity vest", () => {
     const r = parseHouseholdSource("equity-vest:eq1", { type: "earned_income", amount: 20000 }, ctx);
     expect(r).toMatchObject({ type: "Equity Vest/Exercise", description: "RSU Plan", character: "earned" });

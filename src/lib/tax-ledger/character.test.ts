@@ -11,6 +11,7 @@ describe("rawTypeToCharacter", () => {
     expect(rawTypeToCharacter("stcg")).toBe("short_term_gain");
     expect(rawTypeToCharacter("qbi")).toBe("ordinary");
     expect(rawTypeToCharacter("tax_exempt")).toBe("tax_exempt");
+    expect(rawTypeToCharacter("tax_free")).toBe("non_taxable");
   });
   it("falls back to ordinary for unknown", () => {
     expect(rawTypeToCharacter("mystery")).toBe("ordinary");

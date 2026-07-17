@@ -14,6 +14,11 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const name = ctx.accountNames[acctId] ?? acctId;
     return `${name} — Withdrawal`;
   }
+  if (sourceId.startsWith("withdrawal_tax_free:")) {
+    const acctId = sourceId.slice("withdrawal_tax_free:".length);
+    const name = ctx.accountNames[acctId] ?? acctId;
+    return `${name} — Withdrawal (tax-free)`;
+  }
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];
