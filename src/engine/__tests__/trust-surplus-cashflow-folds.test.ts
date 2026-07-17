@@ -149,3 +149,137 @@ describe("F8 — non-grantor trust distribution folds into totalIncome + netCash
     expect(y0.accountLedgers["hh-checking"].endingValue).toBeCloseTo(150_000, 0);
   });
 });
+
+// ── F2: surplus base counts grantor cash received, not gross attributed ───────
+
+describe("F2 — grantor-trust retained income does not create phantom surplus spend", () => {
+  // A grantor (IDGT) trust earns $40k/yr; its cash routes to TRUST checking. The
+  // income is taxed to the household (grantor-trust rules) and folds into
+  // totalIncome — but the household never receives the cash. With surplusSpendPct
+  // = 1, the pre-fix engine spends spendPct of that phantom income from household
+  // checking. After the fix, a RETAINED trust contributes 0 to the surplus base.
+  const planSettings: PlanSettings = {
+    flatFederalRate: 0.24,
+    flatStateRate: 0.05,
+    inflationRate: 0,
+    planStartYear: 2026,
+    planEndYear: 2026,
+    surplusSpendPct: 1, // spend 100% of surplus → makes the phantom spend observable
+  };
+  const client = {
+    firstName: "Alice",
+    lastName: "Test",
+    dateOfBirth: "1975-01-01",
+    retirementAge: 65,
+    planEndAge: 90,
+    filingStatus: "married_joint" as const,
+    spouseName: "Bob Test",
+    spouseDob: "1975-06-01",
+    spouseRetirementAge: 65,
+  };
+  const hhChecking: Account = {
+    id: "hh-checking",
+    name: "Household Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 100_000,
+    basis: 100_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
+    isDefaultChecking: true,
+  };
+  const spouseFm: FamilyMember = {
+    id: "fm-spouse",
+    relationship: "other",
+    role: "other",
+    firstName: "Bob",
+    lastName: "Test",
+    dateOfBirth: "1975-06-01",
+  };
+  const trustChecking: Account = {
+    id: "idgt-checking",
+    name: "IDGT Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 50_000,
+    basis: 50_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "idgt", percent: 1 }],
+    isDefaultChecking: true,
+  };
+  // $40k/yr ordinary income owned by the grantor trust → grantorIncome.other.
+  const trustIncomeRow = {
+    id: "idgt-royalty",
+    name: "IDGT royalty stream",
+    type: "other",
+    taxType: "ordinary_income",
+    annualAmount: 40_000,
+    growthRate: 0,
+    startYear: 2026,
+    endYear: 2026,
+    ownerEntityId: "idgt",
+  } as unknown as ClientData["incomes"][number];
+
+  const idgt = (distribution: Partial<EntitySummary>): EntitySummary => ({
+    id: "idgt",
+    includeInPortfolio: true,
+    isGrantor: true,
+    entityType: "trust",
+    isIrrevocable: true,
+    grantor: "client",
+    distributionMode: null,
+    distributionAmount: null,
+    distributionPercent: null,
+    incomeBeneficiaries: [],
+    ...distribution,
+  });
+
+  const mkData = (entity: EntitySummary): ClientData => ({
+    client,
+    accounts: [hhChecking, trustChecking],
+    incomes: [trustIncomeRow],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    planSettings,
+    familyMembers: [spouseFm],
+    entities: [entity],
+    giftEvents: [],
+  });
+
+  it("retained: no phantom discretionary spend", () => {
+    // distributionMode null → the trust keeps its income. The household received
+    // no cash, so the surplus base must exclude it → zero discretionary spend.
+    const years = runProjection(mkData(idgt({ distributionMode: null })));
+    const y0 = years[0];
+    expect(y0.expenses.discretionary).toBeCloseTo(0, 0);
+  });
+
+  it("distribute-through: distributed cash IS spendable surplus", () => {
+    // The trust distributes its $40k income to the household (household
+    // beneficiary). Now the household really has the cash, so the surplus base
+    // counts it → a real, positive discretionary spend. Proves the F2 correction
+    // nets to zero when the trust fully distributes (no over-correction).
+    const years = runProjection(
+      mkData(
+        idgt({
+          distributionMode: "fixed",
+          distributionAmount: 40_000,
+          incomeBeneficiaries: [
+            { familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 },
+          ],
+        }),
+      ),
+    );
+    const y0 = years[0];
+    expect(y0.expenses.discretionary).toBeGreaterThan(20_000);
+  });
+});

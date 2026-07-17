@@ -2440,6 +2440,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // missing income/cash-flow line. Mirrors householdNoteCashIn (audit F8).
     let householdTrustCashIn = 0;
 
+    // F2: grantor-trust cash actually distributed to the household. The surplus
+    // base counts grantor gross via grantorIncome (cash routes to TRUST checking),
+    // so replace gross with cash-received below by subtracting
+    // (grantorGrossFolded − grantorTrustDistToHousehold). A retained trust then
+    // contributes 0 to discretionary surplus (audit F2).
+    let grantorTrustDistToHousehold = 0;
+
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
     //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
@@ -2748,6 +2755,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: `Grantor trust distribution`,
             sourceId: gt.entityId,
           });
+          grantorTrustDistToHousehold += dist.actualAmount; // F2
         }
       }
     }
@@ -6139,9 +6147,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           checkingLedger.entries.push(entry);
         }
       };
+      // F2: the surplus base must count grantor-trust CASH RECEIVED, not gross
+      // income attributed. grantorIncome (grantor-trust income only; business is
+      // handled via businessDistributions) is folded into totalIncome but its
+      // cash routes to TRUST checking — reaching the household only via the
+      // grantor distribution pass. Replace gross with cash received by
+      // subtracting the retained (undistributed) portion. Negative when the trust
+      // distributes principal in excess of income — correctly adding that cash.
+      const grantorGrossFolded = grantorIncome.total - grantorIncome.business;
+      const grantorTrustSurplusCorrection =
+        grantorGrossFolded - grantorTrustDistToHousehold;
       const surplusForSplit = Math.max(
         0,
-        totalIncome - expenses.total - savings.total - hypoContribution
+        totalIncome
+          - expenses.total
+          - savings.total
+          - hypoContribution
+          - grantorTrustSurplusCorrection
       );
       if (surplusForSplit > 0) {
         const rawPct = data.planSettings.surplusSpendPct ?? 0;
