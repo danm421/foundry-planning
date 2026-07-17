@@ -1,16 +1,17 @@
-// src/lib/tax/explain-tax-change/detectors.ts
+// src/lib/projection-explain/subjects/tax-detectors.ts
 // Cause detectors for year-over-year tax changes. Each returns a quantified
 // TaxChangeFinding or null. Detectors report EXACT income-side dollars from
 // ledger data; assembly (explain.ts) attaches the estimated tax impact.
 import type { ProjectionYear } from "@/engine/types";
-import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { LINE_FLOOR, money, pct, type TaxChangeFinding, type TaxYearDiff } from "./types";
+import type { DrillContext } from "../types";
+import { LINE_FLOOR, money, pct } from "../types";
+import type { TaxChangeFinding, TaxYearDiff } from "./tax-diff";
 
 export interface DetectorArgs {
   prev: ProjectionYear;
   next: ProjectionYear;
   diff: TaxYearDiff;
-  ctx: CellDrillContext;
+  ctx: DrillContext;
   firstDeathYear: number | null;
   secondDeathYear: number | null;
 }

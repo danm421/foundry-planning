@@ -1,6 +1,6 @@
-// src/lib/tax/explain-tax-change/__tests__/diff.test.ts
+// src/lib/projection-explain/__tests__/tax-diff.test.ts
 import { describe, expect, it } from "vitest";
-import { diffTaxYears } from "../diff";
+import { diffTaxYears } from "../subjects/tax-diff";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
 
 describe("diffTaxYears", () => {

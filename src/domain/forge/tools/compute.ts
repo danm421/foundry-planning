@@ -9,8 +9,9 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
-import { explainTaxChange } from "@/lib/tax/explain-tax-change/explain";
-import { buildTaxDrillContext } from "@/lib/tax/explain-tax-change/context";
+import { explainChange } from "@/lib/projection-explain/explain";
+import { buildDrillContext } from "@/lib/projection-explain/context";
+import { taxAdapter } from "@/lib/projection-explain/subjects/tax";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
@@ -139,11 +140,12 @@ export function buildComputeTools(
 
         const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
         const result = runProjectionWithEvents(effectiveTree);
-        const drillCtx = buildTaxDrillContext(effectiveTree, result.years);
+        const drillCtx = buildDrillContext(effectiveTree, result.years);
 
         return {
           scenarioId: ctx.scenarioId,
-          ...explainTaxChange({
+          ...explainChange({
+            adapter: taxAdapter,
             years: result.years,
             firstDeathYear: result.firstDeathEvent?.year ?? null,
             secondDeathYear: result.secondDeathEvent?.year ?? null,

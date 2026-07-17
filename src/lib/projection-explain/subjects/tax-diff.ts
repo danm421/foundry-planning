@@ -1,10 +1,84 @@
-// src/lib/tax/explain-tax-change/diff.ts
-// Metric-agnostic year-pair delta layer. prev = baseline year, next = asked year.
+// src/lib/projection-explain/subjects/tax-diff.ts
+// Tax subject: year-pair delta layer. prev = baseline year, next = asked year.
 // Callers guarantee taxResult on both years (explain.ts handles the degrade path).
 import type { ProjectionYear } from "@/engine/types";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, type DollarDelta, type TaxYearDiff } from "./types";
+import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, type DollarDelta, type DrillContext } from "../types";
+
+// ── Tax-specific delta shapes (relocated from the Phase-0 types.ts; owned here) ──
+
+export type TaxChangeCauseKind =
+  | "withdrawal_shift"
+  | "rmd"
+  | "roth_conversion"
+  | "social_security"
+  | "realized_gains"
+  | "filing_status_change"
+  | "deduction_change"
+  | "state_move";
+
+/** What a detector returns — assembly adds estimatedTaxImpact. */
+export interface TaxChangeFinding {
+  kind: TaxChangeCauseKind;
+  summary: string;
+  /** Exact income-side dollars from ledger data, signed. 0 for rate-structure causes. */
+  incomeDelta: number;
+  evidence: Record<string, number | string | boolean>;
+}
+
+export interface TaxChangeCause extends TaxChangeFinding {
+  /** ESTIMATE: incomeDelta × blended incremental rate (state_move: exact state
+   *  delta; filing_status_change: unattributed residual). Never fake-precise. */
+  estimatedTaxImpact: number;
+}
+
+export interface AccountDrawDelta {
+  account: string;
+  from: number;
+  to: number;
+  delta: number;
+  priorYearEndingBalance: number;
+  depleted: boolean;
+}
+
+export interface TaxYearDiff {
+  headline: { totalTax: DollarDelta; federalTax: DollarDelta; stateTax: DollarDelta };
+  taxLineDeltas: DollarDelta[];
+  incomeDeltas: DollarDelta[];
+  sourceDeltas: DollarDelta[];
+  withdrawalPicture: {
+    totalWithdrawals: DollarDelta;
+    netCashFlow: DollarDelta;
+    byAccount: AccountDrawDelta[];
+  };
+  marginalFederalRate: { from: number; to: number };
+  /** Δtax/ΔtaxableIncome clamped to [0, 0.6]; falls back to year-N marginal
+   *  federal rate when taxable income didn't rise. Used for cause estimates. */
+  blendedRate: number;
+}
+
+export interface TaxChangeExplanation {
+  available: true;
+  /** True when one year lacks taxResult — headline only, from expenses.taxes. */
+  degraded?: boolean;
+  year: number;
+  compareYear: number;
+  headline: { totalTax: DollarDelta; federalTax?: DollarDelta; stateTax?: DollarDelta };
+  taxLineDeltas?: DollarDelta[];
+  incomeDeltas?: DollarDelta[];
+  sourceDeltas?: DollarDelta[];
+  causes?: TaxChangeCause[];
+  withdrawalPicture?: TaxYearDiff["withdrawalPicture"];
+  marginalFederalRate?: { from: number; to: number };
+  noSignificantChange?: boolean;
+  notes: string[];
+}
+
+export interface TaxChangeUnavailable {
+  available: false;
+  reason: string;
+  availableYears?: { first: number; last: number };
+}
 
 function dd(label: string, from: number, to: number): DollarDelta {
   return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
@@ -13,7 +87,7 @@ function dd(label: string, from: number, to: number): DollarDelta {
 export function diffTaxYears(
   prev: ProjectionYear,
   next: ProjectionYear,
-  ctx: CellDrillContext,
+  ctx: DrillContext,
 ): TaxYearDiff {
   const pf = prev.taxResult!.flow;
   const nf = next.taxResult!.flow;

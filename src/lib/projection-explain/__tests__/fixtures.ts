@@ -1,7 +1,7 @@
-// src/lib/tax/explain-tax-change/__tests__/fixtures.ts
+// src/lib/projection-explain/__tests__/fixtures.ts
 import type { AccountLedger, ProjectionYear } from "@/engine/types";
 import type { TaxResult } from "@/lib/tax/types";
-import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
+import type { DrillContext } from "../types";
 
 export function makeTaxResult(over?: {
   income?: Partial<TaxResult["income"]>;
@@ -81,8 +81,11 @@ export function makeYear(over: Partial<ProjectionYear> & { year: number }): Proj
   };
 }
 
-export const DRILL_CTX: CellDrillContext = {
+export const DRILL_CTX: DrillContext = {
   accountNames: { brok: "Joint Brokerage", ira: "Dan IRA", cash: "Checking" },
   incomes: [],
   accounts: [],
+  savingsRules: [],
+  accountSeedRoth: {},
+  accountRothRollover: {},
 };

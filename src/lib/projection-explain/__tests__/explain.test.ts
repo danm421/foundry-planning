@@ -1,16 +1,18 @@
-// src/lib/tax/explain-tax-change/__tests__/explain.test.ts
+// src/lib/projection-explain/__tests__/explain.test.ts
 import { describe, expect, it } from "vitest";
-import { explainTaxChange } from "../explain";
-import { buildTaxDrillContext } from "../context";
+import { explainChange } from "../explain";
+import { buildDrillContext } from "../context";
+import { taxAdapter } from "../subjects/tax";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
 import type { ClientData } from "@/engine/types";
 
 const base = (year: number, totalTax: number) =>
   makeYear({ year, taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome: totalTax * 4 } }) });
 
-describe("explainTaxChange", () => {
+describe("explainChange", () => {
   it("rejects years outside the projection range with the available range", () => {
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [base(2060, 10_000), base(2061, 11_000)],
       firstDeathYear: null, secondDeathYear: null, year: 2099, ctx: DRILL_CTX,
     });
@@ -22,20 +24,22 @@ describe("explainTaxChange", () => {
   });
 
   it("defaults compareYear to year − 1", () => {
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [base(2062, 55_800), base(2063, 142_000)],
       firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
     });
     expect(out.available).toBe(true);
     if (out.available) {
       expect(out.compareYear).toBe(2062);
-      expect(out.headline.totalTax.delta).toBe(86_200);
+      expect(out.headline.figure.delta).toBe(86_200);
     }
   });
 
   it("degrades gracefully when a year lacks taxResult", () => {
     const noTax = makeYear({ year: 2062, taxResult: undefined, expenses: { ...makeYear({ year: 2062 }).expenses, taxes: 50_000 } });
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [noTax, base(2063, 142_000)],
       firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
     });
@@ -48,13 +52,14 @@ describe("explainTaxChange", () => {
   });
 
   it("flags an immaterial change but still returns the waterfall", () => {
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [base(2062, 50_000), base(2063, 50_200)],
       firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
     });
     if (out.available) {
       expect(out.noSignificantChange).toBe(true);
-      expect(out.headline.totalTax.delta).toBe(200);
+      expect(out.headline.figure.delta).toBe(200);
     }
   });
 
@@ -73,12 +78,12 @@ describe("explainTaxChange", () => {
       taxDetail: makeTaxDetail({ "withdrawal:ira": { type: "ordinary", amount: 190_000 } }),
       taxResult: makeTaxResult({ flow: { totalTax: 142_000, totalFederalTax: 130_000, stateTax: 12_000, taxableIncome: 400_000 } }),
     });
-    const out = explainTaxChange({ years: [prev, next], firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX });
+    const out = explainChange({ adapter: taxAdapter, years: [prev, next], firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX });
     expect(out.available).toBe(true);
     if (out.available) {
       expect(out.causes?.[0]?.kind).toBe("withdrawal_shift");
       // blendedRate = 86,200 / 250,000 = 0.3448 → estimate = 170,000 × 0.3448 ≈ 58,616
-      expect(out.causes?.[0]?.estimatedTaxImpact).toBe(Math.round(170_000 * (86_200 / 250_000)));
+      expect(out.causes?.[0]?.estimatedImpact).toBe(Math.round(170_000 * (86_200 / 250_000)));
       expect(out.notes.some((n) => n.includes("approximation"))).toBe(true);
     }
   });
@@ -106,7 +111,8 @@ describe("explainTaxChange", () => {
         marginalFederalRate: 0.35,
       }),
     });
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [prev, next],
       firstDeathYear: 2063, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
     });
@@ -114,7 +120,7 @@ describe("explainTaxChange", () => {
     if (!out.available) return;
     const fsCause = out.causes?.find((c) => c.kind === "filing_status_change");
     expect(fsCause).toBeDefined();
-    expect(fsCause!.estimatedTaxImpact).toBeLessThan(0);
+    expect(fsCause!.estimatedImpact).toBeLessThan(0);
     expect(JSON.stringify(out.causes)).not.toContain("taxed harder");
     expect(out.notes.some((n) => n.toLowerCase().includes("residual"))).toBe(true);
   });
@@ -122,7 +128,8 @@ describe("explainTaxChange", () => {
   it("adds the IRMAA 2-year-lookback note when N+2 surcharge rises", () => {
     const y64 = makeYear({ year: 2064, medicare: { totalAnnualCost: 8_000, totalIrmaaSurcharge: 0 } });
     const y65 = makeYear({ year: 2065, medicare: { totalAnnualCost: 12_000, totalIrmaaSurcharge: 3_400 } });
-    const out = explainTaxChange({
+    const out = explainChange({
+      adapter: taxAdapter,
       years: [base(2062, 55_800), base(2063, 142_000), y64, y65],
       firstDeathYear: null, secondDeathYear: null, year: 2063, ctx: DRILL_CTX,
     });
@@ -132,7 +139,7 @@ describe("explainTaxChange", () => {
   });
 });
 
-describe("buildTaxDrillContext", () => {
+describe("buildDrillContext", () => {
   it("maps account, entity, roth-conversion, and note names from the tree", () => {
     const tree = {
       accounts: [{ id: "a1", name: "Brokerage" }],
@@ -141,7 +148,7 @@ describe("buildTaxDrillContext", () => {
       rothConversions: [{ id: "rc1", name: "Bracket fill" }],
       notesReceivable: [{ id: "n1", name: "Seller note" }],
     } as unknown as ClientData;
-    const ctx = buildTaxDrillContext(tree, [makeYear({ year: 2062, syntheticAccounts: [{ id: "s1", name: "Vested RSUs", category: "taxable", owners: [] }] })]);
+    const ctx = buildDrillContext(tree, [makeYear({ year: 2062, syntheticAccounts: [{ id: "s1", name: "Vested RSUs", category: "taxable", owners: [] }] })]);
     expect(ctx.accountNames).toMatchObject({ a1: "Brokerage", s1: "Vested RSUs" });
     expect(ctx.entityNames).toMatchObject({ e1: "Family Trust" });
     expect(ctx.rothConversionNames).toMatchObject({ rc1: "Bracket fill" });

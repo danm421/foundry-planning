@@ -1,15 +1,22 @@
-// src/lib/tax/explain-tax-change/context.ts
-// Build the CellDrillContext (source-label lookups) from an effective tree +
-// projection years. Mirrors the pattern in income-tax-report.tsx's useMemo ctx.
+// src/lib/projection-explain/context.ts
+// Build the DrillContext (source-label lookups + provenance maps) from an
+// effective tree + projection years. Mirrors the pattern in
+// income-tax-report.tsx's useMemo ctx, extended with savings/Roth provenance.
 import type { ClientData, ProjectionYear } from "@/engine/types";
-import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
+import type { DrillContext } from "./types";
 
-export function buildTaxDrillContext(
+export function buildDrillContext(
   tree: ClientData,
   years: ProjectionYear[],
-): CellDrillContext {
+): DrillContext {
   const accountNames: Record<string, string> = {};
-  for (const a of tree.accounts) accountNames[a.id] = a.name;
+  const accountSeedRoth: Record<string, number> = {};
+  const accountRothRollover: Record<string, boolean> = {};
+  for (const a of tree.accounts) {
+    accountNames[a.id] = a.name;
+    accountSeedRoth[a.id] = a.rothValue ?? 0;
+    accountRothRollover[a.id] = a.education529?.rothRolloverEnabled ?? false;
+  }
   for (const y of years) {
     for (const s of y.syntheticAccounts ?? []) accountNames[s.id] ??= s.name;
   }
@@ -26,5 +33,8 @@ export function buildTaxDrillContext(
     entityNames,
     rothConversionNames,
     noteNames,
+    savingsRules: tree.savingsRules ?? [],
+    accountSeedRoth,
+    accountRothRollover,
   };
 }

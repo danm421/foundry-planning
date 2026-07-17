@@ -1,6 +1,6 @@
-// src/lib/tax/explain-tax-change/__tests__/detectors.test.ts
+// src/lib/projection-explain/__tests__/tax-detectors.test.ts
 import { describe, expect, it } from "vitest";
-import { diffTaxYears } from "../diff";
+import { diffTaxYears } from "../subjects/tax-diff";
 import {
   DETECTORS,
   detectDeductionChange,
@@ -12,7 +12,7 @@ import {
   detectStateMove,
   detectWithdrawalShift,
   type DetectorArgs,
-} from "../detectors";
+} from "../subjects/tax-detectors";
 import { DRILL_CTX, makeLedger, makeTaxDetail, makeTaxResult, makeYear } from "./fixtures";
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income/types";
 
