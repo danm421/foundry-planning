@@ -1,7 +1,8 @@
 import { cache } from "react";
-import { eq, inArray, isNull } from "drizzle-orm";
-import { crmHouseholds } from "@/db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { accounts, crmHouseholds } from "@/db/schema";
 import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 
 /** Task statuses that count as open for the due-this-week KPI and the feed. */
 export const OPEN_TASK_STATUSES = ["open", "in_progress", "blocked"] as const;
@@ -30,3 +31,14 @@ export const visibleHouseholdConditions = cache(async function visibleHouseholdC
   if (scope) conditions.push(scope);
   return conditions;
 });
+
+/**
+ * The account-level filter shared by Total book value / Assets held away and
+ * their per-household drill-down: AUM-eligible category within the given
+ * visible-household conditions. Callers apply the identical base-case scenario
+ * join and household joins; keeping this predicate in one place stops the two
+ * loaders from drifting (a category leak here would silently change the book).
+ */
+export function aumBookWhere(hhConditions: HouseholdConditions) {
+  return and(...hhConditions, inArray(accounts.category, [...AUM_ELIGIBLE_CATEGORIES]));
+}

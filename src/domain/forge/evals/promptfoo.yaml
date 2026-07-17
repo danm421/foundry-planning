@@ -38,6 +38,14 @@ tests:
       - type: javascript
         value: file://./assertions.ts:noInventedNumbers
   - vars:
+      message: "In 2063 why do the taxes jump up so much from the previous year?"
+      expectTool: "explain_tax_change"
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noInventedNumbers
+  - vars:
       message: "What if they do a Roth conversion of $50,000 this year?"
       expectTool: "whatif_roth"
     assert:
