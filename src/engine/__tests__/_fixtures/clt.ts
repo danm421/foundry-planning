@@ -52,6 +52,12 @@ export interface CltLifecycleOpts {
   payoutType?: "unitrust" | "annuity";
   /** Required when payoutType='annuity'. Annual fixed payment to charity. */
   payoutAmount?: number;
+  /**
+   * Grantor-trust flag on the CLT entity. Defaults to TRUE to preserve every
+   * pre-existing test. Set false to exercise the DEFAULT config the form and
+   * solver actually produce (audit F1).
+   */
+  isGrantor?: boolean;
 }
 
 /**
@@ -232,7 +238,7 @@ export function buildCltLifecycleFixture(opts: CltLifecycleOpts): ClientData {
         entityType: "trust",
         trustSubType: "clt",
         isIrrevocable: true,
-        isGrantor: true,
+        isGrantor: opts.isGrantor ?? true,
         includeInPortfolio: false,
         grantor: "client",
         ...(beneficiaries ? { beneficiaries } : {}),

@@ -1,5 +1,6 @@
 import type { Account, BeneficiaryRef, EntitySummary } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
+import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { SolverMutation } from "./types";
 
 /** Trust subtypes the solver can CREATE in Phase 3a. CRT/CLT are Phase 3b. */
@@ -10,21 +11,20 @@ interface BuildTrustEntityArgs {
   id: string;
   name: string;
   /** Full TrustSubType: 3a (ilit|idgt|irrevocable) + 3b split-interest (crt|clt).
-   *  crt/clt fall through to non-grantor / non-crummey, matching DB-created trusts. */
+   *  Non-crummey; isGrantor comes from defaultIsGrantorFor (crt→false, clt→true). */
   subType: TrustSubType;
   grantor: "client" | "spouse";
 }
 
 /**
  * Build the EntitySummary for a solver-created irrevocable trust. Defaults
- * replicate AddTrustForm create-mode (add-trust-form.tsx:605-626): every trust is
- * out of estate (isIrrevocable true, includeInPortfolio false); ILIT carries
- * Crummey powers; IDGT is a grantor trust.
+ * replicate AddTrustForm create-mode: every trust is out of estate
+ * (isIrrevocable true, includeInPortfolio false); ILIT carries Crummey powers;
+ * IDGT and CLT are grantor trusts.
  *
- * Note: the form itself initializes crummeyPowers/isGrantor to false (user-toggles),
- * but the solver applies subType-appropriate smart defaults since the subType choice
- * already implies these properties (ILIT always needs Crummey powers; IDGT is always
- * a grantor trust by definition).
+ * Note: crummeyPowers is ILIT-defaulted here (the form toggles it). isGrantor now
+ * comes from the shared defaultIsGrantorFor() used by BOTH surfaces — idgt and clt
+ * default to grantor, crt stays false (§664(c) makes the flag inert for a CRT).
  */
 export function buildTrustEntity({ id, name, subType, grantor }: BuildTrustEntityArgs): EntitySummary {
   return {
@@ -38,7 +38,7 @@ export function buildTrustEntity({ id, name, subType, grantor }: BuildTrustEntit
     grantor,
     trustSubType: subType,
     crummeyPowers: subType === "ilit",
-    isGrantor: subType === "idgt",
+    isGrantor: defaultIsGrantorFor(subType),
   };
 }
 

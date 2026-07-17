@@ -4,6 +4,7 @@ import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState, 
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
+import { defaultIsGrantorFor } from "@/lib/trust-defaults";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
 import BeneficiaryRowList, { type BeneficiaryRow } from "./beneficiary-row-list";
 import { splitEvenly } from "./auto-split-percentages";
@@ -194,6 +195,15 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
   const [grantorStatusEndYear, setGrantorStatusEndYear] = useState<number | "">(
     editing?.grantorStatusEndYear != null ? editing.grantorStatusEndYear : ""
   );
+
+  // Adopt the subtype's grantor default when the trust type changes. Create-only:
+  // choosing a type is a fresh context, but editing an existing trust must never
+  // clobber a stored value.
+  useEffect(() => {
+    if (!isCreate) return;
+    if (trustSubType === "") return;
+    setIsGrantor(defaultIsGrantorFor(trustSubType));
+  }, [isCreate, trustSubType]);
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
   // Distribution policy
@@ -976,6 +986,15 @@ const AddTrustForm = forwardRef<TrustFormAutoSaveHandle, AddTrustFormProps>(func
                 if (!v) setGrantorStatusEndYear("");
               }}
             />
+            {trustSubType === "clt" && (
+              <p className="text-ink-4 pt-1 text-xs">
+                Grantor CLT: the grantor deducts the present value of the charity&rsquo;s
+                lead interest up front, in the funding year (§170(f)(2)(B)), and is taxed
+                on the trust&rsquo;s income each year. Non-grantor CLT: no up-front
+                deduction &mdash; the trust deducts each year&rsquo;s payment to charity
+                instead (§642(c)).
+              </p>
+            )}
           </div>
           {isIrrevocable && isGrantor && (
             <div className="pt-1">

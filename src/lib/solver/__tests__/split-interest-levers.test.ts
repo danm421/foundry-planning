@@ -210,7 +210,7 @@ describe("buildSplitInterestTrustEntity", () => {
     expect(e.remainderBeneficiaries).toBeUndefined();
   });
 
-  it("CLT also yields non-grantor / non-crummey defaults", () => {
+  it("CLT yields grantor (non-crummey) defaults", () => {
     const splitInterest = buildSplitInterestSnapshot(unitrustInput(), "clt", {
       age1: undefined,
       age2: undefined,
@@ -226,7 +226,7 @@ describe("buildSplitInterestTrustEntity", () => {
       trustSubType: "clt",
       grantor: "spouse",
       crummeyPowers: false,
-      isGrantor: false,
+      isGrantor: true,
       isIrrevocable: true,
     });
     expect(e.splitInterest).toBe(splitInterest);

@@ -435,6 +435,36 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   rebuildEntityMap();
 
   /**
+   * Was each split-interest trust a GRANTOR trust in its own inception year?
+   * Snapshotted once, from the immutable `data.entities`, before any death-event
+   * grantor-succession flip can occur.
+   *
+   * ⚠️ Do NOT re-derive this as `effectiveIsGrantor(id, si.inceptionYear)`.
+   * That predicate reads `entityMap[id].isGrantor` — i.e. "as of NOW" — and only
+   * its grantorStatusEndYear comparison consumes the year argument. Grantor
+   * succession reassigns currentEntities and calls rebuildEntityMap() with
+   * isGrantor:false at the grantor's death, so in the death year — exactly when
+   * §170(f)(2)(B) recapture must fire — the naive gate would return false and
+   * recapture would silently never fire. (audit F5)
+   *
+   * Also correct when inceptionYear predates planStartYear (a pre-existing CLT),
+   * where no runtime observation of the deduction is possible at all.
+   *
+   * Gates BOTH the CLT inception deduction and its recapture, so the invariant
+   * "recapture iff deducted" holds by construction.
+   */
+  const grantorAtInception = new Map<string, boolean>();
+  for (const e of data.entities ?? []) {
+    if (!e.splitInterest) continue;
+    grantorAtInception.set(
+      e.id,
+      e.isGrantor === true &&
+        (e.grantorStatusEndYear == null ||
+          e.splitInterest.inceptionYear <= e.grantorStatusEndYear),
+    );
+  }
+
+  /**
    * Year-aware "is this entity currently a grantor trust" predicate. A trust
    * is "effectively grantor" only when {@link EntitySummary.isGrantor} is
    * still true AND the grantor-status window has not elapsed
@@ -457,6 +487,47 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     return true;
   };
+
+  /**
+   * IRC §664(c)(1): a charitable remainder trust is exempt from income tax for
+   * its entire life — internal income accumulates untaxed and only the
+   * annuity/unitrust payment is taxed, to the recipient. No year parameter:
+   * the exemption never turns on or off.
+   *
+   * ⚠️ This is NOT expressible as "not a grantor trust". Every tax fork in this
+   * file is binary — `if (effectiveIsGrantor(x)) → household 1040; else → trust
+   * 1041` — so routing a CRT down the `else` branch lands it in the
+   * compressed-bracket 1041 pass, which IS the bug (audit F1). Always test
+   * isTaxExemptTrust BEFORE the grantor fork, never instead of it.
+   *
+   * Keyed on trustSubType alone (not `&& splitInterest`): a malformed CRT with
+   * no splitInterest snapshot still must not be taxed as an ordinary trust.
+   *
+   * Ten call sites, against 14 `effectiveIsGrantor` call sites — the two are NOT
+   * in 1:1 correspondence, so "every grantor fork has a CRT guard" is the wrong
+   * mental model. The sites are:
+   *   - buildNonGrantorTrusts .............. keeps the CRT out of the 1041 pass
+   *   - carry-in gap-fill gains ............ prior-year entity liquidation
+   *   - grantorIncome filter ............... CRT-owned income rows
+   *   - growth pass: grantorShare .......... realization → householdLikeShare
+   *   - growth pass: grantorTrustIncome .... distribution sizing (not tax)
+   *   - growth pass: non-grantor push ...... realization → 1041 pass
+   *   - entity RMD ......................... CRT-owned retirement account
+   *   - household-1040 trust income rows ... CRT-owned income rows
+   *   - sale-gain exemption netting ........ SELECTS the exempt share (inverted)
+   *   - sale gains → 1041 hand-off ......... keeps CRT gains out of that pass
+   *
+   * Eight of the ten are individually mutation-killed by
+   * `crt-664c-exemption.test.ts`. The two growth-pass sites marked above
+   * (grantorTrustIncome, non-grantor push) are defense-in-depth: disabling
+   * either ALONE is behaviorally inert (verified byte-identical projection
+   * output), because the only consumer of what they feed already filters on the
+   * entity list buildNonGrantorTrusts governs. Do not read their lack of
+   * coverage as "untested" — read it as "currently unreachable"; they exist so
+   * that relaxing buildNonGrantorTrusts later cannot silently re-tax a CRT.
+   */
+  const isTaxExemptTrust = (entityId: string | undefined): boolean =>
+    entityId != null && entityMap[entityId]?.trustSubType === "crt";
 
   // Effective withdrawal strategy. If the user hasn't configured anything, fall back
   // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
@@ -523,7 +594,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (e) =>
           e.entityType === "trust" &&
           e.isIrrevocable === true &&
-          e.isGrantor === false
+          e.isGrantor === false &&
+          // §664(c): a CRT is exempt — it must never enter the 1041 pass. (F1)
+          !isTaxExemptTrust(e.id)
       )
       .map((e) => ({
         entityId: e.id,
@@ -923,6 +996,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const nonGrantorCarryInGains: AssetTransactionGain[] = [];
     for (const g of deferredEntityLiquidationGains.splice(0)) {
       if (g.gain <= 0) continue;
+      // §664(c): CRT gains are exempt — neither deferred to the household 1040
+      // nor routed to the 1041 pass. Drop them outright. (F1)
+      if (isTaxExemptTrust(g.entityId)) continue;
       if (effectiveIsGrantor(g.entityId, year)) {
         grantorCarryInCapGains += g.gain;
       } else {
@@ -962,6 +1038,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       client,
       (inc) => {
         if (inc.ownerEntityId == null) return false;
+        // §664(c): CRT-owned income rows are exempt — never on the household
+        // 1040. Cash still routes to the trust's checking via
+        // resolveEntityFlowAmount, which does not consult grantorIncome. (F1)
+        if (isTaxExemptTrust(inc.ownerEntityId)) return false;
         if (!effectiveIsGrantor(inc.ownerEntityId, year)) return false;
         return entityMap[inc.ownerEntityId]?.entityType === "trust";
       }
@@ -1610,6 +1690,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           let grantorShare = 0;
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            // §664(c): CRT shares are exempt — excluded from householdLikeShare. (F1)
+            if (isTaxExemptTrust(owner.entityId)) continue;
             if (effectiveIsGrantor(owner.entityId, year)) grantorShare += owner.percent;
           }
           const householdLikeShare = householdShare + grantorShare;
@@ -1629,6 +1711,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // Per grantor-entity owner: track its share for pct_income distribution.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            if (isTaxExemptTrust(owner.entityId)) continue; // §664(c) (F1)
             if (!effectiveIsGrantor(owner.entityId, year)) continue;
             const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
             if (bucket) {
@@ -1647,6 +1730,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           //                   See spec 2026-05-11-business-distribution-passthrough-design.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
+            // §664(c): CRT shares never reach the 1041 pass. Without this the
+            // exemption above would push them down the non-grantor branch. (F1)
+            if (isTaxExemptTrust(owner.entityId)) continue;
             if (effectiveIsGrantor(owner.entityId, year)) continue;
             const ownerEntity = entityMap[owner.entityId];
             const isTrust = ownerEntity?.entityType === "trust";
@@ -1825,7 +1911,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           sourceId: acct.id,
           basis: rmd, // cash inflow into entity checking: basis == amount (1:1)
         });
-        if (effectiveIsGrantor(entityOwner.entityId, year)) {
+        if (
+          // §664(c): CRT-owned RMDs are exempt. (F1)
+          !isTaxExemptTrust(entityOwner.entityId) &&
+          effectiveIsGrantor(entityOwner.entityId, year)
+        ) {
           grantorRmdTaxable += rmd;
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         }
@@ -1915,6 +2005,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows
         // also flow through Phase 3 K-1 below — only grantor trust rows fall
         // through to the household 1040 here.
+        // §664(c): CRT-owned rows are exempt. (F1)
+        if (isTaxExemptTrust(inc.ownerEntityId)) continue;
         if (!effectiveIsGrantor(inc.ownerEntityId, year)) continue;
         if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
       }
@@ -2243,6 +2335,35 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.ordinaryIncome += grantorRmdTaxable;
     }
 
+    // §664(c): net each CRT's share of this year's sale gains OUT of the
+    // household 1040. (F1)
+    //
+    // This has to happen at the ADD, not via the trust-owned subtraction in the
+    // non-grantor pass below: that subtraction lives inside
+    // `if (nonGrantorTrusts.length > 0)`, and a CRT is never in that list, so a
+    // CRT-only plan skips the block entirely and the gain would stay on the
+    // 1040. Netting here is also independent of the grantor fork, which is what
+    // §664(c) requires — the trust is exempt in EITHER isGrantor config.
+    const crtSaleGainByTxn = new Map<string, number>();
+    for (const item of saleResult.breakdown) {
+      const sold = accountById.get(item.accountId);
+      if (!sold) continue;
+      const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
+      let crtShare = 0;
+      for (const owner of saleYearOwners) {
+        if (owner.kind !== "entity") continue;
+        if (!isTaxExemptTrust(owner.entityId)) continue;
+        crtShare += owner.percent;
+      }
+      if (crtShare > 0) {
+        crtSaleGainByTxn.set(
+          item.transactionId,
+          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.capitalGain * crtShare,
+        );
+      }
+    }
+    const crtSaleGainTotal = [...crtSaleGainByTxn.values()].reduce((s, g) => s + g, 0);
+
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
     taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
@@ -2252,6 +2373,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
       grantorCarryInCapGains;
+    if (crtSaleGainTotal > 0) {
+      taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - crtSaleGainTotal);
+    }
     if (grantorCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",
@@ -2271,8 +2395,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     for (const item of saleResult.breakdown) {
-      if (item.capitalGain > 0) {
-        taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
+      // §664(c): itemize only the non-CRT share — the drill-down must reconcile
+      // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
+      const householdGain = item.capitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+      if (householdGain > 0) {
+        taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: householdGain };
       }
     }
     for (const item of businessSaleResult.breakdown) {
@@ -2323,6 +2450,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
         for (const owner of saleYearOwners) {
           if (owner.kind !== "entity") continue;
+          // §664(c): CRT gains are exempt — they were already netted out of the
+          // household ADD above and must not reach the 1041 pass either. This
+          // also keeps them out of `sameYearTrustGains`, which would otherwise
+          // subtract a gain the household was never charged for and under-tax
+          // the household's OWN gains in a plan that mixes a CRT with an
+          // ordinary non-grantor trust. (F1)
+          if (isTaxExemptTrust(owner.entityId)) continue;
           if (effectiveIsGrantor(owner.entityId, year)) continue;
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
@@ -2945,6 +3079,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       };
       for (const trust of currentEntities) {
         if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
+        // Recapture iff deducted — the SAME predicate that gated the inception
+        // deduction. A non-grantor CLT never took one, so there is nothing to
+        // recapture and doing so would be phantom income. (F5)
+        if (!grantorAtInception.get(trust.id)) continue;
         if (trust.grantor !== decedentRoleThisYear) continue;
         const si = trust.splitInterest;
         const grantorFmId =
@@ -3396,6 +3534,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const e of data.entities ?? []) {
       if (e.trustSubType !== "clt" || !e.splitInterest) continue;
       if (e.splitInterest.inceptionYear !== year) continue;
+      // §170(f)(2)(B) is a GRANTOR-CLT deduction only. A non-grantor CLT deducts
+      // each year's payment under §642(c) inside the 1041 pass instead
+      // (nonGrantorTrustsWithDeductions) — granting both is a double
+      // deduction. (F5)
+      if (!grantorAtInception.get(e.id)) continue;
       const charity = (data.externalBeneficiaries ?? []).find(
         (eb) => eb.id === e.splitInterest!.charityId,
       );
