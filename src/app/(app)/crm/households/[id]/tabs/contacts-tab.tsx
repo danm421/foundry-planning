@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import { CrmContactForm, type CrmContactFormInitial } from "@/components/crm-contact-form";
@@ -13,6 +14,11 @@ import {
   CrmExternalContactForm,
   type ExternalContactFormInitial,
 } from "@/components/crm-external-contact-form";
+import {
+  CrmPromoteFamilyMemberDialog,
+  type CrmPromoteFamilyMemberInitial,
+} from "@/components/crm-promote-family-member-dialog";
+import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
@@ -116,6 +122,88 @@ function rowsOf(...rows: (Row | null)[]): Row[] {
   return rows.filter((r): r is Row => r !== null && r.value !== null && r.value !== "");
 }
 
+const EMPTY_PROMOTE_INITIAL: CrmPromoteFamilyMemberInitial = {
+  firstName: "",
+  lastName: "",
+  dateOfBirth: null,
+  email: null,
+  phone: null,
+  mobile: null,
+};
+
+/** Single-item overflow ("⋯") menu — same idiom as RelationshipCard's menu in
+ *  crm-household-relationships-section.tsx. Only ever holds one entry here
+ *  ("View household" or "Promote to household…"), so it stays local rather
+ *  than growing into a general-purpose menu component. */
+function CardMenuButton(
+  props: { label: string } & ({ href: string; onClick?: undefined } | { href?: undefined; onClick: () => void }),
+) {
+  const { label, href, onClick } = props;
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors hover:bg-card-2 hover:text-ink"
+      >
+        ⋯
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1.5 min-w-[170px] rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
+        >
+          {href ? (
+            <Link
+              href={href}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
+            >
+              {label}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onClick?.();
+              }}
+              className="block w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
+            >
+              {label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContactCard({
   badge,
   name,
@@ -124,6 +212,7 @@ function ContactCard({
   onEdit,
   onDelete,
   deleting,
+  menu,
 }: {
   badge: ReactNode;
   name: string;
@@ -132,6 +221,7 @@ function ContactCard({
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
+  menu?: ReactNode;
 }) {
   const preferred = preferredName?.trim();
   return (
@@ -178,6 +268,7 @@ function ContactCard({
           >
             <TrashIcon width={14} height={14} aria-hidden="true" />
           </button>
+          {menu}
         </div>
       </div>
     </li>
@@ -192,7 +283,13 @@ function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
-export function ContactsTab({ household }: { household: Household }) {
+export function ContactsTab({
+  household,
+  relationships = [],
+}: {
+  household: Household;
+  relationships?: HouseholdRelationshipView[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -217,6 +314,16 @@ export function ContactsTab({ household }: { household: Household }) {
   const [externalDialog, setExternalDialog] = useState<{
     initialValues?: ExternalContactFormInitial;
   } | null>(null);
+  const [promoteDialog, setPromoteDialog] = useState<CrmPromoteFamilyMemberInitial | null>(null);
+
+  // sourceFamilyMemberId -> the household it was promoted into. Only edges
+  // that came from a family-member promote carry sourceFamilyMemberId; plain
+  // household links (CrmLinkHouseholdDialog) don't populate it.
+  const promotedByMemberId = new Map(
+    relationships
+      .filter((r) => r.sourceFamilyMemberId)
+      .map((r) => [r.sourceFamilyMemberId as string, r.counterpart.id]),
+  );
 
   const existingRoles = useMemo(() => {
     const set = new Set<"primary" | "spouse">();
@@ -294,6 +401,11 @@ export function ContactsTab({ household }: { household: Household }) {
   function openExternalCreate() {
     nextInstance();
     setExternalDialog({});
+  }
+
+  function openPromote(initial: CrmPromoteFamilyMemberInitial) {
+    nextInstance();
+    setPromoteDialog(initial);
   }
 
   function openExternalEdit(contact: Contact) {
@@ -405,28 +517,54 @@ export function ContactsTab({ household }: { household: Household }) {
 
         {hasFamilyRows && (
           <ul className="space-y-2.5">
-            {sections.family.map(({ member, contact }) => (
-              <ContactCard
-                key={member.id}
-                badge={
-                  <span className={relBadgeClass}>{relationshipLabel(member.relationship)}</span>
-                }
-                name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
-                preferredName={contact?.preferredName}
-                rows={rowsOf(
-                  { label: "DOB", value: dobRow(member.dateOfBirth) },
-                  { label: "Email", value: contact?.email ?? null },
-                  {
-                    label: "Phone",
-                    value: contact ? phoneLine(contact) : null,
-                  },
-                  { label: "Notes", value: contact?.notes ?? null },
-                )}
-                onEdit={() => openFamilyEdit({ member, contact })}
-                onDelete={() => deleteFamilyMember(member)}
-                deleting={busy === member.id}
-              />
-            ))}
+            {sections.family.map(({ member, contact }) => {
+              const promotedHouseholdId = promotedByMemberId.get(member.id);
+              return (
+                <ContactCard
+                  key={member.id}
+                  badge={
+                    <span className={relBadgeClass}>{relationshipLabel(member.relationship)}</span>
+                  }
+                  name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
+                  preferredName={contact?.preferredName}
+                  rows={rowsOf(
+                    { label: "DOB", value: dobRow(member.dateOfBirth) },
+                    { label: "Email", value: contact?.email ?? null },
+                    {
+                      label: "Phone",
+                      value: contact ? phoneLine(contact) : null,
+                    },
+                    { label: "Notes", value: contact?.notes ?? null },
+                  )}
+                  onEdit={() => openFamilyEdit({ member, contact })}
+                  onDelete={() => deleteFamilyMember(member)}
+                  deleting={busy === member.id}
+                  menu={
+                    promotedHouseholdId ? (
+                      <CardMenuButton
+                        label="View household"
+                        href={`/crm/households/${promotedHouseholdId}`}
+                      />
+                    ) : (
+                      <CardMenuButton
+                        label="Promote to household…"
+                        onClick={() =>
+                          openPromote({
+                            sourceFamilyMemberId: member.id,
+                            firstName: member.firstName,
+                            lastName: member.lastName ?? "",
+                            dateOfBirth: member.dateOfBirth,
+                            email: contact?.email ?? null,
+                            phone: contact?.phone ?? null,
+                            mobile: contact?.mobile ?? null,
+                          })
+                        }
+                      />
+                    )
+                  }
+                />
+              );
+            })}
 
             {sections.unlinkedFamily.map((c) => (
               <ContactCard
@@ -443,6 +581,21 @@ export function ContactsTab({ household }: { household: Household }) {
                 onEdit={() => openUnlinkedEdit(c)}
                 onDelete={() => deleteContact(c)}
                 deleting={busy === c.id}
+                menu={
+                  <CardMenuButton
+                    label="Promote to household…"
+                    onClick={() =>
+                      openPromote({
+                        firstName: c.firstName,
+                        lastName: c.lastName,
+                        dateOfBirth: c.dateOfBirth,
+                        email: c.email,
+                        phone: c.phone,
+                        mobile: c.mobile,
+                      })
+                    }
+                  />
+                }
               />
             ))}
           </ul>
@@ -522,6 +675,15 @@ export function ContactsTab({ household }: { household: Household }) {
         mode={externalDialog?.initialValues ? "edit" : "create"}
         initialValues={externalDialog?.initialValues}
         onSaved={() => router.refresh()}
+      />
+
+      <CrmPromoteFamilyMemberDialog
+        key={`promote-${dialogInstance}`}
+        sourceHouseholdId={household.id}
+        defaultState={household.state}
+        initial={promoteDialog ?? EMPTY_PROMOTE_INITIAL}
+        open={promoteDialog !== null}
+        onClose={() => setPromoteDialog(null)}
       />
     </div>
   );
