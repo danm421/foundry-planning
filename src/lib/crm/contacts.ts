@@ -39,13 +39,18 @@ export async function createCrmContact(
     await assertFamilyMemberInHousehold(householdId, input.familyMemberId);
   }
 
+  // Creation-time only: for an adult role with no DOB entered this invents the
+  // age-50 placeholder. The conflict path deliberately does NOT reuse it — see
+  // the date_of_birth note on the ON CONFLICT set below.
+  const resolvedDateOfBirth = resolveContactDateOfBirth(input.role, input.dateOfBirth);
+
   const insertQuery = db.insert(crmHouseholdContacts).values({
     householdId,
     role: input.role,
     firstName: input.firstName,
     lastName: input.lastName,
     preferredName: input.preferredName,
-    dateOfBirth: resolveContactDateOfBirth(input.role, input.dateOfBirth),
+    dateOfBirth: resolvedDateOfBirth,
     email: input.email || null,
     phone: input.phone,
     mobile: input.mobile,
@@ -82,9 +87,16 @@ export async function createCrmContact(
   // the bug this shape exists to prevent. Deliberately absent: household_id and
   // family_member_id (invariant — the conflict key, and its household is pinned
   // by assertFamilyMemberInHousehold) and `role` (see comment on the set).
-  // date_of_birth needs no special casing: `excluded.date_of_birth` IS the
-  // resolveContactDateOfBirth(...) output the insert computed, so the conflict
-  // path coalesces the resolved value, never the raw input.
+  //
+  // date_of_birth is the ONE column where insert and conflict deliberately
+  // differ, and the difference is load-bearing. `excluded.date_of_birth` is the
+  // resolveContactDateOfBirth(input.role, ...) output, which for an adult role
+  // with no DOB entered is an INVENTED age-50 January-1 placeholder. Since the
+  // conflict path pins `role`, coalescing that value would let a re-link
+  // submitting role:"primary" stamp a fake ~50-year-old birthday onto a stored
+  // dependent whose DOB is legitimately NULL — corrupt planning data, because
+  // dependent DOB drives education timing. The conflict path therefore coalesces
+  // the RAW submitted DOB: the placeholder is a creation-time concern only.
   const [created] = input.familyMemberId
     ? await insertQuery
         .onConflictDoUpdate({
@@ -100,7 +112,8 @@ export async function createCrmContact(
             firstName: input.firstName,
             lastName: input.lastName,
             preferredName: sql`coalesce(excluded.preferred_name, ${crmHouseholdContacts.preferredName})`,
-            dateOfBirth: sql`coalesce(excluded.date_of_birth, ${crmHouseholdContacts.dateOfBirth})`,
+            // NOT `excluded.date_of_birth` — see the date_of_birth note above.
+            dateOfBirth: sql`coalesce(${input.dateOfBirth ?? null}, ${crmHouseholdContacts.dateOfBirth})`,
             email: sql`coalesce(excluded.email, ${crmHouseholdContacts.email})`,
             phone: sql`coalesce(excluded.phone, ${crmHouseholdContacts.phone})`,
             mobile: sql`coalesce(excluded.mobile, ${crmHouseholdContacts.mobile})`,
@@ -141,8 +154,11 @@ export async function createCrmContact(
     {
       householdId,
       kind: "contact_change",
-      title: `Added ${input.role}: ${input.firstName} ${input.lastName}`,
-      metadata: { contactId: created.id, role: input.role },
+      // PERSISTED role, same reason as the household-name branch above: the
+      // conflict path leaves `role` alone, so an activity entry reading
+      // input.role would tell the advisor a dependent was "Added primary".
+      title: `Added ${created.role}: ${input.firstName} ${input.lastName}`,
+      metadata: { contactId: created.id, role: created.role },
       occurredAt: new Date(),
     },
     { actorUserId: userId ?? "" },

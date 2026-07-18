@@ -165,6 +165,7 @@ describe("family-linked contact rows", () => {
     const linked = await createCrmContact(householdId, {
       role: "dependent", firstName: "Emma", lastName: "Doe", familyMemberId: memberId,
     });
+    expect(linked.dateOfBirth).toBeNull(); // dependents get no invented DOB
 
     const relinked = await createCrmContact(householdId, {
       role: "primary", firstName: "Emma", lastName: "Doe", familyMemberId: memberId,
@@ -172,6 +173,13 @@ describe("family-linked contact rows", () => {
 
     expect(relinked.id).toBe(linked.id);
     expect(relinked.role).toBe("dependent");
+    // The submitted role:"primary" makes resolveContactDateOfBirth invent an
+    // age-50 January-1 placeholder for the INSERT values. Because this row's
+    // role stays "dependent", that placeholder must never reach the stored row:
+    // the conflict path coalesces the raw submitted DOB (absent here), not the
+    // resolved one. A child silently acquiring a ~50-year-old birthday would
+    // corrupt education-timing projections.
+    expect(relinked.dateOfBirth).toBeNull();
     const household = await db.query.crmHouseholds.findFirst({
       where: eq(crmHouseholds.id, householdId),
     });
