@@ -7,6 +7,7 @@ export function hashBattery(b: InsightsBattery): string {
   const material = {
     clientName: b.clientName,
     kpis: b.kpis,
+    retirementPeople: b.retirementPeople,
     risk: b.risk,
     goalsText: b.grounding.goalsText,
     notesText: b.grounding.notesText,

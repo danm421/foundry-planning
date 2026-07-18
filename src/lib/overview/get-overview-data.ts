@@ -10,6 +10,11 @@ import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
+import {
+  personRetirementFacts,
+  yearsUntilFirstRetirement,
+  type PersonRetirementFacts,
+} from "@/lib/retirement/retirement-facts";
 import type { ProjectionYear } from "@/engine";
 import type { ToggleState } from "@/engine/scenario/types";
 
@@ -39,7 +44,7 @@ export async function getOverviewData(
 
   if (!client) throw new ClientNotFoundError(clientId);
 
-  // CRM contacts: source of truth for identity (DOB used here for years-to-retirement).
+  // CRM contacts: source of truth for identity (DOB drives retirement timing).
   const crmContactRows = client.crmHouseholdId
     ? await db
         .select()
@@ -48,8 +53,6 @@ export async function getOverviewData(
     : [];
   const primaryContact = crmContactRows.find((c) => c.role === "primary") ?? null;
   const spouseContact = crmContactRows.find((c) => c.role === "spouse") ?? null;
-  const clientDob = primaryContact?.dateOfBirth;
-  const spouseDob = spouseContact?.dateOfBirth;
 
   const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows, entityRows] =
     await Promise.all([
@@ -114,26 +117,23 @@ export async function getOverviewData(
     .filter((a) => !LIQUID_CATEGORY_EXCLUDE.has(String(a.category)))
     .reduce((sum, a) => sum + Number(a.value ?? 0), 0);
 
-  // Years-to-retirement — unchanged from before
-  const currentYear = new Date().getFullYear();
-  const retirementYears: number[] = [];
-  if (client.retirementAge != null && clientDob) {
-    retirementYears.push(
-      new Date(clientDob).getFullYear() + client.retirementAge,
-    );
-  }
-  if (client.spouseRetirementAge != null && spouseDob) {
-    retirementYears.push(
-      new Date(spouseDob).getFullYear() + client.spouseRetirementAge,
-    );
-  }
-  const earliestRetirementYear = retirementYears.length
-    ? Math.min(...retirementYears)
-    : null;
-  const yearsToRetirement =
-    earliestRetirementYear != null
-      ? Math.max(earliestRetirementYear - currentYear, 0)
-      : null;
+  // Per-person retirement age + calendar year — the single source of truth for
+  // retirement timing. `yearsToRetirement` alone is ambiguous downstream (the
+  // 360 AI battery consumes it and had no age/year to check advisor notes
+  // against), so derive the KPI from these rather than re-deriving in parallel.
+  const now = new Date();
+  const factsFor = (
+    contact: typeof primaryContact,
+    retirementAge: number | null,
+  ): PersonRetirementFacts | null =>
+    contact ? personRetirementFacts({ ...contact, retirementAge }, now) : null;
+
+  const retirementPeople = [
+    factsFor(primaryContact, client.retirementAge),
+    factsFor(spouseContact, client.spouseRetirementAge),
+  ].filter((p): p is PersonRetirementFacts => p != null);
+
+  const yearsToRetirement = yearsUntilFirstRetirement(retirementPeople, now);
 
   // Projection-derived fields — fail-soft
   let projection: ProjectionYear[] | null = null;
@@ -189,6 +189,7 @@ export async function getOverviewData(
   return {
     client,
     kpi: { netWorth, liquidPortfolio, yearsToRetirement },
+    retirementPeople,
     runway: { netWorthSeries, minNetWorth },
     projection: projection ?? [],
     allocation,
