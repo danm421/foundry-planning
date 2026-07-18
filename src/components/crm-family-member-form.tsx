@@ -32,7 +32,9 @@ export const RELATIONSHIP_OPTIONS: { value: string; label: string }[] = [
   { value: "grandparent", label: "Grandparent" },
   { value: "sibling", label: "Sibling" },
   { value: "sibling_in_law", label: "Sibling-in-law" },
-  { value: "child_in_law", label: "Child-in-law" },
+  // "Son/Daughter-in-law" matches family-member-dialog.tsx and family-view.tsx —
+  // the same relationship must not read differently in CRM vs planning.
+  { value: "child_in_law", label: "Son/Daughter-in-law" },
   { value: "niece_nephew", label: "Niece/Nephew" },
   { value: "aunt_uncle", label: "Aunt/Uncle" },
   { value: "cousin", label: "Cousin" },

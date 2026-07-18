@@ -26,6 +26,14 @@ describe("deriveContactSections", () => {
     expect(out.unlinkedFamily.map((x: { id: string }) => x.id)).toEqual(["d2"]);
   });
 
+  it("never folds a non-dependent row into a family card, even carrying a link", () => {
+    // Without the role filter in byFmId this contact renders TWICE: once folded
+    // into fm1's card and once in its own external section.
+    const out = deriveContactSections([c("other", "o1", "fm1")], [{ id: "fm1" }]);
+    expect(out.family).toEqual([{ member: { id: "fm1" }, contact: null }]);
+    expect(out.external.map((x: { id: string }) => x.id)).toEqual(["o1"]);
+  });
+
   it("treats a linked row whose member is missing as unlinked (never invisible)", () => {
     const out = deriveContactSections([c("dependent", "d1", "fm-gone")], []);
     expect(out.family).toEqual([]);

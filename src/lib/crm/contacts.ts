@@ -175,6 +175,15 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
   const { userId } = await auth();
 
   if (patch.familyMemberId) {
+    // A family link is dependent-only. The schema accepts familyMemberId on any
+    // role, so without this a PATCH could hang a planning link off a
+    // primary/spouse/other row. Resolve against the patched role when the same
+    // request changes it. Create is deliberately NOT guarded this way: its
+    // conflict path resolves a submitted role against the PERSISTED dependent
+    // row (see createCrmContact's ON CONFLICT note).
+    if ((patch.role ?? existing.role) !== "dependent") {
+      throw new Error("Family member link requires the dependent role");
+    }
     await assertFamilyMemberInHousehold(existing.householdId, patch.familyMemberId);
   }
 

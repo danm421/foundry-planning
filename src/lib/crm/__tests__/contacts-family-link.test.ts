@@ -94,6 +94,34 @@ describe("family-linked contact rows", () => {
       .rejects.toThrow("Family member does not belong to this household");
   });
 
+  it("rejects familyMemberId on update against a non-dependent row", async () => {
+    // updateCrmContactSchema accepts familyMemberId on ANY role and the
+    // ownership check only validates household membership, so before the guard
+    // this PATCH succeeded and hung a planning link off an external contact.
+    const external = await createCrmContact(householdId, {
+      role: "other", firstName: "Carl", lastName: "Paulson",
+    });
+    await expect(updateCrmContact(external.id, { familyMemberId: memberId }))
+      .rejects.toThrow("Family member link requires the dependent role");
+
+    const row = await db.query.crmHouseholdContacts.findFirst({
+      where: eq(crmHouseholdContacts.id, external.id),
+    });
+    expect(row?.familyMemberId).toBeNull();
+  });
+
+  it("allows familyMemberId on update when the same patch sets role dependent", async () => {
+    // The role is resolved against the patch, not just the stored row, so
+    // promoting an unlinked contact to a linked dependent in one PATCH works.
+    const orphan = await createCrmContact(householdId, {
+      role: "other", firstName: "Emma", lastName: "Doe",
+    });
+    const updated = await updateCrmContact(orphan.id, {
+      role: "dependent", familyMemberId: memberId,
+    });
+    expect(updated.familyMemberId).toBe(memberId);
+  });
+
   // Every nullable column createCrmContact writes on INSERT. A field missing
   // from the ON CONFLICT set is silently dropped on re-link while the caller
   // still gets a 201, so both directions are asserted over the WHOLE set rather

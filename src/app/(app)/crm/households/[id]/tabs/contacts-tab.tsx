@@ -228,16 +228,17 @@ export function ContactsTab({ household }: { household: Household }) {
 
   const planningClientId = household.planningClient?.id ?? null;
 
-  // Assumption: deriveContactSections indexes linked rows by `familyMemberId`
-  // without filtering on role, which is only safe while non-dependent contacts
-  // never carry a familyMemberId. Nothing in this tab (or the two dialogs it
-  // opens) sets familyMemberId on a primary/spouse/other row — the family form
-  // writes it with role "dependent" only.
   const sections = deriveContactSections(
     household.contacts,
     household.planningClient?.familyMembers ?? [],
   );
-  const familyCount = sections.family.length + sections.unlinkedFamily.length;
+  // primarySpouse renders INSIDE the Family section (see :373 below), so it
+  // counts. Omitting it made a household with just a primary + spouse — the
+  // default state of every new household — read "Family (0)" above two visible
+  // cards, with "No family members yet" underneath them.
+  const familyCount =
+    sections.primarySpouse.length + sections.family.length + sections.unlinkedFamily.length;
+  const hasFamilyRows = sections.family.length > 0 || sections.unlinkedFamily.length > 0;
 
   function openContactEdit(contact: Contact) {
     nextInstance();
@@ -398,9 +399,11 @@ export function ContactsTab({ household }: { household: Household }) {
           </ul>
         )}
 
-        {familyCount === 0 ? (
+        {familyCount === 0 && (
           <EmptyState>No family members yet. Add one here or in planning.</EmptyState>
-        ) : (
+        )}
+
+        {hasFamilyRows && (
           <ul className="space-y-2.5">
             {sections.family.map(({ member, contact }) => (
               <ContactCard
@@ -409,6 +412,7 @@ export function ContactsTab({ household }: { household: Household }) {
                   <span className={relBadgeClass}>{relationshipLabel(member.relationship)}</span>
                 }
                 name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
+                preferredName={contact?.preferredName}
                 rows={rowsOf(
                   { label: "DOB", value: dobRow(member.dateOfBirth) },
                   { label: "Email", value: contact?.email ?? null },

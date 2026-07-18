@@ -15,9 +15,14 @@ export function deriveContactSections<C extends ContactLike, F extends { id: str
   familyMembers: F[],
 ) {
   const memberIds = new Set(familyMembers.map((m) => m.id));
+  // Role-filtered on purpose: a family link is a dependent-only relationship.
+  // Indexing every row that happens to carry a familyMemberId would fold a
+  // non-dependent into its member's card AND leave it in its own section — the
+  // same contact rendered twice. Filtering here makes that invariant code
+  // rather than a convention.
   const byFmId = new Map(
     contacts
-      .filter((x) => x.familyMemberId !== null)
+      .filter((x) => x.role === "dependent" && x.familyMemberId !== null)
       .map((x) => [x.familyMemberId as string, x]),
   );
   return {

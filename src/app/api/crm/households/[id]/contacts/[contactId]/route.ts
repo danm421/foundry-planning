@@ -32,7 +32,8 @@ export async function PATCH(
     }
     if (
       err instanceof Error &&
-      err.message === "Family member does not belong to this household"
+      (err.message === "Family member does not belong to this household" ||
+        err.message === "Family member link requires the dependent role")
     ) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }

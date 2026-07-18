@@ -43,6 +43,48 @@ describe("ContactsTab sections", () => {
   });
 });
 
+// The default state of every newly created household: a primary and a spouse,
+// no children, no planning client yet. Both cards render inside the Family
+// section, so the heading count and the empty state must agree with them.
+const primaryAndSpouseOnly = {
+  id: "hh1",
+  contacts: [
+    { id: "p1", role: "primary", firstName: "Dan", lastName: "Cooper", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: null, email: null, phone: null,
+      mobile: null, addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+    { id: "s1", role: "spouse", firstName: "Kim", lastName: "Cooper", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: null, email: null, phone: null,
+      mobile: null, addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+  ],
+  planningClient: null,
+} as never;
+
+describe("ContactsTab family count", () => {
+  // Regression guard: familyCount omitted sections.primarySpouse while those
+  // cards render inside the same <section>, so this household read
+  // "Family (0)" above two visible cards with "No family members yet"
+  // underneath — a self-contradicting screen on the most common household.
+  it("counts primary and spouse and suppresses the empty state", () => {
+    render(<ContactsTab household={primaryAndSpouseOnly} />);
+
+    expect(screen.getByRole("heading", { name: "Family (2)" })).toBeInTheDocument();
+    expect(screen.getByText("Dan Cooper")).toBeInTheDocument();
+    expect(screen.getByText("Kim Cooper")).toBeInTheDocument();
+    expect(screen.queryByText(/No family members yet/i)).not.toBeInTheDocument();
+  });
+
+  it("still shows the empty state when the section is genuinely empty", () => {
+    render(
+      <ContactsTab household={{ id: "hh1", contacts: [], planningClient: null } as never} />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Family (0)" })).toBeInTheDocument();
+    expect(screen.getByText(/No family members yet/i)).toBeInTheDocument();
+  });
+});
+
 // Two family members so the dialog can be reopened for a *different* record.
 const twoKids = {
   id: "hh1",
