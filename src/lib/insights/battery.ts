@@ -11,6 +11,7 @@ import { loadCmaReturnBounds } from "./cma-bounds";
 import { deriveInsightInputs, growthPctFromAllocation } from "./derive";
 import { assembleRiskAlignment, type RiskAlignment } from "./risk-capacity";
 import { computeNeedsAttention, type LintFinding } from "./lint";
+import type { PersonRetirementFacts } from "@/lib/retirement/retirement-facts";
 
 export interface InsightsBattery {
   clientName: string;
@@ -21,6 +22,8 @@ export interface InsightsBattery {
     mcSuccessRate: number | null;
     fundingScore: number;
   };
+  /** Plan-authoritative retirement age + year per person. */
+  retirementPeople: PersonRetirementFacts[];
   risk: RiskAlignment;
   needsAttention: LintFinding[];
   grounding: {
@@ -81,7 +84,13 @@ export async function loadInsightsBattery(
 
   // CRM grounding + needs-attention.
   const notes = await listHouseholdNotes(client.crmHouseholdId, firmId);
-  const notesText = notes.slice(0, 15).map((n) => n.body).join("\n");
+  // Date + title each note. Bare bodies made a years-old discovery note read as
+  // current — that is how "both want to retire around Cooper's 60th birthday"
+  // ended up stated as the plan's timeline. Dates let the model age-weight them.
+  const notesText = notes
+    .slice(0, 15)
+    .map((n) => `[${n.occurredAt.slice(0, 10)}] ${n.kind} — ${n.title}: ${n.body}`)
+    .join("\n");
   const tasks = await listTasks(firmId, { householdId: client.crmHouseholdId }, {
     status: null,
     overdueOnly: false,
@@ -112,6 +121,7 @@ export async function loadInsightsBattery(
       mcSuccessRate,
       fundingScore: score,
     },
+    retirementPeople: overview.retirementPeople,
     risk,
     needsAttention,
     grounding: {

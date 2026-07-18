@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { birthYearFromDob, yearForAge, ageForYear } from "@/lib/age-year";
+import { birthYearFromDob, yearForAge, ageForYear, ageOnDate } from "@/lib/age-year";
 
 describe("birthYearFromDob", () => {
   it("slices the year from an ISO date string", () => {
@@ -40,5 +40,36 @@ describe("ageForYear", () => {
 
   it("returns null when the birth year is unknown", () => {
     expect(ageForYear(null, 2045)).toBeNull();
+  });
+});
+
+describe("ageOnDate", () => {
+  const TODAY = new Date("2026-07-18T12:00:00Z");
+
+  it("counts a birthday that has already passed this year", () => {
+    expect(ageOnDate("1975-06-20", TODAY)).toBe(51);
+  });
+
+  it("reads a year younger before this year's birthday", () => {
+    expect(ageOnDate("1975-12-25", TODAY)).toBe(50);
+  });
+
+  it("turns the age exactly on the birthday", () => {
+    expect(ageOnDate("1975-07-18", TODAY)).toBe(51);
+    expect(ageOnDate("1975-07-19", TODAY)).toBe(50);
+  });
+
+  it("does not shift a Jan-1 DOB", () => {
+    // new Date('1979-01-01') lands on 1978-12-31 in negative-UTC zones.
+    expect(ageOnDate("1979-01-01", TODAY)).toBe(47);
+  });
+
+  it("returns a sub-1 age for an infant", () => {
+    expect(ageOnDate("2026-03-01", TODAY)).toBe(0);
+  });
+
+  it("returns null for missing or unparseable input", () => {
+    expect(ageOnDate(null, TODAY)).toBeNull();
+    expect(ageOnDate("not-a-date", TODAY)).toBeNull();
   });
 });

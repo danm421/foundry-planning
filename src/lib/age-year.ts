@@ -33,3 +33,24 @@ export function ageForYear(
   if (birthYear == null) return null;
   return year - birthYear;
 }
+
+/**
+ * Age as of `today`, with month/day precision so someone who has not yet had
+ * this year's birthday reads a year younger. Month and day are sliced from the
+ * ISO string for the same timezone reason as `birthYearFromDob`.
+ */
+export function ageOnDate(
+  dob: string | null | undefined,
+  today: Date,
+): number | null {
+  const birthYear = birthYearFromDob(dob);
+  if (birthYear == null) return null;
+  const month = parseInt(String(dob).slice(5, 7), 10);
+  const day = parseInt(String(dob).slice(8, 10), 10);
+  if (!Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+  let age = today.getFullYear() - birthYear;
+  const monthDelta = today.getMonth() + 1 - month;
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < day)) age -= 1;
+  return age;
+}

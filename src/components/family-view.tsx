@@ -18,6 +18,7 @@ import type { ClientWithContacts } from "@/lib/clients/get-client-with-contacts"
 import { type TrustSubType } from "@/lib/entities/trust";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember, AssetsTabBusiness } from "./forms/assets-tab";
 import type { AccountOwner } from "@/engine/ownership";
+import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -174,11 +175,14 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-function birthYear(dob: string | null | undefined): number | null {
-  if (!dob) return null;
-  const d = new Date(dob);
-  if (isNaN(d.getTime())) return null;
-  return d.getFullYear();
+/**
+ * Renders an ISO date as M/D/YYYY without going through `new Date(...)`, which
+ * shifts a Jan-1 DOB to Dec-31 of the prior year in a negative-UTC timezone.
+ */
+function formatIsoDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso;
+  return `${Number(m)}/${Number(d)}/${y}`;
 }
 
 function formatRetirement(
@@ -188,8 +192,7 @@ function formatRetirement(
 ): string {
   if (age == null) return "—";
   const m = month ?? 1;
-  const by = birthYear(dob);
-  const year = by != null ? by + age : null;
+  const year = yearForAge(birthYearFromDob(dob), age);
   const monthLabel = MONTH_NAMES[m - 1];
   if (year == null) return m === 1 ? String(age) : `${age} (${monthLabel})`;
   return `${age} (${monthLabel} ${year})`;
@@ -200,9 +203,9 @@ function formatLifeExpectancy(
   dob: string | null | undefined,
 ): string {
   if (age == null) return "—";
-  const by = birthYear(dob);
-  if (by == null) return String(age);
-  return `${age} (${by + age})`;
+  const year = yearForAge(birthYearFromDob(dob), age);
+  if (year == null) return String(age);
+  return `${age} (${year})`;
 }
 
 interface FamilyViewProps {
@@ -260,13 +263,9 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
 };
 
 function computeAge(dob: string | null): string {
-  if (!dob) return "—";
-  const d = new Date(dob);
-  if (isNaN(d.getTime())) return "—";
-  const diff = Date.now() - d.getTime();
-  const years = diff / (365.25 * 24 * 60 * 60 * 1000);
-  if (years < 1) return "< 1";
-  return String(Math.floor(years));
+  const age = ageOnDate(dob, new Date());
+  if (age == null) return "—";
+  return age < 1 ? "< 1" : String(age);
 }
 
 /**
@@ -473,7 +472,7 @@ export default function FamilyView({
               name={`${primary.firstName} ${primary.lastName}`}
               badge="Client"
               fields={[
-                ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
+                ["Date of Birth", primary.dateOfBirth ? `${formatIsoDate(primary.dateOfBirth)} (age ${primaryAge})` : "—"],
                 ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth, primary.dateOfBirth)],
                 ["Life Expectancy", formatLifeExpectancy(primary.lifeExpectancy, primary.dateOfBirth)],
               ]}
@@ -483,7 +482,7 @@ export default function FamilyView({
                 name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
                 badge="Spouse"
                 fields={[
-                  ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
+                  ["Date of Birth", primary.spouseDob ? `${formatIsoDate(primary.spouseDob)} (age ${spouseAge})` : "—"],
                   ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
                   ["Life Expectancy", formatLifeExpectancy(primary.spouseLifeExpectancy, primary.spouseDob)],
                 ]}
