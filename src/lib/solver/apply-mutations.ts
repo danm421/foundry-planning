@@ -296,6 +296,37 @@ export function applyMutations(
         const list = (result.entities ?? []).filter((e) => e.id !== m.id);
         if (m.value !== null) list.push(m.value);
         result.entities = list;
+        // F13: mirror the API path (entities/route.ts:236-260) — an entity with
+        // no checking account cannot receive or pay anything, so every trust
+        // payment pass silently `continue`s and the scenario computes zeros.
+        // The engine keys off isDefaultChecking + full entity ownership
+        // (projection.ts:557-563). Deterministic id so repeated solver
+        // recomputes neither churn scenario diffs nor stack duplicates.
+        if (m.value !== null) {
+          const entityId = m.value.id;
+          const hasChecking = result.accounts.some(
+            (a) =>
+              a.isDefaultChecking === true &&
+              a.owners.some((o) => o.kind === "entity" && o.entityId === entityId),
+          );
+          if (!hasChecking) {
+            result.accounts = [
+              ...result.accounts,
+              {
+                id: `entity-checking-${entityId}`,
+                name: `${m.value.name ?? "Entity"} — Cash`,
+                category: "cash",
+                subType: "checking",
+                value: 0,
+                basis: 0,
+                growthRate: 0,
+                rmdEnabled: false,
+                isDefaultChecking: true,
+                owners: [{ kind: "entity", entityId, percent: 1 }],
+              } as ClientData["accounts"][number],
+            ];
+          }
+        }
         break;
       }
       case "stress-inflation": {
