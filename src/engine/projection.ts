@@ -2969,8 +2969,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // actually drained — the drain loops already skip non-positive accounts,
     // but the totalAvailable sums did not, which let a negative account shrink
     // the reported distribution below the real one.
+    //
+    // F10 review fix: this must be a SNAPSHOT, not a live read of `cashDelta`.
+    // The drain loops below write NEGATIVE cashDelta as they drain each
+    // trust's share. A live read lets a second (or third) trust that
+    // co-owns the same account — including across the CLT-pass-then-CRT-pass
+    // boundary — see the previous trust's drain already subtracted, so it
+    // under-drains its own share against the reduced figure. Snapshotting
+    // every account's effective balance once, before any trust in this year
+    // drains anything, means every trust's totalAvailable/drain reads the
+    // same pre-drain figures and fractional co-ownership shares sum
+    // correctly regardless of processing order.
+    const terminationBalanceSnapshot: Record<string, number> = {};
+    for (const a of workingAccounts) {
+      terminationBalanceSnapshot[a.id] = Math.max(
+        0,
+        (accountBalances[a.id] ?? 0) + (cashDelta[a.id] ?? 0)
+      );
+    }
     const effectiveTerminationBalance = (id: string) =>
-      Math.max(0, (accountBalances[id] ?? 0) + (cashDelta[id] ?? 0));
+      terminationBalanceSnapshot[id] ?? 0;
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;

@@ -29,7 +29,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { buildCltLifecycleFixture, CLT_FIXTURE_IDS } from "./_fixtures/clt";
-import type { ClientData, NoteReceivable } from "../types";
+import type { ClientData, EntitySummary, NoteReceivable } from "../types";
 
 const INCEPTION = 2026;
 const TERM_YEARS = 10;
@@ -99,5 +99,111 @@ describe("F10 — CLT termination drains the effective balance", () => {
     // The reported figure must equal the drain, so the trust ends at zero.
     expect(checkingAtTermination.endingValue).toBeCloseTo(0, 2);
     expect(distributed).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Regression for the F10 review finding: `effectiveTerminationBalance` was a
+ * LIVE read of `cashDelta`, which the drain loops themselves write to
+ * (negatively) as they drain. Two split-interest trusts terminating in the
+ * SAME year, co-owning the SAME account at fractional shares, therefore
+ * compounded: the trust processed first drains its share against the full
+ * balance, but the trust processed second reads an already-reduced effective
+ * balance and under-drains its own share against THAT — stranding the
+ * product of the two shortfall fractions in the terminated trusts.
+ *
+ * Concretely: a $1,000,000 account co-owned 60/40 by CLT-A and CLT-B, both
+ * term-certain and terminating the same year.
+ *   - Correct: totalAvailable is computed once, pre-drain, for both trusts.
+ *     A drains 60% of $1,000,000 = $600,000; B drains 40% of $1,000,000 =
+ *     $400,000. Full balance drained; nothing stranded.
+ *   - Buggy (live cashDelta read): A drains $600,000 first — cashDelta now
+ *     -$600,000. B then reads an effective balance of $400,000 and drains
+ *     40% of THAT = $160,000. Total drained = $760,000; $240,000 (24% —
+ *     0.6 × 0.4 of the balance, order-independent) stranded in the
+ *     terminated trusts.
+ *
+ * Neither trust has its own default-checking account here (the shared
+ * account is co-owned, so it fails the single-entity-owner precondition for
+ * `entityCheckingByEntityId`), so neither makes annual lead payments before
+ * termination — isolating the compounding bug from any other cash movement
+ * touching the shared account.
+ */
+const CO_OWNED_TRUST_B_ID = "00000000-0000-0000-0000-0000000007b1";
+
+function buildCoOwnedTerminationFixture(): ClientData {
+  const data = buildCltLifecycleFixture({
+    inceptionYear: INCEPTION,
+    payoutPercent: 0.06,
+    termYears: TERM_YEARS,
+    inceptionValue: 1_000_000,
+    charityType: "public",
+    grantorAgi: 300_000,
+  });
+
+  const trustB: EntitySummary = {
+    id: CO_OWNED_TRUST_B_ID,
+    name: "Test CLT B",
+    entityType: "trust",
+    trustSubType: "clt",
+    isIrrevocable: true,
+    isGrantor: true,
+    includeInPortfolio: false,
+    grantor: "client",
+    splitInterest: {
+      inceptionYear: INCEPTION,
+      inceptionValue: 0,
+      payoutType: "unitrust",
+      payoutPercent: 0.06,
+      payoutAmount: null,
+      irc7520Rate: 0.06,
+      termType: "years",
+      termYears: TERM_YEARS,
+      measuringLife1Id: null,
+      measuringLife2Id: null,
+      charityId: CLT_FIXTURE_IDS.PUBLIC_CHARITY_ID,
+      originalIncomeInterest: 0,
+      originalRemainderInterest: 0,
+    },
+  };
+  data.entities = [...(data.entities ?? []), trustB];
+
+  // Re-own the CLT's checking account 60/40 between CLT-A and the new
+  // CLT-B, both terminating in TERMINATION_YEAR. Clearing isDefaultChecking
+  // means neither trust resolves an entry in `entityCheckingByEntityId`
+  // (that map requires the account to be *fully* single-entity owned — see
+  // projection.ts:549-551), so no annual lead payments touch this account
+  // before termination; it stays flat at $1,000,000 (growthRate 0).
+  const sharedAccount = data.accounts.find(
+    (a) => a.id === CLT_FIXTURE_IDS.CLT_CHECKING_ID,
+  )!;
+  sharedAccount.isDefaultChecking = false;
+  sharedAccount.owners = [
+    { kind: "entity", entityId: CLT_FIXTURE_IDS.CLT_ENTITY_ID, percent: 0.6 },
+    { kind: "entity", entityId: CO_OWNED_TRUST_B_ID, percent: 0.4 },
+  ];
+
+  return data;
+}
+
+describe("F10 review fix — co-owned trusts don't compound-drain the same account", () => {
+  const years = runProjection(buildCoOwnedTerminationFixture());
+
+  it("terminates both trusts in the same year", () => {
+    const t = years.find((y) => y.year === TERMINATION_YEAR)!;
+    expect(t.trustTerminations).toBeDefined();
+    expect(t.trustTerminations).toHaveLength(2);
+  });
+
+  it("drains the FULL shared balance — nothing stranded from compounding", () => {
+    const t = years.find((y) => y.year === TERMINATION_YEAR)!;
+    const checking = t.accountLedgers[CLT_FIXTURE_IDS.CLT_CHECKING_ID];
+    const totalDistributed = t.trustTerminations!.reduce(
+      (s, r) => s + r.totalDistributed,
+      0,
+    );
+    // Pre-fix this strands ~$240,000 (24% of $1,000,000) via compounding.
+    expect(checking.endingValue).toBeCloseTo(0, 2);
+    expect(totalDistributed).toBeCloseTo(1_000_000, 2);
   });
 });
