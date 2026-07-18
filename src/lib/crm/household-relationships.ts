@@ -26,6 +26,32 @@ export function isUniqueViolation(err: unknown): boolean {
   return e.code === "23505" || e.cause?.code === "23505";
 }
 
+/**
+ * recordActivity wrapped so a failure here never surfaces to the caller. By
+ * the time this runs the relationship row is already committed (create) or
+ * already deleted (delete) — letting an activity-log error propagate would
+ * report a false failure for a write that actually succeeded, and on retry
+ * the caller would immediately hit the pair-unique index and see a
+ * misleading "already linked" error. Mirrors how recordAudit (src/lib/audit.ts)
+ * already swallows its own failures and logs instead of throwing.
+ */
+async function recordRelationshipActivity(
+  input: Parameters<typeof recordActivity>[0],
+  opts: Parameters<typeof recordActivity>[1],
+): Promise<void> {
+  try {
+    await recordActivity(input, opts);
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown activity error";
+    console.error("[household-relationships] failed to record:", {
+      kind: input.kind,
+      householdId: input.householdId,
+      err: msg,
+    });
+  }
+}
+
 export type HouseholdRelationshipView = {
   id: string;
   type: CrmHouseholdRelationshipType;
@@ -126,7 +152,7 @@ export async function createHouseholdRelationship(
     firmId: orgId,
   });
   const now = new Date();
-  await recordActivity(
+  await recordRelationshipActivity(
     {
       householdId,
       kind: "relationship_change",
@@ -136,7 +162,7 @@ export async function createHouseholdRelationship(
     },
     { actorUserId: actorId },
   );
-  await recordActivity(
+  await recordRelationshipActivity(
     {
       householdId: counterpart.id,
       kind: "relationship_change",
@@ -171,7 +197,7 @@ export async function deleteHouseholdRelationship(householdId: string, relations
   const otherId = edge.fromHouseholdId === householdId ? edge.toHouseholdId : edge.fromHouseholdId;
   const now = new Date();
   for (const hh of [householdId, otherId]) {
-    await recordActivity(
+    await recordRelationshipActivity(
       { householdId: hh, kind: "relationship_change", title: "Removed household link", metadata: { relationshipId }, occurredAt: now },
       { actorUserId: userId ?? "system" },
     );
