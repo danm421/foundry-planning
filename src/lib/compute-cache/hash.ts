@@ -7,6 +7,8 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * Bump when MC/LI engine logic or the cached payload shape changes. Folded into
  * every hash, so a bump invalidates all existing cache rows automatically.
  * 8: F3 locked-share clamp/cap + F4 orphaned-gain backstop (2026-07-18)
+ * 9: F12 entity policy-row schedule + F10 termination effective balance + F13
+ *    entity checking synthesis on the solver and scenario-load paths (2026-07-18)
  */
 export const ENGINE_VERSION = 9;
 
