@@ -366,4 +366,29 @@ describe("F12 — policy-sourced rows keep their own schedule", () => {
     );
     expect(amount).toBe(10_000);
   });
+
+  it("does not pay a premium before the policy's startYear, even when the schedule map carries an earlier key (audit finding on F12)", () => {
+    // resolvePremiumSchedule (src/lib/insurance-policies/premium-expense.ts) builds
+    // scheduleOverrides from every cashValueSchedule row, then clamps the row's
+    // startYear UP to currentYear/activationYear — but the overrides map keeps
+    // the earlier keys. A late-activating policy's row therefore has schedule
+    // entries below its own startYear; the resolver must not resurrect them.
+    const lateActivationRow = {
+      annualAmount: 0,
+      growthRate: 0,
+      startYear: 2030,
+      endYear: 2032,
+      source: "policy" as const,
+      scheduleOverrides: { 2026: 40_000, 2030: 40_000 },
+    };
+    const beforeActivation = resolveEntityFlowAmount(
+      lateActivationRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(beforeActivation).toBe(0);
+
+    const atActivation = resolveEntityFlowAmount(
+      lateActivationRow, "ent-1", "expense", 2030, [], "annual",
+    );
+    expect(atActivation).toBe(40_000);
+  });
 });
