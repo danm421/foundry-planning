@@ -9,8 +9,9 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
 import type { ProjectionYear } from "@/engine";
-import { explainTaxChange } from "@/lib/tax/explain-tax-change/explain";
-import { buildTaxDrillContext } from "@/lib/tax/explain-tax-change/context";
+import { explainChange, explainComposition } from "@/lib/projection-explain/explain";
+import { buildDrillContext } from "@/lib/projection-explain/context";
+import { ADAPTERS, SUBJECT_KEYS } from "@/lib/projection-explain/registry";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import { summarizeMonteCarlo } from "@/engine/monteCarlo/summarize";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
@@ -70,7 +71,8 @@ const RunProjectionResultSchema = z.looseObject({
   years: z.array(z.unknown()),
 });
 const RunMonteCarloResultSchema = z.looseObject({ available: z.boolean() });
-const ExplainTaxChangeResultSchema = z.looseObject({ available: z.boolean() });
+const ExplainProjectionChangeResultSchema = z.looseObject({ available: z.boolean() });
+const BreakDownProjectionFigureResultSchema = z.looseObject({ available: z.boolean() });
 
 /** Per-year story compacted for the model — the engine's own numbers only. */
 function compactYear(y: ProjectionYear) {
@@ -131,47 +133,103 @@ export function buildComputeTools(
     },
   );
 
-  const explainTaxChangeTool = tool(
-    async ({ clientId, year, compareYear }) =>
+  const explainProjectionChangeTool = tool(
+    async ({ clientId, subject, year, compareYear }) =>
+      withOutputRetry(async () => {
+        const firmId = await requireOrgId();
+        await assertClientReadable(ctx, clientId);
+
+        const adapter = ADAPTERS[subject];
+
+        const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
+        const result = runProjectionWithEvents(effectiveTree);
+        const drillCtx = buildDrillContext(effectiveTree, result.years);
+
+        const explanation = explainChange({
+          adapter,
+          years: result.years,
+          firstDeathYear: result.firstDeathEvent?.year ?? null,
+          secondDeathYear: result.secondDeathEvent?.year ?? null,
+          year,
+          compareYear,
+          ctx: drillCtx,
+        });
+        // The pure engine can't know the scenario identity — fill it from the
+        // tool context. loadEffectiveTree exposes only the ClientData tree (no
+        // scenario name), so scenarioName is left undefined rather than invented.
+        if (explanation.available) {
+          explanation.analysisContext.scenarioId = ctx.scenarioId;
+        }
+
+        return { scenarioId: ctx.scenarioId, ...explanation };
+      }, ExplainProjectionChangeResultSchema),
+    {
+      name: "explain_projection_change",
+      description:
+        "Explain WHY a projection figure changed between two years for the ACTIVE scenario. " +
+        "subject selects the figure: use 'tax' when the advisor asks why taxes/the tax bill jumped, spiked, " +
+        "dropped, or differ year-over-year. Returns the from→to→Δ headline, federal+state tax-line deltas, " +
+        "income-composition deltas, per-source recognized-income deltas, the per-account withdrawal/funding " +
+        "picture, ranked root-cause findings, and analysisContext (which scenario + boundary was analyzed, and " +
+        "a probableIntendedBoundary when the asked year is one row off the real cliff). estimatedImpact values " +
+        "are approximations — present them as estimates; exact movement is in taxLineDeltas. All numbers are the " +
+        "engine's own; narrate, never recompute.",
+      schema: z.object({
+        clientId: z.string().describe("the active client uuid"),
+        subject: z
+          .enum(SUBJECT_KEYS)
+          .describe("which projection figure changed. Use 'tax' for the tax bill / taxes owed."),
+        year: z.number().int().describe("the year whose change to explain"),
+        compareYear: z
+          .number()
+          .int()
+          .optional()
+          .describe("baseline year (defaults to year − 1)"),
+      }),
+    },
+  );
+
+  const breakDownProjectionFigureTool = tool(
+    async ({ clientId, subject, year, compareTo }) =>
       withOutputRetry(async () => {
         const firmId = await requireOrgId();
         await assertClientReadable(ctx, clientId);
 
         const { effectiveTree } = await loadEffectiveTree(clientId, firmId, ctx.scenarioId, {});
         const result = runProjectionWithEvents(effectiveTree);
-        const drillCtx = buildTaxDrillContext(effectiveTree, result.years);
+        const drillCtx = buildDrillContext(effectiveTree, result.years);
 
-        return {
-          scenarioId: ctx.scenarioId,
-          ...explainTaxChange({
-            years: result.years,
-            firstDeathYear: result.firstDeathEvent?.year ?? null,
-            secondDeathYear: result.secondDeathEvent?.year ?? null,
-            year,
-            compareYear,
-            ctx: drillCtx,
-          }),
-        };
-      }, ExplainTaxChangeResultSchema),
+        const composition = explainComposition({
+          adapter: ADAPTERS[subject],
+          years: result.years,
+          year,
+          compareTo: compareTo ?? "none",
+          ctx: drillCtx,
+        });
+        // Pure engine can't know the scenario identity — fill it from the tool
+        // context (mirrors explain_projection_change).
+        if (composition.available) {
+          composition.analysisContext.scenarioId = ctx.scenarioId;
+        }
+
+        return { scenarioId: ctx.scenarioId, ...composition };
+      }, BreakDownProjectionFigureResultSchema),
     {
-      name: "explain_tax_change",
+      name: "break_down_projection_figure",
       description:
-        "Explain WHY total tax changed between two projection years for the ACTIVE scenario. " +
-        "Use whenever the advisor asks why taxes jumped, spiked, dropped, or differ year-over-year. " +
-        "Returns federal+state tax-line deltas, income-composition deltas, per-source recognized-income " +
-        "deltas, the per-account withdrawal/depletion picture, and ranked root-cause findings " +
-        "(e.g. a taxable account ran dry so draws shifted to pre-tax, RMD onset, Roth conversion, " +
-        "Social Security taxability, realized gains, a death changing filing status, deduction changes, " +
-        "a state move). estimatedTaxImpact values are approximations — present them as estimates; " +
-        "exact movement is in taxLineDeltas. All numbers are the engine's own; narrate, never recompute.",
+        "Break down WHAT MAKES UP a projection figure in one year for the ACTIVE scenario, with labeled, " +
+        "source-attributed parts. subject selects the figure ('tax' = the tax bill). Set compareTo to also " +
+        "explain why the level is high/low vs a reference: 'prior_year', 'plan_average', 'working_years', or a " +
+        "specific year number; omit (or 'none') for a pure composition. Returns componentBreakdown + " +
+        "analysisContext. All numbers are the engine's own; narrate, never recompute.",
       schema: z.object({
         clientId: z.string().describe("the active client uuid"),
-        year: z.number().int().describe("the year whose tax change to explain"),
-        compareYear: z
-          .number()
-          .int()
+        subject: z.enum(SUBJECT_KEYS).describe("which figure to break down. 'tax' = the tax bill."),
+        year: z.number().int().describe("the projection year to decompose"),
+        compareTo: z
+          .union([z.enum(["none", "prior_year", "plan_average", "working_years"]), z.number().int()])
           .optional()
-          .describe("baseline year (defaults to year − 1)"),
+          .describe("reference for LEVEL; omit for pure composition"),
       }),
     },
   );
@@ -392,5 +450,12 @@ export function buildComputeTools(
     },
   );
 
-  return [runProjection, explainTaxChangeTool, runMonteCarlo, compareScenarios, explainReport];
+  return [
+    runProjection,
+    explainProjectionChangeTool,
+    breakDownProjectionFigureTool,
+    runMonteCarlo,
+    compareScenarios,
+    explainReport,
+  ];
 }

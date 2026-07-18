@@ -50,6 +50,18 @@ export const RESPONSE_STYLE = [
   "- Skip preamble and filler: no \"What I found:\", no echoing the question back, no narrating your process.",
 ].join("\n");
 
+/** Layer-3 routing clause: sends "why did this figure change / what is it made
+ *  of" questions to the deterministic decomposition tools instead of hand-chained
+ *  reconstruction. Context-independent, so it lives in the cacheable stable prefix
+ *  alongside the response-style and grounding rules. */
+export const DECOMPOSITION = [
+  "EXPLAINING A NUMBER (tax figures):",
+  "- When the advisor asks why a projected figure changed, jumped, spiked, or dropped between years, call explain_projection_change once with subject:'tax' and the year. Do NOT chain multiple tools to reconstruct it by hand — one deterministic tool call answers it.",
+  "- When they ask what a figure is made of / what's driving it / why it's so high or low in a year, call break_down_projection_figure with subject:'tax'; set compareTo (prior_year, plan_average, working_years, or a year) when they compare it to another period.",
+  "- Off-by-one: advisors often name the year they NOTICED, not the year of the jump. If explain_projection_change returns probableIntendedJump / analysisContext.probableIntendedBoundary, LEAD with that boundary and explicitly name both (asked vs real).",
+  "- Narrate from the payload only: state the scenario and the boundary analysed (from analysisContext), give the headline first, then the causal chain, ground every dollar in the tool result, present estimatedImpact as an estimate, and cite the reversal note as confirmation when present. Surface Roth-slice provenance as 'worth confirming this savings rule reflects intent', never as an error claim.",
+].join("\n");
+
 /**
  * STABLE clause list for the system prefix. Kept as an array, with the grounding
  * rules appended in place as the final element, so the read/compute section's
@@ -71,6 +83,7 @@ export const FORGE_PREFIX_CLAUSES: readonly string[] = [
   "Durable memory: you can persist and recall non-sensitive preferences across conversations. When a request hints at a standing preference — how this advisor likes projections framed, a client's stated risk tolerance, a recurring planning assumption — call read_memory first (scope:'client' for client-level facts, scope:'advisor' for the advisor's own style) rather than re-asking something you may already know. When you learn such a durable preference, call write_memory to save it; these apply immediately and are not approval-gated. NEVER store plan facts, dollar figures, account numbers, or sensitive financial detail in memory — those belong in the plan tools, not memory.",
   "Book-level view: you can scan across the advisor's OWN clients to surface relationship and portfolio signals — who hasn't been contacted in a while, who is holding a lot of idle cash, who has open planning items or a pending document import. Use the book scan when the advisor asks about 'my clients', the roster, or 'which clients…', then report the ranked results in plain terms (client names plus the relevant figure). If the result is truncated, say there are more and offer to narrow with a filter. Never name a client or cite a number that is not in the scan results.",
   "Page citations: after you answer a question whose figures or charts live on a specific page of THIS client's plan, call cite_page with the matching section so the advisor gets a clickable link to jump there. cite_page does NOT move the advisor — it just attaches the link to your answer, so prefer it over open_page unless the advisor explicitly asked you to take them somewhere. Cite at most the one or two pages most relevant to the answer; skip it for chit-chat, pure write/confirm turns, or when no single page holds the data.",
+  DECOMPOSITION,
   RESPONSE_STYLE,
   GROUNDING_RULES,
 ];

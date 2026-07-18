@@ -1,68 +1,140 @@
-// src/lib/tax/explain-tax-change/detectors.ts
+// src/lib/projection-explain/subjects/tax-detectors.ts
 // Cause detectors for year-over-year tax changes. Each returns a quantified
-// TaxChangeFinding or null. Detectors report EXACT income-side dollars from
-// ledger data; assembly (explain.ts) attaches the estimated tax impact.
+// Finding (TaxChangeFinding for the fixed-shape causes) or null. Detectors report
+// EXACT income-side dollars from ledger data; assembly (explain.ts) attaches the
+// estimated tax impact.
 import type { ProjectionYear } from "@/engine/types";
-import type { CellDrillContext } from "@/lib/tax/cell-drill/types";
-import { LINE_FLOOR, money, pct, type TaxChangeFinding, type TaxYearDiff } from "./types";
+import { rmdTotal } from "@/lib/retirement/retirement-inflows";
+import type { DrillContext, Finding } from "../types";
+import { LINE_FLOOR, RATIO_SHIFT_POINTS, ROTH_SLICE_MIN, money, pct } from "../types";
+import { recognizedForAccount, type FundingRow, type TaxChangeFinding, type TaxYearDiff } from "./tax-diff";
+import { rothSliceProvenance, type RothProvenance } from "./tax-provenance";
 
 export interface DetectorArgs {
   prev: ProjectionYear;
   next: ProjectionYear;
   diff: TaxYearDiff;
-  ctx: CellDrillContext;
+  ctx: DrillContext;
   firstDeathYear: number | null;
   secondDeathYear: number | null;
 }
 
-/** Recognized income from supplemental draws — the `withdrawal:<acctId>`
- *  bySource keys the engine writes per gap-fill draw. */
-function withdrawalIncome(y: ProjectionYear): number {
-  return Object.entries(y.taxDetail?.bySource ?? {})
-    .filter(([key]) => key.startsWith("withdrawal:"))
-    .reduce((sum, [, v]) => sum + v.amount, 0);
+/** A funding row tagged with WHY its recognized/cash ratio lands where it does —
+ *  the tax character of the money leaving the account this year. */
+export interface RatioAccount extends FundingRow {
+  ratioReason:
+    | "roth_designated_slice"
+    | "roth_ira_qualified"
+    | "basis_return"
+    | "exempt_529_hsa"
+    | "cash_principal"
+    | "fully_pretax";
+  /** Attached only to `roth_designated_slice` rows: where the account's
+   *  already-taxed Roth slice came from (seed value + Roth savings rules). */
+  provenance?: RothProvenance;
 }
 
-const names = (rows: Array<{ account: string }>) => rows.map((r) => r.account).join(", ");
+/** Classify an account's recognition character from its category/subType (+ name
+ *  fallback) and its Roth slice. Ordered most-specific first. Keys off
+ *  `Account.subType` — there is no `taxType` field on Account. The Roth slice
+ *  reads the asked-year ledger; for a depleted prior-funder (asked-year beginning
+ *  value 0) it falls back to the PRIOR-year ledger, so the ran-dry account's
+ *  designated-Roth character is still recognized. */
+function classifyRatioReason(
+  id: string,
+  prev: ProjectionYear,
+  next: ProjectionYear,
+  ctx: DrillContext,
+): RatioAccount["ratioReason"] {
+  const acct = ctx.accounts.find((a) => a.id === id);
+  const sub = `${acct?.category ?? ""}/${acct?.subType ?? ""}`;
+  const name = acct?.name ?? "";
+  const nextLed = next.accountLedgers[id];
+  const led = nextLed && nextLed.beginningValue > 0 ? nextLed : prev.accountLedgers[id];
+  const rothSlice = led && led.beginningValue > 0 ? (led.rothValueBoY ?? 0) / led.beginningValue : 0;
+  if (/roth.?ira/i.test(sub) || /roth.?ira/i.test(name)) return "roth_ira_qualified";
+  if (/(401|403)/.test(sub) && rothSlice > ROTH_SLICE_MIN) return "roth_designated_slice";
+  if (/529|hsa/i.test(sub) || /529|hsa/i.test(name)) return "exempt_529_hsa";
+  if (/cash|checking|savings/i.test(sub)) return "cash_principal";
+  if (/taxable|brokerage|individual|joint/i.test(sub)) return "basis_return";
+  return "fully_pretax";
+}
 
-/** The canonical chain: a funding account ran dry last year, this year's draws
- *  shifted to other (typically pre-tax) accounts, recognizing more taxable
- *  income — which in turn grosses up the total withdrawal need. */
-export function detectWithdrawalShift(a: DetectorArgs): TaxChangeFinding | null {
-  const depleted = a.diff.withdrawalPicture.byAccount.filter((d) => d.depleted && d.delta <= 0);
-  const risers = a.diff.withdrawalPicture.byAccount.filter((d) => d.delta > 0);
-  if (depleted.length === 0 || risers.length === 0) return null;
+/** The blended recognition ratio (taxable dollars ÷ gross funding) moved between
+ *  the two years — usually because a lower-recognition source (Roth, basis-heavy
+ *  taxable, cash) gave way to a fully-pre-tax one, recognizing more ordinary
+ *  income to fund the same need and grossing up the total draw. */
+export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
+  const wp = a.diff.withdrawalPicture;
+  const rows: RatioAccount[] = wp.byAccount.map((r) => {
+    const ratioReason = classifyRatioReason(r.accountId, a.prev, a.next, a.ctx);
+    return {
+      ...r,
+      ratioReason,
+      // A Roth-designated 401k/403b slice is a data-review prompt: surface where
+      // its already-taxed dollars came from (seed value + Roth savings rules).
+      ...(ratioReason === "roth_designated_slice"
+        ? { provenance: rothSliceProvenance(r.accountId, a.ctx) }
+        : {}),
+    };
+  });
 
-  const before = withdrawalIncome(a.prev);
-  const after = withdrawalIncome(a.next);
-  const incomeDelta = Math.round(after - before);
-  if (incomeDelta < LINE_FLOOR) return null;
+  const blended = (fundingTotal: number, recognizedTotal: number) =>
+    fundingTotal > 0 ? recognizedTotal / fundingTotal : 0;
+  // Prior-year recognized must sum over the SAME set that produced
+  // totalFundingPrev (every prior-year funder), NOT wp.byAccount. byAccount holds
+  // asked-year funding rows, so an account that funded last year but ran to $0
+  // this year is filtered out — iterating it here would drop that account's prior
+  // recognized income and understate ratioPrev (Task 3 deferred this "funding-side
+  // account-set" semantics to here). recognizedForAccount(prev, <next-only id>) is
+  // 0, so restricting to prior funders is exactly symmetric with totalFundingPrev.
+  const priorFundingIds = new Set<string>([
+    ...Object.keys(a.prev.withdrawals.byAccount),
+    ...Object.keys(a.prev.accountLedgers).filter(
+      (id) => (a.prev.accountLedgers[id]?.rmdAmount ?? 0) > 0,
+    ),
+  ]);
+  const recPrev = [...priorFundingIds].reduce((s, id) => s + recognizedForAccount(a.prev, id), 0);
+  const recNext = rows.reduce((s, r) => s + r.recognized, 0);
+  const ratioPrev = blended(wp.totalFundingPrev, recPrev);
+  const ratioNext = blended(wp.totalFundingNext, recNext);
+  const impliedIncomeDelta = Math.round((ratioNext - ratioPrev) * wp.totalFundingNext);
+  if (
+    Math.abs(ratioNext - ratioPrev) < RATIO_SHIFT_POINTS ||
+    Math.abs(impliedIncomeDelta) < LINE_FLOOR
+  )
+    return null;
 
-  const grossUp = a.diff.withdrawalPicture.totalWithdrawals.delta;
+  const depleted = rows.filter((r) => r.depleted);
+  const grossUp = wp.grossUp;
+  // Roth-slice provenance is advisory, not an error — a nudge to confirm the
+  // savings rule matches intent. Attached for downstream note assembly (Task 6/11).
+  const hasRothSlice = rows.some((r) => r.ratioReason === "roth_designated_slice");
+  const notes = hasRothSlice
+    ? ["Roth-slice provenance is a data-review prompt — surface it as 'worth confirming this savings rule reflects intent', not as an error."]
+    : [];
   const grossUpClause =
-    grossUp >= 0
-      ? `Total gross withdrawals rose ${money(grossUp)} to fund the same need plus the extra tax.`
-      : `Total gross withdrawals actually fell ${money(grossUp)} even as draws shifted to the ` +
-        `more heavily taxed source.`;
+    grossUp.deltaFunding >= 0
+      ? `Total funding rose ${money(grossUp.deltaFunding)}; of that, ${money(grossUp.deltaTax)} is the new tax itself.`
+      : `Total funding fell ${money(grossUp.deltaFunding)} even as its tax character worsened.`;
   return {
-    kind: "withdrawal_shift",
+    kind: "funding_character_shift",
     summary:
-      `${names(depleted)} was depleted in ${a.prev.year} (ended near $0), so ` +
-      `${a.next.year} withdrawals shifted to ${names(risers)} — recognizing ` +
-      `${money(incomeDelta)} more taxable income from draws. ${grossUpClause}`,
-    incomeDelta,
+      `The taxable share of withdrawals moved ${pct(ratioPrev)} → ${pct(ratioNext)}` +
+      (depleted.length
+        ? `, as ${depleted.map((r) => r.account).join(", ")} depleted`
+        : ` on a funding reorder`) +
+      `, recognizing about ${money(impliedIncomeDelta)} ${impliedIncomeDelta >= 0 ? "more" : "less"} ordinary income. ${grossUpClause}`,
+    incomeDelta: impliedIncomeDelta,
     evidence: {
-      depletedAccounts: names(depleted),
-      shiftedTo: names(risers),
-      withdrawalIncomePriorYear: Math.round(before),
-      withdrawalIncomeYear: Math.round(after),
-      grossWithdrawalDelta: grossUp,
+      blendedRatioPriorYear: Math.round(ratioPrev * 100) / 100,
+      blendedRatioYear: Math.round(ratioNext * 100) / 100,
+      totalFunding: wp.totalFundingNext,
+      ...(wp.residualNote ? { residualNote: wp.residualNote } : {}),
     },
+    detail: { accounts: rows, grossUp, ...(notes.length ? { notes } : {}) },
   };
 }
-
-const rmdTotal = (y: ProjectionYear) =>
-  Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
 
 export function detectRmdChange(a: DetectorArgs): TaxChangeFinding | null {
   const before = rmdTotal(a.prev);
@@ -124,7 +196,7 @@ export function detectSocialSecurity(a: DetectorArgs): TaxChangeFinding | null {
 }
 
 /** Gain-flavored bySource keys — deliberately excludes `withdrawal:` keys,
- *  which belong to detectWithdrawalShift. */
+ *  which belong to detectFundingCharacterShift's recognition ratio. */
 const isGainKey = (k: string) =>
   k.startsWith("sale:") || k.startsWith("business_sale:") ||
   k.startsWith("equity-ltcg:") || k.startsWith("equity-stcg:") ||
@@ -207,7 +279,7 @@ export function detectStateMove(a: DetectorArgs): TaxChangeFinding | null {
 
 /** Ordered detector battery — assembly runs them all and ranks the findings. */
 export const DETECTORS = [
-  detectWithdrawalShift,
+  detectFundingCharacterShift,
   detectRmdChange,
   detectRothConversion,
   detectSocialSecurity,

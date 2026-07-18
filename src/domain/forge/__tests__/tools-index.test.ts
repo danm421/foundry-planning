@@ -114,7 +114,8 @@ const EXPECTED_PHASE1 = [
   "run_monte_carlo",
   "compare_scenarios",
   "explain_report",
-  "explain_tax_change",
+  "explain_projection_change",
+  "break_down_projection_figure",
   // whatif + solvers
   "whatif_roth",
   "whatif_social_security",
@@ -188,7 +189,7 @@ const EXPECTED_BOOK = ["scan_book"];
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 64 named tools (19 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 64, + 1 meeting save)", () => {
+  it("returns exactly the 65 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 65, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
     // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
@@ -204,7 +205,7 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(64);
+    expect(tools).toHaveLength(65);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -319,11 +320,18 @@ describe("buildTools (Phase 4 report tool)", () => {
     expect(routeAfterAgent([{ name: "generate_report" }], WRITE_TOOL_NAMES)).toBe("tools");
   });
 
-  it("explain_tax_change is present, read-only, and routes to tools (not approval)", () => {
+  it("explain_projection_change is present, read-only, and routes to tools (not approval)", () => {
     const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
-    expect(names.has("explain_tax_change")).toBe(true);
-    expect(WRITE_TOOL_NAMES.has("explain_tax_change")).toBe(false);
-    expect(routeAfterAgent([{ name: "explain_tax_change" }], WRITE_TOOL_NAMES)).toBe("tools");
+    expect(names.has("explain_projection_change")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("explain_projection_change")).toBe(false);
+    expect(routeAfterAgent([{ name: "explain_projection_change" }], WRITE_TOOL_NAMES)).toBe("tools");
+  });
+
+  it("break_down_projection_figure is present, read-only, routes to tools", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    expect(names.has("break_down_projection_figure")).toBe(true);
+    expect(WRITE_TOOL_NAMES.has("break_down_projection_figure")).toBe(false);
+    expect(routeAfterAgent([{ name: "break_down_projection_figure" }], WRITE_TOOL_NAMES)).toBe("tools");
   });
 });
 
@@ -362,8 +370,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 64)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(64);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 65)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(65);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
