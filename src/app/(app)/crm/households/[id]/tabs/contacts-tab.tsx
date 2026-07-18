@@ -14,6 +14,7 @@ import {
   type ExternalContactFormInitial,
 } from "@/components/crm-external-contact-form";
 import { deriveContactSections } from "@/lib/crm/contact-sections";
+import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
@@ -55,9 +56,6 @@ function fmtDob(iso: string | null | undefined): string {
   });
 }
 
-/** Whole years since `iso`, average-Gregorian-year approximation. */
-const age = (iso: string) => Math.floor((Date.now() - Date.parse(iso)) / 31557600000);
-
 const relationshipLabel = (value: string) =>
   RELATIONSHIP_OPTIONS.find((o) => o.value === value)?.label ?? "Family";
 
@@ -66,10 +64,12 @@ function dobRow(iso: string | null | undefined): ReactNode | null {
   if (!iso) return null;
   const formatted = fmtDob(iso);
   if (!formatted) return null;
-  const years = age(iso);
+  // Calendar-precise and TZ-safe: ageOnDate slices the ISO string rather than
+  // Date.parse-ing it, which is what keeps Jan-1 DOBs from reading a year young.
+  const years = ageOnDate(iso, new Date());
   return (
     <span className="tabular">
-      {Number.isFinite(years) ? `${formatted} · ${years}` : formatted}
+      {years === null ? formatted : `${formatted} · ${years}`}
     </span>
   );
 }
