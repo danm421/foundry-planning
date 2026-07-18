@@ -2457,6 +2457,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // contributes 0 to discretionary surplus (audit F2).
     let grantorTrustDistToHousehold = 0;
 
+    // F13: an entity with no checking account cannot receive or pay anything —
+    // every pass below silently `continue`s. Collect the condition so it is at
+    // least detectable. Nothing renders trust warnings yet; the user-facing fix
+    // is the solver auto-create in apply-mutations.ts.
+    const missingCheckingWarnings: TrustWarning[] = [];
+
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
     //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
@@ -2650,7 +2656,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // projection scope, same as the grantor pass's non-household case.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
-        if (!checkingId) continue;
+        if (!checkingId) {
+          missingCheckingWarnings.push({
+            code: "entity_missing_checking",
+            entityId: trust.entityId,
+            year,
+          });
+          continue;
+        }
         const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
         const tax = trustPassResult.taxByEntity.get(trust.entityId);
         const distAmount = dist?.actualAmount ?? 0;
@@ -2721,7 +2734,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       for (const gt of grantorTrusts) {
         const checkingId = entityCheckingByEntityId[gt.entityId];
-        if (!checkingId) continue; // no checking account — cannot distribute
+        if (!checkingId) {
+          // no checking account — cannot distribute
+          missingCheckingWarnings.push({
+            code: "entity_missing_checking",
+            entityId: gt.entityId,
+            year,
+          });
+          continue;
+        }
 
         const cash = accountBalances[checkingId] ?? 0;
         // Aggregate taxable brokerage for this grantor trust — only the
@@ -2806,7 +2827,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
       // Life-based termination is handled in Task 10's trust-termination pass.
       const checkingId = entityCheckingByEntityId[trust.id];
-      if (!checkingId) continue;
+      if (!checkingId) {
+        missingCheckingWarnings.push({
+          code: "entity_missing_checking",
+          entityId: trust.id,
+          year,
+        });
+        continue;
+      }
 
       let startOfYearFmv = 0;
       for (const acct of workingAccounts) {
@@ -2887,7 +2915,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Life-based termination is handled in a later phase (Spec A ships
       // term-certain only).
       const checkingId = entityCheckingByEntityId[trust.id];
-      if (!checkingId) continue;
+      if (!checkingId) {
+        missingCheckingWarnings.push({
+          code: "entity_missing_checking",
+          entityId: trust.id,
+          year,
+        });
+        continue;
+      }
 
       let startOfYearFmv = 0;
       for (const acct of workingAccounts) {
@@ -6596,6 +6631,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        || grantorDistributionWarnings.length > 0
        || entityGapFillWarnings.length > 0
        || noteShortfallWarnings.length > 0
+       || missingCheckingWarnings.length > 0
        || convergenceWarning != null
         ? {
             ...(trustPassResult != null ? {
@@ -6612,6 +6648,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...grantorDistributionWarnings,
                 ...entityGapFillWarnings,
                 ...noteShortfallWarnings,
+                ...missingCheckingWarnings,
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
               ];
               return all.length > 0 ? all : undefined;
