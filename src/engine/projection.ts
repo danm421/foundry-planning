@@ -2992,11 +2992,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // may refine to per-beneficiary deposit if the user adds beneficiary-owned
     // accounts to the data model.
     // F10: both termination passes below run BEFORE the step-11 cashDelta
-    // flush (projection.ts:4944), so cash credited earlier this year — RMDs
-    // (:1918), note payments (:2143), trust tax debits (:2665) — is not yet in
+    // flush, so cash credited earlier this year — RMDs, note payments, trust
+    // tax debits (the non-grantor trust annual pass) — is not yet in
     // accountBalances. Read the effective balance instead, mirroring the
-    // note-payment pass at projection.ts:2170-2171. Without this the residue is
-    // stranded permanently: isTrustTerminationYear fires exactly once.
+    // note-payment pass above. Without this the residue is stranded
+    // permanently: isTrustTerminationYear fires exactly once.
     //
     // Clamped at 0 so the reported TrustTerminationResult equals what is
     // actually drained — the drain loops already skip non-positive accounts,
@@ -3015,7 +3015,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // correctly regardless of processing order.
     //
     // m4: built LAZILY on first read. The great majority of plans hold no CLT
-    // or CRT at all, and `monteCarlo/trial.ts:143` calls runProjection once per
+    // or CRT at all, and `monteCarlo/trial.ts` calls runProjection once per
     // trial — eagerly walking every account every year was ~60 × 1000 wasted
     // objects per MC run. Laziness is placement-neutral: every reader is inside
     // the two termination passes below, and the FIRST of them (the CLT

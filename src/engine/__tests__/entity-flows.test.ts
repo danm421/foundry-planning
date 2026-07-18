@@ -330,7 +330,18 @@ describe("F12 — policy-sourced rows keep their own schedule", () => {
     expect(amount).toBe(87_216);
   });
 
-  it("returns 0 for a year outside the policy schedule", () => {
+  it("uses the per-row schedule for the income direction too (policy-income.ts builds the same shape)", () => {
+    // resolveEntityFlowAmount is shared by income and expense callers — the
+    // policySchedule branch doesn't discriminate on `field`, so an
+    // entity-owned policy INCOME row (synthesizePolicyIncome) must resolve
+    // its schedule exactly like an expense row does.
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "income", 2026, [], "annual",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("returns 0 for a year inside the row's window but missing from the schedule map (falls through to ?? 0)", () => {
     const amount = resolveEntityFlowAmount(
       policyRow, "ent-1", "expense", 2029, [], "annual",
     );

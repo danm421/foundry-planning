@@ -1,30 +1,17 @@
 /**
  * Audit F10 — trust termination must drain the EFFECTIVE balance
- * (accountBalances + cashDelta), not the pre-flush balance.
+ * (accountBalances + cashDelta), not the pre-flush balance. The trust-
+ * termination passes run before the step-11 cashDelta flush, so cash credited
+ * earlier in the termination year is otherwise invisible to the drain; since
+ * `isTrustTerminationYear` fires exactly once, that residue is stranded in
+ * the terminated trust for the rest of the projection.
  *
- * Termination runs at projection.ts:2951, the cashDelta flush at :4944. Cash
- * credited earlier in the termination year is therefore invisible to the
- * drain. Because `isTrustTerminationYear` fires exactly once, that residue is
- * stranded in the terminated trust for the rest of the projection.
- *
- * Lever note: the brief's original lever (RMD from a trust-owned IRA,
- * :1918) does not fire in the termination year — RMD-enabled accounts use
- * the grantor's age (owner born 1970), and SECURE 2.0's RMD age of 73 isn't
- * reached until 2043, after both the termination year (2036) and the
- * fixture's plan end (2038). Confirmed via temporary diagnostic logging that
- * cashDelta[CLT_CHECKING] was `undefined` and accountBalances[TRUST_IRA] was
- * unchanged (400000) at year 2036 with that lever — i.e. no RMD ever fired.
- *
- * Switched to a note receivable owned by the CLT (:2143). A note that pays
- * every year (e.g. a multi-year amortizing/interest-only note) reproduces
- * the residue at termination but ALSO keeps paying interest in later years
- * — since the note is independent of trust status, that ongoing income
- * legitimately reappears in the CLT's checking post-termination and is
- * *not* itself an F10 symptom. To isolate the F10 residue cleanly, the note
- * here is a single-payment note maturing exactly in the termination year
- * (startYear = termYear, termMonths = 12, interest_only_balloon): interest
- * + full principal land in cashDelta once, in the termination year, and
- * never again — matching the RMD lever's one-shot shape.
+ * Lever: the brief's original RMD-from-trust-owned-IRA lever never fires
+ * here — the grantor (born 1970) is only 66 in the 2036 termination year,
+ * below SECURE 2.0's RMD age of 73 — so the fixture uses a single-payment
+ * note receivable maturing in the termination year to reproduce the residue
+ * instead (a recurring note would keep paying post-termination, masking the
+ * isolated F10 symptom).
  */
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
@@ -35,6 +22,8 @@ const INCEPTION = 2026;
 const TERM_YEARS = 10;
 const TERMINATION_YEAR = INCEPTION + TERM_YEARS; // 2036 — distribution year
 const TRUST_NOTE_ID = "00000000-0000-0000-0000-0000000006a1";
+const TRUST_NOTE_FACE_VALUE = 200_000;
+const TRUST_NOTE_INTEREST_RATE = 0.05;
 
 function buildFixtureWithTrustNote(): ClientData {
   const data = buildCltLifecycleFixture({
@@ -55,9 +44,9 @@ function buildFixtureWithTrustNote(): ClientData {
   const note: NoteReceivable = {
     id: TRUST_NOTE_ID,
     name: "CLT-owned note receivable",
-    faceValue: 200_000,
-    basis: 200_000,
-    interestRate: 0.05,
+    faceValue: TRUST_NOTE_FACE_VALUE,
+    basis: TRUST_NOTE_FACE_VALUE,
+    interestRate: TRUST_NOTE_INTEREST_RATE,
     paymentType: "interest_only_balloon",
     startYear: TERMINATION_YEAR,
     startMonth: 1,
@@ -91,14 +80,20 @@ describe("F10 — CLT termination drains the effective balance", () => {
     expect(checking.endingValue).toBeCloseTo(0, 2);
   });
 
-  it("reports a distribution that matches what was actually drained", () => {
+  it("reports a distribution that equals the pre-drain effective balance (beginningValue + the note's cash-in)", () => {
     const t = years.find((y) => y.year === TERMINATION_YEAR)!;
     const checkingAtTermination =
       t.accountLedgers[CLT_FIXTURE_IDS.CLT_CHECKING_ID];
     const distributed = t.trustTerminations![0].totalDistributed;
+    // The note is a single-payment interest_only_balloon maturing exactly
+    // this year: one year of interest plus full principal, no proration.
+    const noteCashIn =
+      TRUST_NOTE_FACE_VALUE * TRUST_NOTE_INTEREST_RATE + TRUST_NOTE_FACE_VALUE;
+    const preDrainEffectiveBalance =
+      checkingAtTermination.beginningValue + noteCashIn;
     // The reported figure must equal the drain, so the trust ends at zero.
     expect(checkingAtTermination.endingValue).toBeCloseTo(0, 2);
-    expect(distributed).toBeGreaterThan(0);
+    expect(distributed).toBeCloseTo(preDrainEffectiveBalance, 2);
   });
 });
 
@@ -112,8 +107,13 @@ describe("F10 — CLT termination drains the effective balance", () => {
  * balance and under-drains its own share against THAT — stranding the
  * product of the two shortfall fractions in the terminated trusts.
  *
- * Concretely: a $1,000,000 account co-owned 60/40 by CLT-A and CLT-B, both
- * term-certain and terminating the same year.
+ * Concretely: a $1,000,000 account co-owned 60/40 by CLT-A and CRT-B, both
+ * term-certain and terminating the same year. Trust B is deliberately a CRT
+ * (not a second CLT) so this fixture actually spans the CLT-pass-then-CRT-
+ * pass boundary the snapshot comment above describes — the drain math itself
+ * is subtype-agnostic (both termination passes drain totalAvailable the same
+ * way; only the recipient differs), so using one of each subtype exercises
+ * the real boundary without changing the arithmetic below.
  *   - Correct: totalAvailable is computed once, pre-drain, for both trusts.
  *     A drains 60% of $1,000,000 = $600,000; B drains 40% of $1,000,000 =
  *     $400,000. Full balance drained; nothing stranded.
@@ -125,7 +125,7 @@ describe("F10 — CLT termination drains the effective balance", () => {
  *
  * Neither trust has its own default-checking account here (the shared
  * account is co-owned, so it fails the single-entity-owner precondition for
- * `entityCheckingByEntityId`), so neither makes annual lead payments before
+ * `entityCheckingByEntityId`), so neither makes its annual payment before
  * termination — isolating the compounding bug from any other cash movement
  * touching the shared account.
  */
@@ -143,9 +143,9 @@ function buildCoOwnedTerminationFixture(): ClientData {
 
   const trustB: EntitySummary = {
     id: CO_OWNED_TRUST_B_ID,
-    name: "Test CLT B",
+    name: "Test CRT B",
     entityType: "trust",
-    trustSubType: "clt",
+    trustSubType: "crt",
     isIrrevocable: true,
     isGrantor: true,
     includeInPortfolio: false,
@@ -169,11 +169,11 @@ function buildCoOwnedTerminationFixture(): ClientData {
   data.entities = [...(data.entities ?? []), trustB];
 
   // Re-own the CLT's checking account 60/40 between CLT-A and the new
-  // CLT-B, both terminating in TERMINATION_YEAR. Clearing isDefaultChecking
+  // CRT-B, both terminating in TERMINATION_YEAR. Clearing isDefaultChecking
   // means neither trust resolves an entry in `entityCheckingByEntityId`
   // (that map requires the account to be *fully* single-entity owned — see
-  // projection.ts:549-551), so no annual lead payments touch this account
-  // before termination; it stays flat at $1,000,000 (growthRate 0).
+  // projection.ts:549-551), so neither trust makes its annual payment before
+  // termination; it stays flat at $1,000,000 (growthRate 0).
   const sharedAccount = data.accounts.find(
     (a) => a.id === CLT_FIXTURE_IDS.CLT_CHECKING_ID,
   )!;

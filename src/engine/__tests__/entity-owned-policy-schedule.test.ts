@@ -40,6 +40,10 @@ function buildIlitPolicyFixture(): ClientData {
     lifeInsurance: {
       faceValue: 2_000_000,
       costBasis: 0,
+      // Inert in scheduled mode — premiumAmount/premiumYears drive the
+      // non-scheduled (flat/level) premium path; here cashValueSchedule below
+      // is the real source of truth. Left at 0/null on purpose, not an
+      // oversight.
       premiumAmount: 0,
       premiumYears: null,
       premiumPayer: "owner",
@@ -150,13 +154,6 @@ describe("F12 — ILIT-owned policy with a scheduled premium", () => {
     const ilit2027 = y2027.accountLedgers[ILIT_CHECKING_ID];
     expect(ilit2027.endingValue).toBeCloseTo(
       ILIT_STARTING_CASH - PREMIUM_2026 - PREMIUM_2027, 2,
-    );
-  });
-
-  it("does not silently pay zero (the pre-F12 behaviour)", () => {
-    const y2026 = years.find((y) => y.year === 2026)!;
-    expect(y2026.accountLedgers[ILIT_CHECKING_ID].endingValue).not.toBe(
-      ILIT_STARTING_CASH,
     );
   });
 });
