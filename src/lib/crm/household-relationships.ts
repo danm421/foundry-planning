@@ -4,7 +4,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
-import { recordActivity } from "./activity";
+import { recordActivityNonFatal } from "./activity";
 import {
   counterpartLabel,
   toCanonicalColumns,
@@ -24,32 +24,6 @@ export function isUniqueViolation(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
   const e = err as { code?: unknown; cause?: { code?: unknown } };
   return e.code === "23505" || e.cause?.code === "23505";
-}
-
-/**
- * recordActivity wrapped so a failure here never surfaces to the caller. By
- * the time this runs the relationship row is already committed (create) or
- * already deleted (delete) — letting an activity-log error propagate would
- * report a false failure for a write that actually succeeded, and on retry
- * the caller would immediately hit the pair-unique index and see a
- * misleading "already linked" error. Mirrors how recordAudit (src/lib/audit.ts)
- * already swallows its own failures and logs instead of throwing.
- */
-async function recordRelationshipActivity(
-  input: Parameters<typeof recordActivity>[0],
-  opts: Parameters<typeof recordActivity>[1],
-): Promise<void> {
-  try {
-    await recordActivity(input, opts);
-  } catch (err) {
-    const msg =
-      err instanceof Error ? err.message.slice(0, 200) : "unknown activity error";
-    console.error("[household-relationships] failed to record:", {
-      kind: input.kind,
-      householdId: input.householdId,
-      err: msg,
-    });
-  }
 }
 
 export type HouseholdRelationshipView = {
@@ -152,7 +126,7 @@ export async function createHouseholdRelationship(
     firmId: orgId,
   });
   const now = new Date();
-  await recordRelationshipActivity(
+  await recordActivityNonFatal(
     {
       householdId,
       kind: "relationship_change",
@@ -161,8 +135,9 @@ export async function createHouseholdRelationship(
       occurredAt: now,
     },
     { actorUserId: actorId },
+    "household-relationships",
   );
-  await recordRelationshipActivity(
+  await recordActivityNonFatal(
     {
       householdId: counterpart.id,
       kind: "relationship_change",
@@ -171,6 +146,7 @@ export async function createHouseholdRelationship(
       occurredAt: now,
     },
     { actorUserId: actorId },
+    "household-relationships",
   );
   return row;
 }
@@ -197,9 +173,10 @@ export async function deleteHouseholdRelationship(householdId: string, relations
   const otherId = edge.fromHouseholdId === householdId ? edge.toHouseholdId : edge.fromHouseholdId;
   const now = new Date();
   for (const hh of [householdId, otherId]) {
-    await recordRelationshipActivity(
+    await recordActivityNonFatal(
       { householdId: hh, kind: "relationship_change", title: "Removed household link", metadata: { relationshipId }, occurredAt: now },
       { actorUserId: userId ?? "system" },
+      "household-relationships",
     );
   }
 }

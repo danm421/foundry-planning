@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
-import { recordActivity } from "./activity";
+import { recordActivityNonFatal } from "./activity";
 import { buildHouseholdName } from "./household-name";
 import { isUniqueViolation } from "./household-relationships";
 
@@ -29,31 +29,6 @@ export type PromoteFamilyMemberInput = {
   state: string;
   status?: "prospect" | "active" | "inactive" | "archived";
 };
-
-/**
- * recordActivity wrapped so a failure here never surfaces to the caller. By
- * the time this runs the household + contact + edge are already committed —
- * letting an activity-log error propagate would report a false failure for a
- * write that actually succeeded. Mirrors recordRelationshipActivity in
- * household-relationships.ts (same shape, log tag scoped to this module since
- * that helper isn't exported).
- */
-async function recordPromoteActivity(
-  input: Parameters<typeof recordActivity>[0],
-  opts: Parameters<typeof recordActivity>[1],
-): Promise<void> {
-  try {
-    await recordActivity(input, opts);
-  } catch (err) {
-    const msg =
-      err instanceof Error ? err.message.slice(0, 200) : "unknown activity error";
-    console.error("[promote-family-member] failed to record:", {
-      kind: input.kind,
-      householdId: input.householdId,
-      err: msg,
-    });
-  }
-}
 
 /**
  * Promote a family member (or a prospect household's dependent) into their
@@ -100,8 +75,15 @@ export async function promoteFamilyMember(
     if (existingEdge) return { householdId: existingEdge.fromHouseholdId, existing: true };
   }
 
+  // Scoped to exactly db.transaction(...) — the catch below means one thing
+  // only: the transaction lost the unique-index race. Post-commit
+  // recordAudit/recordActivityNonFatal calls never throw (they swallow their
+  // own failures), so keeping them out of this try prevents a future
+  // throwing call from being misrouted through isUniqueViolation(err) =>
+  // false => a false failure report for a promote that already committed.
+  let result: { household: typeof crmHouseholds.$inferSelect; contact: typeof crmHouseholdContacts.$inferSelect; edge: typeof crmHouseholdRelationships.$inferSelect };
   try {
-    const result = await db.transaction(async (tx) => {
+    result = await db.transaction(async (tx) => {
       const [household] = await tx
         .insert(crmHouseholds)
         .values({
@@ -142,32 +124,6 @@ export async function promoteFamilyMember(
         .returning();
       return { household, contact, edge };
     });
-
-    await recordAudit({ action: "crm.household.create", resourceType: "crm_household", resourceId: result.household.id, firmId: orgId });
-    await recordAudit({ action: "crm.contact.create", resourceType: "crm_contact", resourceId: result.contact.id, firmId: orgId });
-    await recordAudit({ action: "crm.household_relationship.create", resourceType: "crm_household_relationship", resourceId: result.edge.id, firmId: orgId });
-    const now = new Date();
-    await recordPromoteActivity(
-      {
-        householdId: sourceHouseholdId,
-        kind: "relationship_change",
-        title: `Promoted ${input.firstName} ${input.lastName} to their own household`,
-        metadata: { newHouseholdId: result.household.id, relationshipId: result.edge.id },
-        occurredAt: now,
-      },
-      { actorUserId: actorId },
-    );
-    await recordPromoteActivity(
-      {
-        householdId: result.household.id,
-        kind: "relationship_change",
-        title: `Created by promotion from ${sourceHousehold.name}`,
-        metadata: { sourceHouseholdId, relationshipId: result.edge.id },
-        occurredAt: now,
-      },
-      { actorUserId: actorId },
-    );
-    return { householdId: result.household.id, existing: false };
   } catch (err) {
     // Double-promote race: the partial unique on source_family_member_id won
     // and the whole transaction rolled back — return the winner's household.
@@ -179,4 +135,32 @@ export async function promoteFamilyMember(
     }
     throw err;
   }
+
+  await recordAudit({ action: "crm.household.create", resourceType: "crm_household", resourceId: result.household.id, firmId: orgId });
+  await recordAudit({ action: "crm.contact.create", resourceType: "crm_contact", resourceId: result.contact.id, firmId: orgId });
+  await recordAudit({ action: "crm.household_relationship.create", resourceType: "crm_household_relationship", resourceId: result.edge.id, firmId: orgId });
+  const now = new Date();
+  await recordActivityNonFatal(
+    {
+      householdId: sourceHouseholdId,
+      kind: "relationship_change",
+      title: `Promoted ${input.firstName} ${input.lastName} to their own household`,
+      metadata: { newHouseholdId: result.household.id, relationshipId: result.edge.id },
+      occurredAt: now,
+    },
+    { actorUserId: actorId },
+    "promote-family-member",
+  );
+  await recordActivityNonFatal(
+    {
+      householdId: result.household.id,
+      kind: "relationship_change",
+      title: `Created by promotion from ${sourceHousehold.name}`,
+      metadata: { sourceHouseholdId, relationshipId: result.edge.id },
+      occurredAt: now,
+    },
+    { actorUserId: actorId },
+    "promote-family-member",
+  );
+  return { householdId: result.household.id, existing: false };
 }

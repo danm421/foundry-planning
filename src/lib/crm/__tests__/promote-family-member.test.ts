@@ -88,11 +88,39 @@ describe("promoteFamilyMember", () => {
     const [otherHh] = await db.insert(crmHouseholds).values({
       firmId: TEST_ORG, advisorId: "test_advisor", name: "Other Household",
     }).returning();
+    // otherHh needs its own planning client so the promote call reaches the
+    // real and(id, clientId) query — without this, planningClient resolves to
+    // null and the test would pass even if the clientId filter were dropped.
+    await db.insert(clients).values({
+      firmId: TEST_ORG, advisorId: "test_advisor", crmHouseholdId: otherHh.id,
+      retirementAge: 65, planEndAge: 95, lifeExpectancy: 95, filingStatus: "single",
+    }).returning();
     await expect(
       promoteFamilyMember(otherHh.id, {
         sourceFamilyMemberId: child.id, firstName: "Sarah", lastName: "Cooper", state: "NY",
       }),
     ).rejects.toThrow(FamilyMemberNotInHouseholdError);
+  });
+
+  it("resolves a concurrent double-promote race to a single household", async () => {
+    const { hh, child } = await seedParentHouseholdWithChild();
+    const [first, second] = await Promise.all([
+      promoteFamilyMember(hh.id, {
+        sourceFamilyMemberId: child.id, firstName: "Sarah", lastName: "Cooper", state: "NY",
+      }),
+      promoteFamilyMember(hh.id, {
+        sourceFamilyMemberId: child.id, firstName: "Sarah", lastName: "Cooper", state: "NY",
+      }),
+    ]);
+    expect(first.householdId).toBe(second.householdId);
+
+    const allHouseholds = await db.query.crmHouseholds.findMany({ where: eq(crmHouseholds.firmId, TEST_ORG) });
+    expect(allHouseholds).toHaveLength(2); // parents + one promoted household, not three
+
+    const edges = await db.query.crmHouseholdRelationships.findMany({
+      where: eq(crmHouseholdRelationships.sourceFamilyMemberId, child.id),
+    });
+    expect(edges).toHaveLength(1);
   });
 
   it("promotes a prospect dependent with no planning row (null source)", async () => {
