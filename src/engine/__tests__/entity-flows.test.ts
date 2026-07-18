@@ -312,3 +312,58 @@ describe("flowMode = 'schedule' (custom-schedule mode)", () => {
     expect(resolveDistributionPercent(entity, 2027, overrides)).toBe(0.25);
   });
 });
+
+describe("F12 — policy-sourced rows keep their own schedule", () => {
+  const policyRow = {
+    annualAmount: 0,
+    growthRate: 0,
+    startYear: 2026,
+    endYear: 2030,
+    source: "policy" as const,
+    scheduleOverrides: { 2026: 87_216, 2027: 87_216 },
+  };
+
+  it("uses the per-row schedule when no entity grid cell exists", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("returns 0 for a year outside the policy schedule", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2029, [], "annual",
+    );
+    expect(amount).toBe(0);
+  });
+
+  it("lets an entity grid cell win over the per-row schedule", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2026,
+      [{ entityId: "ent-1", year: 2026, expenseAmount: 50_000 }],
+      "annual",
+    );
+    expect(amount).toBe(50_000);
+  });
+
+  it("applies the policy schedule in schedule flowMode too", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2027, [], "schedule",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("does NOT consult scheduleOverrides on a non-policy row (P2-3 stands)", () => {
+    const userRow = {
+      annualAmount: 10_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2030,
+      scheduleOverrides: { 2026: 99_999 },
+    };
+    const amount = resolveEntityFlowAmount(
+      userRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(amount).toBe(10_000);
+  });
+});
