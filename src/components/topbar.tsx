@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactElement } from "react";
 import BackButton from "./back-button";
+import { useBackNav } from "./back-nav-provider";
 import Breadcrumb from "./breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -130,13 +131,13 @@ const SECONDARY_TABS: ReadonlyArray<Tab> = [
 // theme toggle) rather than grouped with the planning tabs above.
 const PORTAL_TAB = { label: "Portal", href: "portal" } as const;
 
-interface TopbarProps {
-  clientHouseholdTitle?: string;
-}
-
-export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElement {
+export default function Topbar(): ReactElement {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
+  // The client layout registers the household name for its section (via
+  // ReportSectionLabel), so the breadcrumb can show "Clients / <household>"
+  // even though this component renders above the client layout in the tree.
+  const { currentSectionLabel } = useBackNav();
   const match = pathname.match(/^\/clients\/([^/]+)/);
   const clientId = match?.[1];
 
@@ -144,7 +145,7 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
     <header className="sticky top-0 z-40 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-hair bg-paper px-[var(--pad-card)]">
       <div className="flex items-center gap-2 justify-self-start">
         <BackButton />
-        <Breadcrumb clientHouseholdTitle={clientHouseholdTitle} />
+        <Breadcrumb clientHouseholdTitle={currentSectionLabel ?? undefined} />
       </div>
       {clientId ? (
         <nav role="tablist" className="flex items-center gap-1 justify-self-center">

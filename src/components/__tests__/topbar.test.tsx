@@ -15,6 +15,7 @@ vi.mock("@clerk/nextjs", () => ({
 import { usePathname, useSearchParams } from "next/navigation";
 import Topbar from "../topbar";
 import { BackNavProvider } from "../back-nav-provider";
+import ReportSectionLabel from "../report-section-label";
 
 beforeEach(() => {
   vi.mocked(useSearchParams).mockReturnValue(
@@ -58,6 +59,21 @@ describe("Topbar", () => {
     vi.mocked(usePathname).mockReturnValue("/clients");
     const { container } = renderTopbar();
     expect(container.textContent).toContain("Clients");
+  });
+
+  it("shows the registered household name in the breadcrumb on a client route", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    sessionStorage.clear();
+    // The client layout registers its household name via ReportSectionLabel;
+    // the topbar breadcrumb must pick it up from the shared provider.
+    const { container } = render(
+      <BackNavProvider>
+        <ReportSectionLabel label="Cooper & Susan Sample" />
+        <Topbar />
+      </BackNavProvider>,
+    );
+    expect(container.textContent).toContain("Clients");
+    expect(container.textContent).toContain("Cooper & Susan Sample");
   });
 
   it("does not render report tabs outside a client route", () => {

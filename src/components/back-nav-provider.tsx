@@ -26,6 +26,12 @@ interface BackNavState {
   target: TrailEntry | null;
   /** Resolved label for the target (or null). */
   targetLabel: string | null;
+  /**
+   * Registered label for the section we're currently in (e.g. the client
+   * household name), or null when none has been registered. Registered only —
+   * no static fallback, so consumers can tell "unlabeled" apart from "Client".
+   */
+  currentSectionLabel: string | null;
   goBack: () => void;
   registerLabel: (sectionKey: string, label: string) => void;
 }
@@ -52,7 +58,10 @@ export function BackNavProvider({ children }: { children: ReactNode }): ReactEle
         };
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot sessionStorage hydration on mount; no cascade risk (hydrated flag gates all other effects). The rule fires once per effect, so this covers both setTrail and setLabels below.
         if (Array.isArray(parsed.trail)) setTrail(parsed.trail);
-        if (parsed.labels) setLabels(parsed.labels);
+        // Merge (live registrations win): child effects run before this parent
+        // effect, so a label registered during the same commit — e.g. landing
+        // directly on a client page — must survive the restore.
+        if (parsed.labels) setLabels((prev) => ({ ...parsed.labels, ...prev }));
       }
     } catch {
       /* corrupt/unavailable storage — start fresh */
@@ -86,6 +95,7 @@ export function BackNavProvider({ children }: { children: ReactNode }): ReactEle
 
   const target = hydrated && trail.length >= 2 ? trail[trail.length - 2] : null;
   const targetLabel = target ? labelForSection(target.sectionKey, labels) : null;
+  const currentSectionLabel = labels[sectionKeyForPath(pathname)] ?? null;
 
   const goBack = useCallback(() => {
     if (trail.length < 2) return;
@@ -95,8 +105,8 @@ export function BackNavProvider({ children }: { children: ReactNode }): ReactEle
   }, [trail, router]);
 
   const value = useMemo<BackNavState>(
-    () => ({ target, targetLabel, goBack, registerLabel }),
-    [target, targetLabel, goBack, registerLabel],
+    () => ({ target, targetLabel, currentSectionLabel, goBack, registerLabel }),
+    [target, targetLabel, currentSectionLabel, goBack, registerLabel],
   );
 
   return <BackNavContext.Provider value={value}>{children}</BackNavContext.Provider>;
