@@ -4,7 +4,7 @@
 import type { ProjectionYear } from "@/engine/types";
 import { rmdTotal } from "@/lib/retirement/retirement-inflows";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, dd, money, type DollarDelta, type DrillContext } from "../types";
+import { DEPLETED_EPS, LINE_FLOOR, RESIDUAL_TAX_LINE_LABEL, SOURCE_CAP, dd, money, type DollarDelta, type DrillContext } from "../types";
 
 // ── Tax-specific delta shapes (relocated from the Phase-0 types.ts; owned here) ──
 
@@ -150,6 +150,16 @@ export function diffTaxYears(
     ["Early-withdrawal penalty", pf.earlyWithdrawalPenalty, nf.earlyWithdrawalPenalty],
     ["State tax", pf.stateTax, nf.stateTax],
   ];
+  // SECA residual (final review, Finding 4): the engine folds self-employment tax
+  // straight into totalTax with no line field, so for self-employed clients the
+  // eight lines sum to totalTax − seTax. Append a residual delta symmetric with the
+  // COMPOSITION residual (subjects/tax.ts) — same label, same
+  // round(totalTax) − Σ(rounded lines) arithmetic — so the two layers agree. It
+  // flows through the same |delta| >= LINE_FLOOR filter below, so a W-2 client
+  // (residual ≈ 0 in both years) sees nothing.
+  const priorResidual = Math.round(pf.totalTax) - taxLines.reduce((s, [, a]) => s + Math.round(a), 0);
+  const nextResidual = Math.round(nf.totalTax) - taxLines.reduce((s, [, , b]) => s + Math.round(b), 0);
+  taxLines.push([RESIDUAL_TAX_LINE_LABEL, priorResidual, nextResidual]);
 
   const incomeLines: Array<[string, number, number]> = [
     ["Earned income", pi.earnedIncome, ni.earnedIncome],
@@ -203,7 +213,11 @@ export function diffTaxYears(
       // asked-year draw, so its next-year dollar fields below are the real (0)
       // values — prior-year dollars are surfaced separately, never folded in.
       const priorCashOut = cashOutForAccount(prev, id);
-      const depleted = priorCashOut > 0 && priorEnd < DEPLETED_EPS;
+      // ...AND it stopped funding this year (raw next-year cashOut === 0). Without
+      // the cashOut guard a replenished sweep account — funded last year, ended it
+      // under EPS, still drawing this year — would be mis-flagged depleted while
+      // actively funding (final review, Finding 2).
+      const depleted = priorCashOut > 0 && priorEnd < DEPLETED_EPS && cashOut === 0;
       const priorRecognized = depleted ? recognizedForAccount(prev, id) : 0;
       return {
         account: ctx.accountNames[id] ?? id,

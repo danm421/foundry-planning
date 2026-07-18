@@ -120,6 +120,20 @@ function offByOneFixtureYears(): ProjectionYear[] {
   ];
 }
 
+// ── Material-asked-boundary cliff-location fixture (final review, Finding 1) ──
+// The asked boundary 2062→2063 moved a MATERIAL +$20k, but a bigger +$65k jump
+// sits at 2061→2062 (≥ max(3×20k, 10k) = 60k), so the redirect still fires. The
+// note must state both magnitudes truthfully and NOT claim the asked boundary is
+// "nearly flat".
+function materialAskedCliffYears(): ProjectionYear[] {
+  return [
+    base(2060, 50_000),
+    base(2061, 50_000), // 2060→2061 flat
+    base(2062, 115_000), // 2061→2062 RISE +65k (the bigger move)
+    base(2063, 135_000), // 2062→2063 asked boundary — material rise +20k
+  ];
+}
+
 // ── Sign-aware cliff-location fixtures (Fix 2) ───────────────────────────────
 // Asked boundary is a small RISE. The ±2 window holds BOTH a qualifying larger
 // fall (2064→2065, −70k) and a qualifying same-sign rise (2061→2062, +64k). The
@@ -409,6 +423,38 @@ describe("explainChange", () => {
     // Its headline carries the real jump, and a note names both boundaries.
     expect(res.probableIntendedJump?.headline.figure.delta).toBe(40_000);
     expect(res.notes.some((n) => n.includes("2062→2063") && n.includes("2061→2062"))).toBe(true);
+  });
+
+  it("keeps the 'nearly flat' wording when the asked boundary is immaterial", () => {
+    // Asked boundary +$200 (< MATERIALITY): the original "is nearly flat" sentence
+    // is truthful and must be preserved byte-for-byte.
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: offByOneFixtureYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2063, compareYear: 2062, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(
+      res.notes.some((n) => n.includes("nearly flat") && n.includes("2062→2063") && n.includes("2061→2062")),
+    ).toBe(true);
+  });
+
+  it("states both magnitudes (never 'nearly flat') when the asked boundary moved materially", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: materialAskedCliffYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2063, compareYear: 2062, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.probableIntendedJump?.boundary).toBe("2061→2062");
+    const note = res.notes.find((n) => n.includes("2062→2063") && n.includes("2061→2062"));
+    expect(note).toBeDefined();
+    expect(note).not.toContain("nearly flat"); // no longer over-asserts flatness
+    expect(note).toContain("$20,000"); // asked-boundary move stated
+    expect(note).toContain("$65,000"); // located-boundary move stated
+    expect(note).toContain("Lead with that and name both boundaries."); // consistent imperative
   });
 
   it("prefers a same-sign rise over a larger opposite-sign fall when auto-locating the cliff", () => {

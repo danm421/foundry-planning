@@ -162,6 +162,20 @@ describe("explainComposition", () => {
     expect(out.analysisContext.boundaryAnalyzed).not.toContain("→");
   });
 
+  it("rounds the emitted figure so it never carries the raw engine float", () => {
+    // The engine's totalTax is an unrounded float; the emitted `figure` must round
+    // it to whole dollars so it agrees with the rounded componentBreakdown amounts
+    // and the DELTA layer's rounded headline.
+    const year = makeYear({
+      year: 2062,
+      taxResult: makeTaxResult({ flow: { totalTax: 144_804.3016, totalFederalTax: 144_804.3016, taxableIncome: 500_000 } }),
+    });
+    const out = explainComposition({ adapter: taxAdapter, years: [year], year: 2062, compareTo: "none", ctx: DRILL_CTX });
+    expect(out.available).toBe(true);
+    if (!out.available) return;
+    expect(out.figure).toBe(144_804); // rounded, not 144_804.3016
+  });
+
   it("rejects an out-of-range year with the available range", () => {
     const { year, ctx } = compositionFixture();
     const out = explainComposition({

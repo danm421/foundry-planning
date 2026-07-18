@@ -21,6 +21,11 @@ export const RATIO_SHIFT_POINTS = 0.1;
 /** A 401k/403b counts as Roth-designated when its BoY Roth slice exceeds this
  *  fraction of beginning value. */
 export const ROTH_SLICE_MIN = 0.05;
+/** Label for the residual tax line — additive terms the engine folds into
+ *  flow.totalTax with no dedicated field (today: SECA self-employment tax). Shared
+ *  by the COMPOSITION (subjects/tax.ts) and DELTA (subjects/tax-diff.ts) layers so
+ *  the two never drift. */
+export const RESIDUAL_TAX_LINE_LABEL = "Self-employment tax and other federal adjustments";
 
 export const money = (n: number) =>
   `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;

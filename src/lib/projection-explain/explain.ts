@@ -282,9 +282,23 @@ export function explainChange(
         // too; the dedup in hoistDetailNotes keeps it single if also raised above.
         hoistDetailNotes(alt.causes, result.notes);
         result.analysisContext.probableIntendedBoundary = `${localMax.from}→${localMax.to}`;
+        // Truthful in both regimes (final review, Finding 1): keep "nearly flat"
+        // ONLY when the asked boundary really is immaterial; otherwise state both
+        // signed magnitudes so the note never contradicts a material headline. The
+        // redirect threshold is max(3×requestedDelta, 10k), so it can fire on a
+        // boundary that moved materially — don't claim flatness there. `requested`
+        // is absent for a non-adjacent compareYear ⇒ fall back to totalDelta (the
+        // canonical asked-boundary move). Both branches end with the same imperative
+        // sentence so the system-prompt guidance keys on consistent language.
+        const requestedSignedDelta = requested?.delta ?? totalDelta;
+        const dir = (d: number) => (d >= 0 ? "rose" : "fell");
         result.notes.push(
-          `The asked boundary ${compareYear}→${args.year} is nearly flat; the real jump is ` +
-            `${localMax.from}→${localMax.to}. Lead with that and name both boundaries.`,
+          Math.abs(requestedSignedDelta) < MATERIALITY
+            ? `The asked boundary ${compareYear}→${args.year} is nearly flat; the real jump is ` +
+                `${localMax.from}→${localMax.to}. Lead with that and name both boundaries.`
+            : `The asked boundary ${compareYear}→${args.year} moved ${money(requestedSignedDelta)} ` +
+                `(${dir(requestedSignedDelta)}), but the bigger move is ${localMax.from}→${localMax.to} ` +
+                `(${money(localMax.delta)} ${dir(localMax.delta)}). Lead with that and name both boundaries.`,
         );
       }
     }
@@ -404,7 +418,7 @@ export function explainComposition(args: ExplainCompositionArgs): Composition | 
     degraded: degraded || undefined,
     subject: adapter.key,
     year: args.year,
-    figure: degraded ? adapter.degradedFigure(target) : figureVal,
+    figure: Math.round(degraded ? adapter.degradedFigure(target) : figureVal!),
     componentBreakdown,
     ...(level ? { level } : {}),
     analysisContext,

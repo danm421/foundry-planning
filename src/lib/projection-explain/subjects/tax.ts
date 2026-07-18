@@ -3,7 +3,7 @@
 // the metric-agnostic SubjectAdapter seam.
 import type { ProjectionYear } from "@/engine/types";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import { LINE_FLOOR, SOURCE_CAP, type Component, type DrillContext, type SubjectAdapter } from "../types";
+import { LINE_FLOOR, RESIDUAL_TAX_LINE_LABEL, SOURCE_CAP, type Component, type DrillContext, type SubjectAdapter } from "../types";
 import { diffTaxYears, type TaxYearDiff } from "./tax-diff";
 import { DETECTORS } from "./tax-detectors";
 
@@ -83,7 +83,7 @@ function taxComponents(y: ProjectionYear, ctx: DrillContext): Component[] {
   const residual = Math.round(f.totalTax) - taxLineParts.reduce((s, p) => s + p.amount, 0);
   if (residual >= LINE_FLOOR) {
     taxLineParts.push({
-      label: "Self-employment tax and other federal adjustments",
+      label: RESIDUAL_TAX_LINE_LABEL,
       amount: residual,
       type: "tax_line",
     });

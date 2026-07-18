@@ -180,4 +180,69 @@ describe("diffTaxYears", () => {
     const flat = makeYear({ year: 2063, taxResult: makeTaxResult({ flow: { totalTax: 80_000, taxableIncome: 200_000 }, marginalFederalRate: 0.24 }) });
     expect(diffTaxYears(prev, flat, DRILL_CTX).blendedRate).toBe(0.24);
   });
+
+  it("does not flag a replenished sweep account that keeps drawing as depleted", () => {
+    // A cash/checking account funded last year and ended it under DEPLETED_EPS but
+    // is replenished and KEEPS drawing this year. Keying `depleted` off the prior
+    // year alone would mis-flag it while it is actively funding; the fix also
+    // requires the (raw) next-year cashOut to be zero.
+    const prev = makeYear({
+      year: 2062,
+      withdrawals: { byAccount: { cash: 30_000 }, total: 30_000 },
+      accountLedgers: { cash: makeLedger({ beginningValue: 30_000, endingValue: 0 }) }, // funded, ended < EPS
+      taxDetail: makeTaxDetail({}),
+    });
+    const next = makeYear({
+      year: 2063,
+      withdrawals: { byAccount: { cash: 25_000 }, total: 25_000 }, // replenished, keeps drawing
+      accountLedgers: { cash: makeLedger({ beginningValue: 50_000, endingValue: 25_000 }) },
+      taxDetail: makeTaxDetail({}),
+    });
+    const cash = diffTaxYears(prev, next, DRILL_CTX).withdrawalPicture.byAccount.find((r) => r.account === "Checking")!;
+    expect(cash.depleted).toBe(false);
+    expect(cash.cashOut).toBe(25_000);
+    expect(cash.priorCashOut).toBeUndefined();
+  });
+
+  it("appends a SECA residual delta line when self-employment tax moves between years", () => {
+    // The engine folds SECA into totalTax with NO line field. Hold the eight lines
+    // identical between years so ONLY the residual moves: prior SECA $5,000, next
+    // $18,360 (the eight lines sum to $47,000 both years). The residual line must
+    // appear with the COMPOSITION-symmetric label, its delta = $13,360, and
+    // sum(taxLineDeltas) must reconcile to the headline total-tax delta.
+    const lines = {
+      regularFederalIncomeTax: 30_000, capitalGainsTax: 8_000, niit: 2_000,
+      additionalMedicare: 1_000, stateTax: 6_000, // sum 47_000
+    };
+    const prev = makeYear({
+      year: 2062,
+      taxResult: makeTaxResult({ flow: { ...lines, totalFederalTax: 46_000, totalTax: 52_000 } }), // +5,000 SECA
+    });
+    const next = makeYear({
+      year: 2063,
+      taxResult: makeTaxResult({ flow: { ...lines, totalFederalTax: 59_360, totalTax: 65_360 } }), // +18,360 SECA
+    });
+    const d = diffTaxYears(prev, next, DRILL_CTX);
+    const residual = d.taxLineDeltas.find((l) => l.label === "Self-employment tax and other federal adjustments");
+    expect(residual).toBeDefined();
+    expect(residual!.delta).toBe(13_360);
+    // Eight lines identical ⇒ only the residual survives the LINE_FLOOR filter, so
+    // sum(taxLineDeltas) reconciles to the headline delta.
+    expect(d.taxLineDeltas.reduce((s, l) => s + l.delta, 0)).toBe(d.headline.totalTax.delta);
+  });
+
+  it("emits no residual line for a W-2 client whose lines already reconcile", () => {
+    // No SECA: the eight lines equal totalTax in both years, so the residual is 0
+    // both years and its delta drops below LINE_FLOOR.
+    const prev = makeYear({
+      year: 2062,
+      taxResult: makeTaxResult({ flow: { regularFederalIncomeTax: 30_000, stateTax: 6_000, totalFederalTax: 30_000, totalTax: 36_000 } }),
+    });
+    const next = makeYear({
+      year: 2063,
+      taxResult: makeTaxResult({ flow: { regularFederalIncomeTax: 40_000, stateTax: 8_000, totalFederalTax: 40_000, totalTax: 48_000 } }),
+    });
+    const d = diffTaxYears(prev, next, DRILL_CTX);
+    expect(d.taxLineDeltas.some((l) => l.label.includes("Self-employment"))).toBe(false);
+  });
 });
