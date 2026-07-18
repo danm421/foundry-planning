@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DialogShell from "@/components/dialog-shell";
 import {
   inputClassName,
@@ -84,6 +84,23 @@ export function CrmFamilyMemberForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Persist the planning family-member id created during THIS open dialog. In
+  // the linked-create path the POST /family-members can succeed and the
+  // subsequent contact write throw — the dialog stays open. Without this, a
+  // retry would POST /family-members again (duplicate member, orphaned first).
+  // Reset on close so a fresh open (or reuse for a different member) starts
+  // clean. See onSubmit's "existingMemberId → PUT else POST" branch.
+  const createdMemberIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) createdMemberIdRef.current = null;
+  }, [open]);
+
+  // Prospect households (no planning client) have no family_members list to
+  // drift from, so every save writes a CRM contact row — and
+  // createCrmContactSchema.lastName is min(1). Last name is therefore always
+  // required here; the linked flow keeps it optional (guarded in onSubmit).
+  const isProspect = planningClientId === null;
+
   // Unlinked rows have nowhere to store a planning relationship, so hide the
   // select (and store contact info only) when there's no planning client and
   // no existing member to update.
@@ -112,19 +129,37 @@ export function CrmFamilyMemberForm({
 
     try {
       if (planningClientId) {
-        let memberId = initialValues?.memberId;
+        // Finding 1: the family_members row allows a blank last name, but any
+        // contact write here needs one (createCrmContactSchema.lastName is
+        // min(1) — both the lazy-link POST and the PATCH always carry
+        // `lastName`). Fail fast before any network call so we never surface a
+        // raw 400, and never POST the member and THEN fail the contact write
+        // (which is Finding 2's duplicate trigger).
+        const willWriteContact = !!initialValues?.contactId || hasContactInfo;
+        if (willWriteContact && !lastName) {
+          throw new Error("Last name is required when saving contact info.");
+        }
+
         const identity = { firstName, lastName, relationship, dateOfBirth };
-        if (mode === "edit" && memberId) {
+        // Finding 2: branch on "have a member id from props OR the ref". After a
+        // partial failure the created id lives in the ref, so a retry PUTs the
+        // existing row (persisting any edits made between attempts) instead of
+        // POSTing a duplicate.
+        const existingMemberId = initialValues?.memberId ?? createdMemberIdRef.current;
+        let memberId: string | undefined;
+        if (existingMemberId) {
           await put(
-            `/api/clients/${planningClientId}/family-members/${memberId}`,
+            `/api/clients/${planningClientId}/family-members/${existingMemberId}`,
             identity,
           );
+          memberId = existingMemberId;
         } else {
           const member = await post(
             `/api/clients/${planningClientId}/family-members`,
             identity,
           );
           memberId = member.id;
+          createdMemberIdRef.current = memberId ?? null;
         }
         const contactFields = { email, phone, mobile, notes, firstName, lastName };
         if (initialValues?.contactId) {
@@ -239,11 +274,12 @@ export function CrmFamilyMemberForm({
           </div>
           <div>
             <label className={fieldLabelClassName} htmlFor="fm-last">
-              Last name
+              Last name {isProspect && <span className="text-crit">*</span>}
             </label>
             <input
               id="fm-last"
               name="lastName"
+              required={isProspect}
               maxLength={100}
               defaultValue={initialValues?.lastName ?? ""}
               className={inputClassName}
