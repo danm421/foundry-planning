@@ -16,6 +16,12 @@ interface BaseRow {
   inflationStartYear?: number;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  /** F12: rows synthesized from life-insurance policies carry their real
+   *  per-year amounts here while `annualAmount` stays 0. Consulted ONLY when
+   *  `source === "policy"` — user-entered entity rows keep the P2-3 rule that
+   *  the entity override grid is authoritative. */
+  source?: "manual" | "extracted" | "policy";
+  scheduleOverrides?: Record<number, number>;
 }
 
 /** Resolve an entity-owned income or expense row to its year amount.
@@ -34,8 +40,12 @@ interface BaseRow {
  *    3. 0 outside the row's window.
  *
  *  Per-row scheduleOverrides on entity-owned rows is intentionally NOT consulted
- *  here (P2-3 — Phase 2 replaces that path). Non-entity rows go through the
- *  legacy resolution paths in src/engine/income.ts / expenses.ts. */
+ *  here for user-entered rows (P2-3 — Phase 2 replaces that path). The ONE
+ *  exception is `source === "policy"`: those rows are synthesized from a
+ *  policy's cash-value schedule and carry `annualAmount: 0`, so ignoring their
+ *  schedule resolves the flow to zero (audit F12).
+ *  Non-entity rows go through the legacy resolution paths in
+ *  src/engine/income.ts / expenses.ts. */
 export function resolveEntityFlowAmount(
   row: BaseRow,
   entityId: string,
@@ -47,8 +57,25 @@ export function resolveEntityFlowAmount(
 ): number {
   const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
   const ovrAmount = field === "income" ? ovr?.incomeAmount : ovr?.expenseAmount;
-  if (flowMode === "schedule") return ovrAmount ?? 0;
+  // F12: policy-synthesized rows keep their own per-year schedule. It ranks
+  // BELOW the entity grid cell and ABOVE base+growth. Non-policy rows are
+  // untouched, so the P2-3 decision documented above still holds for
+  // user-entered entity rows. Like a grid cell, an explicit per-year amount
+  // is authoritative and bypasses retirement-month proration.
+  // Gated on the row's [startYear, endYear] window: resolvePremiumSchedule
+  // (src/lib/insurance-policies/premium-expense.ts) builds scheduleOverrides
+  // from every cashValueSchedule row, then clamps the row's OWN startYear up
+  // to currentYear/activationYear — but the overrides map still carries the
+  // earlier keys. An unwindowed read would resurrect pre-activation premiums
+  // for a policy whose activationYear lands after its earliest schedule row.
+  const policySchedule =
+    row.source === "policy" && row.scheduleOverrides
+    && year >= row.startYear && year <= row.endYear
+      ? (row.scheduleOverrides[year] ?? 0)
+      : null;
+  if (flowMode === "schedule") return ovrAmount ?? policySchedule ?? 0;
   if (ovrAmount != null) return ovrAmount;
+  if (policySchedule != null) return policySchedule;
   let factor = 1;
   if (client) {
     const gate = itemProrationGate(row, year, client);

@@ -39,6 +39,7 @@ export type TrustWarning =
   | { code: "trust_distribution_insufficient_liquid"; entityId: string; shortfall: number }
   | { code: "trust_tax_insufficient_cash"; entityId: string; shortfall: number }
   | { code: "entity_overdraft"; entityId: string; shortfall: number }
+  | { code: "entity_missing_checking"; entityId: string; year: number }
   | { code: "trust_note_cash_shortfall"; entityId: string; year: number; shortfall: number }
   | {
       code: "engine_iteration_limit";

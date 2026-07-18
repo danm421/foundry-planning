@@ -312,3 +312,94 @@ describe("flowMode = 'schedule' (custom-schedule mode)", () => {
     expect(resolveDistributionPercent(entity, 2027, overrides)).toBe(0.25);
   });
 });
+
+describe("F12 — policy-sourced rows keep their own schedule", () => {
+  const policyRow = {
+    annualAmount: 0,
+    growthRate: 0,
+    startYear: 2026,
+    endYear: 2030,
+    source: "policy" as const,
+    scheduleOverrides: { 2026: 87_216, 2027: 87_216 },
+  };
+
+  it("uses the per-row schedule when no entity grid cell exists", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("uses the per-row schedule for the income direction too (policy-income.ts builds the same shape)", () => {
+    // resolveEntityFlowAmount is shared by income and expense callers — the
+    // policySchedule branch doesn't discriminate on `field`, so an
+    // entity-owned policy INCOME row (synthesizePolicyIncome) must resolve
+    // its schedule exactly like an expense row does.
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "income", 2026, [], "annual",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("returns 0 for a year inside the row's window but missing from the schedule map (falls through to ?? 0)", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2029, [], "annual",
+    );
+    expect(amount).toBe(0);
+  });
+
+  it("lets an entity grid cell win over the per-row schedule", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2026,
+      [{ entityId: "ent-1", year: 2026, expenseAmount: 50_000 }],
+      "annual",
+    );
+    expect(amount).toBe(50_000);
+  });
+
+  it("applies the policy schedule in schedule flowMode too", () => {
+    const amount = resolveEntityFlowAmount(
+      policyRow, "ent-1", "expense", 2027, [], "schedule",
+    );
+    expect(amount).toBe(87_216);
+  });
+
+  it("does NOT consult scheduleOverrides on a non-policy row (P2-3 stands)", () => {
+    const userRow = {
+      annualAmount: 10_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2030,
+      scheduleOverrides: { 2026: 99_999 },
+    };
+    const amount = resolveEntityFlowAmount(
+      userRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(amount).toBe(10_000);
+  });
+
+  it("does not pay a premium before the policy's startYear, even when the schedule map carries an earlier key (audit finding on F12)", () => {
+    // resolvePremiumSchedule (src/lib/insurance-policies/premium-expense.ts) builds
+    // scheduleOverrides from every cashValueSchedule row, then clamps the row's
+    // startYear UP to currentYear/activationYear — but the overrides map keeps
+    // the earlier keys. A late-activating policy's row therefore has schedule
+    // entries below its own startYear; the resolver must not resurrect them.
+    const lateActivationRow = {
+      annualAmount: 0,
+      growthRate: 0,
+      startYear: 2030,
+      endYear: 2032,
+      source: "policy" as const,
+      scheduleOverrides: { 2026: 40_000, 2030: 40_000 },
+    };
+    const beforeActivation = resolveEntityFlowAmount(
+      lateActivationRow, "ent-1", "expense", 2026, [], "annual",
+    );
+    expect(beforeActivation).toBe(0);
+
+    const atActivation = resolveEntityFlowAmount(
+      lateActivationRow, "ent-1", "expense", 2030, [], "annual",
+    );
+    expect(atActivation).toBe(40_000);
+  });
+});

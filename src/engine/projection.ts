@@ -2457,6 +2457,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // contributes 0 to discretionary surplus (audit F2).
     let grantorTrustDistToHousehold = 0;
 
+    // F13: an entity with no checking account cannot receive or pay anything —
+    // every pass below silently `continue`s. Collect the condition so it is at
+    // least detectable. Nothing renders trust warnings yet; the user-facing fix
+    // is the solver auto-create in apply-mutations.ts.
+    //
+    // m9: keyed by entityId, not a plain array. A CLT with `isGrantor: false`
+    // clears every filter in `buildNonGrantorTrusts` (:591-599) AND matches the
+    // CLT annual pass over `currentEntities` (:2818), so an array let the same
+    // entity emit twice in one year. The map is rebuilt per year, so entityId
+    // alone is the full dedupe key.
+    const missingCheckingByEntity = new Map<string, TrustWarning>();
+    const warnMissingChecking = (entityId: string) => {
+      if (missingCheckingByEntity.has(entityId)) return;
+      missingCheckingByEntity.set(entityId, {
+        code: "entity_missing_checking",
+        entityId,
+        year,
+      });
+    };
+
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
     //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
@@ -2650,7 +2670,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // projection scope, same as the grantor pass's non-household case.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
-        if (!checkingId) continue;
+        if (!checkingId) {
+          warnMissingChecking(trust.entityId);
+          continue;
+        }
         const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
         const tax = trustPassResult.taxByEntity.get(trust.entityId);
         const distAmount = dist?.actualAmount ?? 0;
@@ -2721,7 +2744,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       for (const gt of grantorTrusts) {
         const checkingId = entityCheckingByEntityId[gt.entityId];
-        if (!checkingId) continue; // no checking account — cannot distribute
+        if (!checkingId) {
+          // no checking account — cannot distribute
+          warnMissingChecking(gt.entityId);
+          continue;
+        }
 
         const cash = accountBalances[checkingId] ?? 0;
         // Aggregate taxable brokerage for this grantor trust — only the
@@ -2806,7 +2833,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
       // Life-based termination is handled in Task 10's trust-termination pass.
       const checkingId = entityCheckingByEntityId[trust.id];
-      if (!checkingId) continue;
+      if (!checkingId) {
+        warnMissingChecking(trust.id);
+        continue;
+      }
 
       let startOfYearFmv = 0;
       for (const acct of workingAccounts) {
@@ -2887,7 +2917,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Life-based termination is handled in a later phase (Spec A ships
       // term-certain only).
       const checkingId = entityCheckingByEntityId[trust.id];
-      if (!checkingId) continue;
+      if (!checkingId) {
+        warnMissingChecking(trust.id);
+        continue;
+      }
 
       let startOfYearFmv = 0;
       for (const acct of workingAccounts) {
@@ -2958,6 +2991,53 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // mirroring how non-household charity outflows are handled. Future tasks
     // may refine to per-beneficiary deposit if the user adds beneficiary-owned
     // accounts to the data model.
+    // F10: both termination passes below run BEFORE the step-11 cashDelta
+    // flush, so cash credited earlier this year — RMDs, note payments, trust
+    // tax debits (the non-grantor trust annual pass) — is not yet in
+    // accountBalances. Read the effective balance instead, mirroring the
+    // note-payment pass above. Without this the residue is stranded
+    // permanently: isTrustTerminationYear fires exactly once.
+    //
+    // Clamped at 0 so the reported TrustTerminationResult equals what is
+    // actually drained — the drain loops already skip non-positive accounts,
+    // but the totalAvailable sums did not, which let a negative account shrink
+    // the reported distribution below the real one.
+    //
+    // F10 review fix: this must be a SNAPSHOT, not a live read of `cashDelta`.
+    // The drain loops below write NEGATIVE cashDelta as they drain each
+    // trust's share. A live read lets a second (or third) trust that
+    // co-owns the same account — including across the CLT-pass-then-CRT-pass
+    // boundary — see the previous trust's drain already subtracted, so it
+    // under-drains its own share against the reduced figure. Snapshotting
+    // every account's effective balance once, before any trust in this year
+    // drains anything, means every trust's totalAvailable/drain reads the
+    // same pre-drain figures and fractional co-ownership shares sum
+    // correctly regardless of processing order.
+    //
+    // m4: built LAZILY on first read. The great majority of plans hold no CLT
+    // or CRT at all, and `monteCarlo/trial.ts` calls runProjection once per
+    // trial — eagerly walking every account every year was ~60 × 1000 wasted
+    // objects per MC run. Laziness is placement-neutral: every reader is inside
+    // the two termination passes below, and the FIRST of them (the CLT
+    // `totalAvailable` loop) still runs before the first drain `creditCash`, so
+    // first-touch lands at the same point in the year the eager build did —
+    // after the CLT lead payment / CRT annuity debits, before any drain. That
+    // ordering is what the snapshot is for; do not hoist a read above it.
+    // Declared inside the year loop, so it cannot leak across years.
+    let terminationBalanceSnapshot: Record<string, number> | null = null;
+    const effectiveTerminationBalance = (id: string) => {
+      if (terminationBalanceSnapshot === null) {
+        const snap: Record<string, number> = {};
+        for (const a of workingAccounts) {
+          snap[a.id] = Math.max(
+            0,
+            (accountBalances[a.id] ?? 0) + (cashDelta[a.id] ?? 0)
+          );
+        }
+        terminationBalanceSnapshot = snap;
+      }
+      return terminationBalanceSnapshot[id] ?? 0;
+    };
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
@@ -2976,7 +3056,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         totalAvailable += balance * trustShare;
       }
       if (totalAvailable <= 0) continue;
@@ -3002,7 +3082,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         const drain = balance * trustShare;
         if (drain <= 0) continue;
         creditCash(acct.id, -drain, {
@@ -3033,7 +3113,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         totalAvailable += balance * trustShare;
       }
       if (totalAvailable <= 0) continue;
@@ -3059,7 +3139,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         const drain = balance * trustShare;
         if (drain <= 0) continue;
         creditCash(acct.id, -drain, {
@@ -6565,6 +6645,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        || grantorDistributionWarnings.length > 0
        || entityGapFillWarnings.length > 0
        || noteShortfallWarnings.length > 0
+       || missingCheckingByEntity.size > 0
        || convergenceWarning != null
         ? {
             ...(trustPassResult != null ? {
@@ -6581,6 +6662,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...grantorDistributionWarnings,
                 ...entityGapFillWarnings,
                 ...noteShortfallWarnings,
+                ...missingCheckingByEntity.values(),
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
               ];
               return all.length > 0 ? all : undefined;

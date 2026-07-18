@@ -27,6 +27,7 @@ import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-gro
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
@@ -172,8 +173,18 @@ export function applyScenarioChangesWithRefs(
   // prior policy gifts and re-derives. Must run OUTERMOST so it sees the
   // effective tree after premium + income synthesis.
   const withPremiumGifts = withSynthesizedPremiumGifts(withPolicyIncome);
+  // Give every entity on the effective tree a default checking account. A saved
+  // scenario persists an entity as a lone `targetKind: "entity"` row, so an
+  // entity the solver created arrives here with no account and the engine has
+  // nowhere to route its cash (audit F13). Runs LAST so it mirrors the live
+  // ordering exactly — the solver calls loadEffectiveTree (this whole chain)
+  // and only then applyMutations, whose entity-upsert branch synthesizes the
+  // same account. Nothing downstream of here reads accounts, so the three
+  // policy synthesizers above are provably unaffected. Idempotent, and returns
+  // the same tree when every entity already has one.
+  const withEntityChecking = withSynthesizedEntityChecking(withPremiumGifts);
 
-  return { effectiveTree: withPremiumGifts, warnings };
+  return { effectiveTree: withEntityChecking, warnings };
 }
 
 export const loadEffectiveTree = cache(
@@ -224,7 +235,22 @@ export const loadEffectiveTree = cache(
             ),
           }
         : baseTree;
-      return { effectiveTree: filteredBase, warnings: [], resolutionContext };
+      // Entity checking synthesis runs here too. Base entities normally carry a
+      // real account row (entities/route.ts creates one per entity), but
+      // promote-to-base writes an `entities` row through
+      // PROMOTE_TABLE_REGISTRY with no child writer — so a promoted entity
+      // reaches base with no checking account. Skipping it here would leave the
+      // base view making zero trust payments while the very same client's
+      // base-WITH-toggles view (which falls through to the full path below)
+      // pays correctly. Inconsistent projections are worse than a $0 cash row,
+      // and the API path already puts an identical one on every entity.
+      // No-ops by reference when nothing is missing, so the fast path stays
+      // byte-identical for every client whose entities came in via the API.
+      return {
+        effectiveTree: withSynthesizedEntityChecking(filteredBase),
+        warnings: [],
+        resolutionContext,
+      };
     }
 
     const entityIds = baseTree.entities?.map((e) => e.id) ?? [];

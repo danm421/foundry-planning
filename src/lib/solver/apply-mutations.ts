@@ -12,6 +12,10 @@ import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftsToClientData, giftEventBelongsTo, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import {
+  entityCheckingId,
+  makeEntityCheckingAccount,
+} from "@/lib/entities/entity-checking";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
 
@@ -296,6 +300,34 @@ export function applyMutations(
         const list = (result.entities ?? []).filter((e) => e.id !== m.id);
         if (m.value !== null) list.push(m.value);
         result.entities = list;
+        // F13: mirror the API path (entities/route.ts:236-260) — an entity with
+        // no checking account cannot receive or pay anything, so every trust
+        // payment pass silently `continue`s and the scenario computes zeros.
+        // The engine keys off isDefaultChecking + full entity ownership
+        // (projection.ts:557-563). The account shape and its deterministic id
+        // both come from `@/lib/entities/entity-checking` — the loader path
+        // calls the same constructor, so the two can no longer drift.
+        if (m.value !== null) {
+          const entityId = m.value.id;
+          const hasChecking = result.accounts.some(
+            (a) =>
+              a.isDefaultChecking === true &&
+              a.owners.some((o) => o.kind === "entity" && o.entityId === entityId),
+          );
+          if (!hasChecking) {
+            result.accounts = [
+              ...result.accounts,
+              makeEntityCheckingAccount(entityId, m.value.name),
+            ];
+          }
+        } else {
+          // Entity deleted: drop only the exact synthesized checking account
+          // (same deterministic id as above), never a sweep by ownership —
+          // an advisor may have added real accounts owned by this entity and
+          // those must survive the entity's removal.
+          const syntheticId = entityCheckingId(m.id);
+          result.accounts = result.accounts.filter((a) => a.id !== syntheticId);
+        }
         break;
       }
       case "stress-inflation": {
