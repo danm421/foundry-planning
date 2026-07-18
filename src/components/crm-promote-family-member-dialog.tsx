@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "@/components/dialog-shell";
 import { StateSelect } from "@/components/state-select";
+import { HOUSEHOLD_STATUS_LABELS } from "@/components/household-status-select";
 import {
   inputClassName,
   selectClassName,
@@ -11,12 +12,12 @@ import {
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon } from "@/components/icons";
 
-const STATUS_OPTIONS = [
-  { value: "prospect", label: "Prospect" },
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
-  { value: "archived", label: "Archived" },
-];
+// Derived from the exhaustively-typed HOUSEHOLD_STATUS_LABELS (already
+// reused by unified-clients-table.tsx) instead of hand-rolling another copy
+// of the status enum's display labels.
+const STATUS_OPTIONS = Object.entries(HOUSEHOLD_STATUS_LABELS).map(
+  ([value, label]) => ({ value, label }),
+);
 
 const FORM_ID = "crm-promote-family-member-form";
 
@@ -49,6 +50,14 @@ export function CrmPromoteFamilyMemberDialog(props: {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // DialogShell's button disable only takes effect after the `submitting`
+    // re-render, which isn't synchronous with a fast double-click/double-
+    // Enter. That matters here: the unlinked-dependent path (no
+    // sourceFamilyMemberId) has no server-side idempotency — the partial
+    // unique index on promote-family-member only covers
+    // `WHERE source_family_member_id IS NOT NULL` — so a race here can
+    // create two households from one click.
+    if (submitting) return;
     if (!state) {
       setError("Pick the new household's state of residence.");
       return;

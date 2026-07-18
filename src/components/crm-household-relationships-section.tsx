@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CrmLinkHouseholdDialog } from "@/components/crm-link-household-dialog";
+import { OverflowMenu } from "@/components/overflow-menu";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,25 +42,6 @@ function RelationshipCard({
   onUnlink: () => void;
   unlinking: boolean;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onPointerDown(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [menuOpen]);
-
   return (
     <li className="rounded-[var(--radius)] border border-hair bg-card p-4 transition-colors hover:border-hair-2">
       <div className="flex items-start justify-between gap-3">
@@ -82,38 +64,13 @@ function RelationshipCard({
           )}
         </div>
 
-        <div ref={wrapperRef} className="relative shrink-0">
-          <button
-            type="button"
-            aria-label={`Actions for ${relationship.counterpart.name}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((v) => !v)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors hover:bg-card-2 hover:text-ink"
-          >
-            ⋯
-          </button>
-
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-full z-30 mt-1.5 min-w-[140px] rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                disabled={unlinking}
-                onClick={() => {
-                  setMenuOpen(false);
-                  onUnlink();
-                }}
-                className="block w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-crit transition-colors hover:bg-crit/10 disabled:opacity-50"
-              >
-                Unlink
-              </button>
-            </div>
-          )}
-        </div>
+        <OverflowMenu
+          triggerLabel={`Actions for ${relationship.counterpart.name}`}
+          minWidthClassName="min-w-[140px]"
+          items={[
+            { label: "Unlink", variant: "destructive", disabled: unlinking, onClick: onUnlink },
+          ]}
+        />
       </div>
     </li>
   );

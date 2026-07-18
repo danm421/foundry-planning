@@ -1,7 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import { CrmContactForm, type CrmContactFormInitial } from "@/components/crm-contact-form";
@@ -18,6 +17,7 @@ import {
   CrmPromoteFamilyMemberDialog,
   type CrmPromoteFamilyMemberInitial,
 } from "@/components/crm-promote-family-member-dialog";
+import { OverflowMenu } from "@/components/overflow-menu";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
@@ -130,79 +130,6 @@ const EMPTY_PROMOTE_INITIAL: CrmPromoteFamilyMemberInitial = {
   phone: null,
   mobile: null,
 };
-
-/** Single-item overflow ("⋯") menu — same idiom as RelationshipCard's menu in
- *  crm-household-relationships-section.tsx. Only ever holds one entry here
- *  ("View household" or "Promote to household…"), so it stays local rather
- *  than growing into a general-purpose menu component. */
-function CardMenuButton(
-  props: { label: string } & ({ href: string; onClick?: undefined } | { href?: undefined; onClick: () => void }),
-) {
-  const { label, href, onClick } = props;
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div ref={wrapperRef} className="relative shrink-0">
-      <button
-        type="button"
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-ink-3 transition-colors hover:bg-card-2 hover:text-ink"
-      >
-        ⋯
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full z-30 mt-1.5 min-w-[170px] rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
-        >
-          {href ? (
-            <Link
-              href={href}
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="block rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
-            >
-              {label}
-            </Link>
-          ) : (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onClick?.();
-              }}
-              className="block w-full rounded-[var(--radius-sm)] px-3 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
-            >
-              {label}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ContactCard({
   badge,
@@ -540,27 +467,34 @@ export function ContactsTab({
                   onDelete={() => deleteFamilyMember(member)}
                   deleting={busy === member.id}
                   menu={
-                    promotedHouseholdId ? (
-                      <CardMenuButton
-                        label="View household"
-                        href={`/crm/households/${promotedHouseholdId}`}
-                      />
-                    ) : (
-                      <CardMenuButton
-                        label="Promote to household…"
-                        onClick={() =>
-                          openPromote({
-                            sourceFamilyMemberId: member.id,
-                            firstName: member.firstName,
-                            lastName: member.lastName ?? "",
-                            dateOfBirth: member.dateOfBirth,
-                            email: contact?.email ?? null,
-                            phone: contact?.phone ?? null,
-                            mobile: contact?.mobile ?? null,
-                          })
-                        }
-                      />
-                    )
+                    <OverflowMenu
+                      triggerLabel="More actions"
+                      minWidthClassName="min-w-[170px]"
+                      items={
+                        promotedHouseholdId
+                          ? [
+                              {
+                                label: "View household",
+                                href: `/crm/households/${promotedHouseholdId}`,
+                              },
+                            ]
+                          : [
+                              {
+                                label: "Promote to household…",
+                                onClick: () =>
+                                  openPromote({
+                                    sourceFamilyMemberId: member.id,
+                                    firstName: member.firstName,
+                                    lastName: member.lastName ?? "",
+                                    dateOfBirth: member.dateOfBirth,
+                                    email: contact?.email ?? null,
+                                    phone: contact?.phone ?? null,
+                                    mobile: contact?.mobile ?? null,
+                                  }),
+                              },
+                            ]
+                      }
+                    />
                   }
                 />
               );
@@ -582,18 +516,23 @@ export function ContactsTab({
                 onDelete={() => deleteContact(c)}
                 deleting={busy === c.id}
                 menu={
-                  <CardMenuButton
-                    label="Promote to household…"
-                    onClick={() =>
-                      openPromote({
-                        firstName: c.firstName,
-                        lastName: c.lastName,
-                        dateOfBirth: c.dateOfBirth,
-                        email: c.email,
-                        phone: c.phone,
-                        mobile: c.mobile,
-                      })
-                    }
+                  <OverflowMenu
+                    triggerLabel="More actions"
+                    minWidthClassName="min-w-[170px]"
+                    items={[
+                      {
+                        label: "Promote to household…",
+                        onClick: () =>
+                          openPromote({
+                            firstName: c.firstName,
+                            lastName: c.lastName,
+                            dateOfBirth: c.dateOfBirth,
+                            email: c.email,
+                            phone: c.phone,
+                            mobile: c.mobile,
+                          }),
+                      },
+                    ]}
                   />
                 }
               />
