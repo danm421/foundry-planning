@@ -6286,13 +6286,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
         const acc = accrueLockedEntityShare({
           carriedBoY: carried,
-          ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
+          ledger: {
+            beginningValue: ledger.beginningValue,
+            growth: ledger.growth,
+            endingValue: ledger.endingValue,
+          },
           percent: o.percent,
         });
         if (!lockedEntityShareCarry.has(o.entityId)) {
           lockedEntityShareCarry.set(o.entityId, new Map());
         }
         lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
+      }
+    }
+    // F3: sweep carry entries for accounts no longer in the projection (BoY
+    // sale/liquidation removed them from workingAccounts) so death-event and
+    // hypothetical-estate math never read a drained account's phantom slice.
+    // Live accounts are handled by the clamp above.
+    const liveAccountIds = new Set(workingAccounts.map((a) => a.id));
+    for (const byAccount of lockedEntityShareCarry.values()) {
+      for (const acctId of [...byAccount.keys()]) {
+        if (!liveAccountIds.has(acctId)) byAccount.delete(acctId);
       }
     }
 
