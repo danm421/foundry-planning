@@ -94,16 +94,58 @@ describe("family-linked contact rows", () => {
       .rejects.toThrow("Family member does not belong to this household");
   });
 
-  it("deleting the planning family member cascades the linked contact row", async () => {
+  it("second create omitting a field preserves the stored value", async () => {
+    const first = await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe",
+      familyMemberId: memberId,
+      email: "emma@example.com", phone: "555-0100", mobile: "555-0199",
+      notes: "Allergic to peanuts", relationshipLabel: "Daughter",
+    });
+    // A partial refresh (name only) must not wipe advisor-entered contact info.
     await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe-Smith",
+      familyMemberId: memberId,
+    });
+    const refreshed = await db.query.crmHouseholdContacts.findFirst({
+      where: eq(crmHouseholdContacts.id, first.id),
+    });
+    expect(refreshed?.lastName).toBe("Doe-Smith"); // NOT NULL snapshot, always refreshed
+    expect(refreshed?.email).toBe("emma@example.com");
+    expect(refreshed?.phone).toBe("555-0100");
+    expect(refreshed?.mobile).toBe("555-0199");
+    expect(refreshed?.notes).toBe("Allergic to peanuts");
+    expect(refreshed?.relationshipLabel).toBe("Daughter");
+  });
+
+  it("second create supplying relationshipLabel overwrites the stored value", async () => {
+    const first = await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe",
+      familyMemberId: memberId, relationshipLabel: "Daughter",
+    });
+    await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe",
+      familyMemberId: memberId, relationshipLabel: "Stepdaughter",
+    });
+    const refreshed = await db.query.crmHouseholdContacts.findFirst({
+      where: eq(crmHouseholdContacts.id, first.id),
+    });
+    expect(refreshed?.relationshipLabel).toBe("Stepdaughter");
+  });
+
+  it("deleting the planning family member cascades the linked contact row", async () => {
+    const created = await createCrmContact(householdId, {
       role: "dependent", firstName: "Emma", lastName: "Doe",
       familyMemberId: memberId, phone: "555-0100",
     });
     await db.delete(familyMembers).where(eq(familyMembers.id, memberId));
-    const rows = await db.query.crmHouseholdContacts.findMany({
-      where: eq(crmHouseholdContacts.familyMemberId, memberId),
-    });
-    expect(rows).toHaveLength(0);
+    // Assert on the row id, not on family_member_id: a regression to
+    // ON DELETE SET NULL would leave an orphan row that a familyMemberId
+    // lookup would still report as "gone".
+    expect(
+      await db.query.crmHouseholdContacts.findFirst({
+        where: eq(crmHouseholdContacts.id, created.id),
+      }),
+    ).toBeUndefined();
   });
 
   it("persists relationshipLabel on external contacts", async () => {

@@ -68,6 +68,14 @@ export async function createCrmContact(
   // Lazy-linking is idempotent: a second create for an already-linked family
   // member refreshes the contact fields in place rather than violating the
   // partial unique index on family_member_id.
+  //
+  // The refresh is non-destructive. A partial payload (say, one that only knows
+  // the member's name) must not wipe advisor-entered contact info, so every
+  // nullable field coalesces the proposed value over the stored one: supplying a
+  // field overwrites it, omitting it keeps whatever is already there. Inside
+  // ON CONFLICT DO UPDATE, `excluded.x` is the proposed row and the qualified
+  // table reference is the existing row. first/last name are NOT NULL snapshot
+  // columns and stay unconditional so name-based CRM search stays current.
   const [created] = input.familyMemberId
     ? await insertQuery
         .onConflictDoUpdate({
@@ -76,10 +84,11 @@ export async function createCrmContact(
           set: {
             firstName: input.firstName,
             lastName: input.lastName,
-            email: input.email || null,
-            phone: input.phone ?? null,
-            mobile: input.mobile ?? null,
-            notes: input.notes ?? null,
+            email: sql`coalesce(excluded.email, ${crmHouseholdContacts.email})`,
+            phone: sql`coalesce(excluded.phone, ${crmHouseholdContacts.phone})`,
+            mobile: sql`coalesce(excluded.mobile, ${crmHouseholdContacts.mobile})`,
+            notes: sql`coalesce(excluded.notes, ${crmHouseholdContacts.notes})`,
+            relationshipLabel: sql`coalesce(excluded.relationship_label, ${crmHouseholdContacts.relationshipLabel})`,
             updatedAt: new Date(),
           },
         })
