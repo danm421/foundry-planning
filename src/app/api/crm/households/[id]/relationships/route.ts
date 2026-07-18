@@ -6,6 +6,7 @@ import {
   SelfLinkError,
 } from "@/lib/crm/household-relationships";
 import { createHouseholdRelationshipSchema } from "@/lib/crm/schemas";
+import { UnauthorizedError } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function GET(
     const relationships = await listHouseholdRelationships(id);
     return NextResponse.json({ relationships });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof Error && err.message.startsWith("CRM household not found or access denied")) {
@@ -49,7 +50,7 @@ export async function POST(
     if (err instanceof HouseholdsAlreadyLinkedError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof Error && err.message.startsWith("CRM household not found or access denied")) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteHouseholdRelationship } from "@/lib/crm/household-relationships";
+import { UnauthorizedError } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function DELETE(
     await deleteHouseholdRelationship(id, relationshipId);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (

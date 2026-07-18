@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promoteFamilyMember, FamilyMemberNotInHouseholdError } from "@/lib/crm/promote-family-member";
 import { promoteFamilyMemberSchema } from "@/lib/crm/schemas";
+import { UnauthorizedError } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export async function POST(
     if (err instanceof FamilyMemberNotInHouseholdError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    if (err instanceof Error && err.message === "Unauthorized") {
+    if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (err instanceof Error && err.message.startsWith("CRM household not found or access denied")) {
