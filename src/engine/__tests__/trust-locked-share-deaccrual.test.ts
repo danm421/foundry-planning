@@ -127,4 +127,59 @@ describe("F3 — locked entity shares de-accrue with the account", () => {
     expect(y27.portfolioAssets.trustsAndBusinesses["acct-mixed"] ?? 0).toBeCloseTo(0, 2);
     expect(y28.portfolioAssets.trustsAndBusinesses["acct-mixed"] ?? 0).toBeCloseTo(0, 2);
   });
+
+  it("household supplemental withdrawals stop at balance − locked share; trust principal survives", () => {
+    // 300k/yr living expense, no income → supplemental draws from the 50/50
+    // account. Household's tappable half is 500k; the trust's 500k must
+    // survive all three years.
+    const livingExpense: Expense = {
+      id: "exp-living",
+      name: "Living",
+      type: "living",
+      annualAmount: 300_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2028,
+    };
+    const strategy: WithdrawalPriority[] = [
+      { accountId: "acct-mixed", priorityOrder: 1, startYear: 2026, endYear: 2028 },
+    ];
+    const data = buildClientData({
+      client,
+      familyMembers,
+      accounts: [checking(10_000), mixed(1_000_000, 1_000_000)],
+      entities: [trust],
+      incomes: [],
+      expenses: [livingExpense],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: strategy,
+      planSettings: settings,
+    });
+
+    const years = runProjection(data);
+    expect(years).toHaveLength(3);
+
+    for (const y of years) {
+      const ledger = y.accountLedgers["acct-mixed"];
+      const locked = y.entityAccountSharesEoY?.get(TRUST_ID)?.get("acct-mixed") ?? 0;
+      // The account never falls below the trust's locked slice…
+      expect(ledger.endingValue).toBeGreaterThanOrEqual(locked - 0.01);
+      // …and the locked slice never exceeds the account (audit F3 test gap:
+      // Σ reported buckets ≤ account balance).
+      expect(locked).toBeLessThanOrEqual(ledger.endingValue + 0.01);
+      // Re-bucket conservation: family + trust slices == account value exactly.
+      const familySlice = y.portfolioAssets.taxable["acct-mixed"] ?? 0;
+      const trustSlice = y.portfolioAssets.trustsAndBusinesses["acct-mixed"] ?? 0;
+      expect(familySlice + trustSlice).toBeCloseTo(ledger.endingValue, 2);
+    }
+
+    // With basis == value there is no gain, so draws are untaxed and the
+    // arithmetic is exact: yr1 draws ~290k of the 500k household half; by yr2
+    // capacity caps at balance − 500k and the account floors AT the locked
+    // slice. The trust's 500k principal is intact at the horizon.
+    const y28 = years[2];
+    expect(y28.accountLedgers["acct-mixed"].endingValue).toBeCloseTo(500_000, 0);
+    expect(y28.entityAccountSharesEoY?.get(TRUST_ID)?.get("acct-mixed")).toBeCloseTo(500_000, 0);
+  });
 });

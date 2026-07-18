@@ -3595,7 +3595,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (householdShare <= 0) continue;
       if (acct.isDefaultChecking) continue;
       const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
-      householdWithdrawBalances[acct.id] = balance * householdShare;
+      // F3: a split-owned account's locked entity slice is untappable. Cap
+      // household capacity at balance − Σ locked-so-far, computed with the
+      // same roll-forward the EoY accrual books (carry + this year's growth
+      // share, clamped at the current balance) so the cap and the accounting
+      // can't drift. Without this the household re-derives capacity from the
+      // raw balance every year and progressively spends trust principal.
+      const wLedger = accountLedgers[acct.id];
+      let lockedTotal = 0;
+      for (const o of acct.owners) {
+        if (o.kind !== "entity" || o.percent >= 1) continue;
+        lockedTotal += accrueLockedEntityShare({
+          carriedBoY: lockedEntityShareCarry.get(o.entityId)?.get(acct.id),
+          ledger: {
+            beginningValue: wLedger?.beginningValue ?? balance,
+            growth: wLedger?.growth ?? 0,
+            endingValue: balance,
+          },
+          percent: o.percent,
+        }).lockedEoY;
+      }
+      householdWithdrawBalances[acct.id] =
+        lockedTotal > 0
+          ? Math.min(balance * householdShare, Math.max(0, balance - lockedTotal))
+          : balance * householdShare;
     }
 
     // ── Roth Conversions — Phase 5b (size-only for fill_up_bracket) ─────────
