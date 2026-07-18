@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -69,8 +70,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Stable identity so per-row consumers don't re-render on every toast tick.
+  const contextValue = useMemo(() => ({ showToast }), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <div
         aria-live="polite"

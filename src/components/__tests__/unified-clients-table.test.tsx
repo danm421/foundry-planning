@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import { ToastProvider } from "../toast";
 import { UnifiedClientsTable, type UnifiedClientRow } from "../unified-clients-table";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 const ROWS: UnifiedClientRow[] = [
   {
@@ -28,9 +33,17 @@ const ROWS: UnifiedClientRow[] = [
   },
 ];
 
+function renderTable(rows: UnifiedClientRow[]) {
+  return render(
+    <ToastProvider>
+      <UnifiedClientsTable rows={rows} />
+    </ToastProvider>,
+  );
+}
+
 describe("UnifiedClientsTable", () => {
   it("renders a Planning status pill for households with a plan", () => {
-    render(<UnifiedClientsTable rows={ROWS} />);
+    renderTable(ROWS);
     const planningRow = screen.getByText("Smith Household").closest("tr")!;
     // The row also has a "Planning" quick-link <a>; the status pill is the <span>.
     const planningEls = within(planningRow).getAllByText("Planning");
@@ -38,7 +51,7 @@ describe("UnifiedClientsTable", () => {
   });
 
   it("shows an em dash for households with no plan and no primary contact", () => {
-    render(<UnifiedClientsTable rows={ROWS} />);
+    renderTable(ROWS);
     const prospectRow = screen.getByText("Jones Household").closest("tr")!;
     // No "Planning" pill, and primary-contact cell shows the dash.
     expect(within(prospectRow).queryByText("Planning")).toBeNull();
@@ -46,7 +59,7 @@ describe("UnifiedClientsTable", () => {
   });
 
   it("renders CRM and planning quick links per household", () => {
-    render(<UnifiedClientsTable rows={ROWS} />);
+    renderTable(ROWS);
     const smithRow = screen.getByText("Smith Household").closest("tr")!;
     expect(within(smithRow).getByRole("link", { name: "CRM" })).toBeInTheDocument();
     expect(within(smithRow).getByRole("link", { name: "Planning" })).toBeInTheDocument();
@@ -56,8 +69,29 @@ describe("UnifiedClientsTable", () => {
     expect(within(jonesRow).getByRole("link", { name: "Start planning" })).toBeInTheDocument();
   });
 
+  it("renders an inline status dropdown preset to the row's status", () => {
+    renderTable(ROWS);
+    const smithRow = screen.getByText("Smith Household").closest("tr")!;
+    const select = within(smithRow).getByRole("combobox", {
+      name: "Status for Smith Household",
+    }) as HTMLSelectElement;
+    expect(select.value).toBe("active");
+  });
+
+  it("renders static status text instead of a dropdown for trashed rows", () => {
+    renderTable([
+      {
+        ...ROWS[0],
+        deletedAt: "2026-05-03T00:00:00.000Z",
+      },
+    ]);
+    const row = screen.getByText("Smith Household").closest("tr")!;
+    expect(within(row).queryByRole("combobox")).toBeNull();
+    expect(within(row).getByText("Active")).toBeInTheDocument();
+  });
+
   it("renders an empty state when there are no rows", () => {
-    render(<UnifiedClientsTable rows={[]} />);
+    renderTable([]);
     expect(screen.getByText(/no clients yet/i)).toBeInTheDocument();
   });
 });

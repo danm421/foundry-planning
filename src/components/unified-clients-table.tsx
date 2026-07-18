@@ -1,6 +1,7 @@
 "use client";
 
 import { ClientRowActions } from "./client-row-actions";
+import { HouseholdStatusSelect, HOUSEHOLD_STATUS_LABELS } from "./household-status-select";
 import { HouseholdTrashActions } from "./household-trash-actions";
 import { daysUntilPurge } from "@/lib/crm/trash";
 
@@ -24,12 +25,8 @@ interface UnifiedClientsTableProps {
   canManage?: boolean;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  prospect: "Prospect",
-  active: "Active",
-  inactive: "Inactive",
-  archived: "Archived",
-};
+// Widened so a row's plain-string status can index it (unknowns fall back below).
+const STATUS_LABELS: Record<string, string> = HOUSEHOLD_STATUS_LABELS;
 
 const TH =
   "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
@@ -87,7 +84,18 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage }: UnifiedCl
                   />
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
-                  {STATUS_LABELS[r.status] ?? r.status}
+                  {r.deletedAt ? (
+                    STATUS_LABELS[r.status] ?? r.status
+                  ) : (
+                    <HouseholdStatusSelect
+                      // Remount when the server-confirmed status changes so the
+                      // select's optimistic local value re-seeds from fresh data.
+                      key={r.status}
+                      householdId={r.householdId}
+                      householdName={r.name}
+                      status={r.status}
+                    />
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
                   {dash(r.primaryName)}
