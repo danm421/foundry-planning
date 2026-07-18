@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { crmHouseholdContacts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { crmHouseholdContacts, familyMembers } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
@@ -9,6 +9,18 @@ import { resolveContactDateOfBirth } from "./default-dob";
 import { syncHouseholdNameFromContacts } from "./sync-household-name";
 import { roleAffectsHouseholdName } from "./household-name";
 import type { CreateCrmContactInput } from "./schemas";
+
+// A linked contact row must point at a family member of THIS household's
+// planning client — never trust a client-supplied familyMemberId.
+async function assertFamilyMemberInHousehold(householdId: string, familyMemberId: string) {
+  const member = await db.query.familyMembers.findFirst({
+    where: eq(familyMembers.id, familyMemberId),
+    with: { client: { columns: { crmHouseholdId: true } } },
+  });
+  if (!member || member.client.crmHouseholdId !== householdId) {
+    throw new Error("Family member does not belong to this household");
+  }
+}
 
 export async function createCrmContact(
   householdId: string,
@@ -23,35 +35,112 @@ export async function createCrmContact(
   const { orgId } = await requireCrmHouseholdAccess(householdId);
   const { userId } = await auth();
 
-  const [created] = await db
-    .insert(crmHouseholdContacts)
-    .values({
-      householdId,
-      role: input.role,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      preferredName: input.preferredName,
-      dateOfBirth: resolveContactDateOfBirth(input.role, input.dateOfBirth),
-      email: input.email || null,
-      phone: input.phone,
-      mobile: input.mobile,
-      addressLine1: input.addressLine1,
-      addressLine2: input.addressLine2,
-      city: input.city,
-      state: input.state,
-      postalCode: input.postalCode,
-      country: input.country,
-      ssnLast4: input.ssnLast4,
-      maritalStatus: input.maritalStatus,
-      employmentStatus: input.employmentStatus,
-      employer: input.employer,
-      occupation: input.occupation,
-      notes: input.notes,
-    })
-    .returning();
+  if (input.familyMemberId) {
+    await assertFamilyMemberInHousehold(householdId, input.familyMemberId);
+  }
+
+  // Creation-time only: for an adult role with no DOB entered this invents the
+  // age-50 placeholder. The conflict path deliberately does NOT reuse it — see
+  // the date_of_birth note on the ON CONFLICT set below.
+  const resolvedDateOfBirth = resolveContactDateOfBirth(input.role, input.dateOfBirth);
+
+  const insertQuery = db.insert(crmHouseholdContacts).values({
+    householdId,
+    role: input.role,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    preferredName: input.preferredName,
+    dateOfBirth: resolvedDateOfBirth,
+    email: input.email || null,
+    phone: input.phone,
+    mobile: input.mobile,
+    addressLine1: input.addressLine1,
+    addressLine2: input.addressLine2,
+    city: input.city,
+    state: input.state,
+    postalCode: input.postalCode,
+    country: input.country,
+    ssnLast4: input.ssnLast4,
+    maritalStatus: input.maritalStatus,
+    employmentStatus: input.employmentStatus,
+    employer: input.employer,
+    occupation: input.occupation,
+    notes: input.notes,
+    relationshipLabel: input.relationshipLabel,
+    familyMemberId: input.familyMemberId,
+  });
+
+  // Lazy-linking is idempotent: a second create for an already-linked family
+  // member refreshes the contact fields in place rather than violating the
+  // partial unique index on family_member_id.
+  //
+  // The refresh is non-destructive. A partial payload (say, one that only knows
+  // the member's name) must not wipe advisor-entered contact info, so every
+  // nullable field coalesces the proposed value over the stored one: supplying a
+  // field overwrites it, omitting it keeps whatever is already there. Inside
+  // ON CONFLICT DO UPDATE, `excluded.x` is the proposed row and the qualified
+  // table reference is the existing row. first/last name are NOT NULL snapshot
+  // columns and stay unconditional so name-based CRM search stays current.
+  //
+  // The set below lists every nullable column of the insert values above, in the
+  // same order — a column missing here is silently dropped on re-link, which is
+  // the bug this shape exists to prevent. Deliberately absent: household_id and
+  // family_member_id (invariant — the conflict key, and its household is pinned
+  // by assertFamilyMemberInHousehold) and `role` (see comment on the set).
+  //
+  // date_of_birth is the ONE column where insert and conflict deliberately
+  // differ, and the difference is load-bearing. `excluded.date_of_birth` is the
+  // resolveContactDateOfBirth(input.role, ...) output, which for an adult role
+  // with no DOB entered is an INVENTED age-50 January-1 placeholder. Since the
+  // conflict path pins `role`, coalescing that value would let a re-link
+  // submitting role:"primary" stamp a fake ~50-year-old birthday onto a stored
+  // dependent whose DOB is legitimately NULL — corrupt planning data, because
+  // dependent DOB drives education timing. The conflict path therefore coalesces
+  // the RAW submitted DOB: the placeholder is a creation-time concern only.
+  const [created] = input.familyMemberId
+    ? await insertQuery
+        .onConflictDoUpdate({
+          target: crmHouseholdContacts.familyMemberId,
+          targetWhere: sql`family_member_id is not null`,
+          set: {
+            // `role` is intentionally NOT refreshed: a conflicting create is a
+            // re-link of an existing row, not a role change (those go through
+            // updateCrmContact), and setting it here could collide with the
+            // one-primary/one-spouse partial unique indexes — a second conflict
+            // that ON CONFLICT DO UPDATE cannot resolve, turning today's 201
+            // into an unhandled 23505.
+            firstName: input.firstName,
+            lastName: input.lastName,
+            preferredName: sql`coalesce(excluded.preferred_name, ${crmHouseholdContacts.preferredName})`,
+            // NOT `excluded.date_of_birth` — see the date_of_birth note above.
+            dateOfBirth: sql`coalesce(${input.dateOfBirth ?? null}, ${crmHouseholdContacts.dateOfBirth})`,
+            email: sql`coalesce(excluded.email, ${crmHouseholdContacts.email})`,
+            phone: sql`coalesce(excluded.phone, ${crmHouseholdContacts.phone})`,
+            mobile: sql`coalesce(excluded.mobile, ${crmHouseholdContacts.mobile})`,
+            addressLine1: sql`coalesce(excluded.address_line1, ${crmHouseholdContacts.addressLine1})`,
+            addressLine2: sql`coalesce(excluded.address_line2, ${crmHouseholdContacts.addressLine2})`,
+            city: sql`coalesce(excluded.city, ${crmHouseholdContacts.city})`,
+            state: sql`coalesce(excluded.state, ${crmHouseholdContacts.state})`,
+            postalCode: sql`coalesce(excluded.postal_code, ${crmHouseholdContacts.postalCode})`,
+            country: sql`coalesce(excluded.country, ${crmHouseholdContacts.country})`,
+            ssnLast4: sql`coalesce(excluded.ssn_last4, ${crmHouseholdContacts.ssnLast4})`,
+            maritalStatus: sql`coalesce(excluded.marital_status, ${crmHouseholdContacts.maritalStatus})`,
+            employmentStatus: sql`coalesce(excluded.employment_status, ${crmHouseholdContacts.employmentStatus})`,
+            employer: sql`coalesce(excluded.employer, ${crmHouseholdContacts.employer})`,
+            occupation: sql`coalesce(excluded.occupation, ${crmHouseholdContacts.occupation})`,
+            notes: sql`coalesce(excluded.notes, ${crmHouseholdContacts.notes})`,
+            relationshipLabel: sql`coalesce(excluded.relationship_label, ${crmHouseholdContacts.relationshipLabel})`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning()
+    : await insertQuery.returning();
 
   // Adding a primary/spouse changes the derived household name; keep it in sync.
-  if (syncHouseholdName && roleAffectsHouseholdName(input.role)) {
+  // Branch on the PERSISTED role, not the submitted one: since the conflict path
+  // leaves `role` alone, a re-link submitting role:"primary" against a stored
+  // dependent row must not act as if the row became primary.
+  if (syncHouseholdName && roleAffectsHouseholdName(created.role)) {
     await syncHouseholdNameFromContacts(db, householdId);
   }
 
@@ -65,8 +154,11 @@ export async function createCrmContact(
     {
       householdId,
       kind: "contact_change",
-      title: `Added ${input.role}: ${input.firstName} ${input.lastName}`,
-      metadata: { contactId: created.id, role: input.role },
+      // PERSISTED role, same reason as the household-name branch above: the
+      // conflict path leaves `role` alone, so an activity entry reading
+      // input.role would tell the advisor a dependent was "Added primary".
+      title: `Added ${created.role}: ${input.firstName} ${input.lastName}`,
+      metadata: { contactId: created.id, role: created.role },
       occurredAt: new Date(),
     },
     { actorUserId: userId ?? "" },
@@ -81,6 +173,19 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
   if (!existing) throw new Error("Contact not found");
   const { orgId } = await requireCrmHouseholdAccess(existing.householdId);
   const { userId } = await auth();
+
+  if (patch.familyMemberId) {
+    // A family link is dependent-only. The schema accepts familyMemberId on any
+    // role, so without this a PATCH could hang a planning link off a
+    // primary/spouse/other row. Resolve against the patched role when the same
+    // request changes it. Create is deliberately NOT guarded this way: its
+    // conflict path resolves a submitted role against the PERSISTED dependent
+    // row (see createCrmContact's ON CONFLICT note).
+    if ((patch.role ?? existing.role) !== "dependent") {
+      throw new Error("Family member link requires the dependent role");
+    }
+    await assertFamilyMemberInHousehold(existing.householdId, patch.familyMemberId);
+  }
 
   const nameChanging = "firstName" in patch || "lastName" in patch;
 

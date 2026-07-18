@@ -594,6 +594,16 @@ export const crmHouseholdContacts = pgTable("crm_household_contacts", {
   employer: text("employer"),
   occupation: text("occupation"),
   notes: text("notes"),
+  // Live-join link to a planning family member. When set, name/DOB/relationship
+  // display comes from family_members at read time; this row only carries
+  // CRM-side contact info. Cascade keeps CRM clean regardless of which planning
+  // write path deletes the member.
+  familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+    onDelete: "cascade",
+  }),
+  // Free-text label for external (role 'other') contacts: "CPA", "Trustee",
+  // "Emergency contact", "Family friend".
+  relationshipLabel: text("relationship_label"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -605,6 +615,9 @@ export const crmHouseholdContacts = pgTable("crm_household_contacts", {
   uniqueIndex("crm_contacts_one_spouse_per_household")
     .on(t.householdId)
     .where(sql`role = 'spouse'`),
+  uniqueIndex("crm_contacts_family_member_uniq")
+    .on(t.familyMemberId)
+    .where(sql`family_member_id is not null`),
 ]);
 
 export const crmHouseholdAccounts = pgTable("crm_household_accounts", {
