@@ -6,7 +6,8 @@ type RecordActivityInput = {
   householdId: string;
   kind:
     | "note" | "call" | "meeting" | "email" | "status_change"
-    | "contact_change" | "account_change" | "document_uploaded" | "planning_link";
+    | "contact_change" | "account_change" | "document_uploaded" | "planning_link"
+    | "relationship_change";
   title: string;
   body?: string;
   metadata?: Record<string, unknown>;

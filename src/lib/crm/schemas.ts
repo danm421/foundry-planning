@@ -6,6 +6,7 @@ export const crmContactRoleSchema = z.enum(["primary", "spouse", "dependent", "o
 export const crmActivityKindSchema = z.enum([
   "note", "call", "meeting", "email", "status_change",
   "contact_change", "account_change", "document_uploaded", "planning_link",
+  "relationship_change",
 ]);
 
 // Minimal contact captured inline when a household is first created
