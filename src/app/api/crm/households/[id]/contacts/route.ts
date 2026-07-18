@@ -27,6 +27,12 @@ export async function POST(
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (
+      err instanceof Error &&
+      err.message === "Family member does not belong to this household"
+    ) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST /api/crm/households/[id]/contacts error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

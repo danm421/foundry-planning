@@ -30,6 +30,12 @@ export async function PATCH(
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    if (
+      err instanceof Error &&
+      err.message === "Family member does not belong to this household"
+    ) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("PATCH /api/crm/households/[id]/contacts/[contactId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

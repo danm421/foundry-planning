@@ -66,6 +66,8 @@ export const createCrmContactSchema = z.object({
   employer: z.string().max(200).optional(),
   occupation: z.string().max(200).optional(),
   notes: z.string().max(5000).optional(),
+  relationshipLabel: z.string().trim().max(100).optional(),
+  familyMemberId: z.uuid().optional(),
 });
 
 export const updateCrmContactSchema = createCrmContactSchema.partial();
