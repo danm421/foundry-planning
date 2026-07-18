@@ -2958,6 +2958,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // mirroring how non-household charity outflows are handled. Future tasks
     // may refine to per-beneficiary deposit if the user adds beneficiary-owned
     // accounts to the data model.
+    // F10: both termination passes below run BEFORE the step-11 cashDelta
+    // flush (projection.ts:4944), so cash credited earlier this year — RMDs
+    // (:1918), note payments (:2143), trust tax debits (:2665) — is not yet in
+    // accountBalances. Read the effective balance instead, mirroring the
+    // note-payment pass at projection.ts:2170-2171. Without this the residue is
+    // stranded permanently: isTrustTerminationYear fires exactly once.
+    //
+    // Clamped at 0 so the reported TrustTerminationResult equals what is
+    // actually drained — the drain loops already skip non-positive accounts,
+    // but the totalAvailable sums did not, which let a negative account shrink
+    // the reported distribution below the real one.
+    const effectiveTerminationBalance = (id: string) =>
+      Math.max(0, (accountBalances[id] ?? 0) + (cashDelta[id] ?? 0));
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
@@ -2976,7 +2989,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         totalAvailable += balance * trustShare;
       }
       if (totalAvailable <= 0) continue;
@@ -3002,7 +3015,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         const drain = balance * trustShare;
         if (drain <= 0) continue;
         creditCash(acct.id, -drain, {
@@ -3033,7 +3046,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         totalAvailable += balance * trustShare;
       }
       if (totalAvailable <= 0) continue;
@@ -3059,7 +3072,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear,
         );
         if (trustShare <= 0) continue;
-        const balance = accountBalances[acct.id] ?? 0;
+        const balance = effectiveTerminationBalance(acct.id);
         const drain = balance * trustShare;
         if (drain <= 0) continue;
         creditCash(acct.id, -drain, {
