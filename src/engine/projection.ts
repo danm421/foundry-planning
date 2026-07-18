@@ -503,7 +503,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
    * Keyed on trustSubType alone (not `&& splitInterest`): a malformed CRT with
    * no splitInterest snapshot still must not be taxed as an ordinary trust.
    *
-   * Ten call sites, against 14 `effectiveIsGrantor` call sites — the two are NOT
+   * Ten call sites, against 12 `effectiveIsGrantor` call sites — the two are NOT
    * in 1:1 correspondence, so "every grantor fork has a CRT guard" is the wrong
    * mental model. The sites are:
    *   - buildNonGrantorTrusts .............. keeps the CRT out of the 1041 pass
@@ -862,12 +862,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
   // gap-fill time the trust marginal rate isn't available (trust-tax pass has
   // already run for the current year), so the gain is stashed here and drained
-  // at the start of the next year. Non-grantor entries flow into that year's
-  // `assetTransactionGains` (trust pays its own 1041 cap-gains tax). Grantor
-  // entries flow into household `taxDetail.capitalGains` (taxed at 1040). The
-  // grantor / non-grantor decision is re-evaluated at drain time using the
-  // entity's CURRENT-year status — a death-event grantor flip in the
-  // intervening year correctly redirects the gain.
+  // at the start of the next year. Entries whose entity is in the drain year's
+  // non-grantor 1041 pass flow into that year's `assetTransactionGains`; all
+  // others (grantor trusts, business entities, lapsed/reclassified trusts)
+  // backstop into household `taxDetail.capitalGains` (taxed at 1040).
+  // Membership is re-evaluated at drain time, so a death-event grantor flip in
+  // the intervening year correctly redirects the gain. (F4)
   const deferredEntityLiquidationGains: Array<{
     entityId: string;
     accountId: string;
@@ -989,20 +989,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const nonGrantorTrusts: NonGrantorTrustInput[] = buildNonGrantorTrusts(currentEntities);
     const grantorTrusts: GrantorTrustEntry[] = buildGrantorTrusts(currentEntities);
 
+    // F4: entities that will actually be in this year's 1041 pass. Deferred
+    // and same-year gains for anyone else (business entities, grantor trusts,
+    // lapsed-grantor-status trusts) must stay on / backstop to the household
+    // 1040 — collectTrustIncome silently drops non-members.
+    const nonGrantorTrustIds = new Set(nonGrantorTrusts.map((t) => t.entityId));
+
     // Drain prior-year entity-liquidation cap gains (step 12c carry-over).
-    // Routed by the entity's CURRENT-year grantor status: grantor → household
-    // 1040 cap-gains; non-grantor → trust-tax pass via assetTransactionGains.
-    let grantorCarryInCapGains = 0;
+    // Routed by CURRENT-year 1041 membership: entities in this year's
+    // non-grantor pass → trust-tax via assetTransactionGains; everyone else
+    // (grantor trusts, business entities, lapsed/reclassified trusts) →
+    // household 1040 backstop. (F4 — membership, not the grantor fork:
+    // collectTrustIncome drops non-members, so routing a non-member to the
+    // 1041 side silently evaporates the gain.)
+    let householdCarryInCapGains = 0;
     const nonGrantorCarryInGains: AssetTransactionGain[] = [];
     for (const g of deferredEntityLiquidationGains.splice(0)) {
       if (g.gain <= 0) continue;
       // §664(c): CRT gains are exempt — neither deferred to the household 1040
       // nor routed to the 1041 pass. Drop them outright. (F1)
       if (isTaxExemptTrust(g.entityId)) continue;
-      if (effectiveIsGrantor(g.entityId, year)) {
-        grantorCarryInCapGains += g.gain;
-      } else {
+      if (nonGrantorTrustIds.has(g.entityId)) {
         nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
+      } else {
+        householdCarryInCapGains += g.gain;
       }
     }
 
@@ -2372,14 +2382,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       reinvestmentResult.capitalGains +
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
-      grantorCarryInCapGains;
+      householdCarryInCapGains;
     if (crtSaleGainTotal > 0) {
       taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - crtSaleGainTotal);
     }
-    if (grantorCarryInCapGains > 0) {
+    if (householdCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",
-        amount: grantorCarryInCapGains,
+        amount: householdCarryInCapGains,
       };
     }
 
@@ -2476,7 +2486,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // the household's OWN gains in a plan that mixes a CRT with an
           // ordinary non-grantor trust. (F1)
           if (isTaxExemptTrust(owner.entityId)) continue;
-          if (effectiveIsGrantor(owner.entityId, year)) continue;
+          // F4: only this year's 1041 members — a business entity's (or any
+          // non-member's) share must stay on the household ADD above, not be
+          // subtracted via sameYearTrustGains and then dropped by
+          // collectTrustIncome.
+          if (!nonGrantorTrustIds.has(owner.entityId)) continue;
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
             gain: item.capitalGain * owner.percent,
@@ -2486,7 +2500,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Step 12c carry-over: prior-year entity gap-fill liquidations of trust
       // taxable accounts surface here so this year's trust-tax pass picks up
-      // the recognized gain. (Grantor entries were routed to household above.)
+      // the recognized gain. (Entries for entities outside this year's 1041
+      // pass — grantor trusts, businesses, lapsed trusts — were backstopped
+      // to the household 1040 at the drain instead. F4)
       if (nonGrantorCarryInGains.length > 0) {
         assetTransactionGains.push(...nonGrantorCarryInGains);
       }
@@ -3595,7 +3611,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (householdShare <= 0) continue;
       if (acct.isDefaultChecking) continue;
       const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
-      householdWithdrawBalances[acct.id] = balance * householdShare;
+      // F3: a split-owned account's locked entity slice is untappable. Cap
+      // household capacity at balance − Σ locked-so-far, computed with the
+      // same roll-forward the EoY accrual books (carry + this year's growth
+      // share, clamped at the current balance) so the cap and the accounting
+      // can't drift. Without this the household re-derives capacity from the
+      // raw balance every year and progressively spends trust principal.
+      const wLedger = accountLedgers[acct.id];
+      let lockedTotal = 0;
+      for (const o of acct.owners) {
+        if (o.kind !== "entity" || o.percent >= 1) continue;
+        lockedTotal += accrueLockedEntityShare({
+          carriedBoY: lockedEntityShareCarry.get(o.entityId)?.get(acct.id),
+          ledger: {
+            beginningValue: wLedger?.beginningValue ?? balance,
+            growth: wLedger?.growth ?? 0,
+            endingValue: balance,
+          },
+          percent: o.percent,
+        }).lockedEoY;
+      }
+      householdWithdrawBalances[acct.id] =
+        lockedTotal > 0
+          ? Math.min(balance * householdShare, Math.max(0, balance - lockedTotal))
+          : balance * householdShare;
     }
 
     // ── Roth Conversions — Phase 5b (size-only for fill_up_bracket) ─────────
@@ -5852,9 +5891,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // pro-rata gain against the pre-liquidation balance, reduce basis by
         // the same fraction, and stash the gain for NEXT year's trust-tax pass
         // (deferred — trust marginal rate isn't available at gap-fill time).
-        // Routing (grantor → household 1040 vs non-grantor → trust 1041)
-        // happens at drain time in next year's loop iteration so a grantor
-        // flip in the intervening year is honored.
+        // Routing (1041-pass members → trust 1041; everyone else → household
+        // 1040 backstop, F4) happens at drain time in next year's loop
+        // iteration so a grantor flip in the intervening year is honored.
         if (liqTaxable) {
           const acctBasis = liqBasisBefore;
           const fraction = liqFraction;
@@ -6286,13 +6325,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
         const acc = accrueLockedEntityShare({
           carriedBoY: carried,
-          ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
+          ledger: {
+            beginningValue: ledger.beginningValue,
+            growth: ledger.growth,
+            endingValue: ledger.endingValue,
+          },
           percent: o.percent,
         });
         if (!lockedEntityShareCarry.has(o.entityId)) {
           lockedEntityShareCarry.set(o.entityId, new Map());
         }
         lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
+      }
+    }
+    // F3: sweep carry entries for accounts no longer in the projection (BoY
+    // sale/liquidation removed them from workingAccounts) so death-event and
+    // hypothetical-estate math never read a drained account's phantom slice.
+    // Live accounts are handled by the clamp above. The liveness Set is built
+    // lazily — most plans have no split-owned entity accounts and the carry
+    // map stays empty, so the per-year allocation would be pure waste.
+    let liveAccountIds: Set<string> | null = null;
+    for (const byAccount of lockedEntityShareCarry.values()) {
+      if (byAccount.size === 0) continue;
+      liveAccountIds ??= new Set(workingAccounts.map((a) => a.id));
+      for (const acctId of byAccount.keys()) {
+        if (!liveAccountIds.has(acctId)) byAccount.delete(acctId);
       }
     }
 
