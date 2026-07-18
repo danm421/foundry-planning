@@ -76,17 +76,45 @@ export async function createCrmContact(
   // ON CONFLICT DO UPDATE, `excluded.x` is the proposed row and the qualified
   // table reference is the existing row. first/last name are NOT NULL snapshot
   // columns and stay unconditional so name-based CRM search stays current.
+  //
+  // The set below lists every nullable column of the insert values above, in the
+  // same order — a column missing here is silently dropped on re-link, which is
+  // the bug this shape exists to prevent. Deliberately absent: household_id and
+  // family_member_id (invariant — the conflict key, and its household is pinned
+  // by assertFamilyMemberInHousehold) and `role` (see comment on the set).
+  // date_of_birth needs no special casing: `excluded.date_of_birth` IS the
+  // resolveContactDateOfBirth(...) output the insert computed, so the conflict
+  // path coalesces the resolved value, never the raw input.
   const [created] = input.familyMemberId
     ? await insertQuery
         .onConflictDoUpdate({
           target: crmHouseholdContacts.familyMemberId,
           targetWhere: sql`family_member_id is not null`,
           set: {
+            // `role` is intentionally NOT refreshed: a conflicting create is a
+            // re-link of an existing row, not a role change (those go through
+            // updateCrmContact), and setting it here could collide with the
+            // one-primary/one-spouse partial unique indexes — a second conflict
+            // that ON CONFLICT DO UPDATE cannot resolve, turning today's 201
+            // into an unhandled 23505.
             firstName: input.firstName,
             lastName: input.lastName,
+            preferredName: sql`coalesce(excluded.preferred_name, ${crmHouseholdContacts.preferredName})`,
+            dateOfBirth: sql`coalesce(excluded.date_of_birth, ${crmHouseholdContacts.dateOfBirth})`,
             email: sql`coalesce(excluded.email, ${crmHouseholdContacts.email})`,
             phone: sql`coalesce(excluded.phone, ${crmHouseholdContacts.phone})`,
             mobile: sql`coalesce(excluded.mobile, ${crmHouseholdContacts.mobile})`,
+            addressLine1: sql`coalesce(excluded.address_line1, ${crmHouseholdContacts.addressLine1})`,
+            addressLine2: sql`coalesce(excluded.address_line2, ${crmHouseholdContacts.addressLine2})`,
+            city: sql`coalesce(excluded.city, ${crmHouseholdContacts.city})`,
+            state: sql`coalesce(excluded.state, ${crmHouseholdContacts.state})`,
+            postalCode: sql`coalesce(excluded.postal_code, ${crmHouseholdContacts.postalCode})`,
+            country: sql`coalesce(excluded.country, ${crmHouseholdContacts.country})`,
+            ssnLast4: sql`coalesce(excluded.ssn_last4, ${crmHouseholdContacts.ssnLast4})`,
+            maritalStatus: sql`coalesce(excluded.marital_status, ${crmHouseholdContacts.maritalStatus})`,
+            employmentStatus: sql`coalesce(excluded.employment_status, ${crmHouseholdContacts.employmentStatus})`,
+            employer: sql`coalesce(excluded.employer, ${crmHouseholdContacts.employer})`,
+            occupation: sql`coalesce(excluded.occupation, ${crmHouseholdContacts.occupation})`,
             notes: sql`coalesce(excluded.notes, ${crmHouseholdContacts.notes})`,
             relationshipLabel: sql`coalesce(excluded.relationship_label, ${crmHouseholdContacts.relationshipLabel})`,
             updatedAt: new Date(),
@@ -96,7 +124,10 @@ export async function createCrmContact(
     : await insertQuery.returning();
 
   // Adding a primary/spouse changes the derived household name; keep it in sync.
-  if (syncHouseholdName && roleAffectsHouseholdName(input.role)) {
+  // Branch on the PERSISTED role, not the submitted one: since the conflict path
+  // leaves `role` alone, a re-link submitting role:"primary" against a stored
+  // dependent row must not act as if the row became primary.
+  if (syncHouseholdName && roleAffectsHouseholdName(created.role)) {
     await syncHouseholdNameFromContacts(db, householdId);
   }
 

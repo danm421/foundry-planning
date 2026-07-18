@@ -94,12 +94,35 @@ describe("family-linked contact rows", () => {
       .rejects.toThrow("Family member does not belong to this household");
   });
 
-  it("second create omitting a field preserves the stored value", async () => {
+  // Every nullable column createCrmContact writes on INSERT. A field missing
+  // from the ON CONFLICT set is silently dropped on re-link while the caller
+  // still gets a 201, so both directions are asserted over the WHOLE set rather
+  // than over whichever fields a review happened to name.
+  const FULL_CONTACT = {
+    preferredName: "Em", dateOfBirth: "2010-04-02",
+    email: "emma@example.com", phone: "555-0100", mobile: "555-0199",
+    addressLine1: "1 Main St", addressLine2: "Apt 2", city: "Springfield",
+    state: "IL", postalCode: "62704", country: "USA", ssnLast4: "1234",
+    maritalStatus: "single", employmentStatus: "student",
+    employer: "Acme Corp", occupation: "Intern",
+    notes: "Allergic to peanuts", relationshipLabel: "Daughter",
+  } as const;
+
+  // Compare the whole set in one assertion so a failure names EVERY dropped
+  // column, not just the first one.
+  async function readContactFields(id: string) {
+    const row = await db.query.crmHouseholdContacts.findFirst({
+      where: eq(crmHouseholdContacts.id, id),
+    });
+    return Object.fromEntries(
+      Object.keys(FULL_CONTACT).map((f) => [f, row?.[f as keyof typeof row]]),
+    );
+  }
+
+  it("second create omitting fields preserves every stored value", async () => {
     const first = await createCrmContact(householdId, {
       role: "dependent", firstName: "Emma", lastName: "Doe",
-      familyMemberId: memberId,
-      email: "emma@example.com", phone: "555-0100", mobile: "555-0199",
-      notes: "Allergic to peanuts", relationshipLabel: "Daughter",
+      familyMemberId: memberId, ...FULL_CONTACT,
     });
     // A partial refresh (name only) must not wipe advisor-entered contact info.
     await createCrmContact(householdId, {
@@ -110,11 +133,49 @@ describe("family-linked contact rows", () => {
       where: eq(crmHouseholdContacts.id, first.id),
     });
     expect(refreshed?.lastName).toBe("Doe-Smith"); // NOT NULL snapshot, always refreshed
-    expect(refreshed?.email).toBe("emma@example.com");
-    expect(refreshed?.phone).toBe("555-0100");
-    expect(refreshed?.mobile).toBe("555-0199");
-    expect(refreshed?.notes).toBe("Allergic to peanuts");
-    expect(refreshed?.relationshipLabel).toBe("Daughter");
+    expect(await readContactFields(first.id)).toEqual({ ...FULL_CONTACT });
+  });
+
+  it("second create supplying previously-absent fields writes every one of them", async () => {
+    // Lazy-link case: the row was seeded from family_members with nothing but a
+    // name, then the advisor submits the full contact form for that member.
+    const first = await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe",
+      familyMemberId: memberId,
+    });
+    expect(first.city).toBeNull();
+    expect(first.employer).toBeNull();
+    expect(first.dateOfBirth).toBeNull();
+
+    await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe",
+      familyMemberId: memberId, ...FULL_CONTACT,
+    });
+    expect(await readContactFields(first.id)).toEqual({ ...FULL_CONTACT });
+  });
+
+  it("second create leaves the stored role alone and never collides with the one-primary index", async () => {
+    // `role` is deliberately excluded from the ON CONFLICT set. Refreshing it
+    // would collide with crm_contacts_one_primary_per_household here — a second
+    // conflict ON CONFLICT DO UPDATE cannot resolve — and the household name
+    // must keep tracking the real primary, not the submitted role.
+    await createCrmContact(householdId, {
+      role: "primary", firstName: "Jane", lastName: "Doe",
+    });
+    const linked = await createCrmContact(householdId, {
+      role: "dependent", firstName: "Emma", lastName: "Doe", familyMemberId: memberId,
+    });
+
+    const relinked = await createCrmContact(householdId, {
+      role: "primary", firstName: "Emma", lastName: "Doe", familyMemberId: memberId,
+    });
+
+    expect(relinked.id).toBe(linked.id);
+    expect(relinked.role).toBe("dependent");
+    const household = await db.query.crmHouseholds.findFirst({
+      where: eq(crmHouseholds.id, householdId),
+    });
+    expect(household?.name).toBe("Jane Doe");
   });
 
   it("second create supplying relationshipLabel overwrites the stored value", async () => {
