@@ -117,7 +117,7 @@ describe("POST /forge/stream — verification", () => {
     expect(text).toBe("Balance is $1,000,000.");
   });
 
-  it("prepends the caveat when verify exhausts", async () => {
+  it("appends the caveat after the answer when verify exhausts", async () => {
     fakeGraph.streamEvents = async function* () {
       yield { event: "on_chat_model_stream", name: "model", data: { chunk: { content: "Balance is $2.5M." } } };
       yield { event: "on_custom_event", name: "forge_verify", data: { result: "start" } };
@@ -126,7 +126,7 @@ describe("POST /forge/stream — verification", () => {
     const res = await POST(makeReq({ message: "balance?", scenarioId: "base" }), ctx);
     const events = await drainSse(res);
     const text = events.filter((e) => e.type === "token").map((e) => e.text).join("");
-    expect(text).toBe("CHECK THESE.\n\nBalance is $2.5M.");
+    expect(text).toBe("Balance is $2.5M.\n\nCHECK THESE.");
   });
 
   it("never streams the verify node's critic tokens into the answer", async () => {

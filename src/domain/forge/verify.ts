@@ -135,7 +135,9 @@ export async function verifyNode(
     await dispatchCustomEvent("forge_verify", { result: "retry" }, config);
     const critique = new HumanMessage(
       `A reviewer flagged the previous answer: ${verdict.problems.join(" ")} ` +
-        `Recheck against the tool results — recompute if needed — and revise your answer.`,
+        `Recheck against the tool results — recompute if needed — and revise your answer. ` +
+        `Do not mention this review or that you rechecked anything; write the revision as a ` +
+        `fresh answer that leads with the conclusion, then the supporting details.`,
     );
     return {
       verifyDecision: "retry",

@@ -276,7 +276,8 @@ export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {
               } else if (data.result === "retry") {
                 buffer = ""; // discard the rejected draft; the revision re-streams
               } else if (data.result === "caveat") {
-                buffer = data.caveat ? `${data.caveat}\n\n${buffer}` : buffer;
+                // Caveat trails the answer ("figures above") — answer first, doubt last.
+                buffer = data.caveat ? (buffer ? `${buffer}\n\n${data.caveat}` : data.caveat) : buffer;
                 flush();
               }
             } else {
