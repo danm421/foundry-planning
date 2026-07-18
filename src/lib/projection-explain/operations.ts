@@ -1,22 +1,11 @@
 // src/lib/projection-explain/operations.ts
-// Metric-agnostic engine operations. `explain.ts` owns the full DELTA assembly
-// (with real death years); these are the thin, reusable public seams Phase 2
-// leans on. COMPOSITION/LEVEL bodies land in Tasks 8–9.
+// Metric-agnostic engine operations backing COMPOSITION/LEVEL. `explain.ts`
+// owns the full DELTA assembly inline — its diff+detector pass needs the real
+// death years, so no separate diff seam exists here (a null-death-year
+// `diffYears` shipped in Task 1 and was removed as dead code at the simplify
+// pass; rebuild it WITH death-year params if Phase 2 ever needs it).
 import type { ProjectionYear } from "@/engine/types";
-import type { Component, DrillContext, Finding, SubjectAdapter } from "./types";
-
-export function diffYears(
-  adapter: SubjectAdapter,
-  prev: ProjectionYear,
-  next: ProjectionYear,
-  ctx: DrillContext,
-): { diff: unknown; findings: Finding[] } {
-  const diff = adapter.buildDiff(prev, next, ctx);
-  const findings = adapter.detectors
-    .map((d) => d({ prev, next, diff, ctx, firstDeathYear: null, secondDeathYear: null }))
-    .filter((f): f is Finding => f != null);
-  return { diff, findings };
-}
+import type { Component, DrillContext, SubjectAdapter } from "./types";
 
 export function composeYear(
   adapter: SubjectAdapter,

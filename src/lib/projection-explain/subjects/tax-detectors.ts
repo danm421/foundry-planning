@@ -4,6 +4,7 @@
 // EXACT income-side dollars from ledger data; assembly (explain.ts) attaches the
 // estimated tax impact.
 import type { ProjectionYear } from "@/engine/types";
+import { rmdTotal } from "@/lib/retirement/retirement-inflows";
 import type { DrillContext, Finding } from "../types";
 import { LINE_FLOOR, RATIO_SHIFT_POINTS, ROTH_SLICE_MIN, money, pct } from "../types";
 import { recognizedForAccount, type FundingRow, type TaxChangeFinding, type TaxYearDiff } from "./tax-diff";
@@ -134,9 +135,6 @@ export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
     detail: { accounts: rows, grossUp, ...(notes.length ? { notes } : {}) },
   };
 }
-
-const rmdTotal = (y: ProjectionYear) =>
-  Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
 
 export function detectRmdChange(a: DetectorArgs): TaxChangeFinding | null {
   const before = rmdTotal(a.prev);

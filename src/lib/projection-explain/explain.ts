@@ -5,8 +5,8 @@
 // figure, degraded figure, detectors, diff, rate, and subject-specific extras.
 import type { ProjectionYear } from "@/engine/types";
 import {
-  DRIVER_CAP, LINE_FLOOR, MATERIALITY, money,
-  type AnalysisContext, type Cause, type Composition, type DollarDelta, type DrillContext,
+  DRIVER_CAP, LINE_FLOOR, MATERIALITY, dd, money,
+  type AnalysisContext, type Cause, type Composition, type DrillContext,
   type Explanation, type Finding, type SubjectAdapter, type Unavailable,
 } from "./types";
 import { compareToReference, composeYear } from "./operations";
@@ -25,10 +25,6 @@ export interface ExplainChangeArgs {
   year: number;
   compareYear?: number;
   ctx: DrillContext;
-}
-
-function dd(label: string, from: number, to: number): DollarDelta {
-  return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
 }
 
 /** Hoist per-finding advisory notes into a top-level notes array. `detail.notes`

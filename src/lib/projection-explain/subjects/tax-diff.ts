@@ -2,8 +2,9 @@
 // Tax subject: year-pair delta layer. prev = baseline year, next = asked year.
 // Callers guarantee taxResult on both years (explain.ts handles the degrade path).
 import type { ProjectionYear } from "@/engine/types";
+import { rmdTotal } from "@/lib/retirement/retirement-inflows";
 import { resolveSourceLabel } from "@/lib/tax/cell-drill/_shared";
-import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, money, type DollarDelta, type DrillContext } from "../types";
+import { DEPLETED_EPS, LINE_FLOOR, SOURCE_CAP, dd, money, type DollarDelta, type DrillContext } from "../types";
 
 // ── Tax-specific delta shapes (relocated from the Phase-0 types.ts; owned here) ──
 
@@ -108,10 +109,6 @@ export interface TaxChangeUnavailable {
   available: false;
   reason: string;
   availableYears?: { first: number; last: number };
-}
-
-function dd(label: string, from: number, to: number): DollarDelta {
-  return { label, from: Math.round(from), to: Math.round(to), delta: Math.round(to - from) };
 }
 
 /** Recognized (taxable) dollars for one account, summed from ONLY the named
@@ -238,12 +235,11 @@ export function diffTaxYears(
   // cashOutForAccount counts that same RMD on the funding side. Add RMD back here
   // so both sides count it consistently — subtracting a raw totalIncome would
   // double-count RMD and fire a false funding≠need residual on every real RMD
-  // decumulation year. Sum over ALL ledgers to match the funding side's RMD set
-  // (which includes entity-owned RMDs that don't reach householdRmdIncome).
-  const totalRmd = (y: ProjectionYear) =>
-    Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+  // decumulation year. Sum over ALL ledgers (rmdTotal) to match the funding
+  // side's RMD set (which includes entity-owned RMDs that don't reach
+  // householdRmdIncome).
   const netNeed = (y: ProjectionYear) =>
-    Math.round(y.totalExpenses - (y.totalIncome - totalRmd(y)));
+    Math.round(y.totalExpenses - (y.totalIncome - rmdTotal(y)));
   const netNeedNext = netNeed(next);
   const netNeedPrev = netNeed(prev);
   const residualNote =

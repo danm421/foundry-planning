@@ -33,6 +33,15 @@ export interface DollarDelta {
   delta: number;
 }
 
+/** Rounded from/to/delta triple — the one DollarDelta factory (assembly + diff
+ *  layers share it so rounding can never diverge between them). */
+export const dd = (label: string, from: number, to: number): DollarDelta => ({
+  label,
+  from: Math.round(from),
+  to: Math.round(to),
+  delta: Math.round(to - from),
+});
+
 /** A labeled, source-keyed part of a figure (COMPOSITION). */
 export interface Component {
   label: string;
