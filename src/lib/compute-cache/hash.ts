@@ -8,7 +8,7 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * every hash, so a bump invalidates all existing cache rows automatically.
  * 8: F3 locked-share clamp/cap + F4 orphaned-gain backstop (2026-07-18)
  */
-export const ENGINE_VERSION = 8;
+export const ENGINE_VERSION = 9;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {
