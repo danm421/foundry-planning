@@ -2500,7 +2500,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Step 12c carry-over: prior-year entity gap-fill liquidations of trust
       // taxable accounts surface here so this year's trust-tax pass picks up
-      // the recognized gain. (Grantor entries were routed to household above.)
+      // the recognized gain. (Entries for entities outside this year's 1041
+      // pass — grantor trusts, businesses, lapsed trusts — were backstopped
+      // to the household 1040 at the drain instead. F4)
       if (nonGrantorCarryInGains.length > 0) {
         assetTransactionGains.push(...nonGrantorCarryInGains);
       }
@@ -5889,9 +5891,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // pro-rata gain against the pre-liquidation balance, reduce basis by
         // the same fraction, and stash the gain for NEXT year's trust-tax pass
         // (deferred — trust marginal rate isn't available at gap-fill time).
-        // Routing (grantor → household 1040 vs non-grantor → trust 1041)
-        // happens at drain time in next year's loop iteration so a grantor
-        // flip in the intervening year is honored.
+        // Routing (1041-pass members → trust 1041; everyone else → household
+        // 1040 backstop, F4) happens at drain time in next year's loop
+        // iteration so a grantor flip in the intervening year is honored.
         if (liqTaxable) {
           const acctBasis = liqBasisBefore;
           const fraction = liqFraction;
@@ -6339,10 +6341,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // F3: sweep carry entries for accounts no longer in the projection (BoY
     // sale/liquidation removed them from workingAccounts) so death-event and
     // hypothetical-estate math never read a drained account's phantom slice.
-    // Live accounts are handled by the clamp above.
-    const liveAccountIds = new Set(workingAccounts.map((a) => a.id));
+    // Live accounts are handled by the clamp above. The liveness Set is built
+    // lazily — most plans have no split-owned entity accounts and the carry
+    // map stays empty, so the per-year allocation would be pure waste.
+    let liveAccountIds: Set<string> | null = null;
     for (const byAccount of lockedEntityShareCarry.values()) {
-      for (const acctId of [...byAccount.keys()]) {
+      if (byAccount.size === 0) continue;
+      liveAccountIds ??= new Set(workingAccounts.map((a) => a.id));
+      for (const acctId of byAccount.keys()) {
         if (!liveAccountIds.has(acctId)) byAccount.delete(acctId);
       }
     }
