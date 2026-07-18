@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { getCrmHousehold } from "@/lib/crm/households";
+import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
+
+/** Hairline pill — same idiom as the Related-households chip on the
+ *  Contacts tab (crm-household-relationships-section.tsx's chipClass). This
+ *  block is read-only: no menus, no unlink action — just the label + link. */
+const chipClass =
+  "rounded-full border border-hair-2 bg-card-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 
@@ -30,9 +38,11 @@ function fmtTimestamp(d: Date | string | null | undefined): string {
 export function OverviewTab({
   household,
   advisorName,
+  relationships,
 }: {
   household: Household;
   advisorName: string;
+  relationships: HouseholdRelationshipView[];
 }) {
   const [editOpen, setEditOpen] = useState(false);
 
@@ -90,6 +100,27 @@ export function OverviewTab({
           <dd className="text-[14px] text-ink-2">{fmtTimestamp(household.updatedAt)}</dd>
         </dl>
       </section>
+
+      {relationships.length > 0 && (
+        <section className="rounded-[var(--radius)] border border-hair bg-card p-5">
+          <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3">
+            Related households
+          </h2>
+          <ul className="space-y-2.5">
+            {relationships.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2">
+                <span className={chipClass}>{r.label}</span>
+                <Link
+                  href={`/crm/households/${r.counterpart.id}`}
+                  className="text-[14px] font-medium text-ink transition-colors hover:text-accent-ink"
+                >
+                  {r.counterpart.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <CrmHouseholdEditForm
         open={editOpen}

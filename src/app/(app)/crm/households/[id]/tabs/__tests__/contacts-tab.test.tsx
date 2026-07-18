@@ -33,7 +33,7 @@ const household = {
 
 describe("ContactsTab sections", () => {
   it("renders planning family members and labeled external contacts", () => {
-    render(<ContactsTab household={household} />);
+    render(<ContactsTab household={household} relationships={[]} />);
     expect(screen.getByText("Emma Cooper")).toBeInTheDocument();
     expect(screen.getByText("Child")).toBeInTheDocument();
     expect(screen.getByText("Carl Paulson")).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("ContactsTab family count", () => {
   // "Family (0)" above two visible cards with "No family members yet"
   // underneath — a self-contradicting screen on the most common household.
   it("counts primary and spouse and suppresses the empty state", () => {
-    render(<ContactsTab household={primaryAndSpouseOnly} />);
+    render(<ContactsTab household={primaryAndSpouseOnly} relationships={[]} />);
 
     expect(screen.getByRole("heading", { name: "Family (2)" })).toBeInTheDocument();
     expect(screen.getByText("Dan Cooper")).toBeInTheDocument();
@@ -77,7 +77,10 @@ describe("ContactsTab family count", () => {
 
   it("still shows the empty state when the section is genuinely empty", () => {
     render(
-      <ContactsTab household={{ id: "hh1", contacts: [], planningClient: null } as never} />,
+      <ContactsTab
+        household={{ id: "hh1", contacts: [], planningClient: null } as never}
+        relationships={[]}
+      />,
     );
 
     expect(screen.getByRole("heading", { name: "Family (0)" })).toBeInTheDocument();
@@ -125,7 +128,7 @@ describe("ContactsTab dialog reuse", () => {
   // being unmounted, while DialogShell keeps the form component mounted. The
   // tab must therefore give each open a fresh mount.
   it("does not carry a failed save's error banner into the next record", async () => {
-    render(<ContactsTab household={twoKids} />);
+    render(<ContactsTab household={twoKids} relationships={[]} />);
 
     editCard("Emma Cooper");
     expect(screen.getByRole("dialog", { name: "Edit family member" })).toBeInTheDocument();
@@ -174,7 +177,7 @@ describe("ContactsTab unlinked-dependent edit", () => {
   // false: the "Not linked to planning" copy appears and the Relationship
   // select does not.
   it("stays contact-only when editing an unlinked dependent in a household with a planning client", () => {
-    render(<ContactsTab household={householdWithUnlinkedDependent} />);
+    render(<ContactsTab household={householdWithUnlinkedDependent} relationships={[]} />);
 
     editCard("Alex Doe");
 
@@ -213,7 +216,7 @@ describe("ContactsTab delete routing", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as typeof fetch;
 
-    render(<ContactsTab household={householdForDeletes} />);
+    render(<ContactsTab household={householdForDeletes} relationships={[]} />);
     deleteCard("Emma Cooper");
 
     await waitFor(() =>
@@ -229,7 +232,7 @@ describe("ContactsTab delete routing", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as typeof fetch;
 
-    render(<ContactsTab household={householdForDeletes} />);
+    render(<ContactsTab household={householdForDeletes} relationships={[]} />);
     deleteCard("Carl Paulson");
 
     await waitFor(() =>

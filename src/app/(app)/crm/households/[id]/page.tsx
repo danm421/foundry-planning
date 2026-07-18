@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholds } from "@/db/schema";
 import { getCrmHousehold } from "@/lib/crm/households";
+import { listHouseholdRelationships } from "@/lib/crm/household-relationships";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import {
   getTaskById,
@@ -52,6 +53,7 @@ export default async function CrmHouseholdPage({
     members,
     firmTags,
     households,
+    relationships,
   ] = await Promise.all([
     resolveActors([household.advisorId]),
     listTasks(firmId, { householdId: id }, filters),
@@ -62,6 +64,7 @@ export default async function CrmHouseholdPage({
       .from(crmHouseholds)
       .where(and(eq(crmHouseholds.firmId, firmId), isNull(crmHouseholds.deletedAt)))
       .orderBy(crmHouseholds.name),
+    listHouseholdRelationships(id),
   ]);
   const advisorName = advisorActors.get(household.advisorId)?.name ?? household.advisorId;
 
@@ -138,6 +141,7 @@ export default async function CrmHouseholdPage({
       initialTaskId={task}
       tasksBootstrap={tasksBootstrap}
       canManage={canManage}
+      relationships={relationships}
     />
   );
 }

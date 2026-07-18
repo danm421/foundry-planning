@@ -18,6 +18,7 @@ import {
   type CrmPromoteFamilyMemberInitial,
 } from "@/components/crm-promote-family-member-dialog";
 import { OverflowMenu } from "@/components/overflow-menu";
+import { CrmHouseholdRelationshipsSection } from "@/components/crm-household-relationships-section";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
@@ -212,10 +213,10 @@ function EmptyState({ children }: { children: ReactNode }) {
 
 export function ContactsTab({
   household,
-  relationships = [],
+  relationships,
 }: {
   household: Household;
-  relationships?: HouseholdRelationshipView[];
+  relationships: HouseholdRelationshipView[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -541,42 +542,49 @@ export function ContactsTab({
         )}
       </section>
 
-      <section aria-labelledby="contacts-external-heading" className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="contacts-external-heading" className={sectionHeadingClass}>
-            External contacts ({sections.external.length})
-          </h2>
-          <button type="button" onClick={openExternalCreate} className={addGhostClass}>
-            Add external contact
-          </button>
-        </div>
+      <div className="space-y-6">
+        <section aria-labelledby="contacts-external-heading" className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="contacts-external-heading" className={sectionHeadingClass}>
+              External contacts ({sections.external.length})
+            </h2>
+            <button type="button" onClick={openExternalCreate} className={addGhostClass}>
+              Add external contact
+            </button>
+          </div>
 
-        {sections.external.length === 0 ? (
-          <EmptyState>No external contacts yet.</EmptyState>
-        ) : (
-          <ul className="space-y-2.5">
-            {sections.external.map((c) => (
-              <ContactCard
-                key={c.id}
-                badge={
-                  c.relationshipLabel ? (
-                    <span className={relBadgeClass}>{c.relationshipLabel}</span>
-                  ) : null
-                }
-                name={`${c.firstName} ${c.lastName}`.trim()}
-                rows={rowsOf(
-                  { label: "Email", value: c.email },
-                  { label: "Phone", value: phoneLine(c) },
-                  { label: "Notes", value: c.notes },
-                )}
-                onEdit={() => openExternalEdit(c)}
-                onDelete={() => deleteContact(c)}
-                deleting={busy === c.id}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+          {sections.external.length === 0 ? (
+            <EmptyState>No external contacts yet.</EmptyState>
+          ) : (
+            <ul className="space-y-2.5">
+              {sections.external.map((c) => (
+                <ContactCard
+                  key={c.id}
+                  badge={
+                    c.relationshipLabel ? (
+                      <span className={relBadgeClass}>{c.relationshipLabel}</span>
+                    ) : null
+                  }
+                  name={`${c.firstName} ${c.lastName}`.trim()}
+                  rows={rowsOf(
+                    { label: "Email", value: c.email },
+                    { label: "Phone", value: phoneLine(c) },
+                    { label: "Notes", value: c.notes },
+                  )}
+                  onEdit={() => openExternalEdit(c)}
+                  onDelete={() => deleteContact(c)}
+                  deleting={busy === c.id}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <CrmHouseholdRelationshipsSection
+          householdId={household.id}
+          relationships={relationships}
+        />
+      </div>
 
       <CrmContactForm
         key={`contact-${dialogInstance}`}
