@@ -166,6 +166,62 @@ function grantorTrust(id: string = TRUST_ID): EntitySummary {
   };
 }
 
+const BIZ_ID = "biz-1";
+
+function businessLlc(id: string = BIZ_ID): EntitySummary {
+  return {
+    id,
+    name: "Family LLC",
+    includeInPortfolio: true,
+    isGrantor: false,
+    entityType: "llc",
+  };
+}
+
+function bizChecking(value: number): Account {
+  return {
+    id: "biz-checking",
+    name: "LLC Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value,
+    basis: value,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: BIZ_ID, percent: 1 }],
+    isDefaultChecking: true,
+  };
+}
+
+function bizTaxable(value: number, basis: number): Account {
+  return {
+    id: "biz-taxable",
+    name: "LLC Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value,
+    basis,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: BIZ_ID, percent: 1 }],
+  };
+}
+
+function bizExpense(amount: number): Expense {
+  return {
+    id: "exp-biz",
+    name: "LLC Expense",
+    type: "other",
+    annualAmount: amount,
+    startYear: 2026,
+    endYear: 2026,
+    growthRate: 0,
+    ownerEntityId: BIZ_ID,
+  };
+}
+
 function buildData(overrides: Partial<ClientData>): ClientData {
   return {
     client: baseClient,
@@ -457,5 +513,103 @@ describe("Entity gap-fill (step 12c)", () => {
     // remaining taxable suffices, OR an overdraft warning surfaces. Either is
     // acceptable; just verify the projection completed all three years cleanly.
     expect(yr2.accountLedgers["trust-taxable"].endingValue).toBeGreaterThanOrEqual(0);
+  });
+
+  it("Case 9 (F4): business-entity liquidation gain lands on the household 1040 next year — no trust in plan", () => {
+    // LLC gap-fill mirrors Case 5's math: $150k liquidation of $200k/$100k
+    // basis → $75k gain. An LLC is never in the non-grantor trust list, so
+    // pre-fix the gain evaporated. It must backstop to the household 1040
+    // (K-1 pass-through treatment).
+    const data = buildData({
+      accounts: [bizChecking(100_000), bizTaxable(200_000, 100_000)],
+      expenses: [bizExpense(250_000)],
+      entities: [businessLlc()],
+      planSettings: { ...onePassPlanSettings, planEndYear: 2027 },
+    });
+
+    const years = runProjection(data);
+    expect(years).toHaveLength(2);
+
+    const yr2 = years[1];
+    expect(yr2.taxDetail!.capitalGains).toBeCloseTo(75_000, 2);
+    expect(
+      yr2.taxDetail!.bySource["entity_gap_fill_prior_year:capital_gains"]?.amount,
+    ).toBeCloseTo(75_000, 2);
+  });
+
+  it("Case 10 (F4): business gain → household while a coexisting non-grantor trust's own gain still hits the 1041", () => {
+    // Both entities gap-fill in year 1 with identical $75k gains. Year 2:
+    // the trust's gain routes to its 1041 pass (Case 6 behavior, unchanged);
+    // the LLC's gain must NOT be handed to collectTrustIncome (which would
+    // drop it) — it backstops to the household 1040.
+    const data = buildData({
+      accounts: [
+        trustChecking(100_000),
+        trustTaxable(200_000, 100_000),
+        bizChecking(100_000),
+        bizTaxable(200_000, 100_000),
+      ],
+      expenses: [trustExpense(250_000), bizExpense(250_000)],
+      entities: [nonGrantorTrust(), businessLlc()],
+      planSettings: { ...onePassPlanSettings, planEndYear: 2027, taxEngineMode: "bracket" },
+      taxYearRows: [taxYearRow2026, taxYearRow2027],
+    });
+
+    const years = runProjection(data);
+    const yr2 = years[1];
+
+    // Trust 1041 side unchanged.
+    const trustRow = yr2.trustTaxByEntity?.get(TRUST_ID);
+    expect(trustRow).toBeDefined();
+    expect(trustRow!.recognizedCapGains).toBeCloseTo(75_000, 2);
+
+    // Business side: household 1040, not dropped.
+    expect(yr2.taxDetail!.capitalGains).toBeCloseTo(75_000, 2);
+    expect(
+      yr2.taxDetail!.bySource["entity_gap_fill_prior_year:capital_gains"]?.amount,
+    ).toBeCloseTo(75_000, 2);
+  });
+
+  it("Case 11 (F4): trust whose grantor status lapsed is in NEITHER list — gain backstops to household", () => {
+    // isGrantor: true + grantorStatusEndYear 2026: at the 2027 drain,
+    // effectiveIsGrantor is false but buildNonGrantorTrusts still excludes it
+    // (isGrantor !== false). Pre-fix the gain evaporated.
+    const lapsed: EntitySummary = {
+      ...grantorTrust(),
+      grantorStatusEndYear: 2026,
+    };
+    const data = buildData({
+      accounts: [trustChecking(100_000), trustTaxable(200_000, 100_000)],
+      expenses: [trustExpense(250_000)],
+      entities: [lapsed],
+      planSettings: { ...onePassPlanSettings, planEndYear: 2027 },
+    });
+
+    const years = runProjection(data);
+    const yr2 = years[1];
+    expect(yr2.taxDetail!.capitalGains).toBeCloseTo(75_000, 2);
+    expect(yr2.trustTaxByEntity?.get(TRUST_ID)).toBeUndefined();
+  });
+
+  it("Case 12 (F4): same-year business sale gain stays on the household 1040 when a non-grantor trust coexists", () => {
+    // A BoY sale of the LLC's brokerage ($200k value, $100k basis → $100k
+    // gain) while a non-grantor trust exists so the 1041 block runs. Pre-fix
+    // the push loop handed the LLC's gain to collectTrustIncome (dropped) and
+    // sameYearTrustGains subtracted it from the household → untaxed.
+    const data = buildData({
+      accounts: [trustChecking(100_000), bizChecking(10_000), bizTaxable(200_000, 100_000)],
+      expenses: [],
+      entities: [nonGrantorTrust(), businessLlc()],
+      assetTransactions: [
+        { id: "sale-biz", name: "Sell LLC brokerage", type: "sell", year: 2026, accountId: "biz-taxable" },
+      ],
+      planSettings: { ...onePassPlanSettings, planEndYear: 2026, taxEngineMode: "bracket" },
+      taxYearRows: [taxYearRow2026],
+    });
+
+    const [yr1] = runProjection(data);
+    expect(yr1.taxDetail!.capitalGains).toBeCloseTo(100_000, 2);
+    // The trust's 1041 must not receive the LLC's gain.
+    expect(yr1.trustTaxByEntity?.get(TRUST_ID)?.recognizedCapGains ?? 0).toBeCloseTo(0, 2);
   });
 });
