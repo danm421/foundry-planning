@@ -12,6 +12,10 @@ import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftsToClientData, giftEventBelongsTo, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import {
+  entityCheckingId,
+  makeEntityCheckingAccount,
+} from "@/lib/entities/entity-checking";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation } from "./types";
 
@@ -300,8 +304,9 @@ export function applyMutations(
         // no checking account cannot receive or pay anything, so every trust
         // payment pass silently `continue`s and the scenario computes zeros.
         // The engine keys off isDefaultChecking + full entity ownership
-        // (projection.ts:557-563). Deterministic id so repeated solver
-        // recomputes neither churn scenario diffs nor stack duplicates.
+        // (projection.ts:557-563). The account shape and its deterministic id
+        // both come from `@/lib/entities/entity-checking` — the loader path
+        // calls the same constructor, so the two can no longer drift.
         if (m.value !== null) {
           const entityId = m.value.id;
           const hasChecking = result.accounts.some(
@@ -312,18 +317,7 @@ export function applyMutations(
           if (!hasChecking) {
             result.accounts = [
               ...result.accounts,
-              {
-                id: `entity-checking-${entityId}`,
-                name: `${m.value.name ?? "Entity"} — Cash`,
-                category: "cash",
-                subType: "checking",
-                value: 0,
-                basis: 0,
-                growthRate: 0,
-                rmdEnabled: false,
-                isDefaultChecking: true,
-                owners: [{ kind: "entity", entityId, percent: 1 }],
-              } as ClientData["accounts"][number],
+              makeEntityCheckingAccount(entityId, m.value.name),
             ];
           }
         } else {
@@ -331,7 +325,7 @@ export function applyMutations(
           // (same deterministic id as above), never a sweep by ownership —
           // an advisor may have added real accounts owned by this entity and
           // those must survive the entity's removal.
-          const syntheticId = `entity-checking-${m.id}`;
+          const syntheticId = entityCheckingId(m.id);
           result.accounts = result.accounts.filter((a) => a.id !== syntheticId);
         }
         break;

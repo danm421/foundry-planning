@@ -45,6 +45,39 @@ describe("F13 — entity_missing_checking warning", () => {
     });
   });
 
+  // m9: a CLT with isGrantor:false clears every filter in
+  // `buildNonGrantorTrusts` (trust + irrevocable + !isGrantor + not §664(c)
+  // exempt — only CRTs are), so it is BOTH in `nonGrantorTrusts` and in the CLT
+  // annual pass over `currentEntities`. Before the dedupe both passes pushed,
+  // emitting the same entityId/year twice. The tests above use the fixture's
+  // `isGrantor: true` default, which routes to the grantor pass instead and so
+  // never exercised the overlap.
+  it("emits exactly ONE warning per entity-year for a non-grantor CLT", () => {
+    const nonGrantor = buildCltLifecycleFixture({
+      inceptionYear: 2026,
+      payoutPercent: 0.06,
+      termYears: 5,
+      inceptionValue: 1_000_000,
+      charityType: "public",
+      grantorAgi: 300_000,
+      remainderBeneficiaries: [{ childIndex: 1, percentage: 100 }],
+      isGrantor: false,
+    });
+    const acct = nonGrantor.accounts.find(
+      (a) => a.id === CLT_FIXTURE_IDS.CLT_CHECKING_ID,
+    )!;
+    delete (acct as { isDefaultChecking?: boolean }).isDefaultChecking;
+
+    const rows = runProjection(nonGrantor);
+    const y = rows.find((r) => r.year === 2027)!;
+    const emitted = (y.trustWarnings ?? []).filter(
+      (w) =>
+        w.code === "entity_missing_checking" &&
+        w.entityId === CLT_FIXTURE_IDS.CLT_ENTITY_ID,
+    );
+    expect(emitted).toHaveLength(1);
+  });
+
   it("does NOT emit the warning when the trust has its checking account", () => {
     const healthy = buildCltLifecycleFixture({
       inceptionYear: 2026,

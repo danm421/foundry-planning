@@ -2461,7 +2461,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // every pass below silently `continue`s. Collect the condition so it is at
     // least detectable. Nothing renders trust warnings yet; the user-facing fix
     // is the solver auto-create in apply-mutations.ts.
-    const missingCheckingWarnings: TrustWarning[] = [];
+    //
+    // m9: keyed by entityId, not a plain array. A CLT with `isGrantor: false`
+    // clears every filter in `buildNonGrantorTrusts` (:591-599) AND matches the
+    // CLT annual pass over `currentEntities` (:2818), so an array let the same
+    // entity emit twice in one year. The map is rebuilt per year, so entityId
+    // alone is the full dedupe key.
+    const missingCheckingByEntity = new Map<string, TrustWarning>();
+    const warnMissingChecking = (entityId: string) => {
+      if (missingCheckingByEntity.has(entityId)) return;
+      missingCheckingByEntity.set(entityId, {
+        code: "entity_missing_checking",
+        entityId,
+        year,
+      });
+    };
 
     // ── Non-grantor trust annual pass ────────────────────────────────────────
     // Runs after taxDetail is fully assembled. Results feed:
@@ -2657,11 +2671,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
         if (!checkingId) {
-          missingCheckingWarnings.push({
-            code: "entity_missing_checking",
-            entityId: trust.entityId,
-            year,
-          });
+          warnMissingChecking(trust.entityId);
           continue;
         }
         const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
@@ -2736,11 +2746,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const checkingId = entityCheckingByEntityId[gt.entityId];
         if (!checkingId) {
           // no checking account — cannot distribute
-          missingCheckingWarnings.push({
-            code: "entity_missing_checking",
-            entityId: gt.entityId,
-            year,
-          });
+          warnMissingChecking(gt.entityId);
           continue;
         }
 
@@ -2828,11 +2834,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Life-based termination is handled in Task 10's trust-termination pass.
       const checkingId = entityCheckingByEntityId[trust.id];
       if (!checkingId) {
-        missingCheckingWarnings.push({
-          code: "entity_missing_checking",
-          entityId: trust.id,
-          year,
-        });
+        warnMissingChecking(trust.id);
         continue;
       }
 
@@ -2916,11 +2918,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // term-certain only).
       const checkingId = entityCheckingByEntityId[trust.id];
       if (!checkingId) {
-        missingCheckingWarnings.push({
-          code: "entity_missing_checking",
-          entityId: trust.id,
-          year,
-        });
+        warnMissingChecking(trust.id);
         continue;
       }
 
@@ -3015,15 +3013,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // drains anything, means every trust's totalAvailable/drain reads the
     // same pre-drain figures and fractional co-ownership shares sum
     // correctly regardless of processing order.
-    const terminationBalanceSnapshot: Record<string, number> = {};
-    for (const a of workingAccounts) {
-      terminationBalanceSnapshot[a.id] = Math.max(
-        0,
-        (accountBalances[a.id] ?? 0) + (cashDelta[a.id] ?? 0)
-      );
-    }
-    const effectiveTerminationBalance = (id: string) =>
-      terminationBalanceSnapshot[id] ?? 0;
+    //
+    // m4: built LAZILY on first read. The great majority of plans hold no CLT
+    // or CRT at all, and `monteCarlo/trial.ts:143` calls runProjection once per
+    // trial — eagerly walking every account every year was ~60 × 1000 wasted
+    // objects per MC run. Laziness is placement-neutral: every reader is inside
+    // the two termination passes below, and the FIRST of them (the CLT
+    // `totalAvailable` loop) still runs before the first drain `creditCash`, so
+    // first-touch lands at the same point in the year the eager build did —
+    // after the CLT lead payment / CRT annuity debits, before any drain. That
+    // ordering is what the snapshot is for; do not hoist a read above it.
+    // Declared inside the year loop, so it cannot leak across years.
+    let terminationBalanceSnapshot: Record<string, number> | null = null;
+    const effectiveTerminationBalance = (id: string) => {
+      if (terminationBalanceSnapshot === null) {
+        const snap: Record<string, number> = {};
+        for (const a of workingAccounts) {
+          snap[a.id] = Math.max(
+            0,
+            (accountBalances[a.id] ?? 0) + (cashDelta[a.id] ?? 0)
+          );
+        }
+        terminationBalanceSnapshot = snap;
+      }
+      return terminationBalanceSnapshot[id] ?? 0;
+    };
     const yearTrustTerminations: TrustTerminationResult[] = [];
     for (const trust of currentEntities) {
       if (trust.trustSubType !== "clt" || !trust.splitInterest) continue;
@@ -6631,7 +6645,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
        || grantorDistributionWarnings.length > 0
        || entityGapFillWarnings.length > 0
        || noteShortfallWarnings.length > 0
-       || missingCheckingWarnings.length > 0
+       || missingCheckingByEntity.size > 0
        || convergenceWarning != null
         ? {
             ...(trustPassResult != null ? {
@@ -6648,7 +6662,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...grantorDistributionWarnings,
                 ...entityGapFillWarnings,
                 ...noteShortfallWarnings,
-                ...missingCheckingWarnings,
+                ...missingCheckingByEntity.values(),
                 ...(convergenceWarning != null ? [convergenceWarning] : []),
               ];
               return all.length > 0 ? all : undefined;
