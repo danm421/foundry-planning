@@ -164,6 +164,7 @@ function ContactCard({
           <button
             type="button"
             onClick={onEdit}
+            aria-label={`Edit ${name}`}
             className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
           >
             Edit
@@ -359,9 +360,11 @@ export function ContactsTab({ household }: { household: Household }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
-      <section className="space-y-4">
+      <section aria-labelledby="contacts-family-heading" className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className={sectionHeadingClass}>Family ({familyCount})</h2>
+          <h2 id="contacts-family-heading" className={sectionHeadingClass}>
+            Family ({familyCount})
+          </h2>
           <button type="button" onClick={openFamilyCreate} className={addPrimaryClass}>
             Add family member
           </button>
@@ -442,9 +445,9 @@ export function ContactsTab({ household }: { household: Household }) {
         )}
       </section>
 
-      <section className="space-y-4">
+      <section aria-labelledby="contacts-external-heading" className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className={sectionHeadingClass}>
+          <h2 id="contacts-external-heading" className={sectionHeadingClass}>
             External contacts ({sections.external.length})
           </h2>
           <button type="button" onClick={openExternalCreate} className={addGhostClass}>

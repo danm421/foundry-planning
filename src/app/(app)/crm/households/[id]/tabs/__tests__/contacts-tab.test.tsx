@@ -61,7 +61,15 @@ const twoKids = {
 function editCard(name: string) {
   const card = screen.getByText(name).closest("li");
   if (!card) throw new Error(`No card for ${name}`);
-  fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Edit" }));
+  // Edit buttons carry aria-label={`Edit ${name}`} (Fix 3) so two columns of
+  // cards don't all read as an undifferentiated "Edit" to a screen reader.
+  fireEvent.click(within(card as HTMLElement).getByRole("button", { name: `Edit ${name}` }));
+}
+
+function deleteCard(name: string) {
+  const card = screen.getByText(name).closest("li");
+  if (!card) throw new Error(`No card for ${name}`);
+  fireEvent.click(within(card as HTMLElement).getByRole("button", { name: `Delete ${name}` }));
 }
 
 const originalFetch = global.fetch;
@@ -93,5 +101,101 @@ describe("ContactsTab dialog reuse", () => {
     editCard("Liam Cooper");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect((screen.getByLabelText(/first name/i) as HTMLInputElement).value).toBe("Liam");
+  });
+});
+
+// A household WITH a planning client, but the dependent contact row is
+// unlinked (familyMemberId: null) — deriveContactSections puts it in
+// unlinkedFamily, not family. Editing it must still force the family form's
+// contact-only branch (see contacts-tab.tsx openUnlinkedEdit / :270-290);
+// otherwise a save here would POST an orphan family_members row into planning
+// while leaving this contact unlinked.
+const householdWithUnlinkedDependent = {
+  id: "hh1",
+  contacts: [
+    { id: "d1", role: "dependent", firstName: "Alex", lastName: "Doe", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: null, email: null, phone: null,
+      mobile: null, addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+  ],
+  planningClient: {
+    id: "cl1",
+    familyMembers: [],
+  },
+} as never;
+
+describe("ContactsTab unlinked-dependent edit", () => {
+  // Regression guard for Fix 1: proves the unlinked-dependent edit path takes
+  // CrmFamilyMemberForm's contact-only branch (planningClientId === null)
+  // even though this household HAS a planning client. Probe matches what
+  // crm-family-member-form.tsx actually renders when `showRelationship` is
+  // false: the "Not linked to planning" copy appears and the Relationship
+  // select does not.
+  it("stays contact-only when editing an unlinked dependent in a household with a planning client", () => {
+    render(<ContactsTab household={householdWithUnlinkedDependent} />);
+
+    editCard("Alex Doe");
+
+    expect(screen.getByRole("dialog", { name: "Edit family member" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Not linked to planning — contact info only"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/relationship/i)).not.toBeInTheDocument();
+  });
+});
+
+// Fixture with both a linked family member and an external contact, to
+// exercise Fix 2's two delete routes against the same household.
+const householdForDeletes = {
+  id: "hh1",
+  contacts: [
+    { id: "o1", role: "other", firstName: "Carl", lastName: "Paulson", familyMemberId: null,
+      relationshipLabel: "CPA", preferredName: null, dateOfBirth: null, email: null, phone: null,
+      mobile: null, addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+  ],
+  planningClient: {
+    id: "cl1",
+    familyMembers: [
+      { id: "fm1", firstName: "Emma", lastName: "Cooper", relationship: "child",
+        dateOfBirth: "2015-04-02", role: "child" },
+    ],
+  },
+} as never;
+
+describe("ContactsTab delete routing", () => {
+  // Guards the two delete flows in contacts-tab.tsx:332-358. A mis-route on
+  // the linked-family branch is severe: it would destroy the wrong resource
+  // or silently no-op against planning data.
+  it("deletes a linked family member via the planning family-members endpoint", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as typeof fetch;
+
+    render(<ContactsTab household={householdForDeletes} />);
+    deleteCard("Emma Cooper");
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith("/api/clients/cl1/family-members/fm1", {
+        method: "DELETE",
+      }),
+    );
+
+    confirmSpy.mockRestore();
+  });
+
+  it("deletes an external contact via the CRM contacts endpoint", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as typeof fetch;
+
+    render(<ContactsTab household={householdForDeletes} />);
+    deleteCard("Carl Paulson");
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith("/api/crm/households/hh1/contacts/o1", {
+        method: "DELETE",
+      }),
+    );
+
+    confirmSpy.mockRestore();
   });
 });
