@@ -149,7 +149,17 @@ export async function getCrmHousehold(id: string) {
     with: {
       contacts: true,
       documents: true,
-      planningClient: { columns: { id: true } },
+      planningClient: {
+        columns: { id: true },
+        with: {
+          familyMembers: {
+            // family_members also holds the client/spouse self-rows
+            // (syncHouseholdFamilyMembers) — the CRM family list excludes them.
+            where: (fm, { notInArray }) => notInArray(fm.role, ["client", "spouse"]),
+            orderBy: (fm, { asc }) => [asc(fm.relationship), asc(fm.firstName)],
+          },
+        },
+      },
     },
   });
   if (!household) return undefined;
