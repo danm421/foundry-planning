@@ -65,6 +65,49 @@ function reversalFixtureYears(): ProjectionYear[] {
   ];
 }
 
+// ── Off-by-one reversal fixture (Fix 3) ──────────────────────────────────────
+// The asked boundary 2063→2064 is flat (+$200); the real cliff is the 2061→2062
+// funding-character rise (Roth → pre-tax, tax 20k → 60k), which is CONFIRMED by
+// the 2062→2063 reversal (pre-tax → Roth, tax 60k → 20k). The reversal note lives
+// only on the nested cliff run's top-level notes, so it reaches the payload only
+// when propagated onto probableIntendedJump.notes.
+function offByOneReversalYears(): ProjectionYear[] {
+  return [
+    rothDrawYear(2060, 20_000, 80_000, { beginningValue: 600_000, endingValue: 500_000 }, { beginningValue: 600_000, endingValue: 600_000 }),
+    rothDrawYear(2061, 20_000, 80_000, { beginningValue: 500_000, endingValue: 400_000 }, { beginningValue: 600_000, endingValue: 600_000 }),
+    preTaxDrawYear(2062, 60_000, 250_000, { beginningValue: 400_000, endingValue: 400_000 }, { beginningValue: 600_000, endingValue: 480_000 }),
+    rothDrawYear(2063, 20_000, 80_000, { beginningValue: 400_000, endingValue: 300_000 }, { beginningValue: 480_000, endingValue: 480_000 }),
+    rothDrawYear(2064, 20_200, 80_800, { beginningValue: 300_000, endingValue: 200_000 }, { beginningValue: 480_000, endingValue: 480_000 }),
+  ];
+}
+
+// ── First-confirming reversal fixture (Fix 4) ────────────────────────────────
+// The cliff is the 2061→2062 funding-character rise (Roth → pre-tax, tax 22k →
+// 90k). TWO later falls exist: the LARGER 2062→2063 (−70k) is an income cessation
+// — funding stays pre-tax (ratio flat 1.0), so it is NOT a reversal — while the
+// SMALLER 2063→2064 (−8k) is a genuine reversal (pre-tax → Roth, ratio 1.0 → 0).
+// The mirror scan must skip the larger non-reversal and cite the smaller one,
+// rather than taking the single most-negative boundary and giving up.
+function firstConfirmingReversalYears(): ProjectionYear[] {
+  const incomeCessationYear = makeYear({
+    year: 2063,
+    withdrawals: { byAccount: { tira: 20_000 }, total: 20_000 },
+    accountLedgers: {
+      rira: makeLedger({ beginningValue: 400_000, endingValue: 400_000 }),
+      tira: makeLedger({ beginningValue: 580_000, endingValue: 560_000 }),
+    },
+    taxDetail: makeTaxDetail({ "withdrawal:tira": { type: "ordinary", amount: 20_000 } }),
+    taxResult: makeTaxResult({ flow: { totalTax: 20_000, totalFederalTax: 20_000, taxableIncome: 80_000 } }),
+  });
+  return [
+    rothDrawYear(2060, 20_000, 80_000, { beginningValue: 600_000, endingValue: 500_000 }, { beginningValue: 700_000, endingValue: 700_000 }),
+    rothDrawYear(2061, 22_000, 90_000, { beginningValue: 500_000, endingValue: 400_000 }, { beginningValue: 700_000, endingValue: 700_000 }),
+    preTaxDrawYear(2062, 90_000, 350_000, { beginningValue: 400_000, endingValue: 400_000 }, { beginningValue: 700_000, endingValue: 580_000 }),
+    incomeCessationYear, // 2062→2063 fall −70k, ratio flat (NOT a reversal)
+    rothDrawYear(2064, 12_000, 40_000, { beginningValue: 400_000, endingValue: 300_000 }, { beginningValue: 560_000, endingValue: 560_000 }),
+  ];
+}
+
 // ── Off-by-one cliff-location fixture (Task 7) ───────────────────────────────
 // The real jump is 2061→2062 (total tax +40k). The asked boundary 2062→2063 is
 // nearly flat (+200 < materiality), so the request is one row off the cliff.
@@ -77,55 +120,85 @@ function offByOneFixtureYears(): ProjectionYear[] {
   ];
 }
 
+// ── Sign-aware cliff-location fixtures (Fix 2) ───────────────────────────────
+// Asked boundary is a small RISE. The ±2 window holds BOTH a qualifying larger
+// fall (2064→2065, −70k) and a qualifying same-sign rise (2061→2062, +64k). The
+// same-sign rise must win — an advisor asking about a jump/high tax means the
+// nearby rise, not a bigger opposite-direction fall.
+function signAwareRiseYears(): ProjectionYear[] {
+  return [
+    base(2060, 60_000),
+    base(2061, 60_000), // 2060→2061 flat
+    base(2062, 124_000), // 2061→2062 RISE +64k (qualifying, same sign)
+    base(2063, 128_000), // 2062→2063 asked boundary — small rise +4k
+    base(2064, 132_000), // 2063→2064 +4k
+    base(2065, 62_000), // 2064→2065 FALL −70k (larger |Δ|, opposite sign)
+  ];
+}
+
+// Asked boundary is a small RISE, but the ONLY qualifying candidate in the window
+// is an opposite-sign fall — the unsigned fallback must still surface it.
+function opposelSignOnlyYears(): ProjectionYear[] {
+  return [
+    base(2061, 60_000),
+    base(2062, 64_000), // 2061→2062 asked boundary — small rise +4k
+    base(2063, 64_000), // 2062→2063 flat
+    base(2064, 10_000), // 2063→2064 FALL −54k (only qualifying candidate)
+  ];
+}
+
 // ── Cooper full-chain assembly fixture (Task 11) ─────────────────────────────
 // The asked boundary 2062→2063 is nearly flat (+$200); the real jump is the
-// 2061→2062 cliff (total tax 50k → 90k), where funding shifts from a tax-free
-// Roth IRA to a pre-tax Spouse 401(k) that ALSO carries a Roth-designated slice
-// (a data-review prompt). One request exercises the whole chain: cliff
-// auto-location → nested probableIntendedJump → funding_character_shift with a
-// roth_designated_slice row → the hoisted "confirm this savings rule" note.
+// 2061→2062 cliff (total tax 50k → 90k). LEDGER-CONTINUOUS, prod-shaped: a
+// mixed-Roth Client 401(k) (a Roth-designated slice — a data-review prompt) funds
+// 2061 and runs dry at year-end, so 2062 is carried alone by the all-pre-tax
+// Spouse 401(k) (recognition 0.4 → 1.0). The depleted Client 401k is retained as
+// a funding row and classifies its Roth slice off the PRIOR-year ledger. One
+// request exercises the whole chain: cliff auto-location → nested
+// probableIntendedJump → funding_character_shift with a roth_designated_slice
+// depleted row → the hoisted "confirm this savings rule" note.
 function cooperCtx(): DrillContext {
   return {
     ...DRILL_CTX,
-    accountNames: { rira: "Client Roth IRA", s401k: "Spouse 401k" },
+    accountNames: { c401k: "Client 401k", s401k: "Spouse 401k" },
     accounts: [
-      { id: "rira", name: "Client Roth IRA", category: "retirement", subType: "roth_ira" },
+      { id: "c401k", name: "Client 401k", category: "retirement", subType: "401k" },
       { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
     ] as unknown as DrillContext["accounts"],
-    // Roth-designated deferral into the Spouse 401k — the provenance of its slice.
+    // Roth-designated deferral into the Client 401k — the provenance of its slice.
     savingsRules: [
-      { id: "sr1", accountId: "s401k", annualAmount: 20_000, rothPercent: 1, isDeductible: false, startYear: 2026, endYear: 2040 },
+      { id: "sr1", accountId: "c401k", annualAmount: 20_000, rothPercent: 1, isDeductible: false, startYear: 2026, endYear: 2040 },
     ],
-    accountSeedRoth: { s401k: 60_000 },
+    accountSeedRoth: { c401k: 60_000 },
   };
 }
 
 function cooperFixtureYears(): ProjectionYear[] {
-  // Tax-free Roth-IRA draws in 2060–2061; the riser (Spouse 401k) is present in
-  // every year's ledgers — as real engine output would carry it — so no benign
-  // depleted false-positive names it before it's actually tapped.
-  const rothDraw = (year: number, totalTax: number): ProjectionYear =>
+  // The mixed-Roth Client 401k funds 2060–2061 (only $40k of its $100k draw is
+  // taxable) and ends 2061 at $0; the pre-tax Spouse 401k is present in every
+  // year's ledgers and carries 2062 alone. Ledger-continuous throughout.
+  const clientFundedYear = (year: number, totalTax: number, cBoY: number, cEoY: number): ProjectionYear =>
     makeYear({
       year,
-      withdrawals: { byAccount: { rira: 100_000 }, total: 100_000 },
+      withdrawals: { byAccount: { c401k: 100_000 }, total: 100_000 },
       accountLedgers: {
-        rira: makeLedger({ beginningValue: 500_000, endingValue: 400_000 }),
-        s401k: makeLedger({ beginningValue: 480_000, endingValue: 480_000, rothValueBoY: 100_000 }),
+        c401k: makeLedger({ beginningValue: cBoY, endingValue: cEoY, rothValueBoY: 200_000 }),
+        s401k: makeLedger({ beginningValue: 480_000, endingValue: 480_000 }),
       },
-      taxDetail: makeTaxDetail({}),
+      taxDetail: makeTaxDetail({ "withdrawal:c401k": { type: "ordinary", amount: 40_000 } }),
       taxResult: makeTaxResult({ flow: { totalTax, totalFederalTax: totalTax, taxableIncome: totalTax * 4 } }),
     });
   return [
-    rothDraw(2060, 50_000),
-    rothDraw(2061, 50_000), // 2060→2061 flat
-    // 2062 CLIFF: the draw shifts to the pre-tax Spouse 401k (Roth-slice > 5%),
-    // recognition 0 → 1.0, total tax +40k.
+    clientFundedYear(2060, 50_000, 500_000, 400_000),
+    clientFundedYear(2061, 50_000, 400_000, 0), // 2060→2061 flat; Client 401k runs dry
+    // 2062 CLIFF: Client 401k depleted (no draw), the pre-tax Spouse 401k carries
+    // the load, recognition 0.4 → 1.0, total tax +40k.
     makeYear({
       year: 2062,
       withdrawals: { byAccount: { s401k: 120_000 }, total: 120_000 },
       accountLedgers: {
-        rira: makeLedger({ beginningValue: 400_000, endingValue: 400_000 }),
-        s401k: makeLedger({ beginningValue: 480_000, endingValue: 360_000, rothValueBoY: 100_000 }),
+        c401k: makeLedger({ beginningValue: 0, endingValue: 0 }),
+        s401k: makeLedger({ beginningValue: 480_000, endingValue: 360_000 }),
       },
       taxDetail: makeTaxDetail({ "withdrawal:s401k": { type: "ordinary", amount: 120_000 } }),
       taxResult: makeTaxResult({ flow: { totalTax: 90_000, totalFederalTax: 90_000, taxableIncome: 360_000 } }),
@@ -133,6 +206,10 @@ function cooperFixtureYears(): ProjectionYear[] {
     // 2063 asked boundary: nearly flat (+$200 < materiality) — one row off the cliff.
     makeYear({
       year: 2063,
+      accountLedgers: {
+        c401k: makeLedger({ beginningValue: 0, endingValue: 0 }),
+        s401k: makeLedger({ beginningValue: 360_000, endingValue: 360_000 }),
+      },
       taxResult: makeTaxResult({ flow: { totalTax: 90_200, totalFederalTax: 90_200, taxableIncome: 360_800 } }),
     }),
   ];
@@ -282,6 +359,21 @@ describe("explainChange", () => {
     expect(res.notes.some((n) => n.includes("2062–2063") && n.includes("$20,000"))).toBe(true);
   });
 
+  it("cites the first CONFIRMING reversal, not the largest fall", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: firstConfirmingReversalYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2062, ctx: reversalCtx(),
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    expect(res.causes?.[0]?.kind).toBe("funding_character_shift");
+    // The largest fall (2062→2063, −70k) is an income cessation with a flat ratio;
+    // the genuine reversal is the smaller 2063→2064 fall, which the scan reaches.
+    expect(res.notes.some((n) => /reversal|confirmed by/i.test(n) && n.includes("2063–2064"))).toBe(true);
+    expect(res.notes.some((n) => n.includes("2062–2063"))).toBe(false);
+  });
+
   it("stays silent when a tax fall isn't a funding-character reversal", () => {
     // Same cliff, but 2063 keeps drawing from the pre-tax IRA (blended ratio holds
     // at ~1.0) while a deduction jump drops the tax — a fall, not a reversal of the
@@ -319,6 +411,32 @@ describe("explainChange", () => {
     expect(res.notes.some((n) => n.includes("2062→2063") && n.includes("2061→2062"))).toBe(true);
   });
 
+  it("prefers a same-sign rise over a larger opposite-sign fall when auto-locating the cliff", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: signAwareRiseYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2063, compareYear: 2062, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    // The +64k rise wins even though a −70k fall has the larger |Δ|.
+    expect(res.probableIntendedJump?.boundary).toBe("2061→2062");
+    expect(res.probableIntendedJump?.headline.figure.delta).toBe(64_000);
+  });
+
+  it("falls back to an opposite-sign fall when no same-sign candidate qualifies", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: opposelSignOnlyYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2062, compareYear: 2061, ctx: DRILL_CTX,
+    });
+    expect(res.available).toBe(true);
+    if (!res.available) return;
+    // Asked boundary is a rise, but only a fall qualifies — surface it anyway.
+    expect(res.probableIntendedJump?.boundary).toBe("2063→2064");
+    expect(res.probableIntendedJump?.headline.figure.delta).toBe(-54_000);
+  });
+
   it("assembles the full Cooper causal chain in one payload", () => {
     const res = explainChange({
       adapter: taxAdapter,
@@ -332,6 +450,21 @@ describe("explainChange", () => {
     expect(res.analysisContext.subject).toBe("tax");
     expect(res.analysisContext.planYearRange.first).toBeLessThan(res.analysisContext.planYearRange.last);
     expect(res.notes.some((n) => /confirming this savings rule/i.test(n))).toBe(true);
+  });
+
+  it("propagates the nested run's top-level notes (reversal confirmation) onto probableIntendedJump", () => {
+    const res = explainChange({
+      adapter: taxAdapter,
+      years: offByOneReversalYears(),
+      firstDeathYear: null, secondDeathYear: null, year: 2064, compareYear: 2063, ctx: reversalCtx(),
+    }) as Explanation;
+    expect(res.probableIntendedJump?.boundary).toBe("2061→2062");
+    // The reversal note is a top-level note on the nested run, NOT a detail.note,
+    // so it reaches the payload only via probableIntendedJump.notes propagation.
+    expect(res.probableIntendedJump?.notes?.some((n) => /reversal|confirmed by/i.test(n))).toBe(true);
+    // And it is NOT hoisted onto the outer notes (the outer boundary is flat, with
+    // no funding-character cause of its own).
+    expect(res.notes.some((n) => /reversal|confirmed by/i.test(n))).toBe(false);
   });
 
   it("stays silent when the asked boundary IS the cliff", () => {

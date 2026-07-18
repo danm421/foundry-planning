@@ -43,15 +43,17 @@ function argsWithCtx(
 }
 
 describe("detectFundingCharacterShift", () => {
-  // Cooper-shaped: prior-year funding is a mixed-Roth Client 401k (~0.44 taxable);
-  // the asked year shifts to an all-pre-tax Spouse 401k (1.0), while a taxable
-  // brokerage that ran to $0 keeps drawing a residual (the depletion flag).
+  // Cooper-shaped and LEDGER-CONTINUOUS (as real engine output is): the mixed-Roth
+  // Client 401k funds the PRIOR year (recognized ~0.42 of gross) and ends it at $0;
+  // the next year it carries BoY=EoY=0 with NO draw (a depleted prior funder), and
+  // the all-pre-tax Spouse 401k funds both years, carrying the asked year alone
+  // (ratio → 1.0). The Client 401k's Roth slice must classify off the PRIOR-year
+  // ledger, since its next-year beginning value is 0.
   function cooperDetectorArgs(): DetectorArgs {
     const ctx: DrillContext = {
       ...ctxWith([
         { id: "c401k", name: "Client 401k", category: "retirement", subType: "401k" },
         { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
-        { id: "brok", name: "Joint Brokerage", category: "taxable", subType: "brokerage" },
       ]),
       // A 100%-Roth deferral into the Client 401k — the provenance of its Roth slice.
       savingsRules: [
@@ -60,28 +62,26 @@ describe("detectFundingCharacterShift", () => {
     };
     const prev = makeYear({
       year: 2062,
-      withdrawals: { byAccount: { c401k: 200_000, brok: 100_000 }, total: 300_000 },
+      withdrawals: { byAccount: { c401k: 200_000, s401k: 40_000 }, total: 240_000 },
       accountLedgers: {
-        c401k: makeLedger({ beginningValue: 500_000, endingValue: 300_000, rothValueBoY: 250_000 }),
-        brok: makeLedger({ beginningValue: 100_000, endingValue: 0 }),
+        c401k: makeLedger({ beginningValue: 400_000, endingValue: 0, rothValueBoY: 250_000 }),
+        s401k: makeLedger({ beginningValue: 800_000, endingValue: 760_000 }),
       },
       taxDetail: makeTaxDetail({
-        "withdrawal:c401k": { type: "ordinary", amount: 88_000 },
-        "withdrawal:brok": { type: "capGains", amount: 10_000 },
+        // Mostly Roth — only $60k of the $200k draw is taxable.
+        "withdrawal:c401k": { type: "ordinary", amount: 60_000 },
+        "withdrawal:s401k": { type: "ordinary", amount: 40_000 },
       }),
     });
     const next = makeYear({
       year: 2063,
-      withdrawals: { byAccount: { c401k: 20_000, s401k: 250_000, brok: 5_000 }, total: 275_000 },
+      withdrawals: { byAccount: { s401k: 250_000 }, total: 250_000 },
       accountLedgers: {
-        c401k: makeLedger({ beginningValue: 300_000, endingValue: 280_000, rothValueBoY: 150_000 }),
-        s401k: makeLedger({ beginningValue: 800_000, endingValue: 550_000 }),
-        brok: makeLedger({ beginningValue: 0, endingValue: 0 }),
+        c401k: makeLedger({ beginningValue: 0, endingValue: 0 }), // depleted, no draw
+        s401k: makeLedger({ beginningValue: 760_000, endingValue: 510_000 }),
       },
       taxDetail: makeTaxDetail({
-        "withdrawal:c401k": { type: "ordinary", amount: 8_800 },
         "withdrawal:s401k": { type: "ordinary", amount: 250_000 },
-        "withdrawal:brok": { type: "capGains", amount: 500 },
       }),
     });
     return argsWithCtx(prev, next, ctx);
@@ -124,8 +124,8 @@ describe("detectFundingCharacterShift", () => {
     expect(rows.find((r) => r.account.includes("Client 401k"))!.ratioReason).toBe("roth_designated_slice");
     expect(rows.find((r) => r.account.includes("Spouse 401k"))!.ratioReason).toBe("fully_pretax");
     expect(rows.find((r) => r.depleted)).toBeTruthy();
-    // ratioPrev (~0.33) counts the mixed-Roth Client 401k that dominated 2062;
-    // ratioNext (~0.94) reflects the pre-tax Spouse 401k. The jump is real.
+    // ratioPrev (~0.42) counts the mixed-Roth Client 401k that dominated 2062;
+    // ratioNext (1.0) reflects the pre-tax Spouse 401k that carries 2063 alone.
     expect(f.evidence.blendedRatioPriorYear as number).toBeLessThan(0.5);
     expect(f.evidence.blendedRatioYear as number).toBeGreaterThan(0.85);
   });
@@ -138,11 +138,12 @@ describe("detectFundingCharacterShift", () => {
     expect(f.summary).toContain("reorder");
   });
 
-  it("counts a prior-year-only funder (dropped from the asked-year rows) in the prior blended ratio", () => {
+  it("counts a prior-year-only funder (kept as a depleted row) in the prior blended ratio", () => {
     // Client 401k funds 2062 at 0.44 then depletes; 2063 draws entirely from
-    // Spouse 401k. Client 401k has no asked-year cashOut, so Task 3's byAccount
-    // filter drops it — iterating byAccount for recPrev would read the prior
-    // ratio as 0. The detector must sum recognized over the PRIOR funding set.
+    // Spouse 401k. Client 401k has no asked-year cashOut, so it is retained as a
+    // depleted row whose next-year dollar fields are 0 — it must NOT leak into
+    // recNext/totalFundingNext. Its prior recognized income still counts in
+    // ratioPrev, summed over the PRIOR funding set (not the asked-year rows).
     const ctx = ctxWith([
       { id: "c401k", name: "Client 401k", category: "retirement", subType: "401k" },
       { id: "s401k", name: "Spouse 401k", category: "retirement", subType: "401k" },
@@ -159,13 +160,21 @@ describe("detectFundingCharacterShift", () => {
     const next = makeYear({
       year: 2063,
       withdrawals: { byAccount: { s401k: 100_000 }, total: 100_000 },
-      accountLedgers: { s401k: makeLedger({ beginningValue: 800_000, endingValue: 700_000 }) },
+      accountLedgers: {
+        c401k: makeLedger({ beginningValue: 0, endingValue: 0 }), // depleted, no draw
+        s401k: makeLedger({ beginningValue: 800_000, endingValue: 700_000 }),
+      },
       taxDetail: makeTaxDetail({ "withdrawal:s401k": { type: "ordinary", amount: 100_000 } }),
     });
     const f = detectFundingCharacterShift(argsWithCtx(prev, next, ctx))!;
     // 44k recognized on 100k prior funding — NOT 0.
     expect(f.evidence.blendedRatioPriorYear).toBe(0.44);
     expect(f.evidence.blendedRatioYear).toBe(1);
+    // The depleted Client 401k row is present but contributes 0 to the asked year.
+    const rows = f.detail!.accounts as RatioAccount[];
+    const client = rows.find((r) => r.account.includes("Client 401k"))!;
+    expect(client.depleted).toBe(true);
+    expect(client.cashOut).toBe(0);
   });
 
   it("excludes a withdrawal_tax_free slice from the recognized amount (tax-ledger semantics)", () => {

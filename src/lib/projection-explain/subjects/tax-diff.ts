@@ -46,11 +46,24 @@ export interface FundingRow {
   /** recognized / cashOut, guarded (0 when nothing came out). */
   ratio: number;
   priorYearEndingBalance: number;
+  /** True when the account FUNDED the prior year (prior cashOut > 0) yet ended it
+   *  below DEPLETED_EPS — a prior-year funder that ran dry. Because ledgers are
+   *  continuous (BoY(next) = EoY(prev)), such an account has BoY=EoY=0 and no draw
+   *  in the asked year, so its next-year dollar fields (cashOut/rmd/…) are all 0;
+   *  the prior-year context below carries the pre-depletion numbers. */
   depleted: boolean;
+  /** Prior-year cash out, populated ONLY on depleted rows. */
+  priorCashOut?: number;
+  /** Prior-year recognized (taxable) dollars, populated ONLY on depleted rows. */
+  priorRecognized?: number;
+  /** priorRecognized / priorCashOut, guarded — populated ONLY on depleted rows. */
+  priorRatio?: number;
 }
 
 export interface WithdrawalPicture {
-  /** Asked-year funding rows, union of both years' funding accounts. */
+  /** Asked-year funding rows — the union of both years' funding accounts. A
+   *  prior-year funder that ran dry is retained as a `depleted` row (its
+   *  asked-year dollar fields are 0, with prior-year context attached). */
   byAccount: FundingRow[];
   totalFundingPrev: number;
   totalFundingNext: number;
@@ -188,6 +201,13 @@ export function diffTaxYears(
       const rmd = next.accountLedgers[id]?.rmdAmount ?? 0;
       const recognized = recognizedForAccount(next, id);
       const priorEnd = prev.accountLedgers[id]?.endingValue ?? 0;
+      // Depleted = a PRIOR-year funder (prior cashOut > 0) that ran dry (prior
+      // ending < EPS). Continuous ledgers mean it then carries BoY=EoY=0 and no
+      // asked-year draw, so its next-year dollar fields below are the real (0)
+      // values — prior-year dollars are surfaced separately, never folded in.
+      const priorCashOut = cashOutForAccount(prev, id);
+      const depleted = priorCashOut > 0 && priorEnd < DEPLETED_EPS;
+      const priorRecognized = depleted ? recognizedForAccount(prev, id) : 0;
       return {
         account: ctx.accountNames[id] ?? id,
         accountId: id,
@@ -197,7 +217,14 @@ export function diffTaxYears(
         recognized: Math.round(recognized),
         ratio: cashOut > 0 ? recognized / cashOut : 0,
         priorYearEndingBalance: Math.round(priorEnd),
-        depleted: priorEnd < DEPLETED_EPS && (next.withdrawals.byAccount[id] ?? 0) > 0,
+        depleted,
+        ...(depleted
+          ? {
+              priorCashOut: Math.round(priorCashOut),
+              priorRecognized: Math.round(priorRecognized),
+              priorRatio: priorCashOut > 0 ? priorRecognized / priorCashOut : 0,
+            }
+          : {}),
       };
     })
     .filter((r) => r.cashOut !== 0 || r.depleted)

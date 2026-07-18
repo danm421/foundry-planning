@@ -112,34 +112,64 @@ describe("diffTaxYears", () => {
     expect(wp.residualNote).toBeUndefined(); // balances within 1%
   });
 
-  it("flags a next-year funding row as depleted when its prior-year balance ended below DEPLETED_EPS", () => {
-    // New (funding) shape: a row is depleted when the account ended the prior
-    // year near $0 yet still draws in the asked year. A healthy account with a
-    // large prior balance is not depleted.
+  it("flags a prior-year funder that ran dry as depleted, retaining its row with prior-year context", () => {
+    // New (funding) semantics: a row is depleted when the account FUNDED the prior
+    // year (cashOut > 0) and ended it below DEPLETED_EPS — a prior funder that ran
+    // dry. Ledgers are continuous, so it has BoY=EoY=0 and no draw in the asked
+    // year; its next-year dollar fields stay the real (zero) values, and prior-year
+    // context (priorCashOut/priorRecognized/priorRatio) is attached. A healthy
+    // account that keeps drawing is not depleted and carries no prior-year context.
     const prev = makeYear({
       year: 2062,
+      withdrawals: { byAccount: { ira: 150_000, brok: 40_000 }, total: 190_000 },
       accountLedgers: {
-        ira: makeLedger({ beginningValue: 200_000, endingValue: 50 }), // all but drained
+        ira: makeLedger({ beginningValue: 150_000, endingValue: 0 }), // ran dry
         brok: makeLedger({ beginningValue: 500_000, endingValue: 460_000 }),
       },
+      taxDetail: makeTaxDetail({
+        "withdrawal:ira": { type: "ordinary", amount: 150_000 },
+        "withdrawal:brok": { type: "capGains", amount: 8_000 },
+      }),
     });
     const next = makeYear({
       year: 2063,
-      withdrawals: { byAccount: { ira: 190_000, brok: 40_000 }, total: 230_000 },
+      withdrawals: { byAccount: { brok: 40_000 }, total: 40_000 },
       accountLedgers: {
-        ira: makeLedger({ beginningValue: 50, endingValue: 0 }),
+        ira: makeLedger({ beginningValue: 0, endingValue: 0 }), // depleted, no draw
         brok: makeLedger({ beginningValue: 460_000, endingValue: 420_000 }),
       },
-      taxDetail: makeTaxDetail({
-        "withdrawal:ira": { type: "ordinary", amount: 190_000 },
-        "withdrawal:brok": { type: "capGains", amount: 8_000 },
-      }),
+      taxDetail: makeTaxDetail({ "withdrawal:brok": { type: "capGains", amount: 8_000 } }),
     });
     const rows = diffTaxYears(prev, next, DRILL_CTX).withdrawalPicture.byAccount;
     const ira = rows.find((r) => r.account === "Dan IRA");
     const brok = rows.find((r) => r.account === "Joint Brokerage");
-    expect(ira).toMatchObject({ depleted: true, cashOut: 190_000, priorYearEndingBalance: 50 });
+    expect(ira).toMatchObject({
+      depleted: true,
+      cashOut: 0,
+      priorYearEndingBalance: 0,
+      priorCashOut: 150_000,
+      priorRecognized: 150_000,
+      priorRatio: 1,
+    });
     expect(brok).toMatchObject({ depleted: false, cashOut: 40_000, priorYearEndingBalance: 460_000 });
+    expect(brok!.priorCashOut).toBeUndefined();
+  });
+
+  it("does not flag a riser absent from prior ledgers as depleted (old false-positive shape)", () => {
+    // A new funder that first draws in the asked year — no prior-year cashOut, no
+    // prior ledger — must NOT be flagged depleted. The pre-fix rule flagged such a
+    // riser as 'depleted' (priorEnd ~0 + a current draw) and named it in the prose.
+    const prev = makeYear({ year: 2062 });
+    const next = makeYear({
+      year: 2063,
+      withdrawals: { byAccount: { ira: 190_000 }, total: 190_000 },
+      accountLedgers: { ira: makeLedger({ beginningValue: 900_000, endingValue: 750_000 }) },
+      taxDetail: makeTaxDetail({ "withdrawal:ira": { type: "ordinary", amount: 190_000 } }),
+    });
+    const rows = diffTaxYears(prev, next, DRILL_CTX).withdrawalPicture.byAccount;
+    const ira = rows.find((r) => r.account === "Dan IRA")!;
+    expect(ira.depleted).toBe(false);
+    expect(ira.priorCashOut).toBeUndefined();
   });
 
   it("blendedRate is Δtax/ΔtaxableIncome clamped, falling back to marginal rate", () => {

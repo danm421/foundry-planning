@@ -168,11 +168,12 @@ export function explainChange(
 
   // Reversal cross-check (refinement E): when the top cause is a funding-character
   // shift — draws moving toward taxable sources, spiking tax — a genuine mechanism
-  // reverses when its driver reverses. Scan the whole projection for the largest
-  // opposite-sign (tax-falling) boundary and confirm its blended funding ratio
-  // swings back toward tax-free before citing it as confirmation. Subject-honest:
-  // tax-only, and silent when no such mirror exists. Runs AFTER the degrade guard,
-  // so `causes` reflect a real diff.
+  // reverses when its driver reverses. Collect EVERY opposite-sign (tax-falling)
+  // boundary, order them by |Δ| descending, and cite the FIRST whose blended
+  // funding ratio actually swings back toward tax-free — not merely the single
+  // most-negative boundary, which may be an unrelated cash-onset/income-cessation
+  // cliff whose mechanism isn't a funding reversal. Subject-honest: tax-only, and
+  // silent when no confirming mirror exists. Runs AFTER the degrade guard.
   const cliff = causes[0];
   if (
     adapter.key === "tax" &&
@@ -180,7 +181,7 @@ export function explainChange(
     totalDelta > 0 &&
     Number(cliff.evidence.blendedRatioYear) > Number(cliff.evidence.blendedRatioPriorYear)
   ) {
-    let mirror: { prevYear: ProjectionYear; nextYear: ProjectionYear; figure: number; delta: number } | null = null;
+    const falls: { prevYear: ProjectionYear; nextYear: ProjectionYear; figure: number; delta: number }[] = [];
     for (let i = 0; i + 1 < args.years.length; i++) {
       const py = args.years[i];
       const ny = args.years[i + 1];
@@ -190,13 +191,14 @@ export function explainChange(
       if (pf == null || nf == null) continue; // skip degraded (figure-less) years
       const delta = nf - pf;
       if (delta >= 0) continue; // opposite the rising cliff ⇒ a tax fall
-      if (!mirror || delta < mirror.delta) mirror = { prevYear: py, nextYear: ny, figure: nf, delta };
+      falls.push({ prevYear: py, nextYear: ny, figure: nf, delta });
     }
-    if (mirror) {
+    falls.sort((a, b) => a.delta - b.delta); // most-negative first = |Δ| descending
+    for (const cand of falls) {
       const mirrorFinding = detectFundingCharacterShift({
-        prev: mirror.prevYear,
-        next: mirror.nextYear,
-        diff: adapter.buildDiff(mirror.prevYear, mirror.nextYear, args.ctx) as TaxYearDiff,
+        prev: cand.prevYear,
+        next: cand.nextYear,
+        diff: adapter.buildDiff(cand.prevYear, cand.nextYear, args.ctx) as TaxYearDiff,
         ctx: args.ctx,
         firstDeathYear: args.firstDeathYear,
         secondDeathYear: args.secondDeathYear,
@@ -206,9 +208,10 @@ export function explainChange(
         Number(mirrorFinding.evidence.blendedRatioYear) < Number(mirrorFinding.evidence.blendedRatioPriorYear)
       ) {
         notes.push(
-          `Mechanism confirmed by the ${mirror.prevYear.year}–${mirror.nextYear.year} reversal ` +
-            `(draws shift back toward tax-free sources; total tax falls to ${money(mirror.figure)}).`,
+          `Mechanism confirmed by the ${cand.prevYear.year}–${cand.nextYear.year} reversal ` +
+            `(draws shift back toward tax-free sources; total tax falls to ${money(cand.figure)}).`,
         );
+        break;
       }
     }
   }
@@ -245,13 +248,27 @@ export function explainChange(
     // gap in the middle of the range never derails the scan.
     const figs = args.years.map((y) => ({ year: y.year, v: adapter.figure(y) ?? adapter.degradedFigure(y) }));
     const boundaries = figs.slice(1).map((f, i) => ({
-      from: figs[i].year, to: f.year, absDelta: Math.abs(f.v - figs[i].v),
+      from: figs[i].year, to: f.year, delta: f.v - figs[i].v, absDelta: Math.abs(f.v - figs[i].v),
     }));
+    type Boundary = (typeof boundaries)[number];
     const requested = boundaries.find((b) => b.from === compareYear && b.to === args.year);
     const window = boundaries.filter((b) => Math.abs(b.to - args.year) <= 2);
-    const localMax = window.reduce((m, b) => (b.absDelta > m.absDelta ? b : m), window[0]);
     const requestedDelta = requested?.absDelta ?? 0;
-    if (localMax && localMax !== requested && localMax.absDelta >= Math.max(3 * requestedDelta, 10_000)) {
+    const threshold = Math.max(3 * requestedDelta, 10_000);
+    const qualifies = (b: Boundary) => b !== requested && b.absDelta >= threshold;
+    const pickLargest = (cands: Boundary[]): Boundary | undefined =>
+      cands.reduce<Boundary | undefined>((m, b) => (!m || b.absDelta > m.absDelta ? b : m), undefined);
+    // Sign-aware: an advisor asking about a rise (or fall) means the nearby move
+    // in that direction, not a larger opposite-direction one. Prefer a qualifying
+    // same-sign candidate; only when none exists fall back to the largest |Δ| of
+    // any sign (a huge opposite move is still worth surfacing). A flat requested
+    // boundary (delta 0) has no sign, so it keeps the unsigned behavior.
+    const requestedSign = requested && requested.delta !== 0 ? Math.sign(requested.delta) : 0;
+    const sameSign = requestedSign !== 0
+      ? window.filter((b) => qualifies(b) && Math.sign(b.delta) === requestedSign)
+      : [];
+    const localMax = sameSign.length ? pickLargest(sameSign) : pickLargest(window.filter(qualifies));
+    if (localMax) {
       const alt = explainChange({ ...args, year: localMax.to, compareYear: localMax.from }, depth + 1);
       if (alt.available) {
         result.probableIntendedJump = {
@@ -259,6 +276,10 @@ export function explainChange(
           headline: alt.headline,
           causes: alt.causes,
           withdrawalPicture: alt.withdrawalPicture,
+          // Carry the nested run's own top-level notes (reversal confirmation,
+          // IRMAA second-order) — they live only on the located cliff and would
+          // otherwise be dropped, since hoistDetailNotes lifts detail.notes only.
+          notes: alt.notes,
         };
         // The advisory note may live ONLY on the located cliff (the asked boundary
         // was flat, so no direct cause carried it). Hoist from the nested causes

@@ -121,6 +121,10 @@ export interface Explanation {
     headline: { figure: DollarDelta };
     causes?: Cause[];
     withdrawalPicture?: unknown;
+    /** The located cliff's own top-level notes (reversal confirmation, IRMAA
+     *  second-order). Typed explicitly — the Explanation index signature would
+     *  otherwise widen this to `unknown` — so consumers see the string array. */
+    notes?: string[];
   };
   analysisContext: AnalysisContext;
   notes: string[];

@@ -34,17 +34,22 @@ export interface RatioAccount extends FundingRow {
 }
 
 /** Classify an account's recognition character from its category/subType (+ name
- *  fallback) and its asked-year Roth slice. Ordered most-specific first. Keys off
- *  `Account.subType` — there is no `taxType` field on Account. */
+ *  fallback) and its Roth slice. Ordered most-specific first. Keys off
+ *  `Account.subType` — there is no `taxType` field on Account. The Roth slice
+ *  reads the asked-year ledger; for a depleted prior-funder (asked-year beginning
+ *  value 0) it falls back to the PRIOR-year ledger, so the ran-dry account's
+ *  designated-Roth character is still recognized. */
 function classifyRatioReason(
   id: string,
+  prev: ProjectionYear,
   next: ProjectionYear,
   ctx: DrillContext,
 ): RatioAccount["ratioReason"] {
   const acct = ctx.accounts.find((a) => a.id === id);
   const sub = `${acct?.category ?? ""}/${acct?.subType ?? ""}`;
   const name = acct?.name ?? "";
-  const led = next.accountLedgers[id];
+  const nextLed = next.accountLedgers[id];
+  const led = nextLed && nextLed.beginningValue > 0 ? nextLed : prev.accountLedgers[id];
   const rothSlice = led && led.beginningValue > 0 ? (led.rothValueBoY ?? 0) / led.beginningValue : 0;
   if (/roth.?ira/i.test(sub) || /roth.?ira/i.test(name)) return "roth_ira_qualified";
   if (/(401|403)/.test(sub) && rothSlice > ROTH_SLICE_MIN) return "roth_designated_slice";
@@ -61,7 +66,7 @@ function classifyRatioReason(
 export function detectFundingCharacterShift(a: DetectorArgs): Finding | null {
   const wp = a.diff.withdrawalPicture;
   const rows: RatioAccount[] = wp.byAccount.map((r) => {
-    const ratioReason = classifyRatioReason(r.accountId, a.next, a.ctx);
+    const ratioReason = classifyRatioReason(r.accountId, a.prev, a.next, a.ctx);
     return {
       ...r,
       ratioReason,
