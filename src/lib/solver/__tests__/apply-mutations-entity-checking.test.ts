@@ -104,11 +104,14 @@ describe("F13 — entity-upsert creates an entity checking account", () => {
     expect(entityCash[0].id).toBe("pre-existing-trust-cash");
   });
 
-  it("removes nothing when the upsert deletes the entity (value null)", () => {
+  it("removes the entity and its synthesized checking account when the upsert deletes the entity (value null)", () => {
     const result = applyMutations(baseData(), [
       upsertTrust,
       { kind: "entity-upsert", id: TRUST_ID, value: null } as unknown as SolverMutation,
     ]);
     expect(result.entities).toHaveLength(0);
+    expect(
+      result.accounts.find((a) => a.id === `entity-checking-${TRUST_ID}`),
+    ).toBeUndefined();
   });
 });

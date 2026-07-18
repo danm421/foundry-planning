@@ -326,6 +326,13 @@ export function applyMutations(
               } as ClientData["accounts"][number],
             ];
           }
+        } else {
+          // Entity deleted: drop only the exact synthesized checking account
+          // (same deterministic id as above), never a sweep by ownership —
+          // an advisor may have added real accounts owned by this entity and
+          // those must survive the entity's removal.
+          const syntheticId = `entity-checking-${m.id}`;
+          result.accounts = result.accounts.filter((a) => a.id !== syntheticId);
         }
         break;
       }
