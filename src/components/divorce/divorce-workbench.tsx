@@ -234,7 +234,7 @@ export default function DivorceWorkbench({
       {/* Board (left, scrolls) + settings rail (right); stacks on mobile so the
           settings + Abandon control stay reachable at every width. */}
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 lg:overflow-hidden lg:pb-0">
           {allocError ? (
             <p className="mb-3 text-[13px] text-crit">{allocError}</p>
           ) : null}

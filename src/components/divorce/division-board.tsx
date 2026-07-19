@@ -194,7 +194,7 @@ export function AllocationBoard({
   );
 
   return (
-    <div className="mt-6 grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-3">
+    <div className="mt-6 grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-3 lg:flex-1 lg:grid-rows-[minmax(0,1fr)]">
       {/* Primary side */}
       <SideColumn name={people.primaryName || "Primary"} totals={totals.primary}>
         {primary.length === 0 ? (
@@ -207,9 +207,9 @@ export function AllocationBoard({
       {/* Pool — objects still needing a decision, grouped by kind */}
       <section
         aria-label="To divide"
-        className="flex min-h-0 flex-col rounded-[var(--radius)] border border-hair bg-card-2"
+        className="flex min-h-0 flex-col rounded-[var(--radius)] border border-hair bg-card-2 lg:overflow-hidden"
       >
-        <header className="sticky top-0 z-20 rounded-t-[var(--radius)] border-b border-hair bg-card-2 px-4 py-3">
+        <header className="sticky top-0 z-20 shrink-0 rounded-t-[var(--radius)] border-b border-hair bg-card-2 px-4 py-3">
           <div className="text-[14px] font-semibold text-ink">To divide</div>
           <p className="mt-1 text-[12px] text-ink-3">
             {decisionsRemaining === 0 ? (
@@ -222,7 +222,7 @@ export function AllocationBoard({
             )}
           </p>
         </header>
-        <div className="flex flex-col gap-4 p-3">
+        <div className="flex flex-col gap-4 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           {decisionsRemaining === 0 ? (
             <EmptyHint text="Every object is assigned. Review each side, then commit." />
           ) : (
@@ -282,9 +282,9 @@ function SideColumn({
   return (
     <section
       aria-label={name}
-      className="flex min-h-0 flex-col rounded-[var(--radius)] border border-hair bg-card-2"
+      className="flex min-h-0 flex-col rounded-[var(--radius)] border border-hair bg-card-2 lg:overflow-hidden"
     >
-      <header className="sticky top-0 z-20 rounded-t-[var(--radius)] border-b border-hair bg-card-2 px-4 py-3">
+      <header className="sticky top-0 z-20 shrink-0 rounded-t-[var(--radius)] border-b border-hair bg-card-2 px-4 py-3">
         <div className="truncate text-[14px] font-semibold text-ink">{name}</div>
         <dl className="mt-2 grid grid-cols-3 gap-2">
           <TotalStat label="Net worth" value={totals.netWorth} />
@@ -292,7 +292,9 @@ function SideColumn({
           <TotalStat label="Expenses" value={totals.annualExpenses} />
         </dl>
       </header>
-      <div className="flex flex-col gap-3 p-3">{children}</div>
+      <div className="flex flex-col gap-3 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        {children}
+      </div>
     </section>
   );
 }
