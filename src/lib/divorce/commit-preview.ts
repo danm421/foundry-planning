@@ -79,6 +79,15 @@ export interface CommitPreview {
     label: string;
     side: Side;
     remove: boolean;
+    // True when this row's removal is structurally forced and the "keep" choice
+    // can't be honored: the designation references the departing spouse's P
+    // family_member, which commit cleanup deletes — cascade-deleting the
+    // designation (beneficiary_designations.family_member_id is ON DELETE
+    // CASCADE) regardless of the checkbox. The dialog renders these
+    // non-interactive. Only ever true for familyMemberId-based spouse
+    // designations; householdRole-based rows (no fm ref) are struck by the
+    // checklist and are never forced.
+    forced: boolean;
   }>;
   informational: string[];
 }
@@ -542,6 +551,12 @@ export async function buildCommitPreview(args: {
       // A household principal (the soon-to-be-ex) named on a document that lands
       // on the OTHER side → offer to strike them.
       const objLabel = des.accountId ? accountObjById.get(des.accountId)?.label ?? "Account" : "Trust";
+      // Forced iff the designation references the departing spouse's P family
+      // member — commit cleanup deletes that fm row, cascade-deleting this
+      // designation whatever the checkbox says. (householdRole-based rows carry
+      // no fm ref, so the checklist strikes them and they're never forced.)
+      const forced =
+        des.familyMemberId != null && des.familyMemberId === spouseFamilyMemberId;
       for (const side of belongsSides) {
         if (side !== namedSide) {
           cleanupRaw.push({
@@ -549,6 +564,7 @@ export async function buildCommitPreview(args: {
             id: des.id,
             label: `${objLabel} names ${nameForSide(namedSide)}`,
             side,
+            forced,
           });
         }
       }
@@ -587,6 +603,9 @@ export async function buildCommitPreview(args: {
         id: r.id,
         label: `${r.bequestName} names ${nameForSide(ns)}`,
         side: ws,
+        // will_*_recipients.recipient_id is a polymorphic uuid, NOT an fm FK, so
+        // the spouse-fm delete never cascades it — the checklist strikes it.
+        forced: false,
       });
     }
   }
@@ -599,6 +618,7 @@ export async function buildCommitPreview(args: {
         id: r.id,
         label: `Residuary estate names ${nameForSide(ns)}`,
         side: ws,
+        forced: false,
       });
     }
   }

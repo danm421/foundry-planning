@@ -138,6 +138,36 @@ d("buildCommitPreview", () => {
     }
   });
 
+  it("marks a familyMemberId-spouse cleanup row forced, but a householdRole-spouse row not forced", async () => {
+    const f = await createMarriedFixture({ withSpouseNamedDesignations: true });
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: TEST_ADVISOR_ID });
+
+      const preview = await buildCommitPreview({ clientId: f.clientId, firmId: f.firmId });
+
+      // Both designations sit on the P-retained primaryBrokerage naming the
+      // departing spouse, so both surface as primary-side cleanup rows…
+      const fmRow = preview.cleanup.find(
+        (c) => c.source === "beneficiary_designation" && c.id === f.spouseFmDesignationId,
+      );
+      const roleRow = preview.cleanup.find(
+        (c) => c.source === "beneficiary_designation" && c.id === f.spouseRoleDesignationId,
+      );
+      expect(fmRow).toBeDefined();
+      expect(roleRow).toBeDefined();
+      expect(fmRow!.side).toBe("primary");
+      expect(roleRow!.side).toBe("primary");
+
+      // …but only the familyMemberId one cascade-deletes with the spouse's fm on
+      // commit, so its "keep" choice can't be honored → forced. The householdRole
+      // row carries no fm ref and is struck by the checklist → not forced.
+      expect(fmRow!.forced).toBe(true);
+      expect(roleRow!.forced).toBe(false);
+    } finally {
+      await destroyFixture(f);
+    }
+  });
+
   it("a transfer whose endpoints land on opposite sides → straddle_dropped warning", async () => {
     const f = await createMarriedFixture({ withStraddleTransfer: true });
     try {

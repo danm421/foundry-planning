@@ -83,9 +83,26 @@ const cleanPreview: CommitPreview = {
     },
   ],
   cleanup: [
-    { source: "beneficiary_designation", id: "bd1", label: "401(k) names Jordan Kim", side: "primary", remove: true },
+    { source: "beneficiary_designation", id: "bd1", label: "401(k) names Jordan Kim", side: "primary", remove: true, forced: false },
   ],
   informational: ["Tax returns stay with Alex Kim"],
+};
+
+// A preview whose sole cleanup row is structurally forced — its removal rides on
+// the departing spouse's family record and can't be kept, so it renders
+// read-only (disabled + a plain-voice note).
+const forcedCleanupPreview: CommitPreview = {
+  ...cleanPreview,
+  cleanup: [
+    {
+      source: "beneficiary_designation",
+      id: "bd-forced",
+      label: "Primary Brokerage names Jordan Kim",
+      side: "primary",
+      remove: true,
+      forced: true,
+    },
+  ],
 };
 
 const blockedPreview: CommitPreview = {
@@ -250,6 +267,25 @@ describe("CommitPreviewDialog flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create separate household" }));
 
     expect(await screen.findByText(message)).toBeTruthy();
+  });
+
+  it("renders a forced cleanup row non-interactively with the family-record note", async () => {
+    installFetch({ preview: () => ok(forcedCleanupPreview) });
+    render(<DivorceWorkbench payload={makePayload([primaryIncome])} clientId="c1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and commit" }));
+
+    // The row is shown (so the advisor knows it's going away) but the checkbox
+    // is checked + disabled — the "keep" choice can't be honored.
+    const checkbox = (await screen.findByRole("checkbox")) as HTMLInputElement;
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByText("Primary Brokerage names Jordan Kim")).toBeTruthy();
+    expect(screen.getByText("Removed with Jordan's family record")).toBeTruthy();
+
+    // Clicking a disabled checkbox fires no change → no settings PATCH.
+    fireEvent.click(checkbox);
+    const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.some(([, init]) => (init as RequestInit)?.method === "PATCH")).toBe(false);
   });
 
   it("persists a cleanup toggle through the settings PATCH (beneficiaryCleanup.selections)", async () => {

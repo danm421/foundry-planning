@@ -78,6 +78,11 @@ export interface MarriedFixture {
   // only when `withCharitableTrust` is set (Task 11 Fixes 2 & 4). "" otherwise.
   charitableTrustId: string;
   charityId: string;
+  // Two extra designations on the P-retained primaryBrokerage that NAME the
+  // departing spouse — populated only when `withSpouseNamedDesignations` is set
+  // (commit-preview `forced` flag). "" otherwise.
+  spouseFmDesignationId: string; // familyMemberId = spouseFmId → cascades on commit → forced
+  spouseRoleDesignationId: string; // householdRole = 'spouse' → struck by the checklist → not forced
   ids: {
     primaryBrokerage: string; // taxable, 100% primary, value 100k basis 60k
     jointBrokerage: string; // taxable, 50/50 primary+spouse, value 600k basis 200k
@@ -124,6 +129,11 @@ export interface CreateMarriedFixtureOverrides {
   // (`ids.trustAccount`). Exercises Task 11 Fix 3 (duplicate warns the 1:1
   // ride-along wasn't copied). Requires the married graph (no-op for noSpouse).
   withTrustLifePolicy?: boolean;
+  // Add two designations on the P-retained primaryBrokerage that name the
+  // departing spouse — one via familyMemberId (cascade-deleted with the spouse's
+  // fm → forced), one via householdRole (struck by the checklist → not forced).
+  // Exercises the commit-preview `forced` flag. No-op for noSpouse.
+  withSpouseNamedDesignations?: boolean;
 }
 
 const EMPTY_IDS: MarriedFixture["ids"] = {
@@ -321,6 +331,8 @@ export async function createMarriedFixture(
         holdingsAccountId: "",
         charitableTrustId: "",
         charityId: "",
+        spouseFmDesignationId: "",
+        spouseRoleDesignationId: "",
         ids: {
           ...EMPTY_IDS,
           primaryBrokerage: primaryBrokerage.id,
@@ -661,6 +673,41 @@ export async function createMarriedFixture(
       charityId = charity.id;
     }
 
+    // ── Spouse-named designations on the P-retained primaryBrokerage (forced
+    // flag). Both land on the primary side (the account stays with the primary)
+    // and name the departing spouse, so both surface as cleanup rows — but only
+    // the familyMemberId one cascade-deletes with the spouse's fm on commit. ──
+    let spouseFmDesignationId = "";
+    let spouseRoleDesignationId = "";
+    if (overrides.withSpouseNamedDesignations) {
+      const [byFm] = await tx
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: client.id,
+          targetKind: "account",
+          accountId: primaryBrokerage.id,
+          tier: "primary",
+          familyMemberId: spouseFmId,
+          percentage: "100.00",
+          sortOrder: 0,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      const [byRole] = await tx
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: client.id,
+          targetKind: "account",
+          accountId: primaryBrokerage.id,
+          tier: "contingent",
+          householdRole: "spouse",
+          percentage: "100.00",
+          sortOrder: 1,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      spouseFmDesignationId = byFm.id;
+      spouseRoleDesignationId = byRole.id;
+    }
+
     // ── Life-insurance extension on the trust's owned account (Fix 3). The FK
     // has no category check, so a policy row on the taxable trust account is a
     // cheap way to exercise the "ride-along not copied" warning on duplicate. ──
@@ -687,6 +734,8 @@ export async function createMarriedFixture(
       holdingsAccountId,
       charitableTrustId,
       charityId,
+      spouseFmDesignationId,
+      spouseRoleDesignationId,
       ids: {
         primaryBrokerage: primaryBrokerage.id,
         jointBrokerage: jointBrokerage.id,

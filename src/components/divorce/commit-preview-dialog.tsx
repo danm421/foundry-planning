@@ -206,6 +206,7 @@ export function CommitPreviewDialog({
           cleanup={cleanup}
           primaryName={primaryName}
           spouseName={spouseName}
+          spouseFirst={spouseFirst}
           actionGroups={actionGroups}
           onToggleCleanup={toggleCleanup}
         />
@@ -230,6 +231,7 @@ function PreviewStep({
   cleanup,
   primaryName,
   spouseName,
+  spouseFirst,
   actionGroups,
   onToggleCleanup,
 }: {
@@ -239,6 +241,7 @@ function PreviewStep({
   cleanup: CleanupRow[];
   primaryName: string;
   spouseName: string;
+  spouseFirst: string;
   actionGroups: Array<{
     disposition: string;
     heading: (spouse: string) => string;
@@ -336,20 +339,43 @@ function PreviewStep({
             Checked items are removed from the household they land on when you commit.
           </p>
           <ul className="flex flex-col gap-1.5">
-            {cleanup.map((c) => (
-              <li key={`${c.source}:${c.id}`}>
-                <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={c.remove}
-                    onChange={() => onToggleCleanup(c.id, c.source)}
-                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
-                    style={{ accentColor: "var(--color-accent)" }}
-                  />
-                  {c.label}
-                </label>
-              </li>
-            ))}
+            {cleanup.map((c) =>
+              c.forced ? (
+                // Structurally forced: the designation rides on the departing
+                // spouse's family record, so it's removed on commit no matter
+                // what — render it read-only, not as a live choice.
+                <li key={`${c.source}:${c.id}`} className="flex flex-col gap-0.5">
+                  <div className="flex items-start gap-2.5 text-[13px] text-ink-3">
+                    <input
+                      type="checkbox"
+                      checked
+                      disabled
+                      readOnly
+                      aria-label={c.label}
+                      className="mt-0.5 h-4 w-4 shrink-0"
+                      style={{ accentColor: "var(--color-accent)" }}
+                    />
+                    <span>{c.label}</span>
+                  </div>
+                  <span className="pl-[26px] text-[11px] text-ink-4">
+                    {`Removed with ${spouseFirst}'s family record`}
+                  </span>
+                </li>
+              ) : (
+                <li key={`${c.source}:${c.id}`}>
+                  <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={c.remove}
+                      onChange={() => onToggleCleanup(c.id, c.source)}
+                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+                      style={{ accentColor: "var(--color-accent)" }}
+                    />
+                    {c.label}
+                  </label>
+                </li>
+              ),
+            )}
           </ul>
         </section>
       )}

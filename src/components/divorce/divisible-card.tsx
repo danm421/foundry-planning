@@ -24,6 +24,19 @@ function humanize(s: string | null): string | null {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** Nearest scrollable ancestor — the column's `overflow-y-auto` box clips the
+ *  menu, and z-index can't escape an overflow clip, so the menu must open
+ *  toward whichever edge has room INSIDE this element. */
+function getScrollParent(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const oy = getComputedStyle(node).overflowY;
+    if (oy === "auto" || oy === "scroll") return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 type CardSide = "primary" | "spouse" | "pool";
 
 /** Which owner the object currently carries, phrased for the card's owner chip. */
@@ -83,7 +96,11 @@ export function DivisibleCard({
   onOpenSplit,
 }: DivisibleCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // When the card sits near the bottom of its scroll column, flip the menu up so
+  // it opens into free space rather than clipping against the overflow box.
+  const [openUp, setOpenUp] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -124,6 +141,29 @@ export function DivisibleCard({
   const subtypeLabel = humanize(obj.subtype);
   const showBasis = isSplittable(obj);
   const spouseName = people.spouseName || "spouse";
+
+  function toggleMenu() {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    // Decide the open direction the instant we open, comparing the room below
+    // vs above the trigger inside the scroll clip. The menu isn't mounted yet,
+    // so estimate its height from the item count (~34px/item + p-1 padding).
+    const trigger = triggerRef.current;
+    const scroll = getScrollParent(trigger);
+    let up = false;
+    if (trigger && scroll) {
+      const t = trigger.getBoundingClientRect();
+      const clip = scroll.getBoundingClientRect();
+      const estMenuHeight = allowedDispositions(obj).length * 34 + 8;
+      const spaceBelow = clip.bottom - t.bottom;
+      const spaceAbove = t.top - clip.top;
+      up = spaceBelow < estMenuHeight && spaceAbove > spaceBelow;
+    }
+    setOpenUp(up);
+    setMenuOpen(true);
+  }
 
   function choose(d: DivorceDisposition) {
     setMenuOpen(false);
@@ -186,8 +226,9 @@ export function DivisibleCard({
         {interactive ? (
           <div className="relative shrink-0" ref={menuRef}>
             <button
+              ref={triggerRef}
               type="button"
-              onClick={() => setMenuOpen((o) => !o)}
+              onClick={toggleMenu}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               aria-label={`Change allocation for ${obj.label}`}
@@ -202,7 +243,9 @@ export function DivisibleCard({
             {menuOpen ? (
               <div
                 role="menu"
-                className="absolute right-0 top-8 z-30 w-48 rounded-[var(--radius-sm)] border border-hair-2 bg-card-2 p-1 shadow-xl"
+                className={`absolute right-0 z-30 w-48 rounded-[var(--radius-sm)] border border-hair-2 bg-card-2 p-1 shadow-xl ${
+                  openUp ? "bottom-8" : "top-8"
+                }`}
               >
                 {allowedDispositions(obj).map((d) => (
                   <button
