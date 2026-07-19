@@ -88,7 +88,7 @@ d("buildCommitPreview", () => {
     }
   });
 
-  it("designation naming the primary on the spouse-destined 401(k) → cleanup row (side spouse, remove true by default)", async () => {
+  it("designation naming the primary on the spouse-destined 401(k) → forced spouse-side cleanup row with a move note (I4)", async () => {
     const f = await createMarriedFixture();
     try {
       await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: TEST_ADVISOR_ID });
@@ -106,6 +106,11 @@ d("buildCommitPreview", () => {
       expect(row).toBeDefined();
       expect(row!.side).toBe("spouse");
       expect(row!.remove).toBe(true);
+      // The 401(k) moved to S and the designation names the PRIMARY, who can't be
+      // carried onto S — the move drops it regardless of the checkbox, so it's
+      // forced (non-interactive) with an accurate move note, not a toggle (I4).
+      expect(row!.forced).toBe(true);
+      expect(row!.note).toContain("Removed with the move");
     } finally {
       await destroyFixture(f);
     }

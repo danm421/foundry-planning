@@ -83,6 +83,26 @@ export interface MarriedFixture {
   // (commit-preview `forced` flag). "" otherwise.
   spouseFmDesignationId: string; // familyMemberId = spouseFmId → cascades on commit → forced
   spouseRoleDesignationId: string; // householdRole = 'spouse' → struck by the checklist → not forced
+  // A real_estate "rental" account (100% primary) + an income linked to it via
+  // linkedPropertyId, and a "business" account (100% primary) + an income owned
+  // by it via ownerAccountId — populated only when `withContainerLinkedIncomes`
+  // is set (C2: awarding the container to the spouse must re-home its income).
+  // "" otherwise.
+  rentalAccountId: string;
+  rentalIncomeId: string;
+  businessAccountId: string;
+  businessIncomeId: string;
+  // A beneficiary designation on `ids.trustAccount` (a trust-owned child
+  // account) naming the child — populated only when `withTrustAccountDesignation`
+  // is set (I5: a whole entity move must re-point its child accounts'
+  // designations). "" otherwise.
+  trustAccountDesignationId: string;
+  // Two trust-target designations on `ids.trust`: one naming the primary, one
+  // naming the spouse — populated only when `withTrustPrincipalDesignations` is
+  // set (C1: duplicating the trust keeps the primary-named row on P and copies
+  // only the spouse-named one to S). "" otherwise.
+  trustPrimaryDesignationId: string; // familyMemberId = primaryFm
+  trustSpouseDesignationId: string; // familyMemberId = spouseFm
   ids: {
     primaryBrokerage: string; // taxable, 100% primary, value 100k basis 60k
     jointBrokerage: string; // taxable, 50/50 primary+spouse, value 600k basis 200k
@@ -134,6 +154,17 @@ export interface CreateMarriedFixtureOverrides {
   // fm → forced), one via householdRole (struck by the checklist → not forced).
   // Exercises the commit-preview `forced` flag. No-op for noSpouse.
   withSpouseNamedDesignations?: boolean;
+  // Add a real_estate rental account + a linkedPropertyId income, and a business
+  // account + an ownerAccountId income (all 100% primary). Exercises C2: awarding
+  // a container account to the spouse must re-home its container-owned income.
+  withContainerLinkedIncomes?: boolean;
+  // Add a beneficiary designation on `ids.trustAccount` naming the child.
+  // Exercises I5: a whole entity move must re-point child accounts' designations.
+  withTrustAccountDesignation?: boolean;
+  // Add two trust-target designations on `ids.trust`: one naming the primary, one
+  // naming the spouse. Exercises C1: a duplicated trust keeps the primary-named
+  // row on P and copies only the spouse-named one to S. No-op for noSpouse.
+  withTrustPrincipalDesignations?: boolean;
 }
 
 const EMPTY_IDS: MarriedFixture["ids"] = {
@@ -333,6 +364,13 @@ export async function createMarriedFixture(
         charityId: "",
         spouseFmDesignationId: "",
         spouseRoleDesignationId: "",
+        rentalAccountId: "",
+        rentalIncomeId: "",
+        businessAccountId: "",
+        businessIncomeId: "",
+        trustAccountDesignationId: "",
+        trustPrimaryDesignationId: "",
+        trustSpouseDesignationId: "",
         ids: {
           ...EMPTY_IDS,
           primaryBrokerage: primaryBrokerage.id,
@@ -719,6 +757,135 @@ export async function createMarriedFixture(
       });
     }
 
+    // ── Container-linked incomes (C2). A rental real_estate account with an
+    // income linked via linkedPropertyId, and a business account with an income
+    // owned via ownerAccountId — both accounts 100% primary. The loader stamps
+    // each income entityOwnedById = its container and drops it from the pool, so
+    // only the container's own move re-homes it. ──
+    let rentalAccountId = "";
+    let rentalIncomeId = "";
+    let businessAccountId = "";
+    let businessIncomeId = "";
+    if (overrides.withContainerLinkedIncomes) {
+      const [rental] = await tx
+        .insert(accounts)
+        .values({
+          ...acctBase,
+          name: "Rental Property",
+          category: "real_estate",
+          subType: "rental_property",
+          value: "300000.00",
+          basis: "250000.00",
+        })
+        .returning({ id: accounts.id });
+      await tx.insert(accountOwners).values({
+        accountId: rental.id,
+        familyMemberId: primaryFm.id,
+        percent: "1.0000",
+      });
+      const [rentalIncome] = await tx
+        .insert(incomes)
+        .values({
+          ...acctBase,
+          type: "other",
+          name: "Rental Income",
+          annualAmount: "24000.00",
+          startYear: currentYear,
+          endYear,
+          owner: "client",
+          linkedPropertyId: rental.id,
+        })
+        .returning({ id: incomes.id });
+
+      const [business] = await tx
+        .insert(accounts)
+        .values({
+          ...acctBase,
+          name: "Consulting LLC Account",
+          category: "business",
+          subType: "llc",
+          value: "200000.00",
+          basis: "100000.00",
+        })
+        .returning({ id: accounts.id });
+      await tx.insert(accountOwners).values({
+        accountId: business.id,
+        familyMemberId: primaryFm.id,
+        percent: "1.0000",
+      });
+      const [businessIncome] = await tx
+        .insert(incomes)
+        .values({
+          ...acctBase,
+          type: "business",
+          name: "Consulting Income",
+          annualAmount: "80000.00",
+          startYear: currentYear,
+          endYear,
+          owner: "client",
+          ownerAccountId: business.id,
+        })
+        .returning({ id: incomes.id });
+
+      rentalAccountId = rental.id;
+      rentalIncomeId = rentalIncome.id;
+      businessAccountId = business.id;
+      businessIncomeId = businessIncome.id;
+    }
+
+    // ── Beneficiary designation on the trust's owned account naming the child
+    // (I5). Default-duplicate child → remaps onto S when the trust moves whole. ──
+    let trustAccountDesignationId = "";
+    if (overrides.withTrustAccountDesignation) {
+      const [des] = await tx
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: client.id,
+          targetKind: "account",
+          accountId: trustAccount.id,
+          tier: "primary",
+          familyMemberId: childFm.id,
+          percentage: "100.00",
+          sortOrder: 0,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      trustAccountDesignationId = des.id;
+    }
+
+    // ── Trust-target designations naming each principal (C1). On the trust
+    // entity: one names the primary (stays on P when the trust duplicates), one
+    // names the spouse (copied to S, re-pointed to S's client). ──
+    let trustPrimaryDesignationId = "";
+    let trustSpouseDesignationId = "";
+    if (overrides.withTrustPrincipalDesignations) {
+      const [byPrimary] = await tx
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: client.id,
+          targetKind: "trust",
+          entityId: trust.id,
+          tier: "primary",
+          familyMemberId: primaryFm.id,
+          percentage: "100.00",
+          sortOrder: 0,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      const [bySpouse] = await tx
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: client.id,
+          targetKind: "trust",
+          entityId: trust.id,
+          tier: "contingent",
+          familyMemberId: spouseFmId,
+          percentage: "100.00",
+          sortOrder: 1,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      trustPrimaryDesignationId = byPrimary.id;
+      trustSpouseDesignationId = bySpouse.id;
+    }
+
     return {
       firmId: TEST_FIRM_ID,
       householdId: hh.id,
@@ -736,6 +903,13 @@ export async function createMarriedFixture(
       charityId,
       spouseFmDesignationId,
       spouseRoleDesignationId,
+      rentalAccountId,
+      rentalIncomeId,
+      businessAccountId,
+      businessIncomeId,
+      trustAccountDesignationId,
+      trustPrimaryDesignationId,
+      trustSpouseDesignationId,
       ids: {
         primaryBrokerage: primaryBrokerage.id,
         jointBrokerage: jointBrokerage.id,

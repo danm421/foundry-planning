@@ -489,7 +489,7 @@ d("commitDivorcePlan", () => {
   });
 
   it("moves the trust whole to the spouse: entity + owned account re-homed on S, owner collapses to the mover, grantor cleared", async () => {
-    const f = await createMarriedFixture();
+    const f = await createMarriedFixture({ withTrustAccountDesignation: true });
     let result: CommitResult | undefined;
     try {
       await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
@@ -527,6 +527,21 @@ d("commitDivorcePlan", () => {
       const acctOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.trustAccount));
       expect(acctOwners).toHaveLength(1);
       expect(acctOwners[0].entityId).toBe(f.ids.trust);
+
+      // The child account's beneficiary designation re-pointed onto S, remapped
+      // to S's copy of the child (I5 — the whole move now moves child-account
+      // designations, not just the entity's own).
+      const [childDes] = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.id, f.trustAccountDesignationId));
+      expect(childDes.clientId).toBe(result.spouseClientId);
+      expect(childDes.accountId).toBe(f.ids.trustAccount);
+      const [sChild] = await db
+        .select()
+        .from(familyMembers)
+        .where(and(eq(familyMembers.clientId, result.spouseClientId), eq(familyMembers.role, "child")));
+      expect(childDes.familyMemberId).toBe(sChild.id);
     } finally {
       await teardownCommit(f, result);
     }
@@ -1134,6 +1149,130 @@ d("commitDivorcePlan", () => {
       expect(sEnts).toHaveLength(1);
       expect(sEnts[0].grantor).toBe("client");
       expect(sEnts[0].isGrantor).toBe(true);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  // ── Final-review round: designation safety + container follow-through ──
+
+  it("duplicating a trust keeps the primary-named designation on P and copies only the spouse-named one to S (C1)", async () => {
+    const f = await createMarriedFixture({ withTrustPrincipalDesignations: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.ids.trust, disposition: "duplicate", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      // Default selection (no beneficiaryCleanup override).
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // The primary-named designation SURVIVES on P's retained trust copy — it
+      // was never a P-side strike (C1: the old code emitted a spouse-side row
+      // whose id was this P row, deleting it in the default path).
+      const [pDes] = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.id, f.trustPrimaryDesignationId));
+      expect(pDes).toBeDefined();
+      expect(pDes.clientId).toBe(f.clientId);
+      expect(pDes.entityId).toBe(f.ids.trust);
+
+      // The P-side spouse-named row is struck (it names the departing ex).
+      const pSpouse = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.id, f.trustSpouseDesignationId));
+      expect(pSpouse).toHaveLength(0);
+
+      // S's duplicated trust carries exactly ONE designation — the spouse-named
+      // one, re-pointed to S's client. The primary-named one never reached S.
+      const [sTrust] = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.clientId, result.spouseClientId), eq(entities.name, "Family Irrevocable Trust")));
+      const sDes = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.entityId, sTrust.id));
+      expect(sDes).toHaveLength(1);
+      const sFm = await sClientFmId(result.spouseClientId);
+      expect(sDes[0].familyMemberId).toBe(sFm);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("awarding a rental property to the spouse re-homes its linkedPropertyId income onto S (C2)", async () => {
+    const f = await createMarriedFixture({ withContainerLinkedIncomes: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.rentalAccountId, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // The rental account moved to S…
+      const [rental] = await db.select().from(accounts).where(eq(accounts.id, f.rentalAccountId));
+      expect(rental.clientId).toBe(result.spouseClientId);
+      expect(rental.scenarioId).toBe(result.spouseScenarioId);
+      // …and its linkedPropertyId income followed onto S's base scenario (C2 —
+      // previously it stranded on P referencing an S-side account).
+      const [inc] = await db.select().from(incomes).where(eq(incomes.id, f.rentalIncomeId));
+      expect(inc.clientId).toBe(result.spouseClientId);
+      expect(inc.scenarioId).toBe(result.spouseScenarioId);
+      expect(inc.linkedPropertyId).toBe(f.rentalAccountId);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("awarding a business account to the spouse re-homes its ownerAccountId income onto S (C2)", async () => {
+    const f = await createMarriedFixture({ withContainerLinkedIncomes: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.businessAccountId, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      const [biz] = await db.select().from(accounts).where(eq(accounts.id, f.businessAccountId));
+      expect(biz.clientId).toBe(result.spouseClientId);
+      expect(biz.scenarioId).toBe(result.spouseScenarioId);
+      const [inc] = await db.select().from(incomes).where(eq(incomes.id, f.businessIncomeId));
+      expect(inc.clientId).toBe(result.spouseClientId);
+      expect(inc.scenarioId).toBe(result.spouseScenarioId);
+      expect(inc.ownerAccountId).toBe(f.businessAccountId);
+      expect(inc.owner).toBe("client");
     } finally {
       await teardownCommit(f, result);
     }

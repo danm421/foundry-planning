@@ -358,7 +358,7 @@ function PreviewStep({
                     <span>{c.label}</span>
                   </div>
                   <span className="pl-[26px] text-[11px] text-ink-4">
-                    {`Removed with ${spouseFirst}'s family record`}
+                    {c.note ?? `Removed with ${spouseFirst}'s family record`}
                   </span>
                 </li>
               ) : (

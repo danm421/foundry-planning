@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { computeSideTotals } from "../side-totals";
-import { allocationKey, resolveAllocations, type DivisibleObject } from "../allocation-rules";
+import {
+  allocationKey,
+  resolveAllocations,
+  type DivisibleObject,
+  type OwnerSide,
+} from "../allocation-rules";
 
 // Scenario: primary-owned account (100k), spouse-owned income (50k/yr),
 // joint liability (20k) allocated `spouse`, joint account (60k) `split` 50,
@@ -73,5 +78,69 @@ describe("computeSideTotals", () => {
     const { primary, spouse } = computeSideTotals([...objects, child], childResolved);
     expect(primary.netWorth).toBe(100_000 + 30_000 + 500_000);
     expect(spouse.netWorth).toBe(30_000 - 20_000 + 500_000);
+  });
+});
+
+// I3: a container-owned income/expense (entityOwnedById set) is out of the pool,
+// but its annualAmount still belongs on whichever side(s) its container lands on.
+describe("computeSideTotals — container-owned income/expense (I3)", () => {
+  const entity = (id: string, ownerSide: OwnerSide): DivisibleObject => ({
+    kind: "entity", id, label: id, subtype: "llc",
+    value: 0, basis: 0, rothValue: 0, annualAmount: 0,
+    ownerSide, entityOwnedById: null, childIds: [],
+  });
+  const income = (id: string, containerId: string, amount: number): DivisibleObject => ({
+    kind: "income", id, label: id, subtype: "business",
+    value: 0, basis: 0, rothValue: 0, annualAmount: amount,
+    ownerSide: "entity", entityOwnedById: containerId, childIds: [],
+  });
+  const expense = (id: string, containerId: string, amount: number): DivisibleObject => ({
+    kind: "expense", id, label: id, subtype: "business",
+    value: 0, basis: 0, rothValue: 0, annualAmount: amount,
+    ownerSide: "entity", entityOwnedById: containerId, childIds: [],
+  });
+
+  it("entity-owned income follows a primary entity onto the primary side", () => {
+    const objs = [entity("ent", "primary"), income("inc", "ent", 40_000)];
+    const { primary, spouse } = computeSideTotals(objs, resolveAllocations(objs, []));
+    expect(primary.annualIncome).toBe(40_000);
+    expect(spouse.annualIncome).toBe(0);
+  });
+
+  it("entity-owned income follows a spouse entity onto the spouse side", () => {
+    const objs = [entity("ent", "spouse"), income("inc", "ent", 40_000)];
+    const { primary, spouse } = computeSideTotals(objs, resolveAllocations(objs, []));
+    expect(spouse.annualIncome).toBe(40_000);
+    expect(primary.annualIncome).toBe(0);
+  });
+
+  it("a duplicated (joint) entity's income + expense count on BOTH sides", () => {
+    const objs = [
+      entity("ent", "joint"), // joint entity defaults to duplicate
+      income("inc", "ent", 40_000),
+      expense("exp", "ent", 15_000),
+    ];
+    const { primary, spouse } = computeSideTotals(objs, resolveAllocations(objs, []));
+    expect(primary.annualIncome).toBe(40_000);
+    expect(spouse.annualIncome).toBe(40_000);
+    expect(primary.annualExpenses).toBe(15_000);
+    expect(spouse.annualExpenses).toBe(15_000);
+  });
+
+  it("account-owned income follows its account onto the spouse when the account moves", () => {
+    const account: DivisibleObject = {
+      kind: "account", id: "acc", label: "Rental", subtype: "real_estate",
+      value: 300_000, basis: 250_000, rothValue: 0, annualAmount: 0,
+      ownerSide: "primary", entityOwnedById: null, childIds: [],
+    };
+    const objs = [account, income("inc", "acc", 24_000)];
+    const resolvedMap = resolveAllocations(objs, [
+      { targetKind: "account", targetId: "acc", disposition: "spouse", splitPercentToSpouse: null },
+    ]);
+    const { primary, spouse } = computeSideTotals(objs, resolvedMap);
+    // The account's own value lands on the spouse; its linked income follows.
+    expect(spouse.netWorth).toBe(300_000);
+    expect(spouse.annualIncome).toBe(24_000);
+    expect(primary.annualIncome).toBe(0);
   });
 });

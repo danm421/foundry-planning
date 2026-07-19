@@ -104,6 +104,24 @@ export function allocationKey(kind: DivorceTargetKind, id: string): string {
   return `${kind}:${id}`;
 }
 
+/**
+ * The destination side(s) a resolved disposition lands its ORIGINAL row on.
+ * `spouse` → spouse; `duplicate` → BOTH (the row is deep-copied to S while the
+ * original stays on P); `primary` and `split` both keep the original id on the
+ * primary's book (a split UPDATEs the original in place on P and INSERTs a fresh
+ * id for the spouse share). Undefined (no allocation) → no side. The single pure
+ * mapping shared by the preview's link-straddle detection, the commit engine's
+ * follow-or-drop, and side-totals — so all three can never disagree.
+ */
+export function dispositionSides(
+  disposition: DivorceDisposition | undefined,
+): Array<"primary" | "spouse"> {
+  if (!disposition) return [];
+  if (disposition === "spouse") return ["spouse"];
+  if (disposition === "duplicate") return ["primary", "spouse"];
+  return ["primary"]; // primary + split both keep the original id on P
+}
+
 export function resolveAllocations(
   objects: DivisibleObject[],
   rows: Array<{ targetKind: string; targetId: string; disposition: DivorceDisposition; splitPercentToSpouse: string | null }>,

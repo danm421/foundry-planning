@@ -42,6 +42,7 @@ import {
 } from "@/db/schema";
 import {
   allocationKey,
+  dispositionSides,
   resolveAllocations,
   type DivisibleObject,
   type DivorceDisposition,
@@ -84,10 +85,16 @@ export interface CommitPreview {
     // family_member, which commit cleanup deletes — cascade-deleting the
     // designation (beneficiary_designations.family_member_id is ON DELETE
     // CASCADE) regardless of the checkbox. The dialog renders these
-    // non-interactive. Only ever true for familyMemberId-based spouse
-    // designations; householdRole-based rows (no fm ref) are struck by the
+    // non-interactive. Two forced classes exist: (1) the departing spouse's P
+    // family_member ref (cascade-deleted) and (2) a primary-named designation on
+    // a container MOVED to the spouse, which the move drops regardless. Only ever
+    // true for those; householdRole-based P-side strikes are struck by the
     // checklist and are never forced.
     forced: boolean;
+    // When `forced`, the read-only reason shown under the row. Absent → the
+    // dialog's default "removed with {spouse}'s family record" line (class 1).
+    // Set for class 2 (moved-container strike) to explain the different cause.
+    note?: string;
   }>;
   informational: string[];
 }
@@ -106,11 +113,7 @@ type PersistedSelection = { source: string; id: string; remove: boolean };
 // `duplicate` deep-copies to S while keeping the original, so its id lives on
 // both books.
 export function linkEndpointSides(alloc: ResolvedAllocation | undefined): Set<Side> {
-  if (!alloc) return new Set();
-  if (alloc.disposition === "spouse") return new Set(["spouse"]);
-  if (alloc.disposition === "duplicate") return new Set(["primary", "spouse"]);
-  // primary and split both keep the original id on P.
-  return new Set(["primary"]);
+  return new Set(dispositionSides(alloc?.disposition));
 }
 
 // A link straddles when its endpoints share no common destination side.
@@ -367,6 +370,7 @@ export async function buildCommitPreview(args: {
   );
   const primaryName = nameById.get(primaryFamilyMemberId) ?? "";
   const spouseName = (spouseFamilyMemberId && nameById.get(spouseFamilyMemberId)) || "";
+  const primaryFirst = primaryName.split(/\s+/)[0] || "the primary";
   const nameForSide = (s: Side) => (s === "primary" ? primaryName : spouseName);
 
   const baseTotals = computeSideTotals(objects, resolved);
@@ -538,22 +542,44 @@ export async function buildCommitPreview(args: {
 
     if (namedSide) {
       // A household principal (the soon-to-be-ex) named on a document that lands
-      // on the OTHER side → offer to strike them.
+      // on the OTHER side → offer to strike them. `des.id` is ALWAYS the P-side
+      // row: a strike is only executable-by-id when the container's P copy still
+      // carries it (a primary-side strike). Spouse-side removals are informational
+      // — the S copy is a different row (minted by the move/duplicate paths).
       const objLabel = des.accountId ? accountObjById.get(des.accountId)?.label ?? "Account" : "Trust";
-      // Forced iff the designation references the departing spouse's P family
-      // member — commit cleanup deletes that fm row, cascade-deleting this
-      // designation whatever the checkbox says. (householdRole-based rows carry
-      // no fm ref, so the checklist strikes them and they're never forced.)
-      const forced =
-        des.familyMemberId != null && des.familyMemberId === spouseFamilyMemberId;
+      const label = `${objLabel} names ${nameForSide(namedSide)}`;
       for (const side of belongsSides) {
-        if (side !== namedSide) {
+        if (side === namedSide) continue;
+        if (side === "primary") {
+          // The container's P copy names the departing spouse → strike from P
+          // (step 6 executes it by id). Forced iff the row rides the spouse's P
+          // family_member (cascade-deleted whatever the checkbox says);
+          // householdRole-based rows carry no fm ref, so they're struck by the
+          // checklist and never forced.
           cleanupRaw.push({
             source: "beneficiary_designation",
             id: des.id,
-            label: `${objLabel} names ${nameForSide(namedSide)}`,
+            label,
             side,
-            forced,
+            forced: des.familyMemberId != null && des.familyMemberId === spouseFamilyMemberId,
+          });
+        } else {
+          // side === "spouse", namedSide === "primary": the designation names the
+          // PRIMARY, who can't be carried onto S. When the container ALSO lands on
+          // the primary (duplicate), the P copy keeps this row and the S copy
+          // simply never receives it (duplicateTrustDesignations skips
+          // primary-named) — striking des.id would destroy the legitimate P copy,
+          // so surface nothing (C1). When the container MOVED to the spouse, the
+          // move (moveDesignationRow) drops it regardless of the checkbox →
+          // forced, and step 6 skips spouse-side rows (I4).
+          if (belongsSides.has("primary")) continue;
+          cleanupRaw.push({
+            source: "beneficiary_designation",
+            id: des.id,
+            label,
+            side,
+            forced: true,
+            note: `Removed with the move — ${primaryFirst} can't be named on the new household's account.`,
           });
         }
       }

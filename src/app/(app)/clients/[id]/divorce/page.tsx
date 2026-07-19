@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { requireClientAccess } from "@/lib/clients/authz";
+import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
 import {
   getOrCreateDraft,
   loadWorkbench,
@@ -33,6 +34,18 @@ export default async function DivorcePage({
   // Creating/opening a draft is a write — view-only (shared) users can't.
   if (access.permission !== "edit" || !userId) {
     redirect(`/clients/${id}/overview`);
+  }
+  // …and a billable write — gate on an active subscription (mirrors the divorce
+  // API routes). The guard throws ForbiddenError on an inactive plan; send the
+  // advisor to the overview (whose layout surfaces the subscription banner)
+  // rather than error out, matching the redirect convention of the guards above.
+  try {
+    await requireActiveSubscriptionForFirm(access.firmId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      redirect(`/clients/${id}/overview`);
+    }
+    throw err;
   }
 
   let payload;

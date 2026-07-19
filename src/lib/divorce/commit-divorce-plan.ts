@@ -404,8 +404,34 @@ async function moveAccountDesignations(
   for (const d of rows) await moveDesignationRow(tx, ctx, d, obj.label);
 }
 
+/** Container-owned incomes/expenses (ownerAccountId / linkedPropertyId = the
+ *  moved account) follow it onto S. The loader stamped them `entityOwnedById =
+ *  containerId` and kept them out of the pool/allocation/preview, so the
+ *  container's own move is the ONLY thing that re-homes them — otherwise they
+ *  strand on P referencing an account now on S (a cross-client dangling ref).
+ *  Reuses the household income/expense move arms so the semantics match exactly
+ *  (clientId/scenarioId → S, income owner → client, cross-side cash/policy →
+ *  null); the container's id is unchanged, so their FK back to it stays valid. */
+async function moveContainerChildren(
+  tx: Tx,
+  ctx: CommitCtx,
+  containerId: string,
+  keepIfSpouse: (id: string | null) => string | null,
+): Promise<void> {
+  for (const child of ctx.objects) {
+    if (child.entityOwnedById !== containerId) continue;
+    if (child.kind === "income") await moveIncome(tx, ctx, child, keepIfSpouse);
+    else if (child.kind === "expense") await moveExpense(tx, ctx, child, keepIfSpouse);
+  }
+}
+
 /** Move an account + its ride-alongs onto S (Rulebook account `spouse` row). */
-async function moveAccount(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promise<void> {
+async function moveAccount(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+  keepIfSpouse: (id: string | null) => string | null,
+): Promise<void> {
   const [acct] = await tx.select().from(accounts).where(eq(accounts.id, obj.id)).limit(1);
   if (!acct) return;
 
@@ -469,6 +495,10 @@ async function moveAccount(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promis
     );
 
   await moveAccountDesignations(tx, ctx, obj);
+  // Incomes/expenses that follow this account (ownerAccountId / linkedPropertyId)
+  // re-home with it — else a rental's income / a business account's income
+  // strands on P referencing an S-side account.
+  await moveContainerChildren(tx, ctx, obj.id, keepIfSpouse);
 }
 
 /** Move an income onto S; owner → client; cross-side cash account → null. */
@@ -1382,7 +1412,12 @@ async function moveTrustDesignations(
  * trust-target designations onto S's base. The entity id is unchanged, so its
  * accounts' entity-ownership rows ride along without a remap.
  */
-async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promise<void> {
+async function moveEntityWhole(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+  keepIfSpouse: (id: string | null) => string | null,
+): Promise<void> {
   const [ent] = await tx.select().from(entities).where(eq(entities.id, obj.id)).limit(1);
   if (!ent) return;
   const sGrantor = ent.grantor === "spouse" ? "client" : null;
@@ -1448,6 +1483,14 @@ async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Pr
       .update(withdrawalStrategies)
       .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId })
       .where(eq(withdrawalStrategies.accountId, childId));
+    // The child account's own beneficiary designations re-point onto S (mirrors
+    // the pool-account path's moveAccountDesignations) — else a designation on a
+    // trust-owned account strands on P referencing an S-side account (I5).
+    const childObj = ctx.objects.find((o) => o.kind === "account" && o.id === childId);
+    if (childObj) await moveAccountDesignations(tx, ctx, childObj);
+    // Incomes/expenses keyed to this child account (ownerAccountId /
+    // linkedPropertyId) follow it too (C2).
+    await moveContainerChildren(tx, ctx, childId, keepIfSpouse);
   }
 
   // ownerEntityId incomes/expenses follow (base scenario → base(S)). Their
@@ -1517,7 +1560,7 @@ async function moveAllocatedObjects(tx: Tx, ctx: CommitCtx): Promise<void> {
     if (!alloc || alloc.disposition !== "spouse") continue;
     switch (obj.kind) {
       case "account":
-        await moveAccount(tx, ctx, obj);
+        await moveAccount(tx, ctx, obj, keepIfSpouse);
         break;
       case "income":
         await moveIncome(tx, ctx, obj, keepIfSpouse);
@@ -1532,7 +1575,7 @@ async function moveAllocatedObjects(tx: Tx, ctx: CommitCtx): Promise<void> {
         await moveNote(tx, ctx, obj, entitySides);
         break;
       case "entity":
-        await moveEntityWhole(tx, ctx, obj);
+        await moveEntityWhole(tx, ctx, obj, keepIfSpouse);
         break;
       // family_member copies are minted in Step 4 (mintSpouseFamilyMembers).
     }
@@ -1806,8 +1849,13 @@ async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<void> {
 
   // 6. Execute the cleanup checklist: strike every remove:true selection. Re-scan
   //    by id — a designation already cascaded by the fm delete is a silent no-op.
+  //    Only P-side strikes are executable here: `sel.id` is ALWAYS the P-side
+  //    original row, so a spouse-side row's `id` points at the P copy (which
+  //    legitimately survives for a duplicated container) or a row the move path
+  //    already handled — deleting it would destroy the P copy (C1) or is a
+  //    no-op. The move/duplicate arms own the S-side cleanup.
   for (const sel of ctx.cleanupSelections) {
-    if (!sel.remove) continue;
+    if (!sel.remove || sel.side !== "primary") continue;
     if (sel.source === "beneficiary_designation") {
       await tx.delete(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, sel.id));
     } else if (sel.source === "will_bequest_recipient") {
