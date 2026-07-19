@@ -30,6 +30,8 @@ import {
   liabilities,
   liabilityOwners,
   beneficiaryDesignations,
+  transfers,
+  clientImports,
 } from "@/db/schema";
 import type { FilingStatus } from "@/lib/clients/create-client";
 
@@ -46,6 +48,17 @@ export interface MarriedFixture {
   primaryFmId: string;
   spouseFmId: string;
   childFmId: string;
+  // A second scenario with is_base_case = false — populated only when the
+  // `withNonBaseScenario` override is set (Task 7's non_base_scenarios blocker).
+  // "" otherwise.
+  nonBaseScenarioId: string;
+  // A transfer whose endpoints land on opposite sides once jointBrokerage moves
+  // to the spouse — populated only when `withStraddleTransfer` is set (Task 7's
+  // straddle_dropped warning). "" otherwise.
+  straddleTransferId: string;
+  // A client_imports row with status 'review' — populated only when
+  // `withActiveImport` is set (Task 7's import_in_flight blocker). "" otherwise.
+  activeImportId: string;
   ids: {
     primaryBrokerage: string; // taxable, 100% primary, value 100k basis 60k
     jointBrokerage: string; // taxable, 50/50 primary+spouse, value 600k basis 200k
@@ -71,6 +84,13 @@ export interface CreateMarriedFixtureOverrides {
   // are created — a valid single-filer client. The spouse-dependent ids come
   // back as "" (Task 5's not_married guard only reads clientId).
   noSpouse?: boolean;
+  // Add a second, non-base scenario (populates `nonBaseScenarioId`).
+  withNonBaseScenario?: boolean;
+  // Add a transfer jointBrokerage → primaryBrokerage; straddles once
+  // jointBrokerage is allocated to the spouse (populates `straddleTransferId`).
+  withStraddleTransfer?: boolean;
+  // Add a client_imports row with status 'review' (populates `activeImportId`).
+  withActiveImport?: boolean;
 }
 
 const EMPTY_IDS: MarriedFixture["ids"] = {
@@ -250,6 +270,9 @@ export async function createMarriedFixture(
         primaryFmId: primaryFm.id,
         spouseFmId: "",
         childFmId: childFm.id,
+        nonBaseScenarioId: "",
+        straddleTransferId: "",
+        activeImportId: "",
         ids: {
           ...EMPTY_IDS,
           primaryBrokerage: primaryBrokerage.id,
@@ -444,6 +467,50 @@ export async function createMarriedFixture(
       percent: "1.0000",
     });
 
+    // ── Optional overrides. Kept inside the fixture transaction so every test
+    // owns one deterministic graph (see the file header). None carry deferred
+    // constraints, so ordering relative to the rows above doesn't matter. ──
+    let nonBaseScenarioId = "";
+    if (overrides.withNonBaseScenario) {
+      const [alt] = await tx
+        .insert(scenarios)
+        .values({ clientId: client.id, name: "What-If", isBaseCase: false })
+        .returning({ id: scenarios.id });
+      nonBaseScenarioId = alt.id;
+    }
+
+    let straddleTransferId = "";
+    if (overrides.withStraddleTransfer) {
+      const [xfer] = await tx
+        .insert(transfers)
+        .values({
+          clientId: client.id,
+          scenarioId: scenario.id,
+          name: "Brokerage Sweep",
+          sourceAccountId: jointBrokerage.id,
+          targetAccountId: primaryBrokerage.id,
+          amount: "10000.00",
+          startYear: currentYear,
+        })
+        .returning({ id: transfers.id });
+      straddleTransferId = xfer.id;
+    }
+
+    let activeImportId = "";
+    if (overrides.withActiveImport) {
+      const [imp] = await tx
+        .insert(clientImports)
+        .values({
+          clientId: client.id,
+          orgId: TEST_FIRM_ID,
+          mode: "updating",
+          status: "review",
+          createdByUserId: TEST_ADVISOR_ID,
+        })
+        .returning({ id: clientImports.id });
+      activeImportId = imp.id;
+    }
+
     return {
       firmId: TEST_FIRM_ID,
       householdId: hh.id,
@@ -452,6 +519,9 @@ export async function createMarriedFixture(
       primaryFmId: primaryFm.id,
       spouseFmId,
       childFmId: childFm.id,
+      nonBaseScenarioId,
+      straddleTransferId,
+      activeImportId,
       ids: {
         primaryBrokerage: primaryBrokerage.id,
         jointBrokerage: jointBrokerage.id,
