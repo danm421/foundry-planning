@@ -36,7 +36,10 @@ export class DivorcePlanError extends Error {
 type DivorcePlanRow = typeof divorcePlans.$inferSelect;
 
 /** Load the single live (status='draft') plan row for a client, org-scoped. */
-async function loadLiveDraft(clientId: string, firmId: string): Promise<DivorcePlanRow | null> {
+export async function loadLiveDraft(
+  clientId: string,
+  firmId: string,
+): Promise<DivorcePlanRow | null> {
   const [row] = await db
     .select()
     .from(divorcePlans)
@@ -50,12 +53,19 @@ async function loadLiveDraft(clientId: string, firmId: string): Promise<DivorceP
   return row ?? null;
 }
 
-export async function getOrCreateDraft(args: {
+export type DivorceEligibility =
+  | { eligible: true; crmHouseholdId: string }
+  | { eligible: false; reason: "client_not_found" | "not_married" | "no_spouse_contact" };
+
+/** Read-only precondition check shared by the draft service, the workbench entry
+ *  card, and the /divorce page: the client must file as married AND its household
+ *  must carry a spouse contact. Returns the household id on success so callers can
+ *  read household-scoped data (e.g. the default spouse state) without re-querying. */
+export async function checkDivorceEligibility(args: {
   clientId: string;
   firmId: string;
-  userId: string;
-}): Promise<DivorcePlanRow> {
-  const { clientId, firmId, userId } = args;
+}): Promise<DivorceEligibility> {
+  const { clientId, firmId } = args;
 
   const [client] = await db
     .select({
@@ -64,16 +74,11 @@ export async function getOrCreateDraft(args: {
     })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-  if (!client) throw new Error("Client not found");
+  if (!client) return { eligible: false, reason: "client_not_found" };
 
   if (client.filingStatus !== "married_joint" && client.filingStatus !== "married_separate") {
-    throw new DivorcePlanError("not_married", "Client is not filing as married");
+    return { eligible: false, reason: "not_married" };
   }
-
-  const [household] = await db
-    .select({ state: crmHouseholds.state })
-    .from(crmHouseholds)
-    .where(eq(crmHouseholds.id, client.crmHouseholdId));
 
   const [spouseContact] = await db
     .select({ id: crmHouseholdContacts.id })
@@ -84,9 +89,31 @@ export async function getOrCreateDraft(args: {
         eq(crmHouseholdContacts.role, "spouse"),
       ),
     );
-  if (!spouseContact) {
+  if (!spouseContact) return { eligible: false, reason: "no_spouse_contact" };
+
+  return { eligible: true, crmHouseholdId: client.crmHouseholdId };
+}
+
+export async function getOrCreateDraft(args: {
+  clientId: string;
+  firmId: string;
+  userId: string;
+}): Promise<DivorcePlanRow> {
+  const { clientId, firmId, userId } = args;
+
+  const eligibility = await checkDivorceEligibility({ clientId, firmId });
+  if (!eligibility.eligible) {
+    if (eligibility.reason === "client_not_found") throw new Error("Client not found");
+    if (eligibility.reason === "not_married") {
+      throw new DivorcePlanError("not_married", "Client is not filing as married");
+    }
     throw new DivorcePlanError("no_spouse_contact", "Household has no spouse contact");
   }
+
+  const [household] = await db
+    .select({ state: crmHouseholds.state })
+    .from(crmHouseholds)
+    .where(eq(crmHouseholds.id, eligibility.crmHouseholdId));
 
   // Race-safe create: insert and let the partial unique index
   // (divorce_plans_live_draft_uniq) absorb a concurrent create; then select
@@ -130,7 +157,7 @@ export async function updateDraftSettings(args: {
   clientId: string;
   firmId: string;
   patch: DivorceDraftSettings;
-}): Promise<void> {
+}): Promise<DivorcePlanRow> {
   const { clientId, firmId, patch } = args;
   const draft = await loadLiveDraft(clientId, firmId);
   if (!draft) throw new DivorcePlanError("no_draft", "No live divorce draft for this client");
@@ -142,7 +169,11 @@ export async function updateDraftSettings(args: {
   if (patch.splitYear !== undefined) set.splitYear = patch.splitYear;
   if (patch.beneficiaryCleanup !== undefined) set.beneficiaryCleanup = patch.beneficiaryCleanup;
 
-  await db.update(divorcePlans).set(set).where(eq(divorcePlans.id, draft.id));
+  const [updated] = await db
+    .update(divorcePlans)
+    .set(set)
+    .where(eq(divorcePlans.id, draft.id))
+    .returning();
 
   await recordAudit({
     action: "divorce_plan.update",
@@ -151,13 +182,15 @@ export async function updateDraftSettings(args: {
     clientId,
     firmId,
   });
+
+  return updated;
 }
 
 export async function upsertAllocations(args: {
   clientId: string;
   firmId: string;
   items: DivorceAllocationItem[];
-}): Promise<void> {
+}): Promise<WorkbenchPayload["allocations"]> {
   const { clientId, firmId, items } = args;
   const draft = await loadLiveDraft(clientId, firmId);
   if (!draft) throw new DivorcePlanError("no_draft", "No live divorce draft for this client");
@@ -209,6 +242,18 @@ export async function upsertAllocations(args: {
     firmId,
     metadata: { allocationCount: items.length },
   });
+
+  // Return only the fresh allocation rows — the workbench's optimistic-PUT
+  // reconcile reads nothing else off the response.
+  return await db
+    .select({
+      targetKind: divorcePlanAllocations.targetKind,
+      targetId: divorcePlanAllocations.targetId,
+      disposition: divorcePlanAllocations.disposition,
+      splitPercentToSpouse: divorcePlanAllocations.splitPercentToSpouse,
+    })
+    .from(divorcePlanAllocations)
+    .where(eq(divorcePlanAllocations.divorcePlanId, draft.id));
 }
 
 export async function abandonDraft(args: {

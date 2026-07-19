@@ -11,7 +11,7 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
-import { upsertAllocations, loadWorkbench, DivorcePlanError } from "@/lib/divorce/divorce-plans";
+import { upsertAllocations, DivorcePlanError } from "@/lib/divorce/divorce-plans";
 import { AllocationError } from "@/lib/divorce/allocation-rules";
 import { divorceAllocationsPutSchema } from "@/lib/divorce/schemas";
 
@@ -30,9 +30,10 @@ export async function PUT(
     const body = await request.json();
     const { items } = divorceAllocationsPutSchema.parse(body);
 
-    await upsertAllocations({ clientId: id, firmId, items });
-    const payload = await loadWorkbench({ clientId: id, firmId });
-    return NextResponse.json(payload);
+    // The workbench's optimistic-PUT reconcile reads only `allocations`, so
+    // return just the fresh rows rather than re-deriving the whole workbench.
+    const allocations = await upsertAllocations({ clientId: id, firmId, items });
+    return NextResponse.json({ allocations });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

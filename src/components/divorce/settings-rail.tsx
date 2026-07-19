@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StateSelect } from "@/components/state-select";
 import DialogShell from "@/components/dialog-shell";
+import TabAutoSaveIndicator from "@/components/tab-auto-save-indicator";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import {
   fieldLabelClassName,
@@ -30,6 +31,8 @@ export interface SettingsRailProps {
   /** Whether the debounced settings PATCH is in flight / errored (owned by the
    *  workbench shell). Renders a quiet inline status. */
   saveStatus: "idle" | "saving" | "error";
+  /** Clear a surfaced save error (the shell resets saveStatus to idle). */
+  onDismissSaveError: () => void;
   /** Fire a partial settings patch upward; the shell debounces + PATCHes. */
   onChange: (patch: DivorceDraftSettings) => void;
 }
@@ -42,6 +45,7 @@ export function SettingsRail({
   spouseState,
   people,
   saveStatus,
+  onDismissSaveError,
   onChange,
 }: SettingsRailProps) {
   const router = useRouter();
@@ -82,11 +86,11 @@ export function SettingsRail({
         <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-2">
           Split settings
         </h2>
-        {saveStatus === "saving" ? (
-          <span className="text-[11px] text-ink-4">Saving…</span>
-        ) : saveStatus === "error" ? (
-          <span className="text-[11px] text-crit">Save failed</span>
-        ) : null}
+        <TabAutoSaveIndicator
+          saving={saveStatus === "saving"}
+          error={saveStatus === "error" ? "Save failed" : null}
+          onDismissError={onDismissSaveError}
+        />
       </div>
 
       <div className="mt-5 flex flex-col gap-5">

@@ -48,7 +48,7 @@ import {
   type DivorceTargetKind,
   type ResolvedAllocation,
 } from "./allocation-rules";
-import { loadDivisibleObjects } from "./divisible-objects";
+import { loadDivisibleObjects, groupBy } from "./divisible-objects";
 import { computeSideTotals, type SideTotals } from "./side-totals";
 import { DivorcePlanError } from "./divorce-plans";
 
@@ -93,17 +93,6 @@ export interface CommitPreview {
 }
 
 type PersistedSelection = { source: string; id: string; remove: boolean };
-
-function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
-  const out = new Map<K, T[]>();
-  for (const row of rows) {
-    const k = key(row);
-    const list = out.get(k);
-    if (list) list.push(row);
-    else out.set(k, [row]);
-  }
-  return out;
-}
 
 // The destination side(s) a resolved allocation's ORIGINAL row lands on, for
 // link-endpoint (straddle / cross-side-link) detection — NOT value distribution

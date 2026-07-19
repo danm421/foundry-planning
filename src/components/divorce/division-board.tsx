@@ -3,6 +3,7 @@
 import { memo, useMemo, useState, type ReactNode } from "react";
 import {
   allocationKey,
+  countDecisionsRemaining,
   type DivisibleObject,
   type DivorceDisposition,
   type DivorceTargetKind,
@@ -71,7 +72,6 @@ export const AllocationBoard = memo(function AllocationBoard({
     const primaryCards: Placed[] = [];
     const spouseCards: Placed[] = [];
     const pool = new Map<DivorceTargetKind, Placed[]>();
-    let remaining = 0;
 
     const addPool = (p: Placed) => {
       const list = pool.get(p.obj.kind) ?? [];
@@ -92,7 +92,6 @@ export const AllocationBoard = memo(function AllocationBoard({
           : undefined;
 
       if (alloc.needsDecision) {
-        remaining += 1;
         addPool({
           obj,
           disposition: alloc.disposition,
@@ -171,7 +170,7 @@ export const AllocationBoard = memo(function AllocationBoard({
       primary: primaryCards,
       spouse: spouseCards,
       poolByKind: pool,
-      decisionsRemaining: remaining,
+      decisionsRemaining: countDecisionsRemaining(resolved),
     };
   }, [objects, resolved]);
 

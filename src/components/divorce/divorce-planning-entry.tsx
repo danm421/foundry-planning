@@ -8,8 +8,9 @@
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, crmHouseholdContacts, divorcePlans } from "@/db/schema";
+import { divorcePlans } from "@/db/schema";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { checkDivorceEligibility } from "@/lib/divorce/divorce-plans";
 
 export default async function DivorcePlanningEntry({
   clientId,
@@ -21,39 +22,24 @@ export default async function DivorcePlanningEntry({
   // the /divorce route would only bounce them back to the overview.
   if (!access.ok || access.permission !== "edit") return null;
 
-  const [client] = await db
-    .select({
-      filingStatus: clients.filingStatus,
-      crmHouseholdId: clients.crmHouseholdId,
-    })
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.firmId, access.firmId)));
-  // Only married households can split. married_joint / married_separate both
-  // qualify; single / head_of_household never show the card.
-  if (!client || !client.filingStatus.startsWith("married_")) return null;
-
-  const [spouse] = await db
-    .select({ id: crmHouseholdContacts.id })
-    .from(crmHouseholdContacts)
-    .where(
-      and(
-        eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
-        eq(crmHouseholdContacts.role, "spouse"),
+  // Eligibility (married filing + a spouse contact) gates whether the card
+  // shows at all; the live-draft probe only flips its CTA copy. The two reads
+  // are independent, so run them together.
+  const [eligibility, draftRows] = await Promise.all([
+    checkDivorceEligibility({ clientId, firmId: access.firmId }),
+    db
+      .select({ id: divorcePlans.id })
+      .from(divorcePlans)
+      .where(
+        and(
+          eq(divorcePlans.clientId, clientId),
+          eq(divorcePlans.firmId, access.firmId),
+          eq(divorcePlans.status, "draft"),
+        ),
       ),
-    );
-  if (!spouse) return null;
-
-  const [draft] = await db
-    .select({ id: divorcePlans.id })
-    .from(divorcePlans)
-    .where(
-      and(
-        eq(divorcePlans.clientId, clientId),
-        eq(divorcePlans.firmId, access.firmId),
-        eq(divorcePlans.status, "draft"),
-      ),
-    );
-  const hasDraft = Boolean(draft);
+  ]);
+  if (!eligibility.eligible) return null;
+  const hasDraft = draftRows.length > 0;
 
   return (
     <section className="card mb-6 p-[var(--pad-card)]">

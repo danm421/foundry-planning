@@ -30,7 +30,7 @@ export interface LoadDivisibleObjectsResult {
   spouseFamilyMemberId: string | null;
 }
 
-function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
+export function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
   const out = new Map<K, T[]>();
   for (const row of rows) {
     const k = key(row);

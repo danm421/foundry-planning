@@ -41,9 +41,8 @@ export async function GET(
     if (err instanceof DivorcePlanError && err.code === "no_draft") {
       return NextResponse.json({ error: "no_draft" }, { status: 404 });
     }
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("GET /api/clients/[id]/divorce-plan error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -91,9 +90,10 @@ export async function PATCH(
     const body = await request.json();
     const patch = divorceDraftSettingsSchema.parse(body);
 
-    await updateDraftSettings({ clientId: id, firmId, patch });
-    const payload = await loadWorkbench({ clientId: id, firmId });
-    return NextResponse.json(payload);
+    // Settings changes never move allocations, and the client's flush reconcile
+    // reads only `plan`, so return just the updated plan row.
+    const plan = await updateDraftSettings({ clientId: id, firmId, patch });
+    return NextResponse.json({ plan });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

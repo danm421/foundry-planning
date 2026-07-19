@@ -2,14 +2,12 @@
 // UI, the commit preview, and the commit engine so the three can never
 // disagree about what a default is or what's allowed. No DB imports.
 
-export type DivorceTargetKind =
-  | "account" | "income" | "expense" | "liability"
-  | "entity" | "note_receivable" | "family_member";
-
 export const DIVORCE_TARGET_KINDS = [
   "account", "income", "expense", "liability",
   "entity", "note_receivable", "family_member",
 ] as const;
+
+export type DivorceTargetKind = (typeof DIVORCE_TARGET_KINDS)[number];
 
 export type DivorceDisposition = "primary" | "spouse" | "split" | "duplicate";
 export type OwnerSide = "primary" | "spouse" | "joint" | "entity" | "external" | "none";
@@ -134,4 +132,14 @@ export function resolveAllocations(
     }
   }
   return out;
+}
+
+/** Count objects still awaiting an allocation decision — the single source for
+ *  the board's "N decisions remaining" counter AND the workbench commit CTA gate
+ *  so the two can never disagree. resolveAllocations already omits entity-owned
+ *  children, so counting `needsDecision` over the resolved values is exact. */
+export function countDecisionsRemaining(resolved: Map<string, ResolvedAllocation>): number {
+  let n = 0;
+  for (const a of resolved.values()) if (a.needsDecision) n += 1;
+  return n;
 }

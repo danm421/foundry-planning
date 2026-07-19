@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  allocationKey,
+  countDecisionsRemaining,
   resolveAllocations,
   type DivorceDisposition,
   type DivorceTargetKind,
@@ -79,17 +79,13 @@ export default function DivorceWorkbench({
     [objects, resolved],
   );
 
-  // Objects still awaiting an allocation decision. Derived exactly as the board
-  // derives its "N decisions remaining" counter (skip entity-owned children,
-  // count `needsDecision`) so the commit CTA and the board never disagree.
-  const decisionsRemaining = useMemo(() => {
-    let n = 0;
-    for (const obj of objects) {
-      if (obj.entityOwnedById) continue;
-      if (resolved.get(allocationKey(obj.kind, obj.id))?.needsDecision) n += 1;
-    }
-    return n;
-  }, [objects, resolved]);
+  // Objects still awaiting an allocation decision — the commit CTA gate and the
+  // board's "N decisions remaining" counter both read it from the shared
+  // countDecisionsRemaining, so the two can never disagree.
+  const decisionsRemaining = useMemo(
+    () => countDecisionsRemaining(resolved),
+    [resolved],
+  );
 
   // ---- Allocation: optimistic PUT then reconcile -------------------------
   // The handler the allocation board calls. It's defined in the shell so the
@@ -127,7 +123,7 @@ export default function DivorceWorkbench({
           },
         );
         if (!res.ok) throw new Error(`Allocation failed (${res.status})`);
-        const server = (await res.json()) as WorkbenchPayload;
+        const server = (await res.json()) as Pick<WorkbenchPayload, "allocations">;
         // Reconcile ONLY the allocation rows: objects don't change on an
         // allocation write, resolved/totals are derived locally, and merging
         // the whole payload would stomp an optimistic settings edit that hasn't
@@ -158,7 +154,7 @@ export default function DivorceWorkbench({
         body: JSON.stringify(patch),
       });
       if (!res.ok) throw new Error();
-      const server = (await res.json()) as WorkbenchPayload;
+      const server = (await res.json()) as Pick<WorkbenchPayload, "plan">;
       // Settings never move allocations, so reconcile only the plan row — this
       // can't clobber an allocation PUT that resolved while we were in flight.
       setPayload((p) => ({ ...p, plan: server.plan }));
@@ -316,6 +312,7 @@ export default function DivorceWorkbench({
             spouseState={plan.spouseState}
             people={people}
             saveStatus={saveStatus}
+            onDismissSaveError={() => setSaveStatus("idle")}
             onChange={onSettingsChange}
           />
         </div>

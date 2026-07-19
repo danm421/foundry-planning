@@ -100,6 +100,9 @@ d("divorce-plan routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.plan.spouseFilingStatus).toBe("head_of_household");
+    // Leaner PATCH contract: only the updated plan row, not the whole workbench.
+    expect(body.objects).toBeUndefined();
+    expect(body.allocations).toBeUndefined();
   });
 
   it("PUT writes an allocation (50/50 split on the joint brokerage)", async () => {
@@ -124,6 +127,9 @@ d("divorce-plan routes", () => {
     expect(alloc).toBeTruthy();
     expect(alloc.disposition).toBe("split");
     expect(Number(alloc.splitPercentToSpouse)).toBe(50);
+    // Leaner PUT contract: only the fresh allocation rows, not the whole workbench.
+    expect(body.objects).toBeUndefined();
+    expect(body.plan).toBeUndefined();
   });
 
   it("PUT split on the 529 -> 422 { code: 'invalid_disposition' } (education_savings isn't splittable)", async () => {

@@ -82,6 +82,8 @@ import {
   type DivisibleObject,
 } from "./allocation-rules";
 import { loadDivisibleObjects } from "./divisible-objects";
+import { loadLiveDraft } from "./divorce-plans";
+import { splitAmounts, type SplitShare } from "./split-math";
 import {
   buildCommitPreview,
   buildSideResolvers,
@@ -161,24 +163,6 @@ interface CommitCtx {
   extBenRemap: Map<string, string>; // lazy external_beneficiaries copies (Tasks 10–11)
   entityRemap: Map<string, string>; // filled by duplicate/move in Task 11
   warnings: string[]; // dropped-link names, for the audit record (Task 12)
-}
-
-/** Load the single live (status='draft') plan row for a client, org-scoped. */
-async function loadLiveDraft(
-  clientId: string,
-  firmId: string,
-): Promise<typeof divorcePlans.$inferSelect | null> {
-  const [row] = await db
-    .select()
-    .from(divorcePlans)
-    .where(
-      and(
-        eq(divorcePlans.clientId, clientId),
-        eq(divorcePlans.firmId, firmId),
-        eq(divorcePlans.status, "draft"),
-      ),
-    );
-  return row ?? null;
 }
 
 // Step 4 — family-member remap. Maps the ex-spouse's P family_member row to S's
@@ -879,32 +863,6 @@ async function handleLinks(
 // whole graph onto S while leaving P's copy untouched. Both slot in alongside the
 // move mechanics (Task 10) inside `moveAllocatedObjects`; all writes go on `tx`.
 
-/** The primary/spouse dollar split of an account, penny-conserving. The spouse
- *  share is rounded to cents and the primary share is the remainder, so the two
- *  reconstruct the original exactly (no rounding drift). */
-function splitAmounts(
-  value: number,
-  basis: number,
-  rothValue: number,
-  pctToSpouse: number,
-): {
-  primary: { value: string; basis: string; rothValue: string };
-  spouse: { value: string; basis: string; rothValue: string };
-} {
-  const frac = pctToSpouse / 100;
-  const sValue = Number((value * frac).toFixed(2));
-  const sBasis = Number((basis * frac).toFixed(2));
-  const sRoth = Number((rothValue * frac).toFixed(2));
-  return {
-    spouse: { value: sValue.toFixed(2), basis: sBasis.toFixed(2), rothValue: sRoth.toFixed(2) },
-    primary: {
-      value: (value - sValue).toFixed(2),
-      basis: (basis - sBasis).toFixed(2),
-      rothValue: (rothValue - sRoth).toFixed(2),
-    },
-  };
-}
-
 /**
  * An account INSERT payload copied from `p` onto a new (client, scenario) with
  * the given value/basis/rothValue. Every business column rides along; the
@@ -967,6 +925,15 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
       Number(acct.rothValue),
       alloc.splitPercentToSpouse,
     );
+    // splitAmounts returns numbers (shared with the UI/preview); accounts store
+    // value/basis/rothValue as decimal strings, so format each share to cents.
+    const toDecimalStrings = (s: SplitShare) => ({
+      value: s.value.toFixed(2),
+      basis: s.basis.toFixed(2),
+      rothValue: s.rothValue.toFixed(2),
+    });
+    const primaryShare = toDecimalStrings(shares.primary);
+    const spouseShare = toDecimalStrings(shares.spouse);
 
     // If the account was holdings-driven, the stored dollar split is now
     // authoritative (holdings can't be split), so BOTH shares stop deriving from
@@ -987,7 +954,7 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
     // P keeps the original row (and its links), reduced to the primary share.
     await tx
       .update(accounts)
-      .set({ ...shares.primary, deriveFromHoldings: false, updatedAt: new Date() })
+      .set({ ...primaryShare, deriveFromHoldings: false, updatedAt: new Date() })
       .where(eq(accounts.id, obj.id));
     await tx.delete(accountOwners).where(eq(accountOwners.accountId, obj.id));
     await tx.insert(accountOwners).values({
@@ -1003,7 +970,7 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
         accountCopyValues(acct, {
           clientId: ctx.spouseClientId,
           scenarioId: ctx.spouseScenarioId,
-          ...shares.spouse,
+          ...spouseShare,
         }),
       )
       .returning({ id: accounts.id });
