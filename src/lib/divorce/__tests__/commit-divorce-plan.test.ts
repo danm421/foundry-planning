@@ -28,6 +28,8 @@ import {
   scenarioSnapshots,
   accounts,
   accountOwners,
+  entities,
+  entityOwners,
   incomes,
   liabilities,
   liabilityOwners,
@@ -338,6 +340,163 @@ d("commitDivorcePlan", () => {
       // The moved source account is on S's book.
       const [acct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.jointBrokerage));
       expect(acct.clientId).toBe(result.spouseClientId);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("splits jointBrokerage 60% to the spouse: P keeps 240k/80k, a new S share holds 360k/120k, one owner per side, conserved", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "split", splitPercentToSpouse: 60 },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      const sFm = await sClientFmId(result.spouseClientId);
+
+      // P keeps the ORIGINAL id, reduced to its 40% share, owned 100% by the primary.
+      const [pAcct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.jointBrokerage));
+      expect(pAcct.clientId).toBe(f.clientId);
+      expect(pAcct.scenarioId).toBe(f.baseScenarioId);
+      expect(pAcct.value).toBe("240000.00");
+      expect(pAcct.basis).toBe("80000.00");
+      const pOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.jointBrokerage));
+      expect(pOwners).toHaveLength(1);
+      expect(pOwners[0].familyMemberId).toBe(f.primaryFmId);
+      expect(pOwners[0].percent).toBe("1.0000");
+
+      // S gets a NEW row (new id) with the 60% share, owned 100% by S's client.
+      const sAccts = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, result.spouseClientId), eq(accounts.name, "Joint Brokerage")));
+      expect(sAccts).toHaveLength(1);
+      const sAcct = sAccts[0];
+      expect(sAcct.id).not.toBe(f.ids.jointBrokerage);
+      expect(sAcct.scenarioId).toBe(result.spouseScenarioId);
+      expect(sAcct.value).toBe("360000.00");
+      expect(sAcct.basis).toBe("120000.00");
+      const sOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, sAcct.id));
+      expect(sOwners).toHaveLength(1);
+      expect(sOwners[0].familyMemberId).toBe(sFm);
+      expect(sOwners[0].percent).toBe("1.0000");
+
+      // Conservation: the two shares reconstruct the original 600k / 200k exactly.
+      expect(Number(pAcct.value) + Number(sAcct.value)).toBe(600000);
+      expect(Number(pAcct.basis) + Number(sAcct.basis)).toBe(200000);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("duplicates the trust to S: a new entity with grantor cleared + a copied trust account; P rows untouched", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.ids.trust, disposition: "duplicate", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // P side untouched — it IS the primary's copy.
+      const [pTrust] = await db.select().from(entities).where(eq(entities.id, f.ids.trust));
+      expect(pTrust.clientId).toBe(f.clientId);
+      expect(pTrust.grantor).toBe("client");
+      expect(pTrust.isGrantor).toBe(true);
+      const [pTrustAcct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.trustAccount));
+      expect(pTrustAcct.clientId).toBe(f.clientId);
+      expect(pTrustAcct.value).toBe("300000.00");
+
+      // S has a NEW entity — grantor cleared ('client' → null; primary isn't on S),
+      // isGrantor recomputed to false. entityRemap is what wired the copied account.
+      const sEntities = await db.select().from(entities).where(eq(entities.clientId, result.spouseClientId));
+      expect(sEntities).toHaveLength(1);
+      const sTrust = sEntities[0];
+      expect(sTrust.id).not.toBe(f.ids.trust);
+      expect(sTrust.name).toBe("Family Irrevocable Trust");
+      expect(sTrust.grantor).toBeNull();
+      expect(sTrust.isGrantor).toBe(false);
+
+      // S has a copied trust account, values equal to P's, owned 100% by the S entity.
+      const sTrustAccts = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, result.spouseClientId), eq(accounts.name, "Trust Brokerage")));
+      expect(sTrustAccts).toHaveLength(1);
+      expect(sTrustAccts[0].value).toBe("300000.00");
+      expect(sTrustAccts[0].basis).toBe("150000.00");
+      expect(sTrustAccts[0].scenarioId).toBe(result.spouseScenarioId);
+      const sTrustOwners = await db
+        .select()
+        .from(accountOwners)
+        .where(eq(accountOwners.accountId, sTrustAccts[0].id));
+      expect(sTrustOwners).toHaveLength(1);
+      expect(sTrustOwners[0].entityId).toBe(sTrust.id);
+      expect(sTrustOwners[0].percent).toBe("1.0000");
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("moves the trust whole to the spouse: entity + owned account re-homed on S, owner collapses to the mover, grantor cleared", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.ids.trust, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      const sFm = await sClientFmId(result.spouseClientId);
+
+      // Entity re-homed on S (same id), grantor cleared ('client' → null on the ex-spouse's file).
+      const [trust] = await db.select().from(entities).where(eq(entities.id, f.ids.trust));
+      expect(trust.clientId).toBe(result.spouseClientId);
+      expect(trust.grantor).toBeNull();
+      expect(trust.isGrantor).toBe(false);
+
+      // Its owner collapses to the mover (S's client) — the fixture's primary owner can't reach S.
+      const owners = await db.select().from(entityOwners).where(eq(entityOwners.entityId, f.ids.trust));
+      expect(owners).toHaveLength(1);
+      expect(owners[0].familyMemberId).toBe(sFm);
+      expect(owners[0].percent).toBe("1.0000");
+
+      // The owned account follows onto S's base scenario; its entity ownership (id unchanged) rides along.
+      const [trustAcct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.trustAccount));
+      expect(trustAcct.clientId).toBe(result.spouseClientId);
+      expect(trustAcct.scenarioId).toBe(result.spouseScenarioId);
+      const acctOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.trustAccount));
+      expect(acctOwners).toHaveLength(1);
+      expect(acctOwners[0].entityId).toBe(f.ids.trust);
     } finally {
       await teardownCommit(f, result);
     }

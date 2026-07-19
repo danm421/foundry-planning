@@ -36,6 +36,10 @@ import {
   beneficiaryDesignations,
   externalBeneficiaries,
   revocableTrusts,
+  entities,
+  entityOwners,
+  entityFlowOverrides,
+  trustSplitInterestDetails,
   incomes,
   expenses,
   liabilities,
@@ -201,13 +205,14 @@ async function mintSpouseFamilyMembers(tx: Tx, ctx: CommitCtx): Promise<void> {
   }
 }
 
-// ── Step 5: move mechanics + follow rules (Commit engine B) ──────────────────
+// ── Step 5: move mechanics + follow rules (Commit engine B + C) ──────────────
 //
 // Re-homes every object the advisor allocated `spouse` onto S's file, applies
 // the automatic grantor/owner-enum follows (gifts, medicare, wills), and drops
-// the links that would straddle the two households. Entity moves + duplication
-// (Rulebook entity/family_member rows) are Task 11 — the dispatch below leaves a
-// slot for them. All writes go on `tx`; nothing here touches the module `db`.
+// the links that would straddle the two households (engine B). Splits divide a
+// splittable account across the two files and duplication deep-copies an entity
+// graph onto S (engine C, further below). All writes go on `tx`; nothing here
+// touches the module `db`.
 
 /**
  * Copy-on-first-use of a P external_beneficiaries row onto S, memoized in
@@ -817,19 +822,535 @@ async function handleLinks(
   }
 }
 
+// ── Step 5b: split + entity duplication (Commit engine C) ────────────────────
+//
+// Splits divide a splittable account into a primary share (kept in place on P)
+// and a new spouse share (a fresh row on S); duplication deep-copies an entity's
+// whole graph onto S while leaving P's copy untouched. Both slot in alongside the
+// move mechanics (Task 10) inside `moveAllocatedObjects`; all writes go on `tx`.
+
+/** The primary/spouse dollar split of an account, penny-conserving. The spouse
+ *  share is rounded to cents and the primary share is the remainder, so the two
+ *  reconstruct the original exactly (no rounding drift). */
+function splitAmounts(
+  value: number,
+  basis: number,
+  rothValue: number,
+  pctToSpouse: number,
+): {
+  primary: { value: string; basis: string; rothValue: string };
+  spouse: { value: string; basis: string; rothValue: string };
+} {
+  const frac = pctToSpouse / 100;
+  const sValue = Number((value * frac).toFixed(2));
+  const sBasis = Number((basis * frac).toFixed(2));
+  const sRoth = Number((rothValue * frac).toFixed(2));
+  return {
+    spouse: { value: sValue.toFixed(2), basis: sBasis.toFixed(2), rothValue: sRoth.toFixed(2) },
+    primary: {
+      value: (value - sValue).toFixed(2),
+      basis: (basis - sBasis).toFixed(2),
+      rothValue: (rothValue - sRoth).toFixed(2),
+    },
+  };
+}
+
 /**
- * Move every `spouse`-allocated account / income / expense / liability / note
- * onto S with its ride-alongs, apply the automatic grantor/owner-enum follows,
- * then follow-or-drop the technique links. Entity moves + duplication are Task
- * 11 — the `entity` / `family_member` arms are intentionally left to it.
+ * An account INSERT payload copied from `p` onto a new (client, scenario) with
+ * the given value/basis/rothValue. Every business column rides along; the
+ * overridden fields are the ones that must NOT duplicate onto a second file:
+ * the id (fresh), prior-year-end value (recompute), the default-checking flag
+ * (S keeps its own seeded one), and every cross-file reference — revocable-trust
+ * tag, self-referential account FKs (parent / 529-rollover), and Plaid/Orion
+ * linkage (or the S copy would masquerade as the same synced/linked account).
+ * Firm-scoped model/ticker portfolio ids are safe to carry (shared across a
+ * firm's clients).
+ */
+function accountCopyValues(
+  p: typeof accounts.$inferSelect,
+  over: { clientId: string; scenarioId: string; value: string; basis: string; rothValue: string },
+): typeof accounts.$inferInsert {
+  return {
+    ...p,
+    id: undefined, // fresh id
+    createdAt: undefined,
+    updatedAt: undefined,
+    clientId: over.clientId,
+    scenarioId: over.scenarioId,
+    value: over.value,
+    basis: over.basis,
+    rothValue: over.rothValue,
+    priorYearEndValue: null,
+    isDefaultChecking: false,
+    revocableTrustId: null,
+    parentAccountId: null,
+    rothRolloverAccountId: null,
+    plaidItemId: null,
+    plaidAccountId: null,
+    externalProvider: null,
+    externalId: null,
+    lastSyncedAt: null,
+  };
+}
+
+/**
+ * Split every `split`-allocated account: shrink P's original row to its share
+ * (owned 100% by the primary) and insert a NEW spouse-share row on S (owned 100%
+ * by S's client). Savings / withdrawal / designation rows do NOT copy to the S
+ * share — the advisor rebuilds them (the preview says so). The P row keeps its
+ * own ride-alongs, just against a smaller balance.
+ */
+async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
+  for (const obj of ctx.objects) {
+    if (obj.entityOwnedById || obj.kind !== "account") continue;
+    const alloc = ctx.resolved.get(allocationKey("account", obj.id));
+    if (!alloc || alloc.disposition !== "split" || alloc.splitPercentToSpouse == null) continue;
+
+    const [acct] = await tx.select().from(accounts).where(eq(accounts.id, obj.id)).limit(1);
+    if (!acct) continue;
+    const shares = splitAmounts(
+      Number(acct.value),
+      Number(acct.basis),
+      Number(acct.rothValue),
+      alloc.splitPercentToSpouse,
+    );
+
+    // P keeps the original row (and its links), reduced to the primary share.
+    await tx
+      .update(accounts)
+      .set({ ...shares.primary, updatedAt: new Date() })
+      .where(eq(accounts.id, obj.id));
+    await tx.delete(accountOwners).where(eq(accountOwners.accountId, obj.id));
+    await tx.insert(accountOwners).values({
+      accountId: obj.id,
+      familyMemberId: ctx.primaryFamilyMemberId,
+      percent: "1.0000",
+    });
+
+    // S gets a fresh row for the spouse share, owned 100% by S's client.
+    const [sAcct] = await tx
+      .insert(accounts)
+      .values(
+        accountCopyValues(acct, {
+          clientId: ctx.spouseClientId,
+          scenarioId: ctx.spouseScenarioId,
+          ...shares.spouse,
+        }),
+      )
+      .returning({ id: accounts.id });
+    await tx.insert(accountOwners).values({
+      accountId: sAcct.id,
+      familyMemberId: ctx.spouseClientFamilyMemberId,
+      percent: "1.0000",
+    });
+  }
+}
+
+/** entity_owners of a duplicated entity, re-homed on the S copy. fm owners
+ *  remap through fmRemap (unmappable → drop: the owner stays with P); owners
+ *  that are themselves an entity copy over only when that entity also reached S
+ *  (moved or duplicated), else drop + warn. Percents copy verbatim — no
+ *  re-normalization (entity_owners carries no sum-to-100 constraint). */
+async function duplicateEntityOwners(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+  sEntityId: string,
+): Promise<void> {
+  const rows = await tx.select().from(entityOwners).where(eq(entityOwners.entityId, obj.id));
+  for (const r of rows) {
+    if (r.familyMemberId) {
+      const mapped = ctx.fmRemap.get(r.familyMemberId);
+      if (!mapped) continue; // owner stays with the other household
+      await tx.insert(entityOwners).values({
+        entityId: sEntityId,
+        familyMemberId: mapped,
+        percent: r.percent,
+      });
+    } else if (r.ownerEntityId) {
+      const mapped = ctx.entityRemap.get(r.ownerEntityId);
+      if (!mapped) {
+        ctx.warnings.push(
+          `An owner of "${obj.label}" was dropped — the owning entity stays with the other household.`,
+        );
+        continue;
+      }
+      await tx.insert(entityOwners).values({
+        entityId: sEntityId,
+        ownerEntityId: mapped,
+        percent: r.percent,
+      });
+    }
+  }
+}
+
+/** trust_split_interest_details (CRT/CLT) copied onto the S entity: charity via
+ *  ensureExternalBeneficiary; measuring-life family-member FKs remapped, or
+ *  nulled when the person can't reach S. */
+async function duplicateSplitInterest(
+  tx: Tx,
+  ctx: CommitCtx,
+  pEntityId: string,
+  sEntityId: string,
+): Promise<void> {
+  const [d] = await tx
+    .select()
+    .from(trustSplitInterestDetails)
+    .where(eq(trustSplitInterestDetails.entityId, pEntityId))
+    .limit(1);
+  if (!d) return;
+  const charityId = await ensureExternalBeneficiary(tx, ctx, d.charityId);
+  await tx.insert(trustSplitInterestDetails).values({
+    ...d,
+    createdAt: undefined,
+    updatedAt: undefined,
+    entityId: sEntityId,
+    clientId: ctx.spouseClientId,
+    charityId,
+    measuringLife1Id: d.measuringLife1Id ? ctx.fmRemap.get(d.measuringLife1Id) ?? null : null,
+    measuringLife2Id: d.measuringLife2Id ? ctx.fmRemap.get(d.measuringLife2Id) ?? null : null,
+  });
+}
+
+/** The base-plan (null-scenario) + base-scenario sparse cells of a flow-override
+ *  set, re-scoped for the S owner (null stays null; base(P) → base(S)). Non-base
+ *  scenario rows are skipped — those scenarios don't exist on S (and a commit is
+ *  blocked while any survive). Shared by the entity + owned-account copies. */
+type FlowOverrideCell = {
+  scenarioId: string | null;
+  year: number;
+  incomeAmount: string | null;
+  expenseAmount: string | null;
+  distributionPercent: string | null;
+};
+function baseFlowOverrideCells(ctx: CommitCtx, rows: FlowOverrideCell[]): FlowOverrideCell[] {
+  return rows
+    .filter((r) => r.scenarioId === null || r.scenarioId === ctx.baseScenarioId)
+    .map((r) => ({
+      scenarioId: r.scenarioId === null ? null : ctx.spouseScenarioId,
+      year: r.year,
+      incomeAmount: r.incomeAmount,
+      expenseAmount: r.expenseAmount,
+      distributionPercent: r.distributionPercent,
+    }));
+}
+
+/** The entity's owned accounts, copied to S: a fresh account row (values equal
+ *  to P's) owned 100% by the S entity, plus each account's base flow overrides. */
+async function duplicateEntityAccounts(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+  sEntityId: string,
+): Promise<void> {
+  for (const childId of obj.childIds) {
+    const [child] = await tx.select().from(accounts).where(eq(accounts.id, childId)).limit(1);
+    if (!child) continue;
+    const [sChild] = await tx
+      .insert(accounts)
+      .values(
+        accountCopyValues(child, {
+          clientId: ctx.spouseClientId,
+          scenarioId: ctx.spouseScenarioId,
+          value: child.value,
+          basis: child.basis,
+          rothValue: child.rothValue,
+        }),
+      )
+      .returning({ id: accounts.id });
+    await tx.insert(accountOwners).values({
+      accountId: sChild.id,
+      entityId: sEntityId,
+      percent: "1.0000",
+    });
+    const foRows = await tx
+      .select()
+      .from(accountFlowOverrides)
+      .where(eq(accountFlowOverrides.accountId, childId));
+    const foCells = baseFlowOverrideCells(ctx, foRows);
+    if (foCells.length) {
+      await tx
+        .insert(accountFlowOverrides)
+        .values(foCells.map((v) => ({ accountId: sChild.id, ...v })));
+    }
+  }
+}
+
+/** incomes/expenses owned by the entity, copied to S. Cross-file cash / policy /
+ *  linked-account references are nulled (the engine falls back to entity default
+ *  checking); an expense's "for" family member remaps or nulls. */
+async function duplicateEntityIncomesExpenses(
+  tx: Tx,
+  ctx: CommitCtx,
+  pEntityId: string,
+  sEntityId: string,
+): Promise<void> {
+  const incRows = await tx.select().from(incomes).where(eq(incomes.ownerEntityId, pEntityId));
+  for (const r of incRows) {
+    await tx.insert(incomes).values({
+      ...r,
+      id: undefined,
+      createdAt: undefined,
+      updatedAt: undefined,
+      clientId: ctx.spouseClientId,
+      scenarioId: ctx.spouseScenarioId,
+      ownerEntityId: sEntityId,
+      cashAccountId: null,
+      ownerAccountId: null,
+      linkedPropertyId: null,
+    });
+  }
+  const exRows = await tx.select().from(expenses).where(eq(expenses.ownerEntityId, pEntityId));
+  for (const r of exRows) {
+    await tx.insert(expenses).values({
+      ...r,
+      id: undefined,
+      createdAt: undefined,
+      updatedAt: undefined,
+      clientId: ctx.spouseClientId,
+      scenarioId: ctx.spouseScenarioId,
+      ownerEntityId: sEntityId,
+      cashAccountId: null,
+      sourcePolicyAccountId: null,
+      ownerAccountId: null,
+      forFamilyMemberId: r.forFamilyMemberId ? ctx.fmRemap.get(r.forFamilyMemberId) ?? null : null,
+    });
+  }
+}
+
+/** trust-target beneficiary designations (targetKind='trust') on the entity,
+ *  copied to the S entity: named beneficiary resolved onto S (spouse→client, fm
+ *  remap, external via ensureExternalBeneficiary) — dropped when it can't be
+ *  carried; a named-entity ref remaps or nulls. */
+async function duplicateTrustDesignations(
+  tx: Tx,
+  ctx: CommitCtx,
+  pEntityId: string,
+  sEntityId: string,
+): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(beneficiaryDesignations)
+    .where(
+      and(
+        eq(beneficiaryDesignations.targetKind, "trust"),
+        eq(beneficiaryDesignations.entityId, pEntityId),
+      ),
+    );
+  for (const d of rows) {
+    let familyMemberId = d.familyMemberId;
+    let householdRole = d.householdRole;
+    let externalBeneficiaryId = d.externalBeneficiaryId;
+    if (householdRole) {
+      if (householdRole === "spouse") householdRole = "client";
+      else continue; // names the primary — can't reach S
+    } else if (familyMemberId) {
+      const mapped = ctx.fmRemap.get(familyMemberId);
+      if (!mapped) continue;
+      familyMemberId = mapped;
+    } else if (externalBeneficiaryId) {
+      externalBeneficiaryId = await ensureExternalBeneficiary(tx, ctx, externalBeneficiaryId);
+    }
+    await tx.insert(beneficiaryDesignations).values({
+      ...d,
+      id: undefined,
+      createdAt: undefined,
+      updatedAt: undefined,
+      clientId: ctx.spouseClientId,
+      entityId: sEntityId,
+      familyMemberId,
+      householdRole,
+      externalBeneficiaryId,
+      entityIdRef: d.entityIdRef ? ctx.entityRemap.get(d.entityIdRef) ?? null : null,
+    });
+  }
+}
+
+/**
+ * Deep-copy every `duplicate`-allocated entity onto S. P's copy is untouched (it
+ * IS the primary's). Two phases: first mint the S entity rows so `entityRemap`
+ * carries every duplicated id before any owner/reference is written (entities
+ * can own entities); then copy each entity's dependent graph. The S copy's
+ * grantor flips per the Rulebook — that side's grantor person (`spouse`) becomes
+ * `client`, everyone else nulls — and `isGrantor` survives only when the S copy
+ * still has a grantor.
+ */
+async function duplicateEntities(tx: Tx, ctx: CommitCtx): Promise<void> {
+  const dupObjs = ctx.objects.filter(
+    (o) =>
+      o.kind === "entity" &&
+      ctx.resolved.get(allocationKey("entity", o.id))?.disposition === "duplicate",
+  );
+  if (dupObjs.length === 0) return;
+
+  // Phase 1 — mint the S entity rows + record old→new (before any owner writes).
+  for (const obj of dupObjs) {
+    const [p] = await tx.select().from(entities).where(eq(entities.id, obj.id)).limit(1);
+    if (!p) continue;
+    const sGrantor = p.grantor === "spouse" ? "client" : null;
+    const [s] = await tx
+      .insert(entities)
+      .values({
+        ...p,
+        id: undefined, // fresh id
+        createdAt: undefined,
+        updatedAt: undefined,
+        clientId: ctx.spouseClientId,
+        grantor: sGrantor,
+        isGrantor: p.isGrantor && sGrantor !== null,
+      })
+      .returning({ id: entities.id });
+    ctx.entityRemap.set(obj.id, s.id);
+  }
+
+  // Phase 2 — copy each entity's dependent graph onto its S id.
+  for (const obj of dupObjs) {
+    const sEntityId = ctx.entityRemap.get(obj.id);
+    if (!sEntityId) continue;
+    await duplicateEntityOwners(tx, ctx, obj, sEntityId);
+    await duplicateSplitInterest(tx, ctx, obj.id, sEntityId);
+    const efoRows = await tx
+      .select()
+      .from(entityFlowOverrides)
+      .where(eq(entityFlowOverrides.entityId, obj.id));
+    const efoCells = baseFlowOverrideCells(ctx, efoRows);
+    if (efoCells.length) {
+      await tx
+        .insert(entityFlowOverrides)
+        .values(efoCells.map((v) => ({ entityId: sEntityId, ...v })));
+    }
+    await duplicateEntityAccounts(tx, ctx, obj, sEntityId);
+    await duplicateEntityIncomesExpenses(tx, ctx, obj.id, sEntityId);
+    await duplicateTrustDesignations(tx, ctx, obj.id, sEntityId);
+  }
+}
+
+/**
+ * Move an entity whole to S (Rulebook entity `spouse` row): re-point the entity
+ * in place (grantor flip per the Rulebook), collapse its owners to the mover,
+ * and follow its owned accounts (+ scenario-scoped ride-alongs), ownerEntityId
+ * incomes/expenses, and flow overrides onto S's base. The entity id is unchanged,
+ * so its accounts' entity-ownership rows ride along without a remap.
+ */
+async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promise<void> {
+  const [ent] = await tx.select().from(entities).where(eq(entities.id, obj.id)).limit(1);
+  if (!ent) return;
+  const sGrantor = ent.grantor === "spouse" ? "client" : null;
+  await tx
+    .update(entities)
+    .set({
+      clientId: ctx.spouseClientId,
+      grantor: sGrantor,
+      isGrantor: ent.isGrantor && sGrantor !== null,
+      updatedAt: new Date(),
+    })
+    .where(eq(entities.id, obj.id));
+
+  // entity_owners collapse to the mover (mirrors moved accounts/liabilities).
+  const ownerRows = await tx.select().from(entityOwners).where(eq(entityOwners.entityId, obj.id));
+  const survivors = await movedOwnerRows(
+    tx,
+    ctx,
+    ownerRows.map((r) => ({
+      familyMemberId: r.familyMemberId,
+      entityId: r.ownerEntityId,
+      percent: r.percent,
+    })),
+  );
+  await tx.delete(entityOwners).where(eq(entityOwners.entityId, obj.id));
+  for (const s of survivors) {
+    // entity_owners is family-member OR entity only (never external).
+    if (s.familyMemberId) {
+      await tx.insert(entityOwners).values({
+        entityId: obj.id,
+        familyMemberId: s.familyMemberId,
+        percent: s.percent,
+      });
+    } else if (s.entityId) {
+      await tx.insert(entityOwners).values({
+        entityId: obj.id,
+        ownerEntityId: s.entityId,
+        percent: s.percent,
+      });
+    }
+  }
+
+  // Owned accounts + their (client, scenario, account)-scoped ride-alongs follow.
+  for (const childId of obj.childIds) {
+    await tx
+      .update(accounts)
+      .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId, updatedAt: new Date() })
+      .where(eq(accounts.id, childId));
+    await tx
+      .update(accountFlowOverrides)
+      .set({ scenarioId: ctx.spouseScenarioId })
+      .where(
+        and(
+          eq(accountFlowOverrides.accountId, childId),
+          eq(accountFlowOverrides.scenarioId, ctx.baseScenarioId),
+        ),
+      );
+    await tx
+      .update(savingsRules)
+      .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId })
+      .where(eq(savingsRules.accountId, childId));
+    await tx
+      .update(withdrawalStrategies)
+      .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId })
+      .where(eq(withdrawalStrategies.accountId, childId));
+  }
+
+  // ownerEntityId incomes/expenses follow (base scenario → base(S)).
+  await tx
+    .update(incomes)
+    .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId, updatedAt: new Date() })
+    .where(eq(incomes.ownerEntityId, obj.id));
+  await tx
+    .update(expenses)
+    .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId, updatedAt: new Date() })
+    .where(eq(expenses.ownerEntityId, obj.id));
+
+  // entity_flow_overrides base rows → base(S); null-scenario rows follow via FK.
+  await tx
+    .update(entityFlowOverrides)
+    .set({ scenarioId: ctx.spouseScenarioId })
+    .where(
+      and(
+        eq(entityFlowOverrides.entityId, obj.id),
+        eq(entityFlowOverrides.scenarioId, ctx.baseScenarioId),
+      ),
+    );
+}
+
+/**
+ * Move every `spouse`-allocated object onto S, deep-copy every `duplicate`
+ * entity, split every `split` account, apply the automatic grantor/owner-enum
+ * follows, then follow-or-drop the technique links. Duplicated + whole-to-spouse
+ * entities are registered in `entityRemap` FIRST so owner rows, `entity_id_ref`
+ * designations, and cross-entity references resolve regardless of order.
  */
 async function moveAllocatedObjects(tx: Tx, ctx: CommitCtx): Promise<void> {
   const { accountSides, entitySides } = buildSideResolvers(ctx.objects, ctx.resolved);
   const keepIfSpouse = (id: string | null): string | null =>
     id && accountSides(id).has("spouse") ? id : null;
 
+  // Whole-to-spouse entities keep their id — register it now (id→id) so a
+  // duplicated entity owned by one, or a designation referencing one, resolves
+  // before the entity move arm below re-points the row.
   for (const obj of ctx.objects) {
-    if (obj.entityOwnedById) continue; // follows its entity/container (Task 11)
+    if (
+      obj.kind === "entity" &&
+      ctx.resolved.get(allocationKey("entity", obj.id))?.disposition === "spouse"
+    ) {
+      ctx.entityRemap.set(obj.id, obj.id);
+    }
+  }
+  // Deep-copy the duplicate-allocated entity graphs; fills entityRemap with the
+  // new S ids that the account/designation moves and grantor follows below read.
+  await duplicateEntities(tx, ctx);
+
+  for (const obj of ctx.objects) {
+    if (obj.entityOwnedById) continue; // follows its entity/container
     const alloc = ctx.resolved.get(allocationKey(obj.kind, obj.id));
     if (!alloc || alloc.disposition !== "spouse") continue;
     switch (obj.kind) {
@@ -848,10 +1369,14 @@ async function moveAllocatedObjects(tx: Tx, ctx: CommitCtx): Promise<void> {
       case "note_receivable":
         await moveNote(tx, ctx, obj, entitySides);
         break;
-      // entity / family_member moves + duplication → Task 11.
+      case "entity":
+        await moveEntityWhole(tx, ctx, obj);
+        break;
+      // family_member copies are minted in Step 4 (mintSpouseFamilyMembers).
     }
   }
 
+  await splitAccounts(tx, ctx);
   await followGrantorEnums(tx, ctx);
   await handleLinks(tx, ctx, accountSides);
 }
