@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
+  allocationKey,
   resolveAllocations,
   type DivorceDisposition,
   type DivorceTargetKind,
@@ -9,8 +11,10 @@ import {
 import { computeSideTotals } from "@/lib/divorce/side-totals";
 import type { WorkbenchPayload } from "@/lib/divorce/divorce-plans";
 import type { DivorceDraftSettings } from "@/lib/divorce/schemas";
+import type { CommitResult } from "@/lib/divorce/commit-divorce-plan";
 import { SettingsRail } from "./settings-rail";
 import { AllocationBoard } from "./division-board";
+import { CommitPreviewDialog, type CleanupSelection } from "./commit-preview-dialog";
 
 type AllocationRow = WorkbenchPayload["allocations"][number];
 type SplitFilingStatus = "single" | "head_of_household";
@@ -52,6 +56,8 @@ export default function DivorceWorkbench({
   const [payload, setPayload] = useState<WorkbenchPayload>(initialPayload);
   const [allocError, setAllocError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [commitOpen, setCommitOpen] = useState(false);
+  const [committed, setCommitted] = useState<CommitResult | null>(null);
 
   // Latest payload for rollback snapshots without re-creating onAllocate.
   const payloadRef = useRef(payload);
@@ -72,6 +78,18 @@ export default function DivorceWorkbench({
     () => computeSideTotals(objects, resolved),
     [objects, resolved],
   );
+
+  // Objects still awaiting an allocation decision. Derived exactly as the board
+  // derives its "N decisions remaining" counter (skip entity-owned children,
+  // count `needsDecision`) so the commit CTA and the board never disagree.
+  const decisionsRemaining = useMemo(() => {
+    let n = 0;
+    for (const obj of objects) {
+      if (obj.entityOwnedById) continue;
+      if (resolved.get(allocationKey(obj.kind, obj.id))?.needsDecision) n += 1;
+    }
+    return n;
+  }, [objects, resolved]);
 
   // ---- Allocation: optimistic PUT then reconcile -------------------------
   // The handler the allocation board calls. It's defined in the shell so the
@@ -177,6 +195,16 @@ export default function DivorceWorkbench({
     [flushSettings],
   );
 
+  // The commit-preview cleanup checklist persists through the same settings
+  // PATCH path (which reconciles only `plan`) — the dialog owns the full
+  // selection set and hands it here whole, never as a delta.
+  const onCleanupChange = useCallback(
+    (selections: CleanupSelection[]) => {
+      onSettingsChange({ beneficiaryCleanup: { selections } });
+    },
+    [onSettingsChange],
+  );
+
   // Best-effort flush of any pending settings change on unmount (keepalive so
   // it survives the navigation); no state reconcile since we're leaving.
   useEffect(() => {
@@ -194,6 +222,12 @@ export default function DivorceWorkbench({
     };
   }, [clientId]);
 
+  // Terminal state — commit succeeded, the draft is gone, the workbench is
+  // replaced by the two-households confirmation (the CTA cannot run twice).
+  if (committed) {
+    return <CommitSuccess result={committed} clientId={clientId} people={people} />;
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 pt-4">
       {/* Header */}
@@ -204,9 +238,34 @@ export default function DivorceWorkbench({
             Split this household
           </h1>
         </div>
-        {/* Task 16 mounts the commit trigger + dialog here — it receives
-            clientId and gates on the resolved decisions above. */}
+        <button
+          type="button"
+          onClick={() => setCommitOpen(true)}
+          disabled={decisionsRemaining > 0}
+          title={
+            decisionsRemaining > 0
+              ? `${decisionsRemaining} decision${decisionsRemaining === 1 ? "" : "s"} still need${
+                  decisionsRemaining === 1 ? "s" : ""
+                } an allocation`
+              : undefined
+          }
+          className="btn-primary shrink-0 text-[13px] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Review and commit
+        </button>
       </div>
+
+      <CommitPreviewDialog
+        open={commitOpen}
+        onOpenChange={setCommitOpen}
+        clientId={clientId}
+        people={people}
+        onCleanupChange={onCleanupChange}
+        onCommitted={(result) => {
+          setCommitOpen(false);
+          setCommitted(result);
+        }}
+      />
 
       {/* One-way-door banner — copy is verbatim per spec; do not soften. */}
       <div
@@ -259,6 +318,73 @@ export default function DivorceWorkbench({
             saveStatus={saveStatus}
             onChange={onSettingsChange}
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Post-commit terminal screen. Replaces the whole workbench: the draft is gone
+ *  and the commit cannot run again. Links to the primary's plan and the newly
+ *  minted spouse household, and surfaces any dropped-link warnings from the
+ *  commit response. */
+function CommitSuccess({
+  result,
+  clientId,
+  people,
+}: {
+  result: CommitResult;
+  clientId: string;
+  people: { primaryName: string; spouseName: string };
+}) {
+  const primaryName = people.primaryName.trim() || "the primary";
+  const spouseName = people.spouseName.trim() || "the spouse";
+
+  return (
+    <div className="flex flex-1 items-center justify-center pt-4">
+      <div className="w-full max-w-lg">
+        <div className="card p-[var(--pad-card)]">
+          <span className="chip">Divorce planning</span>
+          <h1 className="mt-3 text-[22px] font-semibold tracking-tight text-ink">
+            Two households created.
+          </h1>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
+            {spouseName} now has a separate household with its own plan. A
+            &ldquo;Pre-divorce baseline&rdquo; snapshot was saved to {primaryName}&rsquo;s plan for
+            reference only. Committing cannot be undone.
+          </p>
+
+          {result.warnings.length > 0 && (
+            <div className="mt-4 rounded-[var(--radius)] border border-hair bg-card-2 p-4">
+              <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-4">
+                Dropped on commit
+              </h2>
+              <ul className="mt-2 flex flex-col gap-1">
+                {result.warnings.map((w, i) => (
+                  <li key={i} className="text-[13px] text-ink-2">
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={`/clients/${clientId}`}
+              prefetch={false}
+              className="btn-primary text-center text-[13px]"
+            >
+              Open {primaryName}&rsquo;s plan
+            </Link>
+            <Link
+              href={`/clients/${result.spouseClientId}`}
+              prefetch={false}
+              className="btn-ghost text-center text-[13px]"
+            >
+              Open {spouseName}&rsquo;s household
+            </Link>
+          </div>
         </div>
       </div>
     </div>
