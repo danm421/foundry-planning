@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import {
   allocationKey,
   type DivisibleObject,
@@ -53,7 +53,11 @@ export interface AllocationBoardProps {
   onAllocate: OnAllocate;
 }
 
-export function AllocationBoard({
+// Memoized: `objects`/`resolved`/`totals`/`people`/`onAllocate` are all
+// reference-stable across a settings-only update (the debounced settings
+// PATCH reconciles only `plan`), so this skips re-rendering the whole board
+// — potentially many cards — on every keystroke in the settings rail.
+export const AllocationBoard = memo(function AllocationBoard({
   objects,
   resolved,
   totals,
@@ -267,7 +271,7 @@ export function AllocationBoard({
       />
     </div>
   );
-}
+});
 
 /** A person column: sticky header (name + live per-side totals) over its cards. */
 function SideColumn({

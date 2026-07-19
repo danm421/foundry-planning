@@ -22,9 +22,9 @@ export default async function DivorcePage({
 }) {
   const { id } = await params;
   // The client layout already gates access; re-running here yields the firmId +
-  // permission and the client row (for the filing-status check).
-  const access = await requireClientAccess(id);
-  const { userId } = await auth();
+  // permission and the client row (for the filing-status check). Neither await
+  // depends on the other's result, so start both immediately.
+  const [access, { userId }] = await Promise.all([requireClientAccess(id), auth()]);
 
   // Only married households can split into two.
   if (!access.client.filingStatus.startsWith("married_")) {
