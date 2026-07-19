@@ -289,6 +289,11 @@ export type AuditAction =
   | "crm.note.create"
   | "crm.note.update"
   | "crm.note.delete"
+  // Divorce planning (draft workbench — settings/allocations live on one
+  // draft row per client; abandon retires it without deleting history)
+  | "divorce_plan.create"
+  | "divorce_plan.update"
+  | "divorce_plan.abandon"
   // Medicare coverage (per-person, client-scoped overrides)
   | "medicare_coverage.upsert"
   // Presentation templates

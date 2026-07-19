@@ -59,6 +59,7 @@ export interface MarriedFixture {
     livingExpense: string; // expense living 90k (no person owner)
     jointMortgage: string; // liability 50/50 via liability_owners, 300k, linkedPropertyId = house
     spouseBeneDesignation: string; // designation on spouse401k, familyMemberId = primaryFmId (names the other side)
+    lifeInsurance: string; // life_insurance, 100% primary, value 25k — non-splittable (Task 5 AllocationError case)
   };
 }
 
@@ -85,6 +86,7 @@ const EMPTY_IDS: MarriedFixture["ids"] = {
   livingExpense: "",
   jointMortgage: "",
   spouseBeneDesignation: "",
+  lifeInsurance: "",
 };
 
 export async function createMarriedFixture(
@@ -422,6 +424,26 @@ export async function createMarriedFixture(
       })
       .returning({ id: beneficiaryDesignations.id });
 
+    // ── lifeInsurance: life_insurance, 100% primary, value 25k. Not in
+    // SPLITTABLE_ACCOUNT_CATEGORIES — used to exercise the "split not allowed"
+    // AllocationError path in the Task 5 draft-service tests. ──
+    const [lifeInsurance] = await tx
+      .insert(accounts)
+      .values({
+        ...acctBase,
+        name: "Primary Life Insurance",
+        category: "life_insurance",
+        subType: "other",
+        value: "25000.00",
+        basis: "0.00",
+      })
+      .returning({ id: accounts.id });
+    await tx.insert(accountOwners).values({
+      accountId: lifeInsurance.id,
+      familyMemberId: primaryFm.id,
+      percent: "1.0000",
+    });
+
     return {
       firmId: TEST_FIRM_ID,
       householdId: hh.id,
@@ -443,6 +465,7 @@ export async function createMarriedFixture(
         livingExpense: livingExpense.id,
         jointMortgage: jointMortgage.id,
         spouseBeneDesignation: spouseBeneDesignation.id,
+        lifeInsurance: lifeInsurance.id,
       },
     } satisfies MarriedFixture;
   });
