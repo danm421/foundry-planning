@@ -20,6 +20,7 @@ import {
   crmHouseholdContacts,
   clients,
   scenarios,
+  planSettings,
   familyMembers,
   accounts,
   accountOwners,
@@ -171,6 +172,17 @@ export async function createMarriedFixture(
       .insert(scenarios)
       .values({ clientId: client.id, name: "Base Case", isBaseCase: true })
       .returning({ id: scenarios.id });
+
+    // Plan settings — required for anything that loads the client's effective
+    // tree (e.g. the commit engine's pre-divorce snapshot). Mirrors the row
+    // createClientForHousehold seeds; the rest of plan_settings has defaults.
+    await tx.insert(planSettings).values({
+      clientId: client.id,
+      scenarioId: scenario.id,
+      planStartYear: currentYear,
+      planEndYear: endYear,
+      residenceState: "CA",
+    });
 
     // ── Family members. role drives side mapping; client→primary, spouse→spouse.
     // The child is a non-principal member and surfaces as a family_member object.
