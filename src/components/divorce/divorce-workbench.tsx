@@ -6,10 +6,11 @@ import {
   type DivorceDisposition,
   type DivorceTargetKind,
 } from "@/lib/divorce/allocation-rules";
-import { computeSideTotals, type SideTotals } from "@/lib/divorce/side-totals";
+import { computeSideTotals } from "@/lib/divorce/side-totals";
 import type { WorkbenchPayload } from "@/lib/divorce/divorce-plans";
 import type { DivorceDraftSettings } from "@/lib/divorce/schemas";
 import { SettingsRail } from "./settings-rail";
+import { AllocationBoard } from "./division-board";
 
 type AllocationRow = WorkbenchPayload["allocations"][number];
 type SplitFilingStatus = "single" | "head_of_household";
@@ -22,12 +23,6 @@ export type OnAllocate = (
   disposition: DivorceDisposition,
   pct: number | null,
 ) => void;
-
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 /** The DB plan row carries the full filing_status enum, but only single /
  *  head_of_household are valid post-split; narrow (defaulting to single). */
@@ -79,11 +74,8 @@ export default function DivorceWorkbench({
   );
 
   // ---- Allocation: optimistic PUT then reconcile -------------------------
-  // LOAD-BEARING CONTRACT — do not remove. This is the handler Task 15's
-  // allocation board calls (see the board mount slot in the render below).
-  // It's defined in the shell so the board stays a presentational child; its
-  // only caller arrives in Task 15, so it reads as "unused" until then.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // The handler the allocation board calls. It's defined in the shell so the
+  // board stays a presentational child.
   const onAllocate = useCallback<OnAllocate>(
     async (kind, id, disposition, pct) => {
       const pctStr = disposition === "split" && pct != null ? pct.toFixed(4) : null;
@@ -243,26 +235,17 @@ export default function DivorceWorkbench({
           settings + Abandon control stay reachable at every width. */}
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
-          <SplitPreview
-            primary={totals.primary}
-            spouse={totals.spouse}
-            people={people}
-          />
-
           {allocError ? (
-            <p className="mt-3 text-[13px] text-crit">{allocError}</p>
+            <p className="mb-3 text-[13px] text-crit">{allocError}</p>
           ) : null}
 
-          {/*
-            Task 15: mount the allocation board here. It receives:
-              objects   — DivisibleObject[]                    (payload.objects)
-              resolved  — Map<string, ResolvedAllocation>      (keyed allocationKey(kind,id))
-              totals    — { primary: SideTotals; spouse: SideTotals }
-              onAllocate(kind, id, disposition, pct) — optimistic PUT + reconcile
-            e.g. <AllocationBoard objects={objects} resolved={resolved}
-                    totals={totals} onAllocate={onAllocate} />
-          */}
-          <div data-divorce-allocation-board className="mt-6" />
+          <AllocationBoard
+            objects={objects}
+            resolved={resolved}
+            totals={totals}
+            people={people}
+            onAllocate={onAllocate}
+          />
         </div>
 
         <div className="flex w-full shrink-0 flex-col lg:w-[320px] lg:min-h-0">
@@ -278,47 +261,6 @@ export default function DivorceWorkbench({
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Compact per-side outcome preview — proves the derived-totals wiring and
- *  gives the board region a header. Numbers are mono/tabular per brand. */
-function SplitPreview({
-  primary,
-  spouse,
-  people,
-}: {
-  primary: SideTotals;
-  spouse: SideTotals;
-  people: { primaryName: string; spouseName: string };
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <SideCard title={people.primaryName || "Primary"} t={primary} />
-      <SideCard title={people.spouseName || "Spouse"} t={spouse} />
-    </div>
-  );
-}
-
-function SideCard({ title, t }: { title: string; t: SideTotals }) {
-  return (
-    <div className="rounded-[var(--radius)] border border-hair bg-card p-4">
-      <div className="truncate text-[13px] font-semibold text-ink-2">{title}</div>
-      <dl className="mt-3 flex flex-col gap-2">
-        <Metric label="Net worth" value={t.netWorth} />
-        <Metric label="Annual income" value={t.annualIncome} />
-        <Metric label="Annual expenses" value={t.annualExpenses} />
-      </dl>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[12px] text-ink-3">{label}</dt>
-      <dd className="tabular text-[14px] text-ink">{currency.format(value)}</dd>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -58,12 +58,12 @@ describe("DivorceWorkbench", () => {
 
   it("derives per-side totals locally (income follows the primary owner)", () => {
     render(<DivorceWorkbench payload={makePayload()} clientId="c1" />);
-    // Both people surface as side headers.
-    expect(screen.getByText("Alex Kim")).toBeTruthy();
-    expect(screen.getByText("Jordan Kim")).toBeTruthy();
-    // The primary's $120k salary is summed into Annual income by
-    // computeSideTotals — no allocation row needed (income defaults to owner).
-    expect(screen.getByText("$120,000")).toBeTruthy();
+    // Both people surface as the board's side columns.
+    const primary = within(screen.getByRole("region", { name: "Alex Kim" }));
+    expect(screen.getByRole("region", { name: "Jordan Kim" })).toBeTruthy();
+    // The primary's $120k salary card lands on Alex's side (income defaults to
+    // its owner — no allocation row needed).
+    expect(primary.getByText("$120,000")).toBeTruthy();
   });
 
   it("coalesces rapid settings edits into a single debounced PATCH", async () => {
@@ -74,7 +74,9 @@ describe("DivorceWorkbench", () => {
     const year = screen.getByLabelText(/split year/i, {
       selector: "input",
     }) as HTMLInputElement;
-    const primaryFiling = screen.getByLabelText(/Alex Kim/i) as HTMLSelectElement;
+    const primaryFiling = screen.getByRole("combobox", {
+      name: /Alex Kim/i,
+    }) as HTMLSelectElement;
 
     fireEvent.change(year, { target: { value: "2030" } });
     fireEvent.change(primaryFiling, { target: { value: "head_of_household" } });
