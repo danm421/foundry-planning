@@ -159,6 +159,58 @@ d("buildCommitPreview", () => {
     }
   });
 
+  // A split account keeps its ORIGINAL id on the primary's book (the spouse
+  // share is a new id), so for link endpoints it lands on primary only — a link
+  // from it to a spouse-destined endpoint IS a straddle.
+  it("a transfer between a split account and a spouse-destined account → straddle_dropped", async () => {
+    const f = await createMarriedFixture({ withStraddleTransfer: true });
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: TEST_ADVISOR_ID });
+      // Brokerage Sweep runs jointBrokerage → primaryBrokerage. Split the source
+      // (stays on primary) and send the target to the spouse — now cross-side.
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "split", splitPercentToSpouse: 50 },
+          { targetKind: "account", targetId: f.ids.primaryBrokerage, disposition: "spouse", splitPercentToSpouse: null },
+        ],
+      });
+
+      const preview = await buildCommitPreview({ clientId: f.clientId, firmId: f.firmId });
+      const warning = preview.warnings.find(
+        (w) => w.code === "straddle_dropped" && w.label === "Brokerage Sweep",
+      );
+      expect(warning).toBeDefined();
+    } finally {
+      await destroyFixture(f);
+    }
+  });
+
+  it("a transfer between a split account and a primary-destined account does NOT straddle", async () => {
+    const f = await createMarriedFixture({ withStraddleTransfer: true });
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: TEST_ADVISOR_ID });
+      // Split the source; the target primaryBrokerage stays on the primary
+      // (default) — both originals remain on the primary's book, no straddle.
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "split", splitPercentToSpouse: 50 },
+        ],
+      });
+
+      const preview = await buildCommitPreview({ clientId: f.clientId, firmId: f.firmId });
+      const warning = preview.warnings.find(
+        (w) => w.code === "straddle_dropped" && w.label === "Brokerage Sweep",
+      );
+      expect(warning).toBeUndefined();
+    } finally {
+      await destroyFixture(f);
+    }
+  });
+
   it("a liability moved across its linked property → link_nulled warning", async () => {
     const f = await createMarriedFixture();
     try {

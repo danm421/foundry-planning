@@ -95,14 +95,22 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
   return out;
 }
 
-// The side(s) a resolved allocation lands on. split/duplicate live on both
-// households; spouse on the spouse's; everything else stays primary.
-function sidesFor(alloc: ResolvedAllocation | undefined): Set<Side> {
+// The destination side(s) a resolved allocation's ORIGINAL row lands on, for
+// link-endpoint (straddle / cross-side-link) detection — NOT value distribution
+// (totals/actions handle split's value on both books separately).
+//
+// Commit keeps the original account id on P for both `primary` and `split`: a
+// split UPDATEs the original in place on P and INSERTs a NEW id for the spouse
+// share (plan Task 11). Since every link references the ORIGINAL id, a split
+// account is primary-only here — so a link from a split account to a
+// spouse-destined endpoint straddles and must be dropped, never silently kept.
+// `duplicate` deep-copies to S while keeping the original, so its id lives on
+// both books.
+function linkEndpointSides(alloc: ResolvedAllocation | undefined): Set<Side> {
   if (!alloc) return new Set();
   if (alloc.disposition === "spouse") return new Set(["spouse"]);
-  if (alloc.disposition === "split" || alloc.disposition === "duplicate") {
-    return new Set(["primary", "spouse"]);
-  }
+  if (alloc.disposition === "duplicate") return new Set(["primary", "spouse"]);
+  // primary and split both keep the original id on P.
   return new Set(["primary"]);
 }
 
@@ -349,12 +357,12 @@ export async function buildCommitPreview(args: {
     objects.filter((o) => o.kind === "expense").map((o) => [o.id, o.label]),
   );
   const entitySides = (entityId: string): Set<Side> =>
-    sidesFor(resolved.get(allocationKey("entity", entityId)));
+    linkEndpointSides(resolved.get(allocationKey("entity", entityId)));
   const accountSides = (accountId: string): Set<Side> => {
     const obj = accountObjById.get(accountId);
     if (!obj) return new Set();
     if (obj.entityOwnedById) return entitySides(obj.entityOwnedById);
-    return sidesFor(resolved.get(allocationKey("account", accountId)));
+    return linkEndpointSides(resolved.get(allocationKey("account", accountId)));
   };
 
   // ── Blockers ──
@@ -456,7 +464,7 @@ export async function buildCommitPreview(args: {
     }
   }
   for (const e of edaRows) {
-    const expSides = sidesFor(resolved.get(allocationKey("expense", e.expenseId)));
+    const expSides = linkEndpointSides(resolved.get(allocationKey("expense", e.expenseId)));
     if (straddles([expSides, accountSides(e.accountId)])) {
       const label = expenseLabelById.get(e.expenseId) ?? "Expense";
       const acctLabel = accountObjById.get(e.accountId)?.label ?? "an account";
@@ -471,7 +479,7 @@ export async function buildCommitPreview(args: {
   // ── Warnings: cross-side links nulled ──
   for (const l of liabilityLinkRows) {
     if (!l.linkedPropertyId) continue;
-    const libSides = sidesFor(resolved.get(allocationKey("liability", l.id)));
+    const libSides = linkEndpointSides(resolved.get(allocationKey("liability", l.id)));
     if (straddles([libSides, accountSides(l.linkedPropertyId)])) {
       warnings.push({
         code: "link_nulled",
@@ -482,7 +490,7 @@ export async function buildCommitPreview(args: {
   }
   for (const n of noteLinkRows) {
     if (!n.linkedTrustEntityId) continue;
-    const noteSides = sidesFor(resolved.get(allocationKey("note_receivable", n.id)));
+    const noteSides = linkEndpointSides(resolved.get(allocationKey("note_receivable", n.id)));
     if (straddles([noteSides, entitySides(n.linkedTrustEntityId)])) {
       warnings.push({
         code: "link_nulled",
