@@ -262,6 +262,8 @@ export type AuditAction =
   | "crm.household.delete"
   | "crm.household.soft_delete"
   | "crm.household.restore"
+  | "crm.household_relationship.create"
+  | "crm.household_relationship.delete"
   | "crm.contact.create"
   | "crm.contact.update"
   | "crm.contact.delete"

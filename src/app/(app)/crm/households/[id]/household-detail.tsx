@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { getCrmHousehold } from "@/lib/crm/households";
+import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
 import type { TaskDetailBundle } from "@/app/(app)/tasks/_components/tasks-page";
@@ -65,6 +66,7 @@ export function HouseholdDetail({
   initialTaskId,
   tasksBootstrap,
   canManage,
+  relationships,
 }: {
   household: Household;
   advisorName: string;
@@ -72,6 +74,7 @@ export function HouseholdDetail({
   initialTaskId?: string;
   tasksBootstrap: HouseholdDetailTasksBootstrap;
   canManage: boolean;
+  relationships: HouseholdRelationshipView[];
 }) {
   const planningClientId = household.planningClient?.id ?? null;
   const tabs: Tab[] = ALL_TABS.filter((t) => t !== "insights" || planningClientId !== null);
@@ -145,12 +148,14 @@ export function HouseholdDetail({
 
       <div className="mt-6">
         {tab === "overview" && (
-          <OverviewTab household={household} advisorName={advisorName} />
+          <OverviewTab household={household} advisorName={advisorName} relationships={relationships} />
         )}
         {tab === "insights" && planningClientId && (
           <InsightsTab clientId={planningClientId} />
         )}
-        {tab === "contacts" && <ContactsTab household={household} />}
+        {tab === "contacts" && (
+          <ContactsTab household={household} relationships={relationships} />
+        )}
         {tab === "accounts" && <AccountsTab household={household} />}
         {tab === "activity" && <ActivityTab household={household} />}
         {tab === "documents" && <DocumentsTab household={household} />}

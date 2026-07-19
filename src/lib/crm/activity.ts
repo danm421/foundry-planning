@@ -6,7 +6,8 @@ type RecordActivityInput = {
   householdId: string;
   kind:
     | "note" | "call" | "meeting" | "email" | "status_change"
-    | "contact_change" | "account_change" | "document_uploaded" | "planning_link";
+    | "contact_change" | "account_change" | "document_uploaded" | "planning_link"
+    | "relationship_change";
   title: string;
   body?: string;
   metadata?: Record<string, unknown>;
@@ -39,6 +40,37 @@ export async function recordActivity(
     metadata: input.metadata,
     occurredAt: input.occurredAt,
   });
+}
+
+/**
+ * `recordActivity` wrapped so a failure here never surfaces to the caller.
+ * Callers use this post-commit, once the row(s) it's narrating are already
+ * durable — letting an activity-log error propagate would report a false
+ * failure for a write that actually succeeded, and on retry the caller could
+ * immediately hit a unique-index guard and see a misleading "already exists"
+ * error. Mirrors how `recordAudit` (src/lib/audit.ts) already swallows its
+ * own failures and logs instead of throwing.
+ *
+ * `logTag` is caller-supplied (e.g. "household-relationships",
+ * "promote-family-member") so a failure in production logs immediately
+ * tells you which service emitted it.
+ */
+export async function recordActivityNonFatal(
+  input: Parameters<typeof recordActivity>[0],
+  opts: Parameters<typeof recordActivity>[1],
+  logTag: string,
+): Promise<void> {
+  try {
+    await recordActivity(input, opts);
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown activity error";
+    console.error(`[${logTag}] failed to record:`, {
+      kind: input.kind,
+      householdId: input.householdId,
+      err: msg,
+    });
+  }
 }
 
 export async function listActivity(householdId: string, opts?: { limit?: number; offset?: number }) {

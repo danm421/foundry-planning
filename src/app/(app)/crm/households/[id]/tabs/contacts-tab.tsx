@@ -13,9 +13,17 @@ import {
   CrmExternalContactForm,
   type ExternalContactFormInitial,
 } from "@/components/crm-external-contact-form";
+import {
+  CrmPromoteFamilyMemberDialog,
+  type CrmPromoteFamilyMemberInitial,
+} from "@/components/crm-promote-family-member-dialog";
+import { OverflowMenu } from "@/components/overflow-menu";
+import { CrmHouseholdRelationshipsSection } from "@/components/crm-household-relationships-section";
+import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
+import { chipClass, sectionHeadingClass, addGhostClass, EmptyState } from "@/components/crm-section-primitives";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 type Contact = Household["contacts"][number];
@@ -31,17 +39,9 @@ const ROLE_LABELS: Record<string, string> = {
 /** Verdigris pill — identity roles (primary / spouse) only. */
 const roleBadgeClass =
   "rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent";
-/** Hairline pill — descriptive relationships (Child, Dependent, CPA). Accent is
- *  reserved for action + identity status, never for descriptive data. */
-const relBadgeClass =
-  "rounded-full border border-hair-2 bg-card-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3";
 
-const sectionHeadingClass =
-  "text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3";
 const addPrimaryClass =
   "rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink";
-const addGhostClass =
-  "rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink";
 
 function fmtDob(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -116,6 +116,15 @@ function rowsOf(...rows: (Row | null)[]): Row[] {
   return rows.filter((r): r is Row => r !== null && r.value !== null && r.value !== "");
 }
 
+const EMPTY_PROMOTE_INITIAL: CrmPromoteFamilyMemberInitial = {
+  firstName: "",
+  lastName: "",
+  dateOfBirth: null,
+  email: null,
+  phone: null,
+  mobile: null,
+};
+
 function ContactCard({
   badge,
   name,
@@ -124,6 +133,7 @@ function ContactCard({
   onEdit,
   onDelete,
   deleting,
+  menu,
 }: {
   badge: ReactNode;
   name: string;
@@ -132,6 +142,7 @@ function ContactCard({
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
+  menu?: ReactNode;
 }) {
   const preferred = preferredName?.trim();
   return (
@@ -178,21 +189,20 @@ function ContactCard({
           >
             <TrashIcon width={14} height={14} aria-hidden="true" />
           </button>
+          {menu}
         </div>
       </div>
     </li>
   );
 }
 
-function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-8 text-center">
-      <p className="text-[13px] text-ink-3">{children}</p>
-    </div>
-  );
-}
-
-export function ContactsTab({ household }: { household: Household }) {
+export function ContactsTab({
+  household,
+  relationships,
+}: {
+  household: Household;
+  relationships: HouseholdRelationshipView[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -217,6 +227,20 @@ export function ContactsTab({ household }: { household: Household }) {
   const [externalDialog, setExternalDialog] = useState<{
     initialValues?: ExternalContactFormInitial;
   } | null>(null);
+  const [promoteDialog, setPromoteDialog] = useState<CrmPromoteFamilyMemberInitial | null>(null);
+
+  // sourceFamilyMemberId -> the household it was promoted into. Only edges
+  // that came from a family-member promote carry sourceFamilyMemberId; plain
+  // household links (CrmLinkHouseholdDialog) don't populate it.
+  const promotedByMemberId = useMemo(
+    () =>
+      new Map(
+        relationships
+          .filter((r) => r.sourceFamilyMemberId)
+          .map((r) => [r.sourceFamilyMemberId as string, r.counterpart.id]),
+      ),
+    [relationships],
+  );
 
   const existingRoles = useMemo(() => {
     const set = new Set<"primary" | "spouse">();
@@ -294,6 +318,11 @@ export function ContactsTab({ household }: { household: Household }) {
   function openExternalCreate() {
     nextInstance();
     setExternalDialog({});
+  }
+
+  function openPromote(initial: CrmPromoteFamilyMemberInitial) {
+    nextInstance();
+    setPromoteDialog(initial);
   }
 
   function openExternalEdit(contact: Contact) {
@@ -405,33 +434,66 @@ export function ContactsTab({ household }: { household: Household }) {
 
         {hasFamilyRows && (
           <ul className="space-y-2.5">
-            {sections.family.map(({ member, contact }) => (
-              <ContactCard
-                key={member.id}
-                badge={
-                  <span className={relBadgeClass}>{relationshipLabel(member.relationship)}</span>
-                }
-                name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
-                preferredName={contact?.preferredName}
-                rows={rowsOf(
-                  { label: "DOB", value: dobRow(member.dateOfBirth) },
-                  { label: "Email", value: contact?.email ?? null },
-                  {
-                    label: "Phone",
-                    value: contact ? phoneLine(contact) : null,
-                  },
-                  { label: "Notes", value: contact?.notes ?? null },
-                )}
-                onEdit={() => openFamilyEdit({ member, contact })}
-                onDelete={() => deleteFamilyMember(member)}
-                deleting={busy === member.id}
-              />
-            ))}
+            {sections.family.map(({ member, contact }) => {
+              const promotedHouseholdId = promotedByMemberId.get(member.id);
+              return (
+                <ContactCard
+                  key={member.id}
+                  badge={
+                    <span className={chipClass}>{relationshipLabel(member.relationship)}</span>
+                  }
+                  name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
+                  preferredName={contact?.preferredName}
+                  rows={rowsOf(
+                    { label: "DOB", value: dobRow(member.dateOfBirth) },
+                    { label: "Email", value: contact?.email ?? null },
+                    {
+                      label: "Phone",
+                      value: contact ? phoneLine(contact) : null,
+                    },
+                    { label: "Notes", value: contact?.notes ?? null },
+                  )}
+                  onEdit={() => openFamilyEdit({ member, contact })}
+                  onDelete={() => deleteFamilyMember(member)}
+                  deleting={busy === member.id}
+                  menu={
+                    <OverflowMenu
+                      triggerLabel="More actions"
+                      minWidthClassName="min-w-[170px]"
+                      items={
+                        promotedHouseholdId
+                          ? [
+                              {
+                                label: "View household",
+                                href: `/crm/households/${promotedHouseholdId}`,
+                              },
+                            ]
+                          : [
+                              {
+                                label: "Promote to household…",
+                                onClick: () =>
+                                  openPromote({
+                                    sourceFamilyMemberId: member.id,
+                                    firstName: member.firstName,
+                                    lastName: member.lastName ?? "",
+                                    dateOfBirth: member.dateOfBirth,
+                                    email: contact?.email ?? null,
+                                    phone: contact?.phone ?? null,
+                                    mobile: contact?.mobile ?? null,
+                                  }),
+                              },
+                            ]
+                      }
+                    />
+                  }
+                />
+              );
+            })}
 
             {sections.unlinkedFamily.map((c) => (
               <ContactCard
                 key={c.id}
-                badge={<span className={relBadgeClass}>Dependent</span>}
+                badge={<span className={chipClass}>Dependent</span>}
                 name={`${c.firstName} ${c.lastName}`.trim()}
                 preferredName={c.preferredName}
                 rows={rowsOf(
@@ -443,48 +505,75 @@ export function ContactsTab({ household }: { household: Household }) {
                 onEdit={() => openUnlinkedEdit(c)}
                 onDelete={() => deleteContact(c)}
                 deleting={busy === c.id}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="contacts-external-heading" className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="contacts-external-heading" className={sectionHeadingClass}>
-            External contacts ({sections.external.length})
-          </h2>
-          <button type="button" onClick={openExternalCreate} className={addGhostClass}>
-            Add external contact
-          </button>
-        </div>
-
-        {sections.external.length === 0 ? (
-          <EmptyState>No external contacts yet.</EmptyState>
-        ) : (
-          <ul className="space-y-2.5">
-            {sections.external.map((c) => (
-              <ContactCard
-                key={c.id}
-                badge={
-                  c.relationshipLabel ? (
-                    <span className={relBadgeClass}>{c.relationshipLabel}</span>
-                  ) : null
+                menu={
+                  <OverflowMenu
+                    triggerLabel="More actions"
+                    minWidthClassName="min-w-[170px]"
+                    items={[
+                      {
+                        label: "Promote to household…",
+                        onClick: () =>
+                          openPromote({
+                            firstName: c.firstName,
+                            lastName: c.lastName,
+                            dateOfBirth: c.dateOfBirth,
+                            email: c.email,
+                            phone: c.phone,
+                            mobile: c.mobile,
+                          }),
+                      },
+                    ]}
+                  />
                 }
-                name={`${c.firstName} ${c.lastName}`.trim()}
-                rows={rowsOf(
-                  { label: "Email", value: c.email },
-                  { label: "Phone", value: phoneLine(c) },
-                  { label: "Notes", value: c.notes },
-                )}
-                onEdit={() => openExternalEdit(c)}
-                onDelete={() => deleteContact(c)}
-                deleting={busy === c.id}
               />
             ))}
           </ul>
         )}
       </section>
+
+      <div className="space-y-6">
+        <section aria-labelledby="contacts-external-heading" className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="contacts-external-heading" className={sectionHeadingClass}>
+              External contacts ({sections.external.length})
+            </h2>
+            <button type="button" onClick={openExternalCreate} className={addGhostClass}>
+              Add external contact
+            </button>
+          </div>
+
+          {sections.external.length === 0 ? (
+            <EmptyState>No external contacts yet.</EmptyState>
+          ) : (
+            <ul className="space-y-2.5">
+              {sections.external.map((c) => (
+                <ContactCard
+                  key={c.id}
+                  badge={
+                    c.relationshipLabel ? (
+                      <span className={chipClass}>{c.relationshipLabel}</span>
+                    ) : null
+                  }
+                  name={`${c.firstName} ${c.lastName}`.trim()}
+                  rows={rowsOf(
+                    { label: "Email", value: c.email },
+                    { label: "Phone", value: phoneLine(c) },
+                    { label: "Notes", value: c.notes },
+                  )}
+                  onEdit={() => openExternalEdit(c)}
+                  onDelete={() => deleteContact(c)}
+                  deleting={busy === c.id}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <CrmHouseholdRelationshipsSection
+          householdId={household.id}
+          relationships={relationships}
+        />
+      </div>
 
       <CrmContactForm
         key={`contact-${dialogInstance}`}
@@ -522,6 +611,15 @@ export function ContactsTab({ household }: { household: Household }) {
         mode={externalDialog?.initialValues ? "edit" : "create"}
         initialValues={externalDialog?.initialValues}
         onSaved={() => router.refresh()}
+      />
+
+      <CrmPromoteFamilyMemberDialog
+        key={`promote-${dialogInstance}`}
+        sourceHouseholdId={household.id}
+        defaultState={household.state}
+        initial={promoteDialog ?? EMPTY_PROMOTE_INITIAL}
+        open={promoteDialog !== null}
+        onClose={() => setPromoteDialog(null)}
       />
     </div>
   );

@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { CRM_HOUSEHOLD_RELATIONSHIP_TYPES } from "./relationship-labels";
 
 export const crmHouseholdStatusSchema = z.enum(["prospect", "active", "inactive", "archived"]);
 export const crmContactRoleSchema = z.enum(["primary", "spouse", "dependent", "other"]);
 export const crmActivityKindSchema = z.enum([
   "note", "call", "meeting", "email", "status_change",
   "contact_change", "account_change", "document_uploaded", "planning_link",
+  "relationship_change",
 ]);
 
 // Minimal contact captured inline when a household is first created
@@ -118,3 +120,24 @@ export const updateCrmNoteSchema = z.object({
 
 export type CreateCrmNoteInput = z.infer<typeof createCrmNoteSchema>;
 export type UpdateCrmNoteInput = z.infer<typeof updateCrmNoteSchema>;
+
+export const crmHouseholdRelationshipTypeSchema = z.enum(CRM_HOUSEHOLD_RELATIONSHIP_TYPES);
+
+export const createHouseholdRelationshipSchema = z.object({
+  counterpartHouseholdId: z.uuid(),
+  type: crmHouseholdRelationshipTypeSchema,
+  viewerSide: z.enum(["from", "to"]),
+  note: z.string().trim().max(200).optional(),
+});
+
+export const promoteFamilyMemberSchema = z.object({
+  sourceFamilyMemberId: z.uuid().optional(),
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  dateOfBirth: z.iso.date().optional(),
+  email: z.email().optional().or(z.literal("")),
+  phone: z.string().max(40).optional(),
+  mobile: z.string().max(40).optional(),
+  state: usStateSchema,
+  status: crmHouseholdStatusSchema.optional(),
+});

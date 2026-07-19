@@ -526,6 +526,16 @@ export const crmContactRoleEnum = pgEnum("crm_contact_role", [
   "other",
 ]);
 
+export const crmHouseholdRelationshipTypeEnum = pgEnum("crm_household_relationship_type", [
+  "child",
+  "sibling",
+  "spouse",
+  "ex_spouse",
+  "business_partner",
+  "referral_source",
+  "other",
+]);
+
 export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
   "note",
   "call",
@@ -536,6 +546,7 @@ export const crmActivityKindEnum = pgEnum("crm_activity_kind", [
   "account_change",
   "document_uploaded",
   "planning_link",
+  "relationship_change",
 ]);
 
 export const crmDocumentSourceKindEnum = pgEnum("crm_document_source_kind", [
@@ -619,6 +630,50 @@ export const crmHouseholdContacts = pgTable("crm_household_contacts", {
     .on(t.familyMemberId)
     .where(sql`family_member_id is not null`),
 ]);
+
+// One canonical row per household↔household link. Directional semantics:
+// `child` ⇒ from is the child of to; `referral_source` ⇒ from referred to.
+// Each page renders its own side via src/lib/crm/relationship-labels.ts —
+// there is never a mirrored reverse row.
+export const crmHouseholdRelationships = pgTable(
+  "crm_household_relationships",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    fromHouseholdId: uuid("from_household_id")
+      .notNull()
+      .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+    toHouseholdId: uuid("to_household_id")
+      .notNull()
+      .references(() => crmHouseholds.id, { onDelete: "cascade" }),
+    relationshipType: crmHouseholdRelationshipTypeEnum("relationship_type").notNull(),
+    // Set when the link was created by promoting a planning family member.
+    // SET NULL (not CASCADE): deleting the child from the parents' planning
+    // data must not destroy a household link that now stands on its own.
+    sourceFamilyMemberId: uuid("source_family_member_id")
+      .references(() => familyMembers.id, { onDelete: "set null" }),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("crm_household_rel_firm_idx").on(t.firmId),
+    index("crm_household_rel_from_idx").on(t.fromHouseholdId),
+    index("crm_household_rel_to_idx").on(t.toHouseholdId),
+    check("crm_household_rel_not_self", sql`${t.fromHouseholdId} <> ${t.toHouseholdId}`),
+    // One relationship per household pair, direction-agnostic — blocks the
+    // reversed duplicate a plain ordered-pair unique would miss.
+    uniqueIndex("crm_household_rel_pair_uniq").on(
+      sql`LEAST(${t.fromHouseholdId}, ${t.toHouseholdId})`,
+      sql`GREATEST(${t.fromHouseholdId}, ${t.toHouseholdId})`,
+    ),
+    // One promotion per family member — DB backstop for double-promote races.
+    uniqueIndex("crm_household_rel_source_fm_uniq")
+      .on(t.sourceFamilyMemberId)
+      .where(sql`${t.sourceFamilyMemberId} IS NOT NULL`),
+  ],
+);
 
 export const crmHouseholdAccounts = pgTable("crm_household_accounts", {
   id: uuid("id").defaultRandom().primaryKey(),

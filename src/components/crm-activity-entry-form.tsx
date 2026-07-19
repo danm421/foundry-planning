@@ -19,7 +19,8 @@ export type CrmActivityKind =
   | "contact_change"
   | "account_change"
   | "document_uploaded"
-  | "planning_link";
+  | "planning_link"
+  | "relationship_change";
 
 const KIND_OPTIONS: { value: CrmActivityKind; label: string }[] = [
   { value: "note", label: "Note" },

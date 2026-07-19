@@ -12,7 +12,8 @@ type ActivityKind =
   | "contact_change"
   | "account_change"
   | "document_uploaded"
-  | "planning_link";
+  | "planning_link"
+  | "relationship_change";
 
 export type ActivityRow = {
   id: string;
@@ -35,6 +36,7 @@ const KIND_LABELS: Record<ActivityKind, string> = {
   account_change: "Account",
   document_uploaded: "Document",
   planning_link: "Planning",
+  relationship_change: "Related household",
 };
 
 const PAGE_SIZE = 50;
