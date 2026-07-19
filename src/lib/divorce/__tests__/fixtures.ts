@@ -24,8 +24,12 @@ import {
   familyMembers,
   accounts,
   accountOwners,
+  accountHoldings,
+  lifeInsurancePolicies,
   entities,
   entityOwners,
+  trustSplitInterestDetails,
+  externalBeneficiaries,
   incomes,
   expenses,
   liabilities,
@@ -64,6 +68,16 @@ export interface MarriedFixture {
   // A gift with grantor='spouse' and recipient the child — populated only when
   // `withSpouseGift` is set (Task 10's grantor-enum follow). "" otherwise.
   spouseGiftId: string;
+  // A holdings-backed splittable taxable account (deriveFromHoldings on, ≥1
+  // account_holdings row) — populated only when `withHoldingsAccount` is set
+  // (Task 11 Fix 1: split must stop holdings-driving). "" otherwise.
+  holdingsAccountId: string;
+  // A charitable-remainder trust (trustSubType='crt') with a
+  // trust_split_interest_details row (single-life term, measuring life = the
+  // child, charity remainder) + a trust-target remainder designation — populated
+  // only when `withCharitableTrust` is set (Task 11 Fixes 2 & 4). "" otherwise.
+  charitableTrustId: string;
+  charityId: string;
   ids: {
     primaryBrokerage: string; // taxable, 100% primary, value 100k basis 60k
     jointBrokerage: string; // taxable, 50/50 primary+spouse, value 600k basis 200k
@@ -99,6 +113,17 @@ export interface CreateMarriedFixtureOverrides {
   // Add a gift row with grantor='spouse', recipient = the child (populates
   // `spouseGiftId`). Exercises Task 10's grantor-enum follow.
   withSpouseGift?: boolean;
+  // Add a holdings-backed splittable taxable account (populates
+  // `holdingsAccountId`). Exercises Task 11 Fix 1 (split stops holdings-driving).
+  withHoldingsAccount?: boolean;
+  // Add a CRT + trust_split_interest_details + a charity + a remainder
+  // designation (populates `charitableTrustId`/`charityId`). Exercises Task 11
+  // Fixes 2 (measuring-life remap/throw) & 4 (move re-points split-interest).
+  withCharitableTrust?: boolean;
+  // Attach a life_insurance_policies extension to the trust's owned account
+  // (`ids.trustAccount`). Exercises Task 11 Fix 3 (duplicate warns the 1:1
+  // ride-along wasn't copied). Requires the married graph (no-op for noSpouse).
+  withTrustLifePolicy?: boolean;
 }
 
 const EMPTY_IDS: MarriedFixture["ids"] = {
@@ -293,6 +318,9 @@ export async function createMarriedFixture(
         straddleTransferId: "",
         activeImportId: "",
         spouseGiftId: "",
+        holdingsAccountId: "",
+        charitableTrustId: "",
+        charityId: "",
         ids: {
           ...EMPTY_IDS,
           primaryBrokerage: primaryBrokerage.id,
@@ -546,6 +574,104 @@ export async function createMarriedFixture(
       activeImportId = imp.id;
     }
 
+    // ── Holdings-backed splittable account (Fix 1). taxable, 100% primary,
+    // value 100k basis 40k, deriveFromHoldings on (default) + one manual holding
+    // whose marketValue matches — so the projection loader would derive value
+    // from holdings until the split forces deriveFromHoldings off. ──
+    let holdingsAccountId = "";
+    if (overrides.withHoldingsAccount) {
+      const [managed] = await tx
+        .insert(accounts)
+        .values({
+          ...acctBase,
+          name: "Managed Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: "100000.00",
+          basis: "40000.00",
+        })
+        .returning({ id: accounts.id });
+      await tx.insert(accountOwners).values({
+        accountId: managed.id,
+        familyMemberId: primaryFm.id,
+        percent: "1.0000",
+      });
+      await tx.insert(accountHoldings).values({
+        accountId: managed.id,
+        displayTicker: "VTI",
+        displayName: "Total Market ETF",
+        shares: "100.000000",
+        price: "1000.0000",
+        costBasis: "40000.00",
+        marketValue: "100000.00",
+        source: "manual",
+      });
+      holdingsAccountId = managed.id;
+    }
+
+    // ── Charitable-remainder trust with split-interest details (Fixes 2 & 4).
+    // No entity_owners → side derives "joint" → default disposition "duplicate".
+    // Single-life term measured on the CHILD (default duplicate → remaps to S);
+    // charity remainder via external_beneficiaries + a remainder designation. ──
+    let charitableTrustId = "";
+    let charityId = "";
+    if (overrides.withCharitableTrust) {
+      const [crt] = await tx
+        .insert(entities)
+        .values({
+          clientId: client.id,
+          name: "Charitable Remainder Trust",
+          entityType: "trust",
+          trustSubType: "crt",
+          isIrrevocable: true,
+          isGrantor: true,
+          grantor: "client",
+          value: "0.00",
+          basis: "0.00",
+        })
+        .returning({ id: entities.id });
+      const [charity] = await tx
+        .insert(externalBeneficiaries)
+        .values({ clientId: client.id, name: "Test Charity", kind: "charity", charityType: "public" })
+        .returning({ id: externalBeneficiaries.id });
+      await tx.insert(trustSplitInterestDetails).values({
+        entityId: crt.id,
+        clientId: client.id,
+        inceptionYear: currentYear,
+        inceptionValue: "500000.00",
+        payoutType: "annuity",
+        payoutAmount: "25000.00",
+        irc7520Rate: "0.0400",
+        termType: "single_life",
+        measuringLife1Id: childFm.id,
+        charityId: charity.id,
+        originalIncomeInterest: "300000.00",
+        originalRemainderInterest: "200000.00",
+      });
+      await tx.insert(beneficiaryDesignations).values({
+        clientId: client.id,
+        targetKind: "trust",
+        entityId: crt.id,
+        tier: "remainder",
+        externalBeneficiaryId: charity.id,
+        percentage: "100.00",
+        sortOrder: 0,
+      });
+      charitableTrustId = crt.id;
+      charityId = charity.id;
+    }
+
+    // ── Life-insurance extension on the trust's owned account (Fix 3). The FK
+    // has no category check, so a policy row on the taxable trust account is a
+    // cheap way to exercise the "ride-along not copied" warning on duplicate. ──
+    if (overrides.withTrustLifePolicy) {
+      await tx.insert(lifeInsurancePolicies).values({
+        accountId: trustAccount.id,
+        policyType: "whole",
+        faceValue: "500000.00",
+      });
+    }
+
     return {
       firmId: TEST_FIRM_ID,
       householdId: hh.id,
@@ -558,6 +684,9 @@ export async function createMarriedFixture(
       straddleTransferId,
       activeImportId,
       spouseGiftId,
+      holdingsAccountId,
+      charitableTrustId,
+      charityId,
       ids: {
         primaryBrokerage: primaryBrokerage.id,
         jointBrokerage: jointBrokerage.id,

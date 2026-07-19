@@ -30,6 +30,9 @@ import {
   scenarioSnapshots,
   accounts,
   accountOwners,
+  accountHoldings,
+  lifeInsurancePolicies,
+  stockOptionAccounts,
   savingsRules,
   withdrawalStrategies,
   accountFlowOverrides,
@@ -86,7 +89,7 @@ import {
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export class DivorceCommitError extends Error {
-  code: "blocked" | "no_draft" | "concurrent";
+  code: "blocked" | "no_draft" | "concurrent" | "unresolvable_measuring_life";
   blockers?: CommitPreview["blockers"];
   constructor(
     code: DivorceCommitError["code"],
@@ -320,8 +323,55 @@ async function findOrCreateRevocableTrust(
   return created.id;
 }
 
-/** Re-point + remap a moved account's beneficiary designations; drop the ones
- *  that named someone who can't reach S. */
+/** Re-point ONE moved beneficiary designation onto S, remapping its named
+ *  beneficiary (spouse→client, fm remap, external via ensureExternalBeneficiary,
+ *  entity ref via entityRemap); drop + warn when it named someone who can't reach
+ *  S. Shared by the moved-account and moved-entity (trust) designation paths so
+ *  the two can never diverge. `label` names the container for the warning. */
+async function moveDesignationRow(
+  tx: Tx,
+  ctx: CommitCtx,
+  d: typeof beneficiaryDesignations.$inferSelect,
+  label: string,
+): Promise<void> {
+  let familyMemberId = d.familyMemberId;
+  let householdRole = d.householdRole;
+  let externalBeneficiaryId = d.externalBeneficiaryId;
+  let drop = false;
+
+  if (householdRole) {
+    // On S the mover (ex-spouse) is the client; a row naming the primary strands.
+    if (householdRole === "spouse") householdRole = "client";
+    else drop = true;
+  } else if (familyMemberId) {
+    const mapped = ctx.fmRemap.get(familyMemberId);
+    if (mapped) familyMemberId = mapped;
+    else drop = true;
+  } else if (externalBeneficiaryId) {
+    externalBeneficiaryId = await ensureExternalBeneficiary(tx, ctx, externalBeneficiaryId);
+  }
+
+  if (drop) {
+    await tx.delete(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, d.id));
+    ctx.warnings.push(
+      `Beneficiary designation on "${label}" dropped — it named someone who stays with the other household.`,
+    );
+    return;
+  }
+  await tx
+    .update(beneficiaryDesignations)
+    .set({
+      clientId: ctx.spouseClientId,
+      familyMemberId,
+      householdRole,
+      externalBeneficiaryId,
+      // entity_id_ref names another entity; entityRemap re-points it to its S copy.
+      entityIdRef: d.entityIdRef ? ctx.entityRemap.get(d.entityIdRef) ?? d.entityIdRef : null,
+    })
+    .where(eq(beneficiaryDesignations.id, d.id));
+}
+
+/** Re-point + remap a moved account's beneficiary designations. */
 async function moveAccountDesignations(
   tx: Tx,
   ctx: CommitCtx,
@@ -331,43 +381,7 @@ async function moveAccountDesignations(
     .select()
     .from(beneficiaryDesignations)
     .where(eq(beneficiaryDesignations.accountId, obj.id));
-  for (const d of rows) {
-    let familyMemberId = d.familyMemberId;
-    let householdRole = d.householdRole;
-    let externalBeneficiaryId = d.externalBeneficiaryId;
-    let drop = false;
-
-    if (householdRole) {
-      // On S the mover (ex-spouse) is the client; a row naming the primary strands.
-      if (householdRole === "spouse") householdRole = "client";
-      else drop = true;
-    } else if (familyMemberId) {
-      const mapped = ctx.fmRemap.get(familyMemberId);
-      if (mapped) familyMemberId = mapped;
-      else drop = true;
-    } else if (externalBeneficiaryId) {
-      externalBeneficiaryId = await ensureExternalBeneficiary(tx, ctx, externalBeneficiaryId);
-    }
-
-    if (drop) {
-      await tx.delete(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, d.id));
-      ctx.warnings.push(
-        `Beneficiary designation on "${obj.label}" dropped — it named someone who stays with the other household.`,
-      );
-      continue;
-    }
-    await tx
-      .update(beneficiaryDesignations)
-      .set({
-        clientId: ctx.spouseClientId,
-        familyMemberId,
-        householdRole,
-        externalBeneficiaryId,
-        // entity_id_ref names another entity; Task 11's entityRemap re-points it.
-        entityIdRef: d.entityIdRef ? ctx.entityRemap.get(d.entityIdRef) ?? d.entityIdRef : null,
-      })
-      .where(eq(beneficiaryDesignations.id, d.id));
-  }
+  for (const d of rows) await moveDesignationRow(tx, ctx, d, obj.label);
 }
 
 /** Move an account + its ride-alongs onto S (Rulebook account `spouse` row). */
@@ -864,7 +878,9 @@ function splitAmounts(
  * tag, self-referential account FKs (parent / 529-rollover), and Plaid/Orion
  * linkage (or the S copy would masquerade as the same synced/linked account).
  * Firm-scoped model/ticker portfolio ids are safe to carry (shared across a
- * firm's clients).
+ * firm's clients). `deriveFromHoldings` is forced false: the copy carries no
+ * account_holdings rows, so the projection loader (resolve-entity) MUST honor the
+ * stored value/basis rather than a (missing/stale) holdings rollup.
  */
 function accountCopyValues(
   p: typeof accounts.$inferSelect,
@@ -882,6 +898,7 @@ function accountCopyValues(
     rothValue: over.rothValue,
     priorYearEndValue: null,
     isDefaultChecking: false,
+    deriveFromHoldings: false,
     revocableTrustId: null,
     parentAccountId: null,
     rothRolloverAccountId: null,
@@ -915,10 +932,26 @@ async function splitAccounts(tx: Tx, ctx: CommitCtx): Promise<void> {
       alloc.splitPercentToSpouse,
     );
 
+    // If the account was holdings-driven, the stored dollar split is now
+    // authoritative (holdings can't be split), so BOTH shares stop deriving from
+    // holdings — else the projection loader would re-inflate P to the full
+    // pre-split value AND add the S share (~160% of the household). Holdings stay
+    // attached to P but no longer drive value; warn so the advisor rebuilds them.
+    const [hasHolding] = await tx
+      .select({ id: accountHoldings.id })
+      .from(accountHoldings)
+      .where(eq(accountHoldings.accountId, obj.id))
+      .limit(1);
+    if (hasHolding) {
+      ctx.warnings.push(
+        `"${acct.name}" was split by stored value — its holdings stay on the original household but no longer drive either share's balance. Review/rebuild the holdings on both shares.`,
+      );
+    }
+
     // P keeps the original row (and its links), reduced to the primary share.
     await tx
       .update(accounts)
-      .set({ ...shares.primary, updatedAt: new Date() })
+      .set({ ...shares.primary, deriveFromHoldings: false, updatedAt: new Date() })
       .where(eq(accounts.id, obj.id));
     await tx.delete(accountOwners).where(eq(accountOwners.accountId, obj.id));
     await tx.insert(accountOwners).values({
@@ -984,31 +1017,76 @@ async function duplicateEntityOwners(
   }
 }
 
-/** trust_split_interest_details (CRT/CLT) copied onto the S entity: charity via
- *  ensureExternalBeneficiary; measuring-life family-member FKs remapped, or
- *  nulled when the person can't reach S. */
+// Term types whose CHECK constraints require a measuring life (schema.ts
+// split_interest_measuring_life_required / _joint_life_requires_two). For these,
+// a measuring life that can't be carried onto S can't just be nulled — it would
+// violate the CHECK and abort the whole commit with an opaque DB error. So we
+// throw an actionable DivorceCommitError instead (same atomic rollback, clear cause).
+const MEASURING_LIFE1_TERM_TYPES = new Set(["single_life", "joint_life", "shorter_of_years_or_life"]);
+
+/** Remap one measuring-life family-member FK onto S. Remap when possible; null
+ *  only where the term type legally allows it; otherwise throw. */
+function remapMeasuringLife(
+  ctx: CommitCtx,
+  id: string | null,
+  required: boolean,
+  label: string,
+): string | null {
+  if (id) {
+    const mapped = ctx.fmRemap.get(id);
+    if (mapped) return mapped;
+  }
+  if (required) {
+    throw new DivorceCommitError(
+      "unresolvable_measuring_life",
+      `The charitable trust "${label}" measures its term on a person who stays with the other household, so it can't be carried onto the new file. Reassign that measuring life (or the trust) before committing this divorce plan.`,
+    );
+  }
+  return null;
+}
+
+/** The S-side charity + measuring-life FKs for a split-interest trust, shared by
+ *  the duplicate (insert) and whole-to-spouse move (update) paths so the remap
+ *  semantics — including the measuring-life throw rule — can never diverge. */
+async function resolveSplitInterestRefs(
+  tx: Tx,
+  ctx: CommitCtx,
+  d: typeof trustSplitInterestDetails.$inferSelect,
+  label: string,
+): Promise<{ charityId: string; measuringLife1Id: string | null; measuringLife2Id: string | null }> {
+  return {
+    charityId: await ensureExternalBeneficiary(tx, ctx, d.charityId),
+    measuringLife1Id: remapMeasuringLife(
+      ctx,
+      d.measuringLife1Id,
+      MEASURING_LIFE1_TERM_TYPES.has(d.termType),
+      label,
+    ),
+    measuringLife2Id: remapMeasuringLife(ctx, d.measuringLife2Id, d.termType === "joint_life", label),
+  };
+}
+
+/** trust_split_interest_details (CRT/CLT) copied onto the S entity. */
 async function duplicateSplitInterest(
   tx: Tx,
   ctx: CommitCtx,
-  pEntityId: string,
+  obj: DivisibleObject,
   sEntityId: string,
 ): Promise<void> {
   const [d] = await tx
     .select()
     .from(trustSplitInterestDetails)
-    .where(eq(trustSplitInterestDetails.entityId, pEntityId))
+    .where(eq(trustSplitInterestDetails.entityId, obj.id))
     .limit(1);
   if (!d) return;
-  const charityId = await ensureExternalBeneficiary(tx, ctx, d.charityId);
+  const refs = await resolveSplitInterestRefs(tx, ctx, d, obj.label);
   await tx.insert(trustSplitInterestDetails).values({
     ...d,
     createdAt: undefined,
     updatedAt: undefined,
     entityId: sEntityId,
     clientId: ctx.spouseClientId,
-    charityId,
-    measuringLife1Id: d.measuringLife1Id ? ctx.fmRemap.get(d.measuringLife1Id) ?? null : null,
-    measuringLife2Id: d.measuringLife2Id ? ctx.fmRemap.get(d.measuringLife2Id) ?? null : null,
+    ...refs,
   });
 }
 
@@ -1035,8 +1113,29 @@ function baseFlowOverrideCells(ctx: CommitCtx, rows: FlowOverrideCell[]): FlowOv
     }));
 }
 
+/** True when the account carries a 1:1 life-insurance or stock-option extension
+ *  row. Those keys off accounts.id, so a fresh-id copy does NOT inherit them. */
+async function hasPolicyRideAlong(tx: Tx, accountId: string): Promise<boolean> {
+  const [li] = await tx
+    .select({ id: lifeInsurancePolicies.accountId })
+    .from(lifeInsurancePolicies)
+    .where(eq(lifeInsurancePolicies.accountId, accountId))
+    .limit(1);
+  if (li) return true;
+  const [so] = await tx
+    .select({ id: stockOptionAccounts.accountId })
+    .from(stockOptionAccounts)
+    .where(eq(stockOptionAccounts.accountId, accountId))
+    .limit(1);
+  return !!so;
+}
+
 /** The entity's owned accounts, copied to S: a fresh account row (values equal
- *  to P's) owned 100% by the S entity, plus each account's base flow overrides. */
+ *  to P's) owned 100% by the S entity, plus each account's base flow overrides.
+ *  A copied account gets a NEW id, so its 1:1 life-insurance / stock-option
+ *  extension rows do NOT ride along (unlike the move path, which keeps the id).
+ *  Those carry product-specific structure (insured-person, grants, vesting) whose
+ *  re-attribution is a product decision, so we warn rather than invent semantics. */
 async function duplicateEntityAccounts(
   tx: Tx,
   ctx: CommitCtx,
@@ -1063,6 +1162,11 @@ async function duplicateEntityAccounts(
       entityId: sEntityId,
       percent: "1.0000",
     });
+    if (await hasPolicyRideAlong(tx, childId)) {
+      ctx.warnings.push(
+        `"${child.name}" in "${obj.label}" has a life-insurance or stock-option policy that was NOT copied to the new household — rebuild it there if the duplicated trust should carry it.`,
+      );
+    }
     const foRows = await tx
       .select()
       .from(accountFlowOverrides)
@@ -1208,7 +1312,7 @@ async function duplicateEntities(tx: Tx, ctx: CommitCtx): Promise<void> {
     const sEntityId = ctx.entityRemap.get(obj.id);
     if (!sEntityId) continue;
     await duplicateEntityOwners(tx, ctx, obj, sEntityId);
-    await duplicateSplitInterest(tx, ctx, obj.id, sEntityId);
+    await duplicateSplitInterest(tx, ctx, obj, sEntityId);
     const efoRows = await tx
       .select()
       .from(entityFlowOverrides)
@@ -1225,12 +1329,55 @@ async function duplicateEntities(tx: Tx, ctx: CommitCtx): Promise<void> {
   }
 }
 
+/** Re-point a moved trust's split-interest details onto S (clientId → S client),
+ *  remapping charity + measuring-life FKs with the SAME semantics as the
+ *  duplicate path (including the measuring-life throw rule). The entity id is
+ *  unchanged, so the row stays keyed on it. */
+async function moveSplitInterest(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+): Promise<void> {
+  const [d] = await tx
+    .select()
+    .from(trustSplitInterestDetails)
+    .where(eq(trustSplitInterestDetails.entityId, obj.id))
+    .limit(1);
+  if (!d) return;
+  const refs = await resolveSplitInterestRefs(tx, ctx, d, obj.label);
+  await tx
+    .update(trustSplitInterestDetails)
+    .set({ clientId: ctx.spouseClientId, ...refs, updatedAt: new Date() })
+    .where(eq(trustSplitInterestDetails.entityId, obj.id));
+}
+
+/** Re-point a moved trust's own (targetKind='trust') beneficiary designations
+ *  onto S, reusing the shared per-row mover (drop+warn on unresolvable). The
+ *  entity id is unchanged, so each row stays attached to the same trust. */
+async function moveTrustDesignations(
+  tx: Tx,
+  ctx: CommitCtx,
+  obj: DivisibleObject,
+): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(beneficiaryDesignations)
+    .where(
+      and(
+        eq(beneficiaryDesignations.targetKind, "trust"),
+        eq(beneficiaryDesignations.entityId, obj.id),
+      ),
+    );
+  for (const d of rows) await moveDesignationRow(tx, ctx, d, obj.label);
+}
+
 /**
  * Move an entity whole to S (Rulebook entity `spouse` row): re-point the entity
  * in place (grantor flip per the Rulebook), collapse its owners to the mover,
  * and follow its owned accounts (+ scenario-scoped ride-alongs), ownerEntityId
- * incomes/expenses, and flow overrides onto S's base. The entity id is unchanged,
- * so its accounts' entity-ownership rows ride along without a remap.
+ * incomes/expenses, flow overrides, split-interest details, and its own
+ * trust-target designations onto S's base. The entity id is unchanged, so its
+ * accounts' entity-ownership rows ride along without a remap.
  */
 async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promise<void> {
   const [ent] = await tx.select().from(entities).where(eq(entities.id, obj.id)).limit(1);
@@ -1300,7 +1447,13 @@ async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Pr
       .where(eq(withdrawalStrategies.accountId, childId));
   }
 
-  // ownerEntityId incomes/expenses follow (base scenario → base(S)).
+  // ownerEntityId incomes/expenses follow (base scenario → base(S)). Their
+  // cross-side cashAccountId/sourcePolicyAccountId are intentionally NOT nulled
+  // here (unlike the household income/expense move arms): an entity's cash/policy
+  // reference is normally one of its OWN accounts, which are moving alongside it
+  // in the loop above, so the reference stays valid on S. A reference to an
+  // account NOT owned by this entity is an unusual cross-container link left
+  // as-is (the engine falls back to entity default checking if it dangles).
   await tx
     .update(incomes)
     .set({ clientId: ctx.spouseClientId, scenarioId: ctx.spouseScenarioId, updatedAt: new Date() })
@@ -1320,6 +1473,12 @@ async function moveEntityWhole(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Pr
         eq(entityFlowOverrides.scenarioId, ctx.baseScenarioId),
       ),
     );
+
+  // Split-interest details + the trust's own beneficiary designations re-point to
+  // S with the same charity/measuring-life/beneficiary remap as the duplicate
+  // path — else a moved CRT would silently strand its remainder structure on P.
+  await moveSplitInterest(tx, ctx, obj);
+  await moveTrustDesignations(tx, ctx, obj);
 }
 
 /**

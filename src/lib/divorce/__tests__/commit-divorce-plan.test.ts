@@ -30,6 +30,8 @@ import {
   accountOwners,
   entities,
   entityOwners,
+  trustSplitInterestDetails,
+  externalBeneficiaries,
   incomes,
   liabilities,
   liabilityOwners,
@@ -497,6 +499,223 @@ d("commitDivorcePlan", () => {
       const acctOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.trustAccount));
       expect(acctOwners).toHaveLength(1);
       expect(acctOwners[0].entityId).toBe(f.ids.trust);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("splitting a holdings-driven account stops BOTH shares deriving from holdings, conserves stored value, and warns (Fix 1)", async () => {
+    const f = await createMarriedFixture({ withHoldingsAccount: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.holdingsAccountId, disposition: "split", splitPercentToSpouse: 60 },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // P keeps the original id, 40% share, and STOPS deriving from holdings —
+      // otherwise resolve-entity would re-inflate it to the full 100k.
+      const [pAcct] = await db.select().from(accounts).where(eq(accounts.id, f.holdingsAccountId));
+      expect(pAcct.value).toBe("40000.00");
+      expect(pAcct.basis).toBe("16000.00");
+      expect(pAcct.deriveFromHoldings).toBe(false);
+
+      // S share also holdings-off (it has no holdings rows), stored value governs.
+      const [sAcct] = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, result.spouseClientId), eq(accounts.name, "Managed Brokerage")));
+      expect(sAcct.value).toBe("60000.00");
+      expect(sAcct.basis).toBe("24000.00");
+      expect(sAcct.deriveFromHoldings).toBe(false);
+
+      expect(Number(pAcct.value) + Number(sAcct.value)).toBe(100000);
+      expect(result.warnings.some((w) => w.includes("Managed Brokerage") && w.includes("holdings"))).toBe(true);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("duplicating a CRT copies its split-interest details: charity via ensureExternalBeneficiary, measuring life remapped to S (Fix 2)", async () => {
+    const f = await createMarriedFixture({ withCharitableTrust: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.charitableTrustId, disposition: "duplicate", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      const sCrts = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.clientId, result.spouseClientId), eq(entities.trustSubType, "crt")));
+      expect(sCrts).toHaveLength(1);
+
+      const [sDetails] = await db
+        .select()
+        .from(trustSplitInterestDetails)
+        .where(eq(trustSplitInterestDetails.entityId, sCrts[0].id));
+      expect(sDetails.clientId).toBe(result.spouseClientId);
+
+      // Measuring life (the child) remapped to S's copy of the child.
+      const [sChild] = await db
+        .select()
+        .from(familyMembers)
+        .where(and(eq(familyMembers.clientId, result.spouseClientId), eq(familyMembers.role, "child")));
+      expect(sDetails.measuringLife1Id).toBe(sChild.id);
+
+      // Charity copied onto S via ensureExternalBeneficiary (one new row, shared
+      // by the split-interest FK and the remainder designation's memoized copy).
+      const sCharities = await db
+        .select()
+        .from(externalBeneficiaries)
+        .where(eq(externalBeneficiaries.clientId, result.spouseClientId));
+      expect(sCharities).toHaveLength(1);
+      expect(sCharities[0].name).toBe("Test Charity");
+      expect(sDetails.charityId).toBe(sCharities[0].id);
+      expect(sDetails.charityId).not.toBe(f.charityId);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("aborts the whole commit (DivorceCommitError) when a life-based CRT's measuring life can't reach S (Fix 2)", async () => {
+    const f = await createMarriedFixture({ withCharitableTrust: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      // Retarget the single-life measuring life onto the PRIMARY, who stays on P.
+      await db
+        .update(trustSplitInterestDetails)
+        .set({ measuringLife1Id: f.primaryFmId })
+        .where(eq(trustSplitInterestDetails.entityId, f.charitableTrustId));
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.charitableTrustId, disposition: "duplicate", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      let caught: unknown;
+      try {
+        await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DivorceCommitError);
+      expect((caught as DivorceCommitError).code).toBe("unresolvable_measuring_life");
+
+      // Atomic rollback: plan stays draft, nothing minted, no stray S entity/charity.
+      const [plan] = await db.select().from(divorcePlans).where(eq(divorcePlans.clientId, f.clientId));
+      expect(plan.status).toBe("draft");
+      expect(plan.resultClientId).toBeNull();
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("warns when a duplicated entity's owned account has an uncopied life-insurance/stock-option ride-along (Fix 3)", async () => {
+    const f = await createMarriedFixture({ withTrustLifePolicy: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.ids.trust, disposition: "duplicate", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // Trust Brokerage copied to S, but its LI extension did NOT ride along → warned.
+      expect(
+        result.warnings.some((w) => w.includes("Trust Brokerage") && /life-insurance|stock-option/.test(w)),
+      ).toBe(true);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("moving a CRT whole to the spouse re-points its split-interest details + remainder designation onto S (Fix 4)", async () => {
+    const f = await createMarriedFixture({ withCharitableTrust: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "entity", targetId: f.charitableTrustId, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // Entity re-homed (same id) on S.
+      const [crt] = await db.select().from(entities).where(eq(entities.id, f.charitableTrustId));
+      expect(crt.clientId).toBe(result.spouseClientId);
+
+      // Split-interest details re-pointed: clientId S, measuring life → S child, charity → S copy.
+      const [details] = await db
+        .select()
+        .from(trustSplitInterestDetails)
+        .where(eq(trustSplitInterestDetails.entityId, f.charitableTrustId));
+      expect(details.clientId).toBe(result.spouseClientId);
+      const [sChild] = await db
+        .select()
+        .from(familyMembers)
+        .where(and(eq(familyMembers.clientId, result.spouseClientId), eq(familyMembers.role, "child")));
+      expect(details.measuringLife1Id).toBe(sChild.id);
+      const sCharities = await db
+        .select()
+        .from(externalBeneficiaries)
+        .where(eq(externalBeneficiaries.clientId, result.spouseClientId));
+      expect(sCharities).toHaveLength(1);
+      expect(details.charityId).toBe(sCharities[0].id);
+
+      // The trust's own remainder designation re-pointed to S + the same S charity.
+      const desigs = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.entityId, f.charitableTrustId));
+      expect(desigs).toHaveLength(1);
+      expect(desigs[0].clientId).toBe(result.spouseClientId);
+      expect(desigs[0].externalBeneficiaryId).toBe(sCharities[0].id);
     } finally {
       await teardownCommit(f, result);
     }
