@@ -23,6 +23,8 @@ import {
   divorcePlans,
   clients,
   crmHouseholds,
+  crmHouseholdContacts,
+  crmHouseholdRelationships,
   familyMembers,
   scenarios,
   scenarioSnapshots,
@@ -33,17 +35,22 @@ import {
   trustSplitInterestDetails,
   externalBeneficiaries,
   incomes,
+  clientDeductions,
   liabilities,
   liabilityOwners,
+  notesReceivable,
   beneficiaryDesignations,
   transfers,
   gifts,
+  scenarioComputeCache,
+  solverMcCache,
 } from "@/db/schema";
 import {
   commitDivorcePlan,
   DivorceCommitError,
   type CommitResult,
 } from "../commit-divorce-plan";
+import * as activityModule from "@/lib/crm/activity";
 import { getOrCreateDraft, upsertAllocations } from "../divorce-plans";
 import { createMarriedFixture, destroyFixture, type MarriedFixture } from "./fixtures";
 
@@ -85,6 +92,27 @@ async function sClientFmId(spouseClientId: string): Promise<string> {
     .from(familyMembers)
     .where(and(eq(familyMembers.clientId, spouseClientId), eq(familyMembers.role, "client")));
   return fm.id;
+}
+
+// Net worth of a client in integer cents: Σ(accounts.value) + Σ(notes balance)
+// − Σ(liabilities.balance), across every scenario the client owns (a committed
+// file only has its base scenario). Integer cents so the conservation anchor is
+// exact — no float drift.
+async function netCents(clientId: string): Promise<number> {
+  const toC = (s: string | null) => Math.round(Number(s ?? 0) * 100);
+  const [accts, libs, notes] = await Promise.all([
+    db.select({ v: accounts.value }).from(accounts).where(eq(accounts.clientId, clientId)),
+    db.select({ b: liabilities.balance }).from(liabilities).where(eq(liabilities.clientId, clientId)),
+    db
+      .select({ v: notesReceivable.asOfBalance, f: notesReceivable.faceValue })
+      .from(notesReceivable)
+      .where(eq(notesReceivable.clientId, clientId)),
+  ]);
+  let cents = 0;
+  for (const a of accts) cents += toC(a.v);
+  for (const l of libs) cents -= toC(l.b);
+  for (const n of notes) cents += toC(n.v ?? n.f);
+  return cents;
 }
 
 d("commitDivorcePlan", () => {
@@ -716,6 +744,396 @@ d("commitDivorcePlan", () => {
       expect(desigs).toHaveLength(1);
       expect(desigs[0].clientId).toBe(result.spouseClientId);
       expect(desigs[0].externalBeneficiaryId).toBe(sCharities[0].id);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  // ── Task 12: original cleanup, CRM edge, bookkeeping, conservation, atomicity ──
+
+  it("cleans up P: nulls spouse planning fields + single filing, deletes spouse fm + its CRM contact, flips joint owner enums, writes the ex_spouse edge, invalidates P caches", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    const year = new Date().getFullYear();
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // A joint income (in the pool → needsDecision) and a joint deduction (not
+      // in the pool) on P exercise the owner-enum flips 'joint'→'client'. NOTE:
+      // medicare_coverage is never 'joint' in live data (its dbMapper rejects it,
+      // so the snapshot's tree-load would crash) — the flip still runs defensively
+      // but can't be seeded here.
+      const [jointIncome] = await db
+        .insert(incomes)
+        .values({
+          clientId: f.clientId,
+          scenarioId: f.baseScenarioId,
+          type: "salary",
+          name: "Joint Consulting",
+          annualAmount: "20000.00",
+          startYear: year,
+          endYear: year + 10,
+          owner: "joint",
+        })
+        .returning({ id: incomes.id });
+      await db.insert(clientDeductions).values({
+        clientId: f.clientId,
+        scenarioId: f.baseScenarioId,
+        type: "charitable",
+        owner: "joint",
+        annualAmount: "5000.00",
+        startYear: year,
+        endYear: year + 10,
+      });
+
+      // Seed a Monte-Carlo + solver cache row for P so the invalidation is observable.
+      await db.insert(scenarioComputeCache).values({
+        firmId: f.firmId,
+        clientId: f.clientId,
+        scenarioId: f.baseScenarioId,
+        kind: "monte_carlo",
+        inputHash: "t12-cleanup-test",
+        trials: 1000,
+        engineVersion: 1,
+        payload: {},
+      });
+      await db.insert(solverMcCache).values({
+        firmId: f.firmId,
+        clientId: f.clientId,
+        inputHash: "t12-cleanup-test",
+        successRate: 0.9,
+      });
+
+      // Keep everything on P; the joint income also needs an explicit decision.
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "income", targetId: jointIncome.id, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      const [plan] = await db.select().from(divorcePlans).where(eq(divorcePlans.clientId, f.clientId));
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // ── P clients row: spouse planning fields nulled, filing = primaryFilingStatus ──
+      const [pClient] = await db.select().from(clients).where(eq(clients.id, f.clientId));
+      expect(pClient.spouseRetirementAge).toBeNull();
+      expect(pClient.spouseRetirementMonth).toBeNull();
+      expect(pClient.spouseLifeExpectancy).toBeNull();
+      expect(pClient.filingStatus).toBe(plan.primaryFilingStatus); // default "single"
+
+      // ── Spouse's P family member gone; its CRM contact gone ──
+      const spouseFm = await db.select().from(familyMembers).where(eq(familyMembers.id, f.spouseFmId));
+      expect(spouseFm).toHaveLength(0);
+      const spouseContact = await db
+        .select()
+        .from(crmHouseholdContacts)
+        .where(and(eq(crmHouseholdContacts.householdId, f.householdId), eq(crmHouseholdContacts.role, "spouse")));
+      expect(spouseContact).toHaveLength(0);
+
+      // ── Owner-enum flips on P: joint → client ──
+      const [inc] = await db.select().from(incomes).where(eq(incomes.id, jointIncome.id));
+      expect(inc.clientId).toBe(f.clientId);
+      expect(inc.owner).toBe("client");
+      const [ded] = await db.select().from(clientDeductions).where(eq(clientDeductions.clientId, f.clientId));
+      expect(ded.owner).toBe("client");
+
+      // ── CRM ex_spouse edge: from S household → to P household ──
+      const edges = await db
+        .select()
+        .from(crmHouseholdRelationships)
+        .where(eq(crmHouseholdRelationships.toHouseholdId, f.householdId));
+      expect(edges).toHaveLength(1);
+      expect(edges[0].fromHouseholdId).toBe(result.spouseHouseholdId);
+      expect(edges[0].relationshipType).toBe("ex_spouse");
+
+      // ── Both P caches invalidated ──
+      const cc = await db.select().from(scenarioComputeCache).where(eq(scenarioComputeCache.clientId, f.clientId));
+      expect(cc).toHaveLength(0);
+      const sc = await db.select().from(solverMcCache).where(eq(solverMcCache.clientId, f.clientId));
+      expect(sc).toHaveLength(0);
+
+      // Plan finalized.
+      const [committed] = await db.select().from(divorcePlans).where(eq(divorcePlans.clientId, f.clientId));
+      expect(committed.status).toBe("committed");
+      expect(committed.resultClientId).toBe(result.spouseClientId);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("conserves net worth to the cent across P∪S (moves + split) and collapses a retained joint account's owners (owed b)", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "split", splitPercentToSpouse: 60 },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      // Pre-commit household total (spouse401k / spouseSalary auto-move; the split
+      // and the mortgage move all conserve value).
+      const preTotal = await netCents(f.clientId);
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // ── Conservation anchor: P∪S post === P pre, to the cent ──
+      const postP = await netCents(f.clientId);
+      const postS = await netCents(result.spouseClientId);
+      expect(postP + postS).toBe(preTotal);
+
+      // ── Owed (b): the retained joint house had its spouse owner dropped BEFORE
+      // the spouse fm delete, re-normalized to the primary at 100% — otherwise
+      // the deferred owner-sum check would have rolled the whole commit back. ──
+      const houseOwners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.house));
+      expect(houseOwners).toHaveLength(1);
+      expect(houseOwners[0].familyMemberId).toBe(f.primaryFmId);
+      expect(houseOwners[0].percent).toBe("1.0000");
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("executes cleanup selections: a checked (default) spouse-naming designation is removed; an unchecked (remove:false) one survives", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // Two designations on P-retained accounts that NAME the spouse via
+      // householdRole (no family_member FK → not cascaded by the spouse fm
+      // delete, so remove:false genuinely survives).
+      const [desChecked] = await db
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: f.clientId,
+          targetKind: "account",
+          accountId: f.ids.primaryBrokerage,
+          tier: "primary",
+          householdRole: "spouse",
+          percentage: "100.00",
+          sortOrder: 0,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+      const [desUnchecked] = await db
+        .insert(beneficiaryDesignations)
+        .values({
+          clientId: f.clientId,
+          targetKind: "account",
+          accountId: f.ids.house,
+          tier: "primary",
+          householdRole: "spouse",
+          percentage: "100.00",
+          sortOrder: 0,
+        })
+        .returning({ id: beneficiaryDesignations.id });
+
+      // Persist the advisor's "keep this one" decision for the second designation.
+      await db
+        .update(divorcePlans)
+        .set({ beneficiaryCleanup: { selections: [{ source: "beneficiary_designation", id: desUnchecked.id, remove: false }] } })
+        .where(eq(divorcePlans.clientId, f.clientId));
+
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      const checked = await db.select().from(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, desChecked.id));
+      expect(checked).toHaveLength(0); // removed (default remove:true)
+      const unchecked = await db.select().from(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, desUnchecked.id));
+      expect(unchecked).toHaveLength(1); // survives (persisted remove:false)
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("is atomic: a late failure persists NOTHING — no S client, P untouched, plan still draft, snapshot compensated", async () => {
+    const f = await createMarriedFixture();
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await confirmJointItems(f);
+
+      // Force a late (finalize-phase) failure inside the transaction.
+      const spy = vi
+        .spyOn(activityModule, "recordActivityNonFatal")
+        .mockRejectedValue(new Error("injected late failure"));
+      let caught: unknown;
+      try {
+        await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      } catch (err) {
+        caught = err;
+      } finally {
+        spy.mockRestore();
+      }
+      expect(caught).toBeInstanceOf(Error);
+
+      // Plan still a draft; nothing produced.
+      const [plan] = await db.select().from(divorcePlans).where(eq(divorcePlans.clientId, f.clientId));
+      expect(plan.status).toBe("draft");
+      expect(plan.resultClientId).toBeNull();
+
+      // P untouched: filing status, spouse fm, and the joint account's owners all intact.
+      const [pClient] = await db.select().from(clients).where(eq(clients.id, f.clientId));
+      expect(pClient.filingStatus).toBe("married_joint");
+      const spouseFm = await db.select().from(familyMembers).where(eq(familyMembers.id, f.spouseFmId));
+      expect(spouseFm).toHaveLength(1);
+      const owners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.jointBrokerage));
+      expect(owners).toHaveLength(2);
+
+      // Pre-tx side effects compensated: no snapshot survived for P.
+      const snaps = await db.select().from(scenarioSnapshots).where(eq(scenarioSnapshots.clientId, f.clientId));
+      expect(snaps).toHaveLength(0);
+
+      // No S client linked, no ex_spouse edge from/to P's household.
+      const edges = await db
+        .select()
+        .from(crmHouseholdRelationships)
+        .where(eq(crmHouseholdRelationships.toHouseholdId, f.householdId));
+      expect(edges).toHaveLength(0);
+    } finally {
+      await destroyFixture(f);
+    }
+  });
+
+  it("re-defaults P's household checking when the default account moved to the spouse (owed a)", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // Two household cash accounts on P (no owners — mirrors the seeded default's
+      // shape). defaultCash is the flagged default and is awarded to the spouse;
+      // otherCash stays and should be promoted to the new default.
+      const [defaultCash] = await db
+        .insert(accounts)
+        .values({
+          clientId: f.clientId,
+          scenarioId: f.baseScenarioId,
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          value: "10000.00",
+          basis: "10000.00",
+          isDefaultChecking: true,
+        })
+        .returning({ id: accounts.id });
+      const [otherCash] = await db
+        .insert(accounts)
+        .values({
+          clientId: f.clientId,
+          scenarioId: f.baseScenarioId,
+          name: "Backup Checking",
+          category: "cash",
+          subType: "checking",
+          value: "5000.00",
+          basis: "5000.00",
+          isDefaultChecking: false,
+        })
+        .returning({ id: accounts.id });
+
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: defaultCash.id, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: otherCash.id, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // P now has exactly one default-checking account: the promoted otherCash.
+      const pDefaults = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, f.clientId), eq(accounts.isDefaultChecking, true)));
+      expect(pDefaults).toHaveLength(1);
+      expect(pDefaults[0].id).toBe(otherCash.id);
+
+      // The moved default landed on S with the flag cleared; S keeps exactly one
+      // default (its own seeded Household Cash).
+      const [moved] = await db.select().from(accounts).where(eq(accounts.id, defaultCash.id));
+      expect(moved.clientId).toBe(result.spouseClientId);
+      expect(moved.isDefaultChecking).toBe(false);
+      const sDefaults = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, result.spouseClientId), eq(accounts.isDefaultChecking, true)));
+      expect(sDefaults).toHaveLength(1);
+      expect(sDefaults[0].id).not.toBe(defaultCash.id);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("flips the P-retained copy of a duplicate-allocated spouse-grantor entity off the departed spouse (owed c)", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // A no-owner entity (→ side 'joint' → default 'duplicate') whose grantor is
+      // the spouse. Its P copy must lose the departed spouse; its S copy takes
+      // grantor 'client'.
+      const [ent] = await db
+        .insert(entities)
+        .values({
+          clientId: f.clientId,
+          name: "Spouse Grantor Trust",
+          entityType: "trust",
+          trustSubType: "irrevocable",
+          isIrrevocable: true,
+          isGrantor: true,
+          grantor: "spouse",
+          value: "0.00",
+          basis: "0.00",
+        })
+        .returning({ id: entities.id });
+
+      await confirmJointItems(f);
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // P copy (original id): spouse grantor flipped off, isGrantor recomputed false.
+      const [pEnt] = await db.select().from(entities).where(eq(entities.id, ent.id));
+      expect(pEnt.clientId).toBe(f.clientId);
+      expect(pEnt.grantor).toBeNull();
+      expect(pEnt.isGrantor).toBe(false);
+
+      // S copy: grantor 'client' (that side's person), isGrantor preserved.
+      const sEnts = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.clientId, result.spouseClientId), eq(entities.name, "Spouse Grantor Trust")));
+      expect(sEnts).toHaveLength(1);
+      expect(sEnts[0].grantor).toBe("client");
+      expect(sEnts[0].isGrantor).toBe(true);
     } finally {
       await teardownCommit(f, result);
     }

@@ -294,6 +294,7 @@ export type AuditAction =
   | "divorce_plan.create"
   | "divorce_plan.update"
   | "divorce_plan.abandon"
+  | "divorce_plan.commit"
   // Medicare coverage (per-person, client-scoped overrides)
   | "medicare_coverage.upsert"
   // Presentation templates

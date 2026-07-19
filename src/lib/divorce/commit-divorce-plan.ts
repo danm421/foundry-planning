@@ -24,10 +24,14 @@ import {
   divorcePlans,
   divorcePlanAllocations,
   clients,
+  clientDeductions,
   crmHouseholds,
   crmHouseholdContacts,
+  crmHouseholdRelationships,
   familyMembers,
   scenarioSnapshots,
+  scenarioComputeCache,
+  solverMcCache,
   accounts,
   accountOwners,
   accountHoldings,
@@ -69,6 +73,8 @@ import { createCrmHousehold } from "@/lib/crm/households";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { recordAudit } from "@/lib/audit";
+import { recordActivityNonFatal } from "@/lib/crm/activity";
 import {
   allocationKey,
   resolveAllocations,
@@ -119,6 +125,21 @@ interface CommitCtx {
   plan: typeof divorcePlans.$inferSelect;
   objects: DivisibleObject[];
   resolved: Map<string, ResolvedAllocation>;
+  // Commit args threaded for the P-side cleanup writes (CRM ex_spouse edge +
+  // audit/activity actor). `ctx.plan.firmId` also carries the firm, but the
+  // audit/activity + relationship writes read these explicitly.
+  firmId: string;
+  userId: string;
+  // The original (P) household — the ex_spouse edge points AT it and its spouse
+  // CRM contact is struck during cleanup.
+  primaryHouseholdId: string;
+  // Cleanup-checklist selections resolved by the precondition preview (default
+  // remove:true, persisted remove:false honored). Step 4 executes remove:true.
+  cleanupSelections: CommitPreview["cleanup"];
+  // P's default-checking account id captured BEFORE the moves — lets cleanup tell
+  // "P lost its default (it moved to S)" from "P never had one" so it only
+  // re-defaults in the former case (owed item a). "" when P had none.
+  priorDefaultCheckingId: string;
   // The two household principals' P-side family_member ids. `spouseFamilyMemberId`
   // is the remap source for the ex-spouse → S's role='client' row (Step 4);
   // `primaryFamilyMemberId` is its counterpart, used by the owner/designation
@@ -257,11 +278,32 @@ interface OwnerValue {
 }
 
 /**
+ * Re-normalize a bag of weighted survivor owners so their fractions sum to 100%
+ * (decimal(6,4) — 100% is "1.0000", never "100.0000"). When nothing survives the
+ * `fallback` becomes the sole 100% owner, so an object is never left ownerless.
+ * The single normalization algorithm shared by the S-side move collapse
+ * (`movedOwnerRows`) and the P-side joint-owner collapse (owed item b).
+ */
+function normalizeOwnerFractions(
+  survivors: Array<Omit<OwnerValue, "percent"> & { weight: number }>,
+  fallback: OwnerValue,
+): OwnerValue[] {
+  if (survivors.length === 0) return [fallback];
+  const total = survivors.reduce((sum, x) => sum + x.weight, 0) || 1;
+  return survivors.map((x) => ({
+    familyMemberId: x.familyMemberId,
+    entityId: x.entityId,
+    externalBeneficiaryId: x.externalBeneficiaryId,
+    percent: (x.weight / total).toFixed(4),
+  }));
+}
+
+/**
  * Owner rows for a moved object, re-pointed to S. Owners whose person/entity
- * reaches S are remapped and kept, re-normalized so the survivors sum to 100%
- * (fraction "1.0000"); owners staying on P are dropped. When nothing survives
- * (e.g. a solely-primary account awarded to the ex-spouse) the mover — S's
- * client — becomes the sole 100% owner, so a moved account is never ownerless.
+ * reaches S are remapped and kept, re-normalized so the survivors sum to 100%;
+ * owners staying on P are dropped. When nothing survives (e.g. a solely-primary
+ * account awarded to the ex-spouse) the mover — S's client — becomes the sole
+ * 100% owner.
  */
 async function movedOwnerRows(
   tx: Tx,
@@ -286,16 +328,10 @@ async function movedOwnerRows(
       survivors.push({ externalBeneficiaryId: mapped, weight: Number(r.percent) });
     }
   }
-  if (survivors.length === 0) {
-    return [{ familyMemberId: ctx.spouseClientFamilyMemberId, percent: "1.0000" }];
-  }
-  const total = survivors.reduce((sum, x) => sum + x.weight, 0) || 1;
-  return survivors.map((x) => ({
-    familyMemberId: x.familyMemberId,
-    entityId: x.entityId,
-    externalBeneficiaryId: x.externalBeneficiaryId,
-    percent: (x.weight / total).toFixed(4),
-  }));
+  return normalizeOwnerFractions(survivors, {
+    familyMemberId: ctx.spouseClientFamilyMemberId,
+    percent: "1.0000",
+  });
 }
 
 /** Find-or-create a same-name revocable_trusts tag on S for a moved account. */
@@ -1540,6 +1576,334 @@ async function moveAllocatedObjects(tx: Tx, ctx: CommitCtx): Promise<void> {
   await handleLinks(tx, ctx, accountSides);
 }
 
+// ── Step 6: original (P) cleanup + bookkeeping (Commit engine D) ──────────────
+//
+// After the moves/splits/duplication have re-homed everything bound for S, the P
+// file still describes a married household — it carries the ex-spouse's planning
+// fields, joint owner rows + enum flips, the spouse's family member + CRM
+// contact, and stale caches. `cleanupOriginal` reconciles all of that and writes
+// the CRM ex_spouse edge; `finalize` records the commit + invalidates caches.
+// Every data write is on `tx`; the audit/activity records ride the module db
+// (append-only — orphan rows on a rollback are the tolerated convention).
+
+/** Drop the spouse-fm owner from ONE P-retained object's owner rows and
+ *  re-normalize the survivors to 100% (fallback: the primary at 100%). */
+function collapseOwnersDroppingSpouse(
+  rows: Array<{
+    familyMemberId: string | null;
+    entityId?: string | null;
+    externalBeneficiaryId?: string | null;
+    percent: string;
+  }>,
+  spouseFmId: string,
+  primaryFmId: string,
+): OwnerValue[] {
+  const survivors = rows
+    .filter((r) => r.familyMemberId !== spouseFmId)
+    .map((r) => ({
+      familyMemberId: r.familyMemberId ?? undefined,
+      entityId: r.entityId ?? undefined,
+      externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+      weight: Number(r.percent),
+    }));
+  return normalizeOwnerFractions(survivors, { familyMemberId: primaryFmId, percent: "1.0000" });
+}
+
+/**
+ * For every P-retained object still owned in part by the ex-spouse's family
+ * member, drop that owner and re-normalize the rest to 100% — BEFORE the spouse
+ * fm is deleted (owed item b). The fm FK on every owner table is ON DELETE
+ * CASCADE, so deleting it would otherwise strand a joint account/liability at
+ * <100% and trip the deferred owner-sum check, rolling the whole commit back.
+ * Moves already stripped their spouse-fm rows, so a surviving reference is
+ * exactly a P-retained joint object (incl. a duplicate entity's kept copy).
+ */
+async function collapseRetainedJointOwners(tx: Tx, ctx: CommitCtx): Promise<void> {
+  const spouseFm = ctx.spouseFamilyMemberId;
+  if (!spouseFm) return;
+  const primaryFm = ctx.primaryFamilyMemberId;
+  const distinct = <T>(xs: T[]): T[] => [...new Set(xs)];
+
+  // account_owners (fm | entity | external)
+  const acctHits = await tx
+    .select({ id: accountOwners.accountId })
+    .from(accountOwners)
+    .where(eq(accountOwners.familyMemberId, spouseFm));
+  for (const accountId of distinct(acctHits.map((h) => h.id))) {
+    const rows = await tx.select().from(accountOwners).where(eq(accountOwners.accountId, accountId));
+    const survivors = collapseOwnersDroppingSpouse(rows, spouseFm, primaryFm);
+    await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
+    await tx.insert(accountOwners).values(
+      survivors.map((s) => ({
+        accountId,
+        familyMemberId: s.familyMemberId ?? null,
+        entityId: s.entityId ?? null,
+        externalBeneficiaryId: s.externalBeneficiaryId ?? null,
+        percent: s.percent,
+      })),
+    );
+  }
+
+  // liability_owners (fm | entity)
+  const libHits = await tx
+    .select({ id: liabilityOwners.liabilityId })
+    .from(liabilityOwners)
+    .where(eq(liabilityOwners.familyMemberId, spouseFm));
+  for (const liabilityId of distinct(libHits.map((h) => h.id))) {
+    const rows = await tx.select().from(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
+    const survivors = collapseOwnersDroppingSpouse(rows, spouseFm, primaryFm);
+    await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
+    await tx.insert(liabilityOwners).values(
+      survivors.map((s) => ({
+        liabilityId,
+        familyMemberId: s.familyMemberId ?? null,
+        entityId: s.entityId ?? null,
+        percent: s.percent,
+      })),
+    );
+  }
+
+  // note_receivable_owners (fm | entity | external)
+  const noteHits = await tx
+    .select({ id: noteReceivableOwners.noteReceivableId })
+    .from(noteReceivableOwners)
+    .where(eq(noteReceivableOwners.familyMemberId, spouseFm));
+  for (const noteReceivableId of distinct(noteHits.map((h) => h.id))) {
+    const rows = await tx
+      .select()
+      .from(noteReceivableOwners)
+      .where(eq(noteReceivableOwners.noteReceivableId, noteReceivableId));
+    const survivors = collapseOwnersDroppingSpouse(rows, spouseFm, primaryFm);
+    await tx.delete(noteReceivableOwners).where(eq(noteReceivableOwners.noteReceivableId, noteReceivableId));
+    await tx.insert(noteReceivableOwners).values(
+      survivors.map((s) => ({
+        noteReceivableId,
+        familyMemberId: s.familyMemberId ?? null,
+        entityId: s.entityId ?? null,
+        externalBeneficiaryId: s.externalBeneficiaryId ?? null,
+        percent: s.percent,
+      })),
+    );
+  }
+
+  // entity_owners (fm | ownerEntity). No sum-to-100 constraint, but collapse
+  // anyway so a duplicate-allocated entity's retained P copy doesn't silently
+  // lose an owner when the spouse fm cascades.
+  const entHits = await tx
+    .select({ id: entityOwners.entityId })
+    .from(entityOwners)
+    .where(eq(entityOwners.familyMemberId, spouseFm));
+  for (const entityId of distinct(entHits.map((h) => h.id))) {
+    const rows = await tx.select().from(entityOwners).where(eq(entityOwners.entityId, entityId));
+    const survivors = collapseOwnersDroppingSpouse(
+      rows.map((r) => ({ familyMemberId: r.familyMemberId, entityId: r.ownerEntityId, percent: r.percent })),
+      spouseFm,
+      primaryFm,
+    );
+    await tx.delete(entityOwners).where(eq(entityOwners.entityId, entityId));
+    await tx.insert(entityOwners).values(
+      survivors.map((s) => ({
+        entityId,
+        familyMemberId: s.familyMemberId ?? null,
+        ownerEntityId: s.entityId ?? null,
+        percent: s.percent,
+      })),
+    );
+  }
+}
+
+/**
+ * A `duplicate`-allocated entity's P copy is left untouched by the duplication
+ * pass (it IS the primary's). If its grantor was the spouse, the retained copy
+ * still points at the departed person — flip it off (grantor → null) and
+ * recompute isGrantor, mirroring on the primary's side what the S copy did on the
+ * spouse's (owed item c).
+ */
+async function cleanupDuplicateGrantors(tx: Tx, ctx: CommitCtx): Promise<void> {
+  for (const obj of ctx.objects) {
+    if (obj.kind !== "entity") continue;
+    if (ctx.resolved.get(allocationKey("entity", obj.id))?.disposition !== "duplicate") continue;
+    await tx
+      .update(entities)
+      .set({ grantor: null, isGrantor: false, updatedAt: new Date() })
+      .where(and(eq(entities.id, obj.id), eq(entities.grantor, "spouse")));
+  }
+}
+
+/**
+ * If P's default-checking account was awarded to the spouse, P is left with zero
+ * default-checking rows — promote another household cash account (owed item a).
+ * Mirrors the seeded default's shape: a `cash` account (prefer `checking`), never
+ * entity-owned (entities carry their own default checking). Only fires when P
+ * actually LOST its default — a P that never had one is left unchanged.
+ */
+async function redefaultChecking(tx: Tx, ctx: CommitCtx): Promise<void> {
+  if (!ctx.priorDefaultCheckingId) return; // P never had a default
+  const P = ctx.plan.clientId;
+  const [stillDefault] = await tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.clientId, P), eq(accounts.isDefaultChecking, true)))
+    .limit(1);
+  if (stillDefault) return; // the default stayed on P
+
+  const cashRows = await tx
+    .select()
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.clientId, P),
+        eq(accounts.scenarioId, ctx.baseScenarioId),
+        eq(accounts.category, "cash"),
+      ),
+    );
+  if (cashRows.length === 0) return;
+  const ownerRows = await tx
+    .select({ accountId: accountOwners.accountId, entityId: accountOwners.entityId })
+    .from(accountOwners)
+    .where(inArray(accountOwners.accountId, cashRows.map((a) => a.id)));
+  const entityOwned = new Set(ownerRows.filter((o) => o.entityId).map((o) => o.accountId));
+  const eligible = cashRows.filter((a) => !entityOwned.has(a.id));
+  const candidate = eligible.find((a) => a.subType === "checking") ?? eligible[0];
+  if (!candidate) return;
+  await tx
+    .update(accounts)
+    .set({ isDefaultChecking: true, updatedAt: new Date() })
+    .where(eq(accounts.id, candidate.id));
+}
+
+/** P-side cleanup: reconcile the original file to a single, unmarried household
+ *  and write the CRM ex_spouse edge. Runs after all S-bound moves. */
+async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<void> {
+  const P = ctx.plan.clientId;
+
+  // 1. clients P row: null the ex-spouse planning fields; adopt the primary's
+  //    post-split filing status.
+  await tx
+    .update(clients)
+    .set({
+      spouseRetirementAge: null,
+      spouseRetirementMonth: null,
+      spouseLifeExpectancy: null,
+      filingStatus: ctx.plan.primaryFilingStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(clients.id, P));
+
+  // 2. Owner-enum flips on P: a surviving 'joint' row becomes the client's
+  //    (spouse-owned rows already moved to S). medicare_coverage is never 'joint'
+  //    in live data (its dbMapper rejects it) — the flip is a defensive no-op.
+  await tx
+    .update(incomes)
+    .set({ owner: "client", updatedAt: new Date() })
+    .where(and(eq(incomes.clientId, P), eq(incomes.owner, "joint")));
+  await tx
+    .update(clientDeductions)
+    .set({ owner: "client", updatedAt: new Date() })
+    .where(and(eq(clientDeductions.clientId, P), eq(clientDeductions.owner, "joint")));
+  await tx
+    .update(medicareCoverage)
+    .set({ owner: "client", updatedAt: new Date() })
+    .where(and(eq(medicareCoverage.clientId, P), eq(medicareCoverage.owner, "joint")));
+
+  // 3. P-side grantor cleanup for duplicate-allocated entities (owed item c).
+  await cleanupDuplicateGrantors(tx, ctx);
+
+  // 4. Collapse retained joint owners referencing the spouse fm BEFORE the delete
+  //    (owed item b).
+  await collapseRetainedJointOwners(tx, ctx);
+
+  // 5. Delete the spouse's P family member + any child/other member awarded to
+  //    the spouse (their S copies were minted in Step 4). The fm delete cascades
+  //    the P designations naming them; strike the spouse's CRM contact explicitly
+  //    (it may not carry the family_member live-join, so cascade can't be relied
+  //    on).
+  const spouseAllocatedFmIds = ctx.objects
+    .filter((o) => o.kind === "family_member")
+    .filter((o) => ctx.resolved.get(allocationKey("family_member", o.id))?.disposition === "spouse")
+    .map((o) => o.id);
+  const fmIdsToDelete = [ctx.spouseFamilyMemberId, ...spouseAllocatedFmIds].filter(
+    (id): id is string => !!id,
+  );
+  if (fmIdsToDelete.length) {
+    await tx.delete(familyMembers).where(inArray(familyMembers.id, fmIdsToDelete));
+  }
+  await tx
+    .delete(crmHouseholdContacts)
+    .where(
+      and(
+        eq(crmHouseholdContacts.householdId, ctx.primaryHouseholdId),
+        eq(crmHouseholdContacts.role, "spouse"),
+      ),
+    );
+
+  // 6. Execute the cleanup checklist: strike every remove:true selection. Re-scan
+  //    by id — a designation already cascaded by the fm delete is a silent no-op.
+  for (const sel of ctx.cleanupSelections) {
+    if (!sel.remove) continue;
+    if (sel.source === "beneficiary_designation") {
+      await tx.delete(beneficiaryDesignations).where(eq(beneficiaryDesignations.id, sel.id));
+    } else if (sel.source === "will_bequest_recipient") {
+      await tx.delete(willBequestRecipients).where(eq(willBequestRecipients.id, sel.id));
+    } else {
+      await tx.delete(willResiduaryRecipients).where(eq(willResiduaryRecipients.id, sel.id));
+    }
+  }
+
+  // 7. Re-default P's household checking if the old default was awarded to S
+  //    (owed item a).
+  await redefaultChecking(tx, ctx);
+
+  // 8. CRM ex_spouse edge: from the spouse's new household TO the original.
+  await tx.insert(crmHouseholdRelationships).values({
+    firmId: ctx.firmId,
+    fromHouseholdId: ctx.spouseHouseholdId,
+    toHouseholdId: ctx.primaryHouseholdId,
+    relationshipType: "ex_spouse",
+    createdBy: ctx.userId,
+  });
+}
+
+/** Finalize: record the commit result, invalidate P's projection caches, and
+ *  write the audit + per-household activity records. */
+async function finalize(tx: Tx, ctx: CommitCtx, spouseClientId: string): Promise<void> {
+  await tx
+    .update(divorcePlans)
+    .set({ resultClientId: spouseClientId, committedAt: new Date(), updatedAt: new Date() })
+    .where(eq(divorcePlans.id, ctx.plan.id));
+
+  // P's cached projections are stale — its plan changed materially.
+  await tx.delete(scenarioComputeCache).where(eq(scenarioComputeCache.clientId, ctx.plan.clientId));
+  await tx.delete(solverMcCache).where(eq(solverMcCache.clientId, ctx.plan.clientId));
+
+  // Audit (firm-wide) + activity (per-household). Both ride the module db and are
+  // append-only; placed last so, in practice, only a successful commit reaches them.
+  const counts = { primary: 0, spouse: 0, split: 0, duplicate: 0 };
+  for (const a of ctx.resolved.values()) counts[a.disposition] += 1;
+  await recordAudit({
+    action: "divorce_plan.commit",
+    resourceType: "divorce_plan",
+    resourceId: ctx.plan.id,
+    clientId: ctx.plan.clientId,
+    firmId: ctx.firmId,
+    metadata: { dispositions: counts, warnings: ctx.warnings, resultClientId: spouseClientId },
+  });
+  const now = new Date();
+  for (const householdId of [ctx.spouseHouseholdId, ctx.primaryHouseholdId]) {
+    await recordActivityNonFatal(
+      {
+        householdId,
+        kind: "planning_link",
+        title: "Household split — divorce planning commit",
+        metadata: { divorcePlanId: ctx.plan.id, resultClientId: spouseClientId },
+        occurredAt: now,
+      },
+      { actorUserId: ctx.userId },
+      "divorce-commit",
+    );
+  }
+}
+
 export async function commitDivorcePlan(args: {
   clientId: string;
   firmId: string;
@@ -1688,10 +2052,23 @@ export async function commitDivorcePlan(args: {
         tx,
       });
 
+      // P's default-checking account BEFORE any move clears its flag — lets
+      // cleanup distinguish "the default moved to S" from "P never had one".
+      const [priorDefault] = await tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(eq(accounts.clientId, clientId), eq(accounts.isDefaultChecking, true)))
+        .limit(1);
+
       const ctx: CommitCtx = {
         plan,
         objects,
         resolved,
+        firmId,
+        userId,
+        primaryHouseholdId: pClient.crmHouseholdId,
+        cleanupSelections: preview.cleanup,
+        priorDefaultCheckingId: priorDefault?.id ?? "",
         primaryFamilyMemberId,
         spouseFamilyMemberId,
         baseScenarioId,
@@ -1708,16 +2085,14 @@ export async function commitDivorcePlan(args: {
       // ── Step 4: family-member remap ──
       await mintSpouseFamilyMembers(tx, ctx);
 
-      // ── Step 5: move mechanics + follow rules (T10). Entity moves +
-      // duplication (T11), then P-side cleanup + CRM ex_spouse edge +
-      // audit/activity (T12) slot in around this call, all on `tx` against `ctx`. ──
+      // ── Step 5: move mechanics + follow rules (T10) + entity moves/duplication
+      // (T11). All S-bound re-homing happens here. ──
       await moveAllocatedObjects(tx, ctx);
 
-      // ── Finalize: record which client this draft produced. ──
-      await tx
-        .update(divorcePlans)
-        .set({ resultClientId: created.clientId, committedAt: new Date(), updatedAt: new Date() })
-        .where(eq(divorcePlans.id, plan.id));
+      // ── Step 6: P-side cleanup + CRM ex_spouse edge, then finalize the draft
+      // (result client, cache invalidation, audit + activity). ──
+      await cleanupOriginal(tx, ctx);
+      await finalize(tx, ctx, created.clientId);
 
       return {
         spouseClientId: created.clientId,
