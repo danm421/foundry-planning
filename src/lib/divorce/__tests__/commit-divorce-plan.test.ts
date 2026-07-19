@@ -26,6 +26,14 @@ import {
   familyMembers,
   scenarios,
   scenarioSnapshots,
+  accounts,
+  accountOwners,
+  incomes,
+  liabilities,
+  liabilityOwners,
+  beneficiaryDesignations,
+  transfers,
+  gifts,
 } from "@/db/schema";
 import {
   commitDivorcePlan,
@@ -54,6 +62,25 @@ async function confirmJointItems(f: MarriedFixture): Promise<void> {
       { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
     ],
   });
+}
+
+// Teardown for a committed fixture: S client (crmHouseholdId RESTRICT) before S
+// household, then the P fixture. Deleting S first SET NULLs the plan's
+// resultClientId so the P-client cascade of the plan row is clean.
+async function teardownCommit(f: MarriedFixture, result: CommitResult | undefined): Promise<void> {
+  if (result?.spouseClientId) await db.delete(clients).where(eq(clients.id, result.spouseClientId));
+  if (result?.spouseHouseholdId) await db.delete(crmHouseholds).where(eq(crmHouseholds.id, result.spouseHouseholdId));
+  await destroyFixture(f);
+}
+
+// S's role='client' family member id (the re-homed ex-spouse), the owner every
+// moved object collapses onto.
+async function sClientFmId(spouseClientId: string): Promise<string> {
+  const [fm] = await db
+    .select()
+    .from(familyMembers)
+    .where(and(eq(familyMembers.clientId, spouseClientId), eq(familyMembers.role, "client")));
+  return fm.id;
 }
 
 d("commitDivorcePlan", () => {
@@ -171,6 +198,134 @@ d("commitDivorcePlan", () => {
         await db.delete(crmHouseholds).where(eq(crmHouseholds.id, result.spouseHouseholdId));
       }
       await destroyFixture(f);
+    }
+  });
+
+  it("moves the spouse 401(k) to S, collapses owners to the mover, drops the cross-side designation, follows the spouse gift + salary", async () => {
+    const f = await createMarriedFixture({ withSpouseGift: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      // Every needsDecision joint object → primary; spouse401k / spouseSalary /
+      // the spouse gift move automatically (spouse-owned / grantor spouse).
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      const sFm = await sClientFmId(result.spouseClientId);
+
+      // 401(k) re-homed on S's base scenario.
+      const [acct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.spouse401k));
+      expect(acct.clientId).toBe(result.spouseClientId);
+      expect(acct.scenarioId).toBe(result.spouseScenarioId);
+
+      // Owners collapse to a single 100% row owned by S's client (the ex-spouse).
+      const owners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.spouse401k));
+      expect(owners).toHaveLength(1);
+      expect(owners[0].familyMemberId).toBe(sFm);
+      expect(owners[0].percent).toBe("1.0000");
+
+      // The designation naming the primary can't reach S → dropped + warned.
+      const desigs = await db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.id, f.ids.spouseBeneDesignation));
+      expect(desigs).toHaveLength(0);
+      expect(result.warnings.some((w) => w.includes("Spouse 401(k)"))).toBe(true);
+
+      // Spouse salary follows, owner flipped to client.
+      const [inc] = await db.select().from(incomes).where(eq(incomes.id, f.ids.spouseSalary));
+      expect(inc.clientId).toBe(result.spouseClientId);
+      expect(inc.scenarioId).toBe(result.spouseScenarioId);
+      expect(inc.owner).toBe("client");
+
+      // Spouse gift lands on S, grantor → client, recipient remapped to S's child.
+      const [gift] = await db.select().from(gifts).where(eq(gifts.id, f.spouseGiftId));
+      expect(gift.clientId).toBe(result.spouseClientId);
+      expect(gift.grantor).toBe("client");
+      const [sChild] = await db
+        .select()
+        .from(familyMembers)
+        .where(and(eq(familyMembers.clientId, result.spouseClientId), eq(familyMembers.role, "child")));
+      expect(gift.recipientFamilyMemberId).toBe(sChild.id);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("collapses a joint liability's owners to the mover and nulls the cross-side property link", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      const sFm = await sClientFmId(result.spouseClientId);
+
+      const [lib] = await db.select().from(liabilities).where(eq(liabilities.id, f.ids.jointMortgage));
+      expect(lib.clientId).toBe(result.spouseClientId);
+      expect(lib.scenarioId).toBe(result.spouseScenarioId);
+      // The house stays with the primary → the secured-property link is cleared.
+      expect(lib.linkedPropertyId).toBeNull();
+
+      const owners = await db.select().from(liabilityOwners).where(eq(liabilityOwners.liabilityId, f.ids.jointMortgage));
+      expect(owners).toHaveLength(1);
+      expect(owners[0].familyMemberId).toBe(sFm);
+      expect(owners[0].percent).toBe("1.0000");
+
+      expect(result.warnings.some((w) => w.includes("Home Mortgage"))).toBe(true);
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("deletes a transfer that straddles the two households and records a warning", async () => {
+    const f = await createMarriedFixture({ withStraddleTransfer: true });
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      // jointBrokerage → spouse; primaryBrokerage stays with the primary (default),
+      // so the Brokerage Sweep (jointBrokerage → primaryBrokerage) straddles.
+      await upsertAllocations({
+        clientId: f.clientId,
+        firmId: f.firmId,
+        items: [
+          { targetKind: "account", targetId: f.ids.jointBrokerage, disposition: "spouse", splitPercentToSpouse: null },
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      });
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      const xfers = await db.select().from(transfers).where(eq(transfers.id, f.straddleTransferId));
+      expect(xfers).toHaveLength(0);
+      expect(result.warnings.some((w) => w.includes("Brokerage Sweep"))).toBe(true);
+
+      // The moved source account is on S's book.
+      const [acct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.jointBrokerage));
+      expect(acct.clientId).toBe(result.spouseClientId);
+    } finally {
+      await teardownCommit(f, result);
     }
   });
 });

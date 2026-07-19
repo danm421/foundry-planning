@@ -43,6 +43,7 @@ import {
 import {
   allocationKey,
   resolveAllocations,
+  type DivisibleObject,
   type DivorceDisposition,
   type DivorceTargetKind,
   type ResolvedAllocation,
@@ -51,7 +52,7 @@ import { loadDivisibleObjects } from "./divisible-objects";
 import { computeSideTotals, type SideTotals } from "./side-totals";
 import { DivorcePlanError } from "./divorce-plans";
 
-type Side = "primary" | "spouse";
+export type Side = "primary" | "spouse";
 
 export interface CommitPreview {
   blockers: Array<{
@@ -106,7 +107,7 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
 // spouse-destined endpoint straddles and must be dropped, never silently kept.
 // `duplicate` deep-copies to S while keeping the original, so its id lives on
 // both books.
-function linkEndpointSides(alloc: ResolvedAllocation | undefined): Set<Side> {
+export function linkEndpointSides(alloc: ResolvedAllocation | undefined): Set<Side> {
   if (!alloc) return new Set();
   if (alloc.disposition === "spouse") return new Set(["spouse"]);
   if (alloc.disposition === "duplicate") return new Set(["primary", "spouse"]);
@@ -115,11 +116,36 @@ function linkEndpointSides(alloc: ResolvedAllocation | undefined): Set<Side> {
 }
 
 // A link straddles when its endpoints share no common destination side.
-function straddles(sets: Set<Side>[]): boolean {
+export function straddles(sets: Set<Side>[]): boolean {
   const present = sets.filter((s) => s.size > 0);
   if (present.length < 2) return false;
   const common = present.reduce((acc, s) => new Set([...acc].filter((x) => s.has(x))));
   return common.size === 0;
+}
+
+// The side-resolution functions the preview AND the commit engine share, so the
+// two can never disagree about which household an account or trust lands on. An
+// account follows its entity when entity-owned; otherwise it follows its own
+// resolved disposition. Pure over the loaded objects + resolved allocations.
+export function buildSideResolvers(
+  objects: DivisibleObject[],
+  resolved: Map<string, ResolvedAllocation>,
+): {
+  accountSides: (accountId: string) => Set<Side>;
+  entitySides: (entityId: string) => Set<Side>;
+} {
+  const accountObjById = new Map(
+    objects.filter((o) => o.kind === "account").map((o) => [o.id, o]),
+  );
+  const entitySides = (entityId: string): Set<Side> =>
+    linkEndpointSides(resolved.get(allocationKey("entity", entityId)));
+  const accountSides = (accountId: string): Set<Side> => {
+    const obj = accountObjById.get(accountId);
+    if (!obj) return new Set();
+    if (obj.entityOwnedById) return entitySides(obj.entityOwnedById);
+    return linkEndpointSides(resolved.get(allocationKey("account", accountId)));
+  };
+  return { accountSides, entitySides };
 }
 
 export async function buildCommitPreview(args: {
@@ -351,19 +377,12 @@ export async function buildCommitPreview(args: {
     spouse: { ...baseTotals.spouse, name: spouseName },
   };
 
-  // ── Side resolvers over the resolved map ──
+  // ── Side resolvers over the resolved map (shared with the commit engine) ──
   const accountObjById = new Map(objects.filter((o) => o.kind === "account").map((o) => [o.id, o]));
   const expenseLabelById = new Map(
     objects.filter((o) => o.kind === "expense").map((o) => [o.id, o.label]),
   );
-  const entitySides = (entityId: string): Set<Side> =>
-    linkEndpointSides(resolved.get(allocationKey("entity", entityId)));
-  const accountSides = (accountId: string): Set<Side> => {
-    const obj = accountObjById.get(accountId);
-    if (!obj) return new Set();
-    if (obj.entityOwnedById) return entitySides(obj.entityOwnedById);
-    return linkEndpointSides(resolved.get(allocationKey("account", accountId)));
-  };
+  const { accountSides, entitySides } = buildSideResolvers(objects, resolved);
 
   // ── Blockers ──
   const blockers: CommitPreview["blockers"] = [];

@@ -32,6 +32,7 @@ import {
   liabilityOwners,
   beneficiaryDesignations,
   transfers,
+  gifts,
   clientImports,
 } from "@/db/schema";
 import type { FilingStatus } from "@/lib/clients/create-client";
@@ -60,6 +61,9 @@ export interface MarriedFixture {
   // A client_imports row with status 'review' — populated only when
   // `withActiveImport` is set (Task 7's import_in_flight blocker). "" otherwise.
   activeImportId: string;
+  // A gift with grantor='spouse' and recipient the child — populated only when
+  // `withSpouseGift` is set (Task 10's grantor-enum follow). "" otherwise.
+  spouseGiftId: string;
   ids: {
     primaryBrokerage: string; // taxable, 100% primary, value 100k basis 60k
     jointBrokerage: string; // taxable, 50/50 primary+spouse, value 600k basis 200k
@@ -92,6 +96,9 @@ export interface CreateMarriedFixtureOverrides {
   withStraddleTransfer?: boolean;
   // Add a client_imports row with status 'review' (populates `activeImportId`).
   withActiveImport?: boolean;
+  // Add a gift row with grantor='spouse', recipient = the child (populates
+  // `spouseGiftId`). Exercises Task 10's grantor-enum follow.
+  withSpouseGift?: boolean;
 }
 
 const EMPTY_IDS: MarriedFixture["ids"] = {
@@ -285,6 +292,7 @@ export async function createMarriedFixture(
         nonBaseScenarioId: "",
         straddleTransferId: "",
         activeImportId: "",
+        spouseGiftId: "",
         ids: {
           ...EMPTY_IDS,
           primaryBrokerage: primaryBrokerage.id,
@@ -508,6 +516,21 @@ export async function createMarriedFixture(
       straddleTransferId = xfer.id;
     }
 
+    let spouseGiftId = "";
+    if (overrides.withSpouseGift) {
+      const [gift] = await tx
+        .insert(gifts)
+        .values({
+          clientId: client.id,
+          year: currentYear,
+          grantor: "spouse",
+          amount: "15000.00",
+          recipientFamilyMemberId: childFm.id,
+        })
+        .returning({ id: gifts.id });
+      spouseGiftId = gift.id;
+    }
+
     let activeImportId = "";
     if (overrides.withActiveImport) {
       const [imp] = await tx
@@ -534,6 +557,7 @@ export async function createMarriedFixture(
       nonBaseScenarioId,
       straddleTransferId,
       activeImportId,
+      spouseGiftId,
       ids: {
         primaryBrokerage: primaryBrokerage.id,
         jointBrokerage: jointBrokerage.id,
