@@ -382,6 +382,10 @@ async function moveAccount(tx: Tx, ctx: CommitCtx, obj: DivisibleObject): Promis
       clientId: ctx.spouseClientId,
       scenarioId: ctx.spouseScenarioId,
       revocableTrustId,
+      // S already has its own seeded default-checking account; a moved account
+      // must never carry the flag in, or S would have two (the app assumes one
+      // per client). Re-defaulting the P side is Task 12's problem.
+      isDefaultChecking: false,
       // 529 grantor / beneficiary attributions ride to their S counterparts.
       grantorFamilyMemberId: remapFm(acct.grantorFamilyMemberId),
       beneficiaryFamilyMemberId: remapFm(acct.beneficiaryFamilyMemberId),

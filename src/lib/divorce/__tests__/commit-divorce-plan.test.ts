@@ -218,14 +218,28 @@ d("commitDivorcePlan", () => {
           { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
         ],
       });
+      // Flag the moving account as the household default checking so the move's
+      // dedup path executes — S must not end up with two default-checking rows.
+      await db
+        .update(accounts)
+        .set({ isDefaultChecking: true })
+        .where(eq(accounts.id, f.ids.spouse401k));
 
       result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
       const sFm = await sClientFmId(result.spouseClientId);
 
-      // 401(k) re-homed on S's base scenario.
+      // 401(k) re-homed on S's base scenario, default-checking flag cleared.
       const [acct] = await db.select().from(accounts).where(eq(accounts.id, f.ids.spouse401k));
       expect(acct.clientId).toBe(result.spouseClientId);
       expect(acct.scenarioId).toBe(result.spouseScenarioId);
+      expect(acct.isDefaultChecking).toBe(false);
+
+      // S has exactly one default-checking account — its own seeded one.
+      const sChecking = await db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, result.spouseClientId), eq(accounts.isDefaultChecking, true)));
+      expect(sChecking).toHaveLength(1);
 
       // Owners collapse to a single 100% row owned by S's client (the ex-spouse).
       const owners = await db.select().from(accountOwners).where(eq(accountOwners.accountId, f.ids.spouse401k));
