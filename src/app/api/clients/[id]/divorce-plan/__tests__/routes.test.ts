@@ -1,7 +1,9 @@
-// Route tests for the draft workbench API surface (Task 6):
+// Route tests for the draft workbench API surface (Task 6) plus the Task 8
+// preview route:
 //   GET/POST/PATCH /api/clients/[id]/divorce-plan
 //   PUT            /api/clients/[id]/divorce-plan/allocations
 //   POST           /api/clients/[id]/divorce-plan/abandon
+//   POST           /api/clients/[id]/divorce-plan/preview
 //
 // Mocked-Clerk pattern mirrors accounts-writes.test.ts / revocable-trusts
 // route.test.ts: a single fixed auth() identity acting as an org:admin in the
@@ -37,6 +39,7 @@ vi.mock("@clerk/nextjs/server", () => ({
 import { GET, POST, PATCH } from "../route";
 import { PUT } from "../allocations/route";
 import { POST as ABANDON } from "../abandon/route";
+import { POST as PREVIEW } from "../preview/route";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
@@ -140,6 +143,29 @@ d("divorce-plan routes", () => {
     expect(body.code).toBe("invalid_disposition");
   });
 
+  it("PUT confirms the remaining joint objects (house, livingExpense, jointMortgage) to primary", async () => {
+    const res = await PUT(
+      makeReq("PUT", {
+        items: [
+          { targetKind: "account", targetId: f.ids.house, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "expense", targetId: f.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+          { targetKind: "liability", targetId: f.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+        ],
+      }),
+      { params: Promise.resolve({ id: f.clientId }) }
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("POST preview on the confirmed fixture -> 200 { blockers: [], actions non-empty }", async () => {
+    const res = await PREVIEW(makeReq("POST"), { params: Promise.resolve({ id: f.clientId }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.blockers).toEqual([]);
+    expect(Array.isArray(body.actions)).toBe(true);
+    expect(body.actions.length).toBeGreaterThan(0);
+  });
+
   it("abandon flips the draft to abandoned -> a subsequent GET 404s with no_draft", async () => {
     const res = await ABANDON(makeReq("POST"), { params: Promise.resolve({ id: f.clientId }) });
     expect(res.status).toBe(200);
@@ -232,5 +258,13 @@ d("divorce-plan routes — cross-firm caller", () => {
   it("abandon -> 403", async () => {
     const res = await ABANDON(makeReq("POST"), { params: Promise.resolve({ id: otherClientId }) });
     expect(res.status).toBe(403);
+  });
+
+  // Preview uses verifyClientAccess (like GET) rather than the throw-based
+  // requireClientEditAccess the other mutations use, so a caller with no
+  // access at all gets the same existence-hiding 404 as GET, not 403.
+  it("preview -> 404", async () => {
+    const res = await PREVIEW(makeReq("POST"), { params: Promise.resolve({ id: otherClientId }) });
+    expect(res.status).toBe(404);
   });
 });
