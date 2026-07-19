@@ -9,13 +9,7 @@ import {
 } from "@/components/forms/input-styles";
 import { AlertCircleIcon, SearchIcon } from "@/components/icons";
 import { RELATIONSHIP_PICKER_OPTIONS } from "@/lib/crm/relationship-labels";
-
-const STATUS_LABELS: Record<string, string> = {
-  prospect: "Prospect",
-  active: "Active",
-  inactive: "Inactive",
-  archived: "Archived",
-};
+import { HOUSEHOLD_STATUS_LABELS } from "@/components/household-status-select";
 
 type SearchResultHousehold = {
   id: string;
@@ -221,7 +215,7 @@ export function CrmLinkHouseholdDialog({ householdId, excludeIds, open, onClose,
                   >
                     <span className="min-w-0 truncate text-[14px] font-medium text-ink">{h.name}</span>
                     <span className="shrink-0 rounded-full border border-hair px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink-3">
-                      {STATUS_LABELS[h.status] ?? h.status}
+                      {(HOUSEHOLD_STATUS_LABELS as Record<string, string>)[h.status] ?? h.status}
                     </span>
                   </button>
                 </li>

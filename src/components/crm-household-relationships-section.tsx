@@ -1,37 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CrmLinkHouseholdDialog } from "@/components/crm-link-household-dialog";
 import { OverflowMenu } from "@/components/overflow-menu";
+import { HOUSEHOLD_STATUS_LABELS } from "@/components/household-status-select";
+import { chipClass, sectionHeadingClass, addGhostClass, EmptyState } from "@/components/crm-section-primitives";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 
-const STATUS_LABELS: Record<string, string> = {
-  prospect: "Prospect",
-  active: "Active",
-  inactive: "Inactive",
-  archived: "Archived",
-};
-
-const sectionHeadingClass =
-  "text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3";
-const addGhostClass =
-  "rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink";
-/** Hairline pill — descriptive relationship label, same idiom as the family
- *  section's relationship chip (contacts-tab.tsx's relBadgeClass). */
-const chipClass =
-  "rounded-full border border-hair-2 bg-card-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3";
 const statusBadgeClass =
   "shrink-0 rounded-full border border-hair px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink-3";
-
-function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-8 text-center">
-      <p className="text-[13px] text-ink-3">{children}</p>
-    </div>
-  );
-}
 
 function RelationshipCard({
   relationship,
@@ -55,7 +34,8 @@ function RelationshipCard({
               {relationship.counterpart.name}
             </Link>
             <span className={statusBadgeClass}>
-              {STATUS_LABELS[relationship.counterpart.status] ?? relationship.counterpart.status}
+              {(HOUSEHOLD_STATUS_LABELS as Record<string, string>)[relationship.counterpart.status] ??
+                relationship.counterpart.status}
             </span>
           </div>
 

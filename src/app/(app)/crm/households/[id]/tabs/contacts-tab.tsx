@@ -23,6 +23,7 @@ import type { HouseholdRelationshipView } from "@/lib/crm/household-relationship
 import { deriveContactSections } from "@/lib/crm/contact-sections";
 import { ageOnDate } from "@/lib/age-year";
 import { TrashIcon } from "@/components/icons";
+import { chipClass, sectionHeadingClass, addGhostClass, EmptyState } from "@/components/crm-section-primitives";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 type Contact = Household["contacts"][number];
@@ -38,17 +39,9 @@ const ROLE_LABELS: Record<string, string> = {
 /** Verdigris pill — identity roles (primary / spouse) only. */
 const roleBadgeClass =
   "rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent";
-/** Hairline pill — descriptive relationships (Child, Dependent, CPA). Accent is
- *  reserved for action + identity status, never for descriptive data. */
-const relBadgeClass =
-  "rounded-full border border-hair-2 bg-card-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3";
 
-const sectionHeadingClass =
-  "text-[11px] font-semibold uppercase tracking-[1.2px] text-ink-3";
 const addPrimaryClass =
   "rounded-[var(--radius-sm)] bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-on transition-colors hover:bg-accent-ink";
-const addGhostClass =
-  "rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink";
 
 function fmtDob(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -203,14 +196,6 @@ function ContactCard({
   );
 }
 
-function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-[var(--radius)] border border-dashed border-hair bg-card-2 px-6 py-8 text-center">
-      <p className="text-[13px] text-ink-3">{children}</p>
-    </div>
-  );
-}
-
 export function ContactsTab({
   household,
   relationships,
@@ -247,10 +232,14 @@ export function ContactsTab({
   // sourceFamilyMemberId -> the household it was promoted into. Only edges
   // that came from a family-member promote carry sourceFamilyMemberId; plain
   // household links (CrmLinkHouseholdDialog) don't populate it.
-  const promotedByMemberId = new Map(
-    relationships
-      .filter((r) => r.sourceFamilyMemberId)
-      .map((r) => [r.sourceFamilyMemberId as string, r.counterpart.id]),
+  const promotedByMemberId = useMemo(
+    () =>
+      new Map(
+        relationships
+          .filter((r) => r.sourceFamilyMemberId)
+          .map((r) => [r.sourceFamilyMemberId as string, r.counterpart.id]),
+      ),
+    [relationships],
   );
 
   const existingRoles = useMemo(() => {
@@ -451,7 +440,7 @@ export function ContactsTab({
                 <ContactCard
                   key={member.id}
                   badge={
-                    <span className={relBadgeClass}>{relationshipLabel(member.relationship)}</span>
+                    <span className={chipClass}>{relationshipLabel(member.relationship)}</span>
                   }
                   name={`${member.firstName} ${member.lastName ?? ""}`.trim()}
                   preferredName={contact?.preferredName}
@@ -504,7 +493,7 @@ export function ContactsTab({
             {sections.unlinkedFamily.map((c) => (
               <ContactCard
                 key={c.id}
-                badge={<span className={relBadgeClass}>Dependent</span>}
+                badge={<span className={chipClass}>Dependent</span>}
                 name={`${c.firstName} ${c.lastName}`.trim()}
                 preferredName={c.preferredName}
                 rows={rowsOf(
@@ -562,7 +551,7 @@ export function ContactsTab({
                   key={c.id}
                   badge={
                     c.relationshipLabel ? (
-                      <span className={relBadgeClass}>{c.relationshipLabel}</span>
+                      <span className={chipClass}>{c.relationshipLabel}</span>
                     ) : null
                   }
                   name={`${c.firstName} ${c.lastName}`.trim()}

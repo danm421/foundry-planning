@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteHouseholdRelationship } from "@/lib/crm/household-relationships";
+import { deleteHouseholdRelationship, RelationshipNotFoundError } from "@/lib/crm/household-relationships";
 import { UnauthorizedError } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     if (
-      err instanceof Error &&
-      (err.message.startsWith("CRM household not found or access denied") ||
-        err.message.startsWith("CRM household relationship not found"))
+      err instanceof RelationshipNotFoundError ||
+      (err instanceof Error && err.message.startsWith("CRM household not found or access denied"))
     ) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

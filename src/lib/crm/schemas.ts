@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { CRM_HOUSEHOLD_RELATIONSHIP_TYPES } from "./relationship-labels";
 
 export const crmHouseholdStatusSchema = z.enum(["prospect", "active", "inactive", "archived"]);
 export const crmContactRoleSchema = z.enum(["primary", "spouse", "dependent", "other"]);
@@ -120,9 +121,7 @@ export const updateCrmNoteSchema = z.object({
 export type CreateCrmNoteInput = z.infer<typeof createCrmNoteSchema>;
 export type UpdateCrmNoteInput = z.infer<typeof updateCrmNoteSchema>;
 
-export const crmHouseholdRelationshipTypeSchema = z.enum([
-  "child", "sibling", "spouse", "ex_spouse", "business_partner", "referral_source", "other",
-]);
+export const crmHouseholdRelationshipTypeSchema = z.enum(CRM_HOUSEHOLD_RELATIONSHIP_TYPES);
 
 export const createHouseholdRelationshipSchema = z.object({
   counterpartHouseholdId: z.uuid(),

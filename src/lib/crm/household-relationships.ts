@@ -18,6 +18,11 @@ export class HouseholdsAlreadyLinkedError extends Error {
 export class SelfLinkError extends Error {
   constructor() { super("A household cannot be linked to itself"); }
 }
+export class RelationshipNotFoundError extends Error {
+  constructor(relationshipId: string) {
+    super(`CRM household relationship not found: ${relationshipId}`);
+  }
+}
 
 /** Postgres unique-violation (23505), as surfaced by the Neon driver. */
 export function isUniqueViolation(err: unknown): boolean {
@@ -89,9 +94,12 @@ export async function createHouseholdRelationship(
 ) {
   if (householdId === input.counterpartHouseholdId) throw new SelfLinkError();
   // Access check on BOTH ends doubles as the same-firm assert —
-  // requireCrmHouseholdAccess scopes to the caller's org.
-  const { household, orgId } = await requireCrmHouseholdAccess(householdId);
-  const { household: counterpart } = await requireCrmHouseholdAccess(input.counterpartHouseholdId);
+  // requireCrmHouseholdAccess scopes to the caller's org. Independent checks,
+  // run concurrently.
+  const [{ household, orgId }, { household: counterpart }] = await Promise.all([
+    requireCrmHouseholdAccess(householdId),
+    requireCrmHouseholdAccess(input.counterpartHouseholdId),
+  ]);
   const { userId } = await auth();
   const actorId = userId ?? "system";
 
@@ -126,28 +134,30 @@ export async function createHouseholdRelationship(
     firmId: orgId,
   });
   const now = new Date();
-  await recordActivityNonFatal(
-    {
-      householdId,
-      kind: "relationship_change",
-      title: `Linked household: ${counterpart.name} (${counterpartLabel(input.type, input.viewerSide)})`,
-      metadata: { relationshipId: row.id, counterpartHouseholdId: counterpart.id },
-      occurredAt: now,
-    },
-    { actorUserId: actorId },
-    "household-relationships",
-  );
-  await recordActivityNonFatal(
-    {
-      householdId: counterpart.id,
-      kind: "relationship_change",
-      title: `Linked household: ${household.name} (${counterpartLabel(input.type, input.viewerSide === "from" ? "to" : "from")})`,
-      metadata: { relationshipId: row.id, counterpartHouseholdId: household.id },
-      occurredAt: now,
-    },
-    { actorUserId: actorId },
-    "household-relationships",
-  );
+  await Promise.all([
+    recordActivityNonFatal(
+      {
+        householdId,
+        kind: "relationship_change",
+        title: `Linked household: ${counterpart.name} (${counterpartLabel(input.type, input.viewerSide)})`,
+        metadata: { relationshipId: row.id, counterpartHouseholdId: counterpart.id },
+        occurredAt: now,
+      },
+      { actorUserId: actorId },
+      "household-relationships",
+    ),
+    recordActivityNonFatal(
+      {
+        householdId: counterpart.id,
+        kind: "relationship_change",
+        title: `Linked household: ${household.name} (${counterpartLabel(input.type, input.viewerSide === "from" ? "to" : "from")})`,
+        metadata: { relationshipId: row.id, counterpartHouseholdId: household.id },
+        occurredAt: now,
+      },
+      { actorUserId: actorId },
+      "household-relationships",
+    ),
+  ]);
   return row;
 }
 
@@ -160,7 +170,7 @@ export async function deleteHouseholdRelationship(householdId: string, relations
     ),
   });
   if (!edge || (edge.fromHouseholdId !== householdId && edge.toHouseholdId !== householdId)) {
-    throw new Error(`CRM household relationship not found: ${relationshipId}`);
+    throw new RelationshipNotFoundError(relationshipId);
   }
   await db.delete(crmHouseholdRelationships).where(eq(crmHouseholdRelationships.id, relationshipId));
   const { userId } = await auth();
@@ -172,11 +182,13 @@ export async function deleteHouseholdRelationship(householdId: string, relations
   });
   const otherId = edge.fromHouseholdId === householdId ? edge.toHouseholdId : edge.fromHouseholdId;
   const now = new Date();
-  for (const hh of [householdId, otherId]) {
-    await recordActivityNonFatal(
-      { householdId: hh, kind: "relationship_change", title: "Removed household link", metadata: { relationshipId }, occurredAt: now },
-      { actorUserId: userId ?? "system" },
-      "household-relationships",
-    );
-  }
+  await Promise.all(
+    [householdId, otherId].map((hh) =>
+      recordActivityNonFatal(
+        { householdId: hh, kind: "relationship_change", title: "Removed household link", metadata: { relationshipId }, occurredAt: now },
+        { actorUserId: userId ?? "system" },
+        "household-relationships",
+      ),
+    ),
+  );
 }

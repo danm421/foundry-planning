@@ -6,12 +6,7 @@ import type { getCrmHousehold } from "@/lib/crm/households";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
-
-/** Hairline pill — same idiom as the Related-households chip on the
- *  Contacts tab (crm-household-relationships-section.tsx's chipClass). This
- *  block is read-only: no menus, no unlink action — just the label + link. */
-const chipClass =
-  "rounded-full border border-hair-2 bg-card-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3";
+import { chipClass } from "@/components/crm-section-primitives";
 
 type Household = NonNullable<Awaited<ReturnType<typeof getCrmHousehold>>>;
 

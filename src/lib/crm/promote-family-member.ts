@@ -136,31 +136,33 @@ export async function promoteFamilyMember(
     throw err;
   }
 
-  await recordAudit({ action: "crm.household.create", resourceType: "crm_household", resourceId: result.household.id, firmId: orgId });
-  await recordAudit({ action: "crm.contact.create", resourceType: "crm_contact", resourceId: result.contact.id, firmId: orgId });
-  await recordAudit({ action: "crm.household_relationship.create", resourceType: "crm_household_relationship", resourceId: result.edge.id, firmId: orgId });
   const now = new Date();
-  await recordActivityNonFatal(
-    {
-      householdId: sourceHouseholdId,
-      kind: "relationship_change",
-      title: `Promoted ${input.firstName} ${input.lastName} to their own household`,
-      metadata: { newHouseholdId: result.household.id, relationshipId: result.edge.id },
-      occurredAt: now,
-    },
-    { actorUserId: actorId },
-    "promote-family-member",
-  );
-  await recordActivityNonFatal(
-    {
-      householdId: result.household.id,
-      kind: "relationship_change",
-      title: `Created by promotion from ${sourceHousehold.name}`,
-      metadata: { sourceHouseholdId, relationshipId: result.edge.id },
-      occurredAt: now,
-    },
-    { actorUserId: actorId },
-    "promote-family-member",
-  );
+  await Promise.all([
+    recordAudit({ action: "crm.household.create", resourceType: "crm_household", resourceId: result.household.id, firmId: orgId }),
+    recordAudit({ action: "crm.contact.create", resourceType: "crm_contact", resourceId: result.contact.id, firmId: orgId }),
+    recordAudit({ action: "crm.household_relationship.create", resourceType: "crm_household_relationship", resourceId: result.edge.id, firmId: orgId }),
+    recordActivityNonFatal(
+      {
+        householdId: sourceHouseholdId,
+        kind: "relationship_change",
+        title: `Promoted ${input.firstName} ${input.lastName} to their own household`,
+        metadata: { newHouseholdId: result.household.id, relationshipId: result.edge.id },
+        occurredAt: now,
+      },
+      { actorUserId: actorId },
+      "promote-family-member",
+    ),
+    recordActivityNonFatal(
+      {
+        householdId: result.household.id,
+        kind: "relationship_change",
+        title: `Created by promotion from ${sourceHousehold.name}`,
+        metadata: { sourceHouseholdId, relationshipId: result.edge.id },
+        occurredAt: now,
+      },
+      { actorUserId: actorId },
+      "promote-family-member",
+    ),
+  ]);
   return { householdId: result.household.id, existing: false };
 }
