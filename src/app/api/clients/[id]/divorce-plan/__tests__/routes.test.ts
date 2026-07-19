@@ -1,9 +1,10 @@
 // Route tests for the draft workbench API surface (Task 6) plus the Task 8
-// preview route:
+// preview route and the Task 13 commit route:
 //   GET/POST/PATCH /api/clients/[id]/divorce-plan
 //   PUT            /api/clients/[id]/divorce-plan/allocations
 //   POST           /api/clients/[id]/divorce-plan/abandon
 //   POST           /api/clients/[id]/divorce-plan/preview
+//   POST           /api/clients/[id]/divorce-plan/commit
 //
 // Mocked-Clerk pattern mirrors accounts-writes.test.ts / revocable-trusts
 // route.test.ts: a single fixed auth() identity acting as an org:admin in the
@@ -40,6 +41,7 @@ import { GET, POST, PATCH } from "../route";
 import { PUT } from "../allocations/route";
 import { POST as ABANDON } from "../abandon/route";
 import { POST as PREVIEW } from "../preview/route";
+import { POST as COMMIT } from "../commit/route";
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
@@ -267,4 +269,103 @@ d("divorce-plan routes — cross-firm caller", () => {
     const res = await PREVIEW(makeReq("POST"), { params: Promise.resolve({ id: otherClientId }) });
     expect(res.status).toBe(404);
   });
+
+  // Commit follows the same preamble as preview (Task 8's binding decision,
+  // reused for Task 13): existence-hiding 404, not 403.
+  it("commit -> 404", async () => {
+    const res = await COMMIT(makeReq("POST"), { params: Promise.resolve({ id: otherClientId }) });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── Commit route (Task 13) ──────────────────────────────────────────────────
+// A dedicated fixture + draft, isolated from the main flow above: committing
+// mutates the P side heavily (household/family-member/owner rewrites) and
+// mints a real S client + household, so it can't share `f`'s draft with the
+// PATCH/PUT/preview/abandon sequence above without disturbing their order.
+d("divorce-plan commit route", () => {
+  let f2: MarriedFixture;
+  let spouseClientId: string | undefined;
+  let spouseHouseholdId: string | undefined;
+
+  beforeAll(async () => {
+    f2 = await createMarriedFixture();
+    const created = await POST(makeReq("POST"), { params: Promise.resolve({ id: f2.clientId }) });
+    expect(created.status).toBe(200);
+  });
+
+  afterAll(async () => {
+    // Teardown order: S client, then S household (crmHouseholdId is RESTRICT),
+    // then the P fixture — mirrors commit-divorce-plan.test.ts's teardownCommit.
+    if (spouseClientId) await db.delete(clients).where(eq(clients.id, spouseClientId));
+    if (spouseHouseholdId) await db.delete(crmHouseholds).where(eq(crmHouseholds.id, spouseHouseholdId));
+    await destroyFixture(f2);
+  });
+
+  it("commit on a blocked draft -> 422 { error: 'blocked', blockers }", async () => {
+    // No allocation decisions have been made yet — the joint objects
+    // (jointBrokerage, house, livingExpense, jointMortgage) all still
+    // needsDecision, so buildCommitPreview's unresolved_joint blocker fires.
+    const res = await COMMIT(makeReq("POST"), { params: Promise.resolve({ id: f2.clientId }) });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBe("blocked");
+    expect(Array.isArray(body.blockers)).toBe(true);
+    expect(body.blockers.length).toBeGreaterThan(0);
+    expect(body.blockers.some((b: { code: string }) => b.code === "unresolved_joint")).toBe(true);
+  });
+
+  it(
+    "commit on the confirmed fixture -> 200 { spouseClientId, spouseHouseholdId }; a concurrent second POST -> 409; GET now 404 (no_draft)",
+    async () => {
+      // Resolve every joint object to `primary` — same set the main flow
+      // above confirms — so buildCommitPreview reports blockers: [].
+      const putRes = await PUT(
+        makeReq("PUT", {
+          items: [
+            { targetKind: "account", targetId: f2.ids.jointBrokerage, disposition: "primary", splitPercentToSpouse: null },
+            { targetKind: "account", targetId: f2.ids.house, disposition: "primary", splitPercentToSpouse: null },
+            { targetKind: "expense", targetId: f2.ids.livingExpense, disposition: "primary", splitPercentToSpouse: null },
+            { targetKind: "liability", targetId: f2.ids.jointMortgage, disposition: "primary", splitPercentToSpouse: null },
+          ],
+        }),
+        { params: Promise.resolve({ id: f2.clientId }) }
+      );
+      expect(putRes.status).toBe(200);
+
+      // Fire two commits without awaiting between them — the engine's
+      // concurrency guard is a first-write-wins UPDATE ... WHERE status =
+      // 'draft' inside the tx, so a genuine race (not a call made after the
+      // first has already resolved) is required to observe the `concurrent`
+      // (409) branch rather than `no_draft` (404).
+      const [resA, resB] = await Promise.all([
+        COMMIT(makeReq("POST"), { params: Promise.resolve({ id: f2.clientId }) }),
+        COMMIT(makeReq("POST"), { params: Promise.resolve({ id: f2.clientId }) }),
+      ]);
+      const [bodyA, bodyB] = await Promise.all([resA.json(), resB.json()]);
+      const results = [
+        { status: resA.status, body: bodyA },
+        { status: resB.status, body: bodyB },
+      ];
+
+      const winner = results.find((r) => r.status === 200);
+      const loser = results.find((r) => r.status === 409);
+      expect(winner).toBeTruthy();
+      expect(loser).toBeTruthy();
+      expect(winner!.body.spouseClientId).toEqual(expect.any(String));
+      expect(winner!.body.spouseHouseholdId).toEqual(expect.any(String));
+      expect(winner!.body.spouseClientId).not.toBe("");
+      expect(winner!.body.spouseHouseholdId).not.toBe("");
+      expect(loser!.body.error).toBe("concurrent");
+
+      spouseClientId = winner!.body.spouseClientId as string;
+      spouseHouseholdId = winner!.body.spouseHouseholdId as string;
+
+      const getRes = await GET(makeReq("GET"), { params: Promise.resolve({ id: f2.clientId }) });
+      expect(getRes.status).toBe(404);
+      const getBody = await getRes.json();
+      expect(getBody.error).toBe("no_draft");
+    },
+    30000
+  );
 });
