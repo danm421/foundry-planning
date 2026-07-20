@@ -42,7 +42,7 @@ export default async function DivorcePlanningEntry({
   const hasDraft = draftRows.length > 0;
 
   return (
-    <section className="card mb-6 p-[var(--pad-card)]">
+    <section className="card mt-6 p-[var(--pad-card)]">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <span className="chip">Household</span>

@@ -28,14 +28,14 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
 
   return (
     <DetailsPageShell clientId={id} scenarioId={sp.scenario}>
+      <Suspense fallback={<FamilySkeleton />}>
+        <FamilyContent clientId={id} scenarioParam={sp.scenario} />
+      </Suspense>
       {/* Self-contained: renders nothing unless the client files as married and
           the household has a spouse contact. Its own Suspense so its cheap
           probe queries don't block the family view's first paint. */}
       <Suspense fallback={null}>
         <DivorcePlanningEntry clientId={id} />
-      </Suspense>
-      <Suspense fallback={<FamilySkeleton />}>
-        <FamilyContent clientId={id} scenarioParam={sp.scenario} />
       </Suspense>
     </DetailsPageShell>
   );
