@@ -8,6 +8,7 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { useToast } from "@/components/toast";
+import type { ProviderId } from "@/lib/integrations/types";
 
 interface Household {
   id: string;
@@ -21,6 +22,10 @@ interface ClientOption {
   lastName: string | null;
 }
 
+interface Props {
+  providerId: ProviderId;
+}
+
 function clientLabel(c: ClientOption): string {
   const name = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
   return name || c.id;
@@ -28,7 +33,7 @@ function clientLabel(c: ClientOption): string {
 
 const col = createColumnHelper<Household>();
 
-export function OrionHouseholdLinkTable() {
+export function IntegrationHouseholdLinkTable({ providerId }: Props) {
   const { showToast } = useToast();
   const [households, setHouseholds] = useState<Household[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
@@ -42,7 +47,7 @@ export function OrionHouseholdLinkTable() {
     (async () => {
       try {
         const [hhRes, clientsRes] = await Promise.all([
-          fetch("/api/integrations/orion/households"),
+          fetch(`/api/integrations/${providerId}/households`),
           fetch("/api/clients"),
         ]);
         if (!hhRes.ok || !clientsRes.ok) throw new Error("load failed");
@@ -60,7 +65,7 @@ export function OrionHouseholdLinkTable() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [providerId]);
 
   const clientName = useCallback(
     (clientId: string): string => {
@@ -77,10 +82,10 @@ export function OrionHouseholdLinkTable() {
         prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: clientId } : h)),
       );
       try {
-        const res = await fetch("/api/integrations/orion/households/link", {
+        const res = await fetch(`/api/integrations/${providerId}/households/link`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId, orionHouseholdId: householdId }),
+          body: JSON.stringify({ clientId, externalHouseholdId: householdId }),
         });
         if (!res.ok) throw new Error("link failed");
       } catch {
@@ -90,7 +95,7 @@ export function OrionHouseholdLinkTable() {
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [showToast],
+    [providerId, showToast],
   );
 
   const unlink = useCallback(
@@ -100,7 +105,7 @@ export function OrionHouseholdLinkTable() {
         prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: null } : h)),
       );
       try {
-        const res = await fetch("/api/integrations/orion/households/link", {
+        const res = await fetch(`/api/integrations/${providerId}/households/link`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId }),
@@ -113,7 +118,7 @@ export function OrionHouseholdLinkTable() {
         showToast({ message: "Couldn't update the link. Please try again." });
       }
     },
-    [showToast],
+    [providerId, showToast],
   );
 
   const columns = useMemo(
@@ -192,14 +197,14 @@ export function OrionHouseholdLinkTable() {
     return <p className="text-sm text-ink-3">Loading…</p>;
   }
   if (loadError) {
-    return <p className="text-sm text-ink-3">Couldn&apos;t load Orion households.</p>;
+    return <p className="text-sm text-ink-3">Couldn&apos;t load households.</p>;
   }
 
   return (
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-ink">Household links</h3>
       <p className="text-sm text-ink-3">
-        Link each Orion household to a Foundry client so sync knows where its accounts land.
+        Link each household to a Foundry client so sync knows where its accounts land.
       </p>
       <div className="overflow-hidden rounded border border-hair">
         <table className="w-full text-sm">
@@ -227,7 +232,7 @@ export function OrionHouseholdLinkTable() {
             {households.length === 0 && (
               <tr>
                 <td colSpan={columns.length} className="px-3 py-6 text-center text-ink-3">
-                  No Orion households found.
+                  No households found.
                 </td>
               </tr>
             )}

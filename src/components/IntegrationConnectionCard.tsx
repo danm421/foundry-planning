@@ -4,11 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import type { ProviderId } from "@/lib/integrations/types";
 
-type OrionStatus = "connected" | "disconnected" | "error";
+type ConnectionStatus = "connected" | "disconnected" | "error";
 
 interface Props {
-  status: OrionStatus;
+  providerId: ProviderId;
+  label: string;
+  enabled: boolean;
+  status: ConnectionStatus;
   /** ISO string (serialized across the server boundary) or null. */
   lastSyncedAt: string | null;
   lastSyncError: string | null;
@@ -36,7 +40,7 @@ function SyncIcon() {
   );
 }
 
-function StatusPip({ status }: { status: OrionStatus }) {
+function StatusPip({ status }: { status: ConnectionStatus }) {
   const dot =
     status === "connected"
       ? "bg-good"
@@ -67,15 +71,38 @@ function formatSyncedAt(iso: string): string {
   });
 }
 
-export function OrionConnectionCard({ status, lastSyncedAt, lastSyncError }: Props) {
+export function IntegrationConnectionCard({
+  providerId,
+  label,
+  enabled,
+  status,
+  lastSyncedAt,
+  lastSyncError,
+}: Props) {
   const router = useRouter();
   const { showToast } = useToast();
   const [busy, setBusy] = useState<"sync" | "disconnect" | null>(null);
 
+  if (!enabled) {
+    return (
+      <div className="rounded-lg border border-hair p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-ink">{label}</h2>
+          <span className="rounded-full bg-card-2 px-2 py-0.5 text-xs text-ink-3">
+            Available soon
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-ink-3">
+          We&rsquo;re working with {label} to enable direct account syncing.
+        </p>
+      </div>
+    );
+  }
+
   async function handleSync() {
     setBusy("sync");
     try {
-      const res = await fetch("/api/integrations/orion/sync", {
+      const res = await fetch(`/api/integrations/${providerId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -97,7 +124,7 @@ export function OrionConnectionCard({ status, lastSyncedAt, lastSyncError }: Pro
   async function handleDisconnect() {
     setBusy("disconnect");
     try {
-      const res = await fetch("/api/integrations/orion/disconnect", { method: "POST" });
+      const res = await fetch(`/api/integrations/${providerId}/disconnect`, { method: "POST" });
       if (!res.ok) throw new Error("disconnect failed");
       router.refresh();
     } catch {
@@ -121,11 +148,11 @@ export function OrionConnectionCard({ status, lastSyncedAt, lastSyncError }: Pro
       {status === "disconnected" ? (
         <>
           <p className="text-sm text-ink-3">
-            Connect your Orion account to sync household accounts and holdings into Foundry.
+            Connect your {label} account to sync household accounts and holdings into Foundry.
           </p>
           <div>
-            <a className="btn-primary" href="/api/integrations/orion/connect">
-              Connect Orion
+            <a className="btn-primary" href={`/api/integrations/${providerId}/connect`}>
+              Connect {label}
             </a>
           </div>
         </>
@@ -134,12 +161,12 @@ export function OrionConnectionCard({ status, lastSyncedAt, lastSyncError }: Pro
       {status === "error" ? (
         <>
           <p className="text-sm text-ink-3">
-            Foundry can no longer reach Orion. Reconnect to resume syncing.
+            Foundry can no longer reach {label}. Reconnect to resume syncing.
             {lastSyncError ? ` (${lastSyncError})` : ""}
           </p>
           <div>
-            <a className="btn-primary" href="/api/integrations/orion/connect">
-              Reconnect Orion
+            <a className="btn-primary" href={`/api/integrations/${providerId}/connect`}>
+              Reconnect {label}
             </a>
           </div>
         </>
@@ -156,7 +183,7 @@ export function OrionConnectionCard({ status, lastSyncedAt, lastSyncError }: Pro
             <SyncIcon />
             {busy === "sync" ? "Syncing…" : "Sync now"}
           </button>
-          <FieldTooltip text="Pulls accounts and holdings from linked Orion households. Existing accounts update in place; new ones are queued for your review before they touch a plan." />
+          <FieldTooltip text={`Pulls accounts and holdings from linked ${label} households. Existing accounts update in place; new ones are queued for your review before they touch a plan.`} />
           <button
             type="button"
             className="btn-ghost text-sm"
