@@ -10,6 +10,16 @@ import { CRM_ACCOUNT_FIELD_LABELS } from "@/lib/audit/field-labels";
 import { toCrmAccountSnapshot } from "./activity-snapshots";
 import type { CreateCrmAccountInput } from "./schemas";
 
+/**
+ * Renders an account's last-4 for an activity-feed *title* string. Titles are
+ * plain text (unlike `crm_activity.metadata`, which redacts sensitive fields
+ * entirely) so we mask the digits with a `••` prefix rather than showing them
+ * bare. Preserves the existing "—" fallback for a missing account number.
+ */
+function maskAccountNumberLast4(last4: string | null | undefined): string {
+  return last4 ? `••${last4}` : "—";
+}
+
 export async function createCrmAccount(householdId: string, input: CreateCrmAccountInput) {
   const { orgId } = await requireCrmHouseholdAccess(householdId);
   const { userId } = await auth();
@@ -36,7 +46,7 @@ export async function createCrmAccount(householdId: string, input: CreateCrmAcco
     {
       householdId,
       kind: "account_change",
-      title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${input.accountNumberLast4 ?? "—"})`,
+      title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${maskAccountNumberLast4(input.accountNumberLast4)})`,
       metadata: { accountId: created.id },
       occurredAt: new Date(),
     },
@@ -77,7 +87,7 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
       {
         householdId: existing.householdId,
         kind: "account_change",
-        title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+        title: `Updated account ${existing.custodian ?? "—"} ${maskAccountNumberLast4(existing.accountNumberLast4)}`,
         metadata: { accountId, changes },
         occurredAt: new Date(),
       },
@@ -105,7 +115,7 @@ export async function deleteCrmAccount(accountId: string) {
     {
       householdId: existing.householdId,
       kind: "account_change",
-      title: `Removed account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+      title: `Removed account ${existing.custodian ?? "—"} ${maskAccountNumberLast4(existing.accountNumberLast4)}`,
       occurredAt: new Date(),
     },
     { actorUserId: userId ?? "" },

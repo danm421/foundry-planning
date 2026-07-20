@@ -99,6 +99,12 @@ describe("updateCrmAccount activity wiring", () => {
       const serialized = JSON.stringify(metadata);
       expect(serialized).not.toContain("9999"); // new account number
       expect(serialized).not.toContain("1111"); // old account number
+
+      // The activity *title* is plain text (not redacted metadata) and
+      // interpolates the account number separately — it must render the
+      // masked "••<last4>" form, never the bare digits, so the row doesn't
+      // announce a redaction while disclosing the value right above it.
+      expect(payload.title).toBe("Updated account Schwab ••1111");
     } finally {
       activitySpy.mockRestore();
     }
