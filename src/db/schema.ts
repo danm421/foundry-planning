@@ -562,6 +562,10 @@ export const crmHouseholds = pgTable("crm_households", {
   firmId: text("firm_id").notNull(),
   advisorId: text("advisor_id").notNull(),
   name: text("name").notNull(),
+  // When true the advisor ticked "Use a custom name" and `name` is frozen —
+  // syncHouseholdNameFromContacts returns early instead of re-deriving it.
+  // Default false: every household is dynamic until someone opts out.
+  nameIsCustom: boolean("name_is_custom").notNull().default(false),
   status: crmHouseholdStatusEnum("status").notNull().default("prospect"),
   notes: text("notes"),
   // Canonical household residence (USPS 2-letter code; 50 states + DC).
