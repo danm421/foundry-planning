@@ -52,6 +52,8 @@ import {
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
+import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
+import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 
 // Drizzle transaction handle — same convention as create-client.ts / ownership.ts.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -166,6 +168,10 @@ async function applySectionsToClient(
       });
     }
   }
+
+  // Primary rename, spouse rename, and first-time spouse insert all land above
+  // and all change the derived household label. One sync covers all three.
+  await syncHouseholdNameFromContacts(tx, client.crmHouseholdId);
 
   // Household residence state.
   if (payload.family.stateOfResidence) {
@@ -456,7 +462,13 @@ export async function applyIntake(args: {
         .values({
           firmId,
           advisorId: form.createdByUserId,
-          name: `${primary.lastName} Household`,
+          name:
+            deriveHouseholdNameFromContacts([
+              { role: "primary", firstName: primary.firstName, lastName: primary.lastName },
+              ...(spouse
+                ? [{ role: "spouse", firstName: spouse.firstName, lastName: spouse.lastName }]
+                : []),
+            ]) ?? `${primary.lastName} Household`,
           state: payload.family.stateOfResidence ?? null,
         })
         .returning({ id: crmHouseholds.id });
