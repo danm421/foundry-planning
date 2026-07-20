@@ -14,7 +14,7 @@ import type { EntitySnapshot } from "@/lib/audit/types";
 
 type ContactFields = {
   id?: string;
-  familyMemberId?: string;
+  familyMemberId?: string | null;
   householdId?: string;
   firstName?: string | null;
   lastName?: string | null;

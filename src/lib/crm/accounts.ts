@@ -5,6 +5,9 @@ import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
+import { buildFieldChanges } from "@/lib/audit/build-changes";
+import { CRM_ACCOUNT_FIELD_LABELS } from "@/lib/audit/field-labels";
+import { toCrmAccountSnapshot } from "./activity-snapshots";
 import type { CreateCrmAccountInput } from "./schemas";
 
 export async function createCrmAccount(householdId: string, input: CreateCrmAccountInput) {
@@ -64,16 +67,23 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
     resourceId: accountId,
     firmId: orgId,
   });
-  await recordActivity(
-    {
-      householdId: existing.householdId,
-      kind: "account_change",
-      title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
-      metadata: { accountId, fields: Object.keys(patch) },
-      occurredAt: new Date(),
-    },
-    { actorUserId: userId ?? "" },
+  const changes = buildFieldChanges(
+    toCrmAccountSnapshot(existing),
+    toCrmAccountSnapshot(updated),
+    CRM_ACCOUNT_FIELD_LABELS,
   );
+  if (changes.length > 0) {
+    await recordActivity(
+      {
+        householdId: existing.householdId,
+        kind: "account_change",
+        title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+        metadata: { accountId, changes },
+        occurredAt: new Date(),
+      },
+      { actorUserId: userId ?? "" },
+    );
+  }
   return updated;
 }
 
