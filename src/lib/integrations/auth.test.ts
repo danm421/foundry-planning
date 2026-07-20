@@ -48,9 +48,13 @@ describe("getValidAccessToken", () => {
   });
 
   it("makeCallContext binds firmId and providerId into the token getter", async () => {
+    await upsertConnection({
+      firmId, providerId: "orion", accessToken: "AT", refreshToken: "RT", userId: "u1",
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
     __setRefresher(async () => ({ accessToken: "refreshed" }));
-    const ctx = makeCallContext("firm_1", "orion");
-    expect(ctx.firmId).toBe("firm_1");
+    const ctx = makeCallContext(firmId, "orion");
+    expect(ctx.firmId).toBe(firmId);
     expect(ctx.providerId).toBe("orion");
     await expect(ctx.getToken()).resolves.toBeTypeOf("string");
   });
