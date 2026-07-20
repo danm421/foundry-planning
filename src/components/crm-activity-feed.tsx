@@ -280,11 +280,11 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
                   {row.body}
                 </p>
               )}
-              {row.metadata?.changes?.length ? (
+              {Array.isArray(row.metadata?.changes) && row.metadata.changes.length ? (
                 <div className="mt-1.5">
                   <UpdateRowBody changes={row.metadata.changes} />
                 </div>
-              ) : row.metadata?.fields?.length ? (
+              ) : Array.isArray(row.metadata?.fields) && row.metadata.fields.length ? (
                 // Legacy rows (pre-diff) stored field names only — never values,
                 // so they cannot be backfilled into a before → after view.
                 <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">

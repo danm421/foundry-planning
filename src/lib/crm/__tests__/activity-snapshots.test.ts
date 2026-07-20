@@ -3,6 +3,10 @@ import {
   toCrmContactSnapshot,
   toCrmAccountSnapshot,
 } from "../activity-snapshots";
+import {
+  CRM_CONTACT_FIELD_LABELS,
+  CRM_ACCOUNT_FIELD_LABELS,
+} from "@/lib/audit/field-labels";
 
 describe("toCrmContactSnapshot", () => {
   it("carries the labelled contact fields", () => {
@@ -52,5 +56,37 @@ describe("toCrmAccountSnapshot", () => {
   it("leaves a null balance null rather than coercing to 0", () => {
     const snap = toCrmAccountSnapshot({ custodian: "Schwab", balance: null });
     expect(snap.balance).toBeNull();
+  });
+});
+
+// Redaction is not enforced by buildFieldChanges — it's enforced by whether a
+// field's descriptor in these label tables carries `sensitive: true`. The
+// mechanism (buildFieldChanges honoring `sensitive`) is well covered above
+// and in contacts.test.ts / accounts.test.ts, but nothing pins the table
+// *entries* themselves. `ssnLast4` and `accountNumberLast4` happen to be
+// exercised end-to-end by those update-wiring tests, but `dateOfBirth` is
+// not: delete `sensitive: true` from its line in CRM_CONTACT_FIELD_LABELS
+// and the full suite stays green while full dates of birth start persisting
+// into a jsonb activity-log column and serializing straight to the browser.
+// This is the one assertion standing between that and a passing build.
+describe("sensitive-field label pins", () => {
+  it("marks the identity-sensitive CRM contact fields as sensitive in CRM_CONTACT_FIELD_LABELS", () => {
+    for (const field of ["ssnLast4", "dateOfBirth"] as const) {
+      expect(
+        CRM_CONTACT_FIELD_LABELS[field]?.sensitive,
+        `CRM_CONTACT_FIELD_LABELS.${field} must be marked sensitive: true — ` +
+          `without it, this field's raw value (a piece of PII) is written ` +
+          `into the activity feed's jsonb metadata and rendered to the browser.`,
+      ).toBe(true);
+    }
+  });
+
+  it("marks accountNumberLast4 as sensitive in CRM_ACCOUNT_FIELD_LABELS", () => {
+    expect(
+      CRM_ACCOUNT_FIELD_LABELS.accountNumberLast4?.sensitive,
+      "CRM_ACCOUNT_FIELD_LABELS.accountNumberLast4 must be marked sensitive: true — " +
+        "without it, account numbers are written into the activity feed's jsonb " +
+        "metadata and rendered to the browser.",
+    ).toBe(true);
   });
 });
