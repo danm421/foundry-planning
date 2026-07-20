@@ -1034,6 +1034,99 @@ export const scenarioSnapshots = pgTable("scenario_snapshots", {
   clientIdx: index("scenario_snapshots_client_idx").on(t.clientId),
 }));
 
+export const divorcePlanStatusEnum = pgEnum("divorce_plan_status", [
+  "draft",
+  "committed",
+  "abandoned",
+]);
+
+export const divorceDispositionEnum = pgEnum("divorce_disposition", [
+  "primary",
+  "spouse",
+  "split",
+  "duplicate",
+]);
+
+// One divorce-planning draft per married client. The draft stores DECISIONS
+// only (settings here, per-object rows in divorce_plan_allocations) — never
+// copied balances; the workbench always joins live planning data. Commit is
+// one-way: it mints the spouse's household/client and marks this row
+// committed. History (committed/abandoned rows) is retained.
+export const divorcePlans = pgTable(
+  "divorce_plans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    firmId: text("firm_id").notNull(),
+    status: divorcePlanStatusEnum("status").notNull().default("draft"),
+    primaryFilingStatus: filingStatusEnum("primary_filing_status")
+      .notNull()
+      .default("single"),
+    spouseFilingStatus: filingStatusEnum("spouse_filing_status")
+      .notNull()
+      .default("single"),
+    // Residence state for the spouse's new file. Defaults to the household
+    // state at draft creation; nullable because the household's may be null.
+    spouseState: text("spouse_state"),
+    splitYear: integer("split_year").notNull(),
+    // { selections: Array<{ source, id, remove }> } — persisted cleanup
+    // checklist decisions from the commit preview (see src/lib/divorce/schemas.ts).
+    beneficiaryCleanup: jsonb("beneficiary_cleanup").notNull().default({}),
+    committedAt: timestamp("committed_at"),
+    resultClientId: uuid("result_client_id").references(() => clients.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("divorce_plans_firm_idx").on(t.firmId),
+    index("divorce_plans_client_idx").on(t.clientId),
+    // One LIVE draft per client; committed/abandoned history is unlimited.
+    uniqueIndex("divorce_plans_live_draft_uniq")
+      .on(t.clientId)
+      .where(sql`${t.status} = 'draft'`),
+  ],
+);
+
+export const divorcePlanAllocations = pgTable(
+  "divorce_plan_allocations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    divorcePlanId: uuid("divorce_plan_id")
+      .notNull()
+      .references(() => divorcePlans.id, { onDelete: "cascade" }),
+    // Same vocabulary family as the scenario targetKind registry:
+    // account · income · expense · liability · entity · note_receivable · family_member
+    targetKind: text("target_kind").notNull(),
+    targetId: uuid("target_id").notNull(),
+    disposition: divorceDispositionEnum("disposition").notNull(),
+    splitPercentToSpouse: decimal("split_percent_to_spouse", {
+      precision: 6,
+      scale: 4,
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("divorce_alloc_target_uniq").on(
+      t.divorcePlanId,
+      t.targetKind,
+      t.targetId,
+    ),
+    // split ⟺ percent present, and percent strictly between 0 and 100.
+    check(
+      "divorce_alloc_split_pct",
+      sql`((${t.disposition} = 'split') = (${t.splitPercentToSpouse} IS NOT NULL))
+        AND (${t.splitPercentToSpouse} IS NULL
+          OR (${t.splitPercentToSpouse} > 0 AND ${t.splitPercentToSpouse} < 100))`,
+    ),
+  ],
+);
+
 export const planSettings = pgTable("plan_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
