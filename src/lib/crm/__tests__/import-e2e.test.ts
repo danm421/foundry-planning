@@ -190,4 +190,36 @@ describe("CRM bulk import — e2e", () => {
       .where(eq(crmHouseholds.firmId, ORG_ID));
     expect(after.name).toBe("Johnson Trust");
   });
+
+  it("does not lock a whitespace-only household name", async () => {
+    // Clean slate so the firmId-scoped lookup below is unambiguous.
+    await purge();
+
+    // parseCsv trims cells before validation, so a whitespace-only name
+    // never reaches commit() via the CSV path — but the commit API route
+    // re-validates decisions with a schema that doesn't trim, so a
+    // whitespace-only name CAN reach commit() directly from there. Drive
+    // commit() the same way to prove the lock condition's false branch.
+    const decisions: ImportDecision[] = [
+      {
+        action: "create",
+        row: {
+          household: {
+            name: "   ",
+            advisorId: "test_advisor_e2e",
+            status: "prospect",
+          },
+          primary: { role: "primary", firstName: "Ann", lastName: "NoName" },
+        },
+      },
+    ];
+    const { created } = await commit(decisions);
+    expect(created).toBe(1);
+
+    const [h] = await db
+      .select({ nameIsCustom: crmHouseholds.nameIsCustom })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.firmId, ORG_ID));
+    expect(h.nameIsCustom).toBe(false);
+  });
 });

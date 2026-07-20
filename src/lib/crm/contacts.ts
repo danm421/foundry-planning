@@ -26,9 +26,11 @@ export async function createCrmContact(
   householdId: string,
   input: CreateCrmContactInput,
   // Bulk CSV import seeds households with advisor-typed names ("Johnson Trust")
-  // then adds contacts; it opts out so the derived name doesn't clobber them.
-  // The interactive add-contact endpoint keeps the default so adding a spouse
-  // updates the household name.
+  // by setting nameIsCustom on the household at creation, which locks the
+  // name inside syncHouseholdNameFromContacts — that's why it's safe to
+  // leave this at the default here. The interactive add-contact endpoint
+  // also keeps the default, so adding a spouse to an unlocked household
+  // still updates the derived household name.
   options: { syncHouseholdName?: boolean } = {},
 ) {
   const { syncHouseholdName = true } = options;
