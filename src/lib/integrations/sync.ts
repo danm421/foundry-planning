@@ -1,19 +1,21 @@
-// src/lib/orion/sync.ts
+// src/lib/integrations/sync.ts
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { accounts, clientImports, orionSyncRuns, scenarios } from "@/db/schema";
+import { accounts, clientImports, integrationSyncRuns, scenarios } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { resolveHoldingsForCommit } from "@/lib/imports/commit/holdings";
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
 import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 
-import { OrionClient } from "./client";
+import { makeCallContext } from "./auth";
 import { getConnection, setConnectionStatus } from "./connections";
 import { getHouseholdLinks } from "./households";
-import { mapOrionToImportPayload } from "./map";
+import { mapToImportPayload } from "./map";
 import { reconcile } from "./reconcile";
+import { getProvider } from "./registry";
+import type { ProviderClient, ProviderId } from "./types";
 
 /**
  * Orion → planning sync orchestrator. Reuses the document-import commit path
@@ -30,22 +32,30 @@ import { reconcile } from "./reconcile";
  */
 export async function syncFirm(
   firmId: string,
-  opts: { trigger: "manual" | "cron"; clientId?: string; client?: OrionClient; userId?: string },
+  providerId: ProviderId,
+  opts: {
+    trigger: "manual" | "cron";
+    clientId?: string;
+    client?: ProviderClient;
+    userId?: string;
+  },
 ): Promise<{ committed: number; queued: number; importId?: string }> {
-  const conn = await getConnection(firmId);
+  const provider = getProvider(providerId);
+  const conn = await getConnection(firmId, providerId);
   if (!conn || conn.status === "disconnected") {
-    throw new Error(`Orion is not connected for firm ${firmId}`);
+    throw new Error(`${provider.label} is not connected for firm ${firmId}`);
   }
 
   // One resolved identity for ctx.userId, createdByUserId, AND every audit
   // actorId — guarantees recordAudit never falls back to Clerk auth() (works
   // in cron + tests). The route passes the real advisor id for manual syncs.
-  const userId = opts.userId ?? "system:orion-sync";
-  const client = opts.client ?? new OrionClient({ firmId });
+  const userId = opts.userId ?? `system:${providerId}-sync`;
+  const client = opts.client ?? provider.client;
+  const ctx = makeCallContext(firmId, providerId);
 
   const [run] = await db
-    .insert(orionSyncRuns)
-    .values({ firmId, trigger: opts.trigger, status: "running" })
+    .insert(integrationSyncRuns)
+    .values({ firmId, provider: providerId, trigger: opts.trigger, status: "running" })
     .returning();
 
   let committed = 0;
@@ -54,7 +64,7 @@ export async function syncFirm(
   let importId: string | undefined;
 
   try {
-    let links = await getHouseholdLinks(firmId);
+    let links = await getHouseholdLinks(firmId, providerId);
     if (opts.clientId) links = links.filter((l) => l.clientId === opts.clientId);
 
     for (const link of links) {
@@ -67,27 +77,29 @@ export async function syncFirm(
           .limit(1);
         if (!scn) {
           await recordAudit({
-            action: "orion_sync.run",
-            resourceType: "orion_household_link",
+            action: "integration.sync",
+            resourceType: "integration_household_link",
             resourceId: link.id,
             clientId: link.clientId,
             firmId,
-            metadata: { error: "no base scenario" },
+            metadata: { error: "no base scenario", provider: providerId },
             actorId: userId,
           });
           continue;
         }
 
-        const orionAccounts = await client.getAccounts(link.orionHouseholdId);
+        const providerAccounts = await client.getAccounts(ctx, link.externalHouseholdId);
         const positionsByAccount = new Map(
           await Promise.all(
-            orionAccounts.map(async (a) => [a.id, await client.getPositions(a.id)] as const),
+            providerAccounts.map(async (a) => [a.id, await client.getPositions(ctx, a.id)] as const),
           ),
         );
 
-        const mapped = mapOrionToImportPayload(
-          { id: link.orionHouseholdId, name: "" },
-          orionAccounts,
+        const mapped = mapToImportPayload(
+          providerId,
+          provider.registrationTable,
+          { id: link.externalHouseholdId, name: "" },
+          providerAccounts,
           positionsByAccount,
         );
 
@@ -101,7 +113,7 @@ export async function syncFirm(
           .where(
             and(
               eq(accounts.clientId, link.clientId),
-              eq(accounts.externalProvider, "orion"),
+              eq(accounts.externalProvider, providerId),
               eq(accounts.scenarioId, scn.id),
             ),
           );
@@ -126,7 +138,7 @@ export async function syncFirm(
               mode: "updating",
               status: "draft",
               createdByUserId: userId,
-              origin: "orion",
+              origin: providerId,
               payloadJson: { payload: exactPayload },
             })
             .returning();
@@ -178,7 +190,7 @@ export async function syncFirm(
             .where(
               and(
                 eq(clientImports.clientId, link.clientId),
-                eq(clientImports.origin, "orion"),
+                eq(clientImports.origin, providerId),
                 eq(clientImports.status, "review"),
               ),
             )
@@ -200,7 +212,7 @@ export async function syncFirm(
                 mode: "updating",
                 status: "review",
                 createdByUserId: userId,
-                origin: "orion",
+                origin: providerId,
                 payloadJson: { payload: reviewPayload },
               })
               .returning();
@@ -214,12 +226,12 @@ export async function syncFirm(
       } catch (err) {
         // Per-household isolation: one bad household can't abort the firm.
         await recordAudit({
-          action: "orion_sync.run",
-          resourceType: "orion_household_link",
+          action: "integration.sync",
+          resourceType: "integration_household_link",
           resourceId: link.id,
           clientId: link.clientId,
           firmId,
-          metadata: { error: String(err) },
+          metadata: { error: String(err), provider: providerId },
           actorId: userId,
         });
         continue;
@@ -227,7 +239,7 @@ export async function syncFirm(
     }
 
     await db
-      .update(orionSyncRuns)
+      .update(integrationSyncRuns)
       .set({
         status: "ok",
         householdsSynced: households,
@@ -235,25 +247,25 @@ export async function syncFirm(
         accountsQueued: queued,
         finishedAt: new Date(),
       })
-      .where(eq(orionSyncRuns.id, run.id));
+      .where(eq(integrationSyncRuns.id, run.id));
 
-    await setConnectionStatus(firmId, "connected", null, { lastSyncedAt: new Date() });
+    await setConnectionStatus(firmId, providerId, "connected", null, { lastSyncedAt: new Date() });
 
     await recordAudit({
-      action: "orion_sync.run",
-      resourceType: "orion_connection",
+      action: "integration.sync",
+      resourceType: "integration_connection",
       resourceId: firmId,
       firmId,
-      metadata: { trigger: opts.trigger, committed, queued, households },
+      metadata: { trigger: opts.trigger, committed, queued, households, provider: providerId },
       actorId: userId,
     });
 
     return { committed, queued, importId };
   } catch (err) {
     await db
-      .update(orionSyncRuns)
+      .update(integrationSyncRuns)
       .set({ status: "error", error: String(err), finishedAt: new Date() })
-      .where(eq(orionSyncRuns.id, run.id));
+      .where(eq(integrationSyncRuns.id, run.id));
     throw err;
   }
 }
