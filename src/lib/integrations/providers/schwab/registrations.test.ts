@@ -13,6 +13,8 @@ describe("Schwab registration types", () => {
     ["Company Retirement Account", "retirement", "401k"],
     ["Individual 401(k)", "retirement", "401k"],
     ["403(b)(7)", "retirement", "403b"],
+    ["Roth Individual 401(k)", "retirement", "401k"],
+    ["Roth 403(b)", "retirement", "403b"],
     ["Education Savings Account", "taxable", "529"],
     ["529 Plan", "taxable", "529"],
     ["Schwab One Individual", "taxable", "brokerage"],
