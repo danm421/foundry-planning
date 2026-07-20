@@ -8,6 +8,7 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 import { loadPortalHousehold } from "@/lib/portal/load-profile-data";
+import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export async function PUT(req: Request): Promise<Response> {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Both loop roles feed the derived household name; sync once after the
+    // loop rather than per-role so a two-role patch writes the name once.
+    let nameChanged = false;
+
     for (const role of ["primary", "spouse"] as const) {
       const patch = body[role];
       if (!patch) continue;
@@ -91,6 +96,10 @@ export async function PUT(req: Request): Promise<Response> {
         .set(patch)
         .where(eq(crmHouseholdContacts.id, existing.id));
 
+      if (patch.firstName !== undefined || patch.lastName !== undefined) {
+        nameChanged = true;
+      }
+
       await recordUpdate({
         action: "portal.household.update",
         resourceType: "crm_household_contact",
@@ -108,6 +117,10 @@ export async function PUT(req: Request): Promise<Response> {
           phone: { label: "Phone", format: "text" },
         },
       });
+    }
+
+    if (nameChanged) {
+      await syncHouseholdNameFromContacts(db, client.crmHouseholdId);
     }
 
     return NextResponse.json({ ok: true });
