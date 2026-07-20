@@ -9,6 +9,7 @@ import {
   type ImportDecision,
 } from "../import";
 import { createCrmHousehold } from "../households";
+import { syncHouseholdNameFromContacts } from "../sync-household-name";
 
 // End-to-end import scenario against the real DB. Seeds a household,
 // parses a CSV string with five rows (one a typo-near-match of the
@@ -143,5 +144,50 @@ describe("CRM bulk import — e2e", () => {
     );
     const patel = contactCounts.find((c) => c.name === "Patel Estate");
     expect(patel?.contacts).toBe(2);
+  });
+
+  it("locks a CSV-supplied household name so later contact edits can't clobber it", async () => {
+    // Clean slate so the firmId-scoped lookups below are unambiguous.
+    await purge();
+
+    // Import a row whose household name is deliberately unlike the derived
+    // one ("Bob Johnson") — same shape as the "Johnson Trust" row in the
+    // dry-run scenario above, committed directly since dedup isn't the
+    // point of this test.
+    const header =
+      "household_name,primary_first,primary_last,primary_email,primary_phone,primary_dob,spouse_first,spouse_last,spouse_email,spouse_dob,advisor_id,status,notes,address_line1,city,state,postal_code";
+    const rows = [
+      "Johnson Trust,Bob,Johnson,bob@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
+    ];
+    const buf = Buffer.from([header, ...rows].join("\n"), "utf8");
+    const parsed = await parseCsv(buf);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.proposed).toHaveLength(1);
+
+    const decisions: ImportDecision[] = parsed.proposed.map((row) => ({
+      action: "create",
+      row,
+    }));
+    const { created } = await commit(decisions);
+    expect(created).toBe(1);
+
+    const [h] = await db
+      .select({
+        id: crmHouseholds.id,
+        name: crmHouseholds.name,
+        nameIsCustom: crmHouseholds.nameIsCustom,
+      })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.firmId, ORG_ID));
+    expect(h.name).toBe("Johnson Trust");
+    expect(h.nameIsCustom).toBe(true);
+
+    // The whole point: a later rename must NOT rewrite it.
+    await syncHouseholdNameFromContacts(db, h.id);
+    const [after] = await db
+      .select({ name: crmHouseholds.name })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.firmId, ORG_ID));
+    expect(after.name).toBe("Johnson Trust");
   });
 });
