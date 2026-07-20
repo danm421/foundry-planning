@@ -1,11 +1,13 @@
-// src/lib/orion/connections.ts
+// src/lib/integrations/connections.ts
 import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
-import { orionConnections, orionOauthStates } from "@/db/schema";
+import { integrationConnections, integrationOauthStates } from "@/db/schema";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/secrets";
+import type { ProviderId } from "./types";
 
-export type OrionConnectionRow = {
+export type IntegrationConnectionRow = {
   firmId: string;
+  providerId: ProviderId;
   status: "connected" | "disconnected" | "error";
   accessToken: string | null;
   refreshToken: string | null;
@@ -18,6 +20,7 @@ export type OrionConnectionRow = {
 
 export async function upsertConnection(input: {
   firmId: string;
+  providerId: ProviderId;
   accessToken: string;
   refreshToken?: string | null;
   expiresAt?: Date | null;
@@ -26,6 +29,7 @@ export async function upsertConnection(input: {
 }): Promise<void> {
   const values = {
     firmId: input.firmId,
+    provider: input.providerId,
     accessTokenEnc: encryptSecret(input.accessToken),
     refreshTokenEnc: input.refreshToken ? encryptSecret(input.refreshToken) : null,
     tokenExpiresAt: input.expiresAt ?? null,
@@ -36,20 +40,32 @@ export async function upsertConnection(input: {
     updatedAt: new Date(),
   };
   await db
-    .insert(orionConnections)
+    .insert(integrationConnections)
     .values(values)
-    .onConflictDoUpdate({ target: orionConnections.firmId, set: values });
+    .onConflictDoUpdate({
+      target: [integrationConnections.firmId, integrationConnections.provider],
+      set: values,
+    });
 }
 
-export async function getConnection(firmId: string): Promise<OrionConnectionRow | null> {
+export async function getConnection(
+  firmId: string,
+  providerId: ProviderId,
+): Promise<IntegrationConnectionRow | null> {
   const [row] = await db
     .select()
-    .from(orionConnections)
-    .where(eq(orionConnections.firmId, firmId))
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.firmId, firmId),
+        eq(integrationConnections.provider, providerId),
+      ),
+    )
     .limit(1);
   if (!row) return null;
   return {
     firmId: row.firmId,
+    providerId: row.provider,
     status: row.status,
     accessToken: row.accessTokenEnc ? decryptSecret(row.accessTokenEnc) : null,
     refreshToken: row.refreshTokenEnc ? decryptSecret(row.refreshTokenEnc) : null,
@@ -63,24 +79,33 @@ export async function getConnection(firmId: string): Promise<OrionConnectionRow 
 
 export async function setConnectionStatus(
   firmId: string,
+  providerId: ProviderId,
   status: "connected" | "disconnected" | "error",
   error?: string | null,
   extra?: { lastSyncedAt?: Date },
 ): Promise<void> {
   await db
-    .update(orionConnections)
+    .update(integrationConnections)
     .set({
       status,
       lastSyncError: error ?? null,
       updatedAt: new Date(),
       ...(extra?.lastSyncedAt ? { lastSyncedAt: extra.lastSyncedAt } : {}),
     })
-    .where(eq(orionConnections.firmId, firmId));
+    .where(
+      and(
+        eq(integrationConnections.firmId, firmId),
+        eq(integrationConnections.provider, providerId),
+      ),
+    );
 }
 
-export async function disconnectConnection(firmId: string): Promise<void> {
+export async function disconnectConnection(
+  firmId: string,
+  providerId: ProviderId,
+): Promise<void> {
   await db
-    .update(orionConnections)
+    .update(integrationConnections)
     .set({
       status: "disconnected",
       accessTokenEnc: "",
@@ -88,26 +113,39 @@ export async function disconnectConnection(firmId: string): Promise<void> {
       tokenExpiresAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(orionConnections.firmId, firmId));
+    .where(
+      and(
+        eq(integrationConnections.firmId, firmId),
+        eq(integrationConnections.provider, providerId),
+      ),
+    );
 }
 
-export async function listConnectedFirmIds(): Promise<string[]> {
+/** Every connected (firm, provider) pair — the cron's work list. */
+export async function listConnectedFirms(): Promise<
+  Array<{ firmId: string; providerId: ProviderId }>
+> {
   const rows = await db
-    .select({ firmId: orionConnections.firmId })
-    .from(orionConnections)
-    .where(eq(orionConnections.status, "connected"));
-  return rows.map((r) => r.firmId);
+    .select({
+      firmId: integrationConnections.firmId,
+      provider: integrationConnections.provider,
+    })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.status, "connected"));
+  return rows.map((r) => ({ firmId: r.firmId, providerId: r.provider }));
 }
 
 export async function createOauthState(input: {
   firmId: string;
+  providerId: ProviderId;
   userId: string;
   state: string;
   codeVerifier: string;
   ttlMs: number;
 }): Promise<void> {
-  await db.insert(orionOauthStates).values({
+  await db.insert(integrationOauthStates).values({
     firmId: input.firmId,
+    provider: input.providerId,
     userId: input.userId,
     state: input.state,
     codeVerifier: input.codeVerifier,
@@ -115,17 +153,30 @@ export async function createOauthState(input: {
   });
 }
 
-export async function consumeOauthState(
-  state: string,
-): Promise<{ firmId: string; userId: string; codeVerifier: string } | null> {
+export async function consumeOauthState(state: string): Promise<{
+  firmId: string;
+  providerId: ProviderId;
+  userId: string;
+  codeVerifier: string;
+} | null> {
   const [row] = await db
-    .delete(orionOauthStates)
-    .where(and(eq(orionOauthStates.state, state), gt(orionOauthStates.expiresAt, new Date())))
+    .delete(integrationOauthStates)
+    .where(
+      and(
+        eq(integrationOauthStates.state, state),
+        gt(integrationOauthStates.expiresAt, new Date()),
+      ),
+    )
     .returning();
   if (!row) {
     // Clean up an expired-but-present row so it can't linger.
-    await db.delete(orionOauthStates).where(eq(orionOauthStates.state, state));
+    await db.delete(integrationOauthStates).where(eq(integrationOauthStates.state, state));
     return null;
   }
-  return { firmId: row.firmId, userId: row.userId, codeVerifier: row.codeVerifier };
+  return {
+    firmId: row.firmId,
+    providerId: row.provider,
+    userId: row.userId,
+    codeVerifier: row.codeVerifier,
+  };
 }
