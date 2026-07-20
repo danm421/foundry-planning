@@ -8,6 +8,7 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 import { loadPortalHousehold } from "@/lib/portal/load-profile-data";
+import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export async function PUT(req: Request): Promise<Response> {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Both loop roles feed the derived household name; sync once after the
+    // loop rather than per-role so a two-role patch writes the name once.
+    let nameChanged = false;
+
     for (const role of ["primary", "spouse"] as const) {
       const patch = body[role];
       if (!patch) continue;
@@ -91,6 +96,10 @@ export async function PUT(req: Request): Promise<Response> {
         .set(patch)
         .where(eq(crmHouseholdContacts.id, existing.id));
 
+      if (patch.firstName !== undefined || patch.lastName !== undefined) {
+        nameChanged = true;
+      }
+
       await recordUpdate({
         action: "portal.household.update",
         resourceType: "crm_household_contact",
@@ -108,6 +117,20 @@ export async function PUT(req: Request): Promise<Response> {
           phone: { label: "Phone", format: "text" },
         },
       });
+    }
+
+    if (nameChanged) {
+      // Derived-data maintenance. This handler is non-transactional and the
+      // contact patch above has already committed, so letting a sync failure
+      // propagate would report a save that actually succeeded — inviting a
+      // client retry that re-runs the contact UPDATE and writes a duplicate
+      // audit row. Mirrors the recordHouseholdOpen non-fatal wrap in
+      // POST /api/clients (src/app/api/clients/route.ts).
+      try {
+        await syncHouseholdNameFromContacts(db, client.crmHouseholdId);
+      } catch (syncErr) {
+        console.error("Portal household name sync failed:", syncErr);
+      }
     }
 
     return NextResponse.json({ ok: true });

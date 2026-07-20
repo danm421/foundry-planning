@@ -1,0 +1,1 @@
+ALTER TABLE "crm_households" ADD COLUMN "name_is_custom" boolean DEFAULT false NOT NULL;

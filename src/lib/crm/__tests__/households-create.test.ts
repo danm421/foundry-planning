@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { createCrmHousehold } from "../households";
+import { createCrmHousehold, updateCrmHousehold } from "../households";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
@@ -110,5 +110,79 @@ describe("createCrmHousehold with inline contacts", () => {
     const spouse = contacts.find((c) => c.role === "spouse");
     expect(primary?.state).toBe("CA");
     expect(spouse?.state).toBeNull();
+  });
+});
+
+describe("household name lock", () => {
+  it("persists nameIsCustom on create", async () => {
+    const h = await createCrmHousehold({
+      name: "Smith Family Trust",
+      status: "active",
+      advisorId: "test_advisor",
+      nameIsCustom: true,
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+    expect(h.nameIsCustom).toBe(true);
+    expect(h.name).toBe("Smith Family Trust");
+  });
+
+  it("defaults nameIsCustom to false", async () => {
+    const h = await createCrmHousehold({
+      name: "John Smith",
+      status: "active",
+      advisorId: "test_advisor",
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+    expect(h.nameIsCustom).toBe(false);
+  });
+
+  it("ignores a client-supplied name when unlocking, and re-derives", async () => {
+    const h = await createCrmHousehold({
+      name: "Smith Family Trust",
+      status: "active",
+      advisorId: "test_advisor",
+      nameIsCustom: true,
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+
+    // Client tries to unlock AND set an arbitrary name. The name must lose.
+    const updated = await updateCrmHousehold(h.id, {
+      name: "Whatever The Client Typed",
+      nameIsCustom: false,
+    });
+
+    expect(updated.nameIsCustom).toBe(false);
+    expect(updated.name).toBe("John Smith");
+  });
+
+  it("honors a custom name when locking", async () => {
+    const h = await createCrmHousehold({
+      name: "John Smith",
+      status: "active",
+      advisorId: "test_advisor",
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+
+    const updated = await updateCrmHousehold(h.id, {
+      name: "Smith Family Trust",
+      nameIsCustom: true,
+    });
+
+    expect(updated.name).toBe("Smith Family Trust");
+  });
+
+  it("leaves the name alone on a status-only patch", async () => {
+    const h = await createCrmHousehold({
+      name: "Smith Family Trust",
+      status: "active",
+      advisorId: "test_advisor",
+      nameIsCustom: true,
+      contacts: [{ role: "primary", firstName: "John", lastName: "Smith" }],
+    });
+
+    const updated = await updateCrmHousehold(h.id, { status: "inactive" });
+
+    expect(updated.name).toBe("Smith Family Trust");
+    expect(updated.status).toBe("inactive");
   });
 });

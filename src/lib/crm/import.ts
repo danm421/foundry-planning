@@ -431,13 +431,17 @@ export async function commit(
     }
     let householdId: string | null = null;
     try {
-      const household = await createCrmHousehold(d.row.household);
+      // An advisor typing a household name into the CSV is the same explicit
+      // intent as ticking "Use a custom name" — lock it, so it survives the
+      // contact seeding below AND every later rename.
+      const household = await createCrmHousehold({
+        ...d.row.household,
+        nameIsCustom: Boolean(d.row.household.name?.trim()),
+      });
       householdId = household.id;
-      // Keep the advisor-supplied CSV household name — don't let the derived
-      // name overwrite it as contacts are seeded.
-      await createCrmContact(household.id, d.row.primary, { syncHouseholdName: false });
+      await createCrmContact(household.id, d.row.primary);
       if (d.row.spouse) {
-        await createCrmContact(household.id, d.row.spouse, { syncHouseholdName: false });
+        await createCrmContact(household.id, d.row.spouse);
       }
       created++;
     } catch (err) {

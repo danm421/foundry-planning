@@ -76,6 +76,10 @@ import { isUSPSStateCode } from "@/lib/usps-states";
 import { recordAudit } from "@/lib/audit";
 import { recordActivityNonFatal } from "@/lib/crm/activity";
 import {
+  syncHouseholdNameFromContacts,
+  type SyncHouseholdNameOutcome,
+} from "@/lib/crm/sync-household-name";
+import {
   allocationKey,
   resolveAllocations,
   type ResolvedAllocation,
@@ -1784,7 +1788,7 @@ async function redefaultChecking(tx: Tx, ctx: CommitCtx): Promise<void> {
 
 /** P-side cleanup: reconcile the original file to a single, unmarried household
  *  and write the CRM ex_spouse edge. Runs after all S-bound moves. */
-async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<void> {
+async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<SyncHouseholdNameOutcome> {
   const P = ctx.plan.clientId;
 
   // 1. clients P row: null the ex-spouse planning fields; adopt the primary's
@@ -1847,6 +1851,11 @@ async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<void> {
       ),
     );
 
+  // The spouse contact is gone — re-derive the household label so a divorced
+  // household stops reading "John & Jane Smith". This delete bypasses
+  // deleteCrmContact (it runs on our tx), so the sync has to be explicit.
+  const nameSync = await syncHouseholdNameFromContacts(tx, ctx.primaryHouseholdId);
+
   // 6. Execute the cleanup checklist: strike every remove:true selection. Re-scan
   //    by id — a designation already cascaded by the fm delete is a silent no-op.
   //    Only P-side strikes are executable here: `sel.id` is ALWAYS the P-side
@@ -1877,6 +1886,8 @@ async function cleanupOriginal(tx: Tx, ctx: CommitCtx): Promise<void> {
     relationshipType: "ex_spouse",
     createdBy: ctx.userId,
   });
+
+  return nameSync.outcome;
 }
 
 /** Finalize: record the commit result, invalidate P's projection caches, and
@@ -2030,6 +2041,13 @@ export async function commitDivorcePlan(args: {
     });
     const spouseHouseholdId = spouseHousehold.id;
 
+    // Captured inside the tx, narrated after it commits — recordActivity uses
+    // the module db handle, so writing it inside would escape the transaction.
+    // (No initial literal: TS's control-flow narrowing doesn't see the
+    // reassignment inside the tx closure below, so an initializer like
+    // "unchanged" would freeze the read-out comparison to that one literal.)
+    let nameOutcome: SyncHouseholdNameOutcome | undefined;
+
     const result = await db.transaction(async (tx): Promise<CommitResult> => {
       // ── Step 1: concurrency guard — the FIRST write. Flip the draft to
       // committed, gated on it still being a draft; 0 rows means another commit
@@ -2106,7 +2124,7 @@ export async function commitDivorcePlan(args: {
 
       // ── Step 6: P-side cleanup + CRM ex_spouse edge, then finalize the draft
       // (result client, cache invalidation, audit + activity). ──
-      await cleanupOriginal(tx, ctx);
+      nameOutcome = await cleanupOriginal(tx, ctx);
       await finalize(tx, ctx, created.clientId);
 
       return {
@@ -2117,6 +2135,21 @@ export async function commitDivorcePlan(args: {
         warnings: ctx.warnings,
       };
     });
+
+    if (nameOutcome === "locked") {
+      await recordActivityNonFatal(
+        {
+          householdId: pClient.crmHouseholdId,
+          kind: "contact_change",
+          title: "Household name kept — custom name is locked",
+          body: "The divorce removed the spouse contact, but this household's name is set to a custom value and was left unchanged. Untick \"Use a custom name\" to let it follow the members again.",
+          metadata: { reason: "name_is_custom" },
+          occurredAt: new Date(),
+        },
+        { actorUserId: userId },
+        "divorce-commit-name-locked",
+      );
+    }
 
     return result;
   } catch (err) {

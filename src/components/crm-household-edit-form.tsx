@@ -27,6 +27,9 @@ interface Props {
   initialName: string;
   initialStatus: string;
   initialNotes: string | null;
+  initialNameIsCustom: boolean;
+  /** Auto-name from the household's contacts; null when there's no primary. */
+  derivedName: string | null;
 }
 
 export function CrmHouseholdEditForm({
@@ -36,17 +39,30 @@ export function CrmHouseholdEditForm({
   initialName,
   initialStatus,
   initialNotes,
+  initialNameIsCustom,
+  derivedName,
 }: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // No derivable name (no primary contact) means custom is the only option —
+  // `name` is NOT NULL, so there'd be nothing to fall back to.
+  const mustBeCustom = derivedName == null;
+  const [nameIsCustom, setNameIsCustom] = useState(initialNameIsCustom || mustBeCustom);
+  const [name, setName] = useState(initialName);
+
+  function toggleCustom(next: boolean) {
+    setNameIsCustom(next);
+    // Unticking hands the name back to derivation immediately, so what's shown
+    // is what will be saved.
+    if (!next && derivedName != null) setName(derivedName);
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     const data = new FormData(e.currentTarget);
-    const name = String(data.get("name") ?? "").trim();
     const status = String(data.get("status") ?? "");
     const notes = String(data.get("notes") ?? "").trim();
     try {
@@ -54,7 +70,8 @@ export function CrmHouseholdEditForm({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          name,
+          name: name.trim(),
+          nameIsCustom,
           status,
           notes: notes ? notes : undefined,
         }),
@@ -106,9 +123,33 @@ export function CrmHouseholdEditForm({
             name="name"
             required
             maxLength={200}
-            defaultValue={initialName}
+            readOnly={!nameIsCustom}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className={inputClassName}
+            aria-describedby="edit-name-help"
           />
+          <label
+            htmlFor="edit-name-custom"
+            className="mt-2 flex items-center gap-2 cursor-pointer"
+          >
+            <input
+              id="edit-name-custom"
+              type="checkbox"
+              checked={nameIsCustom}
+              disabled={mustBeCustom}
+              onChange={(e) => toggleCustom(e.target.checked)}
+              className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent disabled:opacity-60"
+            />
+            <span className="text-[13px] font-medium text-ink-2">Use a custom name</span>
+          </label>
+          <p id="edit-name-help" className="mt-1 text-[12px] text-ink-4">
+            {mustBeCustom
+              ? "This household has no primary contact, so its name can't be generated automatically — it will be saved as a custom name."
+              : nameIsCustom
+                ? "Won't change when household members change."
+                : "Updates automatically when household members change."}
+          </p>
         </div>
 
         <div>

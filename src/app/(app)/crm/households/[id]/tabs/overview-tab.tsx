@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { getCrmHousehold } from "@/lib/crm/households";
 import type { HouseholdRelationshipView } from "@/lib/crm/household-relationships";
 import { CrmHouseholdEditForm } from "@/components/crm-household-edit-form";
+import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { USPS_STATE_NAMES, isUSPSStateCode } from "@/lib/usps-states";
 import { chipClass } from "@/components/crm-section-primitives";
 
@@ -124,6 +125,8 @@ export function OverviewTab({
         initialName={household.name}
         initialStatus={household.status}
         initialNotes={household.notes}
+        initialNameIsCustom={household.nameIsCustom}
+        derivedName={deriveHouseholdNameFromContacts(household.contacts)}
       />
     </div>
   );
