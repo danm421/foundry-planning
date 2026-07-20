@@ -1,4 +1,4 @@
-// src/lib/orion/oauth.test.ts
+// src/lib/integrations/providers/orion/oauth.test.ts
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHash } from "node:crypto";
 import { generatePkce, generateState, buildAuthorizeUrl, exchangeCodeForTokens } from "./oauth";

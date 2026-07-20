@@ -1,14 +1,8 @@
-// src/lib/orion/oauth.ts
+// src/lib/integrations/providers/orion/oauth.ts
 import { createHash, randomBytes } from "node:crypto";
 
-import { requireEnv } from "./env";
-
-export type OrionTokenResponse = {
-  accessToken: string;
-  refreshToken?: string;
-  expiresInSec?: number;
-  scope?: string;
-};
+import { requireEnv } from "../../env";
+import type { ProviderOAuth, TokenResponse } from "../../types";
 
 const TOKEN_PATH = "/oauth/token"; // FINALIZE against Orion docs
 const AUTHORIZE_PATH = "/oauth/authorize"; // FINALIZE against Orion docs
@@ -40,7 +34,7 @@ export function buildAuthorizeUrl(opts: { state: string; challenge: string }): s
 export async function exchangeCodeForTokens(
   opts: { code: string; codeVerifier: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<OrionTokenResponse> {
+): Promise<TokenResponse> {
   return tokenRequest(
     {
       grant_type: "authorization_code",
@@ -55,7 +49,7 @@ export async function exchangeCodeForTokens(
 export async function refreshTokens(
   refreshToken: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<OrionTokenResponse> {
+): Promise<TokenResponse> {
   return tokenRequest(
     { grant_type: "refresh_token", refresh_token: refreshToken },
     fetchImpl,
@@ -65,7 +59,7 @@ export async function refreshTokens(
 async function tokenRequest(
   params: Record<string, string>,
   fetchImpl: typeof fetch,
-): Promise<OrionTokenResponse> {
+): Promise<TokenResponse> {
   const body = new URLSearchParams({
     ...params,
     client_id: requireEnv("ORION_CLIENT_ID"),
@@ -86,3 +80,8 @@ async function tokenRequest(
   };
 }
 
+export const orionOAuth: ProviderOAuth = {
+  buildAuthorizeUrl,
+  exchangeCodeForTokens,
+  refreshTokens,
+};

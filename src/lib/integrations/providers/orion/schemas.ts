@@ -1,4 +1,4 @@
-// src/lib/orion/schemas.ts
+// src/lib/integrations/providers/orion/schemas.ts
 import { z } from "zod";
 
 // Shapes are provisional — confirm field names against Orion's Portfolio API and
