@@ -4,14 +4,16 @@ import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationApiLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { makeCallContext } from "@/lib/integrations/auth";
 import { getHouseholdLinks } from "@/lib/integrations/households";
+import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { resolveProvider } from "../_provider";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ provider: string }> },
 ): Promise<Response> {
+  let provider: Awaited<ReturnType<typeof resolveProvider>> = null;
   try {
-    const provider = await resolveProvider(params);
+    provider = await resolveProvider(params);
     if (!provider) return new Response("Not found", { status: 404 });
 
     await requireOrgAdminOrOwner();
@@ -30,6 +32,9 @@ export async function GET(
       households: households.map((h) => ({ ...h, linkedClientId: linkByHousehold.get(h.id) ?? null })),
     });
   } catch (err) {
+    if (err instanceof ProviderNotConfigured) {
+      return NextResponse.json({ error: `${err.providerId} is not yet configured` }, { status: 503 });
+    }
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });
     console.error("GET /api/integrations/[provider]/households error:", err);

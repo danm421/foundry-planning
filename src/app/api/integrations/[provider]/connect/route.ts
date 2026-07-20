@@ -3,15 +3,17 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { generatePkce, generateState } from "@/lib/integrations/pkce";
 import { createOauthState } from "@/lib/integrations/connections";
+import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { resolveProvider } from "../_provider";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ provider: string }> },
 ): Promise<Response> {
+  let provider: Awaited<ReturnType<typeof resolveProvider>> = null;
   try {
-    const provider = await resolveProvider(params);
+    provider = await resolveProvider(params);
     if (!provider) return new Response("Not found", { status: 404 });
 
     // requireOrgAdminOrOwner() returns void — get ids from auth() separately
@@ -31,9 +33,13 @@ export async function GET(
 
     const { verifier, challenge } = generatePkce();
     const state = generateState();
+    const authorizeUrl = provider.oauth.buildAuthorizeUrl({ state, challenge });
     await createOauthState({ firmId, providerId: provider.id, userId, state, codeVerifier: verifier, ttlMs: 600_000 });
-    return NextResponse.redirect(provider.oauth.buildAuthorizeUrl({ state, challenge }));
+    return NextResponse.redirect(authorizeUrl);
   } catch (err) {
+    if (err instanceof ProviderNotConfigured) {
+      return NextResponse.redirect(new URL(`/settings/integrations?error=${err.providerId}_not_configured`, req.url));
+    }
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });
     console.error("GET /api/integrations/[provider]/connect error:", err);

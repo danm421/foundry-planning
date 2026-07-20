@@ -3,14 +3,16 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationSyncLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { syncFirm } from "@/lib/integrations/sync";
+import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { resolveProvider } from "../_provider";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ provider: string }> },
 ): Promise<Response> {
+  let provider: Awaited<ReturnType<typeof resolveProvider>> = null;
   try {
-    const provider = await resolveProvider(params);
+    provider = await resolveProvider(params);
     if (!provider) return new Response("Not found", { status: 404 });
 
     await requireOrgAdminOrOwner();
@@ -28,6 +30,9 @@ export async function POST(
     const result = await syncFirm(firmId, provider.id, { trigger: "manual", userId, clientId });
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof ProviderNotConfigured) {
+      return NextResponse.json({ error: `${err.providerId} is not yet configured` }, { status: 503 });
+    }
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });
     console.error("POST /api/integrations/[provider]/sync error:", err);
