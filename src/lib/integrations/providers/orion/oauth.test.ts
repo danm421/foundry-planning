@@ -1,7 +1,8 @@
 // src/lib/integrations/providers/orion/oauth.test.ts
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHash } from "node:crypto";
-import { generatePkce, generateState, buildAuthorizeUrl, exchangeCodeForTokens } from "./oauth";
+import { generatePkce } from "../../pkce";
+import { buildAuthorizeUrl, exchangeCodeForTokens } from "./oauth";
 
 describe("orion oauth helpers", () => {
   afterEach(() => {
@@ -35,10 +36,5 @@ describe("orion oauth helpers", () => {
     });
     const res = await exchangeCodeForTokens({ code: "c", codeVerifier: "v" }, fetchMock as unknown as typeof fetch);
     expect(res).toEqual({ accessToken: "AT", refreshToken: "RT", expiresInSec: 3600, scope: "read" });
-  });
-
-  it("generateState is unguessable-ish (>=32 chars, unique)", () => {
-    expect(generateState().length).toBeGreaterThanOrEqual(32);
-    expect(generateState()).not.toBe(generateState());
   });
 });

@@ -1,22 +1,10 @@
 // src/lib/integrations/providers/orion/oauth.ts
-import { createHash, randomBytes } from "node:crypto";
-
 import { requireEnv } from "../../env";
 import type { ProviderOAuth, TokenResponse } from "../../types";
 
 const TOKEN_PATH = "/oauth/token"; // FINALIZE against Orion docs
 const AUTHORIZE_PATH = "/oauth/authorize"; // FINALIZE against Orion docs
 const SCOPE = "read"; // FINALIZE against Orion docs
-
-export function generatePkce(): { verifier: string; challenge: string } {
-  const verifier = randomBytes(48).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  return { verifier, challenge };
-}
-
-export function generateState(): string {
-  return randomBytes(24).toString("base64url");
-}
 
 export function buildAuthorizeUrl(opts: { state: string; challenge: string }): string {
   const base = requireEnv("ORION_API_BASE");
