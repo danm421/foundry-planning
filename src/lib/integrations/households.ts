@@ -39,7 +39,8 @@ export async function linkHousehold(input: {
       set: {
         provider: input.providerId,
         externalHouseholdId: input.externalHouseholdId,
-        firmId: input.firmId,
+        // firmId is deliberately NOT updated: org-scoping is immutable per
+        // link row, matching the shipped Orion behavior.
         updatedAt: new Date(),
       },
     });
