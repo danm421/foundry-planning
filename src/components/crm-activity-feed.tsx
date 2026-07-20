@@ -24,7 +24,6 @@ export type ActivityRow = {
   kind: ActivityKind;
   title: string;
   body: string | null;
-  actorUserId: string | null;
   actor?: { name: string; isSystem: boolean };
   metadata?: { changes?: FieldChange[]; fields?: string[] } | null;
   occurredAt: string;

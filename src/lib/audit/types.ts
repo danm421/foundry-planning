@@ -35,8 +35,6 @@ export type FieldChange = {
   /** Value intentionally withheld — the field changed but is sensitive
    *  (SSN last 4, DOB, account number). Renderers show "updated". */
   redacted?: true;
-  /** At least one side was clipped to the descriptor's `truncate` limit. */
-  truncated?: true;
 };
 
 export type AuditMetadata =

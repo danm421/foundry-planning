@@ -25,21 +25,22 @@ export async function recordActivity(
   input: RecordActivityInput,
   opts: { actorUserId: string },
 ) {
-  const household = await db.query.crmHouseholds.findFirst({
-    where: eq(crmHouseholds.id, input.householdId),
-    columns: { firmId: true },
-  });
-  if (!household) throw new Error(`Cannot record activity: household ${input.householdId} not found`);
-
   // Several callers pass `userId ?? ""`. Normalize so the read path classifies
   // it as a system action rather than a departed member.
   const actorUserId = opts.actorUserId.trim() || "system";
 
-  // Snapshot the display name the way `recordAudit` does, so a row keeps its
-  // author's name after that user leaves the org. Never throws; returns null
-  // for non-user ids. Cached 5m, and usually already warm from recordAudit
-  // in the same request.
-  const actorName = await snapshotActorName(actorUserId);
+  // The household lookup and the name snapshot are independent — issue both at
+  // once so a cold actor-name cache costs one round-trip, not two.
+  // `snapshotActorName` mirrors `recordAudit`, so a row keeps its author's name
+  // after that user leaves the org. Never throws; returns null for non-user ids.
+  const [household, actorName] = await Promise.all([
+    db.query.crmHouseholds.findFirst({
+      where: eq(crmHouseholds.id, input.householdId),
+      columns: { firmId: true },
+    }),
+    snapshotActorName(actorUserId),
+  ]);
+  if (!household) throw new Error(`Cannot record activity: household ${input.householdId} not found`);
 
   await db.insert(crmActivity).values({
     householdId: input.householdId,

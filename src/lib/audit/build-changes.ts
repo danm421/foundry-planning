@@ -15,7 +15,8 @@ import type {
  * never needed but the CRM one does:
  *  - `sensitive` descriptors emit the change with null values + `redacted`,
  *    so SSN/DOB/account numbers are never persisted into a feed row.
- *  - `truncate` descriptors clip long free text so a jsonb column doesn't
+ *  - `truncate` descriptors clip long free text (appending an ellipsis, which
+ *    is the only truncation signal renderers need) so a jsonb column doesn't
  *    accumulate whole note bodies.
  */
 export function buildFieldChanges(
@@ -51,29 +52,16 @@ export function buildFieldChanges(
     }
 
     const limit = descriptor.truncate;
-    if (limit != null) {
-      const clip = (v: AuditValue): AuditValue =>
-        typeof v === "string" && v.length > limit ? `${v.slice(0, limit)}…` : v;
-      const from = clip(fromValue);
-      const to = clip(toValue);
-      changes.push({
-        field: key,
-        label: descriptor.label,
-        from,
-        to,
-        format: descriptor.format,
-        ...(from !== fromValue || to !== toValue
-          ? { truncated: true as const }
-          : {}),
-      });
-      continue;
-    }
+    const clip = (v: AuditValue): AuditValue =>
+      limit != null && typeof v === "string" && v.length > limit
+        ? `${v.slice(0, limit)}…`
+        : v;
 
     changes.push({
       field: key,
       label: descriptor.label,
-      from: fromValue,
-      to: toValue,
+      from: clip(fromValue),
+      to: clip(toValue),
       format: descriptor.format,
     });
   }

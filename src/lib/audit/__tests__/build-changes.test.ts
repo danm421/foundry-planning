@@ -41,7 +41,7 @@ describe("buildFieldChanges", () => {
     expect(JSON.stringify(changes)).not.toContain("8823");
   });
 
-  it("truncates free text past the descriptor limit and flags it", () => {
+  it("truncates free text past the descriptor limit", () => {
     const changes = buildFieldChanges(
       { notes: "short" },
       { notes: "a much longer note that exceeds the limit" },
@@ -51,13 +51,12 @@ describe("buildFieldChanges", () => {
       field: "notes",
       from: "short",
       to: "a much lon…",
-      truncated: true,
     });
   });
 
-  it("does not flag truncated when both sides are under the limit", () => {
+  it("leaves values under the limit unclipped", () => {
     const changes = buildFieldChanges({ notes: "a" }, { notes: "b" }, LABELS);
-    expect(changes[0]).not.toHaveProperty("truncated");
+    expect(changes[0]).toMatchObject({ field: "notes", from: "a", to: "b" });
   });
 
   it("treats added and removed keys as changes against null", () => {
