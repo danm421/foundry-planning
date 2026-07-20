@@ -94,6 +94,14 @@ async function sClientFmId(spouseClientId: string): Promise<string> {
   return fm.id;
 }
 
+async function householdNameOf(householdId: string): Promise<string> {
+  const [row] = await db
+    .select({ name: crmHouseholds.name })
+    .from(crmHouseholds)
+    .where(eq(crmHouseholds.id, householdId));
+  return row.name;
+}
+
 // Net worth of a client in integer cents: Σ(accounts.value) + Σ(notes balance)
 // − Σ(liabilities.balance), across every scenario the client owns (a committed
 // file only has its base scenario). Integer cents so the conservation anchor is
@@ -1274,6 +1282,56 @@ d("commitDivorcePlan", () => {
       expect(inc.ownerAccountId).toBe(f.businessAccountId);
       expect(inc.owner).toBe("client");
     } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("collapses P's household name to the remaining member after the split", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    try {
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await confirmJointItems(f);
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // Spouse contact struck -> the derived name is the primary alone.
+      expect(await householdNameOf(f.householdId)).toBe("Taylor Primary");
+    } finally {
+      await teardownCommit(f, result);
+    }
+  });
+
+  it("keeps a locked household name after the split and narrates why", async () => {
+    const f = await createMarriedFixture();
+    let result: CommitResult | undefined;
+    const spy = vi.spyOn(activityModule, "recordActivityNonFatal");
+    try {
+      await db
+        .update(crmHouseholds)
+        .set({ name: "Primary Family Trust", nameIsCustom: true })
+        .where(eq(crmHouseholds.id, f.householdId));
+
+      await getOrCreateDraft({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+      await confirmJointItems(f);
+
+      result = await commitDivorcePlan({ clientId: f.clientId, firmId: f.firmId, userId: USER });
+
+      // The lock wins: only the checkbox changes a locked name.
+      expect(await householdNameOf(f.householdId)).toBe("Primary Family Trust");
+
+      // ...but the outcome is visible in the household timeline.
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          householdId: f.householdId,
+          kind: "contact_change",
+          title: expect.stringContaining("custom name is locked"),
+        }),
+        expect.anything(),
+        "divorce-commit-name-locked",
+      );
+    } finally {
+      spy.mockRestore();
       await teardownCommit(f, result);
     }
   });
