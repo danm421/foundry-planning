@@ -17,8 +17,9 @@ import { ForgeMount } from "@/components/forge/forge-mount";
 import { isForgeEnabled } from "@/domain/forge/flag";
 import CrmHouseholdLink from "@/components/crm-household-link";
 import { ClientAccessProvider } from "@/components/client-access-provider";
-import { getHouseholdLinkForClient } from "@/lib/orion/households";
-import { OrionClientStatus } from "@/components/OrionClientStatus";
+import { getHouseholdLinkForClient } from "@/lib/integrations/households";
+import { getProvider } from "@/lib/integrations/registry";
+import { IntegrationClientStatus } from "@/components/IntegrationClientStatus";
 
 interface Props {
   children: React.ReactNode;
@@ -46,7 +47,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
   // chip row — can run in parallel rather than back-to-back. Neither depends
   // on the other; serializing them just doubled the round-trips before the
   // shell could render.
-  const [contactRows, scenarioRows, orionLink] = await Promise.all([
+  const [contactRows, scenarioRows, link] = await Promise.all([
     db
       .select()
       .from(crmHouseholdContacts)
@@ -63,20 +64,21 @@ export default async function ClientLayout({ children, params }: Props): Promise
       .from(scenariosTable)
       .where(eq(scenariosTable.clientId, id))
       .orderBy(desc(scenariosTable.isBaseCase), asc(scenariosTable.name)),
-    // Orion link has no dependency on the other two — fetch it in the same
-    // round-trip rather than serially after.
+    // Integration household link has no dependency on the other two — fetch
+    // it in the same round-trip rather than serially after.
     getHouseholdLinkForClient(id),
   ]);
+  const provider = link ? getProvider(link.provider) : null;
 
-  let orionLastSyncedAt: Date | null = null;
-  if (orionLink) {
+  let lastSyncedAt: Date | null = null;
+  if (link) {
     const [recent] = await db
       .select({ last: accounts.lastSyncedAt })
       .from(accounts)
-      .where(and(eq(accounts.clientId, id), eq(accounts.externalProvider, "orion"), isNotNull(accounts.lastSyncedAt)))
+      .where(and(eq(accounts.clientId, id), eq(accounts.externalProvider, link.provider), isNotNull(accounts.lastSyncedAt)))
       .orderBy(desc(accounts.lastSyncedAt))
       .limit(1);
-    orionLastSyncedAt = recent?.last ?? null;
+    lastSyncedAt = recent?.last ?? null;
   }
 
   const primary = contactRows.find((c) => c.role === "primary");
@@ -121,11 +123,13 @@ export default async function ClientLayout({ children, params }: Props): Promise
             <>
               <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
               <CrmHouseholdLink crmHouseholdId={clientRow.crmHouseholdId} />
-              {orionLink ? (
-                <OrionClientStatus
+              {provider && link ? (
+                <IntegrationClientStatus
+                  providerId={provider.id}
+                  providerLabel={provider.label}
                   clientId={id}
                   isAdmin={orgRole === "org:admin"}
-                  lastSyncedAt={orionLastSyncedAt ? orionLastSyncedAt.toISOString() : null}
+                  lastSyncedAt={lastSyncedAt ? lastSyncedAt.toISOString() : null}
                 />
               ) : null}
             </>

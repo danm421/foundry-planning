@@ -42,7 +42,7 @@ export const config: VercelConfig = {
       schedule: "0 10 1 * *",
     },
     {
-      path: "/api/cron/orion-sync",
+      path: "/api/cron/integration-sync",
       schedule: "0 7 * * *",
     },
     {

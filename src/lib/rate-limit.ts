@@ -310,27 +310,27 @@ export async function checkBetaRedeemRateLimit(key: string): Promise<RateLimitRe
   return safeLimit(limiter, key);
 }
 
-// Orion integration. Three separate buckets: general read-API calls (120/min),
-// OAuth handshakes (10/min — rare and sensitive), and sync runs (6/min —
-// fan out to per-account fetches so we keep them tight). All fail-closed.
-const getOrionApiLimiter = buildLimiter(120, "1 m", "rl:orion");
-const getOrionOauthLimiter = buildLimiter(10, "1 m", "rl:orion:oauth");
-const getOrionSyncLimiter = buildLimiter(6, "1 m", "rl:orion:sync");
+// Integration providers (Orion, Schwab). Three separate buckets: general
+// read-API calls (120/min), OAuth handshake (10/min), manual sync (6/min).
+// Keys are `${providerId}:${firmId}` so one provider can't exhaust another's.
+const getIntegrationApiLimiter = buildLimiter(120, "1 m", "rl:integration");
+const getIntegrationOauthLimiter = buildLimiter(10, "1 m", "rl:integration:oauth");
+const getIntegrationSyncLimiter = buildLimiter(6, "1 m", "rl:integration:sync");
 
-export async function checkOrionApiLimit(key: string): Promise<RateLimitResult> {
-  const limiter = getOrionApiLimiter();
+export async function checkIntegrationApiLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntegrationApiLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }
 
-export async function checkOrionOauthLimit(key: string): Promise<RateLimitResult> {
-  const limiter = getOrionOauthLimiter();
+export async function checkIntegrationOauthLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntegrationOauthLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }
 
-export async function checkOrionSyncLimit(key: string): Promise<RateLimitResult> {
-  const limiter = getOrionSyncLimiter();
+export async function checkIntegrationSyncLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntegrationSyncLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }

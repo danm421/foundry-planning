@@ -23,8 +23,8 @@ import {
   cmaSettings,
   tickerPortfolios,
   staffAdvisorVisibility,
-  orionOauthStates,
-  orionSyncRuns,
+  integrationOauthStates,
+  integrationSyncRuns,
   intakeForms,
   intakeEmailSettings,
   opsEntitlementOverrides,
@@ -32,7 +32,7 @@ import {
   clientShares,
   planningKbChunks,
   forgeConversations,
-  orionConnections,
+  integrationConnections,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -231,13 +231,13 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   //     Deleting by firm_id catches firm-level rows a client-cascade would miss:
   //     client_shares / planning_kb_chunks / forge_conversations have a NULLABLE
   //     client FK, so their share-all / firm-level / global-conversation rows
-  //     survive the client cascade. orion_connections (encrypted tokens) is
-  //     handled separately below with a vendor-scrub step.
+  //     survive the client cascade. integration_connections (encrypted tokens,
+  //     any provider) is handled separately below with a vendor-scrub step.
   await db.delete(cmaSettings).where(eq(cmaSettings.firmId, firmId));
   await db.delete(tickerPortfolios).where(eq(tickerPortfolios.firmId, firmId));
   await db.delete(staffAdvisorVisibility).where(eq(staffAdvisorVisibility.firmId, firmId));
-  await db.delete(orionOauthStates).where(eq(orionOauthStates.firmId, firmId));
-  await db.delete(orionSyncRuns).where(eq(orionSyncRuns.firmId, firmId));
+  await db.delete(integrationOauthStates).where(eq(integrationOauthStates.firmId, firmId));
+  await db.delete(integrationSyncRuns).where(eq(integrationSyncRuns.firmId, firmId));
   await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
   await db.delete(intakeEmailSettings).where(eq(intakeEmailSettings.firmId, firmId));
   await db.delete(opsEntitlementOverrides).where(eq(opsEntitlementOverrides.firmId, firmId));
@@ -263,12 +263,13 @@ export async function purgeFirmById(firmId: string): Promise<void> {
     console.error(`[purge-firm] clerk deleteOrganization failed for ${firmId}:`, err);
   }
 
-  // Orion connection (best-effort). Scrub our encrypted token copy, then drop
-  // the row — otherwise a purged firm's Orion OAuth tokens linger in the DB.
-  // (No server-side Orion revoke primitive exists — documented gap, audit F2.)
+  // Integration connection (best-effort, any provider). Scrub our encrypted
+  // token copy, then drop the row — otherwise a purged firm's integration
+  // OAuth tokens linger in the DB.
+  // (No server-side revoke primitive exists — documented gap, audit F2.)
   try {
     await db
-      .update(orionConnections)
+      .update(integrationConnections)
       .set({
         accessTokenEnc: "",
         refreshTokenEnc: null,
@@ -276,10 +277,10 @@ export async function purgeFirmById(firmId: string): Promise<void> {
         status: "disconnected",
         updatedAt: new Date(),
       })
-      .where(eq(orionConnections.firmId, firmId));
-    await db.delete(orionConnections).where(eq(orionConnections.firmId, firmId));
+      .where(eq(integrationConnections.firmId, firmId));
+    await db.delete(integrationConnections).where(eq(integrationConnections.firmId, firmId));
   } catch (err) {
-    console.error(`[purge-firm] orion connection purge failed for ${firmId}:`, err);
+    console.error(`[purge-firm] integration connection purge failed for ${firmId}:`, err);
   }
 
   // 5. Blob objects (best-effort — each wrapped so a 404/transport error

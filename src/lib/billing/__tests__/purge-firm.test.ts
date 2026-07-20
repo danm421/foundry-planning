@@ -20,8 +20,8 @@ const mocks = vi.hoisted(() => ({
   deleteCmaSettings: vi.fn(),
   deleteTickerPortfolios: vi.fn(),
   deleteStaffAdvisorVisibility: vi.fn(),
-  deleteOrionOauthStates: vi.fn(),
-  deleteOrionSyncRuns: vi.fn(),
+  deleteIntegrationOauthStates: vi.fn(),
+  deleteIntegrationSyncRuns: vi.fn(),
   deleteIntakeForms: vi.fn(),
   deleteIntakeEmailSettings: vi.fn(),
   deleteOpsEntitlementOverrides: vi.fn(),
@@ -29,8 +29,8 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
-  updateOrionConnection: vi.fn(),
-  deleteOrionConnection: vi.fn(),
+  updateIntegrationConnection: vi.fn(),
+  deleteIntegrationConnection: vi.fn(),
   updateFirm: vi.fn(),
   selectCustomer: vi.fn(),
   stripeCustomersDel: vi.fn(),
@@ -77,8 +77,8 @@ vi.mock("@/db", async () => {
           if (tbl === s.cmaSettings) return mocks.deleteCmaSettings();
           if (tbl === s.tickerPortfolios) return mocks.deleteTickerPortfolios();
           if (tbl === s.staffAdvisorVisibility) return mocks.deleteStaffAdvisorVisibility();
-          if (tbl === s.orionOauthStates) return mocks.deleteOrionOauthStates();
-          if (tbl === s.orionSyncRuns) return mocks.deleteOrionSyncRuns();
+          if (tbl === s.integrationOauthStates) return mocks.deleteIntegrationOauthStates();
+          if (tbl === s.integrationSyncRuns) return mocks.deleteIntegrationSyncRuns();
           if (tbl === s.intakeForms) return mocks.deleteIntakeForms();
           if (tbl === s.intakeEmailSettings) return mocks.deleteIntakeEmailSettings();
           if (tbl === s.opsEntitlementOverrides) return mocks.deleteOpsEntitlementOverrides();
@@ -86,14 +86,14 @@ vi.mock("@/db", async () => {
           if (tbl === s.clientShares) return mocks.deleteClientShares();
           if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
           if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
-          if (tbl === s.orionConnections) return mocks.deleteOrionConnection();
+          if (tbl === s.integrationConnections) return mocks.deleteIntegrationConnection();
           return undefined;
         },
       }),
       update: (tbl: unknown) => ({
         set: (v: unknown) => ({
           where: () =>
-            tbl === s.orionConnections ? mocks.updateOrionConnection(v) : mocks.updateFirm(v),
+            tbl === s.integrationConnections ? mocks.updateIntegrationConnection(v) : mocks.updateFirm(v),
         }),
       }),
     },
@@ -237,8 +237,8 @@ describe("purgeFirmById", () => {
       mocks.deleteCmaSettings,
       mocks.deleteTickerPortfolios,
       mocks.deleteStaffAdvisorVisibility,
-      mocks.deleteOrionOauthStates,
-      mocks.deleteOrionSyncRuns,
+      mocks.deleteIntegrationOauthStates,
+      mocks.deleteIntegrationSyncRuns,
       mocks.deleteIntakeForms,
       mocks.deleteIntakeEmailSettings,
       mocks.deleteOpsEntitlementOverrides,
@@ -251,17 +251,17 @@ describe("purgeFirmById", () => {
     }
   });
 
-  it("scrubs then deletes the orion_connections row (audit F2)", async () => {
+  it("scrubs then deletes the integration_connections row (audit F2)", async () => {
     await purgeFirmById("org_1");
-    expect(mocks.updateOrionConnection).toHaveBeenCalledTimes(1); // token scrub
-    expect(mocks.updateOrionConnection).toHaveBeenCalledWith(
+    expect(mocks.updateIntegrationConnection).toHaveBeenCalledTimes(1); // token scrub
+    expect(mocks.updateIntegrationConnection).toHaveBeenCalledWith(
       expect.objectContaining({ accessTokenEnc: "", refreshTokenEnc: null }),
     );
-    expect(mocks.deleteOrionConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteIntegrationConnection).toHaveBeenCalledTimes(1);
   });
 
-  it("swallows an Orion purge failure and still stamps purgedAt", async () => {
-    mocks.deleteOrionConnection.mockRejectedValueOnce(new Error("orion boom"));
+  it("swallows an integration-connection purge failure and still stamps purgedAt", async () => {
+    mocks.deleteIntegrationConnection.mockRejectedValueOnce(new Error("integration boom"));
     await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
     expect(mocks.updateFirm).toHaveBeenCalledWith(
       expect.objectContaining({ purgedAt: expect.any(Date) }),
@@ -293,9 +293,9 @@ describe("purgeFirmById", () => {
       cma_settings: mocks.deleteCmaSettings,
       ticker_portfolios: mocks.deleteTickerPortfolios,
       staff_advisor_visibility: mocks.deleteStaffAdvisorVisibility,
-      orion_connections: mocks.deleteOrionConnection,
-      orion_oauth_states: mocks.deleteOrionOauthStates,
-      orion_sync_runs: mocks.deleteOrionSyncRuns,
+      integration_connections: mocks.deleteIntegrationConnection,
+      integration_oauth_states: mocks.deleteIntegrationOauthStates,
+      integration_sync_runs: mocks.deleteIntegrationSyncRuns,
       intake_forms: mocks.deleteIntakeForms,
       intake_email_settings: mocks.deleteIntakeEmailSettings,
       ops_entitlement_overrides: mocks.deleteOpsEntitlementOverrides,

@@ -22,9 +22,9 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
   "cma_settings",
   "ticker_portfolios",
   "staff_advisor_visibility",
-  "orion_connections",
-  "orion_oauth_states",
-  "orion_sync_runs",
+  "integration_connections",
+  "integration_oauth_states",
+  "integration_sync_runs",
   "intake_forms",
   "intake_email_settings",
   "ops_entitlement_overrides",
@@ -46,7 +46,7 @@ export const CASCADE_COVERED_FIRM_TABLES: readonly string[] = [
   "divorce_plans", // client_id NOT NULL → clients
   "forge_meeting_transcripts", // household_id + client_id NOT NULL
   "generation_runs", // household_id NOT NULL → crm_households
-  "orion_household_links", // client_id NOT NULL → clients
+  "integration_household_links", // client_id NOT NULL → clients
   "reports", // client_id NOT NULL → clients
   "scenario_compute_cache", // client_id NOT NULL → clients
   "solver_mc_cache", // client_id NOT NULL → clients
