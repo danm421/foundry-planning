@@ -184,24 +184,25 @@ describe("syncFirm", () => {
   it("scopes existing-account lookup to the syncing provider", async () => {
     const firmId = freshFirmId();
     const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
-    await upsertConnection({ firmId, providerId: "orion", accessToken: "fake", userId: "u1" });
-    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hh1", userId: "u1" });
-    // An account carrying a DIFFERENT provider's externalId under the SAME base
-    // scenario must classify NEW, never as an exact match — otherwise an Orion
-    // sync would collide with a Schwab-owned row. syncFirm's existing-account
-    // query filters externalProvider = the syncing provider, so this schwab row
-    // must be invisible to it.
+    await upsertConnection({ firmId, providerId: "schwab", accessToken: "fake", userId: "u1" });
+    await linkHousehold({ firmId, providerId: "schwab", clientId, externalHouseholdId: "hh1", userId: "u1" });
+    // Seed the pre-existing row as Orion-owned, then sync as Schwab. A
+    // correctly provider-scoped query filters externalProvider = "schwab", so
+    // this Orion row is invisible to it and the incoming account classifies
+    // NEW (committed: 0, queued: 1). A regression to a hardcoded "orion"
+    // filter would exact-match this seeded row instead and wrongly report
+    // committed: 1 — that's the discriminator this test guards.
     await db.insert(accounts).values({
       clientId,
       scenarioId,
       name: "Schwab Brokerage",
       category: "taxable",
       subType: "brokerage",
-      externalProvider: "schwab",
+      externalProvider: "orion",
       externalId: "ext-1",
     });
     const client = fakeClient({ id: "ext-1", name: "Joint Brokerage", registrationType: "Individual", value: 1000 });
-    const res = await syncFirm(firmId, "orion", { trigger: "manual", clientId, client, userId: "u1" });
+    const res = await syncFirm(firmId, "schwab", { trigger: "manual", clientId, client, userId: "u1" });
     expect(res.committed).toBe(0);
     expect(res.queued).toBe(1);
   });

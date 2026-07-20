@@ -18,7 +18,7 @@ import { getProvider } from "./registry";
 import type { ProviderClient, ProviderId } from "./types";
 
 /**
- * Orion → planning sync orchestrator. Reuses the document-import commit path
+ * Provider → planning sync orchestrator. Reuses the document-import commit path
  * (`resolveHoldingsForCommit` → `commitTabs` → `syncAccountFromHoldings`) — it
  * never forks a second commit implementation.
  *
@@ -26,9 +26,10 @@ import type { ProviderClient, ProviderId } from "./types";
  *  - EXACT (already imported, matched by externalId): auto-commit / update in
  *    place via `commitTabs(['accounts'])`.
  *  - NEW (never-seen): land in a single open `clientImports` review row
- *    (`origin:'orion'`, `status:'review'`) for the advisor to review — Orion's
- *    category/subType is GUESSED from registrationType, so it must not hit the
- *    plan unreviewed. Re-syncing DEDUPES into one open review import per client.
+ *    (`origin:<syncing providerId>`, `status:'review'`) for the advisor to
+ *    review — the provider's category/subType is GUESSED from
+ *    registrationType, so it must not hit the plan unreviewed. Re-syncing
+ *    DEDUPES into one open review import per client.
  */
 export async function syncFirm(
   firmId: string,
