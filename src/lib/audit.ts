@@ -336,10 +336,10 @@ export type AuditAction =
   | "copilot.write_approved" // legacy
   | "copilot.write_rejected" // legacy
   | "feedback.submitted"
-  // Orion integration (third-party data sync)
-  | "orion_integration.connect"
-  | "orion_integration.disconnect"
-  | "orion_sync.run"
+  // Integration providers (Orion, Schwab)
+  | "integration.connect"
+  | "integration.disconnect"
+  | "integration.sync"
   // Client portal
   | "portal.invite.sent"
   | "portal.invite.revoked"
