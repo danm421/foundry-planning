@@ -190,7 +190,7 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "education",
 ]);
 
-export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid"]);
+export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid", "schwab"]);
 
 export const holdingSourceEnum = pgEnum("holding_source", ["manual", "plaid"]);
 
@@ -234,15 +234,17 @@ export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
   "contains",
 ]);
 
-export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion"]);
+export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion", "schwab"]);
 
-export const orionConnectionStatusEnum = pgEnum("orion_connection_status", [
+export const integrationProviderEnum = pgEnum("integration_provider", ["orion", "schwab"]);
+
+export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", [
   "connected",
   "disconnected",
   "error",
 ]);
 
-export const orionSyncTriggerEnum = pgEnum("orion_sync_trigger", ["manual", "cron"]);
+export const integrationSyncTriggerEnum = pgEnum("integration_sync_trigger", ["manual", "cron"]);
 
 export const entityTypeEnum = pgEnum("entity_type", [
   "trust",
@@ -5045,49 +5047,62 @@ export type ClientShareRow = InferSelectModel<typeof clientShares>;
 export type NewClientShareRow = InferInsertModel<typeof clientShares>;
 
 // ---------------------------------------------------------------------------
-// Orion Advisor Tech integration tables
+// Integration provider tables (Orion, Schwab, ...)
 // ---------------------------------------------------------------------------
 
-export const orionConnections = pgTable("orion_connections", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  firmId: text("firm_id").notNull().unique(),
-  accessTokenEnc: text("access_token_enc").notNull(),
-  refreshTokenEnc: text("refresh_token_enc"),
-  tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
-  scope: text("scope"),
-  status: orionConnectionStatusEnum("status").notNull().default("connected"),
-  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
-  lastSyncError: text("last_sync_error"),
-  connectedByUserId: text("connected_by_user_id"),
-  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const orionHouseholdLinks = pgTable(
-  "orion_household_links",
+export const integrationConnections = pgTable(
+  "integration_connections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     firmId: text("firm_id").notNull(),
+    provider: integrationProviderEnum("provider").notNull(),
+    accessTokenEnc: text("access_token_enc").notNull(),
+    refreshTokenEnc: text("refresh_token_enc"),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+    scope: text("scope"),
+    status: integrationConnectionStatusEnum("status").notNull().default("connected"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSyncError: text("last_sync_error"),
+    connectedByUserId: text("connected_by_user_id"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    firmProviderUnique: uniqueIndex("integration_conn_firm_provider_uq").on(t.firmId, t.provider),
+  }),
+);
+
+export const integrationHouseholdLinks = pgTable(
+  "integration_household_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firmId: text("firm_id").notNull(),
+    provider: integrationProviderEnum("provider").notNull(),
+    // Unique on its own (NOT (client_id, provider)): one source of truth per
+    // client. The same custodial account from two providers carries two
+    // different external_ids, so the reconciler would duplicate it.
     clientId: uuid("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" })
       .unique(),
-    orionHouseholdId: text("orion_household_id").notNull(),
+    externalHouseholdId: text("external_household_id").notNull(),
     linkedByUserId: text("linked_by_user_id"),
     linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    firmHouseholdUnique: uniqueIndex("orion_household_firm_hh_uq").on(
+    firmHouseholdUnique: uniqueIndex("integration_hh_firm_provider_hh_uq").on(
       t.firmId,
-      t.orionHouseholdId,
+      t.provider,
+      t.externalHouseholdId,
     ),
   }),
 );
 
-export const orionOauthStates = pgTable("orion_oauth_states", {
+export const integrationOauthStates = pgTable("integration_oauth_states", {
   id: uuid("id").primaryKey().defaultRandom(),
   firmId: text("firm_id").notNull(),
+  provider: integrationProviderEnum("provider").notNull(),
   userId: text("user_id").notNull(),
   state: text("state").notNull().unique(),
   codeVerifier: text("code_verifier").notNull(),
@@ -5095,10 +5110,11 @@ export const orionOauthStates = pgTable("orion_oauth_states", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-export const orionSyncRuns = pgTable("orion_sync_runs", {
+export const integrationSyncRuns = pgTable("integration_sync_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
   firmId: text("firm_id").notNull(),
-  trigger: orionSyncTriggerEnum("trigger").notNull(),
+  provider: integrationProviderEnum("provider").notNull(),
+  trigger: integrationSyncTriggerEnum("trigger").notNull(),
   status: text("status").notNull(),
   householdsSynced: integer("households_synced").notNull().default(0),
   accountsCommitted: integer("accounts_committed").notNull().default(0),
