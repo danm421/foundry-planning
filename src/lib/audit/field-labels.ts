@@ -112,3 +112,44 @@ export const CLIENT_FIELD_LABELS: FieldLabels = {
   spouseLifeExpectancy: { label: "Spouse life expectancy", format: "text" },
   filingStatus: { label: "Filing status", format: "text" },
 };
+
+/** CRM household contact (`crm_household_contacts`). `ssnLast4` and
+ *  `dateOfBirth` are marked sensitive so the activity feed records that they
+ *  changed without ever persisting the values. */
+export const CRM_CONTACT_FIELD_LABELS: FieldLabels = {
+  firstName: { label: "First name", format: "text" },
+  lastName: { label: "Last name", format: "text" },
+  preferredName: { label: "Preferred name", format: "text" },
+  role: { label: "Role", format: "text" },
+  dateOfBirth: { label: "Date of birth", format: "date", sensitive: true },
+  ssnLast4: { label: "SSN last 4", format: "text", sensitive: true },
+  email: { label: "Email", format: "text" },
+  phone: { label: "Phone", format: "text" },
+  mobile: { label: "Mobile", format: "text" },
+  addressLine1: { label: "Address line 1", format: "text" },
+  addressLine2: { label: "Address line 2", format: "text" },
+  city: { label: "City", format: "text" },
+  state: { label: "State", format: "text" },
+  postalCode: { label: "Postal code", format: "text" },
+  country: { label: "Country", format: "text" },
+  maritalStatus: { label: "Marital status", format: "text" },
+  employmentStatus: { label: "Employment status", format: "text" },
+  employer: { label: "Employer", format: "text" },
+  occupation: { label: "Occupation", format: "text" },
+  relationshipLabel: { label: "Relationship", format: "text" },
+  notes: { label: "Notes", format: "text", truncate: 120 },
+};
+
+/** CRM household account (`crm_household_accounts`). */
+export const CRM_ACCOUNT_FIELD_LABELS: FieldLabels = {
+  accountType: { label: "Account type", format: "text" },
+  custodian: { label: "Custodian", format: "text" },
+  accountNumberLast4: {
+    label: "Account number last 4",
+    format: "text",
+    sensitive: true,
+  },
+  balance: { label: "Balance", format: "currency" },
+  balanceAsOf: { label: "Balance as of", format: "date" },
+  notes: { label: "Notes", format: "text", truncate: 120 },
+};
