@@ -43,6 +43,7 @@ export const CASCADE_COVERED_FIRM_TABLES: readonly string[] = [
   "crm_document_folders", // household_id NOT NULL → crm_households
   "crm_household_views", // household_id NOT NULL → crm_households
   "crm_task_comment_mentions", // task_id → crm_tasks
+  "divorce_plans", // client_id NOT NULL → clients
   "forge_meeting_transcripts", // household_id + client_id NOT NULL
   "generation_runs", // household_id NOT NULL → crm_households
   "orion_household_links", // client_id NOT NULL → clients
