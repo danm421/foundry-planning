@@ -4,8 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/toast";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import type { ProviderId } from "@/lib/integrations/types";
 
 interface Props {
+  providerId: ProviderId;
+  providerLabel: string;
   clientId: string;
   isAdmin: boolean;
   /** ISO string (serialized across the server boundary) or null. */
@@ -41,7 +44,13 @@ function formatSyncedAt(iso: string): string {
   });
 }
 
-export function OrionClientStatus({ clientId, isAdmin, lastSyncedAt }: Props) {
+export function IntegrationClientStatus({
+  providerId,
+  providerLabel,
+  clientId,
+  isAdmin,
+  lastSyncedAt,
+}: Props) {
   const router = useRouter();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -49,7 +58,7 @@ export function OrionClientStatus({ clientId, isAdmin, lastSyncedAt }: Props) {
   async function handleSync() {
     setBusy(true);
     try {
-      const res = await fetch("/api/integrations/orion/sync", {
+      const res = await fetch(`/api/integrations/${providerId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
@@ -72,7 +81,7 @@ export function OrionClientStatus({ clientId, isAdmin, lastSyncedAt }: Props) {
     <span className="inline-flex items-center gap-2 text-xs">
       <span className="inline-flex items-center gap-1.5 text-ink-2">
         <span className="h-1.5 w-1.5 rounded-full bg-good" aria-hidden="true" />
-        Orion
+        {providerLabel}
       </span>
       <span className="text-ink-3">·</span>
       {lastSyncedAt ? (
@@ -93,7 +102,7 @@ export function OrionClientStatus({ clientId, isAdmin, lastSyncedAt }: Props) {
             <SyncIcon />
             {busy ? "Syncing…" : "Sync"}
           </button>
-          <FieldTooltip text="Updates this household's Orion-linked accounts; new accounts are queued for review." />
+          <FieldTooltip text={`Updates this household's ${providerLabel}-linked accounts; new accounts are queued for review.`} />
         </>
       ) : null}
     </span>
