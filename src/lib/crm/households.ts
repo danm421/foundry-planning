@@ -18,6 +18,7 @@ import { recordDelete } from "@/lib/audit/record-helpers";
 import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
 import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
+import { deriveNameForHousehold } from "./sync-household-name";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import type { CreateCrmHouseholdInput } from "./schemas";
 
@@ -237,6 +238,7 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
         firmId,
         advisorId: input.advisorId,
         name: input.name,
+        nameIsCustom: input.nameIsCustom ?? false,
         status: input.status ?? "prospect",
         state: input.state ?? null,
         notes: input.notes,
@@ -314,9 +316,26 @@ export async function updateCrmHousehold(
   });
   if (!existing) throw new Error("Household not found");
 
+  // Resolve the name server-side. The client may send a `name`, but it only
+  // counts when the household ends up locked — an unlocked household's name is
+  // always whatever its contacts derive to, never a string the client asserts.
+  // Only engage when the patch actually touches naming; a status-only patch
+  // must not rewrite the name.
+  const patchTouchesName =
+    patch.name !== undefined || patch.nameIsCustom !== undefined;
+  const nextIsCustom = patch.nameIsCustom ?? existing.nameIsCustom;
+  const resolved: typeof patch = { ...patch };
+
+  if (patchTouchesName && !nextIsCustom) {
+    const derived = await deriveNameForHousehold(db, id);
+    // No primary contact means nothing to derive; `name` is NOT NULL, so keep
+    // what's there rather than writing a null.
+    resolved.name = derived ?? existing.name;
+  }
+
   const [updated] = await db
     .update(crmHouseholds)
-    .set({ ...patch, updatedAt: sql`now()` })
+    .set({ ...resolved, updatedAt: sql`now()` })
     .where(eq(crmHouseholds.id, id))
     .returning();
 

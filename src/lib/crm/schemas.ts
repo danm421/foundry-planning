@@ -29,6 +29,8 @@ export const usStateSchema = z
 
 export const createCrmHouseholdSchema = z.object({
   name: z.string().min(1).max(200),
+  // Advisor ticked "Use a custom name" — freezes `name` against auto-derivation.
+  nameIsCustom: z.boolean().optional(),
   status: crmHouseholdStatusSchema.default("prospect"),
   advisorId: z.string().min(1),
   state: usStateSchema.optional(),
