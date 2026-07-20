@@ -19,6 +19,9 @@ export function isClerkUserId(actorId: string): boolean {
 
 /**
  * Non-user actor shapes get a fixed label without any lookup:
+ *  - "" / whitespace — several `recordActivity` call sites pass
+ *    `actorUserId: userId ?? ""` for unattended writes; an empty actor is
+ *    system-initiated, not a departed member.
  *  - "system" / "clerk:webhook" — unattended jobs, webhooks, crons
  *  - "org_…" — a Clerk org ID; only appears as a historical data artifact
  *    (a bulk/test path that mis-stamped the firm ID as the actor). Labelled
@@ -26,6 +29,10 @@ export function isClerkUserId(actorId: string): boolean {
  * Returns null for user-shaped IDs, which the caller resolves via Clerk.
  */
 export function classifyActor(actorId: string): ActorDisplay | null {
+  // Several write paths pass `userId ?? ""`. An empty actor is an unattended
+  // action, not a departed member — without this it falls through to
+  // "Former member" and misattributes system writes.
+  if (!actorId.trim()) return { name: "System", isSystem: true };
   if (SYSTEM_ACTOR_IDS.has(actorId)) return { name: "System", isSystem: true };
   if (actorId.startsWith("org_")) return { name: "System", isSystem: true };
   return null;
