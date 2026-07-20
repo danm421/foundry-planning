@@ -1,12 +1,6 @@
 import { recordAudit, type AuditAction } from "@/lib/audit";
-import { isAuditValueEqual } from "./equality";
-import { humanizeFieldName } from "./labels";
-import type {
-  AuditValue,
-  EntitySnapshot,
-  FieldChange,
-  FieldLabels,
-} from "./types";
+import { buildFieldChanges } from "./build-changes";
+import type { EntitySnapshot, FieldLabels } from "./types";
 
 type Common = {
   action: AuditAction;
@@ -44,30 +38,7 @@ export async function recordUpdate(
 ): Promise<void> {
   const { before, after, fieldLabels, extraMetadata, ...rest } = args;
 
-  const keys = Array.from(
-    new Set([...Object.keys(before), ...Object.keys(after)]),
-  );
-
-  const changes: FieldChange[] = [];
-  for (const key of keys) {
-    const fromValue: AuditValue = key in before ? before[key]! : null;
-    const toValue: AuditValue = key in after ? after[key]! : null;
-    if (isAuditValueEqual(fromValue, toValue)) continue;
-
-    const descriptor = fieldLabels[key] ?? {
-      label: humanizeFieldName(key),
-      format: "text" as const,
-    };
-
-    changes.push({
-      field: key,
-      label: descriptor.label,
-      from: fromValue,
-      to: toValue,
-      format: descriptor.format,
-    });
-  }
-
+  const changes = buildFieldChanges(before, after, fieldLabels);
   if (changes.length === 0) return;
 
   await recordAudit({ ...rest, metadata: { kind: "update", changes, ...(extraMetadata ?? {}) } });

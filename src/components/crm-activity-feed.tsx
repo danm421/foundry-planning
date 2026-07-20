@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { AlertCircleIcon } from "@/components/icons";
+import type { FieldChange } from "@/lib/audit";
+import { humanizeFieldName } from "@/lib/audit/labels";
+import UpdateRowBody from "@/components/activity/update-row-body";
 
 type ActivityKind =
   | "note"
@@ -21,7 +24,8 @@ export type ActivityRow = {
   kind: ActivityKind;
   title: string;
   body: string | null;
-  actorUserId: string | null;
+  actor?: { name: string; isSystem: boolean };
+  metadata?: { changes?: FieldChange[]; fields?: string[] } | null;
   occurredAt: string;
   createdAt: string;
 };
@@ -56,13 +60,6 @@ function relativeTime(iso: string): string {
   if (mo < 12) return `${mo}mo ago`;
   const yr = Math.round(mo / 12);
   return `${yr}y ago`;
-}
-
-function actorDisplay(actorUserId: string | null): string {
-  if (!actorUserId) return "system";
-  // Truncate Clerk userId for v1 — keep "user_xxxxx" short.
-  if (actorUserId.length > 12) return actorUserId.slice(0, 10) + "…";
-  return actorUserId;
 }
 
 function KindIcon({ kind }: { kind: ActivityKind }) {
@@ -282,11 +279,22 @@ export function CrmActivityFeed({ householdId, handleRef }: Props) {
                   {row.body}
                 </p>
               )}
+              {Array.isArray(row.metadata?.changes) && row.metadata.changes.length ? (
+                <div className="mt-1.5">
+                  <UpdateRowBody changes={row.metadata.changes} />
+                </div>
+              ) : Array.isArray(row.metadata?.fields) && row.metadata.fields.length ? (
+                // Legacy rows (pre-diff) stored field names only — never values,
+                // so they cannot be backfilled into a before → after view.
+                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
+                  Changed: {row.metadata.fields.map(humanizeFieldName).join(", ")}
+                </p>
+              ) : null}
               <div className="mt-1.5 flex items-center gap-2 text-[11px] text-ink-3">
                 <span className="rounded-full bg-card-2 px-1.5 py-0.5 font-medium uppercase tracking-wide">
                   {KIND_LABELS[row.kind]}
                 </span>
-                <span>by {actorDisplay(row.actorUserId)}</span>
+                <span>by {row.actor?.name ?? "System"}</span>
               </div>
             </div>
           </li>

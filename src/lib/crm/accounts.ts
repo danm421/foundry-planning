@@ -5,7 +5,20 @@ import { auth } from "@clerk/nextjs/server";
 import { requireCrmHouseholdAccess } from "./authz";
 import { recordAudit } from "@/lib/audit";
 import { recordActivity } from "./activity";
+import { buildFieldChanges } from "@/lib/audit/build-changes";
+import { CRM_ACCOUNT_FIELD_LABELS } from "@/lib/audit/field-labels";
+import { toCrmAccountSnapshot } from "./activity-snapshots";
 import type { CreateCrmAccountInput } from "./schemas";
+
+/**
+ * Renders an account's last-4 for an activity-feed *title* string. Titles are
+ * plain text (unlike `crm_activity.metadata`, which redacts sensitive fields
+ * entirely) so we mask the digits with a `••` prefix rather than showing them
+ * bare. Preserves the existing "—" fallback for a missing account number.
+ */
+function maskAccountNumberLast4(last4: string | null | undefined): string {
+  return last4 ? `••${last4}` : "—";
+}
 
 export async function createCrmAccount(householdId: string, input: CreateCrmAccountInput) {
   const { orgId } = await requireCrmHouseholdAccess(householdId);
@@ -33,7 +46,7 @@ export async function createCrmAccount(householdId: string, input: CreateCrmAcco
     {
       householdId,
       kind: "account_change",
-      title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${input.accountNumberLast4 ?? "—"})`,
+      title: `Added account: ${input.custodian ?? "Custodian"} ${input.accountType ?? ""} (${maskAccountNumberLast4(input.accountNumberLast4)})`,
       metadata: { accountId: created.id },
       occurredAt: new Date(),
     },
@@ -64,16 +77,23 @@ export async function updateCrmAccount(accountId: string, patch: Partial<CreateC
     resourceId: accountId,
     firmId: orgId,
   });
-  await recordActivity(
-    {
-      householdId: existing.householdId,
-      kind: "account_change",
-      title: `Updated account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
-      metadata: { accountId, fields: Object.keys(patch) },
-      occurredAt: new Date(),
-    },
-    { actorUserId: userId ?? "" },
+  const changes = buildFieldChanges(
+    toCrmAccountSnapshot(existing),
+    toCrmAccountSnapshot(updated),
+    CRM_ACCOUNT_FIELD_LABELS,
   );
+  if (changes.length > 0) {
+    await recordActivity(
+      {
+        householdId: existing.householdId,
+        kind: "account_change",
+        title: `Updated account ${existing.custodian ?? "—"} ${maskAccountNumberLast4(existing.accountNumberLast4)}`,
+        metadata: { accountId, changes },
+        occurredAt: new Date(),
+      },
+      { actorUserId: userId ?? "" },
+    );
+  }
   return updated;
 }
 
@@ -95,7 +115,7 @@ export async function deleteCrmAccount(accountId: string) {
     {
       householdId: existing.householdId,
       kind: "account_change",
-      title: `Removed account ${existing.custodian ?? "—"} ${existing.accountNumberLast4 ?? "—"}`,
+      title: `Removed account ${existing.custodian ?? "—"} ${maskAccountNumberLast4(existing.accountNumberLast4)}`,
       occurredAt: new Date(),
     },
     { actorUserId: userId ?? "" },

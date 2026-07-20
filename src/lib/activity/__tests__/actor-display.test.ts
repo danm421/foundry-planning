@@ -33,6 +33,11 @@ describe("classifyActor", () => {
   it("returns null for user-shaped ids (caller resolves via Clerk)", () => {
     expect(classifyActor("user_3CNEarpTz0k9nI7gWESXLGMTI7k")).toBeNull();
   });
+
+  it("labels an empty/whitespace actor id as System, not Former member", () => {
+    expect(classifyActor("")).toEqual({ name: "System", isSystem: true });
+    expect(classifyActor("   ")).toEqual({ name: "System", isSystem: true });
+  });
 });
 
 describe("actorNameFromMetadata", () => {
@@ -76,6 +81,13 @@ describe("pickActor precedence", () => {
     expect(pickActor("user_gone", { kind: "create" }, live)).toEqual({
       name: "Former member",
       isSystem: false,
+    });
+  });
+
+  it("does not attribute an empty actor id to a departed member", () => {
+    expect(pickActor("", null, new Map())).toEqual({
+      name: "System",
+      isSystem: true,
     });
   });
 });

@@ -12,9 +12,15 @@ export default function UpdateRowBody({ changes }: Props): ReactElement {
       {changes.map((change) => (
         <li key={change.field}>
           <span className="text-ink-3">{change.label}: </span>
-          <span>{formatDiffValue(change.from, change.format)}</span>
-          <span className="text-ink-3"> → </span>
-          <span>{formatDiffValue(change.to, change.format)}</span>
+          {change.redacted ? (
+            <span className="italic text-ink-2">updated</span>
+          ) : (
+            <>
+              <span>{formatDiffValue(change.from, change.format)}</span>
+              <span className="text-ink-3"> → </span>
+              <span>{formatDiffValue(change.to, change.format)}</span>
+            </>
+          )}
         </li>
       ))}
     </ul>

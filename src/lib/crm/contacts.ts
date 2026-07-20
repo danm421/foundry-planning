@@ -8,6 +8,9 @@ import { recordActivity } from "./activity";
 import { resolveContactDateOfBirth } from "./default-dob";
 import { syncHouseholdNameFromContacts } from "./sync-household-name";
 import { roleAffectsHouseholdName } from "./household-name";
+import { buildFieldChanges } from "@/lib/audit/build-changes";
+import { CRM_CONTACT_FIELD_LABELS } from "@/lib/audit/field-labels";
+import { toCrmContactSnapshot } from "./activity-snapshots";
 import type { CreateCrmContactInput } from "./schemas";
 
 // A linked contact row must point at a family member of THIS household's
@@ -209,16 +212,25 @@ export async function updateCrmContact(contactId: string, patch: Partial<CreateC
     resourceId: contactId,
     firmId: orgId,
   });
-  await recordActivity(
-    {
-      householdId: existing.householdId,
-      kind: "contact_change",
-      title: `Updated ${existing.role}: ${existing.firstName} ${existing.lastName}`,
-      metadata: { contactId, fields: Object.keys(patch) },
-      occurredAt: new Date(),
-    },
-    { actorUserId: userId ?? "" },
+  const changes = buildFieldChanges(
+    toCrmContactSnapshot(existing),
+    toCrmContactSnapshot(updated),
+    CRM_CONTACT_FIELD_LABELS,
   );
+  // No real change (a PATCH that resubmitted identical values) writes no feed
+  // row — the audit entry above still records the attempt.
+  if (changes.length > 0) {
+    await recordActivity(
+      {
+        householdId: existing.householdId,
+        kind: "contact_change",
+        title: `Updated ${existing.role}: ${existing.firstName} ${existing.lastName}`,
+        metadata: { contactId, changes },
+        occurredAt: new Date(),
+      },
+      { actorUserId: userId ?? "" },
+    );
+  }
   return updated;
 }
 

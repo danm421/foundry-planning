@@ -32,6 +32,9 @@ export type FieldChange = {
   from: AuditValue;
   to: AuditValue;
   format: DiffFormat;
+  /** Value intentionally withheld — the field changed but is sensitive
+   *  (SSN last 4, DOB, account number). Renderers show "updated". */
+  redacted?: true;
 };
 
 export type AuditMetadata =
@@ -41,4 +44,14 @@ export type AuditMetadata =
   | { kind: "other"; note?: string; data?: Record<string, unknown> };
 
 /** Per-entity label/format descriptor: one entry per snapshot field. */
-export type FieldLabels = Record<string, { label: string; format: DiffFormat }>;
+export type FieldLabels = Record<
+  string,
+  {
+    label: string;
+    format: DiffFormat;
+    /** Record that this field changed, never its values. */
+    sensitive?: true;
+    /** Max characters retained for free text before clipping. */
+    truncate?: number;
+  }
+>;
