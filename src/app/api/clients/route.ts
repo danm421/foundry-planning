@@ -207,6 +207,15 @@ export async function POST(request: NextRequest) {
     });
 
     // Mirror any contact-only fields from the POST body onto the CRM contacts.
+    // No household-name sync after this mirror: contactPatch's keys come from
+    // CONTACT_FIELDS, which derives from clientContactInfoSchema — a `.strict()`
+    // schema (src/lib/schemas/resources.ts) that carries only contact-detail
+    // fields (email/phone/address/...), never firstName/lastName/spouseName/
+    // spouseLastName. So this route structurally cannot change a household
+    // name. If a name field is ever added to clientContactInfoSchema, this
+    // call site becomes name-changing and needs a syncHouseholdNameFromContacts
+    // call afterward, the way PUT /api/clients/[id] does (mirrorContactToCrm
+    // there is followed by a sync — see IDENTITY_FIELDS in ./[id]/route.ts).
     if (Object.keys(contactPatch).length > 0) {
       await db.transaction(async (tx) => {
         await mirrorContactToCrm(tx, crmHouseholdId, contactPatch);

@@ -321,6 +321,11 @@ export async function updateCrmHousehold(
   // always whatever its contacts derive to, never a string the client asserts.
   // Only engage when the patch actually touches naming; a status-only patch
   // must not rewrite the name.
+  //
+  // This inlines the same nameIsCustom lock check that
+  // syncHouseholdNameFromContacts (src/lib/crm/sync-household-name.ts) makes
+  // via the shared helper. The two checks must stay in lockstep if the
+  // locking rule ever changes.
   const patchTouchesName =
     patch.name !== undefined || patch.nameIsCustom !== undefined;
   const nextIsCustom = patch.nameIsCustom ?? existing.nameIsCustom;

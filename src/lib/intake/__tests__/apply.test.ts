@@ -26,8 +26,6 @@ import {
   scenarios,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-// `scenarios` is not imported — the base scenario id comes back from
-// createClientForHousehold; we assert against that directly.
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";

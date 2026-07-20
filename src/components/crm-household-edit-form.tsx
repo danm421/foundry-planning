@@ -145,7 +145,7 @@ export function CrmHouseholdEditForm({
           </label>
           <p id="edit-name-help" className="mt-1 text-[12px] text-ink-4">
             {mustBeCustom
-              ? "This household has no primary contact, so its name can't be generated automatically."
+              ? "This household has no primary contact, so its name can't be generated automatically — it will be saved as a custom name."
               : nameIsCustom
                 ? "Won't change when household members change."
                 : "Updates automatically when household members change."}

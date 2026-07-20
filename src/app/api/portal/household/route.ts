@@ -120,7 +120,17 @@ export async function PUT(req: Request): Promise<Response> {
     }
 
     if (nameChanged) {
-      await syncHouseholdNameFromContacts(db, client.crmHouseholdId);
+      // Derived-data maintenance. This handler is non-transactional and the
+      // contact patch above has already committed, so letting a sync failure
+      // propagate would report a save that actually succeeded — inviting a
+      // client retry that re-runs the contact UPDATE and writes a duplicate
+      // audit row. Mirrors the recordHouseholdOpen non-fatal wrap in
+      // POST /api/clients (src/app/api/clients/route.ts).
+      try {
+        await syncHouseholdNameFromContacts(db, client.crmHouseholdId);
+      } catch (syncErr) {
+        console.error("Portal household name sync failed:", syncErr);
+      }
     }
 
     return NextResponse.json({ ok: true });

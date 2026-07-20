@@ -49,6 +49,10 @@ export async function deriveNameForHousehold(
  * `nameIsCustom` is set — the advisor ticked "Use a custom name", and their
  * name is frozen until they untick it. That check happens first, so a locked
  * household is never read past.
+ *
+ * `updateCrmHousehold` (src/lib/crm/households.ts) checks this same lock
+ * inline instead of calling this helper. The two checks must stay in
+ * lockstep if the locking rule ever changes.
  */
 export async function syncHouseholdNameFromContacts(
   exec: Executor,
