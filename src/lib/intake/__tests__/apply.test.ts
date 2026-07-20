@@ -44,6 +44,113 @@ async function householdName(householdId: string): Promise<string | null> {
   return row?.name ?? null;
 }
 
+// ── Shared fixture builders for the household-name-sync tests below ─────────
+// Both scenarios (rename-the-primary, add-a-spouse) start from the identical
+// seed: a household named "John Smith" with a single primary CRM contact and
+// a matching planning client. Only the submitted payload differs per test.
+
+/** Seeds a household ("John Smith", primary-only) + its planning client. */
+async function seedJohnSmithHousehold(
+  firmId: string,
+  advisorId: string,
+): Promise<{ householdId: string; clientId: string }> {
+  const [hh] = await db
+    .insert(crmHouseholds)
+    .values({
+      firmId,
+      advisorId,
+      name: "John Smith",
+      status: "active",
+      state: "TX",
+    })
+    .returning();
+  const householdId = hh.id;
+
+  await db.insert(crmHouseholdContacts).values({
+    householdId,
+    role: "primary",
+    firstName: "John",
+    lastName: "Smith",
+    dateOfBirth: "1975-04-01",
+    maritalStatus: "single",
+  });
+
+  const created = await createClientForHousehold({
+    household: { id: householdId, firmId, advisorId, state: "TX" },
+    primaryContact: {
+      firstName: "John",
+      lastName: "Smith",
+      dateOfBirth: "1975-04-01",
+    },
+    retirementAge: 65,
+    lifeExpectancy: 95,
+    filingStatus: "single",
+  });
+
+  return { householdId, clientId: created.clientId };
+}
+
+/** Inserts a `submitted` intake form carrying only the given family section. */
+async function submitForm(
+  firmId: string,
+  advisorId: string,
+  clientId: string,
+  family: IntakePayload["family"],
+): Promise<string> {
+  const payload: IntakePayload = {
+    family,
+    accounts: [],
+    income: [],
+    property: [],
+    goals: {},
+    meta: { completedSections: [] },
+  };
+
+  const token = newIntakeToken();
+  const [form] = await db
+    .insert(intakeForms)
+    .values({
+      firmId,
+      clientId,
+      mode: "blank",
+      status: "submitted",
+      token,
+      recipientEmail: "john@example.com",
+      recipientName: "John Smith",
+      payload,
+      createdByUserId: advisorId,
+      submittedAt: new Date(),
+      expiresAt: defaultExpiry(new Date()),
+    })
+    .returning();
+  return form.id;
+}
+
+/** Shared teardown for the household-name-sync tests (client cascade-deletes
+ * scenarios/expenses, but we're explicit so cleanup doesn't rely on that). */
+async function cleanup(ids: {
+  formId?: string;
+  clientId?: string;
+  householdId?: string;
+}): Promise<void> {
+  const { formId, clientId, householdId } = ids;
+  if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
+  if (clientId) {
+    await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
+    await db.delete(accounts).where(eq(accounts.clientId, clientId));
+    await db.delete(incomes).where(eq(incomes.clientId, clientId));
+    await db.delete(expenses).where(eq(expenses.clientId, clientId));
+    await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+    await db.delete(clients).where(eq(clients.id, clientId));
+  }
+  if (householdId) {
+    await db
+      .delete(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, householdId));
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
+  }
+}
+
 describe("applyIntake (existing-client path)", () => {
   let householdId: string;
   let clientId: string;
@@ -195,6 +302,9 @@ describe("applyIntake (existing-client path)", () => {
       .from(crmHouseholds)
       .where(eq(crmHouseholds.id, householdId));
     expect(hhAfter.state).toBe("NJ");
+    // The seed name ("Apply Test HH") doesn't match the primary contact
+    // ("Pat Prospect") — applySectionsToClient's sync call re-derives it.
+    expect(hhAfter.name).toBe("Pat Prospect");
 
     // ── Assert: the default "Retirement Living Expenses" row updated ──────
     const expenseRows = await db
@@ -395,6 +505,12 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
     expect(hhRow).toBeTruthy();
     expect(hhRow.firmId).toBe(PFIRM);
     expect(hhRow.state).toBe("CA");
+    // Named from both members, not the old `${lastName} Household` literal.
+    // The insert derives this directly (see apply.ts), but the value asserted
+    // here is guaranteed by applySectionsToClient's sync call against the
+    // contact rows inserted above, in the same transaction — that's what
+    // actually pins this behavior, not the insert alone.
+    expect(hhRow.name).toBe("Robin & Sam Newclient");
 
     // ── Assert: primary AND spouse CRM contacts created ───────────────────
     const contactRows = await db
@@ -424,98 +540,26 @@ const RFIRM = "test-firm-apply-intake-hh-rename-2026";
 const RADVISOR = "user_test_apply_hh_rename";
 
 describe("applyIntake (household name sync — merge path renames the primary)", () => {
-  let householdId: string;
-  let clientId: string;
-  let formId: string;
+  let householdId: string | undefined;
+  let clientId: string | undefined;
+  let formId: string | undefined;
 
-  afterAll(async () => {
-    if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
-    if (clientId) {
-      await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
-      await db.delete(clients).where(eq(clients.id, clientId));
-    }
-    if (householdId) {
-      await db
-        .delete(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, householdId));
-      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
-    }
-  });
+  afterAll(() => cleanup({ formId, clientId, householdId }));
 
   it("re-derives the household name when intake renames the primary", async () => {
-    // ── Seed household + primary contact, name already matching the derived
-    //    value ("John Smith") ────────────────────────────────────────────────
-    const [hh] = await db
-      .insert(crmHouseholds)
-      .values({
-        firmId: RFIRM,
-        advisorId: RADVISOR,
-        name: "John Smith",
-        status: "active",
-        state: "TX",
-      })
-      .returning();
-    householdId = hh.id;
+    ({ householdId, clientId } = await seedJohnSmithHousehold(RFIRM, RADVISOR));
 
-    await db.insert(crmHouseholdContacts).values({
-      householdId,
-      role: "primary",
-      firstName: "John",
-      lastName: "Smith",
-      dateOfBirth: "1975-04-01",
-      maritalStatus: "single",
-    });
-
-    const created = await createClientForHousehold({
-      household: { id: householdId, firmId: RFIRM, advisorId: RADVISOR, state: "TX" },
-      primaryContact: {
-        firstName: "John",
+    // Intake renames the primary from John to Jonathan.
+    formId = await submitForm(RFIRM, RADVISOR, clientId, {
+      primary: {
+        firstName: "Jonathan",
         lastName: "Smith",
         dateOfBirth: "1975-04-01",
+        maritalStatus: "single",
       },
-      retirementAge: 65,
-      lifeExpectancy: 95,
-      filingStatus: "single",
+      spouse: undefined,
+      children: [],
     });
-    clientId = created.clientId;
-
-    // ── Intake renames the primary from John to Jonathan ──────────────────
-    const payload: IntakePayload = {
-      family: {
-        primary: {
-          firstName: "Jonathan",
-          lastName: "Smith",
-          dateOfBirth: "1975-04-01",
-          maritalStatus: "single",
-        },
-        spouse: undefined,
-        children: [],
-      },
-      accounts: [],
-      income: [],
-      property: [],
-      goals: {},
-      meta: { completedSections: [] },
-    };
-
-    const token = newIntakeToken();
-    const [form] = await db
-      .insert(intakeForms)
-      .values({
-        firmId: RFIRM,
-        clientId,
-        mode: "blank",
-        status: "submitted",
-        token,
-        recipientEmail: "john@example.com",
-        recipientName: "John Smith",
-        payload,
-        createdByUserId: RADVISOR,
-        submittedAt: new Date(),
-        expiresAt: defaultExpiry(new Date()),
-      })
-      .returning();
-    formId = form.id;
 
     await applyIntake({ formId, firmId: RFIRM, actorId: RADVISOR });
 
@@ -527,186 +571,33 @@ const SFIRM = "test-firm-apply-intake-hh-add-spouse-2026";
 const SADVISOR = "user_test_apply_hh_add_spouse";
 
 describe("applyIntake (household name sync — merge path adds a spouse)", () => {
-  let householdId: string;
-  let clientId: string;
-  let formId: string;
-
-  afterAll(async () => {
-    if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
-    if (clientId) {
-      await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
-      await db.delete(clients).where(eq(clients.id, clientId));
-    }
-    if (householdId) {
-      await db
-        .delete(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, householdId));
-      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
-    }
-  });
-
-  it("expands the household name when intake adds a spouse", async () => {
-    // ── Seed household with the primary only, name = "John Smith" ─────────
-    const [hh] = await db
-      .insert(crmHouseholds)
-      .values({
-        firmId: SFIRM,
-        advisorId: SADVISOR,
-        name: "John Smith",
-        status: "active",
-        state: "TX",
-      })
-      .returning();
-    householdId = hh.id;
-
-    await db.insert(crmHouseholdContacts).values({
-      householdId,
-      role: "primary",
-      firstName: "John",
-      lastName: "Smith",
-      dateOfBirth: "1975-04-01",
-      maritalStatus: "single",
-    });
-
-    const created = await createClientForHousehold({
-      household: { id: householdId, firmId: SFIRM, advisorId: SADVISOR, state: "TX" },
-      primaryContact: {
-        firstName: "John",
-        lastName: "Smith",
-        dateOfBirth: "1975-04-01",
-      },
-      retirementAge: 65,
-      lifeExpectancy: 95,
-      filingStatus: "single",
-    });
-    clientId = created.clientId;
-
-    // ── Intake adds a spouse, Jane Smith, that wasn't there before ────────
-    const payload: IntakePayload = {
-      family: {
-        primary: {
-          firstName: "John",
-          lastName: "Smith",
-          dateOfBirth: "1975-04-01",
-          maritalStatus: "married",
-        },
-        spouse: {
-          firstName: "Jane",
-          lastName: "Smith",
-          dateOfBirth: "1976-09-12",
-          maritalStatus: "married",
-        },
-        children: [],
-      },
-      accounts: [],
-      income: [],
-      property: [],
-      goals: {},
-      meta: { completedSections: [] },
-    };
-
-    const token = newIntakeToken();
-    const [form] = await db
-      .insert(intakeForms)
-      .values({
-        firmId: SFIRM,
-        clientId,
-        mode: "blank",
-        status: "submitted",
-        token,
-        recipientEmail: "john@example.com",
-        recipientName: "John Smith",
-        payload,
-        createdByUserId: SADVISOR,
-        submittedAt: new Date(),
-        expiresAt: defaultExpiry(new Date()),
-      })
-      .returning();
-    formId = form.id;
-
-    await applyIntake({ formId, firmId: SFIRM, actorId: SADVISOR });
-
-    expect(await householdName(householdId)).toBe("John & Jane Smith");
-  });
-});
-
-const NFIRM = "test-firm-apply-intake-hh-new-prospect-2026";
-const NADVISOR = "user_test_apply_hh_new_prospect";
-
-describe("applyIntake (household name sync — prospect path names from both members)", () => {
   let householdId: string | undefined;
   let clientId: string | undefined;
   let formId: string | undefined;
 
-  afterAll(async () => {
-    if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
-    if (clientId) {
-      await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
-      await db.delete(accounts).where(eq(accounts.clientId, clientId));
-      await db.delete(incomes).where(eq(incomes.clientId, clientId));
-      await db.delete(expenses).where(eq(expenses.clientId, clientId));
-      await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
-      await db.delete(clients).where(eq(clients.id, clientId));
-    }
-    if (householdId) {
-      await db
-        .delete(crmHouseholdContacts)
-        .where(eq(crmHouseholdContacts.householdId, householdId));
-      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
-    }
-  });
+  afterAll(() => cleanup({ formId, clientId, householdId }));
 
-  it("names a new prospect household from both members", async () => {
-    const payload: IntakePayload = {
-      family: {
-        primary: {
-          firstName: "John",
-          lastName: "Smith",
-          dateOfBirth: "1975-04-01",
-          maritalStatus: "married",
-        },
-        spouse: {
-          firstName: "Jane",
-          lastName: "Smith",
-          dateOfBirth: "1976-09-12",
-          maritalStatus: "married",
-        },
-        children: [],
+  it("expands the household name when intake adds a spouse", async () => {
+    ({ householdId, clientId } = await seedJohnSmithHousehold(SFIRM, SADVISOR));
+
+    // Intake adds a spouse, Jane Smith, that wasn't there before.
+    formId = await submitForm(SFIRM, SADVISOR, clientId, {
+      primary: {
+        firstName: "John",
+        lastName: "Smith",
+        dateOfBirth: "1975-04-01",
+        maritalStatus: "married",
       },
-      accounts: [],
-      income: [],
-      property: [],
-      goals: {},
-      meta: { completedSections: [] },
-    };
+      spouse: {
+        firstName: "Jane",
+        lastName: "Smith",
+        dateOfBirth: "1976-09-12",
+        maritalStatus: "married",
+      },
+      children: [],
+    });
 
-    const token = newIntakeToken();
-    const [form] = await db
-      .insert(intakeForms)
-      .values({
-        firmId: NFIRM,
-        clientId: null,
-        mode: "blank",
-        status: "submitted",
-        token,
-        recipientEmail: "john@example.com",
-        recipientName: "John Smith",
-        payload,
-        createdByUserId: NADVISOR,
-        submittedAt: new Date(),
-        expiresAt: defaultExpiry(new Date()),
-      })
-      .returning();
-    formId = form.id;
-
-    const result = await applyIntake({ formId, firmId: NFIRM, actorId: NADVISOR });
-    clientId = result.clientId;
-
-    const [clientRow] = await db
-      .select({ crmHouseholdId: clients.crmHouseholdId })
-      .from(clients)
-      .where(eq(clients.id, clientId));
-    householdId = clientRow.crmHouseholdId;
+    await applyIntake({ formId, firmId: SFIRM, actorId: SADVISOR });
 
     expect(await householdName(householdId)).toBe("John & Jane Smith");
   });

@@ -457,6 +457,13 @@ export async function applyIntake(args: {
       const { primary, spouse } = payload.family;
 
       // 1. Household — leave status at the enum default ("prospect").
+      //    This derive is defense-in-depth, not the source of truth for the
+      //    final name: applySectionsToClient (step 4 below) calls
+      //    syncHouseholdNameFromContacts against the contact rows inserted in
+      //    step 2, in this same transaction, and that sync overwrites
+      //    whatever name lands here. Deriving it now means the row is never
+      //    even transiently wrong, and keeps this insert correct on its own
+      //    if the sync call in applySectionsToClient is ever moved.
       const [household] = await tx
         .insert(crmHouseholds)
         .values({
