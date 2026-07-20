@@ -13,6 +13,7 @@ const auth = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => auth() }));
 
 import { recordActivity } from "../activity";
+import * as actorNameModule from "@/lib/audit/actor-name";
 
 beforeEach(() => { insertValues.mockReset(); findFirst.mockReset(); auth.mockReset(); });
 
@@ -56,5 +57,28 @@ describe("recordActivity (actor name snapshot)", () => {
     );
     const [values] = insertValues.mock.calls[0]!;
     expect(values.metadata).toMatchObject({ contactId: "c-1" });
+  });
+
+  it("merges the resolved actorName into caller metadata alongside the caller's own keys", async () => {
+    findFirst.mockResolvedValue({ firmId: "org_A" });
+    const spy = vi
+      .spyOn(actorNameModule, "snapshotActorName")
+      .mockResolvedValue("Jane Advisor");
+    try {
+      await recordActivity(
+        {
+          householdId: "hh-1",
+          kind: "contact_change",
+          title: "Updated primary: Michael Mitchell",
+          metadata: { contactId: "c-1" },
+          occurredAt: new Date("2026-06-15"),
+        },
+        { actorUserId: "user_advisor_77" },
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    const [values] = insertValues.mock.calls[0]!;
+    expect(values.metadata).toEqual({ contactId: "c-1", actorName: "Jane Advisor" });
   });
 });
