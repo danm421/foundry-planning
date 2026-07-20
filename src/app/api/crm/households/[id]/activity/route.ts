@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listActivity, recordActivity } from "@/lib/crm/activity";
 import { requireCrmHouseholdAccess } from "@/lib/crm/authz";
 import { createCrmActivitySchema } from "@/lib/crm/schemas";
+import { hydrateRowActors } from "@/lib/activity/resolve-actors";
 import { auth } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,13 @@ export async function GET(
       limit: Number(searchParams.get("limit") ?? 50),
       offset: Number(searchParams.get("offset") ?? 0),
     });
-    return NextResponse.json({ activity: rows });
+    // `hydrateRowActors` keys on `actorId`; crm_activity stores `actorUserId`.
+    // Precedence inside: live Clerk name → metadata.actorName snapshot →
+    // "Former member" (→ "System" for empty/system ids).
+    const activity = await hydrateRowActors(
+      rows.map((row) => ({ ...row, actorId: row.actorUserId ?? "" })),
+    );
+    return NextResponse.json({ activity });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
