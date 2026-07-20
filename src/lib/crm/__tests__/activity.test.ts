@@ -29,3 +29,32 @@ describe("recordActivity (explicit actorUserId)", () => {
     }));
   });
 });
+
+describe("recordActivity (actor name snapshot)", () => {
+  it("normalizes a blank actor id to 'system'", async () => {
+    findFirst.mockResolvedValue({ firmId: "org_A" });
+    await recordActivity(
+      { householdId: "hh-1", kind: "note", title: "Household created", occurredAt: new Date("2026-06-15") },
+      { actorUserId: "" },
+    );
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: "system" }),
+    );
+  });
+
+  it("preserves caller metadata when no name resolves", async () => {
+    findFirst.mockResolvedValue({ firmId: "org_A" });
+    await recordActivity(
+      {
+        householdId: "hh-1",
+        kind: "contact_change",
+        title: "Updated primary: Michael Mitchell",
+        metadata: { contactId: "c-1" },
+        occurredAt: new Date("2026-06-15"),
+      },
+      { actorUserId: "advisor-77" },
+    );
+    const [values] = insertValues.mock.calls[0]!;
+    expect(values.metadata).toMatchObject({ contactId: "c-1" });
+  });
+});

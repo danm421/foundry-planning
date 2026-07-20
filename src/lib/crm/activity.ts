@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { crmActivity, crmHouseholds } from "@/db/schema";
+import { snapshotActorName } from "@/lib/audit/actor-name";
 import { desc, eq } from "drizzle-orm";
 
 type RecordActivityInput = {
@@ -30,14 +31,26 @@ export async function recordActivity(
   });
   if (!household) throw new Error(`Cannot record activity: household ${input.householdId} not found`);
 
+  // Several callers pass `userId ?? ""`. Normalize so the read path classifies
+  // it as a system action rather than a departed member.
+  const actorUserId = opts.actorUserId.trim() || "system";
+
+  // Snapshot the display name the way `recordAudit` does, so a row keeps its
+  // author's name after that user leaves the org. Never throws; returns null
+  // for non-user ids. Cached 5m, and usually already warm from recordAudit
+  // in the same request.
+  const actorName = await snapshotActorName(actorUserId);
+
   await db.insert(crmActivity).values({
     householdId: input.householdId,
     firmId: household.firmId,
-    actorUserId: opts.actorUserId,
+    actorUserId,
     kind: input.kind,
     title: input.title,
     body: input.body,
-    metadata: input.metadata,
+    metadata: actorName
+      ? { ...(input.metadata ?? {}), actorName }
+      : input.metadata,
     occurredAt: input.occurredAt,
   });
 }
