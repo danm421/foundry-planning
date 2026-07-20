@@ -49,22 +49,22 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   const [spouseFirstName, setSpouseFirstName] = useState("");
   const [spouseLastName, setSpouseLastName] = useState("");
 
-  // Household name: auto-derived from the contacts until the advisor edits it.
+  // Household name: derived from the contacts unless the advisor opts out.
   const [name, setName] = useState("");
-  const [nameTouched, setNameTouched] = useState(false);
+  const [nameIsCustom, setNameIsCustom] = useState(false);
   const [state, setState] = useState("");
 
+  const derivedName = buildHouseholdName({
+    firstName,
+    lastName,
+    spouseFirstName: addSpouse ? spouseFirstName : "",
+    spouseLastName: addSpouse ? spouseLastName : "",
+  });
+
   useEffect(() => {
-    if (nameTouched) return;
-    setName(
-      buildHouseholdName({
-        firstName,
-        lastName,
-        spouseFirstName: addSpouse ? spouseFirstName : "",
-        spouseLastName: addSpouse ? spouseLastName : "",
-      }),
-    );
-  }, [firstName, lastName, addSpouse, spouseFirstName, spouseLastName, nameTouched]);
+    if (nameIsCustom) return;
+    setName(derivedName);
+  }, [derivedName, nameIsCustom]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -110,6 +110,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          nameIsCustom,
           status: data.get("status"),
           advisorId: user.id,
           state,
@@ -254,7 +255,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         </p>
       </div>
 
-      {/* Household name — auto, editable */}
+      {/* Household name — derived from the contacts unless locked */}
       <div className="border-t border-hair pt-4">
         <label className={fieldLabelClassName} htmlFor="name">
           Household name
@@ -265,15 +266,28 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           data-forge-anchor="crm-household-name-input"
           required
           maxLength={200}
+          readOnly={!nameIsCustom}
           value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setNameTouched(e.target.value !== "");
-          }}
+          onChange={(e) => setName(e.target.value)}
           className={inputClassName}
         />
+        <label htmlFor="nameIsCustom" className="mt-2 flex items-center gap-2 cursor-pointer">
+          <input
+            id="nameIsCustom"
+            type="checkbox"
+            checked={nameIsCustom}
+            onChange={(e) => {
+              setNameIsCustom(e.target.checked);
+              if (!e.target.checked) setName(derivedName);
+            }}
+            className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+          />
+          <span className="text-[13px] font-medium text-ink-2">Use a custom name</span>
+        </label>
         <p className="mt-1 text-[12px] text-ink-4">
-          Auto-generated from the contacts above. Edit to override.
+          {nameIsCustom
+            ? "Won't change when household members change."
+            : "Generated from the contacts above, and kept up to date as members change."}
         </p>
       </div>
 
