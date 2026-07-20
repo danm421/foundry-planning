@@ -270,6 +270,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           className={inputClassName}
+          aria-describedby="create-name-help"
         />
         <label htmlFor="nameIsCustom" className="mt-2 flex items-center gap-2 cursor-pointer">
           <input
@@ -284,7 +285,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
           />
           <span className="text-[13px] font-medium text-ink-2">Use a custom name</span>
         </label>
-        <p className="mt-1 text-[12px] text-ink-4">
+        <p id="create-name-help" className="mt-1 text-[12px] text-ink-4">
           {nameIsCustom
             ? "Won't change when household members change."
             : "Generated from the contacts above, and kept up to date as members change."}
