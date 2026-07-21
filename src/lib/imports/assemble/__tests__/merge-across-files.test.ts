@@ -37,4 +37,42 @@ describe("mergeAcrossFiles", () => {
     });
     expect(r.payload.accounts).toHaveLength(2);
   });
+
+  it("unions non-null fields on merge instead of a whole-row swap — the poorer row's unique field survives", () => {
+    const r = mergeAcrossFiles({
+      // Richer overall (5 fields: name, custodian, last4, value, category +
+      // basis = 6), but lacks growthRate.
+      f1: er("stmt-jan.pdf", {
+        accounts: [
+          {
+            name: "401k",
+            custodian: "Fidelity",
+            accountNumberLast4: "1234",
+            value: 450000,
+            category: "retirement",
+            basis: 300000,
+          },
+        ],
+      }),
+      // Poorer overall (5 fields), but carries growthRate, which the richer
+      // row above does not have.
+      f2: er("stmt-feb.pdf", {
+        accounts: [
+          {
+            name: "Fidelity 401k",
+            custodian: "fidelity",
+            accountNumberLast4: "1234",
+            value: 455000,
+            growthRate: 0.06,
+          },
+        ],
+      }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    // Richer row's field wins the row.
+    expect(r.payload.accounts[0].basis).toBe(300000);
+    expect(r.payload.accounts[0].category).toBe("retirement");
+    // Poorer row's unique field must survive the merge (union, not swap).
+    expect(r.payload.accounts[0].growthRate).toBe(0.06);
+  });
 });

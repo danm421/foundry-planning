@@ -41,6 +41,25 @@ function countNonNullFields(row: Record<string, unknown>): number {
   return Object.values(row).filter((v) => v !== undefined && v !== null).length;
 }
 
+/**
+ * Backfill any undefined/null field on `base` using the corresponding field
+ * from `other`, without touching fields `base` already has populated. Used
+ * so that merging two rows unions their non-null fields — the row picked as
+ * `base` wins on conflicting fields, but a field only `other` populated is
+ * not silently dropped.
+ */
+function unionFields<T extends object>(base: T, other: T): T {
+  const merged: T = { ...base };
+  for (const key of Object.keys(other) as Array<keyof T>) {
+    const baseValue = merged[key];
+    const otherValue = other[key];
+    if ((baseValue === undefined || baseValue === null) && otherValue !== undefined && otherValue !== null) {
+      merged[key] = otherValue;
+    }
+  }
+  return merged;
+}
+
 interface SourceRow<T> {
   content: T;
   provenance: Provenance;
@@ -57,9 +76,11 @@ interface DedupeBucketEntry<T> {
 /**
  * Append `rows` onto `target`, collapsing entries that share a dedupe key
  * (per `computeKey`) and are judged the same entity (per `isSameEntity`).
- * On a collapse, the row with more non-null fields wins; the surviving
- * row's `__provenance` stays pinned to the FIRST file the entity appeared
- * in, and a `warnings` entry is appended.
+ * On a collapse, the richer row (more non-null fields) wins on conflicting
+ * fields, but the surviving row is the UNION of both — a field only the
+ * poorer row populated is backfilled, not dropped. The surviving row's
+ * `__provenance` stays pinned to the FIRST file the entity appeared in, and
+ * a `warnings` entry is appended.
  *
  * `computeKey` returning `null` means "not enough information to dedupe" —
  * the row is always appended standalone.
@@ -86,10 +107,15 @@ function mergeSection<T extends { name: string }>(
 
     if (existingEntry) {
       const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
-      if (incomingFieldCount > existingEntry.fieldCount) {
-        existingEntry.content = content;
-        existingEntry.fieldCount = incomingFieldCount;
-      }
+      // The richer row (more non-null fields) is the base — it wins on any
+      // conflicting field — but the poorer row's unique fields still
+      // backfill any gaps the richer row left, so nothing is dropped.
+      const [richerContent, poorerContent] =
+        incomingFieldCount > existingEntry.fieldCount
+          ? [content, existingEntry.content]
+          : [existingEntry.content, content];
+      existingEntry.content = unionFields(richerContent, poorerContent);
+      existingEntry.fieldCount = countNonNullFields(existingEntry.content as Record<string, unknown>);
       existingEntry.mergeCount += 1;
       // Content may have been enriched, but provenance stays pinned to the
       // first file this entity was seen in.
@@ -152,13 +178,7 @@ function mergeFamilyMember<T extends { firstName: string; lastName?: string }>(
     return existing;
   }
 
-  const merged: T = { ...existing };
-  for (const key of Object.keys(incoming) as Array<keyof T>) {
-    if (merged[key] === undefined && incoming[key] !== undefined) {
-      merged[key] = incoming[key];
-    }
-  }
-  return merged;
+  return unionFields(existing, incoming);
 }
 
 /**
