@@ -78,6 +78,7 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
         uploadedAt: f.uploadedAt.toISOString(),
       }))}
       payload={payloadJson?.payload ?? null}
+      assumptions={payloadJson?.assemble?.assumptions ?? []}
       perTabCommittedAt={imp.perTabCommittedAt as Record<string, string> | null}
       milestones={importMilestones?.milestones ?? null}
       clientFirstName={importMilestones?.clientFirstName}

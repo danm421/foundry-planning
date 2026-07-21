@@ -15,6 +15,7 @@ import type {
   ExtractedWill,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
+import type { AssembleAssumption } from "@/lib/imports/assemble/types";
 import type { CommitTab } from "@/lib/imports/commit/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -51,6 +52,8 @@ interface ReviewWizardProps {
   clientId: string;
   importId: string;
   payload: ImportPayload;
+  /** Read-only provenance about gap-filled fields — never PATCHed back by commit. */
+  assumptions?: AssembleAssumption[];
   perTabCommittedAt: Record<string, string> | null;
   defaultStartYear: number;
   defaultEndYear: number;
@@ -108,6 +111,7 @@ export default function ReviewWizard({
   clientId,
   importId,
   payload,
+  assumptions = [],
   perTabCommittedAt,
   defaultStartYear,
   defaultEndYear,
@@ -432,6 +436,7 @@ export default function ReviewWizard({
             onPrimaryChange={setPrimary}
             onSpouseChange={setSpouse}
             onDependentsChange={(d) => setDependents(d as Annotated<ExtractedDependent>[])}
+            assumptions={assumptions}
           />
         )}
         {currentTab === "accounts" && (
