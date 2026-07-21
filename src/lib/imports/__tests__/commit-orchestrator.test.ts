@@ -68,9 +68,16 @@ describe("commitTabs orchestrator", () => {
   });
 
   it("returns allTabsCommitted=false when only some tabs ran and DB has none committed yet", async () => {
+    // Two categories carry rows (accounts + entities), so both their tabs
+    // are required — but only "entities" is dispatched/committed here.
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [{ name: "Test Account", match: { kind: "new" } }] as ImportPayload["accounts"],
+      entities: [{ name: "Trust A", match: { kind: "new" } }] as ImportPayload["entities"],
+    };
     const { allTabsCommitted, firstTimeAllCommitted } = await commitTabs({
       importId: "imp-2",
-      payload: emptyPayload(),
+      payload,
       tabs: ["entities"],
       ctx,
     });

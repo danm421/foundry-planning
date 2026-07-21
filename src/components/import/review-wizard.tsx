@@ -17,6 +17,7 @@ import type {
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
 import type { AssembleAssumption } from "@/lib/imports/assemble/types";
 import type { CommitTab } from "@/lib/imports/commit/types";
+import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
@@ -358,7 +359,29 @@ export default function ReviewWizard({
   );
 
   const allCommittableTabs = tabs.filter((t) => t !== "summary");
-  const allCommitted = allCommittableTabs.every(tabCommitted);
+
+  const presence: CategoryPresence = useMemo(
+    () => ({
+      family: primary != null || spouse != null || dependents.length > 0,
+      accounts: accounts.length > 0,
+      incomes: incomes.length > 0,
+      expenses: expenses.length > 0,
+      liabilities: liabilities.length > 0,
+      lifePolicies: lifePolicies.length > 0,
+      wills: wills.length > 0,
+      entities: entities.length > 0,
+    }),
+    [primary, spouse, dependents.length, accounts.length, incomes.length,
+     expenses.length, liabilities.length, lifePolicies.length, wills.length,
+     entities.length],
+  );
+
+  // Completion is judged against the SAME required set the server uses, so the
+  // "All tabs committed" banner can never disagree with the stored status.
+  const requiredTabs = useMemo(() => requiredCommitTabs(presence), [presence]);
+  const allCommitted = requiredTabs.every((ct) =>
+    perTabCommittedAt ? perTabCommittedAt[ct] != null : false,
+  );
 
   const tabCount = (tab: WizardTabId): number => {
     switch (tab) {
