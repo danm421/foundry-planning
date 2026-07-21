@@ -1,0 +1,266 @@
+import type {
+  ExtractedAccount,
+  ExtractedDependent,
+  ExtractedEntity,
+  ExtractedExpense,
+  ExtractedIncome,
+  ExtractedLiability,
+  ExtractedLifePolicy,
+  ExtractedWill,
+  ExtractionResult,
+} from "@/lib/extraction/types";
+import {
+  emptyImportPayload,
+  type Annotated,
+  type ImportPayload,
+  type Provenance,
+} from "../types";
+
+export interface MergeAcrossFilesResult {
+  payload: ImportPayload;
+  mergedFileCount: number;
+}
+
+/** Two amounts are "the same" if they're within this fraction of each other. */
+const AMOUNT_TOLERANCE_PCT = 0.01;
+
+/**
+ * True when `a` and `b` are close enough to treat as the same figure across
+ * two documents. Both-undefined counts as a match (nothing to contradict);
+ * exactly one undefined does not (conservative — don't guess).
+ */
+function withinTolerance(a: number | undefined, b: number | undefined): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  const base = Math.max(Math.abs(a), Math.abs(b));
+  if (base === 0) return true;
+  return Math.abs(a - b) / base <= AMOUNT_TOLERANCE_PCT;
+}
+
+function countNonNullFields(row: Record<string, unknown>): number {
+  return Object.values(row).filter((v) => v !== undefined && v !== null).length;
+}
+
+interface SourceRow<T> {
+  content: T;
+  provenance: Provenance;
+}
+
+interface DedupeBucketEntry<T> {
+  index: number;
+  content: T;
+  fieldCount: number;
+  provenance: Provenance;
+  mergeCount: number;
+}
+
+/**
+ * Append `rows` onto `target`, collapsing entries that share a dedupe key
+ * (per `computeKey`) and are judged the same entity (per `isSameEntity`).
+ * On a collapse, the row with more non-null fields wins; the surviving
+ * row's `__provenance` stays pinned to the FIRST file the entity appeared
+ * in, and a `warnings` entry is appended.
+ *
+ * `computeKey` returning `null` means "not enough information to dedupe" —
+ * the row is always appended standalone.
+ */
+function mergeSection<T extends { name: string }>(
+  target: Annotated<T>[],
+  rows: SourceRow<T>[],
+  label: string,
+  computeKey: (row: T) => string | null,
+  isSameEntity: (existing: T, incoming: T) => boolean,
+  warnings: string[],
+): void {
+  const buckets = new Map<string, DedupeBucketEntry<T>[]>();
+
+  for (const { content, provenance } of rows) {
+    const key = computeKey(content);
+    if (key === null) {
+      target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
+      continue;
+    }
+
+    const bucket = buckets.get(key);
+    const existingEntry = bucket?.find((entry) => isSameEntity(entry.content, content));
+
+    if (existingEntry) {
+      const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
+      if (incomingFieldCount > existingEntry.fieldCount) {
+        existingEntry.content = content;
+        existingEntry.fieldCount = incomingFieldCount;
+      }
+      existingEntry.mergeCount += 1;
+      // Content may have been enriched, but provenance stays pinned to the
+      // first file this entity was seen in.
+      target[existingEntry.index] = {
+        ...existingEntry.content,
+        __provenance: existingEntry.provenance,
+        match: { kind: "new" },
+      } as Annotated<T>;
+      warnings.push(
+        `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents.`,
+      );
+      continue;
+    }
+
+    const entry: DedupeBucketEntry<T> = {
+      index: target.length,
+      content,
+      fieldCount: countNonNullFields(content as Record<string, unknown>),
+      provenance,
+      mergeCount: 1,
+    };
+    target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      buckets.set(key, [entry]);
+    }
+  }
+}
+
+/** Concatenate rows onto `target` with provenance annotated, no dedupe. */
+function concatSection<T>(target: Annotated<T>[], rows: SourceRow<T>[]): void {
+  for (const { content, provenance } of rows) {
+    target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
+  }
+}
+
+/**
+ * Fold `incoming` onto `existing` for a singleton family slot (primary or
+ * spouse). First non-empty value wins the slot; if a later file names a
+ * clearly different person, keep the first and warn instead of silently
+ * overwriting. Otherwise (same person, or the slot was still empty), fill
+ * in any fields the earlier document left blank.
+ */
+function mergeFamilyMember<T extends { firstName: string; lastName?: string }>(
+  existing: T | undefined,
+  incoming: T | undefined,
+  label: string,
+  warnings: string[],
+): T | undefined {
+  if (!incoming) return existing;
+  if (!existing) return incoming;
+
+  const existingDisplayName = `${existing.firstName} ${existing.lastName ?? ""}`.trim();
+  const incomingDisplayName = `${incoming.firstName} ${incoming.lastName ?? ""}`.trim();
+  if (existingDisplayName.toLowerCase() !== incomingDisplayName.toLowerCase()) {
+    warnings.push(
+      `${label} conflict between files: "${existingDisplayName}" vs "${incomingDisplayName}". Keeping the first.`,
+    );
+    return existing;
+  }
+
+  const merged: T = { ...existing };
+  for (const key of Object.keys(incoming) as Array<keyof T>) {
+    if (merged[key] === undefined && incoming[key] !== undefined) {
+      merged[key] = incoming[key];
+    }
+  }
+  return merged;
+}
+
+/**
+ * Merge per-file `ExtractionResult`s into a single `ImportPayload`,
+ * collapsing only high-confidence exact duplicates (see dedupe rules in
+ * the task brief). Fuzzy near-duplicates are intentionally left as
+ * separate rows for the review wizard / match step to reconcile.
+ *
+ * Pure and deterministic: iterates `Object.entries(fileResults)` in
+ * insertion order, no randomness, no clock reads.
+ */
+export function mergeAcrossFiles(
+  fileResults: Record<string, ExtractionResult>,
+): MergeAcrossFilesResult {
+  const payload = emptyImportPayload();
+
+  const accountRows: SourceRow<ExtractedAccount>[] = [];
+  const incomeRows: SourceRow<ExtractedIncome>[] = [];
+  const expenseRows: SourceRow<ExtractedExpense>[] = [];
+  const liabilityRows: SourceRow<ExtractedLiability>[] = [];
+  const dependentRows: SourceRow<ExtractedDependent>[] = [];
+  const entityRows: SourceRow<ExtractedEntity>[] = [];
+  const lifePolicyRows: SourceRow<ExtractedLifePolicy>[] = [];
+  const willRows: SourceRow<ExtractedWill>[] = [];
+
+  for (const [fileId, result] of Object.entries(fileResults)) {
+    const provenanceFor = (section: string): Provenance => ({ sourceFileId: fileId, section });
+
+    for (const row of result.extracted.accounts) {
+      accountRows.push({ content: row, provenance: provenanceFor("accounts") });
+    }
+    for (const row of result.extracted.incomes) {
+      incomeRows.push({ content: row, provenance: provenanceFor("incomes") });
+    }
+    for (const row of result.extracted.expenses) {
+      expenseRows.push({ content: row, provenance: provenanceFor("expenses") });
+    }
+    for (const row of result.extracted.liabilities) {
+      liabilityRows.push({ content: row, provenance: provenanceFor("liabilities") });
+    }
+    for (const row of result.extracted.entities) {
+      entityRows.push({ content: row, provenance: provenanceFor("entities") });
+    }
+    for (const row of result.extracted.lifePolicies) {
+      lifePolicyRows.push({ content: row, provenance: provenanceFor("lifePolicies") });
+    }
+    for (const row of result.extracted.wills) {
+      willRows.push({ content: row, provenance: provenanceFor("wills") });
+    }
+
+    const family = result.extracted.family;
+    if (family) {
+      payload.primary = mergeFamilyMember(payload.primary, family.primary, "Primary client", payload.warnings);
+      payload.spouse = mergeFamilyMember(payload.spouse, family.spouse, "Spouse", payload.warnings);
+      for (const dep of family.dependents ?? []) {
+        dependentRows.push({ content: dep, provenance: provenanceFor("family") });
+      }
+    }
+
+    payload.warnings.push(...result.warnings);
+  }
+
+  mergeSection(
+    payload.accounts,
+    accountRows,
+    "account",
+    (row) => (row.custodian && row.accountNumberLast4 ? `${row.custodian.toLowerCase()}|${row.accountNumberLast4}` : null),
+    () => true,
+    payload.warnings,
+  );
+
+  mergeSection(
+    payload.incomes,
+    incomeRows,
+    "income",
+    (row) => `${row.type ?? ""}|${row.owner ?? ""}|${row.name.toLowerCase().trim()}`,
+    (existing, incoming) => withinTolerance(existing.annualAmount, incoming.annualAmount),
+    payload.warnings,
+  );
+
+  mergeSection(
+    payload.expenses,
+    expenseRows,
+    "expense",
+    (row) => `${row.type ?? ""}|${row.name.toLowerCase().trim()}`,
+    (existing, incoming) => withinTolerance(existing.annualAmount, incoming.annualAmount),
+    payload.warnings,
+  );
+
+  mergeSection(
+    payload.liabilities,
+    liabilityRows,
+    "liability",
+    (row) => row.name.toLowerCase().trim(),
+    (existing, incoming) => withinTolerance(existing.balance, incoming.balance),
+    payload.warnings,
+  );
+
+  concatSection(payload.dependents, dependentRows);
+  concatSection(payload.entities, entityRows);
+  concatSection(payload.lifePolicies, lifePolicyRows);
+  concatSection(payload.wills, willRows);
+
+  return { payload, mergedFileCount: Object.keys(fileResults).length };
+}
