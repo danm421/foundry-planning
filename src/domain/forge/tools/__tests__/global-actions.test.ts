@@ -16,6 +16,7 @@ import { getCrmHousehold } from "@/lib/crm/households";
 import { emitNavigate } from "../../custom-events";
 import { recordAudit } from "@/lib/audit";
 import { createClientForHousehold } from "@/lib/clients/create-client";
+import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 
 const toolCtx = { ctx: { userId: "user_1", firmId: "org_A" }, conversationId: "conv_1" };
 function getTool(name: string) {
@@ -124,5 +125,34 @@ describe("set_up_plan (HITL)", () => {
     }));
     expect(out).toMatch(/not found/i);
     expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+});
+
+describe("build_plan (HITL, new prospect)", () => {
+  it("forces firmId + actorUserId from ctx (never from model args), audits, and does not navigate", async () => {
+    vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
+    const out = JSON.parse(String(await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+    })));
+    expect(ensurePlanImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "new",
+      firmId: "org_A", // requireOrgId() — NOT model-supplied
+      actorUserId: "user_1", // ctx.userId — NOT model-supplied
+      newHousehold: expect.objectContaining({
+        householdName: "Nguyen Household",
+        state: "NJ",
+        filingStatus: "married_joint",
+        retirementAge: 65,
+        lifeExpectancy: 92,
+        primary: { firstName: "Jane", lastName: "Nguyen", dateOfBirth: "1975-04-02" },
+      }),
+    }));
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "forge.write_approved",
+    }));
+    expect(emitNavigate).not.toHaveBeenCalled();
+    expect(out).toEqual({ clientId: "client_9", importId: "imp_1", mode: "new" });
   });
 });
