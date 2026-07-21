@@ -152,7 +152,12 @@ describe("ForgePanel approval slot — Phase 2", () => {
     expect(screen.getByText("+$214k")).toBeInTheDocument();
   });
 
-  it("(3) clicking Confirm row 1 then Apply selected calls resume({ call_a: 'confirm' })", async () => {
+  it("(3) clicking Approve calls resume({ call_a: 'confirm' })", async () => {
+    // SAMPLE_APPROVAL carries one change, so the card renders its collapsed
+    // Reject/Approve form — a single click is the whole interaction. (It used
+    // to take two: a per-row Confirm pill, then "Apply selected". Skipping the
+    // pill and clicking the primary submitted a DECLINE; see approval-card.test
+    // for the regression that pins this.)
     const resumeMock = vi.fn();
     mockStreamState = makeStreamState({
       pendingApproval: SAMPLE_APPROVAL,
@@ -160,13 +165,7 @@ describe("ForgePanel approval slot — Phase 2", () => {
     });
     mountPanel();
 
-    // Click the "Confirm" button for row 1
-    const confirmBtn = screen.getByRole("button", { name: /confirm row 1/i });
-    await userEvent.click(confirmBtn);
-
-    // Click the "Apply selected (1)" button
-    const applyBtn = screen.getByRole("button", { name: /apply selected/i });
-    await userEvent.click(applyBtn);
+    await userEvent.click(screen.getByRole("button", { name: /^approve$/i }));
 
     expect(resumeMock).toHaveBeenCalledOnce();
     expect(resumeMock).toHaveBeenCalledWith({ call_a: "confirm" });
@@ -183,7 +182,7 @@ describe("ForgePanel approval slot — Phase 2", () => {
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 
-  it("(6) refreshes the server-rendered page after a confirmed Apply", async () => {
+  it("(6) refreshes the server-rendered page after a confirmed Approve", async () => {
     // A confirmed write commits during the resume; the host planning views are
     // server components, so the panel must soft-refresh or the advisor sees
     // stale data (e.g. deleted accounts still listed) until a manual reload.
@@ -194,15 +193,17 @@ describe("ForgePanel approval slot — Phase 2", () => {
     });
     mountPanel();
 
-    await userEvent.click(screen.getByRole("button", { name: /confirm row 1/i }));
-    await userEvent.click(screen.getByRole("button", { name: /apply selected/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^approve$/i }));
 
     expect(resumeMock).toHaveBeenCalledWith({ call_a: "confirm" });
     await waitFor(() => expect(refreshMock).toHaveBeenCalledOnce());
   });
 
-  it("(7) does NOT refresh when the advisor rejects everything (Cancel)", async () => {
+  it("(7) does NOT refresh when the advisor rejects (Reject)", async () => {
     // A reject-only resume mutates nothing, so there is nothing to re-fetch.
+    // On the collapsed card the decline goes through onSubmit (all-reject)
+    // rather than onCancel; both resume the graph identically, and neither
+    // may trigger a refresh.
     const resumeMock = vi.fn(async () => {});
     mockStreamState = makeStreamState({
       pendingApproval: SAMPLE_APPROVAL,
@@ -210,7 +211,7 @@ describe("ForgePanel approval slot — Phase 2", () => {
     });
     mountPanel();
 
-    await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^reject$/i }));
 
     expect(resumeMock).toHaveBeenCalledWith({ call_a: "reject" });
     // Flush any microtask the resume-then chain might schedule, then assert.
