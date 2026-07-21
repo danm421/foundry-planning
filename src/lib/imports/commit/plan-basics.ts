@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
 
 import { clients, expenses, incomes } from "@/db/schema";
+import type { YearRef } from "@/lib/milestones";
+import { livingSlotRole } from "../match-keys/living-slot";
 import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
@@ -48,9 +50,14 @@ export async function commitPlanBasics(
   }
 
   // ── 2. Seeded living-expense slots. Amounts only — timing is never touched,
-  //       matching the existing slot rule in commit/expenses.ts. ──
+  //       matching the existing slot rule in commit/expenses.ts. Classified
+  //       structurally by startYearRef (the same `livingSlotRole` the match
+  //       pass uses in match.ts's loadLivingSlots), NOT by name — the name is
+  //       a free-text field the advisor can edit in income-expenses-view.tsx,
+  //       so a substring test on it would silently mis-route or drop the
+  //       write the moment a slot gets renamed. ──
   const slots = await tx
-    .select({ id: expenses.id, name: expenses.name })
+    .select({ id: expenses.id, name: expenses.name, startYearRef: expenses.startYearRef })
     .from(expenses)
     .where(
       and(
@@ -62,8 +69,12 @@ export async function commitPlanBasics(
     );
 
   for (const slot of slots) {
-    const isRetirement = slot.name.toLowerCase().includes("retirement");
-    const field = isRetirement ? basics.retirementLivingSpending : basics.currentLivingSpending;
+    const role = livingSlotRole((slot.startYearRef ?? null) as YearRef | null);
+    // A slot the classifier can't place is not "current" by default — that
+    // would silently write the wrong value. Skip it; the advisor still sees
+    // the seeded $0 row and can fix it by hand.
+    if (!role) continue;
+    const field = role === "retirement" ? basics.retirementLivingSpending : basics.currentLivingSpending;
     if (field.value == null) continue;
     await tx
       .update(expenses)

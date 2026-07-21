@@ -55,7 +55,14 @@ export function requiredCommitTabs(presence: CategoryPresence): CommitTab[] {
   return COMMIT_TABS.filter((t) => required.has(t));
 }
 
-/** Server-side presence, read from the persisted payload. */
+/**
+ * Server-side presence, read from the persisted payload.
+ *
+ * This rule is deliberately duplicated in `review-wizard.tsx`'s `presence`
+ * memo (it derives from live edited state, a different shape than
+ * `ImportPayload`) — the two must keep agreeing. If you change what counts as
+ * "present" here, make the matching change there too.
+ */
 export function presenceFromPayload(payload: ImportPayload): CategoryPresence {
   return {
     family:

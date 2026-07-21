@@ -21,18 +21,14 @@ export async function bridgeTaxReturn(args: {
   filename: string;
   clientId: string;
   kind: UploadKind;
-  model: string;
+  model: "mini" | "full";
 }): Promise<{ ok: boolean; warning?: string }> {
   try {
-    // extractTaxReturnFacts only accepts the "mini" | "full" model tier the
-    // import pipeline already runs with (RunExtractionArgs.model) — this
-    // widens to `string` above only so the bridge doesn't have to duplicate
-    // that union.
     const extracted = await extractTaxReturnFacts({
       buffer: args.buffer,
       fileName: args.filename,
       uploadKind: args.kind,
-      model: args.model as "mini" | "full",
+      model: args.model,
     });
 
     await upsertExtracted({

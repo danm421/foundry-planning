@@ -105,8 +105,18 @@ describe("runAssemble", () => {
 describe("runAssemble planBasics", () => {
   beforeEach(() => { setSpy.mockClear(); whereSpy.mockClear(); recordAudit.mockClear(); });
 
+  // planBasics lives on the persisted PAYLOAD only (see run-assemble.ts) —
+  // `AssembleState`/`result.assemble` never carries it, so every assertion
+  // here reads it off the `payloadJson.payload` the update() call persisted.
+  function persistedPayload() {
+    const persisted = setSpy.mock.calls[0][0] as {
+      payloadJson: { payload: { planBasics?: { retirementAge: { value: number | null; provenance: string }; currentLivingSpending: { value: number | null } } } };
+    };
+    return persisted.payloadJson.payload;
+  }
+
   it("populates planBasics from the known client values", async () => {
-    const result = await runAssemble({
+    await runAssemble({
       importId: "imp5", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: {},
       known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
@@ -114,14 +124,14 @@ describe("runAssemble planBasics", () => {
       taxReturn: null,
     });
 
-    expect(result.assemble.planBasics?.retirementAge).toEqual({
+    expect(persistedPayload().planBasics?.retirementAge).toEqual({
       value: 65,
       provenance: "build_request",
     });
   });
 
   it("passes the stored return through to the spending derivation", async () => {
-    const result = await runAssemble({
+    await runAssemble({
       importId: "imp6", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: {},
       known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
@@ -129,25 +139,15 @@ describe("runAssemble planBasics", () => {
       taxReturn: { taxYear: 2025, agi: 100000, totalTax: 10000 },
     });
 
-    expect(result.assemble.planBasics?.currentLivingSpending.value).toBe(90000);
+    expect(persistedPayload().planBasics?.currentLivingSpending.value).toBe(90000);
   });
 
-  it("omits planBasics when retirementAge/lifeExpectancy are not yet known", async () => {
-    const result = await runAssemble({
-      importId: "imp7", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
-      fileResults: {},
-      hasSpouse: false,
-      taxReturn: null,
-    });
-
-    expect(result.assemble.planBasics).toBeUndefined();
-  });
-
-  // The review wizard reads `payload`, not `assemble` — planBasics must be
-  // seeded onto BOTH so the wizard's Plan basics step (and the round-trip
-  // back through buildLatestPayload → PATCH → commitPlanBasics) can reach it.
-  it("also seeds planBasics onto the persisted payload, not just the assemble state", async () => {
-    const result = await runAssemble({
+  // The review wizard reads `payload`, not `assemble` — planBasics is seeded
+  // onto `payload` only (see run-assemble.ts) so the wizard's Plan basics
+  // step (and the round-trip back through buildLatestPayload → PATCH →
+  // commitPlanBasics) can reach it.
+  it("seeds planBasics onto the persisted payload when it was derived", async () => {
+    await runAssemble({
       importId: "imp8", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: {},
       known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
@@ -155,16 +155,11 @@ describe("runAssemble planBasics", () => {
       taxReturn: null,
     });
 
-    const persisted = setSpy.mock.calls[0][0] as {
-      payloadJson: { payload: { planBasics?: unknown } };
-    };
-    // Guard against both sides being `undefined`: if derivePlanBasics ever
-    // stopped firing for this fixture, toEqual alone would still pass.
-    expect(persisted.payloadJson.payload.planBasics).toBeDefined();
-    expect(persisted.payloadJson.payload.planBasics).toEqual(result.assemble.planBasics);
+    expect(persistedPayload().planBasics).toBeDefined();
+    expect(persistedPayload().planBasics?.retirementAge.value).toBe(65);
   });
 
-  it("leaves the persisted payload's planBasics undefined when it wasn't derived", async () => {
+  it("leaves the persisted payload's planBasics undefined when it wasn't derived (retirementAge/lifeExpectancy not yet known)", async () => {
     await runAssemble({
       importId: "imp9", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: {},
@@ -172,9 +167,6 @@ describe("runAssemble planBasics", () => {
       taxReturn: null,
     });
 
-    const persisted = setSpy.mock.calls[0][0] as {
-      payloadJson: { payload: { planBasics?: unknown } };
-    };
-    expect(persisted.payloadJson.payload.planBasics).toBeUndefined();
+    expect(persistedPayload().planBasics).toBeUndefined();
   });
 });

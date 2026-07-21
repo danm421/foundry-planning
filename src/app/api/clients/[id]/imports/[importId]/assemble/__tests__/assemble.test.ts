@@ -26,7 +26,7 @@ vi.mock("@/lib/clients/get-client-with-contacts", () => ({
   getClientWithContacts: vi.fn(),
 }));
 vi.mock("@/lib/tax-returns/store", () => ({
-  listTaxReturns: vi.fn(),
+  getLatestTaxReturn: vi.fn(),
 }));
 
 import { POST } from "../route";
@@ -38,7 +38,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import { verifyClientAccess } from "@/lib/clients/authz";
-import { listTaxReturns } from "@/lib/tax-returns/store";
+import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
 function makeReq(body: unknown = {}) {
@@ -91,7 +91,7 @@ beforeEach(() => {
     firmId: "org_1",
     access: "own",
   } as never);
-  vi.mocked(listTaxReturns).mockResolvedValue([]);
+  vi.mocked(getLatestTaxReturn).mockResolvedValue(null);
 });
 
 describe("assemble route guard + delegation", () => {
@@ -203,12 +203,11 @@ describe("assemble route guard + delegation", () => {
       ...clientRowFixture,
       spouseFirstName: "Jamie",
     } as never);
-    // listTaxReturns is documented latest-first (desc by taxYear); the route
-    // must take returns[0], not just any row.
-    vi.mocked(listTaxReturns).mockResolvedValue([
-      taxReturnRow(2025, 200000, 30000),
-      taxReturnRow(2024, 180000, 25000),
-    ] as never);
+    // getLatestTaxReturn already orders desc by taxYear and limits to 1 — the
+    // route just takes what it returns, no client-side [0] needed.
+    vi.mocked(getLatestTaxReturn).mockResolvedValue(
+      taxReturnRow(2025, 200000, 30000) as never,
+    );
     vi.mocked(requireImportAccess).mockResolvedValue({
       id: "i1",
       payloadJson: { fileResults: { f1: { warnings: [] } } },
@@ -224,11 +223,11 @@ describe("assemble route guard + delegation", () => {
     const res = await POST(makeReq(), params);
 
     expect(res.status).toBe(200);
-    expect(listTaxReturns).toHaveBeenCalledWith("c1");
+    expect(getLatestTaxReturn).toHaveBeenCalledWith("c1");
     // Authorization ordering: the (not firm-scoped) tax-return read must
     // happen after verifyClientAccess has authorized this client.
     expect(vi.mocked(verifyClientAccess).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(listTaxReturns).mock.invocationCallOrder[0],
+      vi.mocked(getLatestTaxReturn).mock.invocationCallOrder[0],
     );
     expect(runAssemble).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -239,7 +238,7 @@ describe("assemble route guard + delegation", () => {
   });
 
   it("degrades to taxReturn: null (never fails assemble) when the tax-return read throws", async () => {
-    vi.mocked(listTaxReturns).mockRejectedValue(new Error("connection reset"));
+    vi.mocked(getLatestTaxReturn).mockRejectedValue(new Error("connection reset"));
     vi.mocked(requireImportAccess).mockResolvedValue({
       id: "i1",
       payloadJson: { fileResults: { f1: { warnings: [] } } },

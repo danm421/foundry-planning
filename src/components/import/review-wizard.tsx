@@ -378,6 +378,10 @@ export default function ReviewWizard({
 
   const allCommittableTabs = tabs.filter((t) => t !== "summary");
 
+  // Deliberately duplicates `presenceFromPayload` in required-tabs.ts (server
+  // side, derived from the persisted ImportPayload) — this memo derives from
+  // the wizard's own live edited state, a different shape. The two rules must
+  // keep agreeing: a change here needs the matching change there too.
   const presence: CategoryPresence = useMemo(
     () => ({
       family: primary != null || spouse != null || dependents.length > 0,

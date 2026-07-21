@@ -15,7 +15,7 @@ const ARGS = {
   filename: "1040.pdf",
   clientId: "c1",
   kind: "pdf" as const,
-  model: "gpt-5",
+  model: "full" as const,
 };
 
 beforeEach(() => vi.clearAllMocks());

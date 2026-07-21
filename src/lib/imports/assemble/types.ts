@@ -23,7 +23,6 @@ export interface PlanBasicsField<T> {
   value: T | null;
   provenance: PlanBasicsProvenance;
   reason?: string;
-  sourceDocId?: string;
 }
 
 export interface AssemblePlanBasics {
@@ -45,5 +44,4 @@ export interface AssembleState {
   mergedFileCount: number; // how many source files were merged
   assumptions: AssembleAssumption[];
   questions: AssembleQuestion[];
-  planBasics?: AssemblePlanBasics;
 }

@@ -12,7 +12,7 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
-import { listTaxReturns } from "@/lib/tax-returns/store";
+import { getLatestTaxReturn } from "@/lib/tax-returns/store";
 import { parseRowFacts } from "@/lib/tax-returns/db";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
@@ -151,14 +151,13 @@ export async function POST(request: NextRequest, { params }: Params) {
         };
 
         // Best-effort: the latest stored return feeds the plan-basics spending
-        // estimate. listTaxReturns is NOT itself firm-scoped, so it may only be
-        // called after verifyClientAccess (above) has authorized this client.
+        // estimate. getLatestTaxReturn is NOT itself firm-scoped, so it may only
+        // be called after verifyClientAccess (above) has authorized this client.
         // A missing/unreadable return degrades to `taxReturn: null` — it must
         // never fail assemble.
         let taxReturn: { taxYear: number; agi: number | null; totalTax: number | null } | null = null;
         try {
-            const returns = await listTaxReturns(clientId);
-            const latest = returns[0] ?? null;
+            const latest = await getLatestTaxReturn(clientId);
             if (latest) {
                 const { facts } = parseRowFacts(latest);
                 taxReturn = {

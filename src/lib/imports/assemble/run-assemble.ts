@@ -109,12 +109,13 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     });
   }
 
-  const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions, planBasics };
+  const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions };
 
-  // Seed planBasics onto the payload too, not just the assemble state — the
-  // review wizard reads `payload`, not `assemble`, so this is what makes the
-  // Plan basics step (and buildLatestPayload's round-trip back through the
-  // PATCH route to commitPlanBasics) actually reachable.
+  // planBasics is seeded onto the payload only, not onto `assemble` — the
+  // review wizard reads `payload`, not `assemble` (and so does
+  // commitPlanBasics, via buildLatestPayload's round-trip back through the
+  // PATCH route). `assemble` has no reader for this field, so it isn't
+  // duplicated there.
   const payloadWithPlanBasics: ImportPayload = planBasics
     ? { ...annotated, planBasics }
     : annotated;
