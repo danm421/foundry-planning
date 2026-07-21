@@ -26,8 +26,10 @@ export async function commitPlanBasics(
   const basics = payload.planBasics;
   if (!basics) return result;
 
+  const now = new Date();
+
   // ── 1. Client horizon columns. ──
-  const clientPatch: Record<string, number> = {};
+  const clientPatch: Record<string, unknown> = {};
   if (basics.retirementAge.value != null) clientPatch.retirementAge = basics.retirementAge.value;
   if (basics.lifeExpectancy.value != null) clientPatch.lifeExpectancy = basics.lifeExpectancy.value;
   if (basics.spouseRetirementAge?.value != null) {
@@ -37,6 +39,7 @@ export async function commitPlanBasics(
     clientPatch.spouseLifeExpectancy = basics.spouseLifeExpectancy.value;
   }
   if (Object.keys(clientPatch).length > 0) {
+    clientPatch.updatedAt = now;
     await tx
       .update(clients)
       .set(clientPatch)
@@ -64,17 +67,18 @@ export async function commitPlanBasics(
     if (field.value == null) continue;
     await tx
       .update(expenses)
-      .set({ annualAmount: String(field.value) })
+      .set({ annualAmount: String(field.value), updatedAt: now })
       .where(eq(expenses.id, slot.id));
     result.updated += 1;
   }
 
   // ── 3. Seeded Social Security rows, matched on type + owner. ──
   for (const row of basics.socialSecurity) {
-    const patch: Record<string, string | number> = {};
+    const patch: Record<string, unknown> = {};
     if (row.pia.value != null) patch.annualAmount = String(row.pia.value);
     if (row.claimingAge.value != null) patch.claimingAge = row.claimingAge.value;
     if (Object.keys(patch).length === 0) continue;
+    patch.updatedAt = now;
 
     await tx
       .update(incomes)
