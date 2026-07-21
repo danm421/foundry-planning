@@ -675,10 +675,18 @@ export function ForgePanel({
                 <SparkIcon />
               </span>
               <p className="text-[13px] font-medium text-ink">How can I help?</p>
-              <p className="max-w-[16rem] text-[12px] text-ink-3">
-                Ask me to explain the plan, run the numbers, or compare scenarios. I only report
-                figures from the engine — never invented numbers.
-              </p>
+              {clientId == null ? (
+                <p className="max-w-[16rem] text-[12px] text-ink-3">
+                  Build a plan for a new prospect from their documents, find a client, or
+                  ask how something works. I only report figures from the engine — never
+                  invented numbers.
+                </p>
+              ) : (
+                <p className="max-w-[16rem] text-[12px] text-ink-3">
+                  Ask me to explain the plan, run the numbers, or compare scenarios. I only
+                  report figures from the engine — never invented numbers.
+                </p>
+              )}
             </div>
           )}
 
@@ -1111,7 +1119,13 @@ export function ForgePanel({
                   void onSend();
                 }
               }}
-              placeholder={pendingApproval ? "Confirm or cancel the proposed change above…" : "Ask about this plan…"}
+              placeholder={
+                pendingApproval
+                  ? "Approve or reject the proposed change above…"
+                  : clientId == null
+                    ? "Build a plan, find a client, or ask how something works…"
+                    : "Ask about this plan…"
+              }
               disabled={locked}
               className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
             />
