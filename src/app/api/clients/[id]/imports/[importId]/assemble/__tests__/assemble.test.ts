@@ -22,6 +22,9 @@ vi.mock("@/lib/clients/authz", () => ({
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/imports/assemble/run-assemble", () => ({ runAssemble: vi.fn() }));
+vi.mock("@/lib/clients/get-client-with-contacts", () => ({
+  getClientWithContacts: vi.fn(),
+}));
 
 import { POST } from "../route";
 import { auth } from "@clerk/nextjs/server";
@@ -30,6 +33,7 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 
 function makeReq(body: unknown = {}) {
   return new Request(
@@ -48,12 +52,20 @@ const entitledClaims = {
   sessionClaims: { org_public_metadata: { entitlements: ["ai_import"] } },
 };
 
+const clientRowFixture = {
+  retirementAge: 67,
+  lifeExpectancy: 92,
+  filingStatus: "married_joint",
+  dateOfBirth: "1960-03-04",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.mocked(requireActiveSubscription).mockResolvedValue(undefined);
   vi.mocked(auth).mockResolvedValue(entitledClaims as never);
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
+  vi.mocked(getClientWithContacts).mockResolvedValue(clientRowFixture as never);
 });
 
 describe("assemble route guard + delegation", () => {
@@ -80,6 +92,8 @@ describe("assemble route guard + delegation", () => {
       assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
     });
     expect(runAssemble).toHaveBeenCalledTimes(1);
+    // body.known.retirementAge (65) overrides the client row's (67); the rest
+    // of `known` still comes from the row.
     expect(runAssemble).toHaveBeenCalledWith(
       expect.objectContaining({
         importId: "i1",
@@ -87,7 +101,73 @@ describe("assemble route guard + delegation", () => {
         firmId: "org_1",
         mode: "new",
         scenarioId: "sc1",
-        known: { retirementAge: 65 },
+        known: {
+          retirementAge: 65,
+          lifeExpectancy: 92,
+          filingStatus: "married_joint",
+          primaryDob: "1960-03-04",
+        },
+      }),
+    );
+  });
+
+  it("builds `known` entirely from the client row when the request body sends none (the real caller today)", async () => {
+    // Mirrors runPlanBuild's real POST — no body at all — see
+    // use-forge-import.ts. Before FIX 1, `known` was `undefined` here and
+    // every one of these three fields was fabricated as an assumption.
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      payloadJson: { fileResults: { f1: { warnings: [] } } },
+      mode: "onboarding",
+      scenarioId: "sc1",
+    } as never);
+    vi.mocked(runAssemble).mockResolvedValue({
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      questionCount: 0,
+      rowCount: 0,
+    } as never);
+
+    const res = await POST(makeReq(), params);
+
+    expect(res.status).toBe(200);
+    expect(getClientWithContacts).toHaveBeenCalledWith("c1", "org_1");
+    expect(runAssemble).toHaveBeenCalledWith(
+      expect.objectContaining({
+        known: {
+          retirementAge: 67,
+          lifeExpectancy: 92,
+          filingStatus: "married_joint",
+          primaryDob: "1960-03-04",
+        },
+      }),
+    );
+  });
+
+  it("falls back to undefined known fields when the client row can't be found (defensive — shouldn't happen post-verifyClientAccess)", async () => {
+    vi.mocked(getClientWithContacts).mockResolvedValue(null);
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      payloadJson: { fileResults: { f1: { warnings: [] } } },
+      mode: "onboarding",
+      scenarioId: "sc1",
+    } as never);
+    vi.mocked(runAssemble).mockResolvedValue({
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      questionCount: 0,
+      rowCount: 0,
+    } as never);
+
+    const res = await POST(makeReq(), params);
+
+    expect(res.status).toBe(200);
+    expect(runAssemble).toHaveBeenCalledWith(
+      expect.objectContaining({
+        known: {
+          retirementAge: undefined,
+          lifeExpectancy: undefined,
+          filingStatus: undefined,
+          primaryDob: undefined,
+        },
       }),
     );
   });

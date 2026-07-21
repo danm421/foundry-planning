@@ -11,6 +11,7 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
+import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
@@ -125,6 +126,24 @@ export async function POST(request: NextRequest, { params }: Params) {
         const mode = imp.mode === "updating" ? "existing" : "new";
         const scenarioId = imp.scenarioId ?? "";
 
+        // The client row (retirementAge/lifeExpectancy/filingStatus are all
+        // NOT NULL, so a real value always exists by the time assemble runs —
+        // build_plan writes them before creating the draft import) plus the
+        // primary contact's DOB via the same firm-scoped helper Forge's own
+        // read tools use. Without this, gap-fill never sees what's already on
+        // record and fabricates an assumption for every one of these fields on
+        // every real call (see FIX 1 in brief-V1-fixes.md). An explicit
+        // body.known value still wins — nothing sends one today, but the shape
+        // is kept for forward-compat / manual testing.
+        const clientRow = await getClientWithContacts(clientId, firmId);
+        const known = {
+            retirementAge: clientRow?.retirementAge,
+            lifeExpectancy: clientRow?.lifeExpectancy,
+            filingStatus: clientRow?.filingStatus,
+            primaryDob: clientRow?.dateOfBirth ?? undefined,
+            ...body.known,
+        };
+
         const result = await runAssemble({
             importId,
             clientId,
@@ -132,7 +151,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             mode,
             scenarioId,
             fileResults,
-            known: body.known,
+            known,
         });
 
         return NextResponse.json({
