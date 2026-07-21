@@ -25,6 +25,9 @@ vi.mock("@/lib/imports/assemble/run-assemble", () => ({ runAssemble: vi.fn() }))
 vi.mock("@/lib/clients/get-client-with-contacts", () => ({
   getClientWithContacts: vi.fn(),
 }));
+vi.mock("@/lib/tax-returns/store", () => ({
+  listTaxReturns: vi.fn(),
+}));
 
 import { POST } from "../route";
 import { auth } from "@clerk/nextjs/server";
@@ -34,6 +37,9 @@ import { requireImportAccess } from "@/lib/imports/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+import { verifyClientAccess } from "@/lib/clients/authz";
+import { listTaxReturns } from "@/lib/tax-returns/store";
+import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
 function makeReq(body: unknown = {}) {
   return new Request(
@@ -59,6 +65,15 @@ const clientRowFixture = {
   dateOfBirth: "1960-03-04",
 };
 
+/** A DB-row-shaped fixture with a fully valid (zod-strict) `facts` blob so
+ * `parseRowFacts` in the route doesn't silently null it out. */
+function taxReturnRow(taxYear: number, agi: number, totalTax: number) {
+  const facts = emptyTaxReturnFacts(taxYear);
+  facts.income.agi = agi;
+  facts.tax.totalTax = totalTax;
+  return { taxYear, facts, extractedFacts: null };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
@@ -66,6 +81,17 @@ beforeEach(() => {
   vi.mocked(auth).mockResolvedValue(entitledClaims as never);
   vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
   vi.mocked(getClientWithContacts).mockResolvedValue(clientRowFixture as never);
+  // clearAllMocks() only wipes call history, not the default implementation
+  // vi.mock("@/lib/clients/authz", ...) set above — re-set it explicitly
+  // here anyway so this default is visible next to the rest of the fixture
+  // setup, not hidden in the module factory at the top of the file.
+  vi.mocked(verifyClientAccess).mockResolvedValue({
+    ok: true,
+    permission: "edit",
+    firmId: "org_1",
+    access: "own",
+  } as never);
+  vi.mocked(listTaxReturns).mockResolvedValue([]);
 });
 
 describe("assemble route guard + delegation", () => {
@@ -169,6 +195,68 @@ describe("assemble route guard + delegation", () => {
           primaryDob: undefined,
         },
       }),
+    );
+  });
+
+  it("computes hasSpouse from the client row and folds the latest return's AGI/totalTax into taxReturn", async () => {
+    vi.mocked(getClientWithContacts).mockResolvedValue({
+      ...clientRowFixture,
+      spouseFirstName: "Jamie",
+    } as never);
+    // listTaxReturns is documented latest-first (desc by taxYear); the route
+    // must take returns[0], not just any row.
+    vi.mocked(listTaxReturns).mockResolvedValue([
+      taxReturnRow(2025, 200000, 30000),
+      taxReturnRow(2024, 180000, 25000),
+    ] as never);
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      payloadJson: { fileResults: { f1: { warnings: [] } } },
+      mode: "onboarding",
+      scenarioId: "sc1",
+    } as never);
+    vi.mocked(runAssemble).mockResolvedValue({
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      questionCount: 0,
+      rowCount: 0,
+    } as never);
+
+    const res = await POST(makeReq(), params);
+
+    expect(res.status).toBe(200);
+    expect(listTaxReturns).toHaveBeenCalledWith("c1");
+    // Authorization ordering: the (not firm-scoped) tax-return read must
+    // happen after verifyClientAccess has authorized this client.
+    expect(vi.mocked(verifyClientAccess).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(listTaxReturns).mock.invocationCallOrder[0],
+    );
+    expect(runAssemble).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasSpouse: true,
+        taxReturn: { taxYear: 2025, agi: 200000, totalTax: 30000 },
+      }),
+    );
+  });
+
+  it("degrades to taxReturn: null (never fails assemble) when the tax-return read throws", async () => {
+    vi.mocked(listTaxReturns).mockRejectedValue(new Error("connection reset"));
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      payloadJson: { fileResults: { f1: { warnings: [] } } },
+      mode: "onboarding",
+      scenarioId: "sc1",
+    } as never);
+    vi.mocked(runAssemble).mockResolvedValue({
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      questionCount: 0,
+      rowCount: 0,
+    } as never);
+
+    const res = await POST(makeReq(), params);
+
+    expect(res.status).toBe(200);
+    expect(runAssemble).toHaveBeenCalledWith(
+      expect.objectContaining({ taxReturn: null, hasSpouse: false }),
     );
   });
 

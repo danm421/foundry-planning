@@ -27,6 +27,7 @@ describe("runAssemble", () => {
     const res = await runAssemble({
       importId: "imp1", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: { f1: er("stmt.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 100, category: "retirement" }] }) },
+      hasSpouse: false,
     });
     expect(res.assemble.version).toBe(1);
     expect(res.assemble.mergedFileCount).toBe(1);
@@ -47,6 +48,7 @@ describe("runAssemble", () => {
     const res = await runAssemble({
       importId: "imp2", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
       fileResults: { f1: er("stmt.pdf", {}) },
+      hasSpouse: false,
     });
     expect(res.questionCount).toBe(res.assemble.questions.length);
     expect(res.assemble.questions.some((q) => q.id === "q:primary_dob")).toBe(true);
@@ -61,6 +63,7 @@ describe("runAssemble", () => {
         f2: er("feb.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100200 }] }),
         f3: er("mar.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100400 }] }),
       },
+      hasSpouse: false,
     });
 
     const persisted = setSpy.mock.calls[0][0] as {
@@ -92,8 +95,51 @@ describe("runAssemble", () => {
           incomes: [{ name: "Salary", annualAmount: 1000 }],
         }),
       },
+      hasSpouse: false,
     });
     expect(res.rowCount).toBe(2);
     expect(whereSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runAssemble planBasics", () => {
+  beforeEach(() => { setSpy.mockClear(); whereSpy.mockClear(); recordAudit.mockClear(); });
+
+  it("populates planBasics from the known client values", async () => {
+    const result = await runAssemble({
+      importId: "imp5", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
+      hasSpouse: false,
+      taxReturn: null,
+    });
+
+    expect(result.assemble.planBasics?.retirementAge).toEqual({
+      value: 65,
+      provenance: "build_request",
+    });
+  });
+
+  it("passes the stored return through to the spending derivation", async () => {
+    const result = await runAssemble({
+      importId: "imp6", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
+      hasSpouse: false,
+      taxReturn: { taxYear: 2025, agi: 100000, totalTax: 10000 },
+    });
+
+    expect(result.assemble.planBasics?.currentLivingSpending.value).toBe(90000);
+  });
+
+  it("omits planBasics when retirementAge/lifeExpectancy are not yet known", async () => {
+    const result = await runAssemble({
+      importId: "imp7", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      hasSpouse: false,
+      taxReturn: null,
+    });
+
+    expect(result.assemble.planBasics).toBeUndefined();
   });
 });

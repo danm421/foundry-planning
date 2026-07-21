@@ -7,8 +7,9 @@ import { runMatchingPass } from "@/lib/imports/match";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
 import { mergeAcrossFiles } from "./merge-across-files";
+import { derivePlanBasics } from "./plan-basics";
 import { generateQuestions } from "./questions";
-import type { AssembleState } from "./types";
+import type { AssemblePlanBasics, AssembleState } from "./types";
 
 export interface RunAssembleArgs {
   importId: string;
@@ -22,7 +23,18 @@ export interface RunAssembleArgs {
     lifeExpectancy?: number;
     filingStatus?: string;
     primaryDob?: string;
+    spouseRetirementAge?: number | null;
+    spouseLifeExpectancy?: number | null;
+    spouseDob?: string;
   };
+  /** Whether this household has a spouse — drives the plan-basics spouse fields. */
+  hasSpouse: boolean;
+  /**
+   * Latest stored tax return, read by the caller (the route, after
+   * authorization) and passed in so this stays a pure orchestration step.
+   * Best-effort: a failed read degrades to `null`, never fails assemble.
+   */
+  taxReturn?: { taxYear: number; agi: number | null; totalTax: number | null } | null;
 }
 
 export interface RunAssembleResult {
@@ -55,7 +67,7 @@ function countRows(payload: ImportPayload): number {
  * returning match counts.
  */
 export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleResult> {
-  const { importId, clientId, firmId, mode, scenarioId, fileResults, known } = args;
+  const { importId, clientId, firmId, mode, scenarioId, fileResults, known, hasSpouse, taxReturn } = args;
 
   const { payload, mergedFileCount } = mergeAcrossFiles(fileResults);
   const { assumptions } = fillAssumptions({ payload, mode, known });
@@ -74,7 +86,30 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     primaryDobKnown: Boolean(known?.primaryDob || annotated.primary?.dateOfBirth),
   });
 
-  const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions };
+  // retirementAge/lifeExpectancy are the two anchors derivePlanBasics always
+  // needs (its ageProvenance fields are never blank). In production the
+  // route always supplies both off the client row (NOT NULL columns); only
+  // a caller that genuinely doesn't know them yet skips plan-basics rather
+  // than fabricating an anchor value.
+  let planBasics: AssemblePlanBasics | undefined;
+  if (known?.retirementAge != null && known?.lifeExpectancy != null) {
+    planBasics = derivePlanBasics({
+      payload: annotated,
+      known: {
+        retirementAge: known.retirementAge,
+        lifeExpectancy: known.lifeExpectancy,
+        spouseRetirementAge: known.spouseRetirementAge,
+        spouseLifeExpectancy: known.spouseLifeExpectancy,
+        primaryDob: known.primaryDob,
+        spouseDob: known.spouseDob,
+        hasSpouse,
+      },
+      mode: mode === "new" ? "new" : "refresh",
+      taxReturn: taxReturn ?? null,
+    });
+  }
+
+  const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions, planBasics };
 
   await db
     .update(clientImports)
