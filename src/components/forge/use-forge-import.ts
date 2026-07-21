@@ -216,6 +216,10 @@ export function useForgeImport(): UseForgeImportResult {
       answers: Record<string, string>;
     }): Promise<{ ok: boolean; remaining: number } | null> => {
       const { clientId, importId, answers } = args;
+      // Clear any prior error first (mirrors runPlanBuild). Without this a
+      // failed submit's message survives a successful retry, leaving a stale
+      // error box under a card that just accepted the answer.
+      setErrorMessage(null);
       try {
         const res = await fetch(`/api/clients/${clientId}/imports/${importId}/answers`, {
           method: "POST",

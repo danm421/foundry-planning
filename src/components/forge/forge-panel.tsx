@@ -402,8 +402,16 @@ export function ForgePanel({
     if (!result) return; // errorMessage bubble already shown by the hook
     setPlanResult(result);
     setPendingImportId(result.importId);
+    // The attachment alone is a valid turn, so `prompt` is often empty. The
+    // CLIENT stream route tolerates that (it accepts an empty message when
+    // pendingImportId is set), but the GLOBAL route has no pendingImportId
+    // concept and rejects an empty message outright — and `send` drops
+    // pendingImportId from the body when clientId is null. Without a fallback,
+    // the flagship new-prospect flow (drop files, click Send, type nothing)
+    // assembles fine and then shows a 400 under a plan that actually worked.
+    const narration = prompt || "I've attached the documents for the plan build.";
     await send({
-      message: prompt,
+      message: narration,
       scenarioId: scenarioId ?? "base",
       conversationId,
       currentPage: sectionKeyForPath(pathname),

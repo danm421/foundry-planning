@@ -187,6 +187,35 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
   });
 
+  it("sends a NON-EMPTY narration message when the advisor typed nothing", async () => {
+    // The attachment alone is a valid turn, so the composer is usually empty.
+    // The GLOBAL stream route rejects an empty message outright (400) and has
+    // no pendingImportId escape hatch like the client route — so an empty
+    // narration would surface a raw 400 under a plan that assembled fine.
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValue({
+      importId: "imp_1",
+      clientId: "c9",
+      reviewPath: "/clients/c9/details/import/imp_1",
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      warnings: [],
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const { rerender } = mountGlobalPanel();
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+
+    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame("imp_1"), send });
+    await act(async () => {
+      rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const sent = send.mock.calls[0][0] as { message: string };
+    expect(sent.message.trim().length).toBeGreaterThan(0);
+  });
+
   it("a frame with a DIFFERENT importId is treated as a new build", async () => {
     mockStreamState = makeStreamState({ lastToolRender: null });
     const { rerender } = mountGlobalPanel();
