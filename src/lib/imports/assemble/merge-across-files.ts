@@ -41,6 +41,15 @@ function countNonNullFields(row: Record<string, unknown>): number {
   return Object.values(row).filter((v) => v !== undefined && v !== null).length;
 }
 
+/** Advisor-facing whole-dollar formatting for a value-conflict warning. Kept
+ * local (this module stays dependency-free — see gap-fill.ts's header
+ * comment for the same convention) rather than pulling in a shared currency
+ * formatter from an unrelated feature. */
+function formatMoney(n: number | undefined): string {
+  if (n === undefined) return "unknown";
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
 /**
  * Backfill any undefined/null field on `base` using the corresponding field
  * from `other`, without touching fields `base` already has populated. Used
@@ -73,6 +82,11 @@ interface DedupeBucketEntry<T> {
   mergeCount: number;
 }
 
+/** Advisor-facing note about what a collapse actually changed, when the
+ * caller opts in (currently: account balance conflicts — FIX 5). Returning
+ * `null` means "nothing worth calling out for this pair". */
+type DescribeConflict<T> = (existing: T, incoming: T) => string | null;
+
 /**
  * Append `rows` onto `target`, collapsing entries that share a dedupe key
  * (per `computeKey`) and are judged the same entity (per `isSameEntity`).
@@ -92,6 +106,7 @@ function mergeSection<T extends { name: string }>(
   computeKey: (row: T) => string | null,
   isSameEntity: (existing: T, incoming: T) => boolean,
   warnings: string[],
+  describeConflict?: DescribeConflict<T>,
 ): void {
   const buckets = new Map<string, DedupeBucketEntry<T>[]>();
 
@@ -106,6 +121,7 @@ function mergeSection<T extends { name: string }>(
     const existingEntry = bucket?.find((entry) => isSameEntity(entry.content, content));
 
     if (existingEntry) {
+      const priorContent = existingEntry.content;
       const incomingFieldCount = countNonNullFields(content as Record<string, unknown>);
       // The richer row (more non-null fields) is the base — it wins on any
       // conflicting field — but the poorer row's unique fields still
@@ -124,8 +140,17 @@ function mergeSection<T extends { name: string }>(
         __provenance: existingEntry.provenance,
         match: { kind: "new" },
       } as Annotated<T>;
+      // Belt-and-braces callers (accounts — see FIX 5) can name what a
+      // collapse actually changed instead of the generic "Merged duplicate"
+      // notice, e.g. when two same-owner rows at the same custodian+last4
+      // carry materially different balances (a legitimate same-account
+      // different-statement-period case, so we still collapse — but the
+      // advisor needs to see both figures rather than silently losing one).
+      const conflictNote = describeConflict?.(priorContent, content);
       warnings.push(
-        `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents.`,
+        conflictNote
+          ? `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents — ${conflictNote}`
+          : `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents.`,
       );
       continue;
     }
@@ -245,9 +270,19 @@ export function mergeAcrossFiles(
     payload.accounts,
     accountRows,
     "account",
-    (row) => (row.custodian && row.accountNumberLast4 ? `${row.custodian.toLowerCase()}|${row.accountNumberLast4}` : null),
+    // `owner` is part of the key (not just an isSameEntity check) so a
+    // client IRA and a spouse IRA sharing a masked last-4 at the same
+    // custodian never even reach the same bucket — see FIX 5.
+    (row) =>
+      row.custodian && row.accountNumberLast4
+        ? `${row.custodian.toLowerCase()}|${row.accountNumberLast4}|${row.owner ?? ""}`
+        : null,
     () => true,
     payload.warnings,
+    (existing, incoming) =>
+      withinTolerance(existing.value, incoming.value)
+        ? null
+        : `balances differ (${formatMoney(existing.value)} vs ${formatMoney(incoming.value)}); please verify which is current.`,
   );
 
   mergeSection(

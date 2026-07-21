@@ -38,6 +38,48 @@ describe("mergeAcrossFiles", () => {
     expect(r.payload.accounts).toHaveLength(2);
   });
 
+  it("does NOT merge accounts sharing custodian+last4 when owners differ (FIX 5 — client IRA vs spouse IRA)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("a.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", value: 100000, owner: "client" }] }),
+      f2: er("b.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", value: 200000, owner: "spouse" }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(2);
+    expect(r.payload.warnings.some((w) => w.includes("Merged"))).toBe(false);
+  });
+
+  it("still merges same custodian+last4+owner accounts, and names both values when they differ materially (FIX 5)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("jan.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", value: 100000, owner: "client" }] }),
+      f2: er("feb.pdf", { accounts: [{ name: "IRA", custodian: "Fidelity", accountNumberLast4: "1234", value: 250000, owner: "client" }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    // Nothing is dropped — the surviving row keeps a real, non-fabricated value.
+    expect(typeof r.payload.accounts[0].value).toBe("number");
+    const warning = r.payload.warnings.find((w) => w.includes("Merged duplicate account"));
+    expect(warning).toBeDefined();
+    expect(warning).toContain("100,000");
+    expect(warning).toContain("250,000");
+  });
+
+  it("merges same custodian+last4+owner accounts within tolerance without the value-conflict wording (FIX 5)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("jan.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 450000, owner: "client" }] }),
+      f2: er("feb.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 452000, owner: "client" }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    const warning = r.payload.warnings.find((w) => w.includes("Merged duplicate account"));
+    expect(warning).toBeDefined();
+    expect(warning).not.toContain("differ");
+  });
+
+  it("still merges same custodian+last4 accounts when neither carries an owner (undefined === undefined)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("stmt-jan.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 450000 }] }),
+      f2: er("stmt-feb.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 451000 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+  });
+
   it("unions non-null fields on merge instead of a whole-row swap — the poorer row's unique field survives", () => {
     const r = mergeAcrossFiles({
       // Richer overall (5 fields: name, custodian, last4, value, category +
