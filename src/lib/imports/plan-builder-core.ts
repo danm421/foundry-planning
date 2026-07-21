@@ -29,6 +29,8 @@ export interface EnsurePlanImportArgs {
     filingStatus: FilingStatus;
     retirementAge: number;
     lifeExpectancy: number;
+    spouseRetirementAge?: number;
+    spouseLifeExpectancy?: number;
   };
 }
 
@@ -114,6 +116,8 @@ export async function ensurePlanImport(
       retirementAge: newHousehold.retirementAge,
       lifeExpectancy: newHousehold.lifeExpectancy,
       filingStatus: newHousehold.filingStatus,
+      spouseRetirementAge: newHousehold.spouseRetirementAge,
+      spouseLifeExpectancy: newHousehold.spouseLifeExpectancy,
     });
 
     clientId = created.clientId;

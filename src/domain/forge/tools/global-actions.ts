@@ -183,6 +183,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
       spouseFirstName?: string; spouseLastName?: string; spouseDob?: string;
       filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
       retirementAge: number; lifeExpectancy: number;
+      spouseRetirementAge?: number; spouseLifeExpectancy?: number;
     }) => {
       try {
         const firmId = await requireOrgId();
@@ -195,6 +196,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
               ? { firstName: args.spouseFirstName, lastName: args.spouseLastName, dateOfBirth: args.spouseDob }
               : undefined,
             filingStatus: args.filingStatus, retirementAge: args.retirementAge, lifeExpectancy: args.lifeExpectancy,
+            spouseRetirementAge: args.spouseRetirementAge,
+            spouseLifeExpectancy: args.spouseLifeExpectancy,
           },
         });
         await recordAudit({
@@ -215,7 +218,9 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         "Start building a NEW prospect's financial plan from documents the advisor will upload. Mints the household " +
         "+ base plan, then creates a draft import to attach files to. Collect the household name, US state (2-letter), " +
         "primary contact name + date of birth, filing status (single, married_joint, married_separate, head_of_household), " +
-        "retirement age, and life expectancy; a spouse is optional. Requires human approval.",
+        "retirement age, and life expectancy. A spouse is optional; when there is one, also collect the " +
+        "spouse's retirement age and life expectancy — omitting them silently defaults the spouse to 65/95, " +
+        "which changes the plan horizon. Requires human approval.",
       schema: z.object({
         householdName: z.string().min(1).max(200),
         state: z.string().length(2).optional().describe("USPS 2-letter state code, e.g. NJ"),
@@ -228,6 +233,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]),
         retirementAge: z.number().int().min(30).max(90),
         lifeExpectancy: z.number().int().min(60).max(120),
+        spouseRetirementAge: z.number().int().min(30).max(90).optional(),
+        spouseLifeExpectancy: z.number().int().min(60).max(120).optional(),
       }),
     },
   );

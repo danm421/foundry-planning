@@ -95,6 +95,8 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
         filingStatus: "married_joint",
         retirementAge: 65,
         lifeExpectancy: 95,
+        spouseRetirementAge: 63,
+        spouseLifeExpectancy: 90,
       },
     });
     expect(out.name).toBe("build_plan");
@@ -109,6 +111,31 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     expect(details).toMatch(/married_joint/);
     expect(details).toMatch(/65/);
     expect(details).toMatch(/95/);
+    expect(details).toMatch(/Spouse retirement age: 63/);
+    expect(details).toMatch(/Spouse life expectancy: 90/);
+  });
+
+  it("previews build_plan (GLOBAL mode, spouse contact but no spouse horizon args) without a spouse-horizon line — the card must not claim a value the build won't write", async () => {
+    const out = await describeProposedWrite({
+      name: "build_plan",
+      args: {
+        householdName: "Doe Household",
+        state: "NJ",
+        primaryFirstName: "Jane",
+        primaryLastName: "Doe",
+        primaryDob: "1970-05-15",
+        spouseFirstName: "John",
+        spouseLastName: "Doe",
+        spouseDob: "1972-02-01",
+        filingStatus: "married_joint",
+        retirementAge: 65,
+        lifeExpectancy: 95,
+      },
+    });
+    expect(out.name).toBe("build_plan");
+    const details = out.details!.join(" ");
+    expect(details).not.toMatch(/Spouse retirement age/);
+    expect(details).not.toMatch(/Spouse life expectancy/);
   });
 
   it("previews build_plan (GLOBAL mode, new prospect, no spouse) without a spouse line", async () => {

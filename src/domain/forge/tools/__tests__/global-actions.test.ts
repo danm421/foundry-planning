@@ -158,4 +158,34 @@ describe("build_plan (HITL, new prospect)", () => {
     expect(emitNavigate).not.toHaveBeenCalled();
     expect(out).toEqual({ clientId: "client_9", importId: "imp_1", mode: "new" });
   });
+
+  it("forwards spouse retirement age and life expectancy into newHousehold", async () => {
+    vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
+    await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen", spouseDob: "1974-01-01",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    });
+    expect(ensurePlanImport).toHaveBeenCalledWith(expect.objectContaining({
+      newHousehold: expect.objectContaining({
+        spouseRetirementAge: 63,
+        spouseLifeExpectancy: 90,
+      }),
+    }));
+  });
+
+  it("leaves spouse retirement age and life expectancy undefined when the model omits them", async () => {
+    vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
+    await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+    });
+    const call = vi.mocked(ensurePlanImport).mock.calls.at(-1)?.[0] as
+      { newHousehold: Record<string, unknown> };
+    expect(call.newHousehold.spouseRetirementAge).toBeUndefined();
+    expect(call.newHousehold.spouseLifeExpectancy).toBeUndefined();
+  });
 });
