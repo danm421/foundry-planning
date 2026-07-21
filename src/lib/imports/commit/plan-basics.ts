@@ -57,7 +57,7 @@ export async function commitPlanBasics(
   //       so a substring test on it would silently mis-route or drop the
   //       write the moment a slot gets renamed. ──
   const slots = await tx
-    .select({ id: expenses.id, name: expenses.name, startYearRef: expenses.startYearRef })
+    .select({ id: expenses.id, startYearRef: expenses.startYearRef })
     .from(expenses)
     .where(
       and(
