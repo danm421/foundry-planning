@@ -80,6 +80,63 @@ describe("describeProposedWrite (async wrapper without ctx)", () => {
     expect(out.summary).toMatch(/married_joint/);
   });
 
+  it("previews build_plan (GLOBAL mode, new prospect) with every arg an advisor needs to catch a mishearing", async () => {
+    const out = await describeProposedWrite({
+      name: "build_plan",
+      args: {
+        householdName: "Doe Household",
+        state: "NJ",
+        primaryFirstName: "Jane",
+        primaryLastName: "Doe",
+        primaryDob: "1970-05-15",
+        spouseFirstName: "John",
+        spouseLastName: "Doe",
+        spouseDob: "1972-02-01",
+        filingStatus: "married_joint",
+        retirementAge: 65,
+        lifeExpectancy: 95,
+      },
+    });
+    expect(out.name).toBe("build_plan");
+    expect(out.summary).toMatch(/Doe Household/);
+    expect(out.details).toBeDefined();
+    const details = out.details!.join(" ");
+    expect(details).toMatch(/Jane Doe/);
+    expect(details).toMatch(/1970-05-15/);
+    expect(details).toMatch(/John Doe/);
+    expect(details).toMatch(/1972-02-01/);
+    expect(details).toMatch(/NJ/);
+    expect(details).toMatch(/married_joint/);
+    expect(details).toMatch(/65/);
+    expect(details).toMatch(/95/);
+  });
+
+  it("previews build_plan (GLOBAL mode, new prospect, no spouse) without a spouse line", async () => {
+    const out = await describeProposedWrite({
+      name: "build_plan",
+      args: {
+        householdName: "Solo Household",
+        primaryFirstName: "Sam",
+        primaryLastName: "Lee",
+        primaryDob: "1980-01-01",
+        filingStatus: "single",
+        retirementAge: 67,
+        lifeExpectancy: 90,
+      },
+    });
+    expect(out.name).toBe("build_plan");
+    expect(out.summary).toMatch(/Solo Household/);
+    expect(out.details!.join(" ")).not.toMatch(/Spouse/);
+  });
+
+  it("previews build_plan (CLIENT mode, no args) without rendering undefined", async () => {
+    const out = await describeProposedWrite({ name: "build_plan", args: {} });
+    expect(out.name).toBe("build_plan");
+    expect(out.summary).not.toMatch(/undefined/);
+    expect(out.summary.length).toBeGreaterThan(0);
+    expect(out.details).toBeUndefined();
+  });
+
   it("previews tasks_create without a ctx (global mode)", async () => {
     const out = await describeProposedWrite({
       name: "tasks_create",

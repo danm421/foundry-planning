@@ -190,6 +190,53 @@ function previewSetUpPlan(a: Record<string, unknown>): WritePreview {
   return { name: "set_up_plan", summary: `Set up a financial plan${bits ? ` (${bits})` : ""}.` };
 }
 
+/**
+ * `build_plan` has two shapes sharing one tool name (preview.ts distinguishes
+ * by args, not by mode):
+ *   - GLOBAL mode: mints a brand-new household + client + base plan from the
+ *     full set of args below — the advisor is approving the creation of a
+ *     real household/client row, so every arg that could be mis-heard (name,
+ *     DOB, filing status, retirement age, life expectancy) belongs in
+ *     `details` for HITL to catch.
+ *   - CLIENT mode: `z.object({})` — no args, just refreshes the CURRENT
+ *     client's plan build. That variant must not render a card full of
+ *     `undefined`, so it gets its own short summary and no details.
+ * Numbers render as plain values, matching `previewSetUpPlan` above.
+ */
+function previewBuildPlan(a: Record<string, unknown>): WritePreview {
+  const householdName = str(a.householdName);
+  if (!householdName) {
+    return {
+      name: "build_plan",
+      summary: "Start a plan build for this client from documents you'll upload.",
+    };
+  }
+
+  const primaryName = [str(a.primaryFirstName), str(a.primaryLastName)].filter(Boolean).join(" ");
+  const primaryDob = str(a.primaryDob);
+  const spouseName = [str(a.spouseFirstName), str(a.spouseLastName)].filter(Boolean).join(" ");
+  const spouseDob = str(a.spouseDob);
+  const state = str(a.state);
+  const filing = str(a.filingStatus);
+  const ret = typeof a.retirementAge === "number" ? a.retirementAge : undefined;
+  const life = typeof a.lifeExpectancy === "number" ? a.lifeExpectancy : undefined;
+
+  const details = [
+    primaryName && `Primary: ${primaryName}${primaryDob ? ` (DOB ${primaryDob})` : ""}`,
+    spouseName && `Spouse: ${spouseName}${spouseDob ? ` (DOB ${spouseDob})` : ""}`,
+    state && `State: ${state}`,
+    filing && `Filing status: ${filing}`,
+    ret != null && `Retirement age: ${ret}`,
+    life != null && `Life expectancy: ${life}`,
+  ].filter(Boolean) as string[];
+
+  return {
+    name: "build_plan",
+    summary: `Create household "${householdName}" and start a new plan build.`,
+    details,
+  };
+}
+
 function previewTasksCreate(a: Record<string, unknown>): WritePreview {
   const title = str(a.title) ?? "(untitled)";
   const due = str(a.dueDate);
@@ -347,6 +394,8 @@ export function formatProposedWrite(call: ProposedWrite): WritePreview {
       return previewCreateHousehold(call.args);
     case "set_up_plan":
       return previewSetUpPlan(call.args);
+    case "build_plan":
+      return previewBuildPlan(call.args);
     case "tasks_create":
       return previewTasksCreate(call.args);
     case "tasks_delete":
