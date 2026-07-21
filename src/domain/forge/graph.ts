@@ -122,7 +122,35 @@ export function buildGraph(
     return { messages, toolErrorCounts: countToolResults(messages) };
   }
 
-  async function approvalNode(state: typeof ForgeState.State) {
+  /**
+   * Bind a node's runnable config to tool invocations.
+   *
+   * The HITL nodes below run tools themselves instead of delegating to
+   * `toolsNode`, and tools emit generative-UI frames — build_plan's
+   * attach-files paperclip, create_household/set_up_plan's navigation — via
+   * dispatchCustomEvent. Those frames only reach the browser if the tool run is
+   * attached to the streamEvents callback chain, which is what the config
+   * carries. Going through this helper is what makes that non-optional: a bare
+   * `t.invoke(args)` added later would quietly drop it.
+   *
+   * NOTE, so nobody "simplifies" the config away: in LangChain JS the chain
+   * ALSO propagates implicitly via AsyncLocalStorage, so omitting it does not
+   * currently break the frames (verified against the real build_plan tool — see
+   * global-build-plan-frame.test.ts). Passing it explicitly is defence in depth
+   * against that implicit mechanism changing, and it matches toolsNode. Belt
+   * and braces on a path where failure is SILENT: the write still succeeds, the
+   * row still lands, and only the UI frame vanishes.
+   */
+  const toolInvoker =
+    (config?: LangGraphRunnableConfig) =>
+    async (t: StructuredToolInterface, args: unknown): Promise<string> =>
+      String(await t.invoke(args, config));
+
+  async function approvalNode(
+    state: typeof ForgeState.State,
+    config?: LangGraphRunnableConfig,
+  ) {
+    const invokeTool = toolInvoker(config);
     // In client mode ctx carries clientId/scenarioId (enrichment reads them); in
     // global mode (Plan 2 agentic writes) it does not — pass undefined so
     // describeProposedWrite falls back to the pure formatter (no clientId deref).
@@ -187,7 +215,7 @@ export function buildGraph(
         if (verdict === "confirm") {
           // The tool emits forge.write_approved itself, only on real success.
           const t = toolsByName.get(c.name)!;
-          const content = String(await t.invoke(c.args));
+          const content = await invokeTool(t, c.args);
           toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
           messages.push(new ToolMessage({ tool_call_id: id, content }));
         } else {
@@ -206,7 +234,7 @@ export function buildGraph(
       } else {
         // A read call mixed into a write turn: execute it immediately (no approval needed).
         const t = toolsByName.get(c.name);
-        const content = String(t ? await t.invoke(c.args) : "Unknown tool.");
+        const content = t ? await invokeTool(t, c.args) : "Unknown tool.";
         if (t) toolErrorCounts[c.name] = isToolFailure(content) ? 1 : 0;
         messages.push(new ToolMessage({ tool_call_id: id, content }));
       }
@@ -214,7 +242,11 @@ export function buildGraph(
     return { messages, toolErrorCounts };
   }
 
-  async function meetingReviewNode(state: typeof ForgeState.State) {
+  async function meetingReviewNode(
+    state: typeof ForgeState.State,
+    config?: LangGraphRunnableConfig,
+  ) {
+    const invokeTool = toolInvoker(config);
     // Writes/meeting tools exist only in client mode (Plan 1). Assert client
     // scope so describeProposedWrite + the audit's clientId read are well-typed.
     const ctx = authContext as ForgeAuthContext;
@@ -259,15 +291,13 @@ export function buildGraph(
       // transcriptId comes from the original call; everything else from the resume
       // so the advisor's edits to the summary/tasks are persisted.
       const t = toolsByName.get(MEETING_REVIEW_TOOL)!;
-      content = String(
-        await t.invoke({
-          transcriptId: args.transcriptId,
-          summaryTitle: resume.summaryTitle,
-          summary: resume.summary,
-          meetingDate: resume.meetingDate,
-          tasks: resume.tasks,
-        }),
-      );
+      content = await invokeTool(t, {
+        transcriptId: args.transcriptId,
+        summaryTitle: resume.summaryTitle,
+        summary: resume.summary,
+        meetingDate: resume.meetingDate,
+        tasks: resume.tasks,
+      });
       toolErrorCounts[MEETING_REVIEW_TOOL] = isToolFailure(content) ? 1 : 0;
     } else {
       await recordAudit({
@@ -300,7 +330,7 @@ export function buildGraph(
         );
       } else {
         const rt = toolsByName.get(c.name);
-        const rc = String(rt ? await rt.invoke(c.args) : "Unknown tool.");
+        const rc = rt ? await invokeTool(rt, c.args) : "Unknown tool.";
         if (rt) toolErrorCounts[c.name] = isToolFailure(rc) ? 1 : 0;
         messages.push(new ToolMessage({ tool_call_id: c.id, content: rc }));
       }
