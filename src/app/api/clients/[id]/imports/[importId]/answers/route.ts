@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
+import { requireActiveSubscription } from "@/lib/authz";
 import {
     requireImportAccess,
     ForbiddenError,
@@ -24,6 +25,7 @@ interface BodyArgs {
 export async function POST(request: NextRequest, { params }: Params) {
     try {
         const firmId = await requireOrgId();
+        await requireActiveSubscription();
         const { userId } = await auth();
         if (!userId) {
             throw new UnauthorizedError();

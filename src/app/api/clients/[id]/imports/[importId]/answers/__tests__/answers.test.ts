@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AssembleQuestion } from "@/lib/imports/assemble/types";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
+vi.mock("@/lib/authz", () => ({ requireActiveSubscription: vi.fn() }));
 vi.mock("@/lib/db-helpers", async () => {
   const actual = await vi.importActual<typeof import("@/lib/db-helpers")>(
     "@/lib/db-helpers",
