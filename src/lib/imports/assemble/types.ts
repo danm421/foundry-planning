@@ -12,9 +12,38 @@ export interface AssembleAssumption {
   value: string | number;  // the defaulted value
   reason: string;          // why we defaulted it
 }
+export type PlanBasicsProvenance =
+  | "stated"        // advisor typed it — never re-derive, never chip
+  | "client_record" // read off the clients row (refresh)
+  | "build_request" // came in as a build_plan argument (new build)
+  | "document"      // extracted from an uploaded file
+  | "derived";      // computed; `reason` is required and is final copy
+
+export interface PlanBasicsField<T> {
+  value: T | null;
+  provenance: PlanBasicsProvenance;
+  reason?: string;
+  sourceDocId?: string;
+}
+
+export interface AssemblePlanBasics {
+  retirementAge: PlanBasicsField<number>;
+  lifeExpectancy: PlanBasicsField<number>;
+  spouseRetirementAge?: PlanBasicsField<number>;
+  spouseLifeExpectancy?: PlanBasicsField<number>;
+  currentLivingSpending: PlanBasicsField<number>;
+  retirementLivingSpending: PlanBasicsField<number>;
+  socialSecurity: Array<{
+    owner: "client" | "spouse";
+    pia: PlanBasicsField<number>;
+    claimingAge: PlanBasicsField<number>;
+  }>;
+}
+
 export interface AssembleState {
   version: 1;
   mergedFileCount: number; // how many source files were merged
   assumptions: AssembleAssumption[];
   questions: AssembleQuestion[];
+  planBasics?: AssemblePlanBasics;
 }

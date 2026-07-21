@@ -11,7 +11,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
-import type { AssembleState } from "./assemble/types";
+import type { AssemblePlanBasics, AssembleState } from "./assemble/types";
 
 export type Provenance = {
   sourceFileId: string;
@@ -59,6 +59,8 @@ export type ImportPayload = {
    * link targets. Set by the matching pass; absent until then.
    */
   expenseSlots?: Array<{ id: string; name: string }>;
+  /** Advisor-edited plan-level values. Round-trips through buildLatestPayload. */
+  planBasics?: AssemblePlanBasics;
 };
 
 /**
