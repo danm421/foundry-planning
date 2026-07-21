@@ -217,6 +217,7 @@ export type AuditAction =
   | "import.extraction.completed"
   | "import.extraction.failed"
   | "import.match.run"
+  | "import.assemble.run"
   | "import.commit.tab"
   // Billing (Phase 1+ — written by webhook handlers and admin endpoints)
   | "billing.checkout_started"
