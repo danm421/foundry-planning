@@ -43,14 +43,24 @@ function numericAmount(raw: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Find an extracted living-expense row, if any file stated one. */
-function extractedLiving(payload: ImportPayload): number | null {
+/**
+ * Sum every extracted living-expense row. The extraction prompt tags
+ * housing, groceries, utilities, transportation, dining, etc. as separate
+ * `"living"`-typed rows (see `expense-worksheet.ts`) — taking only the first
+ * one silently discards the rest. `count` lets the caller disclose when more
+ * than one row was combined.
+ */
+function extractedLiving(payload: ImportPayload): { total: number; count: number } | null {
+  let total = 0;
+  let count = 0;
   for (const row of payload.expenses) {
     if (row.type !== "living") continue;
     const amount = numericAmount(row.annualAmount);
-    if (amount != null) return amount;
+    if (amount == null) continue;
+    total += amount;
+    count += 1;
   }
-  return null;
+  return count > 0 ? { total, count } : null;
 }
 
 /** Find an extracted Social Security income row for one owner. */
@@ -92,11 +102,18 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
   const { payload, known, mode, taxReturn } = input;
   const ageProvenance = mode === "new" ? "build_request" : "client_record";
 
-  // ── Current living spending: extracted → AGI − totalTax → blank ──
+  // ── Current living spending: extracted (summed) → AGI − totalTax → blank ──
   let currentLivingSpending: PlanBasicsField<number>;
   const stated = extractedLiving(payload);
   if (stated != null) {
-    currentLivingSpending = { value: stated, provenance: "document" };
+    currentLivingSpending =
+      stated.count > 1
+        ? {
+            value: stated.total,
+            provenance: "document",
+            reason: `Summed from ${stated.count} extracted living-expense rows.`,
+          }
+        : { value: stated.total, provenance: "document" };
   } else if (taxReturn && taxReturn.agi != null && taxReturn.totalTax != null) {
     currentLivingSpending = {
       value: taxReturn.agi - taxReturn.totalTax,
@@ -140,14 +157,17 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
   };
 
   if (known.hasSpouse) {
-    basics.spouseRetirementAge = {
-      value: known.spouseRetirementAge ?? null,
-      provenance: ageProvenance,
-    };
-    basics.spouseLifeExpectancy = {
-      value: known.spouseLifeExpectancy ?? null,
-      provenance: ageProvenance,
-    };
+    // A missing spouse age is absent evidence, not a confident read off the
+    // client record / build request — it must go blank and flagged like
+    // every other unset field, not silently carry ageProvenance on a null.
+    basics.spouseRetirementAge =
+      known.spouseRetirementAge != null
+        ? { value: known.spouseRetirementAge, provenance: ageProvenance }
+        : blank<number>();
+    basics.spouseLifeExpectancy =
+      known.spouseLifeExpectancy != null
+        ? { value: known.spouseLifeExpectancy, provenance: ageProvenance }
+        : blank<number>();
   }
 
   return basics;
