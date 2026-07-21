@@ -41,6 +41,8 @@ const PANEL_WIDTH = 420;
 const TOOL_LABELS: Record<string, string> = {
   run_monte_carlo: "Running a Monte Carlo simulation",
   run_projection: "Running the projection",
+  explain_projection_change: "Explaining the change",
+  break_down_projection_figure: "Breaking down the figure",
   client_briefing: "Reading the client overview",
   read_detail: "Reading the plan details",
   explain_report: "Reading the report data",
