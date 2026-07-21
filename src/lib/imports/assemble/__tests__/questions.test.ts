@@ -123,6 +123,24 @@ describe("generateQuestions", () => {
     expect(qs.filter((q) => q.kind === "conflict")).toHaveLength(3);
   });
 
+  it("dedupes questions by id as belt-and-braces, even if two rules ever produced the same id (FIX 6)", () => {
+    // merge-across-files.ts now emits one warning per entity (not per merge),
+    // so this can't happen via a real merge anymore — this pins the
+    // defensive dedupe in generateQuestions itself as a second layer.
+    const payload: ImportPayload = {
+      ...base,
+      warnings: [
+        'Merged duplicate account "Schwab Brokerage" seen in 2 documents.',
+        'Merged duplicate account "Schwab Brokerage" seen in 3 documents.',
+      ],
+    };
+    const qs = generateQuestions({ payload, assumptions: [], mode: "new", primaryDobKnown: true });
+    const conflictQs = qs.filter((q) => q.kind === "conflict");
+    expect(conflictQs).toHaveLength(1);
+    const ids = qs.map((q) => q.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("ignores non-merge warnings and fuzzy-match noise", () => {
     const payload: ImportPayload = {
       ...base,

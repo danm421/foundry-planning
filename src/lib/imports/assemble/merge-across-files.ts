@@ -80,6 +80,10 @@ interface DedupeBucketEntry<T> {
   fieldCount: number;
   provenance: Provenance;
   mergeCount: number;
+  // Notes from `describeConflict` across every merge into this entry — see
+  // FIX 5. Collected in the loop, joined into ONE post-loop warning (FIX 6)
+  // rather than emitted per merge.
+  conflictNotes: string[];
 }
 
 /** Advisor-facing note about what a collapse actually changed, when the
@@ -93,8 +97,15 @@ type DescribeConflict<T> = (existing: T, incoming: T) => string | null;
  * On a collapse, the richer row (more non-null fields) wins on conflicting
  * fields, but the surviving row is the UNION of both — a field only the
  * poorer row populated is backfilled, not dropped. The surviving row's
- * `__provenance` stays pinned to the FIRST file the entity appeared in, and
- * a `warnings` entry is appended.
+ * `__provenance` stays pinned to the FIRST file the entity appeared in.
+ *
+ * Exactly ONE `warnings` entry is appended per bucket entry that actually
+ * collapsed (mergeCount > 1), emitted AFTER the merge loop finishes rather
+ * than once per merge — three files carrying the same entity produce a
+ * single accurate "seen in 3 documents" warning instead of two ("seen in 2
+ * documents." then "seen in 3 documents."), which downstream `questions.ts`
+ * would otherwise turn into two questions sharing the same slugified id
+ * (duplicate React keys / colliding `answers[q.id]` in the questions card).
  *
  * `computeKey` returning `null` means "not enough information to dedupe" —
  * the row is always appended standalone.
@@ -146,12 +157,10 @@ function mergeSection<T extends { name: string }>(
       // carry materially different balances (a legitimate same-account
       // different-statement-period case, so we still collapse — but the
       // advisor needs to see both figures rather than silently losing one).
+      // Collected here and joined into the single post-loop warning below —
+      // NOT emitted per merge (see FIX 6 in the function doc comment).
       const conflictNote = describeConflict?.(priorContent, content);
-      warnings.push(
-        conflictNote
-          ? `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents — ${conflictNote}`
-          : `Merged duplicate ${label} "${existingEntry.content.name}" seen in ${existingEntry.mergeCount} documents.`,
-      );
+      if (conflictNote) existingEntry.conflictNotes.push(conflictNote);
       continue;
     }
 
@@ -161,12 +170,29 @@ function mergeSection<T extends { name: string }>(
       fieldCount: countNonNullFields(content as Record<string, unknown>),
       provenance,
       mergeCount: 1,
+      conflictNotes: [],
     };
     target.push({ ...content, __provenance: provenance, match: { kind: "new" } } as Annotated<T>);
     if (bucket) {
       bucket.push(entry);
     } else {
       buckets.set(key, [entry]);
+    }
+  }
+
+  // One warning per bucket entry that actually collapsed — see the function
+  // doc comment (FIX 6) for why this must happen after the loop rather than
+  // inline per merge.
+  for (const bucket of buckets.values()) {
+    for (const entry of bucket) {
+      if (entry.mergeCount <= 1) continue;
+      const conflictSuffix =
+        entry.conflictNotes.length > 0 ? ` — ${entry.conflictNotes.join("; ")}` : "";
+      warnings.push(
+        conflictSuffix
+          ? `Merged duplicate ${label} "${entry.content.name}" seen in ${entry.mergeCount} documents${conflictSuffix}`
+          : `Merged duplicate ${label} "${entry.content.name}" seen in ${entry.mergeCount} documents.`,
+      );
     }
   }
 }

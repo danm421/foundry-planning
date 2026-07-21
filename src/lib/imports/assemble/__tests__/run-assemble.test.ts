@@ -52,6 +52,36 @@ describe("runAssemble", () => {
     expect(res.assemble.questions.some((q) => q.id === "q:primary_dob")).toBe(true);
   });
 
+  it("collapses a 3-file same-entity merge into exactly one conflict warning and one question with a unique id (FIX 6)", async () => {
+    const res = await runAssemble({
+      importId: "imp4", clientId: "cli1", firmId: "firm1", mode: "existing", scenarioId: "sc1",
+      known: { retirementAge: 65, lifeExpectancy: 92, filingStatus: "single", primaryDob: "1980-01-01" },
+      fileResults: {
+        f1: er("jan.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100000 }] }),
+        f2: er("feb.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100200 }] }),
+        f3: er("mar.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100400 }] }),
+      },
+    });
+
+    const persisted = setSpy.mock.calls[0][0] as {
+      payloadJson: { payload: { warnings: string[] } };
+    };
+    const mergeWarnings = persisted.payloadJson.payload.warnings.filter((w) =>
+      w.includes("Merged duplicate account"),
+    );
+    // Before FIX 6, 3 files carrying the same account produced TWO warnings
+    // ("...seen in 2 documents." then "...seen in 3 documents."), which
+    // conflictQuestions turned into two questions sharing the same slugified
+    // id (duplicate React keys / colliding answers[q.id] in the card).
+    expect(mergeWarnings).toHaveLength(1);
+    expect(mergeWarnings[0]).toMatch(/seen in 3 documents/);
+
+    const conflictQuestions = res.assemble.questions.filter((q) => q.kind === "conflict");
+    expect(conflictQuestions).toHaveLength(1);
+    const ids = res.assemble.questions.map((q) => q.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("computes rowCount across all row kinds and updates the correct import row", async () => {
     const res = await runAssemble({
       importId: "imp3", clientId: "cli1", firmId: "firm1", mode: "existing", scenarioId: "sc1",

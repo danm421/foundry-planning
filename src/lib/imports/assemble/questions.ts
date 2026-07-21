@@ -161,5 +161,18 @@ export function generateQuestions(input: GenerateQuestionsInput): AssembleQuesti
   // order) is preserved — only the kind priority reorders across groups.
   questions.sort((a, b) => KIND_PRIORITY[a.kind] - KIND_PRIORITY[b.kind]);
 
-  return questions.slice(0, MAX_QUESTIONS);
+  // Belt-and-braces: `AssembleQuestion.id`'s type comment promises stable,
+  // UNIQUE ids (PlanQuestionsCard keys + <label htmlFor> + answers[q.id] all
+  // depend on that). merge-across-files.ts now emits one "Merged duplicate"
+  // warning per entity (not per merge — see its FIX 6 comment), which is the
+  // real fix for the duplicate-id case; this dedupe is cheap insurance
+  // against any future rule producing a colliding id.
+  const seenIds = new Set<string>();
+  const deduped = questions.filter((q) => {
+    if (seenIds.has(q.id)) return false;
+    seenIds.add(q.id);
+    return true;
+  });
+
+  return deduped.slice(0, MAX_QUESTIONS);
 }

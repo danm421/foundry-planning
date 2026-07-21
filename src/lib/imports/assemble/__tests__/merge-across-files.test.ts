@@ -72,6 +72,20 @@ describe("mergeAcrossFiles", () => {
     expect(warning).not.toContain("differ");
   });
 
+  it("collapses the same account across 3+ files into ONE warning, not one per merge (FIX 6)", () => {
+    const r = mergeAcrossFiles({
+      f1: er("jan.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100000 }] }),
+      f2: er("feb.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100200 }] }),
+      f3: er("mar.pdf", { accounts: [{ name: "Schwab Brokerage", custodian: "Schwab", accountNumberLast4: "9911", value: 100400 }] }),
+    });
+    expect(r.payload.accounts).toHaveLength(1);
+    const mergeWarnings = r.payload.warnings.filter((w) => w.includes("Merged duplicate account"));
+    // Before FIX 6 this was 2 warnings ("seen in 2 documents." then "seen in
+    // 3 documents.") — both slugifying to the SAME conflict-question id.
+    expect(mergeWarnings).toHaveLength(1);
+    expect(mergeWarnings[0]).toMatch(/seen in 3 documents/);
+  });
+
   it("still merges same custodian+last4 accounts when neither carries an owner (undefined === undefined)", () => {
     const r = mergeAcrossFiles({
       f1: er("stmt-jan.pdf", { accounts: [{ name: "401k", custodian: "Fidelity", accountNumberLast4: "1234", value: 450000 }] }),
