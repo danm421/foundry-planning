@@ -13,6 +13,7 @@ import { recordAudit } from "@/lib/audit";
 import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/crm/households";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
+import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import { emitNavigate } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
@@ -175,5 +176,60 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  return [findClient, openClient, createHousehold, setUpPlan];
+  const buildPlan = tool(
+    async (args: {
+      householdName: string; state?: string;
+      primaryFirstName: string; primaryLastName: string; primaryDob: string;
+      spouseFirstName?: string; spouseLastName?: string; spouseDob?: string;
+      filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
+      retirementAge: number; lifeExpectancy: number;
+    }) => {
+      try {
+        const firmId = await requireOrgId();
+        const { clientId, importId } = await ensurePlanImport({
+          mode: "new", firmId, actorUserId: ctx.userId,
+          newHousehold: {
+            householdName: args.householdName, state: args.state,
+            primary: { firstName: args.primaryFirstName, lastName: args.primaryLastName, dateOfBirth: args.primaryDob },
+            spouse: args.spouseFirstName && args.spouseLastName
+              ? { firstName: args.spouseFirstName, lastName: args.spouseLastName, dateOfBirth: args.spouseDob }
+              : undefined,
+            filingStatus: args.filingStatus, retirementAge: args.retirementAge, lifeExpectancy: args.lifeExpectancy,
+          },
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "client_import", resourceId: importId,
+          firmId, actorId: ctx.userId,
+          metadata: { tool: "build_plan", conversationId, clientId, mode: "new" },
+        });
+        // NO emitNavigate — the advisor stays in Forge to drop files.
+        return JSON.stringify({ clientId, importId, mode: "new" });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to start the plan build.";
+      }
+    },
+    {
+      name: "build_plan",
+      description:
+        "Start building a NEW prospect's financial plan from documents the advisor will upload. Mints the household " +
+        "+ base plan, then creates a draft import to attach files to. Collect the household name, US state (2-letter), " +
+        "primary contact name + date of birth, filing status (single, married_joint, married_separate, head_of_household), " +
+        "retirement age, and life expectancy; a spouse is optional. Requires human approval.",
+      schema: z.object({
+        householdName: z.string().min(1).max(200),
+        state: z.string().length(2).optional().describe("USPS 2-letter state code, e.g. NJ"),
+        primaryFirstName: z.string().min(1).max(100),
+        primaryLastName: z.string().min(1).max(100),
+        primaryDob: z.string().describe("primary contact's date of birth, YYYY-MM-DD"),
+        spouseFirstName: z.string().max(100).optional(),
+        spouseLastName: z.string().max(100).optional(),
+        spouseDob: z.string().optional().describe("spouse's date of birth, YYYY-MM-DD"),
+        filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]),
+        retirementAge: z.number().int().min(30).max(90),
+        lifeExpectancy: z.number().int().min(60).max(120),
+      }),
+    },
+  );
+
+  return [findClient, openClient, createHousehold, setUpPlan, buildPlan];
 }

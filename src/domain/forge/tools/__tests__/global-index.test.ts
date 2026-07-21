@@ -16,6 +16,8 @@ vi.mock("@/lib/crm-tasks/queries", () => ({
   listTaskActivity: vi.fn(), listTaskFiles: vi.fn(),
 }));
 vi.mock("@/lib/crm-tasks/members", () => ({ listFirmMembers: vi.fn() }));
+// global-actions (build_plan) imports the shared plan-import core.
+vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: vi.fn() }));
 
 import { buildGlobalTools } from "../global-index";
 
@@ -25,7 +27,7 @@ describe("buildGlobalTools", () => {
   it("contains ONLY help + global-navigate + global-action + walkthrough + global-task tools", () => {
     const names = buildGlobalTools(toolCtx).map((t) => t.name).sort();
     expect(names).toEqual([
-      "cite_page", "create_household", "find_client", "firm_members", "get_help",
+      "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
       "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
       "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",

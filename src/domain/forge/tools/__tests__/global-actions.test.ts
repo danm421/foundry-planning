@@ -9,6 +9,7 @@ vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") })
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
+vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: vi.fn() }));
 
 import { buildGlobalActionTools } from "../global-actions";
 import { getCrmHousehold } from "@/lib/crm/households";

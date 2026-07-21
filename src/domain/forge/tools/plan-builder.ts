@@ -14,13 +14,16 @@ import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
+import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
+import { recordAudit } from "@/lib/audit";
 import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
+import { gateAccess } from "./scenario-writes";
 
 export function buildPlanBuilderTools(
   toolCtx: ForgeToolContext,
 ): StructuredToolInterface[] {
-  const { ctx } = toolCtx;
+  const { ctx, conversationId } = toolCtx;
 
   const getPlanStatus = tool(
     async ({ importId }: { importId: string }) => {
@@ -69,5 +72,35 @@ export function buildPlanBuilderTools(
     },
   );
 
-  return [getPlanStatus];
+  const buildPlan = tool(
+    async () => {
+      try {
+        const gate = await gateAccess(ctx.clientId);
+        if ("error" in gate) return gate.error;
+        const { firmId } = gate;
+        const { importId } = await ensurePlanImport({
+          mode: "existing", firmId, actorUserId: ctx.userId,
+          existing: { clientId: ctx.clientId },
+        });
+        await recordAudit({
+          action: "forge.write_approved", resourceType: "client_import", resourceId: importId,
+          clientId: ctx.clientId, firmId, actorId: ctx.userId,
+          metadata: { tool: "build_plan", conversationId, mode: "existing" },
+        });
+        return JSON.stringify({ clientId: ctx.clientId, importId, mode: "existing" });
+      } catch {
+        return "Sorry — that action couldn't be completed.";
+      }
+    },
+    {
+      name: "build_plan",
+      description:
+        "Start assembling a refreshed financial plan for the CURRENT client from documents the advisor will " +
+        "upload (statements, tax returns). Creates a draft import to attach files to; after files land, the panel " +
+        "runs extraction + assemble and surfaces a short list of smart questions. Requires human approval.",
+      schema: z.object({}),
+    },
+  );
+
+  return [getPlanStatus, buildPlan];
 }
