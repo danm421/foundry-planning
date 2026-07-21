@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import type {
   ExtractedPrimaryFamilyMember,
   ExtractedSpouseFamilyMember,
@@ -9,6 +10,8 @@ import type {
   FamilyMemberRole,
 } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
+import type { AssembleAssumption } from "@/lib/imports/assemble/types";
+import AssumedChip from "./assumed-chip";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import SourceBadge from "./source-badge";
@@ -55,6 +58,8 @@ interface ReviewStepFamilyProps {
   dependentMatches?: Array<MatchAnnotation | undefined>;
   onDependentMatchChange?: (index: number, match: MatchAnnotation) => void;
   dependentCandidates?: MatchCandidate[];
+  /** Gap-filled field provenance from the assemble stage, keyed by dotted path. */
+  assumptions?: AssembleAssumption[];
 }
 
 export default function ReviewStepFamily({
@@ -67,9 +72,15 @@ export default function ReviewStepFamily({
   dependentMatches,
   onDependentMatchChange,
   dependentCandidates = [],
+  assumptions = [],
 }: ReviewStepFamilyProps) {
   const dependentMatchingEnabled = Boolean(
     dependentMatches && onDependentMatchChange,
+  );
+
+  const assumptionByField = useMemo(
+    () => Object.fromEntries(assumptions.map((a) => [a.field, a])),
+    [assumptions],
   );
 
   const ensurePrimary = (
@@ -136,7 +147,10 @@ export default function ReviewStepFamily({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-gray-300">Filing status</label>
+              <label className="mb-1 flex items-center gap-1.5 text-xs text-gray-300">
+                Filing status
+                <AssumedChip assumption={assumptionByField["client.filingStatus"]} />
+              </label>
               <select
                 value={primary?.filingStatus ?? ""}
                 onChange={(e) => ensurePrimary({

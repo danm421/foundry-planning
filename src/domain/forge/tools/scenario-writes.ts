@@ -49,7 +49,7 @@ const APPROVAL_SUFFIX = "Requires human approval.";
  * firmId baked into `ctx` at propose-time — a /resume can come from a different
  * session, so we re-derive + re-verify on every execution.
  */
-async function gateAccess(
+export async function gateAccess(
   clientId: string,
 ): Promise<{ firmId: string } | { error: string }> {
   const firmId = await requireOrgId();

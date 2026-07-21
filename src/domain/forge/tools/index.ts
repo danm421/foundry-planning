@@ -13,6 +13,7 @@ import { buildMemoryTools } from "./memory";
 import { buildBookTools } from "./book";
 import { buildNavigateTools } from "./navigate";
 import { buildMeetingTools } from "./meetings";
+import { buildPlanBuilderTools } from "./plan-builder";
 import { ALL_BUNDLES, type BundleName } from "../dispatcher";
 
 /**
@@ -37,6 +38,7 @@ export const TOOL_BUNDLES: Record<
   book: buildBookTools,
   navigate: buildNavigateTools,
   meetings: buildMeetingTools,
+  "plan-builder": buildPlanBuilderTools,
 };
 
 /**
@@ -107,4 +109,6 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Global firm-wide task writes — create + delete are HITL; update/status/comment are Tier-A
   "tasks_create",
   "tasks_delete",
+  // Plan builder — HITL-gated (both new + existing modes)
+  "build_plan",
 ]);

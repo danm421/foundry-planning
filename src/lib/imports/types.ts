@@ -11,6 +11,7 @@ import type {
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
+import type { AssembleState } from "./assemble/types";
 
 export type Provenance = {
   sourceFileId: string;
@@ -69,6 +70,7 @@ export type ImportPayload = {
 export interface ImportPayloadJson {
   fileResults?: Record<string, ExtractionResult>;
   payload?: ImportPayload;
+  assemble?: AssembleState;   // NEW — Forge Plan Builder sub-state
 }
 
 /**

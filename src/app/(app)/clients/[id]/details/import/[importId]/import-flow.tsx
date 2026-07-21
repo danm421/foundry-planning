@@ -8,6 +8,7 @@ import UploadZone from "@/components/import/upload-zone";
 import ExtractionProgress from "@/components/import/extraction-progress";
 import ReviewWizard from "@/components/import/review-wizard";
 import type { ImportPayload } from "@/lib/imports/types";
+import type { AssembleAssumption } from "@/lib/imports/assemble/types";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import { draftErrorMessage } from "@/lib/imports/draft-error-message";
@@ -29,6 +30,7 @@ interface ImportFlowProps {
   notes: string | null;
   files: ImportFlowFile[];
   payload: ImportPayload | null;
+  assumptions?: AssembleAssumption[];
   perTabCommittedAt: Record<string, string> | null;
   growthContext: GrowthContext;
   milestones?: ClientMilestones | null;
@@ -264,6 +266,7 @@ function ReviewStage(props: ImportFlowProps) {
           clientId={props.clientId}
           importId={props.importId}
           payload={props.payload}
+          assumptions={props.assumptions}
           perTabCommittedAt={props.perTabCommittedAt}
           defaultStartYear={currentYear}
           defaultEndYear={currentYear + 30}

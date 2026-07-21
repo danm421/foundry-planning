@@ -93,6 +93,8 @@ vi.mock("@/lib/crm/folders", () => ({ ensureTranscriptsFolder: vi.fn() }));
 vi.mock("../custom-events", () => ({ emitNavigate: vi.fn(), emitPageLink: vi.fn(), emitWalkthrough: vi.fn() }));
 // global-actions (set_up_plan) imports create-client which imports @/db.
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
+// plan-builder / global-actions build_plan tools import the shared plan-import core.
+vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: vi.fn() }));
 
 import { buildTools, WRITE_TOOL_NAMES, TOOL_BUNDLES } from "../tools";
 import { routeAfterAgent } from "../routing";
@@ -188,11 +190,13 @@ const EXPECTED_BOOK = ["scan_book"];
 
 const EXPECTED_NAVIGATE = ["open_page", "cite_page"];
 
+const EXPECTED_PLAN_BUILDER_TOOL_NAMES = ["get_plan_status", "build_plan"];
+
 describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + book + navigate)", () => {
-  it("returns exactly the 65 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings = 65, + 1 meeting save)", () => {
+  it("returns exactly the 67 named tools (20 Phase-1 + 5 scenario writes + 12 detail writes + 20 CRM + 1 report + 2 memory + 1 book + 2 navigate + 2 meetings + 2 plan builder = 67, + 1 meeting save)", () => {
     const tools = buildTools(TOOL_CTX);
     const names = new Set(tools.map((t) => t.name));
-    // Phase-1, scenario-write, detail-write, report, memory, navigate, and meetings tools all present
+    // Phase-1, scenario-write, detail-write, report, memory, navigate, meetings, and plan-builder tools all present
     for (const n of [
       ...EXPECTED_PHASE1,
       ...EXPECTED_SCENARIO_WRITE_TOOL_NAMES,
@@ -202,10 +206,11 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
       ...EXPECTED_NAVIGATE,
       "summarize_meeting_transcript",
       "save_meeting_record",
+      ...EXPECTED_PLAN_BUILDER_TOOL_NAMES,
     ]) {
       expect(names.has(n), `expected ${n} in buildTools output`).toBe(true);
     }
-    expect(tools).toHaveLength(65);
+    expect(tools).toHaveLength(67);
   });
 
   it("memory tools are present and NOT in WRITE_TOOL_NAMES (non-destructive prefs)", () => {
@@ -235,9 +240,25 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (25 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes)", () => {
+  it("buildTools includes the plan-builder tool names (get_plan_status, build_plan)", () => {
+    const names = new Set(buildTools(TOOL_CTX).map((t) => t.name));
+    for (const n of EXPECTED_PLAN_BUILDER_TOOL_NAMES) {
+      expect(names.has(n), `expected plan-builder tool ${n} in buildTools output`).toBe(true);
+    }
+  });
+
+  it("get_plan_status is NOT in WRITE_TOOL_NAMES (read-only); build_plan IS (HITL-gated)", () => {
+    expect(WRITE_TOOL_NAMES.has("get_plan_status")).toBe(false);
+    expect(WRITE_TOOL_NAMES.has("build_plan")).toBe(true);
+  });
+
+  it("build_plan routes through the HITL approval gate", () => {
+    expect(routeAfterAgent([{ name: "build_plan" }], WRITE_TOOL_NAMES)).toBe("approval");
+  });
+
+  it("WRITE_TOOL_NAMES is a non-empty Set (26 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes + 1 plan builder write)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(25);
+    expect(WRITE_TOOL_NAMES.size).toBe(26);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -370,8 +391,8 @@ describe("buildTools (navigate bundle)", () => {
 });
 
 describe("buildTools bundles", () => {
-  it("buildTools() with no bundle arg returns the full set (unchanged count 65)", () => {
-    expect(buildTools(TOOL_CTX)).toHaveLength(65);
+  it("buildTools() with no bundle arg returns the full set (unchanged count 67)", () => {
+    expect(buildTools(TOOL_CTX)).toHaveLength(67);
   });
 
   it("buildTools(ctx, ['read']) returns only the read bundle", () => {
@@ -392,9 +413,9 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the help + navigation + global-action + walkthrough + global-task set (17 tools)", () => {
+  it("is exactly the help + navigation + global-action + walkthrough + global-task set (18 tools)", () => {
     expect(names).toEqual([
-      "cite_page", "create_household", "find_client", "firm_members", "get_help",
+      "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
       "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
       "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",
