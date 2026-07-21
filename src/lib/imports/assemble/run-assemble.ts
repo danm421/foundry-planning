@@ -111,10 +111,18 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
 
   const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions, planBasics };
 
+  // Seed planBasics onto the payload too, not just the assemble state — the
+  // review wizard reads `payload`, not `assemble`, so this is what makes the
+  // Plan basics step (and buildLatestPayload's round-trip back through the
+  // PATCH route to commitPlanBasics) actually reachable.
+  const payloadWithPlanBasics: ImportPayload = planBasics
+    ? { ...annotated, planBasics }
+    : annotated;
+
   await db
     .update(clientImports)
     .set({
-      payloadJson: { fileResults, payload: annotated, assemble },
+      payloadJson: { fileResults, payload: payloadWithPlanBasics, assemble },
       updatedAt: new Date(),
     })
     .where(eq(clientImports.id, importId));

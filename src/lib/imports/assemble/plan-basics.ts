@@ -172,3 +172,21 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
 
   return basics;
 }
+
+/**
+ * All-blank plan basics for an import assembled before this feature
+ * existed, or one where `derivePlanBasics` had too little evidence to run
+ * at all (see `runAssemble` — it requires both `retirementAge` and
+ * `lifeExpectancy` to be known). Every field is blank and unflagged — no
+ * `reason`, so no chip — so the wizard's Plan basics step renders empty
+ * inputs instead of crashing on a missing `planBasics` block.
+ */
+export function emptyPlanBasics(): AssemblePlanBasics {
+  return {
+    retirementAge: blank<number>(),
+    lifeExpectancy: blank<number>(),
+    currentLivingSpending: blank<number>(),
+    retirementLivingSpending: blank<number>(),
+    socialSecurity: [],
+  };
+}

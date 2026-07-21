@@ -142,4 +142,36 @@ describe("runAssemble planBasics", () => {
 
     expect(result.assemble.planBasics).toBeUndefined();
   });
+
+  // The review wizard reads `payload`, not `assemble` — planBasics must be
+  // seeded onto BOTH so the wizard's Plan basics step (and the round-trip
+  // back through buildLatestPayload → PATCH → commitPlanBasics) can reach it.
+  it("also seeds planBasics onto the persisted payload, not just the assemble state", async () => {
+    const result = await runAssemble({
+      importId: "imp8", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      known: { retirementAge: 65, lifeExpectancy: 92, primaryDob: "1972-06-14" },
+      hasSpouse: false,
+      taxReturn: null,
+    });
+
+    const persisted = setSpy.mock.calls[0][0] as {
+      payloadJson: { payload: { planBasics?: unknown } };
+    };
+    expect(persisted.payloadJson.payload.planBasics).toEqual(result.assemble.planBasics);
+  });
+
+  it("leaves the persisted payload's planBasics undefined when it wasn't derived", async () => {
+    await runAssemble({
+      importId: "imp9", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      hasSpouse: false,
+      taxReturn: null,
+    });
+
+    const persisted = setSpy.mock.calls[0][0] as {
+      payloadJson: { payload: { planBasics?: unknown } };
+    };
+    expect(persisted.payloadJson.payload.planBasics).toBeUndefined();
+  });
 });
