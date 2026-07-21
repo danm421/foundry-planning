@@ -245,3 +245,22 @@ tests:
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
+  # Plan builder. `build_plan` exists in BOTH tool sets; the global variant is the
+  # new-prospect path (mints the client), so this case runs in global mode and must
+  # halt at HITL. `get_plan_status` is client-scoped ONLY (not in the global set),
+  # so its case stays in client mode and carries an import id the tool can take.
+  - vars:
+      message: "Build a financial plan for a new prospect, the Nguyen household — I'll upload their statements."
+      mode: global
+      expectTool: build_plan
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite
+  - vars:
+      message: "What still needs answering on the plan I'm building? The import id is imp_eval_1."
+      expectTool: get_plan_status
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
