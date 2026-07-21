@@ -18,7 +18,7 @@ import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/ty
 import type { AssembleAssumption, AssemblePlanBasics } from "@/lib/imports/assemble/types";
 import { emptyPlanBasics } from "@/lib/imports/assemble/plan-basics";
 import type { CommitTab } from "@/lib/imports/commit/types";
-import { ALWAYS_REQUIRED_TABS, requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
+import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
@@ -99,23 +99,6 @@ const TAB_TO_COMMIT: Record<Exclude<WizardTabId, "summary">, CommitTab[]> = {
   wills: ["wills"],
   entities: ["entities"],
 };
-
-/**
- * Wizard tabs that are always present and never row-counted — any tab whose
- * CommitTab mapping overlaps required-tabs.ts's ALWAYS_REQUIRED_TABS, the
- * single source of truth for "this category is mandatory regardless of what
- * the documents contained" (Task 8's `["plan-basics"]`). Deriving this once
- * here — rather than hardcoding `=== "plan-basics"` at each call site — means
- * a future always-present tab only has to be added to ALWAYS_REQUIRED_TABS
- * and picks up the tabs-order seeding, the count-hiding, and the summary
- * badge for free.
- */
-const ALWAYS_PRESENT_TABS = (Object.keys(TAB_TO_COMMIT) as Exclude<WizardTabId, "summary">[])
-  .filter((tab) => TAB_TO_COMMIT[tab].some((ct) => ALWAYS_REQUIRED_TABS.includes(ct)));
-
-function isAlwaysPresentTab(tab: WizardTabId): boolean {
-  return (ALWAYS_PRESENT_TABS as WizardTabId[]).includes(tab);
-}
 
 const TAB_LABEL: Record<WizardTabId, string> = {
   "plan-basics": "Plan basics",
@@ -292,7 +275,7 @@ export default function ReviewWizard({
   }, [canonical]);
 
   const tabs: WizardTabId[] = useMemo(() => {
-    const t: WizardTabId[] = [...ALWAYS_PRESENT_TABS];
+    const t: WizardTabId[] = ["plan-basics"];
     if (primary || spouse || dependents.length > 0) t.push("family");
     if (accounts.length > 0) t.push("accounts");
     if (incomes.length > 0) t.push("incomes");
@@ -419,11 +402,11 @@ export default function ReviewWizard({
   );
 
   const tabCount = (tab: WizardTabId): number => {
-    // Not row-driven — there's nothing to count. The tab strip and summary
-    // list both hide the count badge for these instead of showing a
-    // misleading "0".
-    if (isAlwaysPresentTab(tab)) return 0;
     switch (tab) {
+      // Not row-driven — there's nothing to count. The tab strip and summary
+      // list both hide the count badge for this instead of showing a
+      // misleading "0".
+      case "plan-basics": return 0;
       case "family":
         return (primary ? 1 : 0) + (spouse ? 1 : 0) + dependents.length;
       case "accounts": return accounts.length;
@@ -434,10 +417,6 @@ export default function ReviewWizard({
       case "wills": return wills.length;
       case "entities": return entities.length;
       case "summary": return 0;
-      // Unreachable at runtime (handled by the early return above) — TS can't
-      // narrow on isAlwaysPresentTab's runtime check, so every always-present
-      // tab (e.g. "plan-basics") still needs a path here to type-check.
-      default: return 0;
     }
   };
 
@@ -712,7 +691,7 @@ function TabStrip({ tabs, currentTab, committingTab, onSelect, committed, count 
             }`}
           >
             <span>{TAB_LABEL[t]}</span>
-            {t !== "summary" && !isAlwaysPresentTab(t) && (
+            {t !== "summary" && t !== "plan-basics" && (
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] ${
                   isCurrent ? "bg-black/20" : "bg-black/10"
@@ -758,7 +737,7 @@ function SummaryStep({
           <li key={t} className="flex items-center justify-between px-3 py-2 text-sm">
             <div className="flex items-center gap-3">
               <span className="text-ink-2">{TAB_LABEL[t]}</span>
-              {!isAlwaysPresentTab(t) && (
+              {t !== "plan-basics" && (
                 <span className="rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-3">
                   {tabCount(t)}
                 </span>

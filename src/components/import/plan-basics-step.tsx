@@ -136,13 +136,18 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
             <NumberField id="lifeExpectancy" label="Life expectancy" field={value.lifeExpectancy}
               onSet={(v) => set("lifeExpectancy", v)} />
 
-            {hasSpouse && value.spouseRetirementAge && (
+            {hasSpouse && (
               <NumberField id="spouseRetirementAge" label="Spouse retirement age"
-                field={value.spouseRetirementAge} onSet={(v) => set("spouseRetirementAge", v)} />
+                // Absent (not just blank) on an import that predates this
+                // feature — fall back to an unchipped blank field rather
+                // than hiding it: blank is a valid state, absent is not.
+                field={value.spouseRetirementAge ?? { value: null, provenance: "derived" }}
+                onSet={(v) => set("spouseRetirementAge", v)} />
             )}
-            {hasSpouse && value.spouseLifeExpectancy && (
+            {hasSpouse && (
               <NumberField id="spouseLifeExpectancy" label="Spouse life expectancy"
-                field={value.spouseLifeExpectancy} onSet={(v) => set("spouseLifeExpectancy", v)} />
+                field={value.spouseLifeExpectancy ?? { value: null, provenance: "derived" }}
+                onSet={(v) => set("spouseLifeExpectancy", v)} />
             )}
           </div>
         </div>

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import PlanBasicsStep from "../plan-basics-step";
+import { emptyPlanBasics } from "@/lib/imports/assemble/plan-basics";
 import type { AssemblePlanBasics } from "@/lib/imports/assemble/types";
 
 function basics(over: Partial<AssemblePlanBasics> = {}): AssemblePlanBasics {
@@ -72,5 +73,21 @@ describe("PlanBasicsStep", () => {
     const v = basics({ currentLivingSpending: { value: null, provenance: "derived" } });
     render(<PlanBasicsStep value={v} hasSpouse={false} onChange={vi.fn()} />);
     expect((screen.getByLabelText(/current living spending/i) as HTMLInputElement).value).toBe("");
+  });
+
+  it("renders emptyPlanBasics() — the fallback for a pre-feature import — as blank and unchipped", () => {
+    render(<PlanBasicsStep value={emptyPlanBasics()} hasSpouse={false} onChange={vi.fn()} />);
+    expect((screen.getByLabelText(/retirement age/i) as HTMLInputElement).value).toBe("");
+    expect(screen.queryAllByTestId("assumed-chip").length).toBe(0);
+  });
+
+  it("gives a married household with fully-absent planBasics an empty, editable spouse retirement age field", () => {
+    // emptyPlanBasics() leaves spouseRetirementAge/spouseLifeExpectancy
+    // undefined (not blank) — a married household must still get an
+    // editable field, not an absent one.
+    render(<PlanBasicsStep value={emptyPlanBasics()} hasSpouse onChange={vi.fn()} />);
+    const input = screen.getByLabelText(/spouse retirement age/i) as HTMLInputElement;
+    expect(input.value).toBe("");
+    fireEvent.change(input, { target: { value: "66" } });
   });
 });

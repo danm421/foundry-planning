@@ -158,6 +158,9 @@ describe("runAssemble planBasics", () => {
     const persisted = setSpy.mock.calls[0][0] as {
       payloadJson: { payload: { planBasics?: unknown } };
     };
+    // Guard against both sides being `undefined`: if derivePlanBasics ever
+    // stopped firing for this fixture, toEqual alone would still pass.
+    expect(persisted.payloadJson.payload.planBasics).toBeDefined();
     expect(persisted.payloadJson.payload.planBasics).toEqual(result.assemble.planBasics);
   });
 
