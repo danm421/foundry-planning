@@ -400,6 +400,14 @@ export function ForgePanel({
     ]);
     const result = await runPlanBuild({ clientId: target.clientId, importId: target.importId, files });
     if (!result) return; // errorMessage bubble already shown by the hook
+    // One build per build_plan proposal: clear planBuild now that this build
+    // has run so a LATER attach+send in the same thread falls through to the
+    // normal import branch instead of re-hijacking every subsequent file-send
+    // into this already-reviewed import. Safe to clear here — the
+    // lastToolRender effect (above) is keyed only on `lastToolRender` and
+    // guarded by handledPlanBuildRef (left untouched), so clearing planBuild
+    // cannot make it re-fire.
+    setPlanBuild(null);
     setPlanResult(result);
     setPendingImportId(result.importId);
     // The attachment alone is a valid turn, so `prompt` is often empty. The

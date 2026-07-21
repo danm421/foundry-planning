@@ -237,3 +237,91 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// FIX 4 (whole-branch review): planBuild was only ever reset by newChat()/
+// selectThread(), so once a build completed, EVERY later attach+send in the
+// same thread re-routed into onSend's plan-build branch (checked before the
+// normal import branch) — hijacking a plain "attach one more statement"
+// import into the already-reviewed import and silently discarding any
+// review-wizard edits. Mounted in CLIENT mode (clientId set) because the
+// normal-import branch this bug makes unreachable is client-only.
+// ---------------------------------------------------------------------------
+describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () => {
+  beforeEach(() => {
+    mockStreamState = makeStreamState();
+    importMocks.runImport.mockClear();
+    importMocks.runPlanBuild.mockClear();
+    importMocks.runPlanBuild.mockResolvedValue(null);
+    importMocks.runImport.mockResolvedValue(null);
+    importMocks.submitPlanAnswers.mockClear();
+  });
+
+  function clientBuildPlanFrame(importId: string): Extract<UseForgeStreamResult["lastToolRender"], { name: string }> {
+    return {
+      type: "tool_render",
+      name: "build_plan",
+      status: "complete",
+      data: { clientId: "c1", importId, mode: "existing" },
+    };
+  }
+
+  it("after a completed plan build, a subsequent attach+send calls runImport (not runPlanBuild) — and the stale-frame guard still holds", async () => {
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValue({
+      importId: "imp_1",
+      clientId: "c1",
+      reviewPath: "/clients/c1/details/import/imp_1",
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      warnings: [],
+    });
+    importMocks.runImport.mockResolvedValue({
+      importId: "imp_2",
+      summary: { extract: { succeeded: 1, failed: 0 }, match: { exact: 0, fuzzy: 0, new: 1 } },
+      warnings: [],
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const { rerender } = render(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+
+    // build_plan frame arrives with no files attached yet — records the
+    // target only, no build kicks off.
+    const frame1 = clientBuildPlanFrame("imp_1");
+    mockStreamState = makeStreamState({ lastToolRender: frame1, send });
+    await act(async () => {
+      rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    });
+    expect(importMocks.runPlanBuild).not.toHaveBeenCalled();
+
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    const clickSend = async () => {
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Send message"));
+      });
+    };
+
+    // First attach+send: onSend's plan-build branch fires.
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    await clickSend();
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+    expect(importMocks.runImport).not.toHaveBeenCalled();
+
+    // Second attach+send in the SAME thread: planBuild must now be cleared,
+    // so this routes through the normal import branch instead of hijacking
+    // another file into the already-reviewed import.
+    fireEvent.change(fileInput, { target: { files: [new File(["y"], "stmt2.pdf")] } });
+    await clickSend();
+    expect(importMocks.runImport).toHaveBeenCalledTimes(1);
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1); // still just once
+
+    // The stale-frame guard (handledPlanBuildRef) still holds: the SAME
+    // frame object (never cleared by the hook) re-appearing on a later
+    // render must NOT re-trigger a build, even though planBuild was cleared
+    // by the fix above.
+    mockStreamState = makeStreamState({ lastToolRender: frame1, send });
+    await act(async () => {
+      rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    });
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+  });
+});
