@@ -265,7 +265,21 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       updatedAt: new Date(),
     };
     if (payloadJson !== undefined) {
-      updates.payloadJson = payloadJson as Record<string, unknown>;
+      // Shallow-merge onto the EXISTING column instead of replacing it
+      // wholesale: `payloadJson` holds three independent keys —
+      // `fileResults` / `payload` / `assemble` — and a caller sending one
+      // (e.g. the review wizard's `{ payload: latest }`) means to replace
+      // that key, not erase the others. `imp` is already loaded above for
+      // authz, so this reuses that row instead of a second query. Fixes both
+      // the `assemble` state getting wiped by the first tab commit AND the
+      // pre-existing `fileResults` loss from the same wholesale replace.
+      const existingPayloadJson = isPlainObject(imp.payloadJson)
+        ? imp.payloadJson
+        : {};
+      updates.payloadJson = {
+        ...existingPayloadJson,
+        ...payloadJson,
+      } as Record<string, unknown>;
     }
     if (notes !== undefined) {
       updates.notes = typeof notes === "string" ? notes : null;
