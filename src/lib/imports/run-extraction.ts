@@ -11,6 +11,7 @@ import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import { downloadImportFile } from "@/lib/imports/blob";
 import { summarizeExtraction } from "@/lib/imports/extract-summary";
+import { bridgeTaxReturn } from "./tax-bridge";
 
 export interface RunExtractionArgs {
     importId: string;
@@ -108,6 +109,22 @@ export async function runImportExtraction(
                 extractHoldings,
                 comprehensive,
             );
+
+            // A tax return also goes to the tax_returns store — the generic
+            // extractor has no tax block, so plan-basics derivation would
+            // otherwise have nothing to read.
+            if (result.documentType === "tax_return") {
+                const bridged = await bridgeTaxReturn({
+                    buffer,
+                    filename: file.originalFilename,
+                    clientId,
+                    kind: file.detectedKind as UploadKind,
+                    model,
+                });
+                if (!bridged.ok && bridged.warning) {
+                    result.warnings.push(bridged.warning);
+                }
+            }
 
             await db
                 .update(clientImportExtractions)
