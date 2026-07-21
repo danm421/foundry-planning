@@ -2,14 +2,15 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
 vi.mock("../../guards", () => ({ assertClientReadable: vi.fn(async () => {}) }));
-const { row } = vi.hoisted(() => ({
+const { row, state } = vi.hoisted(() => ({
   row: { status: "review", payloadJson: {} as unknown },
+  state: { found: true },
 }));
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ limit: vi.fn(async () => [row]) })),
+        where: vi.fn(() => ({ limit: vi.fn(async () => (state.found ? [row] : [])) })),
       })),
     })),
   },
@@ -43,5 +44,12 @@ describe("get_plan_status tool", () => {
     expect(out.unanswered.map((q: { id: string }) => q.id)).toEqual(["q:retirement_age"]);
     expect(out.reviewPath).toBe("/clients/c1/details/import/imp1");
     expect(out.status).toBe("review");
+  });
+
+  it("returns a JSON error string, not a throw, when the import is out of scope", async () => {
+    state.found = false;
+    const out = JSON.parse(await buildPlanBuilderTools(TOOL_CTX)[0].invoke({ importId: "imp-other-client" }));
+    expect(out).toEqual({ error: "Import not found for this client." });
+    state.found = true;
   });
 });
