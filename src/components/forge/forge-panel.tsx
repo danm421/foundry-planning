@@ -21,8 +21,9 @@ import {
 } from "./actions";
 import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/navigate-allowlist";
 import { ConversationList } from "./conversation-list";
-import { useForgeImport, type ForgeImportResult } from "./use-forge-import";
+import { useForgeImport, type ForgeImportResult, type PlanBuildResult } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
+import { PlanQuestionsCard } from "./plan-questions-card";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -41,6 +42,8 @@ const PANEL_WIDTH = 420;
 const TOOL_LABELS: Record<string, string> = {
   run_monte_carlo: "Running a Monte Carlo simulation",
   run_projection: "Running the projection",
+  build_plan: "Starting the plan build",
+  get_plan_status: "Checking the plan build",
   client_briefing: "Reading the client overview",
   read_detail: "Reading the plan details",
   explain_report: "Reading the report data",
@@ -95,6 +98,7 @@ export function ForgePanel({
     messages,
     setMessages,
     toolStatus,
+    lastToolRender,
     isVerifying,
     pendingApproval,
     setPendingApproval,
@@ -133,6 +137,16 @@ export function ForgePanel({
   const [showTranscriptPaste, setShowTranscriptPaste] = useState(false);
   const [transcriptPasteText, setTranscriptPasteText] = useState("");
   const [importResult, setImportResult] = useState<ForgeImportResult | null>(null);
+  // Plan Builder (Phase 1): the client/import minted by a `build_plan` tool
+  // call, surfaced via the tool_render frame (see the lastToolRender effect
+  // below) — null until that frame lands.
+  const [planBuild, setPlanBuild] = useState<{ clientId: string; importId: string; mode: string } | null>(null);
+  const [planResult, setPlanResult] = useState<PlanBuildResult | null>(null);
+  const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
+  // importId already consumed from lastToolRender — guards against the stale
+  // frame (never cleared by the hook) re-triggering a build on a later turn
+  // or re-mount.
+  const handledPlanBuildRef = useRef<string | null>(null);
   // After the advisor resolves an approval, keep a read-only receipt of the
   // decision in the thread (instead of the card vanishing) until the next turn.
   // Reload-from-history receipts are deferred (needs loadConversationMessages to
@@ -140,12 +154,24 @@ export function ForgePanel({
   const [resolvedApproval, setResolvedApproval] = useState<
     (PendingApproval & { decisions: Record<string, "confirm" | "reject"> }) | null
   >(null);
-  const { status: importStatus, errorMessage: importError, runImport } = useForgeImport();
+  const {
+    status: importStatus,
+    errorMessage: importError,
+    runImport,
+    runPlanBuild,
+    submitPlanAnswers,
+  } = useForgeImport();
+  // Shared with the plan-build run (same underlying hook/status) — "assembling"
+  // only ever fires from runPlanBuild, the rest from either path.
   const importing =
     importStatus === "creating" ||
     importStatus === "uploading" ||
     importStatus === "extracting" ||
-    importStatus === "matching";
+    importStatus === "matching" ||
+    importStatus === "assembling";
+  // Client to attach files to: the client-mode clientId, or (global mode) the
+  // client a build_plan tool call just minted.
+  const attachTarget = clientId ?? planBuild?.clientId ?? null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
   // While an approval is pending the graph is checkpointed mid-interrupt; the
@@ -212,7 +238,8 @@ export function ForgePanel({
 
   // Custom-streaming seam: consume a pending in-app navigation. Re-check the
   // allowlist client-side (defense in depth — the server already gates emit).
-  // lastToolRender is intentionally NOT consumed yet: no renderer (plumbing only).
+  // lastToolRender now has one consumer (build_plan, below) — every other
+  // tool_render name is still unhandled plumbing.
   useEffect(() => {
     if (!pendingNavigate) return;
     const ok = NAVIGATE_ALLOWLIST_PREFIXES.some((p) => pendingNavigate.startsWith(p));
@@ -228,6 +255,42 @@ export function ForgePanel({
     setPendingWalkthrough(null);
     close();
   }, [pendingWalkthrough, walkthrough, setPendingWalkthrough, close]);
+
+  // Custom-streaming seam: consume a `build_plan` tool_render frame. Tool
+  // results go to the model, not the client — this is the only way the panel
+  // learns the clientId/importId a build_plan call just minted (client mode
+  // already knows its clientId; global mode does not until this frame lands).
+  useEffect(() => {
+    if (!lastToolRender) return;
+    if (lastToolRender.name !== "build_plan" || lastToolRender.status !== "complete") return;
+    const data = lastToolRender.data;
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      typeof (data as Record<string, unknown>).clientId !== "string" ||
+      typeof (data as Record<string, unknown>).importId !== "string" ||
+      typeof (data as Record<string, unknown>).mode !== "string"
+    ) {
+      return; // malformed frame — ignore rather than crash the panel
+    }
+    const pb = data as { clientId: string; importId: string; mode: string };
+    // lastToolRender is never cleared by the hook, so it stays set across
+    // turns/re-renders — guard so a stale frame never re-triggers a build
+    // (e.g. on a later unrelated turn, or a re-mount).
+    if (handledPlanBuildRef.current === pb.importId) return;
+    handledPlanBuildRef.current = pb.importId;
+    setPlanBuild({ clientId: pb.clientId, importId: pb.importId, mode: pb.mode });
+    // If the advisor had already attached files before the tool finished,
+    // kick off the build immediately rather than waiting for another Send.
+    if (attached.length > 0) {
+      void runPlanBuildTurn({ clientId: pb.clientId, importId: pb.importId }, attached, input.trim());
+    }
+    // Intentionally keyed only on lastToolRender: attached/input/runPlanBuildTurn
+    // are read as of the render where the frame arrives (the frame fires once
+    // per build), not re-triggered by later keystrokes/attach changes — those
+    // go through onSend's own planBuild branch instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastToolRender]);
 
   // Click handler for a page-citation chip. Re-check the allowlist client-side
   // (defence in depth — the server already gated the emit) before routing.
@@ -255,6 +318,10 @@ export function ForgePanel({
     setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
+    setPlanBuild(null);
+    setPlanResult(null);
+    setPlanQuestionsDismissed(false);
+    handledPlanBuildRef.current = null;
     setInput("");
     resetTranscriptState();
     setHistoryOverride(null);
@@ -299,6 +366,10 @@ export function ForgePanel({
     setResolvedApproval(null);
     setPendingImportId(undefined);
     setImportResult(null);
+    setPlanBuild(null);
+    setPlanResult(null);
+    setPlanQuestionsDismissed(false);
+    handledPlanBuildRef.current = null;
     resetTranscriptState();
     try {
       const { messages: loaded, approval } = await loadConversationMessages(id);
@@ -310,10 +381,75 @@ export function ForgePanel({
     }
   }
 
+  // Shared by onSend's plan-build branch and the lastToolRender effect (files
+  // already attached when the build_plan frame lands). Snapshots `files`,
+  // clears the composer, shows the user's turn immediately, runs the
+  // upload→extract→assemble pipeline, then fires one chat turn so Forge
+  // narrates what it found (mirrors the existing import branch below).
+  async function runPlanBuildTurn(
+    target: { clientId: string; importId: string },
+    files: File[],
+    prompt: string,
+  ) {
+    setAttached([]);
+    setInput("");
+    setPlanResult(null); // clear any prior summary before a new run
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: prompt, attachments: files.map((f) => f.name) },
+    ]);
+    const result = await runPlanBuild({ clientId: target.clientId, importId: target.importId, files });
+    if (!result) return; // errorMessage bubble already shown by the hook
+    setPlanResult(result);
+    setPendingImportId(result.importId);
+    await send({
+      message: prompt,
+      scenarioId: scenarioId ?? "base",
+      conversationId,
+      currentPage: sectionKeyForPath(pathname),
+      pendingImportId: result.importId,
+      skipUserBubble: true,
+    });
+    refetchThreads();
+  }
+
+  // Answer submit for PlanQuestionsCard — updates planResult in place so
+  // answered questions disappear from the card, leaving the review link.
+  async function submitPlanAnswersHandler(answers: Record<string, string>) {
+    if (!planResult) return;
+    const res = await submitPlanAnswers({
+      clientId: planResult.clientId,
+      importId: planResult.importId,
+      answers,
+    });
+    if (!res) return; // failed submit — leave the card as-is; errorMessage already shown
+    setPlanResult((prev) =>
+      prev
+        ? {
+            ...prev,
+            assemble: {
+              ...prev.assemble,
+              questions: prev.assemble.questions.map((q) =>
+                answers[q.id] !== undefined ? { ...q, answer: answers[q.id] } : q,
+              ),
+            },
+          }
+        : prev,
+    );
+  }
+
   async function onSend() {
     if (locked) return;
     // A new turn supersedes the prior approval receipt.
     setResolvedApproval(null);
+    // Plan-build path: files attached + a build_plan tool call already minted
+    // the client/import to attach them to (client OR global mode).
+    if (attached.length > 0 && planBuild != null) {
+      const files = attached;
+      const prompt = input.trim();
+      await runPlanBuildTurn({ clientId: planBuild.clientId, importId: planBuild.importId }, files, prompt);
+      return;
+    }
     // Send-with-files: run the import pipeline, then immediately engage the agent.
     // Import is a client-only affordance; the attach button is hidden in global mode.
     if (attached.length > 0 && clientId != null) {
@@ -608,6 +744,7 @@ export function ForgePanel({
               {importStatus === "uploading" && "Uploading document…"}
               {importStatus === "extracting" && "Extracting data…"}
               {importStatus === "matching" && "Matching against existing accounts…"}
+              {importStatus === "assembling" && "Assembling the plan…"}
             </div>
           )}
 
@@ -617,6 +754,24 @@ export function ForgePanel({
               importId={importResult.importId}
               warnings={importResult.warnings}
             />
+          )}
+
+          {planResult && (
+            <div className="space-y-2">
+              {!planQuestionsDismissed && planResult.assemble.questions.some((q) => !q.answer) && (
+                <PlanQuestionsCard
+                  questions={planResult.assemble.questions.filter((q) => !q.answer)}
+                  busy={busy}
+                  onSubmit={(answers) => void submitPlanAnswersHandler(answers)}
+                  onSkip={() => setPlanQuestionsDismissed(true)}
+                />
+              )}
+              <ImportReviewLink
+                clientId={planResult.clientId}
+                importId={planResult.importId}
+                warnings={planResult.warnings}
+              />
+            </div>
           )}
 
           {importError && (
@@ -840,8 +995,9 @@ export function ForgePanel({
             }}
           />
           <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
-            {/* Attach button — client-only (imports require a client context). */}
-            {clientId != null && (
+            {/* Attach button — needs a client context: client mode always has
+                one; global mode gets one once a build_plan tool call mints it. */}
+            {attachTarget != null && (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -905,13 +1061,13 @@ export function ForgePanel({
               onPaste={(e) => {
                 if (locked) return;
                 // Screenshots first: image clipboard items become attachments
-                // (client context only — imports require a client). Renamed
+                // (needs a client context — see attachTarget above). Renamed
                 // because clipboard images all arrive as generic "image.png",
                 // which reads as noise in the review wizard.
                 const images = Array.from(e.clipboardData.files ?? []).filter(
                   (f) => f.type === "image/png" || f.type === "image/jpeg",
                 );
-                if (images.length > 0 && clientId != null) {
+                if (images.length > 0 && attachTarget != null) {
                   e.preventDefault();
                   setAttached((prev) => [
                     ...prev,

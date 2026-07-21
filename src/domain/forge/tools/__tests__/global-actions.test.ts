@@ -7,7 +7,10 @@ const { listCrmHouseholds, createCrmHousehold } = vi.hoisted(() => ({
 vi.mock("@/lib/crm/households", () => ({ listCrmHouseholds, getCrmHousehold: vi.fn(), createCrmHousehold }));
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: vi.fn(async () => "org_A") }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
-vi.mock("../../custom-events", () => ({ emitNavigate: vi.fn(async () => {}) }));
+vi.mock("../../custom-events", () => ({
+  emitNavigate: vi.fn(async () => {}),
+  emitToolRender: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/clients/create-client", () => ({ createClientForHousehold: vi.fn() }));
 vi.mock("@/lib/imports/plan-builder-core", () => ({ ensurePlanImport: vi.fn() }));
 

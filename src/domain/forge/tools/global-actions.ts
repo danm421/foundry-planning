@@ -14,7 +14,7 @@ import { listCrmHouseholds, getCrmHousehold, createCrmHousehold } from "@/lib/cr
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
-import { emitNavigate } from "../custom-events";
+import { emitNavigate, emitToolRender } from "../custom-events";
 import type { ForgeGlobalToolContext } from "../context";
 
 export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolContext): StructuredToolInterface[] {
@@ -202,6 +202,7 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
           firmId, actorId: ctx.userId,
           metadata: { tool: "build_plan", conversationId, clientId, mode: "new" },
         });
+        await emitToolRender("build_plan", "complete", { clientId, importId, mode: "new" });
         // NO emitNavigate — the advisor stays in Forge to drop files.
         return JSON.stringify({ clientId, importId, mode: "new" });
       } catch (e) {

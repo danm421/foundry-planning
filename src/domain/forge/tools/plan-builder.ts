@@ -16,6 +16,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 import { ensurePlanImport } from "@/lib/imports/plan-builder-core";
 import { recordAudit } from "@/lib/audit";
+import { emitToolRender } from "@/domain/forge/custom-events";
 import type { ForgeToolContext } from "../context";
 import { assertClientReadable } from "../guards";
 import { gateAccess } from "./scenario-writes";
@@ -87,6 +88,7 @@ export function buildPlanBuilderTools(
           clientId: ctx.clientId, firmId, actorId: ctx.userId,
           metadata: { tool: "build_plan", conversationId, mode: "existing" },
         });
+        await emitToolRender("build_plan", "complete", { clientId: ctx.clientId, importId, mode: "existing" });
         return JSON.stringify({ clientId: ctx.clientId, importId, mode: "existing" });
       } catch {
         return "Sorry — that action couldn't be completed.";
