@@ -17,6 +17,7 @@ import { commitFamilyMembers } from "./family-members";
 import { commitIncomes } from "./incomes";
 import { commitLiabilities } from "./liabilities";
 import { commitLifeInsurance } from "./life-insurance";
+import { commitPlanBasics } from "./plan-basics";
 import { commitWills } from "./wills";
 import {
   COMMIT_TABS,
@@ -112,6 +113,8 @@ async function dispatchTab(
   family: FamilyRoleIds | null,
 ): Promise<CommitResult> {
   switch (tab) {
+    case "plan-basics":
+      return commitPlanBasics(tx, payload, ctx);
     case "clients-identity":
       return commitClientsIdentity(tx, payload, ctx);
     case "family-members":

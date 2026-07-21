@@ -33,17 +33,18 @@ function emptyPayload(): ImportPayload {
 
 describe("requiredCommitTabs", () => {
   it("requires nothing extra when no category carries rows", () => {
-    expect(requiredCommitTabs(NOTHING)).toEqual([]);
+    expect(requiredCommitTabs(NOTHING)).toEqual(["plan-basics"]);
   });
 
   it("requires only the categories that carry rows", () => {
     expect(
       requiredCommitTabs({ ...NOTHING, accounts: true, incomes: true }),
-    ).toEqual(["accounts", "incomes"]);
+    ).toEqual(["plan-basics", "accounts", "incomes"]);
   });
 
   it("maps the family category to BOTH of its commit tabs", () => {
     expect(requiredCommitTabs({ ...NOTHING, family: true })).toEqual([
+      "plan-basics",
       "clients-identity",
       "family-members",
     ]);
@@ -51,6 +52,7 @@ describe("requiredCommitTabs", () => {
 
   it("maps lifePolicies to the life-insurance commit tab", () => {
     expect(requiredCommitTabs({ ...NOTHING, lifePolicies: true })).toEqual([
+      "plan-basics",
       "life-insurance",
     ]);
   });
@@ -67,6 +69,7 @@ describe("requiredCommitTabs", () => {
       entities: true,
     });
     expect(all).toEqual([
+      "plan-basics",
       "clients-identity",
       "family-members",
       "accounts",
@@ -103,6 +106,7 @@ describe("presenceFromPayload", () => {
     p.incomes = [{} as ImportPayload["incomes"][number]];
     p.entities = [{} as ImportPayload["entities"][number]];
     expect(requiredCommitTabs(presenceFromPayload(p))).toEqual([
+      "plan-basics",
       "accounts",
       "incomes",
       "entities",

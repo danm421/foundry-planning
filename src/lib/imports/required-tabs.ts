@@ -27,7 +27,7 @@ export interface CategoryPresence {
  * Task 8 adds "plan-basics" here: it is not row-driven, it is the fixed set
  * of values every plan needs.
  */
-export const ALWAYS_REQUIRED_TABS: readonly CommitTab[] = [];
+export const ALWAYS_REQUIRED_TABS: readonly CommitTab[] = ["plan-basics"];
 
 /** One presence flag → the commit tabs it makes mandatory. */
 const PRESENCE_TO_TABS: Record<keyof CategoryPresence, CommitTab[]> = {

@@ -7,12 +7,14 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * The set of tab identifiers used by the import wizard. Each maps to one
  * commit module. Order in the union is the canonical apply order when the
- * route handler commits multiple tabs in a single request — clients-identity
- * first (so family-members can read primary/spouse names), then family-members
- * (so accounts/etc. can resolve owner -> family member id), then everything
- * else.
+ * route handler commits multiple tabs in a single request — plan-basics
+ * first (it writes the client row and nothing depends on it), then
+ * clients-identity (so family-members can read primary/spouse names), then
+ * family-members (so accounts/etc. can resolve owner -> family member id),
+ * then everything else.
  */
 export const COMMIT_TABS = [
+  "plan-basics",
   "clients-identity",
   "family-members",
   "accounts",

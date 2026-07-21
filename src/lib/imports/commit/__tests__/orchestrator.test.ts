@@ -30,7 +30,7 @@ describe("markTabsCommitted completeness (regression: unreachable 'committed')",
     };
 
     const required = requiredCommitTabs(presenceFromPayload(payload));
-    expect(required).toEqual(["accounts", "incomes", "entities"]);
+    expect(required).toEqual(["plan-basics", "accounts", "incomes", "entities"]);
 
     const fake = makeFakeTx();
     // No prior commits recorded for this import.
@@ -52,7 +52,7 @@ describe("markTabsCommitted completeness (regression: unreachable 'committed')",
     };
 
     const required = requiredCommitTabs(presenceFromPayload(payload));
-    expect(required).toEqual(["accounts", "incomes"]);
+    expect(required).toEqual(["plan-basics", "accounts", "incomes"]);
 
     const fake = makeFakeTx();
     fake.setSelectResult("client_imports", []);
