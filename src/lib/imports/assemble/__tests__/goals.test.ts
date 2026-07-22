@@ -90,4 +90,38 @@ describe("deriveGoals — education", () => {
     });
     expect(deriveGoals({ payload }).education[0].id).toBe(deriveGoals({ payload }).education[0].id);
   });
+
+  it("resolves the sole dependent as a fallback, honestly marked as inferred (not a document match)", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "College Fund", subType: "529", category: "education_savings" }],
+        dependents: [{ firstName: "Zoe", dateOfBirth: "2011-03-01" }],
+      }),
+    });
+
+    const g = goals.education[0];
+    expect(g.forFamilyMemberName.value).toBe("Zoe");
+    expect(g.forFamilyMemberName.provenance).toBe("derived");
+    expect(g.forFamilyMemberName.reason).toBe("Only dependent on file.");
+    expect(g.name.provenance).toBe("derived");
+    expect(g.name.reason).toBe("Only dependent on file.");
+  });
+
+  it("de-dupes ids when two 529s slugify to the same name", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [
+          { name: "529 Plan", subType: "529", category: "education_savings" },
+          { name: "529 Plan", subType: "529", category: "education_savings" },
+        ],
+        dependents: [],
+      }),
+    });
+
+    expect(goals.education).toHaveLength(2);
+    const [first, second] = goals.education;
+    expect(first.id).not.toBe(second.id);
+    expect(first.id).toBe("edu:529-plan");
+    expect(second.id).toBe("edu:529-plan-2");
+  });
 });

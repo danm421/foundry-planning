@@ -20,11 +20,27 @@ function goalId(accountName: string): string {
   return `edu:${accountName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 }
 
+/** Reason stamped on the sole-dependent fallback — an inference by elimination, not a document match. */
+const SOLE_DEPENDENT_REASON = "Only dependent on file.";
+
+interface StudentMatch {
+  firstName: string;
+  dateOfBirth?: string;
+  /** How the match was made — see `matchStudent` doc. */
+  provenance: "document" | "derived";
+  /** Set (and required by `PlanBasicsField`) when `provenance` is "derived". */
+  reason?: string;
+}
+
 /**
  * The student a 529 funds. Extraction captures no beneficiary field at all, so
  * this is a proposal from the account name, always shown and always editable:
- *   1. a dependent whose first name appears in the account name, else
- *   2. the sole dependent, if there is exactly one, else
+ *   1. a dependent whose first name appears in the account name — a real
+ *      document signal, `provenance: "document"`, else
+ *   2. the sole dependent, when there is exactly one and no name matched —
+ *      an inference by elimination, NOT something the document actually
+ *      says (a grandchild's 529, a step-relationship could be wrong), so
+ *      `provenance: "derived"` with an honest reason, else
  *   3. blank — the advisor picks.
  * Guessing among several unnamed dependents would attach a goal to the wrong
  * child, which is worse than asking.
@@ -32,16 +48,30 @@ function goalId(accountName: string): string {
 function matchStudent(
   accountName: string,
   dependents: ImportPayload["dependents"],
-): { firstName: string; dateOfBirth?: string } | null {
+): StudentMatch | null {
   const haystack = accountName.toLowerCase();
   const named = dependents.find(
     (d) => d.firstName && d.firstName.length >= 2 && haystack.includes(d.firstName.toLowerCase()),
   );
-  if (named) return { firstName: named.firstName, dateOfBirth: named.dateOfBirth };
+  if (named) {
+    return { firstName: named.firstName, dateOfBirth: named.dateOfBirth, provenance: "document" };
+  }
   if (dependents.length === 1 && dependents[0].firstName) {
-    return { firstName: dependents[0].firstName, dateOfBirth: dependents[0].dateOfBirth };
+    return {
+      firstName: dependents[0].firstName,
+      dateOfBirth: dependents[0].dateOfBirth,
+      provenance: "derived",
+      reason: SOLE_DEPENDENT_REASON,
+    };
   }
   return null;
+}
+
+/** Builds a `name`/`forFamilyMemberName`-shaped field carrying the match's real provenance. */
+function studentField(student: StudentMatch, value: string): PlanBasicsField<string> {
+  return student.provenance === "derived"
+    ? { value, provenance: "derived", reason: student.reason ?? SOLE_DEPENDENT_REASON }
+    : { value, provenance: "document" };
 }
 
 /**
@@ -60,6 +90,12 @@ function matchStudent(
 export function deriveGoals(input: DeriveGoalsInput): AssembleGoals {
   const { payload } = input;
 
+  // De-dupe ids within this pass — two 529s that slugify identically (e.g. two
+  // generic "529 Plan" rows) must not collide; downstream (Tasks 8/10/11)
+  // indexes by `id` for React keys and commit-time lookup. Indexed by payload
+  // order, never Math.random, so it stays deterministic.
+  const idOccurrences = new Map<string, number>();
+
   const education: EducationGoal[] = payload.accounts
     .filter((a) => a.subType === "529")
     .map((account) => {
@@ -67,16 +103,20 @@ export function deriveGoals(input: DeriveGoalsInput): AssembleGoals {
       const birthYear = birthYearFromDob(student?.dateOfBirth);
       const startYear = yearForAge(birthYear, EDUCATION_START_AGE);
 
+      const baseId = goalId(account.name ?? "529");
+      const occurrence = (idOccurrences.get(baseId) ?? 0) + 1;
+      idOccurrences.set(baseId, occurrence);
+
       return {
-        id: goalId(account.name ?? "529"),
-        name: {
-          value: student ? `${student.firstName} — College` : "Education Goal",
-          provenance: student ? "document" : "derived",
-          ...(student ? {} : { reason: "Named generically; no student identified on the account." }),
-        },
-        forFamilyMemberName: student
-          ? { value: student.firstName, provenance: "document" as const }
-          : blank<string>(),
+        id: occurrence === 1 ? baseId : `${baseId}-${occurrence}`,
+        name: student
+          ? studentField(student, `${student.firstName} — College`)
+          : {
+              value: "Education Goal",
+              provenance: "derived",
+              reason: "Named generically; no student identified on the account.",
+            },
+        forFamilyMemberName: student ? studentField(student, student.firstName) : blank<string>(),
         annualAmount: blank<number>(),
         startYear:
           startYear != null
