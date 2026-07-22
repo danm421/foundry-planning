@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 
+import { db } from "@/db";
 import { expenseDedicatedAccounts } from "@/db/schema";
-import type { Tx } from "@/lib/imports/commit/types";
+
+// Declared locally, matching the other `lib/clients` write modules. Importing
+// the identical alias from `lib/imports/commit/types` would point a dependency
+// edge backwards — `lib/imports` already depends on `lib/clients`, not the reverse.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Replace an expense's dedicated-funding accounts, in draw order.
