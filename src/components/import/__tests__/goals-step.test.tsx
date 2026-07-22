@@ -1,9 +1,47 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import GoalsStep from "../goals-step";
+import { SUB_TYPE_BY_CATEGORY } from "@/components/forms/asset-transaction-leg-model";
 import { emptyGoals } from "@/lib/imports/assemble/goals";
-import type { EducationGoal } from "@/lib/imports/assemble/types";
+import type { AssembleGoals, EducationGoal } from "@/lib/imports/assemble/types";
+
+const REAL_ESTATE_SUBTYPES: string[] = SUB_TYPE_BY_CATEGORY.real_estate;
+
+/**
+ * `GoalsStep` is controlled (no internal copy of `value`), so a multi-step
+ * interaction (add a purchase, THEN act on it) needs somewhere to hold state
+ * between renders. This wrapper is that somewhere — `onValueChange` lets a
+ * test read the latest committed value without re-deriving it from mock call
+ * arguments across two renders.
+ */
+function ControlledGoalsStep({
+  initial,
+  onValueChange,
+  ...rest
+}: Omit<React.ComponentProps<typeof GoalsStep>, "value" | "onChange"> & {
+  initial: AssembleGoals;
+  onValueChange?: (next: AssembleGoals) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    // `{...rest}` comes FIRST: `rest` carries whatever `onChange` the caller's
+    // spread (e.g. `{...baseProps}`, whose `onChange` is an inert `vi.fn()`)
+    // included, and an explicit prop after a spread always wins in JSX — put
+    // the spread after instead and that inert mock silently replaces this
+    // wrapper's real state-updating `onChange`, and no interaction ever
+    // reaches the DOM on the next render.
+    <GoalsStep
+      {...rest}
+      value={value}
+      onChange={(next) => {
+        setValue(next);
+        onValueChange?.(next);
+      }}
+    />
+  );
+}
 
 /**
  * Spreads over a complete EducationGoal so each test overrides only the
@@ -108,5 +146,142 @@ describe("GoalsStep", () => {
     render(<GoalsStep value={value} {...baseProps} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: /remove/i }));
     expect(onChange.mock.calls.at(-1)![0].education).toHaveLength(0);
+  });
+});
+
+/**
+ * FIX 1 (Critical) — a planned purchase is ALWAYS a home (`HomePurchaseGoal`
+ * has no `assetCategory` field; `toBuyLeg` hardcodes `assetCategory:
+ * "real_estate"` every render). The shared `BuyLegEditor`'s Category select
+ * is otherwise unconditionally live for every `AssetCategory` — reachable by
+ * any advisor who clicks the dropdown once, and it corrupts state silently:
+ * the category select LOOKS reset to Real Estate on the next render (because
+ * `toBuyLeg` overwrites it), but `assetSubType` is left holding a value from
+ * the category the advisor picked, which is outside real_estate's own
+ * subtype list and gets committed as-is by `commit/goals.ts`.
+ */
+describe("GoalsStep — planned-purchase category lock (FIX 1)", () => {
+  it("offers no category besides Real Estate for a planned purchase", () => {
+    render(<ControlledGoalsStep initial={emptyGoals()} {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /add planned purchase/i }));
+    const categorySelect = screen.getByLabelText(/asset category/i) as HTMLSelectElement;
+    const optionLabels = within(categorySelect)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(optionLabels).toEqual(["Real Estate"]);
+  });
+
+  it("never lets assetSubType end up outside real_estate's list, even if the category select is forced", () => {
+    let latest: AssembleGoals = emptyGoals();
+    render(
+      <ControlledGoalsStep
+        initial={emptyGoals()}
+        onValueChange={(v) => {
+          latest = v;
+        }}
+        {...baseProps}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add planned purchase/i }));
+    const categorySelect = screen.getByLabelText(/asset category/i) as HTMLSelectElement;
+    fireEvent.change(categorySelect, { target: { value: "business" } });
+    expect(REAL_ESTATE_SUBTYPES).toContain(latest.homePurchases[0].assetSubType);
+  });
+
+  it("never lets an assetCategory key land on home-purchase goal state", () => {
+    let latest: AssembleGoals = emptyGoals();
+    render(
+      <ControlledGoalsStep
+        initial={emptyGoals()}
+        onValueChange={(v) => {
+          latest = v;
+        }}
+        {...baseProps}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add planned purchase/i }));
+    const categorySelect = screen.getByLabelText(/asset category/i) as HTMLSelectElement;
+    fireEvent.change(categorySelect, { target: { value: "business" } });
+    expect(latest.homePurchases[0]).not.toHaveProperty("assetCategory");
+  });
+});
+
+/**
+ * FIX 2 (Important) — `payShortfallOutOfPocket`'s chip must stay a SIBLING of
+ * the checkbox's `<label>`, same rule `FieldLabel` documents: nesting it
+ * folds the reason prose into the checkbox's accessible name.
+ */
+describe("GoalsStep — shortfall checkbox chip placement (FIX 2)", () => {
+  it("keeps the checkbox's accessible name free of the Assumed reason text", () => {
+    const value = {
+      ...emptyGoals(),
+      education: [
+        educationGoalFixture({
+          payShortfallOutOfPocket: {
+            value: false,
+            provenance: "derived",
+            reason: "Any cost the 529 cannot cover is left as an unfunded shortfall until you say otherwise.",
+          },
+        }),
+      ],
+    };
+    render(<GoalsStep value={value} {...baseProps} />);
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Pay any shortfall from household cash",
+    });
+    expect(checkbox).toBeInTheDocument();
+    // The reason text is still on the page (inside the chip's tooltip) — it
+    // just must not be PART OF the checkbox's own accessible name.
+    expect(screen.getByText(/unfunded shortfall/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * FIX 3 (Important) — dedicated-529-funding had zero coverage. This feeds
+ * `commit/goals.ts`'s per-name FIFO queue (`commit/goals.ts:82-88`), which
+ * matches by trimmed/lowercased NAME, not id — pushing an id, or any string
+ * other than the account's exact `name`, silently breaks every dedicated
+ * funding link while every other test stays green.
+ */
+describe("GoalsStep — dedicated 529 funding (FIX 3)", () => {
+  it("adds the account's exact name (not its id) to dedicatedAccountNames when checked", () => {
+    const onChange = vi.fn();
+    const value = { ...emptyGoals(), education: [educationGoalFixture()] };
+    render(<GoalsStep value={value} {...baseProps} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Emma 529 Plan" }));
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.education[0].dedicatedAccountNames).toEqual(["Emma 529 Plan"]);
+  });
+
+  it("removes the name again when unchecked — a full toggle-on/toggle-off round trip", () => {
+    const onChange = vi.fn();
+    const checked = {
+      ...emptyGoals(),
+      education: [educationGoalFixture({ dedicatedAccountNames: ["Emma 529 Plan"] })],
+    };
+    render(<GoalsStep value={checked} {...baseProps} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Emma 529 Plan" }));
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.education[0].dedicatedAccountNames).toEqual([]);
+  });
+
+  it("preserves click order across two dedicated 529s", () => {
+    const onChange = vi.fn();
+    const twoAccounts = [
+      { id: "a1", name: "Emma 529 Plan" },
+      { id: "a2", name: "Jack 529 Plan" },
+    ];
+    const value = { ...emptyGoals(), education: [educationGoalFixture()] };
+    const { rerender } = render(
+      <GoalsStep value={value} {...baseProps} accountOptions={twoAccounts} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Jack 529 Plan" }));
+    let next = onChange.mock.calls.at(-1)![0];
+    rerender(
+      <GoalsStep value={next} {...baseProps} accountOptions={twoAccounts} onChange={onChange} />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Emma 529 Plan" }));
+    next = onChange.mock.calls.at(-1)![0];
+    expect(next.education[0].dedicatedAccountNames).toEqual(["Jack 529 Plan", "Emma 529 Plan"]);
   });
 });

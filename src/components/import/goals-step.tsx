@@ -63,6 +63,28 @@ function toBuyLeg(goal: HomePurchaseGoal): BuyLegDraft {
   return { ...rest, key: id, kind: "buy", assetCategory: "real_estate" };
 }
 
+/**
+ * Keys `BuyLegDraft` carries that don't exist on `HomePurchaseGoal` — most
+ * notably `assetCategory`, which `HomePurchaseGoal` has no field for (a
+ * planned purchase here is always a home; `toBuyLeg` hardcodes
+ * `assetCategory: "real_estate"` every render). `BuyLegEditor`'s own Category
+ * select is restricted to `["real_estate"]` below so this can't normally
+ * fire with anything else, but this filter is the belt to that select's
+ * suspenders: even if a patch somehow carried `assetCategory` (or any other
+ * `BuyLegDraft`-only key), it can never be spread onto goal state — the
+ * bare `as Partial<HomePurchaseGoal>` cast that used to sit at the one call
+ * site let exactly that through at runtime despite the type-level lie.
+ */
+const BUY_LEG_ONLY_KEYS = new Set<string>(["key", "recordId", "kind", "assetCategory"]);
+
+function toHomePurchasePatch(patch: Partial<BuyLegDraft>): Partial<HomePurchaseGoal> {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (!BUY_LEG_ONLY_KEYS.has(k)) clean[k] = v;
+  }
+  return clean as Partial<HomePurchaseGoal>;
+}
+
 function blankEducationGoal(id: string, currentYear: number): EducationGoal {
   const blank = <T,>(): PlanBasicsField<T> => ({ value: null, provenance: "stated" });
   return {
@@ -243,17 +265,22 @@ export default function GoalsStep({
                 </div>
               </div>
 
-              <label className="mt-3 flex items-center gap-2 text-xs text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={goal.payShortfallOutOfPocket.value ?? false}
-                  onChange={(e) =>
-                    setEducation(goal.id, { payShortfallOutOfPocket: stated(e.target.checked) })
-                  }
-                />
-                Pay any shortfall from household cash
+              <div className="mt-3 flex items-center gap-1.5">
+                {/* The chip stays OUTSIDE the <label>, same rule as
+                    `FieldLabel` above: nesting it would fold the reason
+                    prose into the checkbox's accessible name. */}
+                <label className="flex items-center gap-2 text-xs text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={goal.payShortfallOutOfPocket.value ?? false}
+                    onChange={(e) =>
+                      setEducation(goal.id, { payShortfallOutOfPocket: stated(e.target.checked) })
+                    }
+                  />
+                  Pay any shortfall from household cash
+                </label>
                 <AssumedChip assumption={chipFor(goal.payShortfallOutOfPocket)} />
-              </label>
+              </div>
 
               {accountOptions.length > 0 && (
                 <div className="mt-3">
@@ -321,10 +348,11 @@ export default function GoalsStep({
               <BuyLegEditor
                 idPrefix={`${purchase.id}-`}
                 leg={toBuyLeg(purchase)}
+                categories={["real_estate"]}
                 accounts={accountOptions.map((a) => ({
                   id: a.id, name: a.name, category: a.category ?? "cash", subType: a.subType ?? "checking",
                 }))}
-                onChange={(patch) => setPurchase(purchase.id, patch as Partial<HomePurchaseGoal>)}
+                onChange={(patch) => setPurchase(purchase.id, toHomePurchasePatch(patch))}
               />
             </div>
           ))}

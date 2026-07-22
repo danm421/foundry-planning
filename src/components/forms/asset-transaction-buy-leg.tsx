@@ -48,12 +48,26 @@ export interface BuyLegEditorProps {
    * existing single-instance callers are unaffected.
    */
   idPrefix?: string;
+  /**
+   * Restricts the Asset Category select to this list. Defaults to every
+   * category (all of `CATEGORY_LABELS`), so `add-asset-transaction-form.tsx`'s
+   * general-purpose dialog is completely unaffected. Pass a single-entry list
+   * (e.g. `["real_estate"]`) to lock a mounted instance to one category — the
+   * Goals import step does this because a planned purchase there is always a
+   * home and `HomePurchaseGoal` has no `assetCategory` field to hold anything
+   * else; without this restriction the select lets an advisor pick any
+   * category, and `toBuyLeg`'s hardcoded `assetCategory: "real_estate"` on
+   * the NEXT render papers over the select while leaving `assetSubType` set
+   * to a value from the wrong category's list.
+   */
+  categories?: AssetCategory[];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "" }: BuyLegEditorProps) {
+export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "", categories }: BuyLegEditorProps) {
   const fieldId = (name: string) => `${idPrefix}${name}`;
+  const categoryOptions = categories ?? (Object.keys(CATEGORY_LABELS) as AssetCategory[]);
   return (
     <div className="space-y-4">
       {/* Asset Name */}
@@ -82,11 +96,19 @@ export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "" }:
             value={leg.assetCategory}
             onChange={(e) => {
               const cat = e.target.value as AssetCategory;
-              onChange({ assetCategory: cat, assetSubType: SUB_TYPE_BY_CATEGORY[cat][0] });
+              const firstSubType = SUB_TYPE_BY_CATEGORY[cat]?.[0];
+              // A native <select> resets its value to "" (no matching option)
+              // rather than accepting an unrecognized one — reachable when
+              // `categories` restricts the rendered options and something
+              // still fires a change event with a value outside that list.
+              // Nothing to apply in that case; the select's own next render
+              // still reflects `leg.assetCategory` correctly.
+              if (firstSubType === undefined) return;
+              onChange({ assetCategory: cat, assetSubType: firstSubType });
             }}
             className={selectClassName}
           >
-            {(Object.keys(CATEGORY_LABELS) as AssetCategory[]).map((cat) => (
+            {categoryOptions.map((cat) => (
               <option key={cat} value={cat}>
                 {CATEGORY_LABELS[cat]}
               </option>
