@@ -95,7 +95,20 @@ export async function commitExpenses(
     // Folded into the reviewed total. Counted as `skipped`, the same channel
     // the deliberately-not-written fuzzy rows use — this is a decision, not a
     // failure, and the warning below says so in the commit result.
-    if (foldLivingRows && isSummedLivingRow(row, retirementSlotIds)) {
+    //
+    // F2: fold ONLY rows that would otherwise be INSERTED, plus rows linked to
+    // a seeded living slot (where folding is the entire point). A row that
+    // exactly matches an existing NON-SLOT DB row must still be updated —
+    // skipping it leaves the stale DB value in the engine's living sum
+    // alongside the reviewed total on the slot, which is a double count with
+    // extra steps.
+    const foldExistingId = getExistingId(row);
+    const isSlotLinked = foldExistingId != null && slotIds.has(foldExistingId);
+    if (
+      foldLivingRows &&
+      isSummedLivingRow(row, retirementSlotIds) &&
+      (kind === "new" || isSlotLinked)
+    ) {
       result.skipped += 1;
       folded += 1;
       continue;
