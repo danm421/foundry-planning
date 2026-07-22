@@ -506,8 +506,12 @@ export default function ReviewWizard({
    * dedicated funding — the 529 silently is never spent, which is the exact
    * defect this phase exists to fix.
    *
-   * Commit-result warnings are not surfaced in this UI, so a warning would be
-   * invisible. Blocking the click is the mitigation.
+   * Commit warnings ARE surfaced now (see `commitWarnings`), so this is no
+   * longer the only signal — but a warning arrives after the write, and
+   * un-doing a goal that landed without funding means editing the expense by
+   * hand. Blocking the click stays the mitigation; the warning is the backstop
+   * for the cases this guard cannot see (a renamed 529, an unresolved fuzzy
+   * row), which `GoalsStep` also flags before the click.
    */
   const goalsBlockedOnAccounts = useMemo(() => {
     if (currentTab !== "goals") return false;
