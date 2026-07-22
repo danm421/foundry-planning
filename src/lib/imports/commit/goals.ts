@@ -12,9 +12,11 @@ import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./t
  * CROSS-TAB REFERENCES RESOLVE BY QUERY, NOT BY ID REMAP. At assemble time the
  * funding 529 and the student are extracted rows with no DB id, so the goal
  * carries their NAMES. This module runs after `accounts` and `family-members`
- * in COMMIT_TABS and looks the ids up from rows those tabs already wrote —
- * exactly how `commitLiabilities` resolves a mortgage to its property via
- * `mortgage-link.ts`.
+ * in COMMIT_TABS and looks the ids up from rows those tabs already wrote — the
+ * same way `commitLiabilities` resolves a mortgage to its property via
+ * `mortgage-link.ts`, including scoping the candidate set by category BEFORE
+ * matching on name (`real_estate` there, `education_savings`/`529` here) so a
+ * same-named row of the wrong kind is never a match candidate at all.
  *
  * BLANK IS NOT COMMITTED. An education goal with no annual amount is skipped
  * rather than written at $0. A $0 education goal is the phase-2 "$0 spending"
@@ -34,6 +36,8 @@ export async function commitGoals(
     .select({
       id: accounts.id,
       name: accounts.name,
+      category: accounts.category,
+      subType: accounts.subType,
       beneficiaryFamilyMemberId: accounts.beneficiaryFamilyMemberId,
       beneficiaryName: accounts.beneficiaryName,
     })
@@ -44,6 +48,21 @@ export async function commitGoals(
   // be decided in application code rather than trusted to the SQL WHERE alone.
   const beneficiaryStateById = new Map(
     accountRows.map((a) => [a.id, { familyMemberId: a.beneficiaryFamilyMemberId, name: a.beneficiaryName }]),
+  );
+
+  // Education dedicated-funding names resolve ONLY against education accounts.
+  // `category === "education_savings"` is what Task 4 (commit 547234ef0)
+  // heals a subType:"529" row into on BOTH insert and update via
+  // `resolveAccountCategory` in `commit/accounts.ts`, so a 529 is already
+  // `education_savings` by the time this module runs (after the `accounts`
+  // tab, per COMMIT_TABS order). `subType === "529"` is kept as a fallback so
+  // a row that somehow escaped that heal still resolves. Unscoped, a checking
+  // account sharing a display name with a 529 (or a name reused after a
+  // rename) could resolve an education goal onto it — joining a non-education
+  // account into `expense_dedicated_accounts` and stamping a 529 beneficiary
+  // onto it.
+  const educationAccountRows = accountRows.filter(
+    (a) => a.category === "education_savings" || a.subType === "529",
   );
 
   // Name -> queue of matching account ids, consumed FIFO. A plain
@@ -61,7 +80,7 @@ export async function commitGoals(
   // correctly; the guarantee that matters — an account is claimed by at most
   // one goal — holds regardless of order.
   const nameQueues = new Map<string, string[]>();
-  for (const row of accountRows) {
+  for (const row of educationAccountRows) {
     const key = row.name.trim().toLowerCase();
     const queue = nameQueues.get(key);
     if (queue) queue.push(row.id);
@@ -216,6 +235,10 @@ export async function commitGoals(
       year,
       assetName: goal.assetName.trim() || name,
       assetCategory: "real_estate",
+      // `HomePurchaseGoal.assetSubType` is bare `string` (form state, not a
+      // provenance-wrapped field — see the type's doc comment), so this cast
+      // is sound only because the wizard populates it exclusively from the
+      // bounded `SUB_TYPE_BY_CATEGORY.real_estate` widget options.
       assetSubType: (goal.assetSubType || "primary_residence") as AccountSubType,
       purchasePrice: num(goal.purchasePrice),
       growthRate: num(goal.growthRate),

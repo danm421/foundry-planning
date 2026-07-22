@@ -100,7 +100,14 @@ describe("commitGoals — education", () => {
   it("writes an education expense with its 529 join row", async () => {
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-emma-529", name: "Emma 529 Plan", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      {
+        id: "acct-emma-529",
+        name: "Emma 529 Plan",
+        category: "education_savings",
+        subType: "529",
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: null,
+      },
     ]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
 
@@ -110,7 +117,7 @@ describe("commitGoals — education", () => {
       annualAmount: { value: 45000, provenance: "stated" },
       startYear: { value: 2028, provenance: "derived", reason: "..." },
       years: { value: 4, provenance: "derived", reason: "..." },
-      growthRate: { value: 0.05, provenance: "derived", reason: "..." },
+      growthRate: { value: 0.06, provenance: "derived", reason: "..." },
       payShortfallOutOfPocket: { value: true, provenance: "stated" },
       dedicatedAccountNames: ["Emma 529 Plan"],
     });
@@ -125,6 +132,7 @@ describe("commitGoals — education", () => {
       annualAmount: "45000",
       startYear: 2028,
       endYear: 2031, // start + years - 1
+      growthRate: "0.06",
       forFamilyMemberId: "fm-emma",
       payShortfallOutOfPocket: true,
       source: "extracted",
@@ -162,7 +170,14 @@ describe("commitGoals — education", () => {
   it("fills a null 529 beneficiary with the confirmed student", async () => {
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-emma-529", name: "Emma 529 Plan", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      {
+        id: "acct-emma-529",
+        name: "Emma 529 Plan",
+        category: "education_savings",
+        subType: "529",
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: null,
+      },
     ]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
     const payload = payloadWithEducationGoal({
@@ -186,6 +201,8 @@ describe("commitGoals — education", () => {
       {
         id: "acct-emma-529",
         name: "Emma 529 Plan",
+        category: "education_savings",
+        subType: "529",
         beneficiaryFamilyMemberId: "fm-noah", // set by someone else already
         beneficiaryName: null,
       },
@@ -203,6 +220,34 @@ describe("commitGoals — education", () => {
     expect(updateCalls(fake, "accounts")).toHaveLength(0);
   });
 
+  it("never overwrites a beneficiary set by NAME (external, no family member row)", async () => {
+    // Covers the OTHER half of the never-overwrite guard: `beneficiaryName` set
+    // (an external/outside beneficiary) with `beneficiaryFamilyMemberId` still
+    // null. Checking only `beneficiaryFamilyMemberId == null` would wrongly
+    // treat this account as unclaimed and clobber the external beneficiary.
+    const fake = makeFakeTx();
+    fake.setSelectResult("accounts", [
+      {
+        id: "acct-emma-529",
+        name: "Emma 529 Plan",
+        category: "education_savings",
+        subType: "529",
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: "Grandma Jones", // set by name, not by family-member id
+      },
+    ]);
+    fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
+    const payload = payloadWithEducationGoal({
+      dedicatedAccountNames: ["Emma 529 Plan"],
+      forFamilyMemberName: { value: "Emma", provenance: "document" },
+      annualAmount: { value: 45000, provenance: "stated" },
+    });
+
+    await commitGoals(fake.tx, payload, CTX);
+
+    expect(updateCalls(fake, "accounts")).toHaveLength(0);
+  });
+
   it("resolves two same-named accounts to two DISTINCT ids, one per goal (Defect 2 fix)", async () => {
     // Two 529s both named "529 Plan" and two goals each naming it. A plain
     // `Map(name -> id)` keeps only the LAST-seen id, so both goals would
@@ -211,8 +256,8 @@ describe("commitGoals — education", () => {
     // consume one distinct id per goal.
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-1", name: "529 Plan", beneficiaryFamilyMemberId: null, beneficiaryName: null },
-      { id: "acct-2", name: "529 Plan", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      { id: "acct-1", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      { id: "acct-2", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
     ]);
     fake.setSelectResult("family_members", []);
     const payload: ImportPayload = {
@@ -252,7 +297,7 @@ describe("commitGoals — education", () => {
     // claims it; the second must warn rather than reusing the same id again.
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-1", name: "529 Plan", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      { id: "acct-1", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
     ]);
     fake.setSelectResult("family_members", []);
     const payload: ImportPayload = {
@@ -282,6 +327,111 @@ describe("commitGoals — education", () => {
     expect(result.warnings.join(" ")).toContain("529 Plan");
     expect(result.warnings.join(" ")).toContain("created without dedicated funding");
   });
+
+  it("does not resolve an education goal's dedicated-account name against a same-named NON-education account (FIX 1)", async () => {
+    // A checking account happens to share a display name with what the goal
+    // calls its funding 529 (e.g. a rename, or a coincidental name collision).
+    // Scoping to education accounts (category === "education_savings" ||
+    // subType === "529") — the same way mortgage-link.ts scopes candidates to
+    // category:"real_estate" before matching — must keep this checking
+    // account out of the candidate pool entirely.
+    const fake = makeFakeTx();
+    fake.setSelectResult("accounts", [
+      {
+        id: "acct-checking",
+        name: "529 Plan", // coincidentally same name, but NOT an education account
+        category: "cash",
+        subType: "checking",
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: null,
+      },
+    ]);
+    fake.setSelectResult("family_members", []);
+    const payload = payloadWithEducationGoal({
+      dedicatedAccountNames: ["529 Plan"],
+      annualAmount: { value: 10000, provenance: "stated" },
+    });
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    expect(result.created).toBe(1);
+    // The checking account must never be joined as dedicated funding.
+    expect(insertCalls(fake, "expense_dedicated_accounts")).toHaveLength(0);
+    expect(result.warnings.join(" ")).toContain("529 Plan");
+    expect(result.warnings.join(" ")).toContain("created without dedicated funding");
+  });
+
+  it("skips a goal with no start year and warns, rather than writing an unbounded window", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithEducationGoal({
+      startYear: { value: null, provenance: "derived" },
+      annualAmount: { value: 30000, provenance: "stated" },
+    });
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(callsForTable(fake.calls, "expenses").filter((c) => c.op === "insert")).toHaveLength(0);
+    expect(result.warnings.join(" ")).toContain("no start year");
+  });
+
+  it("defaults a null years count to 1 and floors a non-positive count at 1", async () => {
+    const fake = makeFakeTx();
+    const nullYears = payloadWithEducationGoal({
+      startYear: { value: 2028, provenance: "derived" },
+      years: { value: null, provenance: "derived" },
+      annualAmount: { value: 10000, provenance: "stated" },
+    });
+    const zeroYears = payloadWithEducationGoal({
+      startYear: { value: 2028, provenance: "derived" },
+      years: { value: 0, provenance: "derived" },
+      annualAmount: { value: 10000, provenance: "stated" },
+    });
+
+    await commitGoals(fake.tx, nullYears, CTX);
+    await commitGoals(fake.tx, zeroYears, CTX);
+
+    const expenseInserts = callsForTable(fake.calls, "expenses").filter((c) => c.op === "insert") as {
+      values: Record<string, unknown>;
+    }[];
+    expect(expenseInserts).toHaveLength(2);
+    // Both a null years count (defaults to 1) and a 0 years count (floored to
+    // 1 by Math.max) land on the SAME one-year window: end === start.
+    expect(expenseInserts[0].values).toMatchObject({ startYear: 2028, endYear: 2028 });
+    expect(expenseInserts[1].values).toMatchObject({ startYear: 2028, endYear: 2028 });
+  });
+
+  it("does not blame the whole goal when only SOME of its named accounts fail to resolve", async () => {
+    // One of two named accounts resolves, the other doesn't. The warning must
+    // say the account "was not linked" — NOT that "the goal was created
+    // without dedicated funding" (which is only true when NOTHING resolved).
+    const fake = makeFakeTx();
+    fake.setSelectResult("accounts", [
+      {
+        id: "acct-real",
+        name: "Emma 529 Plan",
+        category: "education_savings",
+        subType: "529",
+        beneficiaryFamilyMemberId: null,
+        beneficiaryName: null,
+      },
+    ]);
+    fake.setSelectResult("family_members", []);
+    const payload = payloadWithEducationGoal({
+      dedicatedAccountNames: ["Emma 529 Plan", "Nonexistent 529"],
+      annualAmount: { value: 30000, provenance: "stated" },
+    });
+
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    expect(result.created).toBe(1);
+    // One join row landed, for the account that DID resolve.
+    expect(insertCalls(fake, "expense_dedicated_accounts")).toHaveLength(1);
+    expect(result.warnings.join(" ")).toContain("Nonexistent 529");
+    expect(result.warnings.join(" ")).toContain("was not linked as dedicated funding");
+    expect(result.warnings.join(" ")).not.toContain("created without dedicated funding");
+  });
 });
 
 describe("commitGoals — home purchase", () => {
@@ -291,7 +441,7 @@ describe("commitGoals — home purchase", () => {
       { id: "acct-checking", name: "Joint Checking", beneficiaryFamilyMemberId: null, beneficiaryName: null },
     ]);
 
-    const payload = payloadWithHomePurchase({ fundingAccountId: "acct-checking" });
+    const payload = payloadWithHomePurchase({ fundingAccountId: "acct-checking", basis: "50000" });
 
     const result = await commitGoals(fake.tx, payload, CTX);
 
@@ -300,10 +450,16 @@ describe("commitGoals — home purchase", () => {
     expect(txValues).toMatchObject({
       type: "buy",
       year: 2029,
+      assetName: "123 Main St",
       purchasePrice: "700000",
+      growthRate: "0.04",
+      basis: "50000",
       assetCategory: "real_estate",
+      assetSubType: "primary_residence",
       fundingAccountId: "acct-checking",
       mortgageAmount: "560000",
+      mortgageRate: "0.0625",
+      mortgageTermMonths: 360,
     });
     // Buy rows carry no sell-side fields (CHECK asset_transactions_buy_no_source_check).
     // The fake tx cannot enforce the DB CHECK constraint, so this documents intent
