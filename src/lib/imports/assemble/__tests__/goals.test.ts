@@ -19,6 +19,8 @@ describe("deriveGoals — education", () => {
     const g = goals.education[0];
     expect(g.annualAmount.value).toBeNull();          // no evidence — advisor states it
     expect(g.forFamilyMemberName.value).toBe("Emma");
+    expect(g.forFamilyMemberName.provenance).toBe("document");
+    expect(g.name.provenance).toBe("document");
     expect(g.startYear.value).toBe(2028);             // 2010 + 18
     expect(g.startYear.reason).toContain("age 18");
     expect(g.years.value).toBe(EDUCATION_DEFAULT_YEARS);
