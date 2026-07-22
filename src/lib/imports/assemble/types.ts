@@ -34,6 +34,15 @@ export interface AssemblePlanBasics {
   retirementLivingSpending: PlanBasicsField<number>;
   socialSecurity: Array<{
     owner: "client" | "spouse";
+    /**
+     * The ANNUAL Social Security benefit, despite the field name. It commits
+     * straight to `incomes.annualAmount`, and the seeded SS rows carry
+     * `ssBenefitMode = null` — which the engine treats as "manual_amount" and
+     * reads literally, with no PIA/claiming-age actuarial path. The wizard
+     * labels it "Annual Social Security benefit" for that reason. Writing a
+     * real PIA (`piaMonthly` + `ssBenefitMode: "pia_at_fra"`) is follow-up
+     * work; renaming this key alone would not change what is written.
+     */
     pia: PlanBasicsField<number>;
     claimingAge: PlanBasicsField<number>;
   }>;

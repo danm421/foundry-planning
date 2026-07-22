@@ -1,4 +1,5 @@
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
+import { numericAmount, sumExtractedLiving } from "../living-rows";
 import type { ImportPayload } from "../types";
 import type { AssemblePlanBasics, PlanBasicsField } from "./types";
 
@@ -32,39 +33,18 @@ function blank<T>(): PlanBasicsField<T> {
 }
 
 /**
- * Normalize an extracted amount that is typed `number` but is not
- * runtime-guaranteed to be one — the extraction schema (`extraction-schema.ts`)
- * is a loose Zod object that lets raw LLM output (occasionally a numeric
- * string) flow through unchanged. `commit/incomes.ts` defends against the
- * same thing with `Number(row.annualAmount)`.
+ * Find the extracted ANNUAL Social Security amount for one owner.
+ *
+ * Deliberately NOT named `extractedPia`: the value round-trips to
+ * `incomes.annualAmount`, which the engine reads as a literal annual benefit
+ * (the seeded rows carry `ssBenefitMode = null`, i.e. "manual_amount"), so it
+ * is not a PIA and no claiming-age actuarial adjustment is applied to it. The
+ * wizard labels the field "Annual Social Security benefit" to match.
  */
-function numericAmount(raw: unknown): number | null {
-  const n = typeof raw === "string" ? Number(raw) : raw;
-  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/**
- * Sum every extracted living-expense row. The extraction prompt tags
- * housing, groceries, utilities, transportation, dining, etc. as separate
- * `"living"`-typed rows (see `expense-worksheet.ts`) — taking only the first
- * one silently discards the rest. `count` lets the caller disclose when more
- * than one row was combined.
- */
-function extractedLiving(payload: ImportPayload): { total: number; count: number } | null {
-  let total = 0;
-  let count = 0;
-  for (const row of payload.expenses) {
-    if (row.type !== "living") continue;
-    const amount = numericAmount(row.annualAmount);
-    if (amount == null) continue;
-    total += amount;
-    count += 1;
-  }
-  return count > 0 ? { total, count } : null;
-}
-
-/** Find an extracted Social Security income row for one owner. */
-function extractedPia(payload: ImportPayload, owner: "client" | "spouse"): number | null {
+function extractedAnnualSocialSecurity(
+  payload: ImportPayload,
+  owner: "client" | "spouse",
+): number | null {
   for (const row of payload.incomes) {
     if (row.type !== "social_security" || row.owner !== owner) continue;
     const amount = numericAmount(row.annualAmount);
@@ -104,7 +84,7 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
 
   // ── Current living spending: extracted (summed) → AGI − totalTax → blank ──
   let currentLivingSpending: PlanBasicsField<number>;
-  const stated = extractedLiving(payload);
+  const stated = sumExtractedLiving(payload);
   if (stated != null) {
     currentLivingSpending =
       stated.count > 1
@@ -147,10 +127,10 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
     currentLivingSpending,
     retirementLivingSpending,
     socialSecurity: owners.map(({ owner, dob }) => {
-      const pia = extractedPia(payload, owner);
+      const annual = extractedAnnualSocialSecurity(payload, owner);
       return {
         owner,
-        pia: pia != null ? { value: pia, provenance: "document" } : blank<number>(),
+        pia: annual != null ? { value: annual, provenance: "document" } : blank<number>(),
         claimingAge: claimingAgeField(dob),
       };
     }),

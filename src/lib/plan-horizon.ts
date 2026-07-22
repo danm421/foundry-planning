@@ -30,6 +30,23 @@ export function computePlanEndAge(params: {
 }
 
 /**
+ * The calendar year a plan ends: the primary client's birth year plus the
+ * plan-end age. Extracted from the canonical `PATCH /api/clients/[id]` path
+ * (and `createClientForHousehold`, which had the same expression inline) so
+ * every writer of `planSettings.planEndYear` derives it identically — the
+ * import commit's Plan basics step is the third such writer.
+ *
+ * Uses `new Date(dob).getFullYear()` rather than a string slice deliberately:
+ * it must agree with `computePlanEndAge` above and with the PATCH path, both
+ * of which parse the same way. (Both therefore share the same pre-existing
+ * Jan-1-DOB timezone hazard — worth fixing, but only in one move across all
+ * three, not here.)
+ */
+export function computePlanEndYear(clientDob: string, planEndAge: number): number {
+  return new Date(clientDob).getFullYear() + planEndAge;
+}
+
+/**
  * Solver-side variant: re-derive the plan horizon from a (possibly mutated)
  * client singleton. Same last-death rule as computePlanEndAge, but parses
  * birth years the way the engine does (string slice, no Date/timezone) so the

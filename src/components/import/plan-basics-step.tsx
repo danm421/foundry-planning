@@ -70,7 +70,8 @@ function NumberField({
 }
 
 /**
- * A dollar-amount field — living spending and Social Security PIA. Uses the
+ * A dollar-amount field — living spending and the annual Social Security
+ * benefit. Uses the
  * same CurrencyInput every other wizard step uses for money
  * (review-step-expenses.tsx's Annual Amount, review-step-incomes.tsx's
  * Annual Amount) rather than a plain number input, so it gets the $ prefix
@@ -175,8 +176,14 @@ export default function PlanBasicsStep({ value, hasSpouse, onChange }: PlanBasic
           {value.socialSecurity.map((row, i) => (
             <div key={row.owner} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
               <div className="grid grid-cols-2 gap-3">
+                {/* Labelled for what it actually writes: `incomes.annualAmount`
+                    on a row whose `ssBenefitMode` is null, which the engine
+                    reads literally as an annual benefit — no PIA/claiming-age
+                    actuarial path runs. Labelling it "PIA at FRA" invited an
+                    advisor to copy a MONTHLY figure off an SSA statement and
+                    understate the benefit 12x. */}
                 <CurrencyField id={`ss-pia-${row.owner}`}
-                  label={`Social Security PIA at FRA (${row.owner})`}
+                  label={`Annual Social Security benefit (${row.owner})`}
                   field={row.pia} onSet={(v) => setSs(i, "pia", v)} />
                 <NumberField id={`ss-claim-${row.owner}`}
                   label={`Claiming age (${row.owner})`}

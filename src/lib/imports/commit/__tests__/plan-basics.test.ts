@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { commitPlanBasics } from "../plan-basics";
 import { emptyResult } from "../types";
-import { clients, expenses, incomes } from "@/db/schema";
+import { clients, crmHouseholdContacts, expenses, incomes, planSettings } from "@/db/schema";
 
 /**
  * `calls` records every `update(table).set(patch).where(cond)` in call order,
@@ -11,13 +11,19 @@ import { clients, expenses, incomes } from "@/db/schema";
  * brief's original three tests keep working untouched.
  *
  * `seed.expenseSlots` lets a test seed the rows the living-expense-slot
- * `select()` returns; every other `select()` (there are none today besides
- * that one) falls back to `[]`, matching the original fake's behavior.
+ * `select()` returns; `seed.client` / `seed.contacts` do the same for the two
+ * reads the plan-horizon recompute makes. Every other `select()` falls back to
+ * `[]`, matching the original fake's behavior — which is why the tests that
+ * predate the horizon work still see it degrade to "no DOB on file".
  * `startYearRef` drives routing now (see FIX 1) — `name` is carried along
  * only because production selects it too, not because it affects routing.
  */
 function fakeTx(
-  seed: { expenseSlots?: { id: string; name: string; startYearRef?: string | null }[] } = {},
+  seed: {
+    expenseSlots?: { id: string; name: string; startYearRef?: string | null }[];
+    client?: { crmHouseholdId: string; lifeExpectancy: number; spouseLifeExpectancy: number | null };
+    contacts?: { role: string; dateOfBirth: string | null }[];
+  } = {},
 ) {
   const updates: Record<string, unknown>[] = [];
   const calls: { table: unknown; patch: Record<string, unknown> }[] = [];
@@ -31,7 +37,12 @@ function fakeTx(
     }),
     select: () => ({
       from: (table: unknown) => ({
-        where: async () => (table === expenses ? (seed.expenseSlots ?? []) : []),
+        where: async () => {
+          if (table === expenses) return seed.expenseSlots ?? [];
+          if (table === clients) return seed.client ? [seed.client] : [];
+          if (table === crmHouseholdContacts) return seed.contacts ?? [];
+          return [];
+        },
       }),
     }),
   };
@@ -248,5 +259,102 @@ describe("commitPlanBasics", () => {
     } as never, CTX);
 
     expect(calls.filter((c) => c.table === incomes)).toHaveLength(0);
+  });
+});
+
+/**
+ * A committed life expectancy has to MOVE THE PLAN HORIZON. Writing
+ * `clients.lifeExpectancy` alone leaves `clients.planEndAge` and
+ * `planSettings.planEndYear` on the value derived at build time, so the
+ * projection silently stops at the old year — short if the advisor raised the
+ * life expectancy, past the client's death year if they lowered it.
+ */
+describe("commitPlanBasics — plan horizon", () => {
+  const HOUSEHOLD = {
+    client: { crmHouseholdId: "hh1", lifeExpectancy: 90, spouseLifeExpectancy: null },
+    contacts: [{ role: "primary", dateOfBirth: "1970-06-15" }],
+  };
+
+  function basics(over: Record<string, unknown> = {}) {
+    return {
+      planBasics: {
+        retirementAge: { value: null, provenance: "derived" },
+        lifeExpectancy: { value: null, provenance: "derived" },
+        currentLivingSpending: { value: null, provenance: "derived" },
+        retirementLivingSpending: { value: null, provenance: "derived" },
+        socialSecurity: [],
+        ...over,
+      },
+    } as never;
+  }
+
+  it("recomputes planEndAge and planSettings.planEndYear when the life expectancy changes", async () => {
+    const { tx, calls } = fakeTx(HOUSEHOLD);
+    await commitPlanBasics(
+      tx as never,
+      basics({ lifeExpectancy: { value: 100, provenance: "stated" } }),
+      CTX,
+    );
+
+    const clientCall = calls.find((c) => c.table === clients);
+    expect(clientCall?.patch).toMatchObject({ lifeExpectancy: 100, planEndAge: 100 });
+    const settingsCall = calls.find((c) => c.table === planSettings);
+    expect(settingsCall?.patch).toMatchObject({ planEndYear: 2070 });
+    expect(settingsCall?.patch.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("lets a spouse life expectancy alone extend the horizon past the client's death year", async () => {
+    const { tx, calls } = fakeTx({
+      client: { crmHouseholdId: "hh1", lifeExpectancy: 90, spouseLifeExpectancy: 85 },
+      contacts: [
+        { role: "primary", dateOfBirth: "1970-06-15" },
+        { role: "spouse", dateOfBirth: "1975-03-02" },
+      ],
+    });
+    await commitPlanBasics(
+      tx as never,
+      basics({ spouseLifeExpectancy: { value: 100, provenance: "stated" } }),
+      CTX,
+    );
+
+    // Spouse dies 1975 + 100 = 2075; the client would die 1970 + 90 = 2060.
+    // planEndAge is expressed in the PRIMARY's years: 2075 - 1970.
+    expect(calls.find((c) => c.table === clients)?.patch).toMatchObject({ planEndAge: 105 });
+    expect(calls.find((c) => c.table === planSettings)?.patch).toMatchObject({
+      planEndYear: 2075,
+    });
+  });
+
+  it("leaves the horizon alone when no life expectancy was committed", async () => {
+    const { tx, calls } = fakeTx(HOUSEHOLD);
+    await commitPlanBasics(
+      tx as never,
+      basics({ retirementAge: { value: 66, provenance: "stated" } }),
+      CTX,
+    );
+
+    expect(calls.find((c) => c.table === clients)?.patch).not.toHaveProperty("planEndAge");
+    expect(calls.filter((c) => c.table === planSettings)).toHaveLength(0);
+  });
+
+  it("degrades to a warning (never a failed commit) when the primary has no date of birth", async () => {
+    const { tx, calls } = fakeTx({
+      client: { crmHouseholdId: "hh1", lifeExpectancy: 90, spouseLifeExpectancy: null },
+      contacts: [{ role: "primary", dateOfBirth: null }],
+    });
+    const res = await commitPlanBasics(
+      tx as never,
+      basics({ lifeExpectancy: { value: 100, provenance: "stated" } }),
+      CTX,
+    );
+
+    // The life expectancy still lands; only the derived horizon is skipped.
+    expect(calls.find((c) => c.table === clients)?.patch).toMatchObject({ lifeExpectancy: 100 });
+    expect(calls.find((c) => c.table === clients)?.patch).not.toHaveProperty("planEndAge");
+    expect(calls.filter((c) => c.table === planSettings)).toHaveLength(0);
+    expect(res.warnings).toEqual([
+      "Life expectancy saved, but the plan horizon could not be recomputed — " +
+        "no date of birth on file for the primary client.",
+    ]);
   });
 });

@@ -55,6 +55,15 @@ describe("PlanBasicsStep", () => {
     );
   });
 
+  it("labels the Social Security field as the ANNUAL benefit, not a PIA", () => {
+    // The field commits to `incomes.annualAmount` on a row whose ssBenefitMode
+    // is null, which the engine reads as a literal annual figure — labelling it
+    // "PIA at FRA" invited a monthly SSA-statement number and a 12x understate.
+    render(<PlanBasicsStep value={basics()} hasSpouse={false} onChange={vi.fn()} />);
+    expect(screen.getByLabelText(/annual social security benefit \(client\)/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/pia at fra/i)).not.toBeInTheDocument();
+  });
+
   it("hides spouse fields for a single filer", () => {
     render(<PlanBasicsStep value={basics()} hasSpouse={false} onChange={vi.fn()} />);
     expect(screen.queryByLabelText(/spouse retirement age/i)).not.toBeInTheDocument();

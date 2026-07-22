@@ -176,7 +176,37 @@ describe("build_plan (HITL, new prospect)", () => {
     }));
   });
 
-  it("leaves spouse retirement age and life expectancy undefined when the model omits them", async () => {
+  it("refuses a spouse household with no spouse retirement age / life expectancy", async () => {
+    // create-client stamps 65/95 at its write chokepoint when a spouse exists,
+    // and the import's Plan basics step would then show those constants as
+    // confident `build_request` values with no "Assumed" chip. Refusing the
+    // call is what keeps a platform default from becoming a stated fact.
+    const out = String(await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen", spouseDob: "1974-01-01",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+    }));
+    expect(out).toMatch(/spouseRetirementAge/);
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses when only ONE of the spouse horizon pair is supplied", async () => {
+    const out = String(await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+      spouseRetirementAge: 63,
+    }));
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  // The no-spouse case: nothing about the spouse is stated, so nothing is
+  // required and nothing is defaulted — create-client leaves both columns null.
+  it("leaves spouse retirement age and life expectancy undefined when there is no spouse", async () => {
     vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
     await getTool("build_plan").invoke({
       householdName: "Nguyen Household", state: "NJ",
