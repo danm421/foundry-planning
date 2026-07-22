@@ -52,12 +52,20 @@ function completeHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): HomePu
     assetName: "123 Main St",
     assetSubType: "primary_residence",
     purchasePrice: "700000",
-    growthRate: "0.04",
+    // PERCENT STRINGS, not decimals. `HomePurchaseGoal` mirrors `BuyLegDraft`
+    // field-for-field, and `BuyLegDraft` documents `growthRate`/`mortgageRate`
+    // as percent strings (asset-transaction-leg-model.ts:38,43) because the
+    // `PercentInput`s in `BuyLegEditor` write the raw typed percent onto goal
+    // state. The advisor-facing path divides by 100 on submit (`optDec` in
+    // use-asset-transaction-legs.ts); `commitGoals` must do the same. This
+    // fixture previously carried decimals ("0.04"/"0.0625") — a contract the
+    // UI never produces — which hid a 100x error all the way to the DB.
+    growthRate: "4",
     basis: "",
     fundingAccountId: "",
     showMortgage: true,
     mortgageAmount: "560000",
-    mortgageRate: "0.0625",
+    mortgageRate: "6.25",
     mortgageTermMonths: "360",
     ...overrides,
   };
@@ -452,6 +460,8 @@ describe("commitGoals — home purchase", () => {
       year: 2029,
       assetName: "123 Main St",
       purchasePrice: "700000",
+      // "4" in, 0.04 stored — the percent→decimal conversion the columns
+      // (decimal(5,4)) and the engine both require.
       growthRate: "0.04",
       basis: "50000",
       assetCategory: "real_estate",
@@ -468,6 +478,52 @@ describe("commitGoals — home purchase", () => {
     expect(txValues.purchaseTransactionId).toBeUndefined();
     expect(txValues.businessAccountId).toBeUndefined();
     expect(txValues.fractionSold).toBeUndefined();
+  });
+
+  /**
+   * REGRESSION GUARD — do not delete, do not "simplify" by folding the
+   * expected values back into the input. `growthRate` and `mortgageRate` are
+   * the ONLY two percent-string fields on `HomePurchaseGoal`; every other
+   * numeric field here is a plain dollar amount from a `CurrencyInput` and
+   * must pass through untouched. Writing "3.5" into a decimal(5,4) column
+   * raises no error (ceiling 9.9999) — it just runs the projection at 350%
+   * annual home appreciation, silently.
+   */
+  it("converts ONLY growthRate and mortgageRate from percent to decimal", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({
+      purchasePrice: "700000",
+      basis: "50000",
+      growthRate: "3.5",
+      showMortgage: true,
+      mortgageAmount: "560000",
+      mortgageRate: "6.75",
+    });
+
+    await commitGoals(fake.tx, payload, CTX);
+
+    const txValues = insertValues(fake, "asset_transactions");
+    expect(txValues.growthRate).toBe("0.035");
+    expect(txValues.mortgageRate).toBe("0.0675");
+    // Dollar fields are NOT percentages — untouched.
+    expect(txValues.purchasePrice).toBe("700000");
+    expect(txValues.basis).toBe("50000");
+    expect(txValues.mortgageAmount).toBe("560000");
+  });
+
+  it("leaves a blank growth/mortgage rate null rather than converting it to 0", async () => {
+    const fake = makeFakeTx();
+    const payload = payloadWithHomePurchase({
+      growthRate: "",
+      showMortgage: true,
+      mortgageRate: "   ",
+    });
+
+    await commitGoals(fake.tx, payload, CTX);
+
+    const txValues = insertValues(fake, "asset_transactions");
+    expect(txValues.growthRate).toBeNull();
+    expect(txValues.mortgageRate).toBeNull();
   });
 
   it("skips a purchase with neither a name nor a price", async () => {

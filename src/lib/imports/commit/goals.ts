@@ -227,6 +227,22 @@ export async function commitGoals(
       return raw.trim() !== "" && Number.isFinite(n) ? String(n) : null;
     };
 
+    // `HomePurchaseGoal` mirrors `BuyLegDraft` field-for-field, and
+    // `BuyLegDraft` documents growthRate/mortgageRate as PERCENT strings
+    // (asset-transaction-leg-model.ts:38,43) — `BuyLegEditor`'s `PercentInput`s
+    // write the raw typed percent ("3.5") straight onto goal state. The
+    // advisor-facing form converts on submit (`optDec` in
+    // use-asset-transaction-legs.ts:14); this path must too, or "3.5" lands in
+    // a decimal(5,4) column as 3.5 — no error (ceiling 9.9999), just a home
+    // appreciating 350% a year. Only these two fields are percents;
+    // purchasePrice/basis/mortgageAmount come from `CurrencyInput` and are
+    // already plain dollars. Same `String(Number(v) / 100)` shape as `optDec`
+    // so both paths round-trip identically.
+    const pct = (raw: string): string | null => {
+      const n = Number(raw);
+      return raw.trim() !== "" && Number.isFinite(n) ? String(n / 100) : null;
+    };
+
     await tx.insert(assetTransactions).values({
       clientId: ctx.clientId,
       scenarioId: ctx.scenarioId,
@@ -241,12 +257,12 @@ export async function commitGoals(
       // bounded `SUB_TYPE_BY_CATEGORY.real_estate` widget options.
       assetSubType: (goal.assetSubType || "primary_residence") as AccountSubType,
       purchasePrice: num(goal.purchasePrice),
-      growthRate: num(goal.growthRate),
+      growthRate: pct(goal.growthRate),
       basis: num(goal.basis),
       fundingAccountId,
       // The mortgage block is only written when the advisor expanded it.
       mortgageAmount: goal.showMortgage ? num(goal.mortgageAmount) : null,
-      mortgageRate: goal.showMortgage ? num(goal.mortgageRate) : null,
+      mortgageRate: goal.showMortgage ? pct(goal.mortgageRate) : null,
       mortgageTermMonths: goal.showMortgage ? Number(goal.mortgageTermMonths) || null : null,
     });
     result.created += 1;
