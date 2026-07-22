@@ -28,6 +28,9 @@ const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
   { value: "real_estate", label: "Real Estate" },
   { value: "business", label: "Business" },
   { value: "life_insurance", label: "Life Insurance" },
+  // Label matches the canonical mapping in src/lib/accounts/category-labels.ts
+  // (ACCOUNT_CATEGORY_LABELS) — reused everywhere else this category displays.
+  { value: "education_savings", label: "529 / Education" },
 ];
 
 const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
