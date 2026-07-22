@@ -129,6 +129,64 @@ describe("set_up_plan (HITL)", () => {
     expect(out).toMatch(/not found/i);
     expect(createClientForHousehold).not.toHaveBeenCalled();
   });
+
+  const spouseHousehold = {
+    ...household,
+    contacts: [
+      ...household.contacts,
+      { role: "spouse", firstName: "Sam", lastName: "Doe", dateOfBirth: null },
+    ],
+  };
+
+  it("refuses a spouse HOUSEHOLD with no spouse retirement age / life expectancy", async () => {
+    // The same defect build_plan guards against, reached the other way round:
+    // create_household → set_up_plan. The trigger here is the household's
+    // stored spouse contact, not a request arg, because that is what makes
+    // createClientForHousehold stamp its 65/95 defaults — which the Plan
+    // basics step would then show unchipped as confident `build_request`.
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseDob: "1972-03-01",
+    }));
+    expect(out).toMatch(/spouseRetirementAge/);
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+
+  it("refuses when only ONE of the spouse horizon pair is supplied", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseRetirementAge: 63,
+    }));
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+
+  it("proceeds for a spouse household once BOTH horizon values are supplied", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseDob: "1972-03-01",
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    })));
+    expect(createClientForHousehold).toHaveBeenCalledWith(expect.objectContaining({
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    }));
+    expect(out).toEqual({ clientId: "client_9" });
+  });
+
+  it("does NOT require the spouse pair for a household with no spouse contact", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(household as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "single", primaryDob: "1970-05-15",
+    })));
+    expect(out).toEqual({ clientId: "client_9" });
+  });
 });
 
 describe("build_plan (HITL, new prospect)", () => {

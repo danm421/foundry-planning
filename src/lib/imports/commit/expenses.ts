@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 
 import { expenses } from "@/db/schema";
+import type { YearRef } from "@/lib/milestones";
 
 import { isSummedLivingRow, livingTotalSupersedesRows } from "../living-rows";
+import { livingSlotRole } from "../match-keys/living-slot";
 import { getExistingId, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import { resolveImportTiming } from "./timing";
@@ -44,7 +46,7 @@ export async function commitExpenses(
   // these gets its amount filled but keeps its canonical current/retirement
   // year window — never reshaped by extracted timing.
   const slotRows = await tx
-    .select({ id: expenses.id })
+    .select({ id: expenses.id, startYearRef: expenses.startYearRef })
     .from(expenses)
     .where(
       and(
@@ -56,9 +58,21 @@ export async function commitExpenses(
     );
   const slotIds = new Set(slotRows.map((r) => r.id));
 
+  // Fold only when the total has somewhere to land. `livingTotalSupersedesRows`
+  // states an INTENT to write; `commitPlanBasics` only actually writes a slot
+  // whose `startYearRef` classifies as "current", and skips any it cannot
+  // place. Without this check, a household with no isDefault living slot — or
+  // one whose slots predate migration 0012, which added `start_year_ref` with
+  // no backfill — folds every itemized row while nothing is written to a slot,
+  // and the spending disappears entirely. That is worse than double-counting,
+  // so the fold is bound to the same classifier that decides the write.
+  const hasCurrentSlot = slotRows.some(
+    (r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "current",
+  );
+
   // Blank stays blank: with no planBasics block, or a null/cleared figure,
   // nothing is written to the slot and the itemized rows must still land.
-  const foldLivingRows = livingTotalSupersedesRows(payload);
+  const foldLivingRows = livingTotalSupersedesRows(payload) && hasCurrentSlot;
   let folded = 0;
 
   for (const row of payload.expenses) {

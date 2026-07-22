@@ -134,6 +134,22 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         const primary = hh.contacts.find((c: { role: string }) => c.role === "primary");
         if (!primary) return "That household has no primary contact — add one before setting up a plan.";
         const spouse = hh.contacts.find((c: { role: string }) => c.role === "spouse");
+        // Same guard as build_plan, and for the same reason — see the long note
+        // there. `create_household` → `set_up_plan` is a first-class alternative
+        // to build_plan, and it reaches the identical defect: a spouse on the
+        // household means createClientForHousehold stamps its 65/95 defaults,
+        // which the Plan basics step then shows unchipped as `build_request`.
+        // Keyed on the HOUSEHOLD's spouse contact rather than a request arg,
+        // because that is what decides whether the defaults get stamped.
+        if (
+          spouse &&
+          (args.spouseRetirementAge == null || args.spouseLifeExpectancy == null)
+        ) {
+          return (
+            "That household has a spouse, so set_up_plan also needs spouseRetirementAge " +
+            "and spouseLifeExpectancy. Ask the advisor for both, then call set_up_plan again."
+          );
+        }
         const result = await createClientForHousehold({
           household: { id: hh.id, firmId, advisorId: hh.advisorId, state: hh.state },
           primaryContact: { firstName: primary.firstName, lastName: primary.lastName, dateOfBirth: args.primaryDob },
@@ -162,7 +178,9 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         "Turn an existing household into a full financial plan (projection client). Requires human approval. " +
         "Needs the household id (from find_client/create_household), the primary contact's date of birth, " +
         "retirement age, life expectancy, and filing status (single, married_joint, married_separate, head_of_household). " +
-        "Uses the household's stored contact names and state.",
+        "Uses the household's stored contact names and state. When the household HAS a spouse contact, " +
+        "spouseRetirementAge and spouseLifeExpectancy are BOTH required — ask the advisor for them; the call " +
+        "is refused without them rather than defaulting them.",
       schema: z.object({
         householdId: z.string().min(1),
         retirementAge: z.number().int().min(30).max(90),

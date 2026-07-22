@@ -196,6 +196,40 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
     expect(currentPeriodLivingTotal(fake)).toBe(42000);
   });
 
+  it("still inserts every itemized row when there is no seeded slot at all", async () => {
+    const reviewed = payloadWith();
+    const basics = reviewedBasics(reviewed);
+    const fake = makeFakeTx();
+    fake.setSelectResult("expenses", []); // household has no isDefault living slot
+
+    await commitPlanBasics(fake.tx, { ...reviewed, planBasics: basics }, CTX);
+    const expensesResult = await commitExpenses(fake.tx, { ...reviewed, planBasics: basics }, CTX);
+
+    // The figure is non-null, so the fold WANTS to fire — but there is nowhere
+    // for commitPlanBasics to have written it. Folding here would erase the
+    // spending entirely, which is strictly worse than double-counting it.
+    expect(expenseCalls(fake, "update")).toHaveLength(0);
+    expect(expensesResult.created).toBe(3);
+    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+  });
+
+  it("still inserts every itemized row when the slot predates the startYearRef backfill", async () => {
+    const reviewed = payloadWith();
+    const basics = reviewedBasics(reviewed);
+    const fake = makeFakeTx();
+    // Migration 0012 added start_year_ref with NO backfill, so a slot seeded
+    // before it classifies as neither current nor retirement — commitPlanBasics
+    // skips it rather than guessing, so the fold must stand down too.
+    fake.setSelectResult("expenses", [{ id: "slot-legacy", startYearRef: null }]);
+
+    await commitPlanBasics(fake.tx, { ...reviewed, planBasics: basics }, CTX);
+    const expensesResult = await commitExpenses(fake.tx, { ...reviewed, planBasics: basics }, CTX);
+
+    expect(expenseCalls(fake, "update")).toHaveLength(0);
+    expect(expensesResult.created).toBe(3);
+    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+  });
+
   it("never suppresses a non-living row", async () => {
     const basics = reviewedBasics(payloadWith());
     const reviewed: ImportPayload = {
