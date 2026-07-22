@@ -164,3 +164,79 @@ describe("ReviewWizard — Goals tab", () => {
     vi.unstubAllGlobals();
   });
 });
+
+/**
+ * FINAL-REVIEW FINDING 3 — `handleCommit` awaited the commit POST and threw
+ * away the `results` it returns, so every warning the commit modules produce
+ * ("created without dedicated funding", "has no start year", "down-payment
+ * account is no longer available") was invisible to the advisor.
+ */
+describe("ReviewWizard — commit warnings", () => {
+  function stubFetchReturning(results: Record<string, { warnings: string[] }>) {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, results }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const payloadWithGoal = {
+    ...emptyImportPayload(),
+    goals: {
+      education: [educationGoalFixture({ dedicatedAccountNames: [] })],
+      homePurchases: [],
+    },
+  };
+
+  it("surfaces the warnings the commit response returned for the tab it committed", async () => {
+    stubFetchReturning({
+      goals: {
+        warnings: [
+          'Could not find the funding account "Emma 529 Plan" for education goal "Emma — College" — the goal was created without dedicated funding.',
+        ],
+      },
+    });
+
+    render(<ReviewWizard {...baseProps} payload={payloadWithGoal} perTabCommittedAt={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Goals/ }));
+    fireEvent.click(screen.getByRole("button", { name: /commit goals/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/created without dedicated funding/i)).toBeInTheDocument(),
+    );
+
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores warnings belonging to tabs this click did not commit", async () => {
+    stubFetchReturning({
+      goals: { warnings: [] },
+      accounts: { warnings: ["An accounts warning from some earlier pass."] },
+    });
+
+    render(<ReviewWizard {...baseProps} payload={payloadWithGoal} perTabCommittedAt={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Goals/ }));
+    fireEvent.click(screen.getByRole("button", { name: /commit goals/i }));
+
+    await waitFor(() => expect(screen.queryByText(/committing/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/from some earlier pass/i)).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("renders nothing extra when the commit returned no warnings", async () => {
+    stubFetchReturning({ goals: { warnings: [] } });
+
+    render(<ReviewWizard {...baseProps} payload={payloadWithGoal} perTabCommittedAt={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Goals/ }));
+    fireEvent.click(screen.getByRole("button", { name: /commit goals/i }));
+
+    await waitFor(() => expect(screen.queryByText(/committing/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/warnings from the last commit/i)).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+});

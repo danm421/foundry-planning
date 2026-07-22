@@ -17,14 +17,28 @@ const INPUT_CLASS =
 
 interface GoalsStepProps {
   value: AssembleGoals;
-  // Optional `category`/`subType` are NOT part of Task 11's contract (which
-  // passes bare `{ id, name }[]`) — declared here only so `toBuyLegAccounts`
-  // below can fall back to a sane default when a richer caller does supply
-  // them. A `{ id, name }[]` argument still satisfies this type.
-  accountOptions: { id: string; name: string; category?: string; subType?: string }[];
+  /**
+   * Already-committed accounts. `category`/`subType` are REQUIRED, not
+   * optional: `commitGoals` scopes education dedicated-funding resolution to
+   * education accounts, so this step cannot render an honest funding list
+   * without them (see `EDUCATION_ACCOUNT` below). They previously defaulted to
+   * `"cash"`/`"checking"`, which made every account look like a cash account.
+   */
+  accountOptions: { id: string; name: string; category: string; subType: string }[];
   dependentOptions: string[];
   currentYear: number;
   onChange: (next: AssembleGoals) => void;
+}
+
+/**
+ * Mirrors `commitGoals`' candidate scoping EXACTLY (see the comment block at
+ * the top of `src/lib/imports/commit/goals.ts`): an education goal's dedicated
+ * funding resolves only against `category === "education_savings"` or the
+ * `subType === "529"` fallback. Offering any other account as "Dedicated 529
+ * funding" invites the advisor to tick a box the commit then silently drops.
+ */
+function isEducationAccount(a: { category: string; subType: string }): boolean {
+  return a.category === "education_savings" || a.subType === "529";
 }
 
 /** A field carries a chip only when it was derived AND says why. Generic over T
@@ -110,6 +124,83 @@ function blankHomePurchase(id: string, currentYear: number): HomePurchaseGoal {
 }
 
 /**
+ * The "Dedicated 529 funding" block for one education goal.
+ *
+ * `dedicatedAccountNames` is resolved at commit time BY NAME against rows the
+ * Accounts tab wrote — a cross-tab, order-dependent reference. Three ordinary
+ * advisor actions leave a name that resolves to nothing: renaming the 529 in
+ * the Accounts step (which is what that step is FOR), leaving a `fuzzy` row
+ * unresolved (`commitAccounts` skips it while the tab still records a commit
+ * timestamp), and a fuzzy match onto an existing DB account under a different
+ * name. The wizard's accounts-first ordering guard asks "are there uncommitted
+ * accounts?", which none of those three trip.
+ *
+ * So every name with no matching education account is rendered as a visible
+ * unmatched row with a remove control. Critically this renders even when
+ * `educationAccounts` is EMPTY — a fresh import, before Accounts is committed,
+ * is precisely when the derived names are at risk, and the old
+ * `accountOptions.length > 0` gate hid them exactly then.
+ */
+function DedicatedFunding({
+  goal,
+  educationAccounts,
+  educationAccountNames,
+  onToggle,
+}: {
+  goal: EducationGoal;
+  educationAccounts: { id: string; name: string }[];
+  educationAccountNames: Set<string>;
+  onToggle: (goal: EducationGoal, accountName: string) => void;
+}) {
+  const unmatched = goal.dedicatedAccountNames.filter((n) => !educationAccountNames.has(n));
+  if (educationAccounts.length === 0 && unmatched.length === 0) return null;
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs text-gray-300">Dedicated 529 funding</p>
+      {educationAccounts.length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {educationAccounts.map((account) => (
+            <label key={account.id} className="flex items-center gap-1.5 text-xs text-gray-300">
+              <input
+                type="checkbox"
+                checked={goal.dedicatedAccountNames.includes(account.name)}
+                onChange={() => onToggle(goal, account.name)}
+              />
+              {account.name}
+            </label>
+          ))}
+        </div>
+      )}
+      {unmatched.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {unmatched.map((name) => (
+            <li
+              key={name}
+              className="flex items-start justify-between gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1.5 text-xs text-amber-200"
+            >
+              <span>
+                No committed account named{" "}
+                <span className="font-medium text-amber-100">{name}</span>. Until one exists, this
+                goal will be created without that dedicated funding.
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove funding account ${name}`}
+                onClick={() => onToggle(goal, name)}
+                className="shrink-0 text-amber-300 underline hover:text-amber-100"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The Goals review step: education goals (`AssembleGoals.education`, each
  * field a `PlanBasicsField` provenance envelope — chipped when derived) and
  * planned purchases (`AssembleGoals.homePurchases`, plain form strings with
@@ -163,6 +254,9 @@ export default function GoalsStep({
       : [...goal.dedicatedAccountNames, accountName];
     setEducation(goal.id, { dedicatedAccountNames });
   };
+
+  const educationAccounts = accountOptions.filter(isEducationAccount);
+  const educationAccountNames = new Set(educationAccounts.map((a) => a.name));
 
   return (
     <div className="space-y-8">
@@ -282,23 +376,12 @@ export default function GoalsStep({
                 <AssumedChip assumption={chipFor(goal.payShortfallOutOfPocket)} />
               </div>
 
-              {accountOptions.length > 0 && (
-                <div className="mt-3">
-                  <p className="mb-1 text-xs text-gray-300">Dedicated 529 funding</p>
-                  <div className="flex flex-wrap gap-3">
-                    {accountOptions.map((account) => (
-                      <label key={account.id} className="flex items-center gap-1.5 text-xs text-gray-300">
-                        <input
-                          type="checkbox"
-                          checked={goal.dedicatedAccountNames.includes(account.name)}
-                          onChange={() => toggleDedicatedAccount(goal, account.name)}
-                        />
-                        {account.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <DedicatedFunding
+                goal={goal}
+                educationAccounts={educationAccounts}
+                educationAccountNames={educationAccountNames}
+                onToggle={toggleDedicatedAccount}
+              />
             </div>
           ))}
         </div>
@@ -349,9 +432,10 @@ export default function GoalsStep({
                 idPrefix={`${purchase.id}-`}
                 leg={toBuyLeg(purchase)}
                 categories={["real_estate"]}
-                accounts={accountOptions.map((a) => ({
-                  id: a.id, name: a.name, category: a.category ?? "cash", subType: a.subType ?? "checking",
-                }))}
+                // Deliberately UNSCOPED, unlike the education funding list
+                // above: a down payment can legitimately come from any
+                // account (Task 8 decision).
+                accounts={accountOptions}
                 onChange={(patch) => setPurchase(purchase.id, toHomePurchasePatch(patch))}
               />
             </div>

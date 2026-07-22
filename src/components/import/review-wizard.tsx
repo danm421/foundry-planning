@@ -73,7 +73,10 @@ interface ReviewWizardProps {
 }
 
 interface CanonicalRows {
-  accounts: { id: string; name: string }[];
+  /** `category`/`subType` carry through for the Goals step, which must scope
+   *  its dedicated-funding list to education accounts the way `commitGoals`
+   *  scopes its resolution candidates. */
+  accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName: string | null; role: string }[];
   entities: { id: string; name: string }[];
@@ -170,7 +173,7 @@ export default function ReviewWizard({
   // Same absent-on-old-imports rationale as planBasics: an import assembled
   // before this feature existed (or with too little evidence for
   // deriveGoals to run) has no `goals` key at all.
-  const [goals, setGoals] = useState<AssembleGoals>(payload.goals ?? emptyGoals());
+  const [goals, setGoals] = useState<AssembleGoals>(() => payload.goals ?? emptyGoals());
 
   // Established convention on this branch: a household "has a spouse" when
   // the wizard was handed a spouse first name, rather than a separate signal.
@@ -211,7 +214,12 @@ export default function ReviewWizard({
         fetch(`/api/clients/${clientId}/family-members`).catch(() => null),
         fetch(`/api/clients/${clientId}/entities`).catch(() => null),
       ]);
-      const accountsRaw = await safeJson<{ id: string; name: string }>(aRes);
+      const accountsRaw = await safeJson<{
+        id: string;
+        name: string;
+        category?: string;
+        subType?: string;
+      }>(aRes);
       const liabilitiesRaw = await safeJson<{ id: string; name: string }>(lRes);
       const familyRaw = await safeJson<{
         id: string;
@@ -221,7 +229,12 @@ export default function ReviewWizard({
       }>(fRes);
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
-        accounts: accountsRaw.map((a) => ({ id: a.id, name: a.name })),
+        accounts: accountsRaw.map((a) => ({
+          id: a.id,
+          name: a.name,
+          category: a.category ?? "",
+          subType: a.subType ?? "",
+        })),
         liabilities: liabilitiesRaw.map((l) => ({ id: l.id, name: l.name })),
         familyMembers: familyRaw.map((f) => ({
           id: f.id,
@@ -305,6 +318,10 @@ export default function ReviewWizard({
   const [currentTab, setCurrentTab] = useState<WizardTabId>(tabs[0] ?? "summary");
   const [committingTab, setCommittingTab] = useState<WizardTabId | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
+  // Warnings returned by the LAST commit POST, for the tabs that click
+  // committed. Cleared when a new commit starts and when the advisor moves to
+  // another tab, so a warning is never read against the wrong step.
+  const [commitWarnings, setCommitWarnings] = useState<string[]>([]);
 
   /**
    * Snapshot the wizard state into ImportPayload shape so the PATCH
@@ -342,6 +359,7 @@ export default function ReviewWizard({
       }
       setCommittingTab(tab);
       setCommitError(null);
+      setCommitWarnings([]);
       try {
         const latest = buildLatestPayload();
         const patchRes = await fetch(
@@ -367,10 +385,23 @@ export default function ReviewWizard({
             body: JSON.stringify({ tabs: commitTabs }),
           },
         );
+        // The route answers `{ ok, results: Record<CommitTab, CommitResult>,
+        // status }` (see the commit route handler). Parse once, then branch —
+        // a Response body can only be read a single time.
+        const commitBody = (await commitRes.json().catch(() => null)) as {
+          error?: string;
+          results?: Partial<Record<CommitTab, { warnings?: string[] }>>;
+        } | null;
         if (!commitRes.ok) {
-          const j = await commitRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Commit failed (${commitRes.status})`);
+          throw new Error(commitBody?.error ?? `Commit failed (${commitRes.status})`);
         }
+        // Read only the tabs THIS click committed. `results` is keyed by every
+        // CommitTab, and the untouched ones carry an empty warnings array —
+        // but a future shape change must not let another tab's warning leak in
+        // under this tab's heading.
+        setCommitWarnings(
+          commitTabs.flatMap((ct) => commitBody?.results?.[ct]?.warnings ?? []),
+        );
         await fetchCanonical();
         router.refresh();
       } catch (err) {
@@ -501,7 +532,12 @@ export default function ReviewWizard({
         tabs={tabs}
         currentTab={currentTab}
         committingTab={committingTab}
-        onSelect={setCurrentTab}
+        onSelect={(t) => {
+          // Warnings are about the step that produced them; carrying them onto
+          // another tab would read as that tab's problem.
+          setCommitWarnings([]);
+          setCurrentTab(t);
+        }}
         committed={tabCommitted}
         count={tabCount}
       />
@@ -511,6 +547,19 @@ export default function ReviewWizard({
           {commitError}
         </div>
       ) : null}
+
+      {/* The commit modules' own warnings — a goal created without dedicated
+          funding, a purchase whose down-payment account vanished, a row
+          skipped for a missing year. These were previously discarded, which
+          made every cross-tab resolution failure silent. */}
+      {commitWarnings.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-300">
+            Warnings from the last commit
+          </p>
+          <WarningsBanner warnings={commitWarnings} />
+        </div>
+      )}
 
       <div>
         {currentTab === "plan-basics" && (
@@ -603,7 +652,7 @@ export default function ReviewWizard({
         {currentTab === "goals" && (
           <GoalsStep
             value={goals}
-            accountOptions={accountCandidates}
+            accountOptions={canonical.accounts}
             dependentOptions={dependents.map((d) => d.firstName).filter(Boolean)}
             currentYear={defaultStartYear}
             onChange={setGoals}

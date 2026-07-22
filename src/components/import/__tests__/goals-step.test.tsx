@@ -65,8 +65,34 @@ function educationGoalFixture(over: Partial<EducationGoal> = {}): EducationGoal 
   };
 }
 
+/**
+ * Account options carry `category`/`subType` because `commitGoals` scopes its
+ * dedicated-funding resolution to education accounts
+ * (`category === "education_savings" || subType === "529"`). A fixture of bare
+ * `{ id, name }` would encode a contract the wizard never produces — the same
+ * mistake that let the home-purchase percent bug through twelve gates.
+ */
+const EDU_529 = {
+  id: "a1",
+  name: "Emma 529 Plan",
+  category: "education_savings",
+  subType: "529",
+};
+const JACK_529 = {
+  id: "a2",
+  name: "Jack 529 Plan",
+  category: "education_savings",
+  subType: "529",
+};
+const BROKERAGE = {
+  id: "a3",
+  name: "Joint Brokerage",
+  category: "taxable",
+  subType: "brokerage",
+};
+
 const baseProps = {
-  accountOptions: [{ id: "a1", name: "Emma 529 Plan" }],
+  accountOptions: [EDU_529],
   dependentOptions: ["Emma"],
   currentYear: 2026,
   onChange: vi.fn(),
@@ -267,10 +293,7 @@ describe("GoalsStep — dedicated 529 funding (FIX 3)", () => {
 
   it("preserves click order across two dedicated 529s", () => {
     const onChange = vi.fn();
-    const twoAccounts = [
-      { id: "a1", name: "Emma 529 Plan" },
-      { id: "a2", name: "Jack 529 Plan" },
-    ];
+    const twoAccounts = [EDU_529, JACK_529];
     const value = { ...emptyGoals(), education: [educationGoalFixture()] };
     const { rerender } = render(
       <GoalsStep value={value} {...baseProps} accountOptions={twoAccounts} onChange={onChange} />,
@@ -283,5 +306,107 @@ describe("GoalsStep — dedicated 529 funding (FIX 3)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Emma 529 Plan" }));
     next = onChange.mock.calls.at(-1)![0];
     expect(next.education[0].dedicatedAccountNames).toEqual(["Jack 529 Plan", "Emma 529 Plan"]);
+  });
+});
+
+/**
+ * FINAL-REVIEW FINDINGS 2 + 4.
+ *
+ * 4: `commitGoals` resolves an education goal's dedicated funding ONLY against
+ *    education accounts. A checkbox for a taxable brokerage therefore offers
+ *    something the commit silently refuses.
+ * 2: `dedicatedAccountNames` is resolved by NAME against rows a DIFFERENT tab
+ *    wrote. A rename in the Accounts step, an unresolved fuzzy row, or a fuzzy
+ *    match onto a differently-named DB account all leave a name that resolves
+ *    to nothing — and the funding block used to be hidden entirely when no
+ *    accounts were committed yet, which is exactly when that happens.
+ */
+describe("GoalsStep — funding-list scoping and unmatched references", () => {
+  function homePurchaseFixture() {
+    return {
+      id: "home-1",
+      name: "Austin home",
+      year: "2029",
+      assetName: "123 Main St",
+      assetSubType: "primary_residence",
+      purchasePrice: "700000",
+      growthRate: "3.5",
+      basis: "",
+      fundingAccountId: "",
+      showMortgage: false,
+      mortgageAmount: "",
+      mortgageRate: "",
+      mortgageTermMonths: "360",
+    };
+  }
+
+  it("offers only education accounts as dedicated 529 funding", () => {
+    const value = { ...emptyGoals(), education: [educationGoalFixture()] };
+    render(
+      <GoalsStep value={value} {...baseProps} accountOptions={[EDU_529, BROKERAGE]} />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Emma 529 Plan" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Joint Brokerage" })).not.toBeInTheDocument();
+  });
+
+  it("still offers every account as a planned-purchase down-payment source", () => {
+    // Deliberately UNSCOPED (Task 8 decision): a down payment can come from any
+    // account. Only the education funding list above is filtered.
+    const value = { ...emptyGoals(), homePurchases: [homePurchaseFixture()] };
+    render(
+      <GoalsStep value={value} {...baseProps} accountOptions={[EDU_529, BROKERAGE]} />,
+    );
+    expect(screen.getByRole("option", { name: "Joint Brokerage" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Emma 529 Plan" })).toBeInTheDocument();
+  });
+
+  it("surfaces a dedicated-funding name with no matching account, even with zero account options", () => {
+    const value = {
+      ...emptyGoals(),
+      education: [educationGoalFixture({ dedicatedAccountNames: ["Emma 529 Plan"] })],
+    };
+    render(<GoalsStep value={value} {...baseProps} accountOptions={[]} />);
+    expect(screen.getByText(/no committed account named/i)).toBeInTheDocument();
+    expect(screen.getByText("Emma 529 Plan")).toBeInTheDocument();
+  });
+
+  it("flags a name that only matches a NON-education account — commitGoals will not resolve it", () => {
+    const value = {
+      ...emptyGoals(),
+      education: [educationGoalFixture({ dedicatedAccountNames: ["Joint Brokerage"] })],
+    };
+    render(<GoalsStep value={value} {...baseProps} accountOptions={[BROKERAGE]} />);
+    expect(screen.getByText(/no committed account named/i)).toBeInTheDocument();
+  });
+
+  it("does not flag a name that matches a committed education account", () => {
+    const value = {
+      ...emptyGoals(),
+      education: [educationGoalFixture({ dedicatedAccountNames: ["Emma 529 Plan"] })],
+    };
+    render(<GoalsStep value={value} {...baseProps} accountOptions={[EDU_529]} />);
+    expect(screen.queryByText(/no committed account named/i)).not.toBeInTheDocument();
+  });
+
+  it("drops an unmatched name when the advisor removes it", () => {
+    const onChange = vi.fn();
+    const value = {
+      ...emptyGoals(),
+      education: [
+        educationGoalFixture({ dedicatedAccountNames: ["Renamed 529", "Emma 529 Plan"] }),
+      ],
+    };
+    render(
+      <GoalsStep
+        value={value}
+        {...baseProps}
+        accountOptions={[EDU_529]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /remove funding account Renamed 529/i }));
+    const next = onChange.mock.calls.at(-1)![0];
+    // Only the unmatched name goes; the resolvable one is untouched.
+    expect(next.education[0].dedicatedAccountNames).toEqual(["Emma 529 Plan"]);
   });
 });
