@@ -21,7 +21,7 @@ interface GoalsStepProps {
    * Already-committed accounts. `category`/`subType` are REQUIRED, not
    * optional: `commitGoals` scopes education dedicated-funding resolution to
    * education accounts, so this step cannot render an honest funding list
-   * without them (see `EDUCATION_ACCOUNT` below). They previously defaulted to
+   * without them (see `isEducationAccount` below). They previously defaulted to
    * `"cash"`/`"checking"`, which made every account look like a cash account.
    */
   accountOptions: { id: string; name: string; category: string; subType: string }[];
