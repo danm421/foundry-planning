@@ -59,7 +59,7 @@ describe("sendWelcomeEmail", () => {
     expect(arg.from).toBe("Dan Mueller <dan@foundryplanning.com>");
     expect(arg.to).toBe("new@example.com");
     expect(arg.replyTo).toBe("dan@foundryplanning.com");
-    expect(arg.subject).toBe("Welcome to Foundry");
+    expect(arg.subject).toBe("Welcome to Foundry Planning");
     expect(arg.text).toContain("Hi Sarah,");
     expect(arg.html).toBeUndefined();
   });

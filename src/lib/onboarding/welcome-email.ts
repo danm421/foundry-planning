@@ -2,19 +2,19 @@ import { Resend } from "resend";
 
 const DEFAULT_FROM = "Dan Mueller <dan@foundryplanning.com>";
 const REPLY_TO = "dan@foundryplanning.com";
-const SUBJECT = "Welcome to Foundry";
+const SUBJECT = "Welcome to Foundry Planning";
 
-/** Pure plain-text body for the founder welcome email. */
+/** Pure plain-text body for the signup welcome email. */
 export function renderWelcomeText(firstName: string | null): string {
   const name = firstName?.trim();
   const greeting = name ? `Hi ${name},` : "Hi there,";
   return `${greeting}
 
-Thanks for joining Foundry. I'm Dan, the founder — I wanted to personally welcome you and let you know I'm here if you need anything.
+Thanks for signing up for Foundry Planning. I hope you find it useful.
 
-If you have any questions or run into anything at all, just reply to this email. It comes straight to me.
+If you have a question, or something doesn't work the way you expect, just reply to this email. It comes straight to me.
 
-Glad to have you here.
+Glad you're here.
 
 Dan
 Foundry Planning`;
