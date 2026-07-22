@@ -19,6 +19,22 @@ export function numericAmount(raw: unknown): number | null {
 }
 
 /**
+ * Ids of the seeded RETIREMENT living slots for this import. A row matched to
+ * one of them describes retirement-phase spending and must not be summed into
+ * the CURRENT figure (F3).
+ *
+ * Reads `payload.expenseSlots`, which the matching pass populates with each
+ * slot's role. A payload persisted before that field carried a role yields an
+ * empty set — the pre-F3 behaviour, which under-classifies rather than
+ * misclassifies.
+ */
+export function retirementSlotIdsFromPayload(payload: ImportPayload): ReadonlySet<string> {
+  return new Set(
+    (payload.expenseSlots ?? []).filter((s) => s.role === "retirement").map((s) => s.id),
+  );
+}
+
+/**
  * THE rule for "this extracted expense row feeds the reviewed current-living-
  * spending total on the Plan basics step".
  *
@@ -36,9 +52,24 @@ export function numericAmount(raw: unknown): number | null {
  * outside the reviewed total — an under-report of the reviewed figure, never a
  * double count. Widening this predicate would silently change the figure the
  * advisor reviews, which is a separate (already-accepted) decision.
+ *
+ * `retirementSlotIds` (F3) excludes a row matched to the retirement slot from
+ * the CURRENT sum — that row is retirement-phase spending, and summing it here
+ * would both inflate the reviewed current figure AND suppress the row when the
+ * fold commits, losing it entirely.
  */
-export function isSummedLivingRow(row: Annotated<ExtractedExpense>): boolean {
-  return row.type === "living" && numericAmount(row.annualAmount) != null;
+export function isSummedLivingRow(
+  row: Annotated<ExtractedExpense>,
+  retirementSlotIds: ReadonlySet<string>,
+): boolean {
+  if (row.type !== "living") return false;
+  if (numericAmount(row.annualAmount) == null) return false;
+  // A row the advisor linked to the retirement slot is retirement-phase
+  // spending. Summing it into the current figure inflates what the advisor
+  // reviews AND suppresses the row — wrong twice.
+  const existingId = row.match?.kind === "exact" ? row.match.existingId : null;
+  if (existingId != null && retirementSlotIds.has(existingId)) return false;
+  return true;
 }
 
 /**
@@ -51,10 +82,11 @@ export function isSummedLivingRow(row: Annotated<ExtractedExpense>): boolean {
 export function sumExtractedLiving(
   payload: ImportPayload,
 ): { total: number; count: number } | null {
+  const retirementSlotIds = retirementSlotIdsFromPayload(payload);
   let total = 0;
   let count = 0;
   for (const row of payload.expenses) {
-    if (!isSummedLivingRow(row)) continue;
+    if (!isSummedLivingRow(row, retirementSlotIds)) continue;
     total += numericAmount(row.annualAmount)!;
     count += 1;
   }

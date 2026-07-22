@@ -147,7 +147,7 @@ export async function runMatchingPass(
       ? { ...emptyCandidates(), livingSlots }
       : { ...(await loadCandidates(args.clientId, args.scenarioId)), livingSlots };
   const annotated = annotatePayload(args.payload, candidates);
-  annotated.expenseSlots = livingSlots.map((s) => ({ id: s.id, name: s.name }));
+  annotated.expenseSlots = livingSlots.map((s) => ({ id: s.id, name: s.name, role: s.role }));
   return annotated;
 }
 

@@ -57,8 +57,13 @@ export type ImportPayload = {
    * Persistent Current/Retirement living-expense slots for this import's
    * scenario, surfaced to the review UI so the expenses tab can offer them as
    * link targets. Set by the matching pass; absent until then.
+   *
+   * `role` classifies the slot (F3). It is optional because a payload
+   * persisted before this field existed has no role on its slots — those
+   * degrade to "not retirement", i.e. exactly the pre-F3 behaviour, which is
+   * the safe direction.
    */
-  expenseSlots?: Array<{ id: string; name: string }>;
+  expenseSlots?: Array<{ id: string; name: string; role?: "current" | "retirement" }>;
   /** Advisor-edited plan-level values. Round-trips through buildLatestPayload. */
   planBasics?: AssemblePlanBasics;
 };

@@ -6,6 +6,11 @@ import { emptyImportPayload, type ImportPayload } from "../../types";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
 import { commitExpenses } from "../expenses";
 import { commitPlanBasics } from "../plan-basics";
+import {
+  isSummedLivingRow,
+  retirementSlotIdsFromPayload,
+  sumExtractedLiving,
+} from "@/lib/imports/living-rows";
 
 /**
  * THE DOUBLE-COUNT REGRESSION.
@@ -247,5 +252,44 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
 
     expect(expensesResult.created).toBe(1);
     expect(amountsWritten(fake, "insert")).toEqual(["9000"]);
+  });
+});
+
+function payloadWithSlots(): ImportPayload {
+  return {
+    ...emptyImportPayload(),
+    expenseSlots: [
+      { id: "slot-current", name: "Living Expenses", role: "current" },
+      { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+    ],
+  };
+}
+
+describe("F3 — phase-aware living-row predicate", () => {
+  it("excludes a row matched to the retirement slot from the current-spending sum", () => {
+    const payload = payloadWithSlots();
+    payload.expenses = [
+      { type: "living", name: "Living Expenses", annualAmount: 60000,
+        match: { kind: "exact", existingId: "slot-current" } },
+      { type: "living", name: "Retirement Living Expenses", annualAmount: 48000,
+        match: { kind: "exact", existingId: "slot-retirement" } },
+    ];
+
+    const retirementIds = retirementSlotIdsFromPayload(payload);
+    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
+    expect(isSummedLivingRow(payload.expenses[1], retirementIds)).toBe(false);
+
+    // The figure the advisor reviews is 60000, not 108000.
+    expect(sumExtractedLiving(payload)).toEqual({ total: 60000, count: 1 });
+  });
+
+  it("treats a payload with no slot roles as all-current (back-compat)", () => {
+    const payload = emptyImportPayload();
+    payload.expenses = [
+      { type: "living", name: "Housing", annualAmount: 24000, match: { kind: "new" } },
+    ];
+    const retirementIds = retirementSlotIdsFromPayload(payload);
+    expect(retirementIds.size).toBe(0);
+    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
   });
 });

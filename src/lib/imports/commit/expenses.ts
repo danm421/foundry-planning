@@ -70,6 +70,15 @@ export async function commitExpenses(
     (r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "current",
   );
 
+  // Same classification the assemble side uses, derived here from the slot
+  // rows this module already queried. Both sides must agree on which rows fed
+  // the figure, or the fold suppresses rows that were never summed.
+  const retirementSlotIds: ReadonlySet<string> = new Set(
+    slotRows
+      .filter((r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "retirement")
+      .map((r) => r.id),
+  );
+
   // Blank stays blank: with no planBasics block, or a null/cleared figure,
   // nothing is written to the slot and the itemized rows must still land.
   const foldLivingRows = livingTotalSupersedesRows(payload) && hasCurrentSlot;
@@ -86,7 +95,7 @@ export async function commitExpenses(
     // Folded into the reviewed total. Counted as `skipped`, the same channel
     // the deliberately-not-written fuzzy rows use — this is a decision, not a
     // failure, and the warning below says so in the commit result.
-    if (foldLivingRows && isSummedLivingRow(row)) {
+    if (foldLivingRows && isSummedLivingRow(row, retirementSlotIds)) {
       result.skipped += 1;
       folded += 1;
       continue;
