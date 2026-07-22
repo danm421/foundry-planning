@@ -39,20 +39,30 @@ export interface BuyLegEditorProps {
   leg: BuyLegDraft;
   onChange: (patch: Partial<BuyLegDraft>) => void;
   accounts: { id: string; name: string; category: string; subType: string }[];
+  /**
+   * Prefixed onto every field id/htmlFor pair. This component was written for
+   * a single-instance dialog and hardcodes ids like `id="assetName"` —
+   * rendering more than one instance on a page (e.g. one per planned
+   * purchase in the Goals import step) duplicates those ids, which breaks
+   * `getByLabelText` and any other id-based lookup. Defaults to "" so
+   * existing single-instance callers are unaffected.
+   */
+  idPrefix?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorProps) {
+export default function BuyLegEditor({ leg, onChange, accounts, idPrefix = "" }: BuyLegEditorProps) {
+  const fieldId = (name: string) => `${idPrefix}${name}`;
   return (
     <div className="space-y-4">
       {/* Asset Name */}
       <div>
-        <label className={fieldLabelClassName} htmlFor="assetName">
+        <label className={fieldLabelClassName} htmlFor={fieldId("assetName")}>
           Asset Name
         </label>
         <input
-          id="assetName"
+          id={fieldId("assetName")}
           type="text"
           value={leg.assetName}
           onChange={(e) => onChange({ assetName: e.target.value })}
@@ -64,11 +74,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
       {/* Category + Sub-Type */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={fieldLabelClassName} htmlFor="assetCategory">
+          <label className={fieldLabelClassName} htmlFor={fieldId("assetCategory")}>
             Asset Category
           </label>
           <select
-            id="assetCategory"
+            id={fieldId("assetCategory")}
             value={leg.assetCategory}
             onChange={(e) => {
               const cat = e.target.value as AssetCategory;
@@ -84,11 +94,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
           </select>
         </div>
         <div>
-          <label className={fieldLabelClassName} htmlFor="assetSubType">
+          <label className={fieldLabelClassName} htmlFor={fieldId("assetSubType")}>
             Sub-Type
           </label>
           <select
-            id="assetSubType"
+            id={fieldId("assetSubType")}
             value={leg.assetSubType}
             onChange={(e) => onChange({ assetSubType: e.target.value })}
             className={selectClassName}
@@ -105,22 +115,22 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
       {/* Purchase Price + Growth Rate */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={fieldLabelClassName} htmlFor="purchasePrice">
+          <label className={fieldLabelClassName} htmlFor={fieldId("purchasePrice")}>
             Purchase Price ($)
           </label>
           <CurrencyInput
-            id="purchasePrice"
+            id={fieldId("purchasePrice")}
             value={leg.purchasePrice}
             onChange={(raw) => onChange({ purchasePrice: raw })}
             className={inputClassName.replace("px-3", "pr-3")}
           />
         </div>
         <div>
-          <label className={fieldLabelClassName} htmlFor="growthRate">
+          <label className={fieldLabelClassName} htmlFor={fieldId("growthRate")}>
             Growth Rate (%)
           </label>
           <PercentInput
-            id="growthRate"
+            id={fieldId("growthRate")}
             value={leg.growthRate}
             onChange={(raw) => onChange({ growthRate: raw })}
             placeholder="e.g., 3.5"
@@ -132,11 +142,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
       {/* Basis + Funding Source */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={fieldLabelClassName} htmlFor="basis">
+          <label className={fieldLabelClassName} htmlFor={fieldId("basis")}>
             Basis ($)
           </label>
           <CurrencyInput
-            id="basis"
+            id={fieldId("basis")}
             value={leg.basis}
             onChange={(raw) => onChange({ basis: raw })}
             placeholder="Optional"
@@ -144,11 +154,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
           />
         </div>
         <div>
-          <label className={fieldLabelClassName} htmlFor="fundingAccountId">
+          <label className={fieldLabelClassName} htmlFor={fieldId("fundingAccountId")}>
             Funding Source
           </label>
           <select
-            id="fundingAccountId"
+            id={fieldId("fundingAccountId")}
             value={leg.fundingAccountId}
             onChange={(e) => onChange({ fundingAccountId: e.target.value })}
             className={selectClassName}
@@ -184,22 +194,22 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
         {leg.showMortgage && (
           <div className="mt-3 grid grid-cols-3 gap-4 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-4">
             <div>
-              <label className={fieldLabelClassName} htmlFor="mortgageAmount">
+              <label className={fieldLabelClassName} htmlFor={fieldId("mortgageAmount")}>
                 Amount ($)
               </label>
               <CurrencyInput
-                id="mortgageAmount"
+                id={fieldId("mortgageAmount")}
                 value={leg.mortgageAmount}
                 onChange={(raw) => onChange({ mortgageAmount: raw })}
                 className={inputClassName.replace("px-3", "pr-3")}
               />
             </div>
             <div>
-              <label className={fieldLabelClassName} htmlFor="mortgageRate">
+              <label className={fieldLabelClassName} htmlFor={fieldId("mortgageRate")}>
                 Rate (%)
               </label>
               <PercentInput
-                id="mortgageRate"
+                id={fieldId("mortgageRate")}
                 value={leg.mortgageRate}
                 onChange={(raw) => onChange({ mortgageRate: raw })}
                 placeholder="e.g., 6.75"
@@ -207,11 +217,11 @@ export default function BuyLegEditor({ leg, onChange, accounts }: BuyLegEditorPr
               />
             </div>
             <div>
-              <label className={fieldLabelClassName} htmlFor="mortgageTermMonths">
+              <label className={fieldLabelClassName} htmlFor={fieldId("mortgageTermMonths")}>
                 Term (mo)
               </label>
               <input
-                id="mortgageTermMonths"
+                id={fieldId("mortgageTermMonths")}
                 type="number"
                 step="1"
                 min={1}
