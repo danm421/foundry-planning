@@ -54,3 +54,74 @@ export interface AssembleState {
   assumptions: AssembleAssumption[];
   questions: AssembleQuestion[];
 }
+
+/**
+ * An education goal proposed from a 529 in the import, or added by the advisor.
+ *
+ * Cross-entity references are carried BY NAME, not by id: at assemble time the
+ * 529 and the student are extracted rows with no DB row yet. `commitGoals`
+ * resolves them against already-committed rows, the same way
+ * `commit/mortgage-link.ts` resolves a mortgage to its property.
+ */
+export interface EducationGoal {
+  /** Stable and deterministic — derived from the funding account name, never random. */
+  id: string;
+  name: PlanBasicsField<string>;
+  /** The student. Resolved to `expenses.forFamilyMemberId` at commit. */
+  forFamilyMemberName: PlanBasicsField<string>;
+  /** Blank until the advisor states it. A blank goal is NOT committed. */
+  annualAmount: PlanBasicsField<number>;
+  startYear: PlanBasicsField<number>;
+  years: PlanBasicsField<number>;
+  growthRate: PlanBasicsField<number>;
+  payShortfallOutOfPocket: PlanBasicsField<boolean>;
+  /** Funding 529s in draw order. Resolved to account ids at commit. */
+  dedicatedAccountNames: string[];
+}
+
+/**
+ * A planned asset purchase.
+ *
+ * Deliberately NOT wrapped in `PlanBasicsField`. Extraction has no concept of a
+ * future purchase intent, so nothing here is ever derived — every field is
+ * advisor-stated, and a provenance envelope on a field that can only ever read
+ * "stated" is dead weight that would also block reusing the existing form.
+ *
+ * The field names mirror `BuyLegDraft` in
+ * `components/forms/asset-transaction-leg-model.ts` one-for-one (string-typed,
+ * because they are form state) so the wizard can hand this straight to the
+ * shipped `BuyLegEditor` through a near-identity adapter. The type is declared
+ * here rather than imported from `components/` because `lib -> components` is
+ * the wrong direction.
+ *
+ * `fundingAccountId` is a REAL account id, not a name: the down-payment source
+ * is chosen from the client's already-committed accounts, so unlike an
+ * education goal's 529 it needs no resolution pass at commit.
+ */
+export interface HomePurchaseGoal {
+  id: string;
+  /** Transaction name — the only server-required field besides type and year. */
+  name: string;
+  year: string;
+  assetName: string;
+  assetSubType: string;
+  purchasePrice: string;
+  growthRate: string;
+  basis: string;
+  fundingAccountId: string;
+  showMortgage: boolean;
+  mortgageAmount: string;
+  mortgageRate: string;
+  mortgageTermMonths: string;
+}
+
+export interface AssembleGoals {
+  education: EducationGoal[];
+  homePurchases: HomePurchaseGoal[];
+  /**
+   * Advisor-stated risk tolerance. OPTIONAL and written only once the sibling
+   * `model-portfolio-risk-levels` spec has shipped the `clients.risk_tolerance`
+   * column — see the final task of the phase-2b plan.
+   */
+  riskTolerance?: PlanBasicsField<string>;
+}
