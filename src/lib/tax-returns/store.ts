@@ -12,6 +12,16 @@ export async function listTaxReturns(clientId: string): Promise<TaxReturnRow[]> 
     .orderBy(desc(taxReturns.taxYear));
 }
 
+export async function getLatestTaxReturn(clientId: string): Promise<TaxReturnRow | null> {
+  const [row] = await db
+    .select()
+    .from(taxReturns)
+    .where(eq(taxReturns.clientId, clientId))
+    .orderBy(desc(taxReturns.taxYear))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function getTaxReturn(clientId: string, taxYear: number): Promise<TaxReturnRow | null> {
   const [row] = await db
     .select()

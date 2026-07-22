@@ -14,7 +14,7 @@ import {
   plaidItems,
 } from "@/db/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
-import { computePlanEndAge } from "@/lib/plan-horizon";
+import { computePlanEndAge, computePlanEndYear } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
@@ -195,7 +195,7 @@ export async function PUT(
       const dobForHorizon =
         (identityPatch.dateOfBirth as string | undefined) ??
         primaryContact.dateOfBirth;
-      const newEndYear = new Date(dobForHorizon).getFullYear() + updateBody.planEndAge;
+      const newEndYear = computePlanEndYear(dobForHorizon, updateBody.planEndAge);
       await db
         .update(planSettings)
         .set({ planEndYear: newEndYear, updatedAt: new Date() })

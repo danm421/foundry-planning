@@ -220,6 +220,8 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
   const filing = str(a.filingStatus);
   const ret = typeof a.retirementAge === "number" ? a.retirementAge : undefined;
   const life = typeof a.lifeExpectancy === "number" ? a.lifeExpectancy : undefined;
+  const spouseRet = typeof a.spouseRetirementAge === "number" ? a.spouseRetirementAge : undefined;
+  const spouseLife = typeof a.spouseLifeExpectancy === "number" ? a.spouseLifeExpectancy : undefined;
 
   const details = [
     primaryName && `Primary: ${primaryName}${primaryDob ? ` (DOB ${primaryDob})` : ""}`,
@@ -228,6 +230,8 @@ function previewBuildPlan(a: Record<string, unknown>): WritePreview {
     filing && `Filing status: ${filing}`,
     ret != null && `Retirement age: ${ret}`,
     life != null && `Life expectancy: ${life}`,
+    spouseRet != null && `Spouse retirement age: ${spouseRet}`,
+    spouseLife != null && `Spouse life expectancy: ${spouseLife}`,
   ].filter(Boolean) as string[];
 
   return {

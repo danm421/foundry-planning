@@ -134,6 +134,22 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         const primary = hh.contacts.find((c: { role: string }) => c.role === "primary");
         if (!primary) return "That household has no primary contact — add one before setting up a plan.";
         const spouse = hh.contacts.find((c: { role: string }) => c.role === "spouse");
+        // Same guard as build_plan, and for the same reason — see the long note
+        // there. `create_household` → `set_up_plan` is a first-class alternative
+        // to build_plan, and it reaches the identical defect: a spouse on the
+        // household means createClientForHousehold stamps its 65/95 defaults,
+        // which the Plan basics step then shows unchipped as `build_request`.
+        // Keyed on the HOUSEHOLD's spouse contact rather than a request arg,
+        // because that is what decides whether the defaults get stamped.
+        if (
+          spouse &&
+          (args.spouseRetirementAge == null || args.spouseLifeExpectancy == null)
+        ) {
+          return (
+            "That household has a spouse, so set_up_plan also needs spouseRetirementAge " +
+            "and spouseLifeExpectancy. Ask the advisor for both, then call set_up_plan again."
+          );
+        }
         const result = await createClientForHousehold({
           household: { id: hh.id, firmId, advisorId: hh.advisorId, state: hh.state },
           primaryContact: { firstName: primary.firstName, lastName: primary.lastName, dateOfBirth: args.primaryDob },
@@ -162,7 +178,9 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         "Turn an existing household into a full financial plan (projection client). Requires human approval. " +
         "Needs the household id (from find_client/create_household), the primary contact's date of birth, " +
         "retirement age, life expectancy, and filing status (single, married_joint, married_separate, head_of_household). " +
-        "Uses the household's stored contact names and state.",
+        "Uses the household's stored contact names and state. When the household HAS a spouse contact, " +
+        "spouseRetirementAge and spouseLifeExpectancy are BOTH required — ask the advisor for them; the call " +
+        "is refused without them rather than defaulting them.",
       schema: z.object({
         householdId: z.string().min(1),
         retirementAge: z.number().int().min(30).max(90),
@@ -183,8 +201,36 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
       spouseFirstName?: string; spouseLastName?: string; spouseDob?: string;
       filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
       retirementAge: number; lifeExpectancy: number;
+      spouseRetirementAge?: number; spouseLifeExpectancy?: number;
     }) => {
       try {
+        // A spouse in the request means `createClientForHousehold` will stamp
+        // its 65/95 chokepoint defaults onto the clients row — and the import's
+        // Plan basics step then reads those columns back and presents the
+        // constants as `provenance: "build_request"` with no reason, so no
+        // "Assumed" chip: a platform default shown to the advisor as a stated
+        // fact, labelled as though it came in as a build_plan argument. Refuse
+        // the call instead, so the advisor supplies real numbers.
+        //
+        // Enforced in the tool body, NOT as a Zod `superRefine` on the schema:
+        // build_plan is HITL-gated, and `approvalNode` in graph.ts invokes the
+        // confirmed tool through a bare `t.invoke(args, config)` with no
+        // try/catch. A schema rejection there throws ToolInputParsingException
+        // AFTER the advisor has already clicked Approve, taking the turn down.
+        // Returning a message keeps it a normal tool result the model can act
+        // on by asking for the two values. (A refinement would also be
+        // invisible to the model: zod checks do not serialize into the JSON
+        // Schema the tool is bound with — only this description teaches it.)
+        const requestHasSpouse = Boolean(args.spouseFirstName && args.spouseLastName);
+        if (
+          requestHasSpouse &&
+          (args.spouseRetirementAge == null || args.spouseLifeExpectancy == null)
+        ) {
+          return (
+            "This household has a spouse, so build_plan also needs spouseRetirementAge " +
+            "and spouseLifeExpectancy. Ask the advisor for both, then call build_plan again."
+          );
+        }
         const firmId = await requireOrgId();
         const { clientId, importId } = await ensurePlanImport({
           mode: "new", firmId, actorUserId: ctx.userId,
@@ -195,6 +241,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
               ? { firstName: args.spouseFirstName, lastName: args.spouseLastName, dateOfBirth: args.spouseDob }
               : undefined,
             filingStatus: args.filingStatus, retirementAge: args.retirementAge, lifeExpectancy: args.lifeExpectancy,
+            spouseRetirementAge: args.spouseRetirementAge,
+            spouseLifeExpectancy: args.spouseLifeExpectancy,
           },
         });
         await recordAudit({
@@ -215,7 +263,10 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         "Start building a NEW prospect's financial plan from documents the advisor will upload. Mints the household " +
         "+ base plan, then creates a draft import to attach files to. Collect the household name, US state (2-letter), " +
         "primary contact name + date of birth, filing status (single, married_joint, married_separate, head_of_household), " +
-        "retirement age, and life expectancy; a spouse is optional. Requires human approval.",
+        "retirement age, and life expectancy. A spouse is optional, but when the household HAS a spouse, " +
+        "spouseRetirementAge and spouseLifeExpectancy are BOTH required — ask the advisor for them; the call " +
+        "is refused without them, because guessing them would silently set the plan horizon. " +
+        "Requires human approval.",
       schema: z.object({
         householdName: z.string().min(1).max(200),
         state: z.string().length(2).optional().describe("USPS 2-letter state code, e.g. NJ"),
@@ -228,6 +279,8 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
         filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]),
         retirementAge: z.number().int().min(30).max(90),
         lifeExpectancy: z.number().int().min(60).max(120),
+        spouseRetirementAge: z.number().int().min(30).max(90).optional(),
+        spouseLifeExpectancy: z.number().int().min(60).max(120).optional(),
       }),
     },
   );

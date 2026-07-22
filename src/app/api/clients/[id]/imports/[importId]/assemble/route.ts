@@ -12,6 +12,8 @@ import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { runAssemble } from "@/lib/imports/assemble/run-assemble";
 import { getClientWithContacts } from "@/lib/clients/get-client-with-contacts";
+import { getLatestTaxReturn } from "@/lib/tax-returns/store";
+import { parseRowFacts } from "@/lib/tax-returns/db";
 import type { ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
@@ -136,13 +138,40 @@ export async function POST(request: NextRequest, { params }: Params) {
         // body.known value still wins — nothing sends one today, but the shape
         // is kept for forward-compat / manual testing.
         const clientRow = await getClientWithContacts(clientId, firmId);
+        const hasSpouse = Boolean(clientRow?.spouseFirstName);
         const known = {
             retirementAge: clientRow?.retirementAge,
             lifeExpectancy: clientRow?.lifeExpectancy,
             filingStatus: clientRow?.filingStatus,
             primaryDob: clientRow?.dateOfBirth ?? undefined,
+            spouseRetirementAge: clientRow?.spouseRetirementAge,
+            spouseLifeExpectancy: clientRow?.spouseLifeExpectancy,
+            spouseDob: clientRow?.spouseDateOfBirth ?? undefined,
             ...body.known,
         };
+
+        // Best-effort: the latest stored return feeds the plan-basics spending
+        // estimate. getLatestTaxReturn is NOT itself firm-scoped, so it may only
+        // be called after verifyClientAccess (above) has authorized this client.
+        // A missing/unreadable return degrades to `taxReturn: null` — it must
+        // never fail assemble.
+        let taxReturn: { taxYear: number; agi: number | null; totalTax: number | null } | null = null;
+        try {
+            const latest = await getLatestTaxReturn(clientId);
+            if (latest) {
+                const { facts } = parseRowFacts(latest);
+                taxReturn = {
+                    taxYear: latest.taxYear,
+                    agi: facts?.income.agi ?? null,
+                    totalTax: facts?.tax.totalTax ?? null,
+                };
+            }
+        } catch (err) {
+            console.error(
+                "POST /api/clients/[id]/imports/[importId]/assemble: tax return read failed (best-effort):",
+                err,
+            );
+        }
 
         const result = await runAssemble({
             importId,
@@ -152,6 +181,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             scenarioId,
             fileResults,
             known,
+            hasSpouse,
+            taxReturn,
         });
 
         return NextResponse.json({

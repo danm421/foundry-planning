@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ForgePanel } from "../forge-panel";
-import type { UseForgeStreamResult } from "../use-forge-stream";
+import type { UseForgeStreamResult, PendingApproval } from "../use-forge-stream";
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation
@@ -323,5 +323,62 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
       rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
     });
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 — global Forge discoverability. Copy-only: the clientless panel's
+// empty state and composer placeholder must describe what the clientless
+// panel can actually do (find a client, build a plan from documents) instead
+// of leaking client-scoped copy that doesn't apply with no plan in context.
+// Also retires "Confirm or cancel" for the pending-approval placeholder — a
+// one-change card renders Approve/Reject only, so the old copy named a
+// control that isn't on screen.
+// ---------------------------------------------------------------------------
+const SAMPLE_APPROVAL: PendingApproval = {
+  previews: [{ summary: "Add Roth conversion: $40,000 in 2026", name: "propose_changes" }],
+  calls: [{ id: "call_a", name: "propose_changes", args: {} }],
+};
+
+describe("clientless Forge discoverability", () => {
+  beforeEach(() => {
+    mockStreamState = makeStreamState();
+    importMocks.runImport.mockClear();
+    importMocks.runPlanBuild.mockClear();
+    importMocks.submitPlanAnswers.mockClear();
+  });
+
+  it("advertises the plan builder in the empty state when there is no client", () => {
+    mountGlobalPanel();
+    expect(
+      screen.getByText(/build a plan for a new prospect from their documents/i),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the plan-scoped empty state when a client IS in scope", () => {
+    render(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    expect(screen.getByText(/explain the plan, run the numbers/i)).toBeInTheDocument();
+  });
+
+  it("uses a clientless composer placeholder when there is no client", () => {
+    mountGlobalPanel();
+    expect(
+      screen.getByPlaceholderText(/build a plan, find a client, or ask/i),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the plan placeholder when a client IS in scope", () => {
+    render(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    expect(screen.getByPlaceholderText(/ask about this plan/i)).toBeInTheDocument();
+  });
+
+  it("labels the approval composer for approve/reject, not confirm/cancel", () => {
+    // A one-change card renders Approve/Reject; the old copy said "cancel",
+    // which names no control on screen. pendingApproval is driven through the
+    // mocked useForgeStream return value — the same lever
+    // forge-panel-approval.test.tsx uses — rather than a test-only prop.
+    mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL });
+    mountGlobalPanel();
+    expect(screen.getByPlaceholderText(/approve or reject/i)).toBeInTheDocument();
   });
 });

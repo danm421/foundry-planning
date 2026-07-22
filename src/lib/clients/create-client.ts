@@ -8,7 +8,7 @@ import {
   incomes,
   familyMembers,
 } from "@/db/schema";
-import { computePlanEndAge } from "@/lib/plan-horizon";
+import { computePlanEndAge, computePlanEndYear } from "@/lib/plan-horizon";
 import { recordAudit } from "@/lib/audit";
 import { isUSPSStateCode } from "@/lib/usps-states";
 
@@ -149,7 +149,7 @@ async function runCreate(
     clientId: client.id,
     scenarioId: scenario.id,
     planStartYear: currentYear,
-    planEndYear: new Date(dateOfBirth).getFullYear() + planEndAge,
+    planEndYear: computePlanEndYear(dateOfBirth, planEndAge),
     // Seed the plan's residence state from the household's canonical state so
     // state income + estate tax compute on real brackets instead of the flat
     // fallback. Seed-once: the assumptions page owns residenceState per

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clientImports } from "@/db/schema";
 
 import type { ImportPayload } from "../types";
+import { requiredCommitTabs, presenceFromPayload } from "../required-tabs";
 import { commitAccounts } from "./accounts";
 import { commitClientsIdentity } from "./clients-identity";
 import { commitEntities } from "./entities";
@@ -16,6 +17,7 @@ import { commitFamilyMembers } from "./family-members";
 import { commitIncomes } from "./incomes";
 import { commitLiabilities } from "./liabilities";
 import { commitLifeInsurance } from "./life-insurance";
+import { commitPlanBasics } from "./plan-basics";
 import { commitWills } from "./wills";
 import {
   COMMIT_TABS,
@@ -35,7 +37,7 @@ export interface CommitTabsArgs {
 
 export interface CommitTabsResult {
   results: Record<CommitTab, CommitResult>;
-  /** True iff every tab in COMMIT_TABS now has a perTabCommittedAt entry. */
+  /** True iff every tab this import requires (see `requiredCommitTabs`) now has a perTabCommittedAt entry. */
   allTabsCommitted: boolean;
   /**
    * True iff THIS commit call caused the import to transition from
@@ -62,7 +64,8 @@ const FAMILY_DEPENDENT_TABS: ReadonlySet<CommitTab> = new Set([
  *
  * After dispatch, the import row's `perTabCommittedAt` jsonb is patched
  * with the just-finished tabs and the import status is flipped to
- * 'committed' if every tab in COMMIT_TABS is now present.
+ * 'committed' if every tab this import requires (see `requiredCommitTabs`)
+ * is now present.
  */
 export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult> {
   const requested = new Set<CommitTab>(args.tabs);
@@ -96,6 +99,7 @@ export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult
       tx,
       args.importId,
       ordered,
+      args.payload,
     );
     return { results, allTabsCommitted, firstTimeAllCommitted };
   });
@@ -109,6 +113,8 @@ async function dispatchTab(
   family: FamilyRoleIds | null,
 ): Promise<CommitResult> {
   switch (tab) {
+    case "plan-basics":
+      return commitPlanBasics(tx, payload, ctx);
     case "clients-identity":
       return commitClientsIdentity(tx, payload, ctx);
     case "family-members":
@@ -133,14 +139,19 @@ async function dispatchTab(
 /**
  * Load the import row's current perTabCommittedAt, merge in the just-
  * committed tabs, and write back in a single UPDATE — flipping the
- * status to 'committed' atomically when every tab in COMMIT_TABS is
- * present in the merged map. Returns the resulting "all tabs committed"
- * flag.
+ * status to 'committed' atomically when every tab this import actually
+ * requires (per `requiredCommitTabs`) is present in the merged map.
+ * Returns the resulting "all tabs committed" flag.
+ *
+ * Exported so the orchestrator regression test can exercise this directly
+ * against a fake transaction, rather than re-deriving the predicate in the
+ * test and asserting on a local copy.
  */
-async function markTabsCommitted(
+export async function markTabsCommitted(
   tx: Tx,
   importId: string,
   tabs: readonly CommitTab[],
+  payload: ImportPayload,
 ): Promise<{ allTabsCommitted: boolean; firstTimeAllCommitted: boolean }> {
   const now = new Date();
   const patchEntries = tabs.map((t) => [t, now.toISOString()] as const);
@@ -158,7 +169,11 @@ async function markTabsCommitted(
     ...((existing?.perTabCommittedAt as Record<string, unknown> | null) ?? {}),
     ...patch,
   };
-  const allCommitted = COMMIT_TABS.every((t) => merged[t] != null);
+  // Only the tabs this import actually needs. Requiring all of COMMIT_TABS
+  // made 'committed' unreachable for any import lacking a category — i.e.
+  // essentially every real import.
+  const required = requiredCommitTabs(presenceFromPayload(payload));
+  const allCommitted = required.every((t) => merged[t] != null);
   const firstTimeAllCommitted = allCommitted && existing?.committedAt == null;
 
   await tx

@@ -244,6 +244,7 @@ export default function WizardImportReview({
       entities,
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
+      planBasics: payload.planBasics,
     };
   }, [
     primary,
@@ -259,6 +260,7 @@ export default function WizardImportReview({
     entities,
     payload.warnings,
     payload.expenseSlots,
+    payload.planBasics,
   ]);
 
   const alreadyCommitted = STEP_COMMIT_TABS[step].every((ct) =>

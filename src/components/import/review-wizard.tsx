@@ -15,8 +15,10 @@ import type {
   ExtractedWill,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
-import type { AssembleAssumption } from "@/lib/imports/assemble/types";
+import type { AssembleAssumption, AssemblePlanBasics } from "@/lib/imports/assemble/types";
+import { emptyPlanBasics } from "@/lib/imports/assemble/plan-basics";
 import type { CommitTab } from "@/lib/imports/commit/types";
+import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
@@ -26,6 +28,7 @@ import ReviewStepIncomes from "./review-step-incomes";
 import ReviewStepExpenses from "./review-step-expenses";
 import ReviewStepLiabilities from "./review-step-liabilities";
 import ReviewStepEntities from "./review-step-entities";
+import PlanBasicsStep from "./plan-basics-step";
 import ReviewStepFamily from "./review-step-family";
 import ReviewStepInsurance from "./review-step-insurance";
 import ReviewStepWills, {
@@ -38,6 +41,7 @@ import { SourceFilesContext } from "./source-badge";
 import WarningsBanner from "./warnings-banner";
 
 type WizardTabId =
+  | "plan-basics"
   | "family"
   | "accounts"
   | "incomes"
@@ -85,6 +89,7 @@ const EMPTY_CANONICAL: CanonicalRows = {
  * because they share the same wizard step.
  */
 const TAB_TO_COMMIT: Record<Exclude<WizardTabId, "summary">, CommitTab[]> = {
+  "plan-basics": ["plan-basics"],
   family: ["clients-identity", "family-members"],
   accounts: ["accounts"],
   incomes: ["incomes"],
@@ -96,6 +101,7 @@ const TAB_TO_COMMIT: Record<Exclude<WizardTabId, "summary">, CommitTab[]> = {
 };
 
 const TAB_LABEL: Record<WizardTabId, string> = {
+  "plan-basics": "Plan basics",
   family: "Family",
   accounts: "Accounts",
   incomes: "Income",
@@ -147,6 +153,18 @@ export default function ReviewWizard({
     payload.lifePolicies,
   );
   const [entities, setEntities] = useState<Annotated<ExtractedEntity>[]>(payload.entities);
+
+  // planBasics is absent on an import assembled before this feature existed,
+  // or when derivePlanBasics had too little evidence to run at all. The Plan
+  // basics tab is unconditional, so it must never crash on that — fall back
+  // to an all-blank shape rather than requiring the caller to guarantee one.
+  const [planBasics, setPlanBasics] = useState<AssemblePlanBasics>(
+    () => payload.planBasics ?? emptyPlanBasics(),
+  );
+
+  // Established convention on this branch: a household "has a spouse" when
+  // the wizard was handed a spouse first name, rather than a separate signal.
+  const hasSpouse = Boolean(spouseFirstName);
 
   // Wills get their own wizard-internal shape because each bequest
   // gains FK / kind / recipient resolution fields the commit pipeline
@@ -257,7 +275,7 @@ export default function ReviewWizard({
   }, [canonical]);
 
   const tabs: WizardTabId[] = useMemo(() => {
-    const t: WizardTabId[] = [];
+    const t: WizardTabId[] = ["plan-basics"];
     if (primary || spouse || dependents.length > 0) t.push("family");
     if (accounts.length > 0) t.push("accounts");
     if (incomes.length > 0) t.push("incomes");
@@ -296,8 +314,9 @@ export default function ReviewWizard({
       entities,
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
+      planBasics,
     };
-  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots]);
+  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots, planBasics]);
 
   const handleCommit = useCallback(
     async (tab: WizardTabId) => {
@@ -358,10 +377,40 @@ export default function ReviewWizard({
   );
 
   const allCommittableTabs = tabs.filter((t) => t !== "summary");
-  const allCommitted = allCommittableTabs.every(tabCommitted);
+
+  // Deliberately duplicates `presenceFromPayload` in required-tabs.ts (server
+  // side, derived from the persisted ImportPayload) — this memo derives from
+  // the wizard's own live edited state, a different shape. The two rules must
+  // keep agreeing: a change here needs the matching change there too.
+  const presence: CategoryPresence = useMemo(
+    () => ({
+      family: primary != null || spouse != null || dependents.length > 0,
+      accounts: accounts.length > 0,
+      incomes: incomes.length > 0,
+      expenses: expenses.length > 0,
+      liabilities: liabilities.length > 0,
+      lifePolicies: lifePolicies.length > 0,
+      wills: wills.length > 0,
+      entities: entities.length > 0,
+    }),
+    [primary, spouse, dependents.length, accounts.length, incomes.length,
+     expenses.length, liabilities.length, lifePolicies.length, wills.length,
+     entities.length],
+  );
+
+  // Completion is judged against the SAME required set the server uses, so the
+  // "All tabs committed" banner can never disagree with the stored status.
+  const requiredTabs = useMemo(() => requiredCommitTabs(presence), [presence]);
+  const allCommitted = requiredTabs.every((ct) =>
+    perTabCommittedAt ? perTabCommittedAt[ct] != null : false,
+  );
 
   const tabCount = (tab: WizardTabId): number => {
     switch (tab) {
+      // Not row-driven — there's nothing to count. The tab strip and summary
+      // list both hide the count badge for this instead of showing a
+      // misleading "0".
+      case "plan-basics": return 0;
       case "family":
         return (primary ? 1 : 0) + (spouse ? 1 : 0) + dependents.length;
       case "accounts": return accounts.length;
@@ -428,6 +477,9 @@ export default function ReviewWizard({
       ) : null}
 
       <div>
+        {currentTab === "plan-basics" && (
+          <PlanBasicsStep value={planBasics} hasSpouse={hasSpouse} onChange={setPlanBasics} />
+        )}
         {currentTab === "family" && (
           <ReviewStepFamily
             primary={primary}
@@ -643,7 +695,7 @@ function TabStrip({ tabs, currentTab, committingTab, onSelect, committed, count 
             }`}
           >
             <span>{TAB_LABEL[t]}</span>
-            {t !== "summary" && (
+            {t !== "summary" && t !== "plan-basics" && (
               <span
                 className={`rounded px-1.5 py-0.5 text-[10px] ${
                   isCurrent ? "bg-black/20" : "bg-black/10"
@@ -689,9 +741,11 @@ function SummaryStep({
           <li key={t} className="flex items-center justify-between px-3 py-2 text-sm">
             <div className="flex items-center gap-3">
               <span className="text-ink-2">{TAB_LABEL[t]}</span>
-              <span className="rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-3">
-                {tabCount(t)}
-              </span>
+              {t !== "plan-basics" && (
+                <span className="rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-3">
+                  {tabCount(t)}
+                </span>
+              )}
             </div>
             <div className="text-xs">
               {committed(t) ? (

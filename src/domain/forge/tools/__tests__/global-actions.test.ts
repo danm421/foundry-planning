@@ -129,6 +129,64 @@ describe("set_up_plan (HITL)", () => {
     expect(out).toMatch(/not found/i);
     expect(createClientForHousehold).not.toHaveBeenCalled();
   });
+
+  const spouseHousehold = {
+    ...household,
+    contacts: [
+      ...household.contacts,
+      { role: "spouse", firstName: "Sam", lastName: "Doe", dateOfBirth: null },
+    ],
+  };
+
+  it("refuses a spouse HOUSEHOLD with no spouse retirement age / life expectancy", async () => {
+    // The same defect build_plan guards against, reached the other way round:
+    // create_household → set_up_plan. The trigger here is the household's
+    // stored spouse contact, not a request arg, because that is what makes
+    // createClientForHousehold stamp its 65/95 defaults — which the Plan
+    // basics step would then show unchipped as confident `build_request`.
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseDob: "1972-03-01",
+    }));
+    expect(out).toMatch(/spouseRetirementAge/);
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+
+  it("refuses when only ONE of the spouse horizon pair is supplied", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    const out = String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseRetirementAge: 63,
+    }));
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(createClientForHousehold).not.toHaveBeenCalled();
+  });
+
+  it("proceeds for a spouse household once BOTH horizon values are supplied", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(spouseHousehold as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "married_joint", primaryDob: "1970-05-15", spouseDob: "1972-03-01",
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    })));
+    expect(createClientForHousehold).toHaveBeenCalledWith(expect.objectContaining({
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    }));
+    expect(out).toEqual({ clientId: "client_9" });
+  });
+
+  it("does NOT require the spouse pair for a household with no spouse contact", async () => {
+    vi.mocked(getCrmHousehold).mockResolvedValue(household as unknown as Awaited<ReturnType<typeof getCrmHousehold>>);
+    vi.mocked(createClientForHousehold).mockResolvedValue({ clientId: "client_9", scenarioId: "base" } as unknown as Awaited<ReturnType<typeof createClientForHousehold>>);
+    const out = JSON.parse(String(await getTool("set_up_plan").invoke({
+      householdId: "hh_1", retirementAge: 65, lifeExpectancy: 95,
+      filingStatus: "single", primaryDob: "1970-05-15",
+    })));
+    expect(out).toEqual({ clientId: "client_9" });
+  });
 });
 
 describe("build_plan (HITL, new prospect)", () => {
@@ -157,5 +215,65 @@ describe("build_plan (HITL, new prospect)", () => {
     }));
     expect(emitNavigate).not.toHaveBeenCalled();
     expect(out).toEqual({ clientId: "client_9", importId: "imp_1", mode: "new" });
+  });
+
+  it("forwards spouse retirement age and life expectancy into newHousehold", async () => {
+    vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
+    await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen", spouseDob: "1974-01-01",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+      spouseRetirementAge: 63, spouseLifeExpectancy: 90,
+    });
+    expect(ensurePlanImport).toHaveBeenCalledWith(expect.objectContaining({
+      newHousehold: expect.objectContaining({
+        spouseRetirementAge: 63,
+        spouseLifeExpectancy: 90,
+      }),
+    }));
+  });
+
+  it("refuses a spouse household with no spouse retirement age / life expectancy", async () => {
+    // create-client stamps 65/95 at its write chokepoint when a spouse exists,
+    // and the import's Plan basics step would then show those constants as
+    // confident `build_request` values with no "Assumed" chip. Refusing the
+    // call is what keeps a platform default from becoming a stated fact.
+    const out = String(await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen", spouseDob: "1974-01-01",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+    }));
+    expect(out).toMatch(/spouseRetirementAge/);
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses when only ONE of the spouse horizon pair is supplied", async () => {
+    const out = String(await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      spouseFirstName: "Minh", spouseLastName: "Nguyen",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+      spouseRetirementAge: 63,
+    }));
+    expect(out).toMatch(/spouseLifeExpectancy/);
+    expect(ensurePlanImport).not.toHaveBeenCalled();
+  });
+
+  // The no-spouse case: nothing about the spouse is stated, so nothing is
+  // required and nothing is defaulted — create-client leaves both columns null.
+  it("leaves spouse retirement age and life expectancy undefined when there is no spouse", async () => {
+    vi.mocked(ensurePlanImport).mockResolvedValue({ clientId: "client_9", scenarioId: "base", importId: "imp_1" } as unknown as Awaited<ReturnType<typeof ensurePlanImport>>);
+    await getTool("build_plan").invoke({
+      householdName: "Nguyen Household", state: "NJ",
+      primaryFirstName: "Jane", primaryLastName: "Nguyen", primaryDob: "1975-04-02",
+      filingStatus: "married_joint", retirementAge: 65, lifeExpectancy: 92,
+    });
+    const call = vi.mocked(ensurePlanImport).mock.calls.at(-1)?.[0] as
+      { newHousehold: Record<string, unknown> };
+    expect(call.newHousehold.spouseRetirementAge).toBeUndefined();
+    expect(call.newHousehold.spouseLifeExpectancy).toBeUndefined();
   });
 });

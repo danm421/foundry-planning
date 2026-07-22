@@ -182,6 +182,59 @@ describe("ensurePlanImport", () => {
       );
     });
 
+    it("forwards spouse retirement age and life expectancy to client creation", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh3", name: "Okonkwo Household" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c4", scenarioId: "scn4" });
+
+      await ensurePlanImport({
+        mode: "new",
+        firmId: "org1",
+        actorUserId: "u1",
+        newHousehold: {
+          householdName: "Okonkwo Household",
+          state: "NJ",
+          primary: { firstName: "Adaeze", lastName: "Okonkwo", dateOfBirth: "1972-06-14" },
+          spouse: { firstName: "Emeka", lastName: "Okonkwo", dateOfBirth: "1970-09-02" },
+          filingStatus: "married_joint",
+          retirementAge: 65,
+          lifeExpectancy: 92,
+          spouseRetirementAge: 65,
+          spouseLifeExpectancy: 92,
+        },
+      });
+
+      expect(m.createClientForHousehold).toHaveBeenCalledWith(
+        expect.objectContaining({
+          retirementAge: 65,
+          lifeExpectancy: 92,
+          spouseRetirementAge: 65,
+          spouseLifeExpectancy: 92,
+        }),
+      );
+    });
+
+    it("leaves the spouse retirement pair undefined when the caller omits it", async () => {
+      m.createCrmHousehold.mockResolvedValue({ id: "hh4", name: "Solo Household" });
+      m.createClientForHousehold.mockResolvedValue({ clientId: "c5", scenarioId: "scn5" });
+
+      await ensurePlanImport({
+        mode: "new",
+        firmId: "org1",
+        actorUserId: "u1",
+        newHousehold: {
+          householdName: "Solo Household",
+          primary: { firstName: "Ada", lastName: "Solo", dateOfBirth: "1972-06-14" },
+          filingStatus: "single",
+          retirementAge: 65,
+          lifeExpectancy: 92,
+        },
+      });
+
+      const call = m.createClientForHousehold.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(call.spouseRetirementAge).toBeUndefined();
+      expect(call.spouseLifeExpectancy).toBeUndefined();
+    });
+
     it("drops an invalid state and omits spouse when none given", async () => {
       m.createCrmHousehold.mockResolvedValue({ id: "hh2", name: "Solo" });
       m.createClientForHousehold.mockResolvedValue({ clientId: "c3", scenarioId: "scn3" });
