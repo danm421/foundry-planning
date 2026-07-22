@@ -100,6 +100,39 @@ const expenseFields = {
     .nullable()
     .optional()
     .describe("end the expense when this owner reaches Medicare eligibility"),
+  // Education-goal fields (type === "education"; ignored otherwise). Nullable
+  // fields mirror expenseCreateSchema's `shared` block (src/lib/schemas/expenses.ts)
+  // so update_expense can clear them, not just set them. Id-shaped fields stay
+  // bare z.string() (no .uuid()) to match every other id field in this object —
+  // the core re-parses via expenseCreateSchema/expenseUpdateSchema and applies
+  // the FK asserts, so this schema only needs to be loose, not strict.
+  dedicatedAccountIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Accounts this goal draws from first, in draw order. 529s for an education goal.",
+    ),
+  payShortfallOutOfPocket: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, cost the dedicated accounts cannot cover is paid from household cash; when false it is an unfunded shortfall.",
+    ),
+  forFamilyMemberId: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("The student or beneficiary this goal is for."),
+  institutionName: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Free-text name of the educational institution (label only, no cost-of-attendance lookup)."),
+  institutionState: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Free-text two-letter state code of the educational institution (label only, no cost-of-attendance lookup)."),
 };
 
 // The model-supplied public income fields (clientId/scenarioId come from ctx).
