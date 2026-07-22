@@ -110,29 +110,40 @@ const expenseFields = {
     .array(z.string())
     .optional()
     .describe(
-      "Accounts this goal draws from first, in draw order. 529s for an education goal.",
+      "Accounts this goal draws from first, in draw order. 529s for an education goal." +
+        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
     ),
   payShortfallOutOfPocket: z
     .boolean()
     .optional()
     .describe(
-      "When true, cost the dedicated accounts cannot cover is paid from household cash; when false it is an unfunded shortfall.",
+      "When true, cost the dedicated accounts cannot cover is paid from household cash; when false it is an unfunded shortfall." +
+        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
     ),
   forFamilyMemberId: z
     .string()
     .nullable()
     .optional()
-    .describe("The student or beneficiary this goal is for."),
+    .describe(
+      "The student or beneficiary this goal is for." +
+        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
+    ),
   institutionName: z
     .string()
     .nullable()
     .optional()
-    .describe("Free-text name of the educational institution (label only, no cost-of-attendance lookup)."),
+    .describe(
+      "Free-text name of the educational institution (label only, no cost-of-attendance lookup)." +
+        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
+    ),
   institutionState: z
     .string()
     .nullable()
     .optional()
-    .describe("Free-text two-letter state code of the educational institution (label only, no cost-of-attendance lookup)."),
+    .describe(
+      "Free-text two-letter state code of the educational institution (label only, no cost-of-attendance lookup)." +
+        " Education expenses only (type: \"education\") — stored but ignored by the projection on any other expense type.",
+    ),
 };
 
 // The model-supplied public income fields (clientId/scenarioId come from ctx).

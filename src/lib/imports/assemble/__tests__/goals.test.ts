@@ -127,3 +127,80 @@ describe("deriveGoals — education", () => {
     expect(second.id).toBe("edu:529-plan-2");
   });
 });
+
+/**
+ * FINAL-REVIEW MINOR — `matchStudent`'s name match was an unanchored
+ * substring test, so a dependent named "Jo" matched "Johnson Family 529" and
+ * the goal was stamped `provenance: "document"` — a document-grade claim the
+ * document never made. Provenance honesty is a global constraint on this
+ * branch, so the match is anchored to word boundaries.
+ */
+describe("deriveGoals — student name matching is anchored", () => {
+  it("does not treat a name embedded inside a longer word as a document match", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "Johnson Family 529", subType: "529", category: "education_savings" }],
+        dependents: [
+          { firstName: "Jo", dateOfBirth: "2012-03-01" },
+          { firstName: "Sam", dateOfBirth: "2014-05-02" },
+        ],
+      }),
+    });
+    // Two dependents and no anchored match ⇒ blank, not a false "Jo".
+    expect(goals.education[0].forFamilyMemberName.value).toBeNull();
+  });
+
+  it("never claims document provenance from an embedded substring, even with a sole dependent", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "Johnson Family 529", subType: "529", category: "education_savings" }],
+        dependents: [{ firstName: "Jo", dateOfBirth: "2012-03-01" }],
+      }),
+    });
+    // The sole-dependent fallback still fires — but as an honest inference.
+    expect(goals.education[0].forFamilyMemberName.value).toBe("Jo");
+    expect(goals.education[0].forFamilyMemberName.provenance).toBe("derived");
+    expect(goals.education[0].forFamilyMemberName.reason).toMatch(/only dependent/i);
+  });
+
+  it("still matches a real whole-word appearance of the name", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "Jo 529 Plan", subType: "529", category: "education_savings" }],
+        dependents: [
+          { firstName: "Jo", dateOfBirth: "2012-03-01" },
+          { firstName: "Sam", dateOfBirth: "2014-05-02" },
+        ],
+      }),
+    });
+    expect(goals.education[0].forFamilyMemberName.value).toBe("Jo");
+    expect(goals.education[0].forFamilyMemberName.provenance).toBe("document");
+  });
+
+  it("matches a possessive form, where the boundary is the apostrophe", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "Emma's College 529", subType: "529", category: "education_savings" }],
+        dependents: [
+          { firstName: "Emma", dateOfBirth: "2010-06-04" },
+          { firstName: "Sam", dateOfBirth: "2014-05-02" },
+        ],
+      }),
+    });
+    expect(goals.education[0].forFamilyMemberName.provenance).toBe("document");
+  });
+
+  it("treats a name with regex metacharacters as literal text, not a pattern", () => {
+    const goals = deriveGoals({
+      payload: payloadWith({
+        accounts: [{ name: "AXB 529", subType: "529", category: "education_savings" }],
+        dependents: [
+          { firstName: "A.B", dateOfBirth: "2012-03-01" },
+          { firstName: "Sam", dateOfBirth: "2014-05-02" },
+        ],
+      }),
+    });
+    // "A.B" must not match "AXB" via an unescaped `.`.
+    expect(goals.education[0].forFamilyMemberName.value).toBeNull();
+  });
+});

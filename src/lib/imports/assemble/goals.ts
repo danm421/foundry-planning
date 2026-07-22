@@ -45,13 +45,29 @@ interface StudentMatch {
  * Guessing among several unnamed dependents would attach a goal to the wrong
  * child, which is worse than asking.
  */
+/** Escapes a dependent's first name for literal use inside a RegExp — a name
+ *  like "A.B" must match the text "A.B", never "AXB". */
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Whole-word appearance of `needle` in `haystack`. An UNANCHORED substring
+ * test lets a dependent named "Jo" match "Johnson Family 529", and step 1
+ * below then stamps `provenance: "document"` — a document-grade claim the
+ * document never made. `\b` treats an apostrophe, space or hyphen as a
+ * boundary, so "Emma's College 529" still matches "Emma".
+ */
+function containsWholeWord(haystack: string, needle: string): boolean {
+  return new RegExp(`\\b${escapeRegExp(needle)}\\b`, "i").test(haystack);
+}
+
 function matchStudent(
   accountName: string,
   dependents: ImportPayload["dependents"],
 ): StudentMatch | null {
-  const haystack = accountName.toLowerCase();
   const named = dependents.find(
-    (d) => d.firstName && d.firstName.length >= 2 && haystack.includes(d.firstName.toLowerCase()),
+    (d) => d.firstName && d.firstName.length >= 2 && containsWholeWord(accountName, d.firstName),
   );
   if (named) {
     return { firstName: named.firstName, dateOfBirth: named.dateOfBirth, provenance: "document" };
