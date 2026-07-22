@@ -20,12 +20,19 @@ export interface CategoryPresence {
   lifePolicies: boolean;
   wills: boolean;
   entities: boolean;
+  goals: boolean;
 }
 
 /**
  * Tabs required on EVERY import regardless of what the documents contained.
  * Task 8 adds "plan-basics" here: it is not row-driven, it is the fixed set
  * of values every plan needs.
+ *
+ * `goals` is deliberately NOT here even though its wizard step is always
+ * visible. Visibility and requirement are separate: an always-required second
+ * tab would deepen the open onboarding defect where STEP_COMMIT_TABS maps no
+ * onboarding step to plan-basics, leaving those imports unable to reach
+ * status 'committed'.
  */
 export const ALWAYS_REQUIRED_TABS: readonly CommitTab[] = ["plan-basics"];
 
@@ -39,6 +46,7 @@ const PRESENCE_TO_TABS: Record<keyof CategoryPresence, CommitTab[]> = {
   lifePolicies: ["life-insurance"],
   wills: ["wills"],
   entities: ["entities"],
+  goals: ["goals"],
 };
 
 /**
@@ -76,5 +84,7 @@ export function presenceFromPayload(payload: ImportPayload): CategoryPresence {
     lifePolicies: payload.lifePolicies.length > 0,
     wills: payload.wills.length > 0,
     entities: payload.entities.length > 0,
+    goals:
+      (payload.goals?.education.length ?? 0) + (payload.goals?.homePurchases.length ?? 0) > 0,
   };
 }

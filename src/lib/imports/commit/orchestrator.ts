@@ -14,6 +14,7 @@ import {
   type FamilyRoleIds,
 } from "./family-resolver";
 import { commitFamilyMembers } from "./family-members";
+import { commitGoals } from "./goals";
 import { commitIncomes } from "./incomes";
 import { commitLiabilities } from "./liabilities";
 import { commitLifeInsurance } from "./life-insurance";
@@ -133,6 +134,8 @@ async function dispatchTab(
       return commitWills(tx, payload, ctx);
     case "entities":
       return commitEntities(tx, payload, ctx);
+    case "goals":
+      return commitGoals(tx, payload, ctx);
   }
 }
 
