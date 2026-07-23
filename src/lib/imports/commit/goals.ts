@@ -1,8 +1,10 @@
 import { and, eq, isNull } from "drizzle-orm";
 
-import { accounts, assetTransactions, expenses, familyMembers } from "@/db/schema";
+import { accounts, assetTransactions, clients, expenses, familyMembers } from "@/db/schema";
+import { applyRiskPortfolioToScenario, resolveRiskPortfolioId } from "@/lib/cma/resolve-risk-portfolio";
 import { replaceDedicatedAccounts } from "@/lib/clients/dedicated-accounts";
 import type { AccountSubType } from "@/lib/extraction/types";
+import { isRiskLevel } from "@/lib/risk-levels";
 import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
@@ -270,6 +272,31 @@ export async function commitGoals(
       mortgageTermMonths: goal.showMortgage ? Number(goal.mortgageTermMonths) || null : null,
     });
     result.created += 1;
+  }
+
+  // ── Risk tolerance ──
+  // The advisor-stated rung (Goals step) writes clients.risk_tolerance and, when
+  // the firm has a model portfolio tagged for that rung, points the base
+  // scenario's taxable+retirement portfolios at it. Blank/derived (unstated) is
+  // a no-op — nothing is committed until the advisor actually picks one.
+  const tolerance = goals.riskTolerance?.value ?? null;
+  if (tolerance != null && isRiskLevel(tolerance)) {
+    await tx
+      .update(clients)
+      .set({ riskTolerance: tolerance, updatedAt: new Date() })
+      .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
+    result.updated += 1;
+
+    const portfolioId = await resolveRiskPortfolioId(ctx.orgId, tolerance);
+    if (portfolioId) {
+      await applyRiskPortfolioToScenario(tx, ctx.scenarioId, portfolioId);
+    } else {
+      // Untagged rung: tolerance is saved, portfolios unchanged. The advisor was
+      // flagged at input time (goals-step), since commit warnings are invisible.
+      result.warnings.push(
+        `No model portfolio is tagged for the selected risk tolerance; the scenario's portfolios were left unchanged.`,
+      );
+    }
   }
 
   return result;

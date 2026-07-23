@@ -1,10 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/lib/cma/resolve-risk-portfolio", () => ({
+  resolveRiskPortfolioId: vi.fn(),
+  applyRiskPortfolioToScenario: vi.fn(),
+}));
 
 import { commitGoals } from "../goals";
 import { emptyImportPayload, type ImportPayload } from "../../types";
 import type { EducationGoal, HomePurchaseGoal } from "../../assemble/types";
-import { blank } from "../../assemble/field";
+import { blank, stated } from "../../assemble/field";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
+import {
+  resolveRiskPortfolioId,
+  applyRiskPortfolioToScenario,
+} from "@/lib/cma/resolve-risk-portfolio";
 
 /**
  * DEFECT 1 (brief vs. real tree): the brief's Step 8.1 was written against a
@@ -554,5 +563,72 @@ describe("commitGoals — home purchase", () => {
     const txValues = insertValues(fake, "asset_transactions");
     expect(txValues.fundingAccountId).toBeNull();
     expect(result.warnings.join(" ")).toContain("no longer available");
+  });
+});
+
+describe("commitGoals — risk tolerance", () => {
+  // The resolver module is mocked once for the whole file (vi.mock is
+  // hoisted, module-scoped), so call history from an earlier test would
+  // otherwise leak into a later one's "not called" / "called once"
+  // assertions. Clear history (not implementation) before each case.
+  beforeEach(() => {
+    vi.mocked(resolveRiskPortfolioId).mockClear();
+    vi.mocked(applyRiskPortfolioToScenario).mockClear();
+  });
+
+  /** A payload carrying only the `riskTolerance` field of `goals`, otherwise empty. */
+  function payloadWithTolerance(riskTolerance: ReturnType<typeof blank<string>>): ImportPayload {
+    return {
+      ...emptyImportPayload(),
+      goals: { education: [], homePurchases: [], riskTolerance },
+    };
+  }
+
+  it("stated + tagged: patches the client and applies the firm's tagged portfolio", async () => {
+    const fake = makeFakeTx();
+    vi.mocked(resolveRiskPortfolioId).mockResolvedValue("pf-id");
+
+    const payload = payloadWithTolerance(stated("moderate"));
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    const clientUpdates = updateCalls(fake, "clients");
+    expect(clientUpdates).toHaveLength(1);
+    expect((clientUpdates[0] as { values: Record<string, unknown> }).values).toMatchObject({
+      riskTolerance: "moderate",
+    });
+    expect(result.updated).toBe(1);
+    expect(resolveRiskPortfolioId).toHaveBeenCalledWith(CTX.orgId, "moderate");
+    expect(applyRiskPortfolioToScenario).toHaveBeenCalledTimes(1);
+    expect(applyRiskPortfolioToScenario).toHaveBeenCalledWith(fake.tx, CTX.scenarioId, "pf-id");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("stated + untagged: writes the tolerance, leaves portfolios untouched, and warns", async () => {
+    const fake = makeFakeTx();
+    vi.mocked(resolveRiskPortfolioId).mockResolvedValue(null);
+
+    const payload = payloadWithTolerance(stated("aggressive"));
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    const clientUpdates = updateCalls(fake, "clients");
+    expect(clientUpdates).toHaveLength(1);
+    expect((clientUpdates[0] as { values: Record<string, unknown> }).values).toMatchObject({
+      riskTolerance: "aggressive",
+    });
+    expect(result.updated).toBe(1);
+    expect(applyRiskPortfolioToScenario).not.toHaveBeenCalled();
+    expect(result.warnings.join(" ")).toContain("No model portfolio is tagged");
+  });
+
+  it("blank/derived tolerance is a no-op", async () => {
+    const fake = makeFakeTx();
+
+    const payload = payloadWithTolerance(blank<string>());
+    const result = await commitGoals(fake.tx, payload, CTX);
+
+    expect(updateCalls(fake, "clients")).toHaveLength(0);
+    expect(resolveRiskPortfolioId).not.toHaveBeenCalled();
+    expect(applyRiskPortfolioToScenario).not.toHaveBeenCalled();
+    expect(result.warnings).toEqual([]);
   });
 });
