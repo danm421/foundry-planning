@@ -10,12 +10,9 @@ import { encodeAddeparSecret, encodeAddeparConfig } from "@/lib/integrations/pro
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { recordAudit } from "@/lib/audit";
 import { resolveProvider } from "../_provider";
+import { addeparCredsSchema, buildAddeparTestContext } from "../_addepar";
 
-const byokBody = z.object({
-  apiBase: z.string().url(),
-  addeparFirmId: z.string().min(1),
-  apiKey: z.string().min(1),
-  apiSecret: z.string().min(1),
+const byokBody = addeparCredsSchema.extend({
   attestation: z.literal(true, "attestation required"),
 });
 
@@ -104,13 +101,18 @@ export async function POST(
     const configBlob = encodeAddeparConfig({ apiBase, addeparFirmId });
 
     // Validate before persisting: build an ephemeral ctx and hit one read.
-    await testAddeparConnection({
-      providerId: provider.id,
-      firmId,
-      baseUrl: apiBase,
-      config: { apiBase, addeparFirmId },
-      getToken: async () => secretBlob,
-    });
+    // Only a failed credential test is an expected 400 — everything else
+    // below (DB write, audit) falls through to the outer catch as a 500.
+    try {
+      await testAddeparConnection(
+        buildAddeparTestContext({ firmId, providerId: provider.id, apiBase, addeparFirmId, secretBlob }),
+      );
+    } catch {
+      return NextResponse.json(
+        { error: "Could not connect to Addepar with those credentials." },
+        { status: 400 },
+      );
+    }
 
     await upsertByokConnection({ firmId, providerId: provider.id, secretBlob, configBlob, userId });
     await recordAudit({
@@ -124,11 +126,7 @@ export async function POST(
   } catch (err) {
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });
-    // A failed credential test (or any other unexpected error) reaches here —
-    // report as a 400 so the UI shows "couldn't connect" rather than a 500.
-    return NextResponse.json(
-      { error: "Could not connect to Addepar with those credentials." },
-      { status: 400 },
-    );
+    console.error("POST /api/integrations/[provider]/connect error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

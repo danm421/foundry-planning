@@ -10,6 +10,10 @@ vi.mock("@/lib/integrations/providers/addepar/client", () => ({
   testAddeparConnection: vi.fn(),        // resolves = credentials valid
   addeparClient: {},                     // referenced at module scope by providers/addepar/index.ts
 }));
+vi.mock("@/lib/rate-limit", () => ({
+  checkIntegrationOauthLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  rateLimitErrorResponse: vi.fn(),
+}));
 
 import { POST } from "./route";
 import { auth } from "@clerk/nextjs/server";

@@ -5,19 +5,15 @@
 // table write, no audit entry. The connect route re-validates independently
 // before persisting.
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
+import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { encodeAddeparSecret } from "@/lib/integrations/providers/addepar/credentials";
 import { resolveProvider } from "../_provider";
+import { addeparCredsSchema, buildAddeparTestContext } from "../_addepar";
 
-const body = z.object({
-  apiBase: z.string().url(),
-  addeparFirmId: z.string().min(1),
-  apiKey: z.string().min(1),
-  apiSecret: z.string().min(1),
-});
+const body = addeparCredsSchema;
 
 export async function POST(
   req: Request,
@@ -35,6 +31,11 @@ export async function POST(
       return NextResponse.json({ error: "No active organization" }, { status: 400 });
     }
 
+    const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
+    }
+
     const parsed = body.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -43,19 +44,23 @@ export async function POST(
       );
     }
     const { apiBase, addeparFirmId, apiKey, apiSecret } = parsed.data;
+    const secretBlob = encodeAddeparSecret({ apiKey, apiSecret });
 
-    await testAddeparConnection({
-      providerId: provider.id,
-      firmId,
-      baseUrl: apiBase,
-      config: { apiBase, addeparFirmId },
-      getToken: async () => encodeAddeparSecret({ apiKey, apiSecret }),
-    });
+    // Only a failed credential test is an expected 400 — anything else is
+    // unexpected and falls through to the outer catch as a 500.
+    try {
+      await testAddeparConnection(
+        buildAddeparTestContext({ firmId, providerId: provider.id, apiBase, addeparFirmId, secretBlob }),
+      );
+    } catch {
+      return NextResponse.json({ ok: false, error: "Could not reach Addepar." }, { status: 400 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
     const resp = authErrorResponse(err);
     if (resp) return NextResponse.json(resp.body, { status: resp.status });
-    return NextResponse.json({ ok: false, error: "Could not reach Addepar." }, { status: 400 });
+    console.error("POST /api/integrations/[provider]/test error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
