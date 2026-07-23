@@ -111,6 +111,7 @@ export const CLIENT_FIELD_LABELS: FieldLabels = {
   spouseRetirementMonth: { label: "Spouse retirement month", format: "text" },
   spouseLifeExpectancy: { label: "Spouse life expectancy", format: "text" },
   filingStatus: { label: "Filing status", format: "text" },
+  riskTolerance: { label: "Risk tolerance", format: "text" },
 };
 
 /** CRM household contact (`crm_household_contacts`). `ssnLast4` and

@@ -24,5 +24,6 @@ export function toClientSnapshot(row: ClientRow): EntitySnapshot {
     spouseRetirementMonth: row.spouseRetirementMonth,
     spouseLifeExpectancy: row.spouseLifeExpectancy,
     filingStatus: row.filingStatus,
+    riskTolerance: row.riskTolerance,
   };
 }

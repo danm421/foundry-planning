@@ -211,14 +211,18 @@ export default function GrowthInflationForm({ clientId, riskTolerance, modelPort
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save");
       }
-      setSuccess(true);
       if ((riskTolerance ?? "") !== riskTol) {
-        await fetch(`/api/clients/${clientId}`, {
+        const riskRes = await fetch(`/api/clients/${clientId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ riskTolerance: riskTol || null }),
         });
+        if (!riskRes.ok) {
+          const data = await riskRes.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to save risk tolerance");
+        }
       }
+      setSuccess(true);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
