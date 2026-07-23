@@ -65,7 +65,6 @@ describe("GET /api/advisors", () => {
   });
 
   it("401 when there is no session", async () => {
-    mockAuth({ userId: "", orgId: "org_a" });
     vi.mocked(auth).mockResolvedValue({ userId: null, orgId: "org_a" } as never);
     const res = await GET();
     expect(res.status).toBe(401);
