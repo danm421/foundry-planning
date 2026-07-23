@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ForgePanel } from "../forge-panel";
 import type { UseForgeStreamResult, PendingApproval } from "../use-forge-stream";
+import type { PlanBuildResult } from "../use-forge-import";
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation
@@ -72,6 +73,7 @@ const importMocks = vi.hoisted(() => ({
   runImport: vi.fn(),
   runPlanBuild: vi.fn(async () => null as unknown),
   submitPlanAnswers: vi.fn(async () => null as unknown),
+  commitAllTabs: vi.fn(async () => null as unknown),
 }));
 vi.mock("../use-forge-import", () => ({
   useForgeImport: () => ({
@@ -80,6 +82,7 @@ vi.mock("../use-forge-import", () => ({
     runImport: importMocks.runImport,
     runPlanBuild: importMocks.runPlanBuild,
     submitPlanAnswers: importMocks.submitPlanAnswers,
+    commitAllTabs: importMocks.commitAllTabs,
     reset: vi.fn(),
   }),
 }));
@@ -146,6 +149,7 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     importMocks.runPlanBuild.mockClear();
     importMocks.runPlanBuild.mockResolvedValue(null);
     importMocks.submitPlanAnswers.mockClear();
+    importMocks.commitAllTabs.mockClear();
   });
 
   // Task 6 un-gates the paperclip in global mode (attach-first fact-finder
@@ -269,6 +273,7 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
     importMocks.runPlanBuild.mockResolvedValue(null);
     importMocks.runImport.mockResolvedValue(null);
     importMocks.submitPlanAnswers.mockClear();
+    importMocks.commitAllTabs.mockClear();
   });
 
   function clientBuildPlanFrame(importId: string): Extract<UseForgeStreamResult["lastToolRender"], { name: string }> {
@@ -360,6 +365,7 @@ describe("clientless Forge discoverability", () => {
     importMocks.runImport.mockClear();
     importMocks.runPlanBuild.mockClear();
     importMocks.submitPlanAnswers.mockClear();
+    importMocks.commitAllTabs.mockClear();
   });
 
   it("advertises the plan builder in the empty state when there is no client", () => {
@@ -394,5 +400,104 @@ describe("clientless Forge discoverability", () => {
     mockStreamState = makeStreamState({ pendingApproval: SAMPLE_APPROVAL });
     mountGlobalPanel();
     expect(screen.getByPlaceholderText(/approve or reject/i)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 8 review findings — "Commit everything now" success must be keyed to
+// the SPECIFIC importId on screen, not a global boolean:
+//   1. Committing plan A, then a second build_plan proposal landing in the
+//      SAME thread (a fresh planResult for plan B) must not show plan B as
+//      already committed.
+//   2. (covered in forge-panel.tsx by construction, not separately testable
+//      here without a real async race) a commitAllTabs resolution landing
+//      after the advisor moved to a different plan must not flip an unrelated
+//      plan's card to "committed".
+//   3. commitAllTabs can resolve a PARTIAL "review" status (not every tab
+//      committed cleanly) — that must not show the "committed" message either.
+// ---------------------------------------------------------------------------
+describe("ForgePanel — Commit everything now (Task 8)", () => {
+  beforeEach(() => {
+    mockStreamState = makeStreamState();
+    importMocks.runImport.mockClear();
+    importMocks.runPlanBuild.mockClear();
+    importMocks.runPlanBuild.mockResolvedValue(null);
+    importMocks.submitPlanAnswers.mockClear();
+    importMocks.commitAllTabs.mockClear();
+    importMocks.commitAllTabs.mockResolvedValue(null);
+  });
+
+  function planBuildResult(importId: string): PlanBuildResult {
+    return {
+      importId,
+      clientId: "c9",
+      reviewPath: `/clients/c9/details/import/${importId}`,
+      assemble: { version: 1, mergedFileCount: 0, assumptions: [], questions: [] },
+      warnings: [],
+    };
+  }
+
+  // Attaches a file, delivers the build_plan frame for `importId`, and waits
+  // for runPlanBuild (mocked to resolve `result`) to land planResult on
+  // screen. Returns the harness bits later steps in a test need.
+  async function mountWithBuiltPlan(importId: string, result: PlanBuildResult) {
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValueOnce(result);
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const rendered = mountGlobalPanel();
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], `${importId}.pdf`)] } });
+
+    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame(importId), send });
+    await act(async () => {
+      rendered.rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    });
+    return { ...rendered, send, fileInput };
+  }
+
+  async function clickCommitButton() {
+    const commitButton = screen.getByRole("button", { name: "Commit everything now" });
+    await act(async () => {
+      fireEvent.click(commitButton);
+    });
+  }
+
+  it("shows the committed message after a full commit resolves (success path)", async () => {
+    importMocks.commitAllTabs.mockResolvedValue({ status: "committed" });
+    await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
+
+    await clickCommitButton();
+
+    expect(screen.getByTestId("forge-plan-committed")).toBeInTheDocument();
+  });
+
+  it("clears the committed state when a NEW build_plan proposal lands in the same thread (finding 1)", async () => {
+    importMocks.commitAllTabs.mockResolvedValue({ status: "committed" });
+    const { rerender, send, fileInput } = await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
+
+    await clickCommitButton();
+    expect(screen.getByTestId("forge-plan-committed")).toBeInTheDocument();
+
+    // A second build_plan proposal lands in the SAME thread — mints a fresh
+    // planResult for plan B (imp_2). The prior commit must not leak onto it.
+    importMocks.runPlanBuild.mockResolvedValueOnce(planBuildResult("imp_2"));
+    fireEvent.change(fileInput, { target: { files: [new File(["y"], "imp_2.pdf")] } });
+    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame("imp_2"), send });
+    await act(async () => {
+      rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    });
+
+    expect(screen.queryByTestId("forge-plan-committed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Commit everything now" })).toBeInTheDocument();
+  });
+
+  it("does not show the committed message when commitAllTabs resolves a partial 'review' status (finding 3)", async () => {
+    importMocks.commitAllTabs.mockResolvedValue({ status: "review" });
+    await mountWithBuiltPlan("imp_1", planBuildResult("imp_1"));
+
+    await clickCommitButton();
+
+    expect(screen.queryByTestId("forge-plan-committed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Commit everything now" })).toBeInTheDocument();
   });
 });

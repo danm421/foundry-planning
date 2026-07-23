@@ -171,9 +171,15 @@ export function ForgePanel({
   const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
   // "Commit everything now" finish button (Task 8) — commits all 11 tabs for
   // the assembled plan in one shot, as an alternative to the per-tab review
-  // flow behind ImportReviewLink.
+  // flow behind ImportReviewLink. `committing` tracks the in-flight request;
+  // `committedImportId` tracks which import's plan has been fully committed.
   const [committing, setCommitting] = useState(false);
-  const [planCommitted, setPlanCommitted] = useState(false);
+  // Which import's plan has been fully committed via "Commit everything now".
+  // Keyed by importId (not a bool) so the committed message binds to the
+  // specific plan on screen: a new plan built in the same thread, or a commit
+  // that resolves after the advisor moved on, cannot flip an unrelated plan's
+  // card to "committed".
+  const [committedImportId, setCommittedImportId] = useState<string | null>(null);
   // Global attach-first ingest: a duplicate-household decision awaiting the
   // advisor's choice (new vs. update-existing), surfaced by a card in Task 7.
   // Holds the files so the eventual choice can still fire the build/update.
@@ -391,7 +397,7 @@ export function ForgePanel({
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
     setCommitting(false);
-    setPlanCommitted(false);
+    setCommittedImportId(null);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     setInput("");
@@ -442,7 +448,7 @@ export function ForgePanel({
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
     setCommitting(false);
-    setPlanCommitted(false);
+    setCommittedImportId(null);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     resetTranscriptState();
@@ -945,7 +951,7 @@ export function ForgePanel({
                     importId={planResult.importId}
                     warnings={planResult.warnings}
                   />
-                  {planCommitted ? (
+                  {planResult.importId === committedImportId ? (
                     <p className="text-[12px] text-ink-3" data-testid="forge-plan-committed">
                       Committed the whole plan. Open the client to review.
                     </p>
@@ -954,10 +960,14 @@ export function ForgePanel({
                       type="button"
                       disabled={committing}
                       onClick={async () => {
+                        const targetImportId = planResult.importId;
                         setCommitting(true);
                         const res = await commitAllTabs(planResult.clientId, planResult.importId);
                         setCommitting(false);
-                        if (res) setPlanCommitted(true);
+                        // Bind the committed state to THIS import; a "review"
+                        // (partial) status or a resolution that lands after the
+                        // advisor moved on must not show a false "committed".
+                        if (res?.status === "committed") setCommittedImportId(targetImportId);
                       }}
                       className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
                     >
