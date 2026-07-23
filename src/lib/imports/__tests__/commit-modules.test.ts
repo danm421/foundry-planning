@@ -70,7 +70,13 @@ describe("commitClientsIdentity", () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     // Pretend the planning client is linked to a CRM household so the mirror
     // path actually fires.
-    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
+    // Married client: create-client always seeds spouseLifeExpectancy (95) when
+    // a spouse exists, so the single→married planning-seed gate (stored
+    // spouseLifeExpectancy IS NULL) is a no-op here — this test covers the
+    // legacy dual-write + CRM mirror, not the seed (see clients-identity.test.ts).
+    setSelectResult("clients", [
+      { crmHouseholdId: "household-1", spouseLifeExpectancy: 95 },
+    ]);
     // Both contact rows already exist, so the mirror UPDATEs them in place
     // (the insert path is exercised by the single→married test above).
     setSelectResult("crm_household_contacts", [
