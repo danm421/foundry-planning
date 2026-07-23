@@ -24,7 +24,7 @@ export async function GET(
     if (!rl.allowed) return rateLimitErrorResponse(rl, `Too many ${provider.label} requests. Please try again shortly.`);
 
     const [households, links] = await Promise.all([
-      provider.client.getHouseholds(makeCallContext(firmId, provider.id)),
+      provider.client.getHouseholds(await makeCallContext(firmId, provider.id)),
       getHouseholdLinks(firmId, provider.id),
     ]);
     const linkByHousehold = new Map(links.map((l) => [l.externalHouseholdId, l.clientId]));

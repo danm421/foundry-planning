@@ -53,7 +53,7 @@ describe("getValidAccessToken", () => {
       expiresAt: new Date(Date.now() + 3_600_000),
     });
     __setRefresher(async () => ({ accessToken: "refreshed" }));
-    const ctx = makeCallContext(firmId, "orion");
+    const ctx = await makeCallContext(firmId, "orion");
     expect(ctx.firmId).toBe(firmId);
     expect(ctx.providerId).toBe("orion");
     await expect(ctx.getToken()).resolves.toBeTypeOf("string");

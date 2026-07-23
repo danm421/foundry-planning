@@ -1,6 +1,7 @@
 // src/lib/integrations/auth.ts
 import { getConnection, setConnectionStatus, upsertConnection } from "./connections";
 import { ReconnectRequired } from "./errors";
+import { decodeAddeparConfig } from "./providers/addepar/credentials";
 import { getProvider } from "./registry";
 import type { ProviderCallContext, ProviderId, TokenResponse } from "./types";
 
@@ -56,11 +57,25 @@ export async function getValidAccessToken(
 }
 
 /** Builds the context every provider client read takes. */
-export function makeCallContext(
+export async function makeCallContext(
   firmId: string,
   providerId: ProviderId,
   overrides?: { fetchImpl?: typeof fetch; baseUrl?: string },
-): ProviderCallContext {
+): Promise<ProviderCallContext> {
+  const provider = getProvider(providerId);
+  if (provider.authKind === "byok") {
+    const conn = await getConnection(firmId, providerId);
+    if (!conn || !conn.accessToken) throw new ReconnectRequired(firmId, providerId);
+    const config = decodeAddeparConfig(conn.scope);
+    return {
+      firmId,
+      providerId,
+      baseUrl: config.apiBase,
+      config,
+      getToken: async () => conn.accessToken as string, // static; ignores forceRefresh
+      fetchImpl: overrides?.fetchImpl,
+    };
+  }
   return {
     firmId,
     providerId,

@@ -52,7 +52,7 @@ export async function syncFirm(
   // in cron + tests). The route passes the real advisor id for manual syncs.
   const userId = opts.userId ?? `system:${providerId}-sync`;
   const client = opts.client ?? provider.client;
-  const ctx = makeCallContext(firmId, providerId);
+  const ctx = await makeCallContext(firmId, providerId);
 
   const [run] = await db
     .insert(integrationSyncRuns)

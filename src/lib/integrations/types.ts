@@ -49,6 +49,8 @@ export type ProviderCallContext = {
   getToken: (opts?: { forceRefresh?: boolean }) => Promise<string>;
   fetchImpl?: typeof fetch;
   baseUrl?: string;
+  /** Populated for BYOK providers from the connection's stored config. */
+  config?: { apiBase: string; addeparFirmId: string };
 };
 
 export interface ProviderOAuth {
