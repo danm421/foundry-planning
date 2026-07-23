@@ -127,15 +127,16 @@ export async function syncFirm(
         // write. OAuth providers (autoCommitExact: true) keep the original
         // exact-auto-commit / new-review split unchanged.
         const autoCommit = provider.autoCommitExact;
+        const exactWithMatch = exact.map((e) => ({
+          ...e.account,
+          match: { kind: "exact", existingId: e.existingId } as const,
+        }));
 
         // EXACT bucket → auto-commit / update in place via the commit path.
         if (autoCommit && exact.length > 0) {
           const exactPayload: ImportPayload = {
             ...emptyImportPayload(),
-            accounts: exact.map((e) => ({
-              ...e.account,
-              match: { kind: "exact", existingId: e.existingId } as const,
-            })),
+            accounts: exactWithMatch,
           };
           const [vehicle] = await db
             .insert(clientImports)
@@ -189,9 +190,7 @@ export async function syncFirm(
         // commit). For OAuth providers this is just the NEW accounts; for
         // review-mode providers (autoCommit false) it's exact + new together.
         const reviewAccounts = [
-          ...(autoCommit
-            ? []
-            : exact.map((e) => ({ ...e.account, match: { kind: "exact", existingId: e.existingId } as const }))),
+          ...(autoCommit ? [] : exactWithMatch),
           ...fresh.map((a) => ({ ...a, match: { kind: "new" } as const })),
         ];
 

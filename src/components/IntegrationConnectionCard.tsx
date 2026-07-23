@@ -321,7 +321,8 @@ function ByokConnectForm({ providerId, label }: { providerId: ProviderId; label:
     setBusy(null);
   }
 
-  const credentialsIncomplete = !apiBase || !addeparFirmId || !apiKey || !apiSecret;
+  const credentialsIncomplete =
+    !apiBase.trim() || !addeparFirmId.trim() || !apiKey.trim() || !apiSecret.trim();
   const canConnect = attested && testResult === "pass" && busy === null;
 
   return (

@@ -4,12 +4,13 @@
 // common credential-field schema and the ephemeral `ProviderCallContext`
 // builder used to validate credentials via `testAddeparConnection`.
 import { z } from "zod";
+import { addeparApiBaseSchema } from "@/lib/integrations/providers/addepar/credentials";
 import type { ProviderCallContext, ProviderId } from "@/lib/integrations/types";
 
 /** The 4 BYOK credential fields shared by both routes. `connect` extends this
  * with the attestation checkbox; `test` uses it as-is. */
 export const addeparCredsSchema = z.object({
-  apiBase: z.string().url(),
+  apiBase: addeparApiBaseSchema,
   addeparFirmId: z.string().min(1),
   apiKey: z.string().min(1),
   apiSecret: z.string().min(1),
