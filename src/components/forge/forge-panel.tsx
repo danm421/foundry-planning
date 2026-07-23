@@ -169,6 +169,11 @@ export function ForgePanel({
   const [planBuild, setPlanBuild] = useState<{ clientId: string; importId: string; mode: string } | null>(null);
   const [planResult, setPlanResult] = useState<PlanBuildResult | null>(null);
   const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
+  // "Commit everything now" finish button (Task 8) — commits all 11 tabs for
+  // the assembled plan in one shot, as an alternative to the per-tab review
+  // flow behind ImportReviewLink.
+  const [committing, setCommitting] = useState(false);
+  const [planCommitted, setPlanCommitted] = useState(false);
   // Global attach-first ingest: a duplicate-household decision awaiting the
   // advisor's choice (new vs. update-existing), surfaced by a card in Task 7.
   // Holds the files so the eventual choice can still fire the build/update.
@@ -204,6 +209,7 @@ export function ForgePanel({
     runPlanBuild,
     identifyFactFinder,
     submitPlanAnswers,
+    commitAllTabs,
   } = useForgeImport();
   // Shared with the plan-build run (same underlying hook/status) — "assembling"
   // only ever fires from runPlanBuild, the rest from either path.
@@ -384,6 +390,8 @@ export function ForgePanel({
     setPlanBuild(null);
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
+    setCommitting(false);
+    setPlanCommitted(false);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     setInput("");
@@ -433,6 +441,8 @@ export function ForgePanel({
     setPlanBuild(null);
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
+    setCommitting(false);
+    setPlanCommitted(false);
     setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     resetTranscriptState();
@@ -929,11 +939,32 @@ export function ForgePanel({
                 />
               )}
               {!busy && (
-                <ImportReviewLink
-                  clientId={planResult.clientId}
-                  importId={planResult.importId}
-                  warnings={planResult.warnings}
-                />
+                <div className="space-y-2">
+                  <ImportReviewLink
+                    clientId={planResult.clientId}
+                    importId={planResult.importId}
+                    warnings={planResult.warnings}
+                  />
+                  {planCommitted ? (
+                    <p className="text-[12px] text-ink-3" data-testid="forge-plan-committed">
+                      Committed the whole plan. Open the client to review.
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={committing}
+                      onClick={async () => {
+                        setCommitting(true);
+                        const res = await commitAllTabs(planResult.clientId, planResult.importId);
+                        setCommitting(false);
+                        if (res) setPlanCommitted(true);
+                      }}
+                      className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[12px] text-ink hover:bg-card disabled:opacity-40"
+                    >
+                      {committing ? "Committing…" : "Commit everything now"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
