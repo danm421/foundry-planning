@@ -28,9 +28,16 @@ export async function getValidAccessToken(
 
   if (!conn.refreshToken) throw new ReconnectRequired(firmId, providerId);
   try {
-    const t = refresher
-      ? await refresher(providerId, conn.refreshToken)
-      : await getProvider(providerId).oauth.refreshTokens(conn.refreshToken);
+    const provider = getProvider(providerId);
+    let t: TokenResponse;
+    if (refresher) {
+      t = await refresher(providerId, conn.refreshToken);
+    } else {
+      // Task 4 adds the BYOK branch that returns before this point; a
+      // non-oauth provider reaching here is a bug, not a runtime state.
+      if (!provider.oauth) throw new Error("oauth refresh called for non-oauth provider");
+      t = await provider.oauth.refreshTokens(conn.refreshToken);
+    }
     await upsertConnection({
       firmId,
       providerId,

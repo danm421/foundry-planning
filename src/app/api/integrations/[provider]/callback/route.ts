@@ -12,6 +12,9 @@ export async function GET(
 ): Promise<Response> {
   const provider = await resolveProvider(params);
   if (!provider) return new Response("Not found", { status: 404 });
+  if (provider.authKind !== "oauth" || !provider.oauth) {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
 
   const url = new URL(req.url);
   const code = url.searchParams.get("code");

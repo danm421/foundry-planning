@@ -69,12 +69,23 @@ export interface ProviderClient {
 export type RegistrationMap = { category: AccountCategory; subType: AccountSubType };
 export type RegistrationTable = Array<[RegExp, RegistrationMap]>;
 
+export type ProviderAuthKind = "oauth" | "byok";
+
 export interface ProviderDefinition {
   id: ProviderId;
   label: string;
   scope: "firm";
   isEnabled: () => boolean;
-  oauth: ProviderOAuth;
+  /** How the firm connects. "oauth" uses the redirect flow + `oauth`; "byok" posts API credentials. */
+  authKind: ProviderAuthKind;
+  /** Present only when authKind === "oauth". */
+  oauth?: ProviderOAuth;
   client: ProviderClient;
   registrationTable: RegistrationTable;
+  /**
+   * When true (OAuth providers), sync auto-commits externalId-matched accounts.
+   * When false (Addepar), matched + new accounts both route to a review import;
+   * nothing writes until the advisor commits.
+   */
+  autoCommitExact: boolean;
 }

@@ -10,11 +10,12 @@ const ctx = {
 
 describe("Schwab transport stub", () => {
   it("throws ProviderNotConfigured from every oauth method", async () => {
-    expect(() => schwabProvider.oauth.buildAuthorizeUrl({ state: "s", challenge: "c" }))
+    // schwab is authKind: "oauth", so `oauth` is always defined for it.
+    expect(() => schwabProvider.oauth!.buildAuthorizeUrl({ state: "s", challenge: "c" }))
       .toThrow(ProviderNotConfigured);
-    await expect(schwabProvider.oauth.exchangeCodeForTokens({ code: "c", codeVerifier: "v" }))
+    await expect(schwabProvider.oauth!.exchangeCodeForTokens({ code: "c", codeVerifier: "v" }))
       .rejects.toThrow(ProviderNotConfigured);
-    await expect(schwabProvider.oauth.refreshTokens("rt")).rejects.toThrow(ProviderNotConfigured);
+    await expect(schwabProvider.oauth!.refreshTokens("rt")).rejects.toThrow(ProviderNotConfigured);
   });
 
   it("throws ProviderNotConfigured from every client read", async () => {

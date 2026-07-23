@@ -15,6 +15,9 @@ export async function GET(
   try {
     provider = await resolveProvider(params);
     if (!provider) return new Response("Not found", { status: 404 });
+    if (provider.authKind !== "oauth" || !provider.oauth) {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
 
     // requireOrgAdminOrOwner() returns void — get ids from auth() separately
     await requireOrgAdminOrOwner();

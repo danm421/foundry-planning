@@ -22,3 +22,20 @@ describe("provider registry", () => {
     expect(listProviders().map((p) => p.id).sort()).toEqual(["orion", "schwab"]);
   });
 });
+
+describe("provider registry auth kinds", () => {
+  it("orion and schwab are oauth providers with an oauth impl", () => {
+    for (const id of ["orion", "schwab"] as const) {
+      const p = getProvider(id);
+      expect(p.authKind).toBe("oauth");
+      expect(p.oauth).toBeDefined();
+      expect(p.autoCommitExact).toBe(true);
+    }
+  });
+
+  it("every registered provider declares an authKind", () => {
+    for (const p of listProviders()) {
+      expect(["oauth", "byok"]).toContain(p.authKind);
+    }
+  });
+});
