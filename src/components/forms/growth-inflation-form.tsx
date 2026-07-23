@@ -5,15 +5,18 @@ import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
 import { HelpTip } from "@/components/help-tip";
 import { useClientAccess } from "@/components/client-access-provider";
+import { RISK_LEVELS, RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 
 interface ModelPortfolioOption {
   id: string;
   name: string;
   blendedReturn: number;
+  riskLevel: RiskLevel | null;
 }
 
 interface GrowthInflationFormProps {
   clientId: string;
+  riskTolerance?: string | null;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   resolvedInflationRate: number;
@@ -76,7 +79,7 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
   );
 }
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, riskTolerance, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
@@ -92,6 +95,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
   const [inflationRateSource, setInflationRateSource] = useState<"asset_class" | "custom">(
     initialInflationRateSource
   );
+  const [riskTol, setRiskTol] = useState<string>(riskTolerance ?? "");
 
   async function handleResetAccounts() {
     if (!confirm("Reset all taxable, cash, and retirement accounts to use the category defaults above? Any account-level custom rates, portfolios, turnover, and realization overrides will be cleared.")) {
@@ -151,6 +155,15 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     }
   }
 
+  const taggedForTol = (lvl: string) => modelPortfolios?.find((p) => p.riskLevel === lvl) ?? null;
+
+  function applyRiskPortfolio() {
+    const pf = taggedForTol(riskTol);
+    if (!pf) return; // untagged rung: the inline note explains why nothing changed
+    setSource("taxable", `mp:${pf.id}`);
+    setSource("retirement", `mp:${pf.id}`);
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -199,6 +212,13 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
         throw new Error(json.error ?? "Failed to save");
       }
       setSuccess(true);
+      if ((riskTolerance ?? "") !== riskTol) {
+        await fetch(`/api/clients/${clientId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ riskTolerance: riskTol || null }),
+        });
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -268,6 +288,34 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           title="Default Growth Rates"
           help="Applied to every account of the given category unless that account specifies its own growth rate."
         />
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-hair pb-3">
+          <label htmlFor="risk-tol" className="text-sm font-medium text-gray-100">Risk tolerance</label>
+          <select
+            id="risk-tol"
+            value={riskTol}
+            onChange={(e) => setRiskTol(e.target.value)}
+            className={INPUT_CLS}
+          >
+            <option value="">Not specified</option>
+            {RISK_LEVELS.map((lvl) => (
+              <option key={lvl} value={lvl}>{RISK_LEVEL_LABELS[lvl]}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={applyRiskPortfolio}
+            disabled={!riskTol}
+            className="rounded-md border border-hair px-2 py-1 text-sm text-ink-2 disabled:opacity-40"
+          >
+            Apply to portfolios
+          </button>
+          {riskTol && !taggedForTol(riskTol) && (
+            <span className="text-xs text-warn">
+              No {RISK_LEVEL_LABELS[riskTol as RiskLevel]} model tagged — <a href="/cma" className="underline">tag one</a>.
+            </span>
+          )}
+        </div>
 
         <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">
           <div className={`${ROW_GRID} border-b border-gray-800 bg-gray-900/60 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400`}>

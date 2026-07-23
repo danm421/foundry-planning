@@ -24,6 +24,7 @@ import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz
 import { requireOrgId } from "@/lib/db-helpers";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
+import { isRiskLevel } from "@/lib/risk-levels";
 
 export const dynamic = "force-dynamic";
 
@@ -154,10 +155,18 @@ export async function PUT(
       "spouseRetirementMonth",
       "spouseLifeExpectancy",
       "filingStatus",
+      "riskTolerance",
     ] as const;
 
-    const safeUpdate: Record<string, unknown> = {};
     const incoming = updateBody as Record<string, unknown>;
+    if ("riskTolerance" in incoming) {
+      const rt = incoming.riskTolerance;
+      if (rt !== null && !isRiskLevel(rt)) {
+        return NextResponse.json({ error: "Invalid risk tolerance" }, { status: 400 });
+      }
+    }
+
+    const safeUpdate: Record<string, unknown> = {};
     for (const key of MUTABLE_CLIENT_FIELDS) {
       if (key in incoming) safeUpdate[key] = incoming[key];
     }

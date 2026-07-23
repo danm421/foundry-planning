@@ -113,7 +113,10 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
     portfolioRows,
     allocationRows,
     assetClassRows,
-  );
+  ).map((o) => ({
+    ...o,
+    riskLevel: portfolioRows.find((p) => p.id === o.id)?.riskLevel ?? null,
+  }));
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 

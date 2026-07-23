@@ -147,7 +147,10 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     portfolioRows,
     allocationRows,
     assetClassRows,
-  );
+  ).map((o) => ({
+    ...o,
+    riskLevel: portfolioRows.find((p) => p.id === o.id)?.riskLevel ?? null,
+  }));
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 
@@ -269,6 +272,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
 
       <AssumptionsClient
         clientId={id}
+        riskTolerance={clientRow.riskTolerance}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),

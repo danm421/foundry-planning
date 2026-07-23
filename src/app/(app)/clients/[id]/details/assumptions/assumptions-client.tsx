@@ -17,6 +17,7 @@ import type {
   PropertyTaxRow,
 } from "@/components/deductions-derived-summary";
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
+import { type RiskLevel } from "@/lib/risk-levels";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -84,10 +85,12 @@ interface ModelPortfolioOption {
   id: string;
   name: string;
   blendedReturn: number;
+  riskLevel: RiskLevel | null;
 }
 
 interface AssumptionsClientProps {
   clientId: string;
+  riskTolerance?: string | null;
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
@@ -116,6 +119,7 @@ const TABS = [
 
 export default function AssumptionsClient({
   clientId,
+  riskTolerance,
   settings,
   accounts,
   withdrawalStrategies,
@@ -160,6 +164,7 @@ export default function AssumptionsClient({
         {activeTab === "growth-inflation" && (
           <GrowthInflationForm
             clientId={clientId}
+            riskTolerance={riskTolerance}
             inflationRate={settings.inflationRate}
             inflationRateSource={settings.inflationRateSource}
             resolvedInflationRate={resolvedInflationRate}
