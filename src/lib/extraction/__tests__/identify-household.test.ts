@@ -46,4 +46,18 @@ describe("identifyHousehold", () => {
     const res = await identifyHousehold(Buffer.from("x"), "x.pdf", "pdf");
     expect(res.isHouseholdDoc).toBe(false);
   });
+
+  it("falls through to firstName when householdName is absent and lastName is an empty string", async () => {
+    // Schema allows lastName: "" (no .min(1)) with no model-provided householdName.
+    // `??` would yield "" here; the fallback chain must use `||` so it falls
+    // through to firstName instead of yielding an empty household name.
+    callAIExtraction.mockResolvedValueOnce(
+      JSON.stringify({
+        isHouseholdDoc: true,
+        primary: { firstName: "Jane", lastName: "" },
+      }),
+    );
+    const res = await identifyHousehold(Buffer.from("x"), "jane.pdf", "pdf");
+    expect(res.identity?.householdName).toBe("Jane");
+  });
 });

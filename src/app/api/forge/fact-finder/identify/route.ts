@@ -94,9 +94,13 @@ export async function POST(req: Request): Promise<Response> {
     return json(200, { isHouseholdDoc: false, duplicateCandidates: [] });
   }
 
-  // Firm-scoped duplicate candidates by household/last name.
-  const searchName = result.identity.householdName;
-  const rows = await listCrmHouseholds({ search: searchName, limit: 10 });
+  // Firm-scoped duplicate candidates by household/last name. A blank or
+  // whitespace-only name would drop listCrmHouseholds' name filter (empty
+  // search → unfiltered) and surface arbitrary same-firm households as false
+  // "duplicates", feeding unrelated clientIds into a write-capable ingest turn.
+  // No usable name → no candidates.
+  const searchName = result.identity.householdName.trim();
+  const rows = searchName ? await listCrmHouseholds({ search: searchName, limit: 10 }) : [];
   const duplicateCandidates = rows.map((h) => ({
     householdId: h.id,
     clientId: h.planningClient?.id ?? null,

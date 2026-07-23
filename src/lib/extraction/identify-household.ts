@@ -118,7 +118,9 @@ export async function identifyHousehold(
   return {
     isHouseholdDoc: true,
     identity: {
-      householdName: parsed.householdName ?? parsed.primary.lastName ?? parsed.primary.firstName,
+      // `||` (not `??`) so an empty-string lastName (schema allows "") falls
+      // through to firstName (min(1)) instead of yielding an empty household name.
+      householdName: parsed.householdName || parsed.primary.lastName || parsed.primary.firstName,
       primary: parsed.primary,
       spouse: parsed.spouse,
       dependents: parsed.dependents ?? [],
