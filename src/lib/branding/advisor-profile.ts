@@ -10,6 +10,14 @@ export type BrandFields = Pick<
   | "emailFromName" | "emailReplyTo"
 >;
 
+/**
+ * React-`cache`d per request. Within a single request, a read that follows a
+ * write to the same (firmId, advisorUserId) — e.g. via `upsertAdvisorProfile`
+ * or `setAdvisorBrandingEnabled` — returns the memoized pre-write row, not
+ * the fresh one. Callers that need post-write state should use
+ * `upsertAdvisorProfile`'s return value (the row from `.returning()`)
+ * instead of re-calling this getter.
+ */
 export const getAdvisorProfile = cache(
   async (firmId: string, advisorUserId: string): Promise<AdvisorProfileRow | null> => {
     const row = await db.query.advisorProfiles.findFirst({

@@ -28,4 +28,19 @@ describe("advisor-profile", () => {
     await setAdvisorBrandingEnabled(FIRM, "adv_a", true, "u_admin");
     expect((await getAdvisorProfile(FIRM, "adv_a"))?.brandingEnabled).toBe(true);
   });
+
+  it("setAdvisorBrandingEnabled flips the flag without touching brand fields", async () => {
+    await upsertAdvisorProfile(FIRM, "adv_a", { brandName: "X" }, "adv_a");
+    await setAdvisorBrandingEnabled(FIRM, "adv_a", true, "u_admin");
+    const rows = await db.select().from(advisorProfiles).where(eq(advisorProfiles.firmId, FIRM));
+    expect(rows.length).toBe(1);
+    expect(rows[0].brandName).toBe("X");
+    expect(rows[0].brandingEnabled).toBe(true);
+
+    await setAdvisorBrandingEnabled(FIRM, "adv_a", false, "u_admin");
+    const rowsAfter = await db.select().from(advisorProfiles).where(eq(advisorProfiles.firmId, FIRM));
+    expect(rowsAfter.length).toBe(1);
+    expect(rowsAfter[0].brandName).toBe("X");
+    expect(rowsAfter[0].brandingEnabled).toBe(false);
+  });
 });
