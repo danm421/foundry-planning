@@ -89,7 +89,9 @@ describe("getFounderState", () => {
       publicMetadata: {
         is_founder: true,
         subscription_status: "founder",
-        entitlements: ["ai_import"],
+        // Base AI is unioned in by founder-init, so the applied target carries
+        // the full base set even when the beta code only granted ai_import.
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
         billing_contact_userId: TEST_USER_ID,
       },
     });
@@ -158,7 +160,9 @@ describe("applyFounderState", () => {
         publicMetadata: expect.objectContaining({
           is_founder: true,
           subscription_status: "founder",
-          entitlements: ["ai_import"],
+          // A code that granted only ai_import still yields the full base AI set
+          // (ai_forge included) — Forge works for new beta orgs at runtime.
+          entitlements: ["ai_copilot", "ai_forge", "ai_import"],
           billing_contact_userId: TEST_USER_ID,
         }),
       }),
@@ -186,7 +190,9 @@ describe("applyFounderState", () => {
       publicMetadata: {
         is_founder: true,
         subscription_status: "founder",
-        entitlements: ["ai_import"],
+        // Base AI is unioned in by founder-init, so the applied target carries
+        // the full base set even when the beta code only granted ai_import.
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
         billing_contact_userId: TEST_USER_ID,
       },
     });
@@ -229,7 +235,9 @@ describe("applyFounderState", () => {
       publicMetadata: {
         is_founder: true,
         subscription_status: "founder",
-        entitlements: ["ai_import"],
+        // Base AI is unioned in by founder-init, so the applied target carries
+        // the full base set even when the beta code only granted ai_import.
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
         billing_contact_userId: TEST_USER_ID,
       },
     });
@@ -273,7 +281,9 @@ describe("applyFounderState", () => {
       publicMetadata: {
         is_founder: true,
         subscription_status: "founder",
-        entitlements: ["ai_import"],
+        // Base AI is unioned in by founder-init, so the applied target carries
+        // the full base set even when the beta code only granted ai_import.
+        entitlements: ["ai_copilot", "ai_forge", "ai_import"],
         billing_contact_userId: TEST_USER_ID,
       },
     });

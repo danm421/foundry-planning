@@ -23,29 +23,31 @@ export type EntitlementsInput = {
 };
 
 /**
- * Entitlements bundled into the base plan — granted to any firm holding an
- * active seat. AI document import (`ai_import`) and Forge, the AI planning
- * assistant (`ai_forge`), both ship with every plan; neither is a separate
- * add-on or has a usage quota.
+ * The always-on base entitlements — granted to EVERY org unconditionally,
+ * regardless of subscription state (seat, founder/beta, or lapsed). AI document
+ * import (`ai_import`) and Forge, the AI planning assistant (`ai_forge`), ship
+ * with every plan; neither is a separate add-on or has a usage quota, so AI is a
+ * universal capability rather than something a seat or beta code grants. An ops
+ * `revoke` override is the only way to strip a base key from a specific firm.
  *
  * Dual-read transition (copilot → Forge rename): the legacy `ai_copilot` key is
  * still derived alongside `ai_forge` so reads that check either key keep passing
  * and no org loses access. `ai_copilot` is dropped from this list once every
  * org's Clerk metadata carries `ai_forge` (backfill + reconcile cron).
  */
-export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"] as const;
+export const BASE_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"] as const;
 
 /**
  * Derive the Clerk-public-metadata `entitlements` array from a subscription's
  * line items. Pure function — no IO, no Date.now, no env reads.
  *
- * Two sources:
- *  - Any active (non-removed) `seat` item grants every entitlement in
- *    SEAT_INCLUDED_ENTITLEMENTS — holding a plan includes `ai_import`.
+ * Sources, applied in order:
+ *  - BASE_ENTITLEMENTS are seeded unconditionally — AI ships with every org, so
+ *    it is not gated on holding a seat (founder/beta and lapsed orgs get it too).
  *  - Any active `addon` item with an `addonKey` grants that key. This generic
  *    add-on support is retained for future add-ons; none ship today.
  *  - Any active manual override is applied last — `grant` adds the key,
- *    `revoke` removes it.
+ *    `revoke` removes it (a revoke can strip a base key: the ops kill switch).
  *
  * Excludes removed items and addon items missing an addonKey (itself a CHECK
  * violation, but we defend rather than throw so a corrupt payload can't break
@@ -56,10 +58,7 @@ export const SEAT_INCLUDED_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"
  * the reconciliation cron.
  */
 export function deriveEntitlements(input: EntitlementsInput): string[] {
-  const set = new Set<string>();
-  if (input.items.some((i) => i.kind === "seat" && !i.removed)) {
-    for (const e of SEAT_INCLUDED_ENTITLEMENTS) set.add(e);
-  }
+  const set = new Set<string>(BASE_ENTITLEMENTS);
   for (const i of input.items) {
     if (i.kind === "addon" && !i.removed && i.addonKey) set.add(i.addonKey);
   }

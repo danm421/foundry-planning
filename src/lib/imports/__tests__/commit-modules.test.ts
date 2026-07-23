@@ -60,7 +60,7 @@ describe("commitClientsIdentity", () => {
   it("skips when neither primary nor spouse is present", async () => {
     const { tx, calls } = makeFakeTx();
     const result = await commitClientsIdentity(tx, emptyPayload(), ctx);
-    expect(result).toEqual({ created: 0, updated: 0, skipped: 1 });
+    expect(result).toEqual({ created: 0, updated: 0, skipped: 1, warnings: [] });
     // A single select against `clients` is allowed (to discover the linked
     // crm_household_id); no writes should land on the legacy table.
     expect(calls.filter((c) => c.op !== "select")).toHaveLength(0);
@@ -70,7 +70,19 @@ describe("commitClientsIdentity", () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     // Pretend the planning client is linked to a CRM household so the mirror
     // path actually fires.
-    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
+    // Married client: create-client always seeds spouseLifeExpectancy (95) when
+    // a spouse exists, so the single→married planning-seed gate (stored
+    // spouseLifeExpectancy IS NULL) is a no-op here — this test covers the
+    // legacy dual-write + CRM mirror, not the seed (see clients-identity.test.ts).
+    setSelectResult("clients", [
+      { crmHouseholdId: "household-1", spouseLifeExpectancy: 95 },
+    ]);
+    // Both contact rows already exist, so the mirror UPDATEs them in place
+    // (the insert path is exercised by the single→married test above).
+    setSelectResult("crm_household_contacts", [
+      { id: "primary-1", role: "primary", lastName: "Doe" },
+      { id: "spouse-1", role: "spouse", lastName: "Doe" },
+    ]);
     const payload: ImportPayload = {
       ...emptyPayload(),
       primary: {
@@ -108,6 +120,43 @@ describe("commitClientsIdentity", () => {
     expect(crmValues[0].lastName).toBe("Doe");
     expect(crmValues[0].dateOfBirth).toBe("1980-01-01");
     expect(crmValues[1].firstName).toBe("Riley");
+  });
+
+  it("inserts a spouse CRM contact when the household started single", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("clients", [{ crmHouseholdId: "household-1" }]);
+    // Household was created single: only a primary contact row exists — there
+    // is NO role='spouse' row for an UPDATE to land on.
+    setSelectResult("crm_household_contacts", [
+      { id: "primary-1", role: "primary", lastName: "Doe" },
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      primary: {
+        firstName: "Jordan",
+        lastName: "Doe",
+        dateOfBirth: "1980-01-01",
+        filingStatus: "married_filing_jointly",
+      },
+      spouse: { firstName: "Riley", lastName: "Doe", dateOfBirth: "1982-02-02" },
+    };
+    await commitClientsIdentity(tx, payload, ctx);
+
+    // The spouse must be INSERTED (the single→married transition), not silently
+    // dropped by an UPDATE that matches zero rows.
+    const crmInserts = callsForTable(calls, "crm_household_contacts").filter(
+      (c) => c.op === "insert",
+    );
+    expect(crmInserts).toHaveLength(1);
+    const inserted =
+      crmInserts[0].op === "insert"
+        ? (crmInserts[0].values as Record<string, unknown>)
+        : {};
+    expect(inserted.role).toBe("spouse");
+    expect(inserted.firstName).toBe("Riley");
+    expect(inserted.lastName).toBe("Doe");
+    expect(inserted.dateOfBirth).toBe("1982-02-02");
+    expect(inserted.householdId).toBe("household-1");
   });
 
   it("re-syncs the denormalized household name when the import changes a name", async () => {

@@ -5,6 +5,8 @@
  *
  * Supports the chains the commit modules actually use:
  *   tx.insert(table).values(rows) [.returning(...)]
+ *   tx.insert(table).values(rows).onConflictDoNothing() [.returning(...)]
+ *   tx.insert(table).values(rows).onConflictDoUpdate({...}) [.returning(...)]
  *   tx.update(table).set(values).where(...) [.returning(...)]
  *   tx.select(cols).from(table).where(...)
  *   tx.delete(table).where(...)
@@ -92,11 +94,17 @@ export function makeFakeTx(): FakeTx {
         calls.push({ op: "insert", table: tName, values });
         const valArr = Array.isArray(values) ? values : [values];
         const rows = valArr.map(() => ({ id: nextId(tName) }));
-        const promise = Promise.resolve();
         // returning() intercepts the chain: the consumer awaits the
-        // returning() promise (rows), not the .values() promise.
-        return Object.assign(promise, {
+        // returning() promise (rows), not the .values() promise. onConflict*
+        // are terminal no-ops that stay awaitable and still expose returning().
+        const withReturning = () =>
+          Object.assign(Promise.resolve(), {
+            returning: vi.fn(() => Promise.resolve(rows)),
+          });
+        return Object.assign(Promise.resolve(), {
           returning: vi.fn(() => Promise.resolve(rows)),
+          onConflictDoNothing: vi.fn(withReturning),
+          onConflictDoUpdate: vi.fn(withReturning),
         });
       },
     }),
