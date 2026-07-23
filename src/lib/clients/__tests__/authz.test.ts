@@ -167,9 +167,11 @@ describe("verifyClientAccess — siloing", () => {
   });
 
   afterAll(async () => {
-    // Don't let the siloed row for ORG survive this block — later files/reruns
-    // sharing the same ORG fixture must see the legacy (non-siloed) default.
+    // Don't let the siloed row (or a stray intra-firm share) for ORG survive
+    // this block — later files/reruns sharing the same ORG fixture must see
+    // the legacy (non-siloed, unshared) default.
     await db.delete(firms).where(eq(firms.firmId, ORG));
+    await db.delete(clientShares).where(eq(clientShares.firmId, ORG));
   });
 
   it("owning advisor gets edit", async () => {
@@ -188,5 +190,31 @@ describe("verifyClientAccess — siloing", () => {
     setAuth("u_admin", "org:admin");
     const acc = await verifyClientAccess(clientId);
     expect(acc).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  // Regression test for the fall-through itself: a caller denied by the
+  // own-firm ownership check (siloed, not the owning advisor) must still gain
+  // access when an active intra-firm per-client share exists. Inserted
+  // directly via `db.insert(clientShares)` — NOT `createShare` — because the
+  // firm-member guard on `createShare` still rejects intra-firm shares until
+  // Task 6; this test only exercises the authz *read* path's fall-through.
+  // If the own-firm branch ever regresses to an early `return { ok: false }`
+  // before the share block, this test fails (asserts access:"shared", not
+  // ok:false) even though the two tests above would still pass.
+  it("non-owning advisor gains access via an active intra-firm share (fall-through)", async () => {
+    const sharePermission: "edit" = "edit";
+    await db.insert(clientShares).values({
+      firmId: ORG,
+      ownerUserId: ADV_A,
+      recipientUserId: "adv_b",
+      recipientEmail: "advb@example.com",
+      scope: "client",
+      clientId,
+      permission: sharePermission,
+      createdBy: ADV_A,
+    });
+    setAuth("adv_b", "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, access: "shared", permission: sharePermission });
   });
 });
