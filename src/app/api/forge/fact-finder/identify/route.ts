@@ -5,7 +5,7 @@
 // no client yet) and the files route's upload validation, but persists NOTHING:
 // it reads the document in-memory, returns the household identity, and lists
 // firm-scoped duplicate candidates so the panel/agent can branch.
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription, authErrorResponse } from "@/lib/authz";
 import { checkForgeRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
@@ -38,7 +38,6 @@ export async function POST(req: Request): Promise<Response> {
     await requireActiveSubscription();
     const { userId, sessionClaims } = await auth();
     if (!userId) return json(401, { error: "Unauthorized" });
-    await currentUser();
     const claims = sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null;
     entitlements = claims?.org_public_metadata?.entitlements;
   } catch (err) {

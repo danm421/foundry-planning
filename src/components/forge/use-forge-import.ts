@@ -1,9 +1,16 @@
 // src/components/forge/use-forge-import.ts
 //
-// Client-side orchestrator for the in-chat document import. Drives the existing
-// import endpoints in order — create (updating, base case) → upload → extract
-// (with holdings) → match — then returns a compact summary for the chat. The
-// matching step is non-fatal: the review wizard can re-run it on open.
+// Client-side orchestrator for the in-chat document flows. Exposes:
+//   • runImport        — classic import: create (updating, base case) → upload →
+//                        extract (with holdings) → match. Matching is non-fatal
+//                        (the review wizard can re-run it on open).
+//   • runPlanBuild     — Plan Builder: uploads then branches on mode — "new"
+//                        assembles a fresh plan, "updating" matches into an
+//                        existing one.
+//   • identifyFactFinder — clientless identity "peek" for global attach-first
+//                        ingest (hits /forge/fact-finder/identify; no client yet).
+//   • commitAllTabs    — one-shot finish: POST /commit for all tabs.
+//   • submitPlanAnswers / reset — plan follow-up answers and state reset.
 "use client";
 
 import { useCallback, useState } from "react";
