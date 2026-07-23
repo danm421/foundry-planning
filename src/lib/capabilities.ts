@@ -22,6 +22,13 @@ const TASKS: Capability[] = ["tasks:read", "tasks:write"];
 // so reactivation = recreate the Clerk roles + re-point provisioning. No user
 // can hold these keys today, so the extra entries are inert. Live roles:
 // org:admin, org:member. See spec 2026-06-11-role-downgrade-admin-member.
+//
+// 2026-07-23: org:operations and org:planner were also DELETED from the Clerk
+// Dashboard (they lingered as selectable roles in the OrganizationProfile invite
+// picker and billed as custom-role add-ons). They no longer exist in Clerk — so
+// reactivation means recreating them in the Dashboard with these SAME keys
+// (org:operations / org:planner), at which point the entries below re-light with
+// no code change. Kept here deliberately for that path.
 const ROLE_CAPABILITIES: Record<string, ReadonlySet<Capability>> = {
   "org:owner": new Set<Capability>([
     ...PLANNING,
