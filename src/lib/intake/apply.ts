@@ -54,6 +54,7 @@ import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
+import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 
 // Drizzle transaction handle — same convention as create-client.ts / ownership.ts.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -116,58 +117,33 @@ async function applySectionsToClient(
   const planEndYear = primaryDobYear + client.planEndAge;
 
   // ── Family scalars ────────────────────────────────────────────────────────
-  // Primary CRM contact: name / DOB / maritalStatus.
-  await tx
-    .update(crmHouseholdContacts)
-    .set({
-      firstName: primary.firstName,
-      lastName: primary.lastName,
-      dateOfBirth: primary.dateOfBirth,
-      maritalStatus: primary.maritalStatus ?? null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
-        eq(crmHouseholdContacts.role, "primary"),
-      ),
-    );
+  // Primary + spouse CRM contacts (source of truth) via the shared upsert: the
+  // primary always exists so it UPDATEs; a spouse is INSERTED when the household
+  // started single (single→married), UPDATEd otherwise. This is the same helper
+  // the AI-import commit and the manual PUT route through, so the three paths
+  // can't drift.
+  await upsertPrimaryAndSpouseContacts(
+    tx,
+    client.crmHouseholdId,
+    {
+      primary: {
+        firstName: primary.firstName,
+        lastName: primary.lastName,
+        dateOfBirth: primary.dateOfBirth,
+        maritalStatus: primary.maritalStatus ?? null,
+      },
+      spouse: spouse
+        ? {
+            firstName: spouse.firstName,
+            lastName: spouse.lastName,
+            dateOfBirth: spouse.dateOfBirth,
+            maritalStatus: spouse.maritalStatus ?? null,
+          }
+        : undefined,
+    },
+    primary.lastName,
+  );
   result.familyScalarsChanged = true;
-
-  // Spouse CRM contact: upsert when the payload carries one.
-  if (spouse) {
-    const [existingSpouse] = await tx
-      .select({ id: crmHouseholdContacts.id })
-      .from(crmHouseholdContacts)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, client.crmHouseholdId),
-          eq(crmHouseholdContacts.role, "spouse"),
-        ),
-      )
-      .limit(1);
-    if (existingSpouse) {
-      await tx
-        .update(crmHouseholdContacts)
-        .set({
-          firstName: spouse.firstName,
-          lastName: spouse.lastName,
-          dateOfBirth: spouse.dateOfBirth,
-          maritalStatus: spouse.maritalStatus ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(crmHouseholdContacts.id, existingSpouse.id));
-    } else {
-      await tx.insert(crmHouseholdContacts).values({
-        householdId: client.crmHouseholdId,
-        role: "spouse",
-        firstName: spouse.firstName,
-        lastName: spouse.lastName,
-        dateOfBirth: spouse.dateOfBirth,
-        maritalStatus: spouse.maritalStatus ?? null,
-      });
-    }
-  }
 
   // Primary rename, spouse rename, and first-time spouse insert all land above
   // and all change the derived household label. One sync covers all three.

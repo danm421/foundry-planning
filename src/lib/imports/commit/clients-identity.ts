@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
-import { clients } from "@/db/schema";
+import { clients, crmHouseholdContacts, planSettings } from "@/db/schema";
+import { computePlanEndAge, computePlanEndYear } from "@/lib/plan-horizon";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import type { FilingStatus } from "@/lib/extraction/types";
@@ -56,11 +57,29 @@ export async function commitClientsIdentity(
   // ── 1. CRM contact updates (source of truth). ───────────────────────────
   // Look up the household via the planning client's crmHouseholdId.
   const [clientRow] = await tx
-    .select({ crmHouseholdId: clients.crmHouseholdId })
+    .select({
+      crmHouseholdId: clients.crmHouseholdId,
+      lifeExpectancy: clients.lifeExpectancy,
+      spouseLifeExpectancy: clients.spouseLifeExpectancy,
+      spouseRetirementAge: clients.spouseRetirementAge,
+      spouseRetirementMonth: clients.spouseRetirementMonth,
+    })
     .from(clients)
     .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
 
   if (clientRow?.crmHouseholdId) {
+    // Existing contacts, read once BEFORE the upsert: the horizon recompute in
+    // seedSpousePlanningDefaults falls back to the stored primary/spouse DOB
+    // when the payload omits it, and the single→married gate keys off whether a
+    // spouse row pre-exists.
+    const existingContacts = await tx
+      .select({
+        role: crmHouseholdContacts.role,
+        dateOfBirth: crmHouseholdContacts.dateOfBirth,
+      })
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
+
     // Upsert both roles. A spouse row is INSERTED when the household started
     // single — the reason a single→married import used to lose the spouse (the
     // old update-only mirror matched zero rows).
@@ -87,6 +106,19 @@ export async function commitClientsIdentity(
     if (nameChanged) {
       await syncHouseholdNameFromContacts(tx, clientRow.crmHouseholdId);
     }
+
+    // Single → married: seed the spouse's planning defaults + extend the plan
+    // horizon. Detected here because this is where the spouse row first appears
+    // in the import path.
+    await seedSpousePlanningDefaults(
+      tx,
+      ctx,
+      clientRow,
+      existingContacts,
+      primary,
+      spouse,
+      result,
+    );
   }
 
   // ── 2. Legacy clients columns (dual-write until Phase 9). ───────────────
@@ -121,6 +153,100 @@ export async function commitClientsIdentity(
     result.skipped = 1;
   }
   return result;
+}
+
+// Spouse planning defaults applied on a single → married transition. Mirrors
+// the values create-client.ts seeds at create time (the analogous chokepoint);
+// keeping them named makes the policy explicit and referenced once each.
+const SPOUSE_DEFAULT_RETIREMENT_AGE = 65;
+const SPOUSE_DEFAULT_RETIREMENT_MONTH = 1;
+const SPOUSE_DEFAULT_LIFE_EXPECTANCY = 95;
+
+/**
+ * Single → married: seed the spouse's null planning columns (retirement age /
+ * month / life expectancy) and re-derive the plan horizon so it extends past
+ * the primary's death year when the spouse outlives them.
+ *
+ * No-op unless a spouse will exist AND the STORED spouseLifeExpectancy is null.
+ * Gating on the stored value is what makes this reliable: create-client always
+ * writes 95 when a spouse exists, so null means the household was created single
+ * (or is legacy-null, where seeding 95 is still correct). Keying off the stored
+ * value — not the payload — also makes this a clean no-op once the value is set,
+ * including when the Plan basics tab (earlier in COMMIT_TABS) already wrote it
+ * in this same transaction.
+ *
+ * Horizon inputs come from the payload when the import carries them, else the
+ * stored CRM contacts — mirroring the PATCH path's `body.X ?? contact.X`. Only
+ * null planning columns are filled; advisor-set values are never clobbered.
+ *
+ * NOTE: the horizon recompute + planSettings propagation here is a near-copy of
+ * `plan-basics.ts`'s `resolvePlanHorizon` and the PATCH route's block; a shared
+ * "persist plan horizon" helper is tracked as future work.
+ */
+async function seedSpousePlanningDefaults(
+  tx: Tx,
+  ctx: CommitContext,
+  clientRow: {
+    lifeExpectancy: number;
+    spouseLifeExpectancy: number | null;
+    spouseRetirementAge: number | null;
+    spouseRetirementMonth: number | null;
+  },
+  existingContacts: { role: string; dateOfBirth: string | null }[],
+  primary: ImportPayload["primary"],
+  spouse: ImportPayload["spouse"],
+  result: CommitResult,
+): Promise<void> {
+  const spouseWillExist =
+    existingContacts.some((c) => c.role === "spouse") || Boolean(spouse?.firstName);
+  if (!spouseWillExist || clientRow.spouseLifeExpectancy != null) return;
+
+  const spousePatch: Record<string, unknown> = {
+    spouseRetirementAge: clientRow.spouseRetirementAge ?? SPOUSE_DEFAULT_RETIREMENT_AGE,
+    spouseRetirementMonth:
+      clientRow.spouseRetirementMonth ?? SPOUSE_DEFAULT_RETIREMENT_MONTH,
+    spouseLifeExpectancy: SPOUSE_DEFAULT_LIFE_EXPECTANCY,
+  };
+
+  const primaryDob =
+    primary?.dateOfBirth ??
+    existingContacts.find((c) => c.role === "primary")?.dateOfBirth ??
+    null;
+  const spouseDob =
+    spouse?.dateOfBirth ??
+    existingContacts.find((c) => c.role === "spouse")?.dateOfBirth ??
+    null;
+
+  let planEndYear: number | null = null;
+  if (primaryDob) {
+    const planEndAge = computePlanEndAge({
+      clientDob: primaryDob,
+      clientLifeExpectancy: clientRow.lifeExpectancy,
+      spouseDob,
+      spouseLifeExpectancy: SPOUSE_DEFAULT_LIFE_EXPECTANCY,
+    });
+    spousePatch.planEndAge = planEndAge;
+    planEndYear = computePlanEndYear(primaryDob, planEndAge);
+  } else {
+    result.warnings.push(
+      "Life expectancy saved, but the plan horizon could not be recomputed — " +
+        "no date of birth on file for the primary client.",
+    );
+  }
+
+  await tx
+    .update(clients)
+    .set({ ...spousePatch, updatedAt: new Date() })
+    .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
+
+  if (planEndYear != null) {
+    // Every scenario, not just this import's — matching plan-basics / the PATCH
+    // path, so engine + UI stay in sync without a manual re-save.
+    await tx
+      .update(planSettings)
+      .set({ planEndYear, updatedAt: new Date() })
+      .where(eq(planSettings.clientId, ctx.clientId));
+  }
 }
 
 // Replace-if-non-null: build the CRM patch from only the fields the import
