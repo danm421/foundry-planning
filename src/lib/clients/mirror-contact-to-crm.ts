@@ -1,6 +1,5 @@
-import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { crmHouseholdContacts } from "@/db/schema";
+import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 
 // Drizzle transaction handle — same convention used in src/lib/ownership.ts.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -18,8 +17,10 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * create). Both call sites pass a transaction handle so the CRM write is
  * atomic with the clients-row mutation.
  *
- * Spouse patch is UPDATE-only: silently no-ops if the household has no spouse
- * contact row — the caller is responsible for inserting one when needed.
+ * Both slots UPSERT via upsertPrimaryAndSpouseContacts: an existing contact row
+ * is updated, and a missing spouse row is INSERTED — that's how a household
+ * created single transitions to married. (A contact-detail-only patch with no
+ * spouse name still can't materialize a nameless row; see the helper.)
  */
 export async function mirrorContactToCrm(
   tx: Tx,
@@ -41,20 +42,8 @@ export async function mirrorContactToCrm(
   if ("state" in safeUpdate) primaryPatch.state = safeUpdate.state ?? null;
   if ("postalCode" in safeUpdate) primaryPatch.postalCode = safeUpdate.postalCode ?? null;
   if ("country" in safeUpdate) primaryPatch.country = safeUpdate.country ?? null;
-  if (Object.keys(primaryPatch).length > 0) {
-    primaryPatch.updatedAt = new Date();
-    await tx
-      .update(crmHouseholdContacts)
-      .set(primaryPatch)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, crmHouseholdId),
-          eq(crmHouseholdContacts.role, "primary"),
-        ),
-      );
-  }
 
-  // Spouse contact patch — UPDATE only; skip silently if no spouse row exists.
+  // Spouse contact patch.
   const spousePatch: Record<string, unknown> = {};
   if ("spouseName" in safeUpdate) spousePatch.firstName = safeUpdate.spouseName;
   if ("spouseLastName" in safeUpdate) spousePatch.lastName = safeUpdate.spouseLastName;
@@ -69,16 +58,14 @@ export async function mirrorContactToCrm(
   if ("spouseState" in safeUpdate) spousePatch.state = safeUpdate.spouseState ?? null;
   if ("spousePostalCode" in safeUpdate) spousePatch.postalCode = safeUpdate.spousePostalCode ?? null;
   if ("spouseCountry" in safeUpdate) spousePatch.country = safeUpdate.spouseCountry ?? null;
-  if (Object.keys(spousePatch).length > 0) {
-    spousePatch.updatedAt = new Date();
-    await tx
-      .update(crmHouseholdContacts)
-      .set(spousePatch)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, crmHouseholdId),
-          eq(crmHouseholdContacts.role, "spouse"),
-        ),
-      );
-  }
+
+  // Upsert both roles: an existing contact is updated, a missing spouse is
+  // inserted (the single→married transition). The primary name in this patch is
+  // the NOT NULL last_name fallback if the spouse patch omits a last name.
+  await upsertPrimaryAndSpouseContacts(
+    tx,
+    crmHouseholdId,
+    { primary: primaryPatch, spouse: spousePatch },
+    typeof safeUpdate.lastName === "string" ? safeUpdate.lastName : null,
+  );
 }
