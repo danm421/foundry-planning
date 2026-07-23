@@ -79,6 +79,33 @@ function payloadWithHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): Imp
   };
 }
 
+/**
+ * A complete education-savings 529 account row as returned by the `accounts`
+ * SELECT — the shape `commitGoals` reads. Overrides only what a test varies
+ * (id / name / the two beneficiary fields). NON-education accounts stay inline
+ * so their off-default category/subType reads at the call site.
+ */
+type EduAccountRow = {
+  id: string;
+  name: string;
+  category: string;
+  subType: string;
+  beneficiaryFamilyMemberId: string | null;
+  beneficiaryName: string | null;
+};
+
+function eduAccount(overrides: Partial<EduAccountRow> = {}): EduAccountRow {
+  return {
+    id: "acct-emma-529",
+    name: "Emma 529 Plan",
+    category: "education_savings",
+    subType: "529",
+    beneficiaryFamilyMemberId: null,
+    beneficiaryName: null,
+    ...overrides,
+  };
+}
+
 function insertValues(fake: FakeTx, table: string): Record<string, unknown> {
   const call = callsForTable(fake.calls, table).find((c) => c.op === "insert") as
     | { values: Record<string, unknown> }
@@ -107,16 +134,7 @@ function updateCalls(fake: FakeTx, table: string): FakeTxCall[] {
 describe("commitGoals — education", () => {
   it("writes an education expense with its 529 join row", async () => {
     const fake = makeFakeTx();
-    fake.setSelectResult("accounts", [
-      {
-        id: "acct-emma-529",
-        name: "Emma 529 Plan",
-        category: "education_savings",
-        subType: "529",
-        beneficiaryFamilyMemberId: null,
-        beneficiaryName: null,
-      },
-    ]);
+    fake.setSelectResult("accounts", [eduAccount()]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
 
     const payload = payloadWithEducationGoal({
@@ -177,16 +195,7 @@ describe("commitGoals — education", () => {
 
   it("fills a null 529 beneficiary with the confirmed student", async () => {
     const fake = makeFakeTx();
-    fake.setSelectResult("accounts", [
-      {
-        id: "acct-emma-529",
-        name: "Emma 529 Plan",
-        category: "education_savings",
-        subType: "529",
-        beneficiaryFamilyMemberId: null,
-        beneficiaryName: null,
-      },
-    ]);
+    fake.setSelectResult("accounts", [eduAccount()]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
     const payload = payloadWithEducationGoal({
       dedicatedAccountNames: ["Emma 529 Plan"],
@@ -206,14 +215,8 @@ describe("commitGoals — education", () => {
   it("never overwrites a beneficiary someone already set", async () => {
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      {
-        id: "acct-emma-529",
-        name: "Emma 529 Plan",
-        category: "education_savings",
-        subType: "529",
-        beneficiaryFamilyMemberId: "fm-noah", // set by someone else already
-        beneficiaryName: null,
-      },
+      // beneficiary already set by someone else
+      eduAccount({ beneficiaryFamilyMemberId: "fm-noah" }),
     ]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
     const payload = payloadWithEducationGoal({
@@ -235,14 +238,8 @@ describe("commitGoals — education", () => {
     // treat this account as unclaimed and clobber the external beneficiary.
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      {
-        id: "acct-emma-529",
-        name: "Emma 529 Plan",
-        category: "education_savings",
-        subType: "529",
-        beneficiaryFamilyMemberId: null,
-        beneficiaryName: "Grandma Jones", // set by name, not by family-member id
-      },
+      // beneficiary set by name (external), not by family-member id
+      eduAccount({ beneficiaryName: "Grandma Jones" }),
     ]);
     fake.setSelectResult("family_members", [{ id: "fm-emma", firstName: "Emma" }]);
     const payload = payloadWithEducationGoal({
@@ -264,8 +261,8 @@ describe("commitGoals — education", () => {
     // consume one distinct id per goal.
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-1", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
-      { id: "acct-2", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      eduAccount({ id: "acct-1", name: "529 Plan" }),
+      eduAccount({ id: "acct-2", name: "529 Plan" }),
     ]);
     fake.setSelectResult("family_members", []);
     const payload: ImportPayload = {
@@ -305,7 +302,7 @@ describe("commitGoals — education", () => {
     // claims it; the second must warn rather than reusing the same id again.
     const fake = makeFakeTx();
     fake.setSelectResult("accounts", [
-      { id: "acct-1", name: "529 Plan", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: null, beneficiaryName: null },
+      eduAccount({ id: "acct-1", name: "529 Plan" }),
     ]);
     fake.setSelectResult("family_members", []);
     const payload: ImportPayload = {
@@ -415,16 +412,7 @@ describe("commitGoals — education", () => {
     // say the account "was not linked" — NOT that "the goal was created
     // without dedicated funding" (which is only true when NOTHING resolved).
     const fake = makeFakeTx();
-    fake.setSelectResult("accounts", [
-      {
-        id: "acct-real",
-        name: "Emma 529 Plan",
-        category: "education_savings",
-        subType: "529",
-        beneficiaryFamilyMemberId: null,
-        beneficiaryName: null,
-      },
-    ]);
+    fake.setSelectResult("accounts", [eduAccount({ id: "acct-real" })]);
     fake.setSelectResult("family_members", []);
     const payload = payloadWithEducationGoal({
       dedicatedAccountNames: ["Emma 529 Plan", "Nonexistent 529"],

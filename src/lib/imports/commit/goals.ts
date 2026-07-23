@@ -7,6 +7,31 @@ import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
+ * Parses a numeric text field to the decimal string a numeric column expects,
+ * or `null` for blank/whitespace/non-finite input. `raw.trim()` (not `!== ""`)
+ * treats a whitespace-only field as empty, and `Number.isFinite` keeps stray
+ * non-numeric text from ever landing as "NaN".
+ */
+function num(raw: string): string | null {
+  const n = Number(raw);
+  return raw.trim() !== "" && Number.isFinite(n) ? String(n) : null;
+}
+
+/**
+ * Like `num`, but divides by 100. `HomePurchaseGoal.growthRate`/`mortgageRate`
+ * mirror `BuyLegDraft`, which documents them as PERCENT strings
+ * (asset-transaction-leg-model.ts:38,43) — `BuyLegEditor`'s `PercentInput`s
+ * write the raw typed percent ("3.5") onto goal state. The advisor-facing form
+ * converts on submit (`optDec` in use-asset-transaction-legs.ts:14); this path
+ * must too, or "3.5" lands in a decimal(5,4) column as 3.5 — no error (ceiling
+ * 9.9999), just a home appreciating 350% a year.
+ */
+function pct(raw: string): string | null {
+  const n = Number(raw);
+  return raw.trim() !== "" && Number.isFinite(n) ? String(n / 100) : null;
+}
+
+/**
  * Writes the goals the advisor reviewed on the Goals step.
  *
  * CROSS-TAB REFERENCES RESOLVE BY QUERY, NOT BY ID REMAP. At assemble time the
@@ -221,27 +246,6 @@ export async function commitGoals(
         `The down-payment account for "${name}" is no longer available; the purchase was created without one.`,
       );
     }
-
-    const num = (raw: string): string | null => {
-      const n = Number(raw);
-      return raw.trim() !== "" && Number.isFinite(n) ? String(n) : null;
-    };
-
-    // `HomePurchaseGoal` mirrors `BuyLegDraft` field-for-field, and
-    // `BuyLegDraft` documents growthRate/mortgageRate as PERCENT strings
-    // (asset-transaction-leg-model.ts:38,43) — `BuyLegEditor`'s `PercentInput`s
-    // write the raw typed percent ("3.5") straight onto goal state. The
-    // advisor-facing form converts on submit (`optDec` in
-    // use-asset-transaction-legs.ts:14); this path must too, or "3.5" lands in
-    // a decimal(5,4) column as 3.5 — no error (ceiling 9.9999), just a home
-    // appreciating 350% a year. Only these two fields are percents;
-    // purchasePrice/basis/mortgageAmount come from `CurrencyInput` and are
-    // already plain dollars. Same `String(Number(v) / 100)` shape as `optDec`
-    // so both paths round-trip identically.
-    const pct = (raw: string): string | null => {
-      const n = Number(raw);
-      return raw.trim() !== "" && Number.isFinite(n) ? String(n / 100) : null;
-    };
 
     await tx.insert(assetTransactions).values({
       clientId: ctx.clientId,

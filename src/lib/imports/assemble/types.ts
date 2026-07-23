@@ -118,10 +118,4 @@ export interface HomePurchaseGoal {
 export interface AssembleGoals {
   education: EducationGoal[];
   homePurchases: HomePurchaseGoal[];
-  /**
-   * Advisor-stated risk tolerance. OPTIONAL and written only once the sibling
-   * `model-portfolio-risk-levels` spec has shipped the `clients.risk_tolerance`
-   * column — see the final task of the phase-2b plan.
-   */
-  riskTolerance?: PlanBasicsField<string>;
 }
