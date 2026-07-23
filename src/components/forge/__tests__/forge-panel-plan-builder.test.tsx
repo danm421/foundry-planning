@@ -5,6 +5,13 @@
 // tool call minted (tool results go to the model, not the client). Mocks
 // useForgeStream (to drive lastToolRender from the outside, mirroring the
 // Phase-2 approval tests) and useForgeImport (to spy on runPlanBuild).
+//
+// Task 6 un-gated the paperclip in global mode (attach-first fact-finder
+// ingest), which superseded two of this file's original assertions that the
+// attach affordance only appeared after a build_plan frame arrived — those
+// two tests were updated in place to describe the new (still-visible)
+// behavior rather than removed, since the frame-arrival wiring they otherwise
+// exercise (via runPlanBuild call counts, below) remains load-bearing.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
@@ -141,16 +148,22 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     importMocks.submitPlanAnswers.mockClear();
   });
 
-  it("does not show the attach affordance in global mode before a build_plan frame arrives", () => {
+  // Task 6 un-gates the paperclip in global mode (attach-first fact-finder
+  // ingest entry point), superseding the prior "only after a build_plan frame"
+  // gating this describe block originally asserted. The two tests below now
+  // document that: the affordance is available from the start, and a
+  // build_plan frame arriving later doesn't change its visibility (it was
+  // already visible).
+  it("shows the attach affordance in global mode even before any tool_render frame arrives (Task 6 attach-first ingest)", () => {
     mockStreamState = makeStreamState({ lastToolRender: null });
     mountGlobalPanel();
-    expect(screen.queryByLabelText("Attach a document")).toBeNull();
+    expect(screen.getByLabelText("Attach a document")).toBeInTheDocument();
   });
 
-  it("a build_plan tool_render frame enables the attach affordance in global mode (clientId == null)", async () => {
+  it("the attach affordance stays available in global mode once a build_plan tool_render frame arrives", async () => {
     mockStreamState = makeStreamState({ lastToolRender: null });
     const { rerender } = mountGlobalPanel();
-    expect(screen.queryByLabelText("Attach a document")).toBeNull();
+    expect(screen.getByLabelText("Attach a document")).toBeInTheDocument();
 
     mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame("imp_1") });
     await act(async () => {

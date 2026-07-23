@@ -21,7 +21,12 @@ import {
 } from "./actions";
 import { NAVIGATE_ALLOWLIST_PREFIXES } from "@/domain/forge/navigate-allowlist";
 import { ConversationList } from "./conversation-list";
-import { useForgeImport, type ForgeImportResult, type PlanBuildResult } from "./use-forge-import";
+import {
+  useForgeImport,
+  type ForgeImportResult,
+  type PlanBuildResult,
+  type FactFinderIdentifyResponse,
+} from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 import { PlanQuestionsCard } from "./plan-questions-card";
 
@@ -85,6 +90,24 @@ interface ForgePanelProps {
   forceOpenForTest?: boolean;
 }
 
+// Render the identity + duplicate matches as a compact block the model reads
+// to fill ingest_fact_finder's args.
+function buildIngestTurnMessage(res: FactFinderIdentifyResponse, prompt: string): string {
+  const id = res.identity!;
+  const lines: string[] = ["[Attached fact finder]"];
+  lines.push(`household: ${id.householdName}`);
+  if (id.primary) lines.push(`primary: ${id.primary.firstName} ${id.primary.lastName ?? ""} (${id.primary.dateOfBirth ?? "DOB unknown"})`);
+  if (id.spouse) lines.push(`spouse: ${id.spouse.firstName} ${id.spouse.lastName ?? ""} (${id.spouse.dateOfBirth ?? "DOB unknown"})`);
+  if (id.state) lines.push(`state: ${id.state}`);
+  if (id.filingStatus) lines.push(`filing: ${id.filingStatus}`);
+  lines.push(
+    res.duplicateCandidates.length === 0
+      ? "No existing household matched."
+      : `Possible existing matches: ${res.duplicateCandidates.map((c) => `${c.name} (clientId: ${c.clientId ?? "none"})`).join("; ")}`,
+  );
+  return `${prompt ? prompt + "\n\n" : ""}${lines.join("\n")}`;
+}
+
 export function ForgePanel({
   clientId,
   clientName,
@@ -145,6 +168,14 @@ export function ForgePanel({
   const [planBuild, setPlanBuild] = useState<{ clientId: string; importId: string; mode: string } | null>(null);
   const [planResult, setPlanResult] = useState<PlanBuildResult | null>(null);
   const [planQuestionsDismissed, setPlanQuestionsDismissed] = useState(false);
+  // Global attach-first ingest: a duplicate-household decision awaiting the
+  // advisor's choice (new vs. update-existing), surfaced by a card in Task 7.
+  // Holds the files so the eventual choice can still fire the build/update.
+  const [factFinderDecision, setFactFinderDecision] = useState<{
+    identity: FactFinderIdentifyResponse["identity"];
+    candidates: FactFinderIdentifyResponse["duplicateCandidates"];
+    files: File[];
+  } | null>(null);
   // importId already consumed from lastToolRender — guards against the stale
   // frame (never cleared by the hook) re-triggering a build on a later turn
   // or re-mount.
@@ -161,6 +192,7 @@ export function ForgePanel({
     errorMessage: importError,
     runImport,
     runPlanBuild,
+    identifyFactFinder,
     submitPlanAnswers,
   } = useForgeImport();
   // Shared with the plan-build run (same underlying hook/status) — "assembling"
@@ -174,6 +206,10 @@ export function ForgePanel({
   // Client to attach files to: the client-mode clientId, or (global mode) the
   // client a build_plan tool call just minted.
   const attachTarget = clientId ?? planBuild?.clientId ?? null;
+  // Attaching is allowed when we already have a client to attach to, OR we're in
+  // global mode (clientId == null) where an attach kicks the fact-finder ingest
+  // flow (identify → build/update). Paste-to-attach stays client-only for now.
+  const canAttach = attachTarget != null || clientId == null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = status === "streaming";
   // While an approval is pending the graph is checkpointed mid-interrupt; the
@@ -258,13 +294,18 @@ export function ForgePanel({
     close();
   }, [pendingWalkthrough, walkthrough, setPendingWalkthrough, close]);
 
-  // Custom-streaming seam: consume a `build_plan` tool_render frame. Tool
-  // results go to the model, not the client — this is the only way the panel
-  // learns the clientId/importId a build_plan call just minted (client mode
-  // already knows its clientId; global mode does not until this frame lands).
+  // Custom-streaming seam: consume a `build_plan` or `ingest_fact_finder`
+  // tool_render frame (same {clientId, importId, mode} shape). Tool results go
+  // to the model, not the client — this is the only way the panel learns the
+  // clientId/importId either call just minted (client mode already knows its
+  // clientId; global mode does not until this frame lands).
   useEffect(() => {
     if (!lastToolRender) return;
-    if (lastToolRender.name !== "build_plan" || lastToolRender.status !== "complete") return;
+    if (
+      (lastToolRender.name !== "build_plan" && lastToolRender.name !== "ingest_fact_finder") ||
+      lastToolRender.status !== "complete"
+    )
+      return;
     const data = lastToolRender.data;
     if (
       typeof data !== "object" ||
@@ -285,7 +326,11 @@ export function ForgePanel({
     // If the advisor had already attached files before the tool finished,
     // kick off the build immediately rather than waiting for another Send.
     if (attached.length > 0) {
-      void runPlanBuildTurn({ clientId: pb.clientId, importId: pb.importId }, attached, input.trim());
+      void runPlanBuildTurn(
+        { clientId: pb.clientId, importId: pb.importId, mode: pb.mode },
+        attached,
+        input.trim(),
+      );
     }
     // Intentionally keyed only on lastToolRender: attached/input/runPlanBuildTurn
     // are read as of the render where the frame arrives (the frame fires once
@@ -389,7 +434,7 @@ export function ForgePanel({
   // upload→extract→assemble pipeline, then fires one chat turn so Forge
   // narrates what it found (mirrors the existing import branch below).
   async function runPlanBuildTurn(
-    target: { clientId: string; importId: string },
+    target: { clientId: string; importId: string; mode: string },
     files: File[],
     prompt: string,
   ) {
@@ -400,7 +445,12 @@ export function ForgePanel({
       ...m,
       { role: "user", text: prompt, attachments: files.map((f) => f.name) },
     ]);
-    const result = await runPlanBuild({ clientId: target.clientId, importId: target.importId, files });
+    const result = await runPlanBuild({
+      clientId: target.clientId,
+      importId: target.importId,
+      files,
+      mode: target.mode === "updating" ? "updating" : "new",
+    });
     if (!result) return; // errorMessage bubble already shown by the hook
     // One build per build_plan proposal: clear planBuild now that this build
     // has run so a LATER attach+send in the same thread falls through to the
@@ -426,6 +476,48 @@ export function ForgePanel({
       conversationId,
       currentPage: sectionKeyForPath(pathname),
       pendingImportId: result.importId,
+      skipUserBubble: true,
+    });
+    refetchThreads();
+  }
+
+  // Global attach-first ingest. Peek the document for identity + duplicates,
+  // then fire ONE chat turn with an injected identity block so the agent calls
+  // ingest_fact_finder (which mints/targets a client+import and emits a
+  // tool_render frame the lastToolRender effect consumes to run the import).
+  // NOTE: deliberately never clears `attached` here (unlike runPlanBuildTurn) —
+  // the lastToolRender effect reads `attached` when the tool_render frame
+  // lands to auto-kick runPlanBuildTurn against the same files, which clears
+  // `attached` itself once the upload actually starts. The duplicate-decision
+  // path also leaves `attached` set — Task 7's decision card carries the files
+  // forward via `factFinderDecision.files` until the advisor resolves it.
+  async function runFactFinderIngest(files: File[], prompt: string) {
+    setInput("");
+    setMessages((m) => [...m, { role: "user", text: prompt, attachments: files.map((f) => f.name) }]);
+    const res = await identifyFactFinder(files);
+    if (!res) return; // errorMessage bubble already shown by the hook
+    if (!res.isHouseholdDoc || !res.identity) {
+      setAttached([]);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          text: "That doesn't look like a fact finder or household document I can build a plan from. Attach a full fact finder, or tell me what you'd like to do.",
+        },
+      ]);
+      return;
+    }
+    // Duplicate + no typed intent → ask via the decision card (deterministic).
+    if (res.duplicateCandidates.length > 0 && prompt.length === 0) {
+      setFactFinderDecision({ identity: res.identity, candidates: res.duplicateCandidates, files });
+      return;
+    }
+    // Otherwise let the agent decide (no dup → new; typed intent → interpret).
+    await send({
+      message: buildIngestTurnMessage(res, prompt),
+      scenarioId: scenarioId ?? "base",
+      conversationId,
+      currentPage: sectionKeyForPath(pathname),
       skipUserBubble: true,
     });
     refetchThreads();
@@ -460,12 +552,24 @@ export function ForgePanel({
     if (locked) return;
     // A new turn supersedes the prior approval receipt.
     setResolvedApproval(null);
+    // Global attach-first ingest: files attached, no client, and no build_plan
+    // has minted a target yet → read the doc, then let the agent build/update.
+    if (attached.length > 0 && clientId == null && planBuild == null) {
+      const files = attached;
+      const prompt = input.trim();
+      await runFactFinderIngest(files, prompt);
+      return;
+    }
     // Plan-build path: files attached + a build_plan tool call already minted
     // the client/import to attach them to (client OR global mode).
     if (attached.length > 0 && planBuild != null) {
       const files = attached;
       const prompt = input.trim();
-      await runPlanBuildTurn({ clientId: planBuild.clientId, importId: planBuild.importId }, files, prompt);
+      await runPlanBuildTurn(
+        { clientId: planBuild.clientId, importId: planBuild.importId, mode: planBuild.mode },
+        files,
+        prompt,
+      );
       return;
     }
     // Send-with-files: run the import pipeline, then immediately engage the agent.
@@ -1026,9 +1130,10 @@ export function ForgePanel({
             }}
           />
           <div className="flex items-end gap-2 rounded-[var(--radius)] border border-hair bg-card-2 p-1.5 focus-within:border-secondary/50">
-            {/* Attach button — needs a client context: client mode always has
-                one; global mode gets one once a build_plan tool call mints it. */}
-            {attachTarget != null && (
+            {/* Attach button — visible in client mode always, and in global
+                mode as the attach-first fact-finder ingest entry point (see
+                canAttach above). */}
+            {canAttach && (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
