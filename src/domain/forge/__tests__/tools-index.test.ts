@@ -256,9 +256,9 @@ describe("buildTools (Phase 1 + Phase 2 + Phase 3 + Phase 4 + memory assembly + 
     expect(routeAfterAgent([{ name: "build_plan" }], WRITE_TOOL_NAMES)).toBe("approval");
   });
 
-  it("WRITE_TOOL_NAMES is a non-empty Set (26 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes + 1 plan builder write)", () => {
+  it("WRITE_TOOL_NAMES is a non-empty Set (27 entries: 5 scenario writes + 12 detail writes + 3 Tier-B CRM writes + 1 meeting save + 4 global writes + 1 plan builder write + 1 fact-finder ingest write)", () => {
     expect(WRITE_TOOL_NAMES instanceof Set).toBe(true);
-    expect(WRITE_TOOL_NAMES.size).toBe(26);
+    expect(WRITE_TOOL_NAMES.size).toBe(27);
     expect(WRITE_TOOL_NAMES.has("save_meeting_record")).toBe(true);
   });
 
@@ -413,10 +413,10 @@ describe("global tool set (clientless)", () => {
   const names = buildGlobalTools({ ctx: { userId: "u", firmId: "f" }, conversationId: "c" })
     .map((t) => t.name)
     .sort();
-  it("is exactly the help + navigation + global-action + walkthrough + global-task set (18 tools)", () => {
+  it("is exactly the help + navigation + global-action + walkthrough + global-task set (19 tools)", () => {
     expect(names).toEqual([
       "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
-      "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
+      "ingest_fact_finder", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
       "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",
     ]);

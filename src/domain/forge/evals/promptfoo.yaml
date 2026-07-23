@@ -264,3 +264,17 @@ tests:
     assert:
       - type: javascript
         value: file://./assertions.ts:usedExpectedTool
+  # Attach-first fact-finder ingest (global). Simulates the injected identity
+  # block; must select ingest_fact_finder and halt at HITL (write tool).
+  - vars:
+      message: |
+        [Attached fact finder] household: Nguyen; primary: Alex Nguyen (1985-04-02);
+        state: TX; filing: married_joint. No existing household matched.
+        Build the plan from this attached fact finder.
+      mode: global
+      expectTool: ingest_fact_finder
+    assert:
+      - type: javascript
+        value: file://./assertions.ts:usedExpectedTool
+      - type: javascript
+        value: file://./assertions.ts:noUnapprovedWrite

@@ -111,4 +111,6 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "tasks_delete",
   // Plan builder — HITL-gated (both new + existing modes)
   "build_plan",
+  // Attach-first fact-finder ingest (global) — mints or targets a client+import
+  "ingest_fact_finder",
 ]);
