@@ -2,7 +2,26 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { firms } from "@/db/schema";
+import { deriveEntitlements } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
+
+/**
+ * The entitlements a founder/beta org should actually carry in Clerk metadata:
+ * the always-on base AI set unioned with whatever the beta code granted. AI is
+ * universal, so a code that only checked `ai_import` still yields the full base
+ * set (Forge included) — otherwise Forge would silently fail at runtime for the
+ * new org, and the reconcile cron (which skips founder orgs) would never heal it.
+ *
+ * Delegates to the single `deriveEntitlements` source of truth (which seeds the
+ * base set) by modeling the beta-code grants as `grant` overrides — so the
+ * union/sort/dedupe algorithm lives in exactly one place.
+ */
+function founderEntitlements(granted: string[]): string[] {
+  return deriveEntitlements({
+    items: [],
+    overrides: granted.map((entitlement) => ({ entitlement, mode: "grant" as const })),
+  });
+}
 
 export type FounderInitOptions = {
   firmId: string;
@@ -42,7 +61,10 @@ const FOUNDER_STATUS = "founder";
  * Pure-ish: makes Clerk + DB reads only. No writes.
  */
 export async function getFounderState(opts: FounderInitOptions): Promise<FounderState> {
-  const { firmId, displayName, ownerUserId, entitlements } = opts;
+  const { firmId, displayName, ownerUserId, entitlements: granted } = opts;
+  // AI is universal — the target always carries the base set, unioned with any
+  // extra keys the beta code granted.
+  const entitlements = founderEntitlements(granted);
   const cc = await clerkClient();
 
   const org = await cc.organizations.getOrganization({ organizationId: firmId });
@@ -106,9 +128,13 @@ export async function getFounderState(opts: FounderInitOptions): Promise<Founder
  * mistake — fail loudly, don't auto-invite).
  */
 export async function applyFounderState(opts: FounderInitOptions): Promise<void> {
-  const { firmId, displayName, ownerUserId, entitlements } = opts;
+  const { firmId, displayName, ownerUserId } = opts;
   const cc = await clerkClient();
   const state = await getFounderState(opts);
+  // Reuse the target getFounderState already computed — its single source for
+  // the entitlements written to Clerk and recorded in the audit row, so the two
+  // can never disagree.
+  const entitlements = state.target.publicMetadata.entitlements;
 
   if (state.drift.includes("membership.missing")) {
     throw new Error(

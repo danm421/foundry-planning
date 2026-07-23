@@ -134,8 +134,10 @@ describe("setEntitlementOverride", () => {
       setBy: "user_op",
     });
     expect(h.inserted[0]).toMatchObject({ firmId: "org_1", entitlement: "ai_copilot", mode: "grant", reason: "comp", setBy: "user_op" });
-    expect(result).toEqual(["ai_copilot"]); // no live sub → items [], grant adds it
-    expect(h.metadataWrites[0]).toEqual({ id: "org_1", p: { publicMetadata: { entitlements: ["ai_copilot"] } } });
+    // No live sub → items []; base AI is always seeded, and the ai_copilot grant
+    // is idempotent against it, so the effective set is the full base set.
+    expect(result).toEqual(["ai_copilot", "ai_forge", "ai_import"]);
+    expect(h.metadataWrites[0]).toEqual({ id: "org_1", p: { publicMetadata: { entitlements: ["ai_copilot", "ai_forge", "ai_import"] } } });
     expect(h.audits[0]).toMatchObject({
       action: "ops.entitlement.granted",
       actorId: "user_op",
@@ -157,7 +159,9 @@ describe("setEntitlementOverride", () => {
       reason: "abuse",
       setBy: "user_op",
     });
-    expect(result).toEqual([]); // no items + revoke → []
+    // Base AI is seeded even with no items; the revoke strips ai_import, leaving
+    // the rest of the base set — the ops per-firm kill switch on a base key.
+    expect(result).toEqual(["ai_copilot", "ai_forge"]);
     expect(h.audits[0]).toMatchObject({ action: "ops.entitlement.revoked" });
   });
 });
