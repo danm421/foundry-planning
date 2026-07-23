@@ -439,7 +439,9 @@ export default function ReviewWizard({
       lifePolicies: lifePolicies.length > 0,
       wills: wills.length > 0,
       entities: entities.length > 0,
-      goals: goals.education.length + goals.homePurchases.length > 0,
+      goals:
+        goals.education.length + goals.homePurchases.length > 0 ||
+        goals.riskTolerance.value != null,
     }),
     [primary, spouse, dependents.length, accounts.length, incomes.length,
      expenses.length, liabilities.length, lifePolicies.length, wills.length,

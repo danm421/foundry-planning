@@ -85,6 +85,7 @@ export function presenceFromPayload(payload: ImportPayload): CategoryPresence {
     wills: payload.wills.length > 0,
     entities: payload.entities.length > 0,
     goals:
-      (payload.goals?.education.length ?? 0) + (payload.goals?.homePurchases.length ?? 0) > 0,
+      (payload.goals?.education.length ?? 0) + (payload.goals?.homePurchases.length ?? 0) > 0 ||
+      payload.goals?.riskTolerance.value != null,
   };
 }

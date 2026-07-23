@@ -6,7 +6,7 @@ import {
   type CategoryPresence,
 } from "../required-tabs";
 import { emptyImportPayload, type ImportPayload } from "../types";
-import { blank } from "../assemble/field";
+import { blank, stated } from "../assemble/field";
 
 const NOTHING: CategoryPresence = {
   family: false,
@@ -129,6 +129,20 @@ describe("goals tab requirement", () => {
     const payload = {
       ...emptyImportPayload(),
       goals: { education: [{ id: "edu:x" } as never], homePurchases: [], riskTolerance: blank<string>() },
+    };
+    const presence = presenceFromPayload(payload);
+    expect(presence.goals).toBe(true);
+    expect(requiredCommitTabs(presence)).toContain("goals");
+  });
+
+  it("is required when only a risk tolerance is stated (no education/home goals)", () => {
+    // The common no-goals household: the advisor picks a tolerance in the Goals
+    // step but has no education or home-purchase rows. The Goals tab must still
+    // be required so commitGoals runs and persists clients.risk_tolerance —
+    // otherwise the tolerance is silently dropped and no portfolio is applied.
+    const payload = {
+      ...emptyImportPayload(),
+      goals: { education: [], homePurchases: [], riskTolerance: stated<string>("moderate") },
     };
     const presence = presenceFromPayload(payload);
     expect(presence.goals).toBe(true);
