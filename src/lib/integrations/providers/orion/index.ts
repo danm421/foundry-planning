@@ -11,7 +11,9 @@ export const orionProvider: ProviderDefinition = {
   // Orion has no kill-switch flag: it shipped enabled and is merely awaiting
   // partner credentials, which the env accessors already fail loudly on.
   isEnabled: () => true,
+  authKind: "oauth",
   oauth: orionOAuth,
   client: orionClient,
   registrationTable: ORION_REGISTRATIONS,
+  autoCommitExact: true,
 };

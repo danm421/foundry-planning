@@ -53,6 +53,7 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
               providerId={provider.id}
               label={provider.label}
               enabled={provider.isEnabled()}
+              authKind={provider.authKind}
               status={conn?.status ?? "disconnected"}
               lastSyncedAt={conn?.lastSyncedAt ? conn.lastSyncedAt.toISOString() : null}
               lastSyncError={conn?.lastSyncError ?? null}
