@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { db } from "@/db";
-import { clients, clientShares, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
+import { clients, clientShares, crmHouseholds, firms, staffAdvisorVisibility } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", async () => {
@@ -154,5 +154,39 @@ describe("requireClientEditAccess", () => {
     vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
     const acc = await requireClientEditAccess(clientId);
     expect(acc).toMatchObject({ firmId: ORG, access: "shared" });
+  });
+});
+
+// Appended at the end of the file (not interleaved with the describes above)
+// so the siloed `firms` row this block inserts for ORG cannot leak into the
+// earlier non-siloed (legacy) test expectations, which all run first.
+describe("verifyClientAccess — siloing", () => {
+  beforeEach(async () => {
+    await db.delete(firms).where(eq(firms.firmId, ORG));
+    await db.insert(firms).values({ firmId: ORG, bookSiloEnabled: true });
+  });
+
+  afterAll(async () => {
+    // Don't let the siloed row for ORG survive this block — later files/reruns
+    // sharing the same ORG fixture must see the legacy (non-siloed) default.
+    await db.delete(firms).where(eq(firms.firmId, ORG));
+  });
+
+  it("owning advisor gets edit", async () => {
+    setAuth(ADV_A, "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  it("non-owning advisor in the same firm is denied when siloed", async () => {
+    setAuth("adv_b", "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toEqual({ ok: false });
+  });
+
+  it("admin sees any client in the firm", async () => {
+    setAuth("u_admin", "org:admin");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, permission: "edit", access: "own" });
   });
 });
