@@ -66,13 +66,14 @@ export async function makeCallContext(
   if (provider.authKind === "byok") {
     const conn = await getConnection(firmId, providerId);
     if (!conn || !conn.accessToken) throw new ReconnectRequired(firmId, providerId);
+    const token = conn.accessToken; // narrowed to string by the guard above
     const config = decodeAddeparConfig(conn.scope);
     return {
       firmId,
       providerId,
       baseUrl: config.apiBase,
       config,
-      getToken: async () => conn.accessToken as string, // static; ignores forceRefresh
+      getToken: async () => token, // static; ignores forceRefresh
       fetchImpl: overrides?.fetchImpl,
     };
   }

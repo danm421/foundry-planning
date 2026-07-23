@@ -23,9 +23,11 @@ export async function GET(
     const rl = await checkIntegrationApiLimit(`${provider.id}:${firmId}`);
     if (!rl.allowed) return rateLimitErrorResponse(rl, `Too many ${provider.label} requests. Please try again shortly.`);
 
+    const activeProvider = provider;
+    const ctxPromise = makeCallContext(firmId, activeProvider.id);
     const [households, links] = await Promise.all([
-      provider.client.getHouseholds(await makeCallContext(firmId, provider.id)),
-      getHouseholdLinks(firmId, provider.id),
+      ctxPromise.then((ctx) => activeProvider.client.getHouseholds(ctx)),
+      getHouseholdLinks(firmId, activeProvider.id),
     ]);
     const linkByHousehold = new Map(links.map((l) => [l.externalHouseholdId, l.clientId]));
     return NextResponse.json({
