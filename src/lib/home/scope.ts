@@ -4,8 +4,7 @@ import { accounts, crmHouseholds } from "@/db/schema";
 import {
   advisorScopeCondition,
   resolveVisibleAdvisorIds,
-  narrowToAdvisor,
-  isFirmWideAdminRole,
+  applyBookSwitcher,
 } from "@/lib/visibility";
 import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 
@@ -34,9 +33,7 @@ export const visibleHouseholdConditions = cache(async function visibleHouseholdC
   viewAsAdvisorId?: string,
 ) {
   let visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
-  if (viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
-    visible = narrowToAdvisor(visible, viewAsAdvisorId);
-  }
+  visible = applyBookSwitcher(visible, orgRole, viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   const conditions = [
     eq(crmHouseholds.firmId, firmId),

@@ -37,6 +37,9 @@ export function BookSwitcher() {
     };
   }, []);
 
+  // "all" is the book-switcher's own sentinel for "no narrowing" — mirrored
+  // server-side by `ALL_BOOKS` in src/lib/visibility.ts (not imported here:
+  // that module pulls in @/db, which must never reach this client bundle).
   const value = searchParams.get("advisor") ?? "all";
 
   function onChange(next: string) {

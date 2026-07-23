@@ -67,6 +67,16 @@ describe("listCrmHouseholds visibility scoping", () => {
     expect(rows.map((r) => r.name)).toEqual(["A HH"]);
   });
 
+  // REGRESSION (empty-list trap): "all" must mean "no narrowing", not
+  // narrowToAdvisor(visible, "all") → an advisorId IN ('all') filter that
+  // silently matches nothing. Proves applyBookSwitcher is actually wired in
+  // here via a real DB-backed list query, not just unit-tested in isolation.
+  it('an admin with viewAsAdvisorId: "all" sees the FULL unnarrowed list', async () => {
+    setAuth("user_admin", "org:admin");
+    const rows = await listCrmHouseholds({ viewAsAdvisorId: "all" });
+    expect(rows.map((r) => r.name).sort()).toEqual(["A HH", "B HH"]);
+  });
+
   // SECURITY-CRITICAL: narrowToAdvisor replaces (not narrows) whatever set it's
   // given, so a non-admin's viewAsAdvisorId MUST be ignored — never widen a
   // siloed/staff member's scope to some other advisor the client asked for.
@@ -121,6 +131,16 @@ describe("listRecentlyOpenedHouseholds visibility scoping", () => {
       viewAsAdvisorId: ADV_A,
     });
     expect(rows.map((r) => r.name)).toEqual(["A HH"]);
+  });
+
+  // REGRESSION (empty-list trap) — same as listCrmHouseholds above.
+  it('an admin with viewAsAdvisorId: "all" sees the FULL unnarrowed recently-opened list', async () => {
+    setAuth("user_admin", "org:admin");
+    const rows = await listRecentlyOpenedHouseholds({
+      userId: "user_admin",
+      viewAsAdvisorId: "all",
+    });
+    expect(rows.map((r) => r.name).sort()).toEqual(["A HH", "B HH"]);
   });
 
   // SECURITY-CRITICAL: same gate as listCrmHouseholds — a non-admin's

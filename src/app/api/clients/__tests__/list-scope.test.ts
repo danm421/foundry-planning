@@ -101,6 +101,20 @@ describe("GET /api/clients visibility scoping", () => {
     expect(rows.map((r: { lastName: string }) => r.lastName)).toEqual(["Apple"]);
   });
 
+  // REGRESSION (empty-list trap): a hand-typed/bookmarked ?advisor=all must
+  // mean "no narrowing" — not advisorId IN ('all'), which would silently
+  // return an empty list to an admin who asked for "all clients". Proves
+  // applyBookSwitcher is wired into this route via a real DB-backed request.
+  it('an admin with ?advisor=all sees the FULL unnarrowed client list', async () => {
+    setAuth("user_admin", "org:admin");
+    const res = await GET(req("all"));
+    const rows = await res.json();
+    expect(rows.map((r: { lastName: string }) => r.lastName).sort()).toEqual([
+      "Apple",
+      "Banana",
+    ]);
+  });
+
   // SECURITY-CRITICAL: narrowToAdvisor REPLACES whatever set it's given, so a
   // non-admin's ?advisor= must be ignored entirely — never used to widen a
   // siloed/staff member's own scope to some other advisor's book.

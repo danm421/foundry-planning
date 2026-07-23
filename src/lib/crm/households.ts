@@ -15,8 +15,7 @@ import { auth } from "@clerk/nextjs/server";
 import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
-  narrowToAdvisor,
-  isFirmWideAdminRole,
+  applyBookSwitcher,
 } from "@/lib/visibility";
 import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
@@ -57,9 +56,7 @@ export async function listCrmHouseholds(opts?: {
   if (opts?.search) conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
   const { userId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
-  if (opts?.viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
-    visible = narrowToAdvisor(visible, opts.viewAsAdvisorId);
-  }
+  visible = applyBookSwitcher(visible, orgRole, opts?.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
 
@@ -124,9 +121,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
   }
   const { userId: callerId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);
-  if (opts.viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
-    visible = narrowToAdvisor(visible, opts.viewAsAdvisorId);
-  }
+  visible = applyBookSwitcher(visible, orgRole, opts.viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
 

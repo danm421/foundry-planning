@@ -92,3 +92,53 @@ export function narrowToAdvisor(
 ): VisibleAdvisors {
   return new Set<string>([advisorId]);
 }
+
+/**
+ * Sentinel the book-switcher URL param normalizes to "no narrowing". The
+ * switcher's own "All clients" option deletes the `?advisor=` key entirely,
+ * but the contract also allows the literal string `"all"` (hand-typed,
+ * bookmarked, or written by some future caller that sets the key instead of
+ * deleting it) to mean the same thing. See `applyBookSwitcher` for why that
+ * second form must be normalized centrally rather than left to each caller.
+ */
+export const ALL_BOOKS = "all" as const;
+
+/**
+ * Single normalized gate for the four call sites that apply the admin
+ * book-switcher's `viewAsAdvisorId` narrowing (`listCrmHouseholds`,
+ * `listRecentlyOpenedHouseholds`, `visibleHouseholdConditions`, and
+ * `GET /api/clients`). Each previously duplicated:
+ *
+ * ```ts
+ * if (viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
+ *   visible = narrowToAdvisor(visible, viewAsAdvisorId);
+ * }
+ * ```
+ *
+ * which has an empty-list trap: it treats ANY non-empty string as "narrow",
+ * including the literal sentinel `"all"`. The book switcher deletes the URL
+ * param for "All clients" today, so `"all"` never occurs in practice — but a
+ * hand-typed `?advisor=all`, a bookmarked URL, or a future caller that sets
+ * the param instead of deleting it would hit the gate as a truthy string,
+ * flow into `narrowToAdvisor(visible, "all")`, and produce `Set(["all"])` →
+ * `advisorId IN ('all')`, which matches no household. The admin who asked to
+ * see "all clients" would silently get an EMPTY list instead. Normalizing
+ * `ALL_BOOKS` (and empty/missing) to "no narrowing" here, once, closes that
+ * trap for every caller instead of relying on four call sites to each
+ * remember it.
+ *
+ * Otherwise unchanged from the duplicated gate: only admins/owners
+ * (`isFirmWideAdminRole`) may narrow, and `narrowToAdvisor` is the only thing
+ * that performs the narrowing — see its SECURITY docblock above, which still
+ * applies unchanged (this helper is just the one place that decides whether
+ * to call it).
+ */
+export function applyBookSwitcher(
+  visible: VisibleAdvisors,
+  orgRole: string | null | undefined,
+  viewAsAdvisorId: string | null | undefined,
+): VisibleAdvisors {
+  if (!viewAsAdvisorId || viewAsAdvisorId === ALL_BOOKS) return visible;
+  if (!isFirmWideAdminRole(orgRole)) return visible;
+  return narrowToAdvisor(visible, viewAsAdvisorId);
+}

@@ -11,8 +11,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import {
   resolveVisibleAdvisorIds,
   advisorScopeCondition,
-  narrowToAdvisor,
-  isFirmWideAdminRole,
+  applyBookSwitcher,
 } from "@/lib/visibility";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
@@ -45,9 +44,7 @@ export async function GET(request: NextRequest) {
     const { userId, orgRole } = await auth();
     let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
     const viewAsAdvisorId = request.nextUrl.searchParams.get("advisor");
-    if (viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
-      visible = narrowToAdvisor(visible, viewAsAdvisorId);
-    }
+    visible = applyBookSwitcher(visible, orgRole, viewAsAdvisorId);
     const scope = advisorScopeCondition(clients.advisorId, visible);
 
     // Single share-map expansion — used for both the inArray filter and tagging.

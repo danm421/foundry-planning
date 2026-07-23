@@ -42,6 +42,19 @@ describe("visibleHouseholdConditions — admin viewAsAdvisorId narrowing", () =>
     expect(await namesFor(conditions)).toEqual(["A HH"]);
   });
 
+  // REGRESSION (empty-list trap): "all" must mean "no narrowing" here too —
+  // proves applyBookSwitcher is wired into visibleHouseholdConditions via a
+  // real DB-backed query, not just unit-tested in isolation.
+  it('an admin with viewAsAdvisorId: "all" sees the FULL unnarrowed list', async () => {
+    const conditions = await visibleHouseholdConditions(
+      ORG,
+      "user_admin",
+      "org:admin",
+      "all",
+    );
+    expect(await namesFor(conditions)).toEqual(["A HH", "B HH"]);
+  });
+
   // SECURITY-CRITICAL: narrowToAdvisor REPLACES whatever set it's given, so a
   // non-admin's viewAsAdvisorId must be ignored — never used to widen a staff
   // member's own mapped scope to some other advisor's book.
