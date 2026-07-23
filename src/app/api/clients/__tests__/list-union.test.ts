@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts, clients } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -111,7 +112,7 @@ describe("GET /api/clients union + access tagging", () => {
   });
 
   it("returns own client tagged access:own and shared client tagged access:shared with sharedBy", async () => {
-    const res = await GET();
+    const res = await GET(new NextRequest("http://t/api/clients"));
     expect(res.status).toBe(200);
     const rows = await res.json();
 

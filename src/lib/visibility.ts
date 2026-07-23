@@ -12,6 +12,21 @@ export type VisibleAdvisors = typeof VISIBLE_ALL | Set<string>;
 const FIRM_WIDE_ROLES = new Set<string>(["org:owner", "org:admin"]);
 
 /**
+ * True only for roles that are administratively firm-wide (admin/owner) — the
+ * SAME set `resolveVisibleAdvisorIds` uses to short-circuit to `VISIBLE_ALL`.
+ *
+ * This is intentionally narrower than "caller's resolved visibility is
+ * VISIBLE_ALL": a regular `org:member` in a non-siloed firm ALSO resolves to
+ * VISIBLE_ALL (see resolveVisibleAdvisorIds), but has not opted into any
+ * book-switcher UI. Callers MUST gate `narrowToAdvisor` on this role check —
+ * NEVER on `visible === VISIBLE_ALL` — or a non-admin member's scope could be
+ * replaced (not narrowed) by a client-supplied advisor id. See narrowToAdvisor.
+ */
+export function isFirmWideAdminRole(orgRole: string | null | undefined): boolean {
+  return !!orgRole && FIRM_WIDE_ROLES.has(orgRole);
+}
+
+/**
  * The set of advisorIds whose book the caller may see.
  * - Admin/owner → VISIBLE_ALL (never scoped).
  * - Staff (operations/planner) → their staff_advisor_visibility mapping.
@@ -65,6 +80,11 @@ export function advisorScopeCondition(
 /**
  * Admin book-switcher helper: collapse any visibility (including VISIBLE_ALL) to
  * a single chosen advisor's book. Used only after an admin picks one advisor.
+ *
+ * SECURITY: this REPLACES the input set for ANY input, including VISIBLE_ALL.
+ * Callers MUST gate every call site on `isFirmWideAdminRole(orgRole)` first —
+ * calling this for a non-admin (e.g. a siloed member's `{self}`) would widen
+ * their access to whatever advisorId the client sent.
  */
 export function narrowToAdvisor(
   _visible: VisibleAdvisors,

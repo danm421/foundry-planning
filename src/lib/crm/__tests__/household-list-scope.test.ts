@@ -60,4 +60,25 @@ describe("listCrmHouseholds visibility scoping", () => {
     const rows = await listCrmHouseholds();
     expect(rows).toHaveLength(0);
   });
+
+  it("an admin with viewAsAdvisorId sees only that advisor's households", async () => {
+    setAuth("user_admin", "org:admin");
+    const rows = await listCrmHouseholds({ viewAsAdvisorId: ADV_A });
+    expect(rows.map((r) => r.name)).toEqual(["A HH"]);
+  });
+
+  // SECURITY-CRITICAL: narrowToAdvisor replaces (not narrows) whatever set it's
+  // given, so a non-admin's viewAsAdvisorId MUST be ignored — never widen a
+  // siloed/staff member's scope to some other advisor the client asked for.
+  it("a non-admin's viewAsAdvisorId does NOT widen their scope", async () => {
+    await db.insert(staffAdvisorVisibility).values({
+      firmId: ORG,
+      staffUserId: "user_ops",
+      advisorUserId: ADV_B,
+    });
+    setAuth("user_ops", "org:operations");
+    const rows = await listCrmHouseholds({ viewAsAdvisorId: ADV_A });
+    // Still scoped to the staff member's own mapping (ADV_B), NOT ADV_A.
+    expect(rows.map((r) => r.name)).toEqual(["B HH"]);
+  });
 });

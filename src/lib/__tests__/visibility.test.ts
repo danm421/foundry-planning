@@ -6,6 +6,7 @@ import {
   resolveVisibleAdvisorIds,
   VISIBLE_ALL,
   narrowToAdvisor,
+  isFirmWideAdminRole,
 } from "../visibility";
 
 const FIRM = "org_vistest";
@@ -74,5 +75,24 @@ describe("resolveVisibleAdvisorIds — book siloing", () => {
   it("narrowToAdvisor collapses VISIBLE_ALL to a single advisor", () => {
     const n = narrowToAdvisor(VISIBLE_ALL, "u_x");
     expect([...(n as Set<string>)]).toEqual(["u_x"]);
+  });
+});
+
+describe("isFirmWideAdminRole", () => {
+  it("is true only for admin/owner", () => {
+    expect(isFirmWideAdminRole("org:admin")).toBe(true);
+    expect(isFirmWideAdminRole("org:owner")).toBe(true);
+  });
+
+  it("is false for org:member — even though that role can ALSO resolve to VISIBLE_ALL", () => {
+    // This is the crux of the security gate: org:member in a non-siloed firm
+    // resolves to VISIBLE_ALL too, but must never be treated as admin-narrowable.
+    expect(isFirmWideAdminRole("org:member")).toBe(false);
+  });
+
+  it("is false for staff roles and null/undefined", () => {
+    expect(isFirmWideAdminRole("org:operations")).toBe(false);
+    expect(isFirmWideAdminRole(null)).toBe(false);
+    expect(isFirmWideAdminRole(undefined)).toBe(false);
   });
 });

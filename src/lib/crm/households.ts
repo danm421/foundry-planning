@@ -12,7 +12,12 @@ import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-o
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmHouseholdAccess } from "./authz";
 import { auth } from "@clerk/nextjs/server";
-import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
+import {
+  resolveVisibleAdvisorIds,
+  advisorScopeCondition,
+  narrowToAdvisor,
+  isFirmWideAdminRole,
+} from "@/lib/visibility";
 import { recordAudit } from "@/lib/audit";
 import { recordDelete } from "@/lib/audit/record-helpers";
 import { toHouseholdSnapshot } from "@/lib/audit/snapshots/household";
@@ -30,6 +35,12 @@ export async function listCrmHouseholds(opts?: {
   deleted?: boolean;
   limit?: number;
   offset?: number;
+  /**
+   * Admin book-switcher: narrow to a single advisor's book. Only honored when
+   * the caller is admin/owner (see `isFirmWideAdminRole`) — a non-admin's
+   * value here is silently ignored, never used to widen their own scope.
+   */
+  viewAsAdvisorId?: string;
 }) {
   const firmId = await requireOrgId();
   const limit = opts?.limit ?? 50;
@@ -45,7 +56,10 @@ export async function listCrmHouseholds(opts?: {
   }
   if (opts?.search) conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
   const { userId, orgRole } = await auth();
-  const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+  let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+  if (opts?.viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
+    visible = narrowToAdvisor(visible, opts.viewAsAdvisorId);
+  }
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
 
@@ -73,6 +87,8 @@ export async function listRecentlyOpenedHouseholds(opts: {
   search?: string;
   status?: string;
   limit?: number;
+  /** Admin book-switcher narrowing — see listCrmHouseholds for the gate. */
+  viewAsAdvisorId?: string;
 }) {
   const firmId = await requireOrgId();
   const limit = opts.limit ?? 50;
@@ -107,7 +123,10 @@ export async function listRecentlyOpenedHouseholds(opts: {
     conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
   }
   const { userId: callerId, orgRole } = await auth();
-  const visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);
+  let visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);
+  if (opts.viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
+    visible = narrowToAdvisor(visible, opts.viewAsAdvisorId);
+  }
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   if (scope) conditions.push(scope);
 

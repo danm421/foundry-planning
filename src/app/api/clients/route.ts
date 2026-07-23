@@ -8,7 +8,12 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, isNull, or, inArray, sql } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { resolveVisibleAdvisorIds, advisorScopeCondition } from "@/lib/visibility";
+import {
+  resolveVisibleAdvisorIds,
+  advisorScopeCondition,
+  narrowToAdvisor,
+  isFirmWideAdminRole,
+} from "@/lib/visibility";
 import { resolveSharesForRecipient } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { requireActiveSubscription } from "@/lib/authz";
@@ -31,12 +36,18 @@ const CONTACT_FIELDS = Object.keys(clientContactInfoSchema.shape) as Array<
 
 export const dynamic = "force-dynamic";
 
-// GET /api/clients — list all clients for the firm
-export async function GET() {
+// GET /api/clients — list all clients for the firm. Admins may pass
+// ?advisor=<userId> (the book-switcher) to narrow to one advisor's book —
+// honored ONLY for admin/owner callers; see isFirmWideAdminRole.
+export async function GET(request: NextRequest) {
   try {
     const firmId = await requireOrgId();
     const { userId, orgRole } = await auth();
-    const visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+    let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
+    const viewAsAdvisorId = request.nextUrl.searchParams.get("advisor");
+    if (viewAsAdvisorId && isFirmWideAdminRole(orgRole)) {
+      visible = narrowToAdvisor(visible, viewAsAdvisorId);
+    }
     const scope = advisorScopeCondition(clients.advisorId, visible);
 
     // Single share-map expansion — used for both the inArray filter and tagging.
