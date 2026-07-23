@@ -961,6 +961,7 @@ export function ForgePanel({
                   currentPage: sectionKeyForPath(pathname),
                   skipUserBubble: true,
                 });
+                refetchThreads();
                 // Keep files for the build kicked by the tool_render frame.
                 setAttached(files);
               }}
@@ -981,6 +982,7 @@ export function ForgePanel({
                   currentPage: sectionKeyForPath(pathname),
                   skipUserBubble: true,
                 });
+                refetchThreads();
                 setAttached(files);
               }}
               onCancel={() => {
