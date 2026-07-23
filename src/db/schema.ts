@@ -69,6 +69,14 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "education_savings",
 ]);
 
+export const riskLevelEnum = pgEnum("risk_level", [
+  "conservative",
+  "moderately_conservative",
+  "moderate",
+  "moderately_aggressive",
+  "aggressive",
+]);
+
 export const grantTypeEnum = pgEnum("grant_type", ["rsu", "nqso", "iso"]);
 export const equityExerciseTimingEnum = pgEnum("equity_exercise_timing", [
   "at_vest",
@@ -921,6 +929,9 @@ export const clients = pgTable("clients", {
   spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
+  // Advisor-stated willingness to take risk. Nullable; selects the firm's tagged
+  // model portfolio for the scenario's taxable+retirement buckets.
+  riskTolerance: riskLevelEnum("risk_tolerance"),
   // Excludes this client from the owner's share-all grants. Default false
   // (sweepable). An explicit per-client share is honored even when private.
   isPrivate: boolean("is_private").notNull().default(false),
@@ -1672,7 +1683,17 @@ export const modelPortfolios = pgTable("model_portfolios", {
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (t) => [unique("model_portfolios_firm_id_name_unique").on(t.firmId, t.name)]);
+  // Firm-authored risk rung. Nullable = untagged; a client tolerance that finds
+  // no tagged portfolio is blank+flagged, never snapped to a neighbour.
+  riskLevel: riskLevelEnum("risk_level"),
+}, (t) => [
+  unique("model_portfolios_firm_id_name_unique").on(t.firmId, t.name),
+  // At most one portfolio per rung per firm, so the tolerance->portfolio join is
+  // deterministic. Partial: untagged (null) portfolios don't collide.
+  uniqueIndex("model_portfolios_firm_risk_level_uniq")
+    .on(t.firmId, t.riskLevel)
+    .where(sql`risk_level is not null`),
+]);
 
 export const modelPortfolioAllocations = pgTable("model_portfolio_allocations", {
   id: uuid("id").defaultRandom().primaryKey(),
