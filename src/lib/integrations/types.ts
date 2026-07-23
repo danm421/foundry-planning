@@ -4,7 +4,7 @@ import type {
   AccountSubType,
 } from "@/lib/extraction/types";
 
-export const PROVIDER_IDS = ["orion", "schwab"] as const;
+export const PROVIDER_IDS = ["orion", "schwab", "addepar"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export type TokenResponse = {
