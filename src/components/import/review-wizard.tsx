@@ -22,6 +22,7 @@ import type { CommitTab } from "@/lib/imports/commit/types";
 import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { ClientMilestones } from "@/lib/milestones";
+import { type RiskLevel } from "@/lib/risk-levels";
 import type { AssetOption, RecipientOption } from "./will-bequest-mapper";
 import { seedWizardBequest } from "./will-bequest-mapper";
 import ReviewStepAccounts from "./review-step-accounts";
@@ -522,6 +523,13 @@ export default function ReviewWizard({
     return accountsPending && !accountsCommitted;
   }, [currentTab, goals, accounts.length, perTabCommittedAt]);
 
+  /** Rungs the firm has tagged a model portfolio for — `GoalsStep` flags a
+   *  picked tolerance outside this set. */
+  const taggedRiskLevels = useMemo(
+    () => growthContext.modelPortfolios.map((p) => p.riskLevel).filter(Boolean) as RiskLevel[],
+    [growthContext.modelPortfolios],
+  );
+
   return (
     <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
@@ -659,6 +667,7 @@ export default function ReviewWizard({
             accountOptions={canonical.accounts}
             dependentOptions={dependents.map((d) => d.firstName).filter(Boolean)}
             currentYear={defaultStartYear}
+            taggedRiskLevels={taggedRiskLevels}
             onChange={setGoals}
           />
         )}

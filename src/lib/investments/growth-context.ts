@@ -9,11 +9,13 @@ import {
 } from "@/db/schema";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadFundPortfolioOptions, type FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
+import { type RiskLevel } from "@/lib/risk-levels";
 
 export interface GrowthContextPortfolio {
   id: string;
   name: string;
   blendedReturn: number; // decimal
+  riskLevel: RiskLevel | null;
 }
 
 export interface GrowthContext {
@@ -59,7 +61,7 @@ export async function loadImportGrowthContext(
       if (ac) blended += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
     }
     blendedById.set(p.id, blended);
-    return { id: p.id, name: p.name, blendedReturn: blended };
+    return { id: p.id, name: p.name, blendedReturn: blended, riskLevel: p.riskLevel };
   });
 
   const settings = settingsRows[0];

@@ -10,6 +10,7 @@ import type {
   HomePurchaseGoal,
 } from "@/lib/imports/assemble/types";
 import { stated } from "@/lib/imports/assemble/field";
+import { RISK_LEVELS, RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 import AssumedChip from "./assumed-chip";
 import { chipFor, FieldLabel } from "./provenance-fields";
 
@@ -28,6 +29,9 @@ interface GoalsStepProps {
   accountOptions: { id: string; name: string; category: string; subType: string }[];
   dependentOptions: string[];
   currentYear: number;
+  /** Rungs the firm has tagged a model portfolio for. Picking an untagged rung
+   *  shows an inline flag; the tolerance is still captured. */
+  taggedRiskLevels: RiskLevel[];
   onChange: (next: AssembleGoals) => void;
 }
 
@@ -186,7 +190,7 @@ function DedicatedFunding({
  * `deriveGoals` emits `derived` provenance, and only with a `reason`.
  */
 export default function GoalsStep({
-  value, accountOptions, dependentOptions, currentYear, onChange,
+  value, accountOptions, dependentOptions, currentYear, taggedRiskLevels, onChange,
 }: GoalsStepProps) {
   const setEducation = (id: string, patch: Partial<EducationGoal>) =>
     onChange({
@@ -233,6 +237,30 @@ export default function GoalsStep({
 
   return (
     <div className="space-y-8">
+      <section className="space-y-2">
+        <div>
+          <label htmlFor="risk-tolerance" className="text-xs text-gray-300">Risk tolerance</label>
+          <select
+            id="risk-tolerance"
+            className={INPUT_CLASS}
+            value={value.riskTolerance.value ?? ""}
+            onChange={(e) => onChange({ ...value, riskTolerance: stated<string>(e.target.value || null) })}
+          >
+            <option value="">Not specified</option>
+            {RISK_LEVELS.map((lvl) => (
+              <option key={lvl} value={lvl}>{RISK_LEVEL_LABELS[lvl]}</option>
+            ))}
+          </select>
+        </div>
+        {value.riskTolerance.value &&
+          !taggedRiskLevels.includes(value.riskTolerance.value as RiskLevel) && (
+          <p className="text-xs text-warn">
+            Your firm hasn&apos;t tagged a {RISK_LEVEL_LABELS[value.riskTolerance.value as RiskLevel]} model
+            portfolio — <a href="/cma" className="underline">tag one in CMA</a>; portfolios won&apos;t change.
+          </p>
+        )}
+      </section>
+
       <section>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-3">
           Education goals

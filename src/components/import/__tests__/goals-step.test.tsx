@@ -19,6 +19,7 @@ const REAL_ESTATE_SUBTYPES: string[] = SUB_TYPE_BY_CATEGORY.real_estate;
 function ControlledGoalsStep({
   initial,
   onValueChange,
+  taggedRiskLevels = [],
   ...rest
 }: Omit<React.ComponentProps<typeof GoalsStep>, "value" | "onChange"> & {
   initial: AssembleGoals;
@@ -35,6 +36,7 @@ function ControlledGoalsStep({
     <GoalsStep
       {...rest}
       value={value}
+      taggedRiskLevels={taggedRiskLevels}
       onChange={(next) => {
         setValue(next);
         onValueChange?.(next);
@@ -95,6 +97,7 @@ const baseProps = {
   accountOptions: [EDU_529],
   dependentOptions: ["Emma"],
   currentYear: 2026,
+  taggedRiskLevels: [] as import("@/lib/risk-levels").RiskLevel[],
   onChange: vi.fn(),
 };
 
@@ -408,5 +411,48 @@ describe("GoalsStep — funding-list scoping and unmatched references", () => {
     const next = onChange.mock.calls.at(-1)![0];
     // Only the unmatched name goes; the resolvable one is untouched.
     expect(next.education[0].dedicatedAccountNames).toEqual(["Emma 529 Plan"]);
+  });
+});
+
+/**
+ * TASK 9 — risk-tolerance selector + untagged-rung flag. `riskTolerance` is
+ * captured through the shared `stated()` helper (same convention as every
+ * other field on this step), and `taggedRiskLevels` is the firm's set of
+ * rungs with a tagged model portfolio — picking a rung outside that set
+ * doesn't block anything, it just surfaces an inline flag pointing at CMA.
+ */
+describe("GoalsStep — risk tolerance (Task 9)", () => {
+  it("captures tolerance as stated and flags an untagged rung", () => {
+    render(
+      <ControlledGoalsStep
+        initial={emptyGoals()}
+        {...baseProps}
+        taggedRiskLevels={["moderate"]}
+      />,
+    );
+    const select = screen.getByLabelText(/risk tolerance/i);
+
+    // Picking a tagged rung: no flag.
+    fireEvent.change(select, { target: { value: "moderate" } });
+    expect(screen.queryByText(/hasn't tagged/i)).toBeNull();
+
+    // Picking an untagged rung: inline flag appears.
+    fireEvent.change(select, { target: { value: "aggressive" } });
+    expect(screen.getByText(/hasn't tagged/i)).toBeInTheDocument();
+  });
+
+  it("marks the tolerance as stated on selection", () => {
+    const onChange = vi.fn();
+    render(<GoalsStep value={emptyGoals()} {...baseProps} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText(/risk tolerance/i), {
+      target: { value: "moderately_aggressive" },
+    });
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.riskTolerance).toEqual({ value: "moderately_aggressive", provenance: "stated" });
+  });
+
+  it("does not flag when no tolerance is selected", () => {
+    render(<GoalsStep value={emptyGoals()} {...baseProps} />);
+    expect(screen.queryByText(/hasn't tagged/i)).toBeNull();
   });
 });
