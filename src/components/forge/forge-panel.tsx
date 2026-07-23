@@ -180,6 +180,15 @@ export function ForgePanel({
   // frame (never cleared by the hook) re-triggering a build on a later turn
   // or re-mount.
   const handledPlanBuildRef = useRef<string | null>(null);
+  // Re-entrancy guard for the ingest path: every other attach/send branch
+  // synchronously clears `attached`/`input` before its first await, so a
+  // second Send click fails its own guard. The ingest branch can't clear
+  // `attached` (see the invariant on runFactFinderIngest below), and
+  // identifyFactFinder never sets importStatus, so `locked` stays false
+  // during the identify round-trip — without this ref a double-click would
+  // re-enter runFactFinderIngest with the same files and could mint two
+  // clients/imports for one document.
+  const ingestInFlightRef = useRef(false);
   // After the advisor resolves an approval, keep a read-only receipt of the
   // decision in the thread (instead of the card vanishing) until the next turn.
   // Reload-from-history receipts are deferred (needs loadConversationMessages to
@@ -492,35 +501,46 @@ export function ForgePanel({
   // path also leaves `attached` set — Task 7's decision card carries the files
   // forward via `factFinderDecision.files` until the advisor resolves it.
   async function runFactFinderIngest(files: File[], prompt: string) {
-    setInput("");
-    setMessages((m) => [...m, { role: "user", text: prompt, attachments: files.map((f) => f.name) }]);
-    const res = await identifyFactFinder(files);
-    if (!res) return; // errorMessage bubble already shown by the hook
-    if (!res.isHouseholdDoc || !res.identity) {
-      setAttached([]);
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          text: "That doesn't look like a fact finder or household document I can build a plan from. Attach a full fact finder, or tell me what you'd like to do.",
-        },
-      ]);
-      return;
+    // Re-entrancy guard: identifyFactFinder never sets importStatus, so
+    // `locked` stays false for the whole identify round-trip — and this path
+    // can't clear `attached` (see the invariant note above), so a second Send
+    // click would otherwise re-enter with the same files. Wrap the ENTIRE
+    // body (every early return) so the ref always clears in `finally`.
+    if (ingestInFlightRef.current) return;
+    ingestInFlightRef.current = true;
+    try {
+      setInput("");
+      setMessages((m) => [...m, { role: "user", text: prompt, attachments: files.map((f) => f.name) }]);
+      const res = await identifyFactFinder(files);
+      if (!res) return; // errorMessage bubble already shown by the hook
+      if (!res.isHouseholdDoc || !res.identity) {
+        setAttached([]);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            text: "That doesn't look like a fact finder or household document I can build a plan from. Attach a full fact finder, or tell me what you'd like to do.",
+          },
+        ]);
+        return;
+      }
+      // Duplicate + no typed intent → ask via the decision card (deterministic).
+      if (res.duplicateCandidates.length > 0 && prompt.length === 0) {
+        setFactFinderDecision({ identity: res.identity, candidates: res.duplicateCandidates, files });
+        return;
+      }
+      // Otherwise let the agent decide (no dup → new; typed intent → interpret).
+      await send({
+        message: buildIngestTurnMessage(res, prompt),
+        scenarioId: scenarioId ?? "base",
+        conversationId,
+        currentPage: sectionKeyForPath(pathname),
+        skipUserBubble: true,
+      });
+      refetchThreads();
+    } finally {
+      ingestInFlightRef.current = false;
     }
-    // Duplicate + no typed intent → ask via the decision card (deterministic).
-    if (res.duplicateCandidates.length > 0 && prompt.length === 0) {
-      setFactFinderDecision({ identity: res.identity, candidates: res.duplicateCandidates, files });
-      return;
-    }
-    // Otherwise let the agent decide (no dup → new; typed intent → interpret).
-    await send({
-      message: buildIngestTurnMessage(res, prompt),
-      scenarioId: scenarioId ?? "base",
-      conversationId,
-      currentPage: sectionKeyForPath(pathname),
-      skipUserBubble: true,
-    });
-    refetchThreads();
   }
 
   // Answer submit for PlanQuestionsCard — updates planResult in place so

@@ -177,8 +177,9 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     mockStreamState = makeStreamState({ lastToolRender: null });
     const { rerender } = mountGlobalPanel();
 
-    // Attach a file directly on the hidden input — the button isn't visible
-    // yet (attachTarget is still null), but the input itself is unconditional.
+    // Attach a file directly on the hidden input. The button is visible in
+    // global mode from mount since Task 6 (canAttach doesn't depend on
+    // attachTarget), but this test drives the hidden input directly either way.
     const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
 
