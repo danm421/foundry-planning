@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 
-import { clients, crmHouseholdContacts } from "@/db/schema";
+import { clients } from "@/db/schema";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
+import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
 import type { FilingStatus } from "@/lib/extraction/types";
 
 import type { ImportPayload } from "../types";
@@ -60,20 +61,18 @@ export async function commitClientsIdentity(
     .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
 
   if (clientRow?.crmHouseholdId) {
-    if (primary) {
-      await upsertCrmContactIdentity(tx, clientRow.crmHouseholdId, "primary", {
-        firstName: primary.firstName,
-        lastName: primary.lastName,
-        dateOfBirth: primary.dateOfBirth,
-      });
-    }
-    if (spouse) {
-      await upsertCrmContactIdentity(tx, clientRow.crmHouseholdId, "spouse", {
-        firstName: spouse.firstName,
-        lastName: spouse.lastName,
-        dateOfBirth: spouse.dateOfBirth,
-      });
-    }
+    // Upsert both roles. A spouse row is INSERTED when the household started
+    // single — the reason a single→married import used to lose the spouse (the
+    // old update-only mirror matched zero rows).
+    await upsertPrimaryAndSpouseContacts(
+      tx,
+      clientRow.crmHouseholdId,
+      {
+        primary: primary ? contactIdentityPatch(primary) : undefined,
+        spouse: spouse ? contactIdentityPatch(spouse) : undefined,
+      },
+      primary?.lastName ?? null,
+    );
 
     // Keep the denormalized household name tracking the contacts, same as the
     // CRM-edit (updateCrmContact) and planning PUT (/api/clients/[id]) paths.
@@ -124,31 +123,18 @@ export async function commitClientsIdentity(
   return result;
 }
 
-// Replace-if-non-null update on the household's primary/spouse contact. Only
-// writes the fields the import actually extracted — `undefined`/empty leaves
-// the CRM value alone, which matters when the advisor has typed something into
-// the CRM that the extractor couldn't recover.
-async function upsertCrmContactIdentity(
-  tx: Tx,
-  householdId: string,
-  role: "primary" | "spouse",
-  patch: { firstName?: string; lastName?: string; dateOfBirth?: string | null },
-): Promise<void> {
-  const updates: Record<string, unknown> = {};
-  if (patch.firstName) updates.firstName = patch.firstName;
-  if (patch.lastName) updates.lastName = patch.lastName;
-  if (patch.dateOfBirth) updates.dateOfBirth = patch.dateOfBirth;
-  if (Object.keys(updates).length === 0) return;
-
-  updates.updatedAt = new Date();
-
-  await tx
-    .update(crmHouseholdContacts)
-    .set(updates)
-    .where(
-      and(
-        eq(crmHouseholdContacts.householdId, householdId),
-        eq(crmHouseholdContacts.role, role),
-      ),
-    );
+// Replace-if-non-null: build the CRM patch from only the fields the import
+// actually extracted. Empty/undefined leaves the CRM value alone, which matters
+// when the advisor has typed something the extractor couldn't recover. The
+// insert-vs-update decision lives in upsertHouseholdContact.
+function contactIdentityPatch(person: {
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string | null;
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (person.firstName) patch.firstName = person.firstName;
+  if (person.lastName) patch.lastName = person.lastName;
+  if (person.dateOfBirth) patch.dateOfBirth = person.dateOfBirth;
+  return patch;
 }
