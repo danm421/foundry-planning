@@ -8,9 +8,10 @@ import type {
   AssembleGoals,
   EducationGoal,
   HomePurchaseGoal,
-  PlanBasicsField,
 } from "@/lib/imports/assemble/types";
+import { stated } from "@/lib/imports/assemble/field";
 import AssumedChip from "./assumed-chip";
+import { chipFor, FieldLabel } from "./provenance-fields";
 
 const INPUT_CLASS =
   "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -39,33 +40,6 @@ interface GoalsStepProps {
  */
 function isEducationAccount(a: { category: string; subType: string }): boolean {
   return a.category === "education_savings" || a.subType === "529";
-}
-
-/** A field carries a chip only when it was derived AND says why. Generic over T
- * so it serves the string, number and boolean fields alike — the plan-basics
- * version was number-only. */
-function chipFor<T>(field: PlanBasicsField<T>) {
-  if (field.provenance !== "derived" || !field.reason) return undefined;
-  return { field: "", value: String(field.value ?? ""), reason: field.reason };
-}
-
-/** The advisor touched it, so it is stated — and a stated field must never keep
- * displaying as estimated. Dropping `reason` is what clears the chip; every
- * input goes through here so no call site can forget. */
-function stated<T>(value: T | null): PlanBasicsField<T> {
-  return { value, provenance: "stated" };
-}
-
-function FieldLabel<T>({ id, label, field }: { id: string; label: string; field: PlanBasicsField<T> }) {
-  return (
-    <div className="mb-1 flex items-center gap-1.5">
-      {/* The chip stays OUTSIDE the <label>: nesting it folds the reason prose
-          into the accessible name, and a reason mentioning another field's
-          numbers can then match an unrelated getByLabelText regex. */}
-      <label htmlFor={id} className="text-xs text-gray-300">{label}</label>
-      <AssumedChip assumption={chipFor(field)} />
-    </div>
-  );
 }
 
 /** BuyLegDraft is form state keyed by `key`; a goal is the same shape keyed by
@@ -100,12 +74,11 @@ function toHomePurchasePatch(patch: Partial<BuyLegDraft>): Partial<HomePurchaseG
 }
 
 function blankEducationGoal(id: string, currentYear: number): EducationGoal {
-  const blank = <T,>(): PlanBasicsField<T> => ({ value: null, provenance: "stated" });
   return {
     id,
     name: { value: "Education Goal", provenance: "stated" },
-    forFamilyMemberName: blank<string>(),
-    annualAmount: blank<number>(),
+    forFamilyMemberName: stated<string>(null),
+    annualAmount: stated<number>(null),
     startYear: { value: currentYear + 1, provenance: "stated" },
     years: { value: 4, provenance: "stated" },
     growthRate: { value: 0.05, provenance: "stated" },

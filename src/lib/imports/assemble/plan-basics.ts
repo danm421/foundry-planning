@@ -2,6 +2,7 @@ import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { numericAmount, sumExtractedLiving } from "../living-rows";
 import type { ImportPayload } from "../types";
 import type { AssemblePlanBasics, PlanBasicsField } from "./types";
+import { blank } from "./field";
 
 /**
  * Convention, not a finding: retirement spending defaults to 80% of current
@@ -26,10 +27,6 @@ export interface DerivePlanBasicsInput {
   mode: "new" | "refresh";
   /** Latest stored return, read by the caller. Null when none exists. */
   taxReturn?: { taxYear: number; agi: number | null; totalTax: number | null } | null;
-}
-
-function blank<T>(): PlanBasicsField<T> {
-  return { value: null, provenance: "derived" };
 }
 
 /**

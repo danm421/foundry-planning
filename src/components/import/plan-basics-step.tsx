@@ -1,12 +1,8 @@
 "use client";
 
-import AssumedChip from "./assumed-chip";
 import { CurrencyInput } from "@/components/currency-input";
-import type {
-  AssembleAssumption,
-  AssemblePlanBasics,
-  PlanBasicsField,
-} from "@/lib/imports/assemble/types";
+import type { AssemblePlanBasics, PlanBasicsField } from "@/lib/imports/assemble/types";
+import { FieldLabel } from "./provenance-fields";
 
 interface PlanBasicsStepProps {
   value: AssemblePlanBasics;
@@ -16,28 +12,6 @@ interface PlanBasicsStepProps {
 
 const INPUT_CLASS =
   "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-
-/** A derived field carries a chip only when it has a reason; anything else does not. */
-function chipFor(field: PlanBasicsField<number>): AssembleAssumption | undefined {
-  if (field.provenance !== "derived" || !field.reason) return undefined;
-  return { field: "", value: field.value ?? "", reason: field.reason };
-}
-
-/** Label + Assumed chip, shared by both field flavors below. */
-function FieldLabel({ id, label, field }: { id: string; label: string; field: PlanBasicsField<number> }) {
-  return (
-    <div className="mb-1 flex items-center gap-1.5">
-      {/* The chip (and its tooltip prose) must stay OUTSIDE the <label> —
-          nesting it inside would fold the reason text into the label's
-          accessible name, and a reason like "...full retirement age (67)..."
-          can spuriously match an unrelated field's getByLabelText regex. */}
-      <label htmlFor={id} className="text-xs text-gray-300">
-        {label}
-      </label>
-      <AssumedChip assumption={chipFor(field)} />
-    </div>
-  );
-}
 
 /** A plain number field — for ages, not dollar amounts. */
 function NumberField({

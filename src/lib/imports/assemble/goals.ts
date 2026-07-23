@@ -1,6 +1,7 @@
 import { birthYearFromDob, yearForAge } from "@/lib/age-year";
 import type { ImportPayload } from "../types";
 import type { AssembleGoals, EducationGoal, PlanBasicsField } from "./types";
+import { blank } from "./field";
 
 /** Conventions, not findings. Single call site each, and the chips say so. */
 export const EDUCATION_DEFAULT_YEARS = 4;
@@ -9,10 +10,6 @@ export const EDUCATION_START_AGE = 18;
 
 export interface DeriveGoalsInput {
   payload: ImportPayload;
-}
-
-function blank<T>(): PlanBasicsField<T> {
-  return { value: null, provenance: "derived" };
 }
 
 /** Deterministic id from the funding account name — no Math.random. */
