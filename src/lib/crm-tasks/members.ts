@@ -7,6 +7,8 @@ export type FirmMember = {
   displayName: string;
   email: string | null;
   imageUrl: string | null;
+  /** Friendly Clerk org role, e.g. "Admin" / "Member". */
+  role: string;
 };
 
 /**
@@ -28,11 +30,18 @@ export const listFirmMembers = cache(async (firmId: string): Promise<FirmMember[
       u?.identifier ||
       u?.userId ||
       "Unknown";
+    // Clerk role keys look like "org:admin" / "basic_member"; render them friendly.
+    const rawRole = m.role.replace(/^org:/, "");
+    const role =
+      rawRole === "basic_member"
+        ? "Member"
+        : rawRole.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Member";
     return {
       userId: u?.userId ?? m.id,
       displayName: name,
       email: u?.identifier ?? null,
       imageUrl: u?.imageUrl ?? null,
+      role,
     };
   });
 });

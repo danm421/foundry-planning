@@ -29,7 +29,7 @@ describe("resolveRecipientByEmail", () => {
 describe("isMemberOfFirm", () => {
   it("true when the user is in the firm's members", async () => {
     vi.mocked(listFirmMembers).mockResolvedValue([
-      { userId: "user_x", displayName: "X", email: null, imageUrl: null },
+      { userId: "user_x", displayName: "X", email: null, imageUrl: null, role: "Member" },
     ]);
     expect(await isMemberOfFirm("user_x", "org_a")).toBe(true);
   });

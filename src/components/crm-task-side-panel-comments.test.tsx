@@ -10,8 +10,8 @@ import { CrmTaskSidePanelComments } from "@/components/crm-task-side-panel-comme
 import type { FirmMember } from "@/lib/crm-tasks/members";
 
 const MEMBERS: FirmMember[] = [
-  { userId: "u_me", displayName: "Dan Mueller", email: "dan@firm.com", imageUrl: null },
-  { userId: "u_jane", displayName: "Jane Smith", email: "jane@firm.com", imageUrl: null },
+  { userId: "u_me", displayName: "Dan Mueller", email: "dan@firm.com", imageUrl: null, role: "Admin" },
+  { userId: "u_jane", displayName: "Jane Smith", email: "jane@firm.com", imageUrl: null, role: "Member" },
 ];
 
 function comment(body: string) {
