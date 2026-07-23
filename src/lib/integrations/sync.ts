@@ -121,8 +121,15 @@ export async function syncFirm(
 
         const { exact, new: fresh } = reconcile({ mapped: mapped.accounts, existing });
 
+        // Review-mode providers (autoCommitExact: false, e.g. Addepar) must
+        // not auto-commit ANYTHING — every account, exact or new, folds into
+        // the single open review import so the advisor confirms before any
+        // write. OAuth providers (autoCommitExact: true) keep the original
+        // exact-auto-commit / new-review split unchanged.
+        const autoCommit = provider.autoCommitExact;
+
         // EXACT bucket → auto-commit / update in place via the commit path.
-        if (exact.length > 0) {
+        if (autoCommit && exact.length > 0) {
           const exactPayload: ImportPayload = {
             ...emptyImportPayload(),
             accounts: exact.map((e) => ({
@@ -178,11 +185,20 @@ export async function syncFirm(
           committed += exact.length;
         }
 
-        // NEW bucket → upsert ONE open review import per client (do NOT commit).
-        if (fresh.length > 0) {
+        // Review bucket → upsert ONE open review import per client (do NOT
+        // commit). For OAuth providers this is just the NEW accounts; for
+        // review-mode providers (autoCommit false) it's exact + new together.
+        const reviewAccounts = [
+          ...(autoCommit
+            ? []
+            : exact.map((e) => ({ ...e.account, match: { kind: "exact", existingId: e.existingId } as const }))),
+          ...fresh.map((a) => ({ ...a, match: { kind: "new" } as const })),
+        ];
+
+        if (reviewAccounts.length > 0) {
           const reviewPayload: ImportPayload = {
             ...emptyImportPayload(),
-            accounts: fresh.map((a) => ({ ...a, match: { kind: "new" } as const })),
+            accounts: reviewAccounts,
           };
 
           const [openReview] = await db
@@ -220,7 +236,7 @@ export async function syncFirm(
             importId = created.id;
           }
 
-          queued += fresh.length;
+          queued += reviewAccounts.length;
         }
 
         households += 1;
