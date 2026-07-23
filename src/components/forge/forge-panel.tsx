@@ -29,6 +29,7 @@ import {
 } from "./use-forge-import";
 import { ImportReviewLink } from "./import-review-link";
 import { PlanQuestionsCard } from "./plan-questions-card";
+import { FactFinderDuplicateCard } from "./fact-finder-duplicate-card";
 
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
@@ -227,7 +228,13 @@ export function ForgePanel({
   // corrupt the pending proposal, so lock the composer until it resolves.
   // (busy alone isn't enough: the stream emits `approval_required` then `done`,
   // so status is "done" — not "streaming" — while the card is up.)
-  const locked = busy || pendingApproval != null || pendingMeetingReview != null || importing || transcriptCandidate != null;
+  const locked =
+    busy ||
+    pendingApproval != null ||
+    pendingMeetingReview != null ||
+    importing ||
+    transcriptCandidate != null ||
+    factFinderDecision != null;
 
   // Mutual exclusion belt-and-braces: if the scenario drawer opens while the
   // forge is open, close the forge (the provider handles the inverse).
@@ -377,6 +384,7 @@ export function ForgePanel({
     setPlanBuild(null);
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
+    setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     setInput("");
     resetTranscriptState();
@@ -425,6 +433,7 @@ export function ForgePanel({
     setPlanBuild(null);
     setPlanResult(null);
     setPlanQuestionsDismissed(false);
+    setFactFinderDecision(null);
     handledPlanBuildRef.current = null;
     resetTranscriptState();
     try {
@@ -927,6 +936,58 @@ export function ForgePanel({
                 />
               )}
             </div>
+          )}
+
+          {/* Global attach-first ingest: duplicate-household match found with no
+              typed intent — ask the advisor rather than guessing (Task 7). */}
+          {factFinderDecision && (
+            <FactFinderDuplicateCard
+              householdName={factFinderDecision.identity!.householdName}
+              candidates={factFinderDecision.candidates}
+              onUpdate={(cid) => {
+                const files = factFinderDecision.files;
+                setFactFinderDecision(null);
+                void send({
+                  message: `Update the existing plan (clientId: ${cid}) from the attached fact finder.\n\n${buildIngestTurnMessage(
+                    {
+                      isHouseholdDoc: true,
+                      identity: factFinderDecision.identity,
+                      duplicateCandidates: factFinderDecision.candidates,
+                    },
+                    "",
+                  )}`,
+                  scenarioId: scenarioId ?? "base",
+                  conversationId,
+                  currentPage: sectionKeyForPath(pathname),
+                  skipUserBubble: true,
+                });
+                // Keep files for the build kicked by the tool_render frame.
+                setAttached(files);
+              }}
+              onCreateSeparate={() => {
+                const files = factFinderDecision.files;
+                setFactFinderDecision(null);
+                void send({
+                  message: `Create a SEPARATE new household from the attached fact finder (the advisor confirmed it is not the existing match).\n\n${buildIngestTurnMessage(
+                    {
+                      isHouseholdDoc: true,
+                      identity: factFinderDecision.identity,
+                      duplicateCandidates: factFinderDecision.candidates,
+                    },
+                    "",
+                  )}`,
+                  scenarioId: scenarioId ?? "base",
+                  conversationId,
+                  currentPage: sectionKeyForPath(pathname),
+                  skipUserBubble: true,
+                });
+                setAttached(files);
+              }}
+              onCancel={() => {
+                setFactFinderDecision(null);
+                setAttached([]);
+              }}
+            />
           )}
 
           {importError && (
