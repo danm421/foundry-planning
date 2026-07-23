@@ -8,6 +8,7 @@ import {
 } from "@/lib/investments/asset-types";
 import { isLockedSystemAssetClass } from "@/lib/investments/asset-class-slugs";
 import { buildStatsContext, computeStats } from "@/lib/investments/portfolio-stats";
+import { RISK_LEVELS, RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { CorrelationRow } from "@/engine/monteCarlo/correlation-matrix";
 import { TrashIcon } from "@/components/icons";
@@ -45,6 +46,7 @@ interface ModelPortfolio {
   id: string;
   name: string;
   description: string | null;
+  riskLevel: RiskLevel | null;
   allocations: Allocation[];
 }
 
@@ -788,6 +790,24 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
     }
   }
 
+  async function saveRiskLevel(id: string, riskLevel: RiskLevel | null) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/cma/model-portfolios/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riskLevel }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Save failed");
+      }
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
   // Compute blended stats for the selected portfolio. Return + arith mean are
   // naive weighted blends (eMoney parity); volatility is diversification-aware
   // (correlation matrix) via the shared computeStats. Realization stays linear.
@@ -871,6 +891,22 @@ function ModelPortfoliosTab({ portfolios, assetClasses, correlationRows, onRefre
       {selected && (
         <div className="flex-1 space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+
+          {/* Risk level — drives client risk-tolerance -> portfolio selection */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="mp-risk-level" className="text-xs text-ink-3">Risk level</label>
+            <select
+              id="mp-risk-level"
+              value={selected.riskLevel ?? ""}
+              onChange={(e) => saveRiskLevel(selected.id, (e.target.value || null) as RiskLevel | null)}
+              className="rounded-md border border-hair bg-card-2 px-2 py-1 text-sm text-ink-2"
+            >
+              <option value="">Untagged</option>
+              {RISK_LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>{RISK_LEVEL_LABELS[lvl]}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Blended summary */}
           {blended && totalWeight > 0 && (
