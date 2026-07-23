@@ -569,9 +569,9 @@ export function ForgePanel({
             type="button"
             onClick={close}
             aria-label="Close Forge"
-            className="flex h-7 w-7 items-center justify-center rounded text-ink-3 hover:bg-card-hover hover:text-ink"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 hover:bg-card-hover hover:text-ink"
           >
-            <span aria-hidden className="text-base leading-none">×</span>
+            <span aria-hidden className="text-2xl leading-none">×</span>
           </button>
         </div>
 
@@ -774,7 +774,10 @@ export function ForgePanel({
             </div>
           )}
 
-          {importResult && clientId != null && (
+          {/* Hold the commit hand-off until Forge finishes narrating the import
+              (`busy` = streaming). setImportResult + send()'s setStatus("streaming")
+              batch into one render, so the link never flashes before analysis. */}
+          {importResult && clientId != null && !busy && (
             <ImportReviewLink
               clientId={clientId}
               importId={importResult.importId}
@@ -792,11 +795,13 @@ export function ForgePanel({
                   onSkip={() => setPlanQuestionsDismissed(true)}
                 />
               )}
-              <ImportReviewLink
-                clientId={planResult.clientId}
-                importId={planResult.importId}
-                warnings={planResult.warnings}
-              />
+              {!busy && (
+                <ImportReviewLink
+                  clientId={planResult.clientId}
+                  importId={planResult.importId}
+                  warnings={planResult.warnings}
+                />
+              )}
             </div>
           )}
 

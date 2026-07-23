@@ -207,6 +207,45 @@ describe("ForgePanel", () => {
     expect(screen.getAllByText("what is in this statement?")).toHaveLength(1);
   });
 
+  it("holds the review link until the import analysis finishes streaming", async () => {
+    // Hold the analysis stream open so we can observe the window where the
+    // import has resolved but Forge is still narrating what it found.
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    (globalThis.fetch as unknown as { mockResolvedValueOnce: (v: Response) => void })
+      .mockResolvedValueOnce(
+        new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+      );
+
+    mountPanel();
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send message"));
+    });
+
+    // Import has resolved, but the analysis stream is still open (a token is
+    // flowing) → the commit hand-off must NOT be shown yet.
+    await act(async () => {
+      controller.enqueue(encoder.encode(`data: {"type":"token","text":"Reading…"}\n\n`));
+    });
+    expect(screen.queryByTestId("forge-import-review")).toBeNull();
+
+    // Stream drains → analysis done → the review link appears.
+    await act(async () => {
+      controller.enqueue(encoder.encode(`data: {"type":"done"}\n\n`));
+      controller.close();
+    });
+    expect(await screen.findByTestId("forge-import-review")).toBeInTheDocument();
+  });
+
   it("clears the review link when starting a new chat", async () => {
     mountPanel();
     const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
