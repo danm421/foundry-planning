@@ -156,10 +156,10 @@ export function deriveGoals(input: DeriveGoalsInput): AssembleGoals {
 
   // Nothing in a document implies a future purchase. Home purchases are added
   // by the advisor in the wizard, never proposed here.
-  return { education, homePurchases: [] };
+  return { education, homePurchases: [], riskTolerance: blank<string>() };
 }
 
 /** All-empty goals, for an import assembled before this feature existed. */
 export function emptyGoals(): AssembleGoals {
-  return { education: [], homePurchases: [] };
+  return { education: [], homePurchases: [], riskTolerance: blank<string>() };
 }

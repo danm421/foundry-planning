@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { commitGoals } from "../goals";
 import { emptyImportPayload, type ImportPayload } from "../../types";
 import type { EducationGoal, HomePurchaseGoal } from "../../assemble/types";
+import { blank } from "../../assemble/field";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
 
 /**
@@ -40,7 +41,7 @@ function completeEducationGoal(overrides: Partial<EducationGoal> = {}): Educatio
 function payloadWithEducationGoal(overrides: Partial<EducationGoal> = {}): ImportPayload {
   return {
     ...emptyImportPayload(),
-    goals: { education: [completeEducationGoal(overrides)], homePurchases: [] },
+    goals: { education: [completeEducationGoal(overrides)], homePurchases: [], riskTolerance: blank<string>() },
   };
 }
 
@@ -75,7 +76,7 @@ function completeHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): HomePu
 function payloadWithHomePurchase(overrides: Partial<HomePurchaseGoal> = {}): ImportPayload {
   return {
     ...emptyImportPayload(),
-    goals: { education: [], homePurchases: [completeHomePurchase(overrides)] },
+    goals: { education: [], homePurchases: [completeHomePurchase(overrides)], riskTolerance: blank<string>() },
   };
 }
 
@@ -281,6 +282,7 @@ describe("commitGoals — education", () => {
           }),
         ],
         homePurchases: [],
+        riskTolerance: blank<string>(),
       },
     };
 
@@ -321,6 +323,7 @@ describe("commitGoals — education", () => {
           }),
         ],
         homePurchases: [],
+        riskTolerance: blank<string>(),
       },
     };
 

@@ -6,6 +6,7 @@ import {
   type CategoryPresence,
 } from "../required-tabs";
 import { emptyImportPayload, type ImportPayload } from "../types";
+import { blank } from "../assemble/field";
 
 const NOTHING: CategoryPresence = {
   family: false,
@@ -127,7 +128,7 @@ describe("goals tab requirement", () => {
   it("is required once the payload carries a goal", () => {
     const payload = {
       ...emptyImportPayload(),
-      goals: { education: [{ id: "edu:x" } as never], homePurchases: [] },
+      goals: { education: [{ id: "edu:x" } as never], homePurchases: [], riskTolerance: blank<string>() },
     };
     const presence = presenceFromPayload(payload);
     expect(presence.goals).toBe(true);

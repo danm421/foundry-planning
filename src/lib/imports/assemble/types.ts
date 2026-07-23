@@ -118,4 +118,8 @@ export interface HomePurchaseGoal {
 export interface AssembleGoals {
   education: EducationGoal[];
   homePurchases: HomePurchaseGoal[];
+  /** Advisor-stated risk tolerance (a RiskLevel string) or null. Blank+derived
+   *  from assemble; the Goals step captures it; commit writes clients.risk_tolerance
+   *  and selects the firm's tagged portfolio. */
+  riskTolerance: PlanBasicsField<string>;
 }

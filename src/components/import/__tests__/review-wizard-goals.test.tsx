@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ReviewWizard from "@/components/import/review-wizard";
 import { emptyImportPayload } from "@/lib/imports/types";
 import type { EducationGoal } from "@/lib/imports/assemble/types";
+import { blank } from "@/lib/imports/assemble/field";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 
 vi.mock("next/navigation", () => ({
@@ -91,6 +92,7 @@ describe("ReviewWizard — Goals tab", () => {
       goals: {
         education: [educationGoalFixture({ dedicatedAccountNames: ["Emma 529 Plan"] })],
         homePurchases: [],
+        riskTolerance: blank<string>(),
       },
     };
     render(<ReviewWizard {...baseProps} payload={payload} perTabCommittedAt={null} />);
@@ -114,6 +116,7 @@ describe("ReviewWizard — Goals tab", () => {
       goals: {
         education: [educationGoalFixture({ dedicatedAccountNames: ["Emma 529 Plan"] })],
         homePurchases: [],
+        riskTolerance: blank<string>(),
       },
     };
     render(
@@ -136,6 +139,7 @@ describe("ReviewWizard — Goals tab", () => {
       goals: {
         education: [educationGoalFixture({ annualAmount: { value: null, provenance: "derived" } })],
         homePurchases: [],
+        riskTolerance: blank<string>(),
       },
     };
     render(
@@ -188,6 +192,7 @@ describe("ReviewWizard — commit warnings", () => {
     goals: {
       education: [educationGoalFixture({ dedicatedAccountNames: [] })],
       homePurchases: [],
+      riskTolerance: blank<string>(),
     },
   };
 

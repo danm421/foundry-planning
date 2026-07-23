@@ -82,7 +82,17 @@ describe("deriveGoals — education", () => {
   });
 
   it("emptyGoals is all-empty", () => {
-    expect(emptyGoals()).toEqual({ education: [], homePurchases: [] });
+    expect(emptyGoals()).toEqual({
+      education: [],
+      homePurchases: [],
+      riskTolerance: { value: null, provenance: "derived" },
+    });
+  });
+
+  it("riskTolerance is blank+derived from assemble (advisor states it later)", () => {
+    const goals = deriveGoals({ payload: emptyImportPayload() });
+    expect(goals.riskTolerance).toEqual({ value: null, provenance: "derived" });
+    expect(emptyGoals().riskTolerance).toEqual({ value: null, provenance: "derived" });
   });
 
   it("is deterministic — identical input yields identical ids", () => {
