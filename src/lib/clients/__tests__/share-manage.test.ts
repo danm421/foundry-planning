@@ -185,7 +185,10 @@ describe("createShare", () => {
 
   it("allows sharing to a fellow firm member (intra-firm)", async () => {
     // Recipient resolves to a user who IS already a member of the owner's firm —
-    // this must now succeed instead of being rejected with 409.
+    // this must now succeed instead of being rejected with 409. There's no
+    // remaining code-level branch on firm membership, so this is intentionally
+    // near-identical to the plain insert test below — it documents the removed
+    // guard's absence rather than exercising distinct logic.
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
     const newShare = { id: SHARE_ID, scope: "all", firmId: FIRM_A, ownerUserId: ADVISOR_ID, clientId: null };
     mockDb.insert.mockReturnValue(makeInsertChain([newShare]));

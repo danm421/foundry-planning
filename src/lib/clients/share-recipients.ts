@@ -1,5 +1,4 @@
 import { clerkClient } from "@clerk/nextjs/server";
-import { listFirmMembers } from "@/lib/crm-tasks/members";
 
 /**
  * Resolve an email to a Foundry (Clerk) user. Returns null when no user owns
@@ -15,10 +14,4 @@ export async function resolveRecipientByEmail(
   const user = list.data[0];
   if (!user) return null;
   return { userId: user.id, email: normalized };
-}
-
-/** Whether a user is already a member of the given Clerk org. */
-export async function isMemberOfFirm(userId: string, firmId: string): Promise<boolean> {
-  const members = await listFirmMembers(firmId);
-  return members.some((m) => m.userId === userId);
 }
