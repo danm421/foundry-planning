@@ -496,22 +496,35 @@ export function ForgePanel({
     setPlanBuild(null);
     setPlanResult(result);
     setPendingImportId(result.importId);
-    // The attachment alone is a valid turn, so `prompt` is often empty. The
-    // CLIENT stream route tolerates that (it accepts an empty message when
-    // pendingImportId is set), but the GLOBAL route has no pendingImportId
-    // concept and rejects an empty message outright — and `send` drops
-    // pendingImportId from the body when clientId is null. Without a fallback,
-    // the flagship new-prospect flow (drop files, click Send, type nothing)
-    // assembles fine and then shows a 400 under a plan that actually worked.
-    const narration = prompt || "I've attached the documents for the plan build.";
-    await send({
-      message: narration,
-      scenarioId: scenarioId ?? "base",
-      conversationId,
-      currentPage: sectionKeyForPath(pathname),
-      pendingImportId: result.importId,
-      skipUserBubble: true,
-    });
+    // The attachment alone is a valid turn, so `prompt` is often empty — in
+    // which case we'd otherwise narrate the build with a synthetic message.
+    // That only works in CLIENT mode, where the route accepts pendingImportId,
+    // buildSystemPrompt injects the "a document import is pending review"
+    // block, and read_import can inspect it.
+    //
+    // GLOBAL mode has none of that: `send` strips pendingImportId from the body
+    // when clientId is null (use-forge-stream.ts), /api/forge/stream has no
+    // pendingImportId field and no import block in its system prompt, and the
+    // global tool set has no read_import. A synthetic turn therefore arrives as
+    // a bare "I've attached the documents" claim with nothing behind it — and
+    // the model, told by global-system-prompt.ts to expect an "[Attached fact
+    // finder]" block on attachment turns, correctly answers "I don't see
+    // document attachments in this message", a false denial on a plan that in
+    // fact built and committed fine. The ingest_fact_finder / build_plan turn
+    // has already narrated by then and the plan card below reports the result,
+    // so the synthetic turn is pure downside here. A question the advisor
+    // actually typed still goes through in either mode.
+    const narration = prompt || (clientId == null ? "" : "I've attached the documents for the plan build.");
+    if (narration) {
+      await send({
+        message: narration,
+        scenarioId: scenarioId ?? "base",
+        conversationId,
+        currentPage: sectionKeyForPath(pathname),
+        pendingImportId: result.importId,
+        skipUserBubble: true,
+      });
+    }
     refetchThreads();
   }
 

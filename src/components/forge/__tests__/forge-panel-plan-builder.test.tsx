@@ -205,11 +205,20 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
   });
 
-  it("sends a NON-EMPTY narration message when the advisor typed nothing", async () => {
-    // The attachment alone is a valid turn, so the composer is usually empty.
-    // The GLOBAL stream route rejects an empty message outright (400) and has
-    // no pendingImportId escape hatch like the client route — so an empty
-    // narration would surface a raw 400 under a plan that assembled fine.
+  // SUPERSEDED: this test used to assert that a synthetic narration turn
+  // ("I've attached the documents for the plan build.") was sent in GLOBAL mode
+  // whenever the advisor typed nothing, on the theory that the global route
+  // rejects an empty message with a 400. The real defect is upstream of that:
+  // in global mode there is no import context to ground the turn at all —
+  // `send` strips pendingImportId (use-forge-stream.ts), /api/forge/stream has
+  // no pendingImportId field or import block in its system prompt, and the
+  // global tool set has no read_import. So the synthetic turn landed as a bare
+  // "I've attached the documents" claim with nothing behind it, and the model
+  // (trained by global-system-prompt.ts to expect an "[Attached fact finder]"
+  // block) correctly replied "I don't see document attachments in this
+  // message…" — a false denial on a plan that had in fact been built and
+  // committed. Rewritten in place to describe the corrected behavior.
+  it("does not fire a synthetic narration turn in global mode (nothing grounds it)", async () => {
     const send = vi.fn();
     importMocks.runPlanBuild.mockResolvedValue({
       importId: "imp_1",
@@ -229,9 +238,38 @@ describe("ForgePanel — build_plan tool_render wiring (Task B5)", () => {
       rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
     });
 
+    // The build still runs — only the ungrounded chat turn is suppressed.
+    expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("still sends a question the advisor actually typed in global mode", async () => {
+    // Suppressing the SYNTHETIC narration must not swallow a real question the
+    // advisor typed alongside the attachment.
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValue({
+      importId: "imp_1",
+      clientId: "c9",
+      reviewPath: "/clients/c9/details/import/imp_1",
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      warnings: [],
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const { rerender } = mountGlobalPanel();
+    fireEvent.change(screen.getByPlaceholderText(/build a plan, find a client, or ask/i), {
+      target: { value: "what's their savings rate?" },
+    });
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+
+    mockStreamState = makeStreamState({ lastToolRender: buildPlanFrame("imp_1"), send });
+    await act(async () => {
+      rerender(<ForgePanel clientId={null} scenarioNames={{}} forceOpenForTest />);
+    });
+
     expect(send).toHaveBeenCalledTimes(1);
-    const sent = send.mock.calls[0][0] as { message: string };
-    expect(sent.message.trim().length).toBeGreaterThan(0);
+    expect((send.mock.calls[0][0] as { message: string }).message).toBe("what's their savings rate?");
   });
 
   it("a frame with a DIFFERENT importId is treated as a new build", async () => {
@@ -342,6 +380,36 @@ describe("ForgePanel — planBuild clears after a successful build (FIX 4)", () 
       rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
     });
     expect(importMocks.runPlanBuild).toHaveBeenCalledTimes(1);
+  });
+
+  // The global-mode narration suppression must NOT bleed into client mode: the
+  // client route accepts pendingImportId, buildSystemPrompt injects the
+  // "a document import is pending review" block, and read_import can inspect
+  // it — so the synthetic turn is grounded there and still earns its keep.
+  it("still fires the synthetic narration turn in CLIENT mode, where an import context grounds it", async () => {
+    const send = vi.fn();
+    importMocks.runPlanBuild.mockResolvedValue({
+      importId: "imp_1",
+      clientId: "c1",
+      reviewPath: "/clients/c1/details/import/imp_1",
+      assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+      warnings: [],
+    });
+
+    mockStreamState = makeStreamState({ lastToolRender: null, send });
+    const { rerender } = render(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    const fileInput = screen.getByTestId("forge-file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["x"], "stmt.pdf")] } });
+
+    mockStreamState = makeStreamState({ lastToolRender: clientBuildPlanFrame("imp_1"), send });
+    await act(async () => {
+      rerender(<ForgePanel clientId="c1" scenarioNames={{}} forceOpenForTest />);
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const sent = send.mock.calls[0][0] as { message: string; pendingImportId?: string };
+    expect(sent.message.trim().length).toBeGreaterThan(0);
+    expect(sent.pendingImportId).toBe("imp_1");
   });
 });
 
