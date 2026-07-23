@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { db } from "@/db";
-import { clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { clients, crmHouseholds, crmHouseholdContacts, firms } from "@/db/schema";
+import { eq, inArray } from "drizzle-orm";
 import { searchClients, countClientsForFirm } from "../client-search";
 
 const FIRM_A = "firm_search_a";
 const FIRM_B = "firm_search_b";
 const ADVISOR_A = "advisor_search_a";
 const ADVISOR_B = "advisor_search_b";
+
+const CALLER_A = { userId: ADVISOR_A, orgRole: "org:member" };
+const CALLER_B = { userId: ADVISOR_B, orgRole: "org:member" };
 
 type Seed = {
   firmId: string;
@@ -97,33 +100,33 @@ beforeEach(seed);
 
 describe("searchClients", () => {
   it("returns matches by first name for the correct firm", async () => {
-    const results = await searchClients("alice", FIRM_A);
+    const results = await searchClients("alice", FIRM_A, CALLER_A);
     expect(results.map((r) => r.householdTitle)).toEqual(["Alice Anderson"]);
   });
 
   it("returns matches by spouse name", async () => {
-    const results = await searchClients("beth", FIRM_A);
+    const results = await searchClients("beth", FIRM_A, CALLER_A);
     expect(results).toHaveLength(1);
     expect(results[0].householdTitle).toContain("Baxter");
   });
 
   it("does NOT return clients from another firm", async () => {
-    const results = await searchClients("alice", FIRM_B);
+    const results = await searchClients("alice", FIRM_B, CALLER_B);
     expect(results.map((r) => r.householdTitle)).toEqual(["Alice Zelenko"]);
   });
 
   it("returns household title with spouse when present", async () => {
-    const results = await searchClients("baxter", FIRM_A);
+    const results = await searchClients("baxter", FIRM_A, CALLER_A);
     expect(results[0].householdTitle).toBe("Bob & Beth Baxter");
   });
 
   it("returns empty array on empty query", async () => {
-    const results = await searchClients("", FIRM_A);
+    const results = await searchClients("", FIRM_A, CALLER_A);
     expect(results).toEqual([]);
   });
 
   it("trims and lowercases the query", async () => {
-    const results = await searchClients("  ALICE  ", FIRM_A);
+    const results = await searchClients("  ALICE  ", FIRM_A, CALLER_A);
     expect(results.length).toBeGreaterThan(0);
   });
 
@@ -139,7 +142,7 @@ describe("searchClients", () => {
         planEndAge: 95,
       });
     }
-    const results = await searchClients("anderson", FIRM_A);
+    const results = await searchClients("anderson", FIRM_A, CALLER_A);
     expect(results.length).toBeLessThanOrEqual(8);
   });
 });
@@ -158,5 +161,65 @@ describe("countClientsForFirm", () => {
   it("scopes strictly by firm", async () => {
     const count = await countClientsForFirm(FIRM_B);
     expect(count).toBe(1);
+  });
+});
+
+const FIRM_SILO = "firm_search_silo";
+const ADVISOR_SILO_A = "advisor_silo_a";
+const ADVISOR_SILO_B = "advisor_silo_b";
+
+async function cleanupSilo() {
+  await db.delete(clients).where(eq(clients.firmId, FIRM_SILO));
+  await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, FIRM_SILO));
+  await db.delete(firms).where(eq(firms.firmId, FIRM_SILO));
+}
+
+describe("searchClients advisor scope", () => {
+  beforeEach(async () => {
+    await cleanupSilo();
+    await db.insert(firms).values({ firmId: FIRM_SILO, bookSiloEnabled: true });
+    await insertSeed({
+      firmId: FIRM_SILO,
+      advisorId: ADVISOR_SILO_A,
+      firstName: "Sia",
+      lastName: "Alpha",
+      dateOfBirth: "1975-01-01",
+      retirementAge: 65,
+      planEndAge: 95,
+    });
+    await insertSeed({
+      firmId: FIRM_SILO,
+      advisorId: ADVISOR_SILO_B,
+      firstName: "Milo",
+      lastName: "Beta",
+      dateOfBirth: "1976-01-01",
+      retirementAge: 65,
+      planEndAge: 95,
+    });
+  });
+  afterAll(cleanupSilo);
+
+  it("advisor cannot find another advisor's client when siloed", async () => {
+    const results = await searchClients("milo", FIRM_SILO, {
+      userId: ADVISOR_SILO_A,
+      orgRole: "org:member",
+    });
+    expect(results.find((r) => r.householdTitle.includes("Milo"))).toBeUndefined();
+  });
+
+  it("advisor CAN find their own client when siloed", async () => {
+    const results = await searchClients("sia", FIRM_SILO, {
+      userId: ADVISOR_SILO_A,
+      orgRole: "org:member",
+    });
+    expect(results.find((r) => r.householdTitle.includes("Sia"))).toBeTruthy();
+  });
+
+  it("admin finds everyone even when siloed", async () => {
+    const results = await searchClients("milo", FIRM_SILO, {
+      userId: "user_admin",
+      orgRole: "org:admin",
+    });
+    expect(results.find((r) => r.householdTitle.includes("Milo"))).toBeTruthy();
   });
 });

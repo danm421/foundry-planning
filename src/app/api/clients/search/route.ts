@@ -5,7 +5,7 @@ import { searchClients } from "@/lib/client-search";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<Response> {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, orgRole } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -14,6 +14,6 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const query = new URL(req.url).searchParams.get("q") ?? "";
-  const results = await searchClients(query, orgId);
+  const results = await searchClients(query, orgId, { userId, orgRole });
   return NextResponse.json(results);
 }

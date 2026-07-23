@@ -8,9 +8,16 @@ const requireOrgId = vi.fn<() => Promise<string>>();
 vi.mock("@/lib/db-helpers", () => ({ requireOrgId: () => requireOrgId() }));
 
 const searchClients =
-  vi.fn<(query: string, firmId: string) => Promise<{ id: string; householdTitle: string }[]>>();
+  vi.fn<
+    (
+      query: string,
+      firmId: string,
+      caller: { userId: string; orgRole: string | null | undefined },
+    ) => Promise<{ id: string; householdTitle: string }[]>
+  >();
 vi.mock("@/lib/client-search", () => ({
-  searchClients: (q: string, f: string) => searchClients(q, f),
+  searchClients: (q: string, f: string, c: { userId: string; orgRole: string | null | undefined }) =>
+    searchClients(q, f, c),
 }));
 
 const getOverviewData = vi.fn();
@@ -132,7 +139,7 @@ describe("read.ts — find_client", () => {
 
     const out = await tool("find_client").invoke({ query: "do" });
 
-    expect(searchClients).toHaveBeenCalledWith("do", "firmA");
+    expect(searchClients).toHaveBeenCalledWith("do", "firmA", { userId: "u1", orgRole: undefined });
     expect(JSON.parse(out as string)).toEqual(rows);
   });
 });
