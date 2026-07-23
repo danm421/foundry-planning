@@ -285,5 +285,131 @@ export function buildGlobalActionTools({ ctx, conversationId }: ForgeGlobalToolC
     },
   );
 
-  return [findClient, openClient, createHousehold, setUpPlan, buildPlan];
+  const ingestFactFinder = tool(
+    async (args: {
+      mode: "new" | "updating";
+      // mode "new":
+      householdName?: string;
+      state?: string;
+      primaryFirstName?: string;
+      primaryLastName?: string;
+      primaryDob?: string;
+      spouseFirstName?: string;
+      spouseLastName?: string;
+      spouseDob?: string;
+      filingStatus?: "single" | "married_joint" | "married_separate" | "head_of_household";
+      retirementAge?: number;
+      lifeExpectancy?: number;
+      spouseRetirementAge?: number;
+      spouseLifeExpectancy?: number;
+      // mode "updating":
+      clientId?: string;
+    }) => {
+      try {
+        const firmId = await requireOrgId();
+
+        if (args.mode === "updating") {
+          if (!args.clientId) {
+            return "To update an existing plan, pass the clientId of the matched household.";
+          }
+          const { clientId, importId } = await ensurePlanImport({
+            mode: "existing",
+            firmId,
+            actorUserId: ctx.userId,
+            existing: { clientId: args.clientId },
+          });
+          await recordAudit({
+            action: "forge.write_approved",
+            resourceType: "client_import",
+            resourceId: importId,
+            firmId,
+            actorId: ctx.userId,
+            metadata: { tool: "ingest_fact_finder", conversationId, clientId, mode: "updating" },
+          });
+          await emitToolRender("ingest_fact_finder", "complete", { clientId, importId, mode: "updating" });
+          return JSON.stringify({ clientId, importId, mode: "updating" });
+        }
+
+        // mode "new"
+        if (!args.householdName || !args.primaryFirstName || !args.primaryLastName || !args.primaryDob) {
+          return "To build a new plan I need the household name and the primary contact's first name, last name, and date of birth.";
+        }
+        const hasSpouse = Boolean(args.spouseFirstName && args.spouseLastName);
+        const { clientId, importId } = await ensurePlanImport({
+          mode: "new",
+          firmId,
+          actorUserId: ctx.userId,
+          newHousehold: {
+            householdName: args.householdName,
+            state: args.state,
+            primary: {
+              firstName: args.primaryFirstName,
+              lastName: args.primaryLastName,
+              dateOfBirth: args.primaryDob,
+            },
+            spouse: hasSpouse
+              ? { firstName: args.spouseFirstName!, lastName: args.spouseLastName!, dateOfBirth: args.spouseDob }
+              : undefined,
+            filingStatus: args.filingStatus ?? (hasSpouse ? "married_joint" : "single"),
+            // Attach-first defaults: the fact finder often omits horizon numbers.
+            // Use documented platform defaults (retire 65 / mortality 95) rather
+            // than refusing — the Review Wizard's Plan basics step lets the
+            // advisor correct them (unlike the conversational build_plan tool,
+            // which refuses so the advisor states them).
+            retirementAge: args.retirementAge ?? 65,
+            lifeExpectancy: args.lifeExpectancy ?? 95,
+            spouseRetirementAge: hasSpouse ? (args.spouseRetirementAge ?? 65) : undefined,
+            spouseLifeExpectancy: hasSpouse ? (args.spouseLifeExpectancy ?? 95) : undefined,
+          },
+        });
+        await recordAudit({
+          action: "forge.write_approved",
+          resourceType: "client_import",
+          resourceId: importId,
+          firmId,
+          actorId: ctx.userId,
+          metadata: { tool: "ingest_fact_finder", conversationId, clientId, mode: "new" },
+        });
+        await emitToolRender("ingest_fact_finder", "complete", { clientId, importId, mode: "new" });
+        return JSON.stringify({ clientId, importId, mode: "new" });
+      } catch (e) {
+        return e instanceof Error ? e.message : "Failed to ingest the fact finder.";
+      }
+    },
+    {
+      name: "ingest_fact_finder",
+      description:
+        "Build or update a plan from a fact finder the advisor ATTACHED (you'll see an " +
+        "'[Attached fact finder]' block with the extracted household identity and any duplicate " +
+        "matches). Requires human approval. Decide the mode from the identity + duplicate matches + " +
+        "the advisor's message:\n" +
+        "• No duplicate match → mode 'new': pass householdName, state, primary name + DOB, filing " +
+        "status, and spouse fields if present (copy them verbatim from the identity block).\n" +
+        "• A duplicate matches AND the advisor said to update/refresh it → mode 'updating' with that " +
+        "match's clientId.\n" +
+        "• A duplicate matches AND the advisor said to create it anyway/separate → mode 'new'.\n" +
+        "• A duplicate matches AND the advisor did NOT say what to do → do NOT call this tool; ask " +
+        "them whether to update the existing plan, create a separate household, or cancel, then call " +
+        "it with their choice. Retirement age / life expectancy are optional — omit when unknown.",
+      schema: z.object({
+        mode: z.enum(["new", "updating"]),
+        householdName: z.string().min(1).max(200).optional(),
+        state: z.string().length(2).optional().describe("USPS 2-letter state code"),
+        primaryFirstName: z.string().max(100).optional(),
+        primaryLastName: z.string().max(100).optional(),
+        primaryDob: z.string().optional().describe("primary DOB, YYYY-MM-DD"),
+        spouseFirstName: z.string().max(100).optional(),
+        spouseLastName: z.string().max(100).optional(),
+        spouseDob: z.string().optional().describe("spouse DOB, YYYY-MM-DD"),
+        filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]).optional(),
+        retirementAge: z.number().int().min(30).max(90).optional(),
+        lifeExpectancy: z.number().int().min(60).max(120).optional(),
+        spouseRetirementAge: z.number().int().min(30).max(90).optional(),
+        spouseLifeExpectancy: z.number().int().min(60).max(120).optional(),
+        clientId: z.string().optional().describe("mode 'updating': the matched household's clientId"),
+      }),
+    },
+  );
+
+  return [findClient, openClient, createHousehold, setUpPlan, buildPlan, ingestFactFinder];
 }

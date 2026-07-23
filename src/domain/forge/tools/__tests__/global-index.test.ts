@@ -28,7 +28,7 @@ describe("buildGlobalTools", () => {
     const names = buildGlobalTools(toolCtx).map((t) => t.name).sort();
     expect(names).toEqual([
       "build_plan", "cite_page", "create_household", "find_client", "firm_members", "get_help",
-      "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
+      "ingest_fact_finder", "open_client", "open_page", "search_help", "set_up_plan", "start_walkthrough",
       "tasks_comment", "tasks_create", "tasks_delete", "tasks_detail", "tasks_list",
       "tasks_set_status", "tasks_update",
     ]);
