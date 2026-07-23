@@ -12,7 +12,7 @@
 // requireOrgId()/auth()), and NextResponse.json(...) becomes writeError(...) /
 // {ok:true,...}.
 import { db } from "@/db";
-import { expenses, expenseDedicatedAccounts } from "@/db/schema";
+import { expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
@@ -25,6 +25,7 @@ import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
 import { baseCaseScenarioId } from "./base-case";
+import { replaceDedicatedAccounts } from "./dedicated-accounts";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type ExpenseRow = typeof expenses.$inferSelect;
@@ -106,9 +107,7 @@ export async function createExpenseForClient(args: {
       })
       .returning();
     if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
-      await tx.insert(expenseDedicatedAccounts).values(
-        dedicatedAccountIds.map((accountId, i) => ({ expenseId: row.id, accountId, sortOrder: i })),
-      );
+      await replaceDedicatedAccounts(tx, row.id, dedicatedAccountIds);
     }
     return row;
   });
@@ -229,12 +228,7 @@ export async function updateExpenseForClient(args: {
     if (!row) return undefined;
 
     if (dedicatedAccountIds !== undefined) {
-      await tx.delete(expenseDedicatedAccounts).where(eq(expenseDedicatedAccounts.expenseId, expenseId));
-      if (dedicatedAccountIds.length > 0) {
-        await tx.insert(expenseDedicatedAccounts).values(
-          dedicatedAccountIds.map((accountId, i) => ({ expenseId, accountId, sortOrder: i })),
-        );
-      }
+      await replaceDedicatedAccounts(tx, expenseId, dedicatedAccountIds);
     }
 
     return row;

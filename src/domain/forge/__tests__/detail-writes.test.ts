@@ -159,6 +159,35 @@ describe("add_expense", () => {
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createExpenseForClient).not.toHaveBeenCalled();
   });
+
+  it("accepts and forwards the five education fields to the write core", async () => {
+    vi.mocked(createExpenseForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "exp-1", name: "Emma — College" } as never,
+      resourceId: "exp-1",
+    });
+    await getTool("add_expense").invoke({
+      type: "education",
+      name: "Emma — College",
+      annualAmount: 45000,
+      dedicatedAccountIds: ["acct-1"],
+      payShortfallOutOfPocket: true,
+      forFamilyMemberId: "fm-1",
+      institutionName: "State University",
+      institutionState: "TX",
+    });
+    expect(createExpenseForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          dedicatedAccountIds: ["acct-1"],
+          payShortfallOutOfPocket: true,
+          forFamilyMemberId: "fm-1",
+          institutionName: "State University",
+          institutionState: "TX",
+        }),
+      }),
+    );
+  });
 });
 
 describe("update_expense", () => {
@@ -204,6 +233,35 @@ describe("update_expense", () => {
     expect(String(result)).toBe("Expense not found");
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "forge.write_approved" }),
+    );
+  });
+
+  it("accepts and forwards the five education fields to the write core, including null to clear", async () => {
+    vi.mocked(updateExpenseForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "exp-1", name: "Emma — College" } as never,
+      resourceId: "exp-1",
+    });
+    await getTool("update_expense").invoke({
+      expenseId: "exp-1",
+      dedicatedAccountIds: ["acct-1", "acct-2"],
+      payShortfallOutOfPocket: false,
+      // null clears a previously-set attribution/label — this is the
+      // capability that would be lost if the tool schema dropped .nullable().
+      forFamilyMemberId: null,
+      institutionName: null,
+      institutionState: "CA",
+    });
+    expect(updateExpenseForClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          dedicatedAccountIds: ["acct-1", "acct-2"],
+          payShortfallOutOfPocket: false,
+          forFamilyMemberId: null,
+          institutionName: null,
+          institutionState: "CA",
+        }),
+      }),
     );
   });
 });

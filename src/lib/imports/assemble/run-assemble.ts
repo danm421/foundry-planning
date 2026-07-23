@@ -6,6 +6,7 @@ import type { ExtractionResult } from "@/lib/extraction/types";
 import { runMatchingPass } from "@/lib/imports/match";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
+import { deriveGoals } from "./goals";
 import { mergeAcrossFiles } from "./merge-across-files";
 import { derivePlanBasics } from "./plan-basics";
 import { generateQuestions } from "./questions";
@@ -109,21 +110,27 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     });
   }
 
+  // Goals derive from the annotated payload alone — a 529 plus the dependent
+  // roster — so unlike planBasics they need no `known` anchors and always run.
+  const goals = deriveGoals({ payload: annotated });
+
   const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions };
 
   // planBasics is seeded onto the payload only, not onto `assemble` — the
   // review wizard reads `payload`, not `assemble` (and so does
   // commitPlanBasics, via buildLatestPayload's round-trip back through the
   // PATCH route). `assemble` has no reader for this field, so it isn't
-  // duplicated there.
-  const payloadWithPlanBasics: ImportPayload = planBasics
-    ? { ...annotated, planBasics }
-    : annotated;
+  // duplicated there. `goals` follows the identical path.
+  const assembledPayload: ImportPayload = {
+    ...annotated,
+    ...(planBasics ? { planBasics } : {}),
+    goals,
+  };
 
   await db
     .update(clientImports)
     .set({
-      payloadJson: { fileResults, payload: payloadWithPlanBasics, assemble },
+      payloadJson: { fileResults, payload: assembledPayload, assemble },
       updatedAt: new Date(),
     })
     .where(eq(clientImports.id, importId));

@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { accountOwners, accounts, lifeInsurancePolicies } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
+import type { AccountCategory, AccountSubType } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -20,6 +21,21 @@ const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "v
   universal_life: "universal",
   variable_life: "variable",
 };
+
+/**
+ * The account category to persist. Extraction historically classified 529s as
+ * `taxable` + `subType: "529"` because `education_savings` was not in its
+ * category union at all (fixed in the prompt, but old payloads persist and the
+ * model can still ignore the rule). A 529 left as `taxable` is spendable in the
+ * withdrawal waterfall and invisible to the dedicated-funding picker, so the
+ * subType wins here.
+ */
+export function resolveAccountCategory(
+  row: { name?: string; category?: AccountCategory; subType?: AccountSubType },
+): AccountCategory {
+  if (row.subType === "529") return "education_savings";
+  return row.category ?? "taxable";
+}
 
 /**
  * Commits the accounts tab. For each annotated row in `payload.accounts`:
@@ -70,7 +86,7 @@ export async function commitAccounts(
           clientId: ctx.clientId,
           scenarioId: ctx.scenarioId,
           name: row.name,
-          category: row.category ?? "taxable",
+          category: resolveAccountCategory(row),
           subType,
           value: row.value != null ? String(row.value) : "0",
           basis: row.basis != null ? String(row.basis) : "0",
@@ -129,7 +145,14 @@ export async function commitAccounts(
       continue;
     }
     const updates: Record<string, unknown> = { updatedAt: now };
-    if (row.category !== undefined) updates.category = row.category;
+    // Recompute category when the row explicitly sets one (normal replace, per
+    // the field map above) or when subType alone heals to a 529 (Task 4). A
+    // subType edit to anything else, with category left untouched by the
+    // review step, must NOT fall through resolveAccountCategory's `?? "taxable"`
+    // default and clobber an existing category the advisor never touched.
+    if (row.category !== undefined || row.subType === "529") {
+      updates.category = resolveAccountCategory(row);
+    }
     if (row.subType !== undefined) updates.subType = row.subType;
     if (row.value !== undefined) updates.value = String(row.value);
     if (row.basis !== undefined) updates.basis = String(row.basis);

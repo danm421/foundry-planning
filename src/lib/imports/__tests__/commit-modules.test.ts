@@ -8,7 +8,7 @@ vi.mock("@/lib/ownership", async (importOriginal) => {
   return { ...actual, validateOwnersTenant: vi.fn().mockResolvedValue(null) };
 });
 
-import { commitAccounts } from "@/lib/imports/commit/accounts";
+import { commitAccounts, resolveAccountCategory } from "@/lib/imports/commit/accounts";
 import { commitClientsIdentity } from "@/lib/imports/commit/clients-identity";
 import { commitEntities } from "@/lib/imports/commit/entities";
 import { commitExpenses } from "@/lib/imports/commit/expenses";
@@ -257,6 +257,27 @@ describe("commitFamilyMembers", () => {
   });
 });
 
+describe("resolveAccountCategory", () => {
+  it("promotes a 529 misclassified as taxable to education_savings", () => {
+    expect(resolveAccountCategory({ name: "Emma 529", category: "taxable", subType: "529" }))
+      .toBe("education_savings");
+  });
+
+  it("promotes a 529 with no category at all", () => {
+    expect(resolveAccountCategory({ name: "Emma 529", subType: "529" }))
+      .toBe("education_savings");
+  });
+
+  it("leaves a non-529 taxable account alone", () => {
+    expect(resolveAccountCategory({ name: "Joint Brokerage", category: "taxable", subType: "brokerage" }))
+      .toBe("taxable");
+  });
+
+  it("defaults a category-less non-529 account to taxable, as before", () => {
+    expect(resolveAccountCategory({ name: "Mystery" })).toBe("taxable");
+  });
+});
+
 describe("commitAccounts", () => {
   it("inserts new accounts with synthesized owner row when client FM exists", async () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
@@ -447,6 +468,46 @@ describe("commitAccounts", () => {
     const setValues = (updates[0] as { values: Record<string, unknown> }).values;
     expect(setValues.growthSource).toBe("inflation");
     expect(setValues.modelPortfolioId).toBeNull();
+  });
+
+  it("heals an exact-matched account's category to education_savings when subType is edited to 529", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Emma 529",
+          subType: "529",
+          match: { kind: "exact", existingId: "acct-1" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const updates = callsForTable(calls, "accounts").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    const setValues = (updates[0] as { values: Record<string, unknown> }).values;
+    expect(setValues.category).toBe("education_savings");
+    expect(setValues.subType).toBe("529");
+  });
+
+  it("does not clobber category on an exact update that only edits subType to a non-529 value", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "Trad IRA",
+          subType: "traditional_ira",
+          match: { kind: "exact", existingId: "acct-1" },
+        },
+      ],
+    };
+    await commitAccounts(tx, payload, ctx);
+    const updates = callsForTable(calls, "accounts").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    const setValues = (updates[0] as { values: Record<string, unknown> }).values;
+    expect(setValues.subType).toBe("traditional_ira");
+    expect(setValues).not.toHaveProperty("category");
   });
 
   it("writes the advisor-confirmed owners[] when tenant validation passes", async () => {

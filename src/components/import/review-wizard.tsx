@@ -15,8 +15,9 @@ import type {
   ExtractedWill,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
-import type { AssembleAssumption, AssemblePlanBasics } from "@/lib/imports/assemble/types";
+import type { AssembleAssumption, AssembleGoals, AssemblePlanBasics } from "@/lib/imports/assemble/types";
 import { emptyPlanBasics } from "@/lib/imports/assemble/plan-basics";
+import { emptyGoals } from "@/lib/imports/assemble/goals";
 import type { CommitTab } from "@/lib/imports/commit/types";
 import { requiredCommitTabs, type CategoryPresence } from "@/lib/imports/required-tabs";
 import type { GrowthContext } from "@/lib/investments/growth-context";
@@ -29,6 +30,7 @@ import ReviewStepExpenses from "./review-step-expenses";
 import ReviewStepLiabilities from "./review-step-liabilities";
 import ReviewStepEntities from "./review-step-entities";
 import PlanBasicsStep from "./plan-basics-step";
+import GoalsStep from "./goals-step";
 import ReviewStepFamily from "./review-step-family";
 import ReviewStepInsurance from "./review-step-insurance";
 import ReviewStepWills, {
@@ -50,6 +52,7 @@ type WizardTabId =
   | "insurance"
   | "wills"
   | "entities"
+  | "goals"
   | "summary";
 
 interface ReviewWizardProps {
@@ -70,7 +73,10 @@ interface ReviewWizardProps {
 }
 
 interface CanonicalRows {
-  accounts: { id: string; name: string }[];
+  /** `category`/`subType` carry through for the Goals step, which must scope
+   *  its dedicated-funding list to education accounts the way `commitGoals`
+   *  scopes its resolution candidates. */
+  accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string }[];
   familyMembers: { id: string; firstName: string; lastName: string | null; role: string }[];
   entities: { id: string; name: string }[];
@@ -98,6 +104,7 @@ const TAB_TO_COMMIT: Record<Exclude<WizardTabId, "summary">, CommitTab[]> = {
   insurance: ["life-insurance"],
   wills: ["wills"],
   entities: ["entities"],
+  goals: ["goals"],
 };
 
 const TAB_LABEL: Record<WizardTabId, string> = {
@@ -110,6 +117,7 @@ const TAB_LABEL: Record<WizardTabId, string> = {
   insurance: "Insurance",
   wills: "Wills",
   entities: "Trusts",
+  goals: "Goals",
   summary: "Summary",
 };
 
@@ -162,6 +170,11 @@ export default function ReviewWizard({
     () => payload.planBasics ?? emptyPlanBasics(),
   );
 
+  // Same absent-on-old-imports rationale as planBasics: an import assembled
+  // before this feature existed (or with too little evidence for
+  // deriveGoals to run) has no `goals` key at all.
+  const [goals, setGoals] = useState<AssembleGoals>(() => payload.goals ?? emptyGoals());
+
   // Established convention on this branch: a household "has a spouse" when
   // the wizard was handed a spouse first name, rather than a separate signal.
   const hasSpouse = Boolean(spouseFirstName);
@@ -201,7 +214,12 @@ export default function ReviewWizard({
         fetch(`/api/clients/${clientId}/family-members`).catch(() => null),
         fetch(`/api/clients/${clientId}/entities`).catch(() => null),
       ]);
-      const accountsRaw = await safeJson<{ id: string; name: string }>(aRes);
+      const accountsRaw = await safeJson<{
+        id: string;
+        name: string;
+        category?: string;
+        subType?: string;
+      }>(aRes);
       const liabilitiesRaw = await safeJson<{ id: string; name: string }>(lRes);
       const familyRaw = await safeJson<{
         id: string;
@@ -211,7 +229,12 @@ export default function ReviewWizard({
       }>(fRes);
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
-        accounts: accountsRaw.map((a) => ({ id: a.id, name: a.name })),
+        accounts: accountsRaw.map((a) => ({
+          id: a.id,
+          name: a.name,
+          category: a.category ?? "",
+          subType: a.subType ?? "",
+        })),
         liabilities: liabilitiesRaw.map((l) => ({ id: l.id, name: l.name })),
         familyMembers: familyRaw.map((f) => ({
           id: f.id,
@@ -284,6 +307,10 @@ export default function ReviewWizard({
     if (lifePolicies.length > 0) t.push("insurance");
     if (wills.length > 0) t.push("wills");
     if (entities.length > 0) t.push("entities");
+    // Unconditional, like plan-basics: the advisor must be able to add a goal
+    // for a household whose documents contained none. Placed last so the
+    // strip order matches the commit order it depends on.
+    t.push("goals");
     t.push("summary");
     return t;
   }, [primary, spouse, dependents.length, accounts.length, incomes.length, expenses.length, liabilities.length, lifePolicies.length, wills.length, entities.length]);
@@ -291,6 +318,10 @@ export default function ReviewWizard({
   const [currentTab, setCurrentTab] = useState<WizardTabId>(tabs[0] ?? "summary");
   const [committingTab, setCommittingTab] = useState<WizardTabId | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
+  // Warnings returned by the LAST commit POST, for the tabs that click
+  // committed. Cleared when a new commit starts and when the advisor moves to
+  // another tab, so a warning is never read against the wrong step.
+  const [commitWarnings, setCommitWarnings] = useState<string[]>([]);
 
   /**
    * Snapshot the wizard state into ImportPayload shape so the PATCH
@@ -315,8 +346,9 @@ export default function ReviewWizard({
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
       planBasics,
+      goals,
     };
-  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots, planBasics]);
+  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots, planBasics, goals]);
 
   const handleCommit = useCallback(
     async (tab: WizardTabId) => {
@@ -327,6 +359,7 @@ export default function ReviewWizard({
       }
       setCommittingTab(tab);
       setCommitError(null);
+      setCommitWarnings([]);
       try {
         const latest = buildLatestPayload();
         const patchRes = await fetch(
@@ -352,10 +385,23 @@ export default function ReviewWizard({
             body: JSON.stringify({ tabs: commitTabs }),
           },
         );
+        // The route answers `{ ok, results: Record<CommitTab, CommitResult>,
+        // status }` (see the commit route handler). Parse once, then branch —
+        // a Response body can only be read a single time.
+        const commitBody = (await commitRes.json().catch(() => null)) as {
+          error?: string;
+          results?: Partial<Record<CommitTab, { warnings?: string[] }>>;
+        } | null;
         if (!commitRes.ok) {
-          const j = await commitRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Commit failed (${commitRes.status})`);
+          throw new Error(commitBody?.error ?? `Commit failed (${commitRes.status})`);
         }
+        // Read only the tabs THIS click committed. `results` is keyed by every
+        // CommitTab, and the untouched ones carry an empty warnings array —
+        // but a future shape change must not let another tab's warning leak in
+        // under this tab's heading.
+        setCommitWarnings(
+          commitTabs.flatMap((ct) => commitBody?.results?.[ct]?.warnings ?? []),
+        );
         await fetchCanonical();
         router.refresh();
       } catch (err) {
@@ -392,10 +438,11 @@ export default function ReviewWizard({
       lifePolicies: lifePolicies.length > 0,
       wills: wills.length > 0,
       entities: entities.length > 0,
+      goals: goals.education.length + goals.homePurchases.length > 0,
     }),
     [primary, spouse, dependents.length, accounts.length, incomes.length,
      expenses.length, liabilities.length, lifePolicies.length, wills.length,
-     entities.length],
+     entities.length, goals],
   );
 
   // Completion is judged against the SAME required set the server uses, so the
@@ -420,6 +467,7 @@ export default function ReviewWizard({
       case "insurance": return lifePolicies.length;
       case "wills": return wills.length;
       case "entities": return entities.length;
+      case "goals": return goals.education.length + goals.homePurchases.length;
       case "summary": return 0;
     }
   };
@@ -451,6 +499,29 @@ export default function ReviewWizard({
     setExpenses(expenses.map((e, idx) => (idx === i ? { ...e, match: m } : e)));
   };
 
+  /**
+   * A goal can only be funded by a 529 that already has a DB row: commitGoals
+   * resolves funding accounts by querying committed rows. If Goals is committed
+   * before Accounts, resolution finds nothing and the goal lands with NO
+   * dedicated funding — the 529 silently is never spent, which is the exact
+   * defect this phase exists to fix.
+   *
+   * Commit warnings ARE surfaced now (see `commitWarnings`), so this is no
+   * longer the only signal — but a warning arrives after the write, and
+   * un-doing a goal that landed without funding means editing the expense by
+   * hand. Blocking the click stays the mitigation; the warning is the backstop
+   * for the cases this guard cannot see (a renamed 529, an unresolved fuzzy
+   * row), which `GoalsStep` also flags before the click.
+   */
+  const goalsBlockedOnAccounts = useMemo(() => {
+    if (currentTab !== "goals") return false;
+    const referenced = goals.education.some((g) => g.dedicatedAccountNames.length > 0);
+    if (!referenced) return false;
+    const accountsPending = accounts.length > 0;
+    const accountsCommitted = perTabCommittedAt?.accounts != null;
+    return accountsPending && !accountsCommitted;
+  }, [currentTab, goals, accounts.length, perTabCommittedAt]);
+
   return (
     <SourceFilesContext.Provider value={fileNames}>
     <div className="space-y-4">
@@ -465,7 +536,12 @@ export default function ReviewWizard({
         tabs={tabs}
         currentTab={currentTab}
         committingTab={committingTab}
-        onSelect={setCurrentTab}
+        onSelect={(t) => {
+          // Warnings are about the step that produced them; carrying them onto
+          // another tab would read as that tab's problem.
+          setCommitWarnings([]);
+          setCurrentTab(t);
+        }}
         committed={tabCommitted}
         count={tabCount}
       />
@@ -475,6 +551,19 @@ export default function ReviewWizard({
           {commitError}
         </div>
       ) : null}
+
+      {/* The commit modules' own warnings — a goal created without dedicated
+          funding, a purchase whose down-payment account vanished, a row
+          skipped for a missing year. These were previously discarded, which
+          made every cross-tab resolution failure silent. */}
+      {commitWarnings.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-300">
+            Warnings from the last commit
+          </p>
+          <WarningsBanner warnings={commitWarnings} />
+        </div>
+      )}
 
       <div>
         {currentTab === "plan-basics" && (
@@ -564,6 +653,15 @@ export default function ReviewWizard({
             onChange={(e) => setEntities(e as Annotated<ExtractedEntity>[])}
           />
         )}
+        {currentTab === "goals" && (
+          <GoalsStep
+            value={goals}
+            accountOptions={canonical.accounts}
+            dependentOptions={dependents.map((d) => d.firstName).filter(Boolean)}
+            currentYear={defaultStartYear}
+            onChange={setGoals}
+          />
+        )}
         {currentTab === "summary" && (
           <SummaryStep
             tabs={allCommittableTabs}
@@ -577,23 +675,30 @@ export default function ReviewWizard({
       </div>
 
       {currentTab !== "summary" && (
-        <div className="flex items-center justify-between border-t border-hair pt-3">
-          <div className="text-xs text-ink-4">
-            {tabCommitted(currentTab)
-              ? `Committed ${formatTimestamp(currentTab, perTabCommittedAt)}`
-              : "Pending commit"}
+        <div className="space-y-2 border-t border-hair pt-3">
+          {goalsBlockedOnAccounts && (
+            <p className="text-xs text-amber-400">
+              Commit the Accounts step first — these goals draw from a 529 that has not been created yet.
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-ink-4">
+              {tabCommitted(currentTab)
+                ? `Committed ${formatTimestamp(currentTab, perTabCommittedAt)}`
+                : "Pending commit"}
+            </div>
+            <button
+              onClick={() => handleCommit(currentTab)}
+              disabled={committingTab !== null || tabCommitted(currentTab) || goalsBlockedOnAccounts}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
+            >
+              {committingTab === currentTab
+                ? "Committing…"
+                : tabCommitted(currentTab)
+                  ? "✓ Committed"
+                  : `Commit ${TAB_LABEL[currentTab]}`}
+            </button>
           </div>
-          <button
-            onClick={() => handleCommit(currentTab)}
-            disabled={committingTab !== null || tabCommitted(currentTab)}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-          >
-            {committingTab === currentTab
-              ? "Committing…"
-              : tabCommitted(currentTab)
-                ? "✓ Committed"
-                : `Commit ${TAB_LABEL[currentTab]}`}
-          </button>
         </div>
       )}
     </div>

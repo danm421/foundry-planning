@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   requiredCommitTabs,
   presenceFromPayload,
+  ALWAYS_REQUIRED_TABS,
   type CategoryPresence,
 } from "../required-tabs";
-import type { ImportPayload } from "../types";
+import { emptyImportPayload, type ImportPayload } from "../types";
 
 const NOTHING: CategoryPresence = {
   family: false,
@@ -15,6 +16,7 @@ const NOTHING: CategoryPresence = {
   lifePolicies: false,
   wills: false,
   entities: false,
+  goals: false,
 };
 
 function emptyPayload(): ImportPayload {
@@ -67,6 +69,7 @@ describe("requiredCommitTabs", () => {
       lifePolicies: true,
       wills: true,
       entities: true,
+      goals: false,
     });
     expect(all).toEqual([
       "plan-basics",
@@ -111,5 +114,38 @@ describe("presenceFromPayload", () => {
       "incomes",
       "entities",
     ]);
+  });
+});
+
+describe("goals tab requirement", () => {
+  it("is NOT required on an import with no goals", () => {
+    const presence = presenceFromPayload(emptyImportPayload());
+    expect(presence.goals).toBe(false);
+    expect(requiredCommitTabs(presence)).not.toContain("goals");
+  });
+
+  it("is required once the payload carries a goal", () => {
+    const payload = {
+      ...emptyImportPayload(),
+      goals: { education: [{ id: "edu:x" } as never], homePurchases: [] },
+    };
+    const presence = presenceFromPayload(payload);
+    expect(presence.goals).toBe(true);
+    expect(requiredCommitTabs(presence)).toContain("goals");
+  });
+
+  it("never becomes unconditionally required", () => {
+    // Guards the open onboarding STEP_COMMIT_TABS regression: a second
+    // always-required tab would make more import paths uncommittable.
+    expect(ALWAYS_REQUIRED_TABS).toEqual(["plan-basics"]);
+  });
+
+  it("commits last, after accounts", () => {
+    const all = requiredCommitTabs({
+      family: true, accounts: true, incomes: true, expenses: true,
+      liabilities: true, lifePolicies: true, wills: true, entities: true, goals: true,
+    });
+    expect(all[all.length - 1]).toBe("goals");
+    expect(all.indexOf("accounts")).toBeLessThan(all.indexOf("goals"));
   });
 });

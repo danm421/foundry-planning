@@ -71,6 +71,19 @@ describe("buildAccountStatementPrompt", () => {
   });
 });
 
+describe("account-statement prompt — education_savings", () => {
+  const prompt = buildAccountStatementPrompt(false);
+
+  it("offers education_savings as a category", () => {
+    expect(prompt).toContain("education_savings");
+  });
+
+  it("routes 529 and Coverdell accounts to it explicitly", () => {
+    expect(prompt).toMatch(/529[\s\S]{0,160}education_savings/);
+    expect(prompt.toLowerCase()).toContain("coverdell");
+  });
+});
+
 describe("buildHoldingsContinuationPrompt", () => {
   it("identifies the account and lists captured positions", () => {
     const p = buildHoldingsContinuationPrompt(

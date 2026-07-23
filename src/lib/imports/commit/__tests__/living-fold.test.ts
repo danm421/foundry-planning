@@ -1,11 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 
-import { derivePlanBasics } from "../../assemble/plan-basics";
+import { db } from "@/db";
+import { clients, crmHouseholds, expenses } from "@/db/schema";
+import { createTestClientWithScenario } from "@/test/factories";
+
+import { derivePlanBasics, emptyPlanBasics } from "../../assemble/plan-basics";
 import type { AssemblePlanBasics } from "../../assemble/types";
 import { emptyImportPayload, type ImportPayload } from "../../types";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
 import { commitExpenses } from "../expenses";
 import { commitPlanBasics } from "../plan-basics";
+import {
+  isSummedLivingRow,
+  retirementSlotIdsFromPayload,
+  sumExtractedLiving,
+} from "@/lib/imports/living-rows";
 
 /**
  * THE DOUBLE-COUNT REGRESSION.
@@ -247,5 +258,169 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
 
     expect(expensesResult.created).toBe(1);
     expect(amountsWritten(fake, "insert")).toEqual(["9000"]);
+  });
+});
+
+function payloadWithSlots(): ImportPayload {
+  return {
+    ...emptyImportPayload(),
+    expenseSlots: [
+      { id: "slot-current", name: "Living Expenses", role: "current" },
+      { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+    ],
+  };
+}
+
+describe("F3 — phase-aware living-row predicate", () => {
+  it("excludes a row matched to the retirement slot from the current-spending sum", () => {
+    const payload = payloadWithSlots();
+    payload.expenses = [
+      { type: "living", name: "Living Expenses", annualAmount: 60000,
+        match: { kind: "exact", existingId: "slot-current" } },
+      { type: "living", name: "Retirement Living Expenses", annualAmount: 48000,
+        match: { kind: "exact", existingId: "slot-retirement" } },
+    ];
+
+    const retirementIds = retirementSlotIdsFromPayload(payload);
+    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
+    expect(isSummedLivingRow(payload.expenses[1], retirementIds)).toBe(false);
+
+    // The figure the advisor reviews is 60000, not 108000.
+    expect(sumExtractedLiving(payload)).toEqual({ total: 60000, count: 1 });
+  });
+
+  it("treats a payload with no slot roles as all-current (back-compat)", () => {
+    const payload = emptyImportPayload();
+    payload.expenses = [
+      { type: "living", name: "Housing", annualAmount: 24000, match: { kind: "new" } },
+    ];
+    const retirementIds = retirementSlotIdsFromPayload(payload);
+    expect(retirementIds.size).toBe(0);
+    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
+  });
+});
+
+/**
+ * F2 — DB-backed. Hits the dev Neon branch (run with `--testTimeout=30000`).
+ *
+ * The fake-tx harness above can't distinguish "folded" from "updated" for an
+ * EXISTING non-slot row, because both paths end in a call recorded against
+ * the same table. These tests seed a real client/scenario with a real
+ * pre-existing living-expense row and assert against the row that actually
+ * lands in the DB.
+ */
+const f2FirmIds: string[] = [];
+
+afterAll(async () => {
+  for (const firmId of f2FirmIds) {
+    const rows = await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId));
+    for (const c of rows) {
+      await db.delete(clients).where(eq(clients.id, c.id)); // cascades to expenses
+    }
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, firmId));
+  }
+});
+
+/**
+ * Seeds a client + base-case scenario with:
+ *   - a seeded `isDefault` Current Living Expenses slot (`startYearRef:
+ *     "plan_start"`), so `commitExpenses`'s `hasCurrentSlot` check is
+ *     satisfied and the fold is armed, and
+ *   - a real, non-slot living-expense row ("Housing") at `annualAmount`,
+ *     standing in for a row extraction matched exactly onto an existing DB
+ *     row.
+ */
+async function seedClientWithLivingRow(
+  opts: { annualAmount: string },
+): Promise<{ clientId: string; scenarioId: string; currentSlotId: string; existingRowId: string }> {
+  const firmId = `test_firm_${randomBytes(4).toString("hex")}`;
+  f2FirmIds.push(firmId);
+  const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
+  const currentYear = new Date().getUTCFullYear();
+
+  const [slot] = await db
+    .insert(expenses)
+    .values({
+      clientId,
+      scenarioId,
+      type: "living",
+      name: "Living Expenses",
+      annualAmount: "0",
+      startYear: currentYear,
+      endYear: currentYear + 30,
+      startYearRef: "plan_start",
+      isDefault: true,
+      source: "manual",
+    })
+    .returning();
+
+  const [row] = await db
+    .insert(expenses)
+    .values({
+      clientId,
+      scenarioId,
+      type: "living",
+      name: "Housing",
+      annualAmount: opts.annualAmount,
+      startYear: currentYear,
+      endYear: currentYear + 30,
+      isDefault: false,
+      source: "extracted",
+    })
+    .returning();
+
+  return { clientId, scenarioId, currentSlotId: slot.id, existingRowId: row.id };
+}
+
+describe("F2 — the fold no longer swallows a row that matches an existing DB row", () => {
+  it("updates an existing matched living row instead of folding it", async () => {
+    // Arrange: a client whose scenario already has a non-slot living row at
+    // 30000, an import payload whose extracted row EXACTLY matches it at
+    // 36000, and a reviewed current-living-spending figure on planBasics (so
+    // the fold is armed).
+    const { clientId, scenarioId, currentSlotId, existingRowId } =
+      await seedClientWithLivingRow({ annualAmount: "30000" });
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      planBasics: { ...emptyPlanBasics(), currentLivingSpending: { value: 90000, provenance: "stated" } },
+      expenseSlots: [{ id: currentSlotId, name: "Living Expenses", role: "current" }],
+      expenses: [
+        {
+          type: "living",
+          name: "Housing",
+          annualAmount: 36000,
+          match: { kind: "exact", existingId: existingRowId },
+        },
+      ],
+    };
+
+    const result = await db.transaction((tx) =>
+      commitExpenses(tx, payload, { clientId, scenarioId, orgId: "org-1", userId: "user-1" }),
+    );
+
+    // The row is UPDATED, not folded away.
+    expect(result.updated).toBe(1);
+    expect(result.skipped).toBe(0);
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, existingRowId));
+    expect(Number(row.annualAmount)).toBe(36000);
+  });
+
+  it("still folds a brand-new row that fed the reviewed total", async () => {
+    const { clientId, scenarioId, currentSlotId } =
+      await seedClientWithLivingRow({ annualAmount: "30000" });
+    const payload: ImportPayload = {
+      ...emptyImportPayload(),
+      planBasics: { ...emptyPlanBasics(), currentLivingSpending: { value: 90000, provenance: "stated" } },
+      expenseSlots: [{ id: currentSlotId, name: "Living Expenses", role: "current" }],
+      expenses: [{ type: "living", name: "Groceries", annualAmount: 12000, match: { kind: "new" } }],
+    };
+
+    const result = await db.transaction((tx) =>
+      commitExpenses(tx, payload, { clientId, scenarioId, orgId: "org-1", userId: "user-1" }),
+    );
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.warnings.join(" ")).toContain("folded into the reviewed living-expense total");
   });
 });

@@ -170,3 +170,31 @@ describe("runAssemble planBasics", () => {
     expect(persistedPayload().planBasics).toBeUndefined();
   });
 });
+
+describe("runAssemble goals", () => {
+  beforeEach(() => { setSpy.mockClear(); whereSpy.mockClear(); recordAudit.mockClear(); });
+
+  it("seeds goals onto the payload when the import contains a 529", async () => {
+    await runAssemble({
+      importId: "imp10", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {
+        f1: er("stmt.pdf", {
+          accounts: [{ name: "Emma 529 Plan", subType: "529", category: "education_savings", value: 40000 }],
+          family: { dependents: [{ firstName: "Emma", dateOfBirth: "2010-06-04" }] },
+        }),
+      },
+      hasSpouse: false,
+    });
+
+    const persisted = setSpy.mock.calls[0][0] as {
+      payloadJson: {
+        payload: {
+          goals?: { education: Array<{ annualAmount: { value: number | null } }>; homePurchases: unknown[] };
+        };
+      };
+    };
+    expect(persisted.payloadJson.payload.goals?.education).toHaveLength(1);
+    expect(persisted.payloadJson.payload.goals?.education[0].annualAmount.value).toBeNull();
+    expect(persisted.payloadJson.payload.goals?.homePurchases).toEqual([]);
+  });
+});
