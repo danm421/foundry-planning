@@ -13,6 +13,7 @@ import {
 } from "@/lib/cma-seed";
 import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
 import { seedCmaSetsForFirm } from "@/lib/cma-sets";
+import { tagSeedPortfolioRiskLevels } from "@/lib/cma/tag-seed-risk-levels";
 
 export type SeedResult = {
   assetClasses: number; // total rows for firm after seed
@@ -98,6 +99,10 @@ export async function seedCmaForFirm(firmId: string): Promise<SeedResult> {
         target: [modelPortfolios.firmId, modelPortfolios.name],
       });
   }
+
+  // Tag the just-seeded portfolios by name (post-insert, so it never collides
+  // with the (firm_id, name) onConflict target above).
+  await tagSeedPortfolioRiskLevels(db, firmId);
 
   const allPortfolios = await db
     .select()
