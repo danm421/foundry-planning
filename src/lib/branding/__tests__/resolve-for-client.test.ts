@@ -170,6 +170,52 @@ describe("resolveIntakeBrandingForClient", () => {
 
     expect(res?.firmName).toBe("Live Renamed Firm");
   });
+
+  it("treats blank advisor override strings as unset, falling through per field like null does", async () => {
+    mocks.getBranding.mockResolvedValue(FIRM);
+    mocks.getAdvisorProfile.mockResolvedValue(
+      advisorRow({ brandingEnabled: true, brandName: "", logoUrl: "", faviconUrl: "" }),
+    );
+
+    const res = await resolveIntakeBrandingForClient("org_a", "adv_a");
+
+    expect(res).toEqual({
+      logoUrl: FIRM.logoUrl,
+      firmName: FIRM.displayName,
+      faviconUrl: FIRM.faviconUrl,
+    });
+  });
+
+  it("does not suppress the firm's logo when the advisor logoUrl is a blank string", async () => {
+    mocks.getBranding.mockResolvedValue(FIRM);
+    mocks.getAdvisorProfile.mockResolvedValue(
+      advisorRow({ brandingEnabled: true, logoUrl: "" }),
+    );
+
+    const res = await resolveIntakeBrandingForClient("org_a", "adv_a");
+
+    expect(res?.logoUrl).toBe(FIRM.logoUrl);
+  });
+
+  it("uses the advisor's own branding when the firm has no branding row at all", async () => {
+    mocks.getBranding.mockResolvedValue(null);
+    mocks.getAdvisorProfile.mockResolvedValue(
+      advisorRow({
+        brandingEnabled: true,
+        logoUrl: "https://cdn.example/adv.png",
+        brandName: "Summit Advisory",
+        faviconUrl: "https://cdn.example/adv-fav.png",
+      }),
+    );
+
+    const res = await resolveIntakeBrandingForClient("org_a", "adv_a");
+
+    expect(res).toEqual({
+      logoUrl: "https://cdn.example/adv.png",
+      firmName: "Summit Advisory",
+      faviconUrl: "https://cdn.example/adv-fav.png",
+    });
+  });
 });
 
 describe("resolveBrandingForClient", () => {
@@ -252,5 +298,20 @@ describe("resolveBrandingForClient", () => {
     const res = await resolveBrandingForClient("org_a", "adv_a");
 
     expect(res.firmName).toBe("Live Renamed Firm");
+  });
+
+  it("treats blank advisor override strings as unset, falling through per field like null does", async () => {
+    mocks.getBranding.mockResolvedValue(FIRM);
+    mocks.getAdvisorProfile.mockResolvedValue(
+      advisorRow({ brandingEnabled: true, brandName: "", primaryColor: "", logoUrl: "" }),
+    );
+    mockLogoFetch();
+
+    const res = await resolveBrandingForClient("org_a", "adv_a");
+
+    expect(res.firmName).toBe(FIRM.displayName);
+    expect(res.primaryColor).toBe(FIRM.primaryColor);
+    // Firm's own logo, loaded via the base resolution.
+    expect(res.logoDataUrl).toMatch(/^data:image\/png;base64,/);
   });
 });
