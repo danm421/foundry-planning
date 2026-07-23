@@ -48,6 +48,37 @@ export async function upsertConnection(input: {
     });
 }
 
+/** Stores BYOK credentials (Addepar): the encoded secret blob is encrypted into
+ * `accessTokenEnc`; the encoded config blob (apiBase/addeparFirmId) is stored
+ * plaintext in `scope`, mirroring how OAuth providers stash their token scope. */
+export async function upsertByokConnection(input: {
+  firmId: string;
+  providerId: ProviderId;
+  secretBlob: string;   // JSON {apiKey, apiSecret}
+  configBlob: string;   // JSON {apiBase, addeparFirmId}
+  userId: string;
+}): Promise<void> {
+  const values = {
+    firmId: input.firmId,
+    provider: input.providerId,
+    accessTokenEnc: encryptSecret(input.secretBlob),
+    refreshTokenEnc: null,
+    tokenExpiresAt: null,
+    scope: input.configBlob,
+    status: "connected" as const,
+    lastSyncError: null,
+    connectedByUserId: input.userId,
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(integrationConnections)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [integrationConnections.firmId, integrationConnections.provider],
+      set: values,
+    });
+}
+
 export async function getConnection(
   firmId: string,
   providerId: ProviderId,

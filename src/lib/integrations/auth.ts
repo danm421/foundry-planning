@@ -1,6 +1,7 @@
 // src/lib/integrations/auth.ts
 import { getConnection, setConnectionStatus, upsertConnection } from "./connections";
 import { ReconnectRequired } from "./errors";
+import { decodeAddeparConfig } from "./providers/addepar/credentials";
 import { getProvider } from "./registry";
 import type { ProviderCallContext, ProviderId, TokenResponse } from "./types";
 
@@ -28,9 +29,16 @@ export async function getValidAccessToken(
 
   if (!conn.refreshToken) throw new ReconnectRequired(firmId, providerId);
   try {
-    const t = refresher
-      ? await refresher(providerId, conn.refreshToken)
-      : await getProvider(providerId).oauth.refreshTokens(conn.refreshToken);
+    const provider = getProvider(providerId);
+    let t: TokenResponse;
+    if (refresher) {
+      t = await refresher(providerId, conn.refreshToken);
+    } else {
+      // Task 4 adds the BYOK branch that returns before this point; a
+      // non-oauth provider reaching here is a bug, not a runtime state.
+      if (!provider.oauth) throw new Error("oauth refresh called for non-oauth provider");
+      t = await provider.oauth.refreshTokens(conn.refreshToken);
+    }
     await upsertConnection({
       firmId,
       providerId,
@@ -49,11 +57,26 @@ export async function getValidAccessToken(
 }
 
 /** Builds the context every provider client read takes. */
-export function makeCallContext(
+export async function makeCallContext(
   firmId: string,
   providerId: ProviderId,
   overrides?: { fetchImpl?: typeof fetch; baseUrl?: string },
-): ProviderCallContext {
+): Promise<ProviderCallContext> {
+  const provider = getProvider(providerId);
+  if (provider.authKind === "byok") {
+    const conn = await getConnection(firmId, providerId);
+    if (!conn || !conn.accessToken) throw new ReconnectRequired(firmId, providerId);
+    const token = conn.accessToken; // narrowed to string by the guard above
+    const config = decodeAddeparConfig(conn.scope);
+    return {
+      firmId,
+      providerId,
+      baseUrl: config.apiBase,
+      config,
+      getToken: async () => token, // static; ignores forceRefresh
+      fetchImpl: overrides?.fetchImpl,
+    };
+  }
   return {
     firmId,
     providerId,

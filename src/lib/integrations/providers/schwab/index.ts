@@ -10,7 +10,9 @@ export const schwabProvider: ProviderDefinition = {
   label: "Schwab Advisor Services",
   scope: "firm",
   isEnabled: isSchwabEnabled,
+  authKind: "oauth",
   oauth: schwabOAuth,
   client: schwabClient,
   registrationTable: SCHWAB_REGISTRATIONS,
+  autoCommitExact: true,
 };

@@ -198,7 +198,7 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "education",
 ]);
 
-export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid", "schwab"]);
+export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy", "orion", "plaid", "schwab", "addepar"]);
 
 export const holdingSourceEnum = pgEnum("holding_source", ["manual", "plaid"]);
 
@@ -242,9 +242,9 @@ export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
   "contains",
 ]);
 
-export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion", "schwab"]);
+export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion", "schwab", "addepar"]);
 
-export const integrationProviderEnum = pgEnum("integration_provider", ["orion", "schwab"]);
+export const integrationProviderEnum = pgEnum("integration_provider", ["orion", "schwab", "addepar"]);
 
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", [
   "connected",

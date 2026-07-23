@@ -1,5 +1,5 @@
 {
-  "id": "8ac45bdb-2ba3-4c31-9204-d73931de0a24",
+  "id": "390f1096-74cc-46aa-a936-0cc1e3f2a058",
   "prevId": "97f85541-c59e-4ef3-80a4-3a1721a2dad4",
   "version": "7",
   "dialect": "postgresql",
@@ -3933,13 +3933,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'single'"
-        },
-        "risk_tolerance": {
-          "name": "risk_tolerance",
-          "type": "risk_level",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
         },
         "is_private": {
           "name": "is_private",
@@ -11635,39 +11628,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "risk_level": {
-          "name": "risk_level",
-          "type": "risk_level",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {
-        "model_portfolios_firm_risk_level_uniq": {
-          "name": "model_portfolios_firm_risk_level_uniq",
-          "columns": [
-            {
-              "expression": "firm_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "risk_level",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "risk_level is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -20097,7 +20060,8 @@
       "values": [
         "extraction",
         "orion",
-        "schwab"
+        "schwab",
+        "addepar"
       ]
     },
     "public.import_status": {
@@ -20187,7 +20151,8 @@
       "schema": "public",
       "values": [
         "orion",
-        "schwab"
+        "schwab",
+        "addepar"
       ]
     },
     "public.integration_sync_trigger": {
@@ -20374,17 +20339,6 @@
         "custom"
       ]
     },
-    "public.risk_level": {
-      "name": "risk_level",
-      "schema": "public",
-      "values": [
-        "conservative",
-        "moderately_conservative",
-        "moderate",
-        "moderately_aggressive",
-        "aggressive"
-      ]
-    },
     "public.roth_conversion_type": {
       "name": "roth_conversion_type",
       "schema": "public",
@@ -20429,7 +20383,8 @@
         "policy",
         "orion",
         "plaid",
-        "schwab"
+        "schwab",
+        "addepar"
       ]
     },
     "public.subscription_item_kind": {

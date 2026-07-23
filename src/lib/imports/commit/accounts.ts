@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 
-import { accountOwners, accounts, lifeInsurancePolicies } from "@/db/schema";
+import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
 import type { AccountCategory, AccountSubType } from "@/lib/extraction/types";
 import {
@@ -14,6 +14,19 @@ import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
+
+type SourceValue = (typeof sourceEnum.enumValues)[number];
+const EXTERNAL_SOURCES = new Set<SourceValue>(["orion", "schwab", "addepar", "plaid"]);
+export function externalProviderToSource(
+  externalProvider: string | null | undefined,
+): SourceValue {
+  if (
+    externalProvider &&
+    EXTERNAL_SOURCES.has(externalProvider as SourceValue)
+  )
+    return externalProvider as SourceValue;
+  return "extracted";
+}
 
 const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "variable"> = {
   term: "term",
@@ -102,7 +115,7 @@ export async function commitAccounts(
           rmdEnabled: row.rmdEnabled ?? isRmdEligibleSubType(subType),
           deriveFromHoldings: guard.deriveFromHoldings,
           notes: guard.note,
-          source: row.externalProvider ? "orion" : "extracted",
+          source: externalProviderToSource(row.externalProvider),
           externalProvider: row.externalProvider ?? null,
           externalId: row.externalId ?? null,
           lastSyncedAt: row.externalProvider ? now : null,
@@ -173,7 +186,7 @@ export async function commitAccounts(
       }
     }
     if (row.externalProvider) {
-      updates.source = "orion";
+      updates.source = externalProviderToSource(row.externalProvider);
       updates.externalProvider = row.externalProvider;
       updates.externalId = row.externalId ?? null;
       updates.lastSyncedAt = now;
