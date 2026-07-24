@@ -72,13 +72,13 @@ export async function POST(req: Request): Promise<Response> {
     let access: "own" | "shared" = "own";
     // Captured for the blank branch's advisor-brand resolution below — the
     // client's advisor, not the sender, is who a brand resolves by.
-    let clientRow: typeof clients.$inferSelect | undefined;
+    let accessedClient: typeof clients.$inferSelect | undefined;
 
     if (clientIdStr) {
       const acc = await requireClientEditAccess(clientIdStr);
       firmId = acc.firmId;
       access = acc.access;
-      clientRow = acc.client;
+      accessedClient = acc.client;
     } else {
       firmId = orgId;
     }
@@ -137,7 +137,7 @@ export async function POST(req: Request): Promise<Response> {
 
       // Brand resolves by the CLIENT's advisor, not the sender (matches Tasks
       // 11/12). A blank invite carrying no clientId falls back to the sender.
-      const advisorUserId = clientRow?.advisorId ?? userId;
+      const advisorUserId = accessedClient?.advisorId ?? userId;
       const advisorProfile = await getAdvisorProfile(firmId, advisorUserId);
 
       // Per-field fall-through, brand wins: a blank/unset brand field must

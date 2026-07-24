@@ -97,7 +97,7 @@ it("blank send threads per-advisor settings + advisor email into the email", asy
   expect(vi.mocked(sendIntakeFormEmail)).toHaveBeenCalledTimes(1);
   expect(vi.mocked(sendIntakeFormEmail).mock.calls[0][0]).toMatchObject({
     to: "sam@client.com",
-    link: expect.stringContaining("/intake/tok123"),
+    link: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com"}/intake/tok123`,
     fromName: "Acme Personal Desk",
     subject: "Let's begin",
     introBody: "Hi {{clientName}}",
@@ -121,6 +121,19 @@ it("case 1: brandingEnabled + emailFromName/emailReplyTo set -> advisor brand wi
   const payload = vi.mocked(sendIntakeFormEmail).mock.calls[0][0];
   expect(payload.fromName).toBe("Jane Smith CFP");
   expect(payload.replyTo).toBe("jane@smithwealth.com");
+});
+
+it('case 1b: brandingEnabled + emailReplyTo blank ("  ") falls through to no replyTo, fromName still wins', async () => {
+  vi.mocked(getAdvisorProfile).mockResolvedValue(
+    advisorRow({ brandingEnabled: true, emailFromName: "Jane Smith CFP", emailReplyTo: "  " }),
+  );
+
+  const res = await POST(postReq());
+
+  expect(res.status).toBe(200);
+  const payload = vi.mocked(sendIntakeFormEmail).mock.calls[0][0];
+  expect(payload.fromName).toBe("Jane Smith CFP");
+  expect(payload.replyTo).toBeUndefined();
 });
 
 it('case 2: brandingEnabled + emailFromName blank ("") falls through to intake_email_settings.fromName', async () => {
@@ -193,7 +206,7 @@ it("case 5: blank invite WITH a clientId resolves brand by the CLIENT's advisor,
     firmId: "firm_1",
     access: "own",
     client: { advisorId: "adv_2" },
-  } as never);
+  } as unknown as Awaited<ReturnType<typeof requireClientEditAccess>>);
 
   const res = await POST(postReq({ clientId: "client_1" }));
 
@@ -203,4 +216,17 @@ it("case 5: blank invite WITH a clientId resolves brand by the CLIENT's advisor,
   const payload = vi.mocked(sendIntakeFormEmail).mock.calls[0][0];
   expect(payload.fromName).toBe("Jane Smith CFP");
   expect(payload.replyTo).toBe("jane@smithwealth.com");
+});
+
+it("case 6: blank invite WITH a clientId whose row has advisorId null falls back to the sender's id", async () => {
+  vi.mocked(requireClientEditAccess).mockResolvedValue({
+    firmId: "firm_1",
+    access: "own",
+    client: { advisorId: null },
+  } as unknown as Awaited<ReturnType<typeof requireClientEditAccess>>);
+
+  const res = await POST(postReq({ clientId: "client_1" }));
+
+  expect(res.status).toBe(200);
+  expect(vi.mocked(getAdvisorProfile)).toHaveBeenCalledWith("firm_1", "user_1");
 });
