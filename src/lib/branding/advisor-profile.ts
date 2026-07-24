@@ -30,6 +30,24 @@ export const getAdvisorProfile = cache(
   },
 );
 
+/**
+ * Every advisor profile in one firm, in a single firm-scoped query. The
+ * admin grant list joins this with `listFirmMembers` rather than calling
+ * `getAdvisorProfile` per member (N+1).
+ *
+ * Advisors with no row yet are simply absent — the row is created lazily by
+ * the first upsert, so callers must render a missing advisor as "off" rather
+ * than omitting them.
+ */
+export async function listAdvisorProfiles(
+  firmId: string,
+): Promise<AdvisorProfileRow[]> {
+  return db
+    .select()
+    .from(advisorProfiles)
+    .where(eq(advisorProfiles.firmId, firmId));
+}
+
 export async function upsertAdvisorProfile(
   firmId: string,
   advisorUserId: string,

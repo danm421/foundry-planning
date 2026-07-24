@@ -297,6 +297,112 @@ describe("PUT /api/advisor-branding", () => {
   });
 });
 
+// ── logoUrl / faviconUrl host lock (Task 15a Step 3) ───────────────────────
+//
+// These two columns feed `loadLogo()`, which does a bare server-side
+// fetch(url) with no allowlist, and `resolveIntakeBrandingForClient`, which
+// hands the raw URL to the client portal (where `img-src` allows only
+// *.public.blob.vercel-storage.com). Free-text URLs there are an
+// authenticated SSRF with an image response channel plus a CSP violation
+// waiting for the header to go enforcing. `website` is deliberately NOT
+// locked — it is a real external site.
+describe("PUT /api/advisor-branding — asset URL host lock", () => {
+  const BLOB = "https://abc123xyz.public.blob.vercel-storage.com/firms/f1/advisors/a1/branding/logo-Rk3.png";
+
+  beforeEach(() => {
+    getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
+  });
+
+  it("accepts a URL on our public blob host and stores it verbatim", async () => {
+    const res = await PUT(putReq({ logoUrl: BLOB }));
+
+    expect(res.status).toBe(200);
+    expect(upsertAdvisorProfileMock).toHaveBeenCalledWith(
+      "firm-1",
+      "member-1",
+      expect.objectContaining({ logoUrl: BLOB }),
+      "member-1",
+    );
+  });
+
+  it("rejects a logoUrl on a foreign host -> 400, never upserts", async () => {
+    // The SSRF case: a well-formed https URL that is not ours.
+    const res = await PUT(putReq({ logoUrl: "https://evil.example.com/logo.png" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a logoUrl pointing at an internal address -> 400, never upserts", async () => {
+    const res = await PUT(putReq({ logoUrl: "http://169.254.169.254/latest/meta-data/" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a faviconUrl on a foreign host -> 400, never upserts", async () => {
+    // Proves the lock is on BOTH columns, not just the one that was tested.
+    const res = await PUT(putReq({ faviconUrl: "https://evil.example.com/fav.png" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a host that merely ENDS WITH our domain as a suffix -> 400", async () => {
+    // `evilpublic.blob.vercel-storage.com` passes an unanchored
+    // `endsWith`/`includes` check and is attacker-registrable.
+    const res = await PUT(
+      putReq({ logoUrl: "https://evilpublic.blob.vercel-storage.com/logo.png" }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a host that merely CONTAINS our domain as a prefix -> 400", async () => {
+    // `...vercel-storage.com.evil.io` passes a naive `includes` check.
+    const res = await PUT(
+      putReq({ logoUrl: "https://public.blob.vercel-storage.com.evil.io/logo.png" }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects our domain smuggled into the userinfo section -> 400", async () => {
+    // https://<userinfo>@evil.io/ — the real host is evil.io. Only a real
+    // URL parse (not a substring test) gets this right.
+    const res = await PUT(
+      putReq({ logoUrl: "https://abc.public.blob.vercel-storage.com@evil.io/logo.png" }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("still accepts explicit null on logoUrl (the clear path stays open)", async () => {
+    const res = await PUT(putReq({ logoUrl: null }));
+
+    expect(res.status).toBe(200);
+    const fields = upsertAdvisorProfileMock.mock.calls[0][2] as Record<string, unknown>;
+    expect(fields.logoUrl).toBeNull();
+  });
+
+  it("still accepts an ordinary external URL for `website` (the lock is not over-broad)", async () => {
+    // Guards the opposite failure: a lock applied to every URL field would
+    // break the advisor's real website and pass every test above.
+    const res = await PUT(putReq({ website: "https://advisor-firm.example.com/about" }));
+
+    expect(res.status).toBe(200);
+    expect(upsertAdvisorProfileMock).toHaveBeenCalledWith(
+      "firm-1",
+      "member-1",
+      expect.objectContaining({ website: "https://advisor-firm.example.com/about" }),
+      "member-1",
+    );
+  });
+});
+
 // ── GET /api/advisor-branding ───────────────────────────────────────────────
 describe("GET /api/advisor-branding", () => {
   it("GET own profile -> 200, resolves via own userId, never consults the admin gate", async () => {

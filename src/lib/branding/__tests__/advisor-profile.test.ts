@@ -2,9 +2,15 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { db } from "@/db";
 import { advisorProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getAdvisorProfile, upsertAdvisorProfile, setAdvisorBrandingEnabled } from "../advisor-profile";
+import {
+  getAdvisorProfile,
+  upsertAdvisorProfile,
+  setAdvisorBrandingEnabled,
+  listAdvisorProfiles,
+} from "../advisor-profile";
 
 const FIRM = "org_advprof_test";
+const OTHER_FIRM = "org_advprof_test_other";
 
 describe("advisor-profile", () => {
   beforeEach(async () => {
@@ -42,5 +48,52 @@ describe("advisor-profile", () => {
     expect(rowsAfter.length).toBe(1);
     expect(rowsAfter[0].brandName).toBe("X");
     expect(rowsAfter[0].brandingEnabled).toBe(false);
+  });
+});
+
+// Task 15c renders the per-advisor grant list from this + listFirmMembers,
+// which is why it must be ONE firm-scoped query and not an N+1 of
+// getAdvisorProfile. This suite runs against the real database, so unlike the
+// purge-firm harness it genuinely exercises the WHERE clause.
+describe("listAdvisorProfiles", () => {
+  beforeEach(async () => {
+    await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, FIRM));
+    await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, OTHER_FIRM));
+  });
+
+  it("returns an empty list for a firm with no profiles", async () => {
+    expect(await listAdvisorProfiles(FIRM)).toEqual([]);
+  });
+
+  it("returns every profile in the firm", async () => {
+    await upsertAdvisorProfile(FIRM, "adv_a", { brandName: "Summit" }, "adv_a");
+    await upsertAdvisorProfile(FIRM, "adv_b", { brandName: "Ridge" }, "adv_b");
+
+    const rows = await listAdvisorProfiles(FIRM);
+
+    expect(rows.map((r) => r.advisorUserId).sort()).toEqual(["adv_a", "adv_b"]);
+  });
+
+  it("does NOT leak another firm's profiles", async () => {
+    // The load-bearing case: an unscoped `select().from(advisorProfiles)`
+    // passes every other assertion in this file.
+    await upsertAdvisorProfile(FIRM, "adv_a", { brandName: "Summit" }, "adv_a");
+    await upsertAdvisorProfile(OTHER_FIRM, "adv_x", { brandName: "Rival" }, "adv_x");
+
+    const rows = await listAdvisorProfiles(FIRM);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].advisorUserId).toBe("adv_a");
+    expect(rows.every((r) => r.firmId === FIRM)).toBe(true);
+  });
+
+  it("carries the grant flag and brand fields the admin list renders", async () => {
+    await upsertAdvisorProfile(FIRM, "adv_a", { brandName: "Summit" }, "adv_a");
+    await setAdvisorBrandingEnabled(FIRM, "adv_a", true, "u_admin");
+
+    const [row] = await listAdvisorProfiles(FIRM);
+
+    expect(row.brandingEnabled).toBe(true);
+    expect(row.brandName).toBe("Summit");
   });
 });

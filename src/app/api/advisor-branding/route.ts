@@ -7,6 +7,7 @@ import {
   upsertAdvisorProfile,
   type BrandFields,
 } from "@/lib/branding/advisor-profile";
+import { assertCanEditAdvisorBranding } from "@/lib/branding/advisor-authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -39,11 +40,46 @@ function httpUrlField(max: number) {
   );
 }
 
+// `logoUrl`/`faviconUrl` are NOT free-text URLs — they may only ever name an
+// asset we uploaded ourselves. Two sinks assume it:
+//   - `branding.ts loadLogo()` does a bare server-side fetch(url) with no
+//     allowlist on every PDF export. A free-text value there is an
+//     authenticated blind SSRF with an image response channel.
+//   - `resolveIntakeBrandingForClient` hands the raw URL to the client
+//     portal, whose `img-src` allows only *.public.blob.vercel-storage.com —
+//     an external host renders today only because CSP is report-only.
+// The scheme restriction above says nothing about the HOST, so lock the host
+// here, at the source. `website` deliberately keeps `httpUrlField`: it is a
+// real external site and must stay general.
+// Anchored on both ends: `(^|\.)` stops `evilpublic.blob.…` and the trailing
+// `$` stops `public.blob.….com.evil.io`. Matching on `new URL().hostname`
+// (not the raw string) is what defeats the `https://ours@evil.io/` userinfo
+// trick. Uploads always land on a `<storeId>.` subdomain; the bare apex is
+// accepted too since it is still our host.
+const BLOB_HOST_RE = /(^|\.)public\.blob\.vercel-storage\.com$/;
+function blobAssetUrlField(max: number) {
+  return z.preprocess(
+    trimToNull,
+    z
+      .string()
+      .url({ protocol: HTTP_PROTOCOL })
+      .max(max)
+      .refine((v) => {
+        try {
+          return BLOB_HOST_RE.test(new URL(v).hostname);
+        } catch {
+          return false;
+        }
+      }, "Must be an asset uploaded through Foundry")
+      .nullish(),
+  );
+}
+
 const brandFieldsSchema = z
   .object({
     brandName: z.preprocess(emptyToNull, z.string().max(120).nullish()),
-    logoUrl: httpUrlField(2048),
-    faviconUrl: httpUrlField(2048),
+    logoUrl: blobAssetUrlField(2048),
+    faviconUrl: blobAssetUrlField(2048),
     primaryColor: z.preprocess(
       emptyToNull,
       z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
@@ -90,17 +126,8 @@ export async function PUT(req: Request): Promise<Response> {
   try {
     const { orgId, userId } = await requireOrgAndUser();
     const target = resolveTarget(req, userId);
-    const isSelf = target === userId;
 
-    if (isSelf) {
-      const own = await getAdvisorProfile(orgId, userId);
-      if (!own?.brandingEnabled) {
-        // Self-grant isn't on — only a firm admin may still write it.
-        await requireOrgAdminOrOwner();
-      }
-    } else {
-      await requireOrgAdminOrOwner();
-    }
+    await assertCanEditAdvisorBranding(orgId, userId, target);
 
     const body = await req.json().catch(() => ({}));
     const parsed = brandFieldsSchema.safeParse(body);
