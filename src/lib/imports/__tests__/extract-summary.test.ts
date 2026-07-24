@@ -3,7 +3,7 @@ import { summarizeExtraction } from "../extract-summary";
 import type { ExtractionResult } from "@/lib/extraction/types";
 
 function emptyExtracted(): ExtractionResult["extracted"] {
-  return { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [] };
+  return { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [], goals: [] };
 }
 function result(over: Partial<ExtractionResult>): ExtractionResult {
   return { documentType: "account_statement", fileName: "f.pdf", extracted: emptyExtracted(), warnings: [], promptVersion: "x", ...over };

@@ -11,6 +11,8 @@ function emptyExtracted(): ExtractionResult["extracted"] {
     entities: [],
     lifePolicies: [],
     wills: [],
+    savings: [],
+    goals: [],
   };
 }
 
