@@ -34,9 +34,21 @@ describe("applyIncomeTimingDefaults", () => {
     );
     expect(payload.incomes[0].endYearRef).toBe("spouse_retirement");
     expect(payload.incomes[0].endYear).toBeUndefined();
+    expect(payload.incomes[0].startYearRef).toBe("plan_start");
     expect(normalized).toHaveLength(1);
     expect(normalized[0].statedRef).toBe("spouse_end");
     expect(normalized[0].reason).toContain("data-entry error");
+  });
+
+  it("still backfills a blank start ref on a row normalized by rule 2", () => {
+    const { payload, normalized } = applyIncomeTimingDefaults(
+      payloadWithIncomes([
+        { name: "Zach's Salary", type: "salary", owner: "client", endYearRef: "client_end", match: { kind: "new" } },
+      ]),
+    );
+    expect(payload.incomes[0].startYearRef).toBe("plan_start");
+    expect(payload.incomes[0].endYearRef).toBe("client_retirement");
+    expect(normalized).toHaveLength(1);
   });
 
   it("leaves a plausible earning-stop ref alone", () => {

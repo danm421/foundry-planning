@@ -1,4 +1,4 @@
-import { defaultIncomeRefs, type YearRef } from "@/lib/milestones";
+import { defaultIncomeRefs, YEAR_REF_LABELS, type YearRef } from "@/lib/milestones";
 import type { ImportPayload } from "../types";
 
 /** One rewrite of a document-stated timing ref, for the advisor-facing chip. */
@@ -50,6 +50,7 @@ export function applyIncomeTimingDefaults(payload: ImportPayload): {
     const defaults = defaultIncomeRefs(type, owner);
 
     // Rule 2: an implausible earning stop on earned income.
+    let current = row;
     if (
       row.endYearRef &&
       EARNED_TYPES.has(type) &&
@@ -63,17 +64,19 @@ export function applyIncomeTimingDefaults(payload: ImportPayload): {
         appliedRef: defaults.endYearRef,
         reason:
           `Ends at ${who}'s retirement. The document ended this earned income at ` +
-          `${row.endYearRef.replace(/_/g, " ")}, which appears to be a data-entry error.`,
+          `${YEAR_REF_LABELS[row.endYearRef]}, which appears to be a data-entry error.`,
       });
       // Drop the concrete year too: it was resolved from the wrong anchor and
       // would otherwise win over the ref in resolveImportTiming.
       const { endYear: _dropped, ...rest } = row;
-      return { ...rest, endYearRef: defaults.endYearRef };
+      current = { ...rest, endYearRef: defaults.endYearRef };
     }
 
     // Rule 1: fill in what extraction left blank. An explicit year with no ref
-    // is a deliberate manual date - leave it alone.
-    const next = { ...row };
+    // is a deliberate manual date - leave it alone. Runs even when Rule 2 fired
+    // above, so a row rewritten by Rule 2 still gets a blank start ref filled;
+    // it no-ops on endYearRef since Rule 2 already set one.
+    const next = { ...current };
     if (next.startYearRef === undefined && next.startYear === undefined) {
       next.startYearRef = defaults.startYearRef ?? undefined;
     }
@@ -83,5 +86,5 @@ export function applyIncomeTimingDefaults(payload: ImportPayload): {
     return next;
   });
 
-  return { payload: { ...payload, incomes }, normalized };
+  return { payload: { ...payload, incomes, warnings: [...payload.warnings] }, normalized };
 }
