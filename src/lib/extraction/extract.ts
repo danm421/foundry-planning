@@ -68,6 +68,8 @@ function emptyExtracted(): ExtractionResult["extracted"] {
         entities: [],
         lifePolicies: [],
         wills: [],
+        savings: [],
+        goals: [],
     };
 }
 
@@ -108,8 +110,21 @@ function flattenMultiPass(
     merge("expenses", result.sections.expenses);
     merge("liabilities", result.sections.liabilities);
     merge("entities", result.sections.entities);
+    merge("savings", result.sections.savings);
+    merge("goals", result.sections.goals);
     merge("lifePolicies", result.sections.insurance);
     merge("wills", result.sections.wills);
+
+    // assumptions is object-shaped (like family): the section returns one row
+    // that IS the payload, so lift it rather than pushing it into a list.
+    const assumptionRows = result.sections.assumptions;
+    if (assumptionRows.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { __provenance: _drop, ...rest } = assumptionRows[0];
+        if (Object.keys(rest).length > 0) {
+            out.assumptions = rest as ExtractionResult["extracted"]["assumptions"];
+        }
+    }
 
     const familyRows = result.sections.family;
     if (familyRows.length > 0) {
@@ -418,6 +433,9 @@ export async function extractDocument(
         lifePolicies: (Array.isArray(safe.lifePolicies) ? safe.lifePolicies : []) as unknown as ExtractionResult["extracted"]["lifePolicies"],
         wills: (Array.isArray(safe.wills) ? safe.wills : []) as unknown as ExtractionResult["extracted"]["wills"],
         family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
+        savings: (Array.isArray(safe.savings) ? safe.savings : []) as unknown as ExtractionResult["extracted"]["savings"],
+        goals: (Array.isArray(safe.goals) ? safe.goals : []) as unknown as ExtractionResult["extracted"]["goals"],
+        assumptions: (safe.assumptions ?? undefined) as ExtractionResult["extracted"]["assumptions"],
     };
 
     // Complete any holdings table the model truncated. Only fires per-account
@@ -436,6 +454,8 @@ export async function extractDocument(
         extracted.entities.length === 0 &&
         extracted.lifePolicies.length === 0 &&
         extracted.wills.length === 0 &&
+        extracted.savings.length === 0 &&
+        extracted.goals.length === 0 &&
         !extracted.family
     ) {
         warnings.push("No data could be extracted from this document. Try a different document type or the Detailed model.");

@@ -4,7 +4,8 @@ vi.mock("../azure-client", () => ({
     callAIExtraction: vi.fn(),
 }));
 
-import { classifyFactFinder } from "../section-classifier";
+import { classifyFactFinder, ENTITY_SECTIONS } from "../section-classifier";
+import { extractedPayloadSchema } from "../extraction-schema";
 import { callAIExtraction } from "../azure-client";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
@@ -97,4 +98,33 @@ describe("classifyFactFinder", () => {
         const result = await classifyFactFinder("outline", "anchors");
         expect(result).toBeNull();
     });
+});
+
+describe("new planning sections", () => {
+  it("registers savings, goals and assumptions", () => {
+    expect(ENTITY_SECTIONS).toContain("savings");
+    expect(ENTITY_SECTIONS).toContain("goals");
+    expect(ENTITY_SECTIONS).toContain("assumptions");
+  });
+
+  it("accepts the new root keys on the payload schema", () => {
+    const parsed = extractedPayloadSchema.safeParse({
+      savings: [{ name: "401k", destinationAccountName: "Zach 401(k)" }],
+      goals: [{ kind: "education", name: "Education for Ella" }],
+      assumptions: { inflationRate: 0.03 },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still rejects an unknown root key", () => {
+    const parsed = extractedPayloadSchema.safeParse({ mystery: [] });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("caps oversize savings arrays", () => {
+    const parsed = extractedPayloadSchema.safeParse({
+      savings: Array.from({ length: 201 }, () => ({})),
+    });
+    expect(parsed.success).toBe(false);
+  });
 });
