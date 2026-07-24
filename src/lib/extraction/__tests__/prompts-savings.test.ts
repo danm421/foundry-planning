@@ -20,4 +20,23 @@ describe("SAVINGS_PROMPT", () => {
   it("forbids guessing", () => {
     expect(SAVINGS_PROMPT).toContain("do not guess");
   });
+
+  it("forbids merging employee and employer rows for the same destination", () => {
+    expect(SAVINGS_PROMPT).toMatch(/do not merge/i);
+    expect(SAVINGS_PROMPT).toMatch(/separate.*rows in the document/s);
+  });
+
+  it("distinguishes Roth from Pre-Tax contributions via rothPercent", () => {
+    expect(SAVINGS_PROMPT).toContain("Roth Contribution");
+    expect(SAVINGS_PROMPT).toContain("rothPercent");
+    expect(SAVINGS_PROMPT).toContain("Pre-Tax Contribution");
+    expect(SAVINGS_PROMPT).toContain("omits rothPercent");
+  });
+
+  it("maps milestone language to plan tokens", () => {
+    expect(SAVINGS_PROMPT).toContain("plan_start");
+    expect(SAVINGS_PROMPT).toContain("client_retirement");
+    expect(SAVINGS_PROMPT).toContain("spouse_retirement");
+    expect(SAVINGS_PROMPT).toContain("plan_end");
+  });
 });
