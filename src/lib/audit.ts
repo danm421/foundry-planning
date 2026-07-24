@@ -257,6 +257,9 @@ export type AuditAction =
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
   | "firm.branding_color_changed"
+  // Per-advisor branding (self edit gated by grant, admin override)
+  | "advisor_branding.update"
+  | "advisor_branding.grant"
   // CRM (lightweight household / contact / account records that may or
   // may not be linked to a planning client).
   | "crm.household.create"
