@@ -53,8 +53,9 @@ export async function GET(): Promise<Response> {
       }
     }
 
-    const [branding, intakePending] = await Promise.all([
+    const [branding, legacyBranding, intakePending] = await Promise.all([
       resolveIntakeBrandingForClient(row.firmId, row.advisorId),
+      getBranding(row.firmId),
       hasUnsubmittedPrefilledForm(clientId),
     ]);
 
@@ -66,7 +67,7 @@ export async function GET(): Promise<Response> {
     // showing the generic default for every logo-less firm.
     const name = branding
       ? branding.firmName
-      : await resolveFirmName(row.firmId, (await getBranding(row.firmId))?.displayName ?? null);
+      : await resolveFirmName(row.firmId, legacyBranding?.displayName ?? null);
 
     const dto: PortalMeDTO = {
       client: { id: clientId, displayName, email },

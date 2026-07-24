@@ -66,6 +66,15 @@ beforeEach(() => {
 
 describe("GET /api/portal/me", () => {
   it("returns client identity + advisor-resolved firm branding for a bound client", async () => {
+    // Advisor-distinct values (deliberately different from the beforeEach
+    // legacy-path mocks) so this test can only pass if the DTO is actually
+    // built from the resolver's output — not from the legacy
+    // resolveFirmName/getBranding round-trip.
+    brandingForClientMock.mockResolvedValue({
+      logoUrl: "https://blob/advisor.png",
+      firmName: "Advisor Brand",
+      faviconUrl: null,
+    });
     selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
     selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
     const res = await GET();
@@ -73,12 +82,13 @@ describe("GET /api/portal/me", () => {
     const body = await res.json();
     expect(body).toEqual({
       client: { id: "c1", displayName: "Casey Cooper", email: "casey@example.com" },
-      firm: { name: "Ethos Wealth", logoUrl: "https://blob/logo.png" },
+      firm: { name: "Advisor Brand", logoUrl: "https://blob/advisor.png" },
       mode: "client",
       editEnabled: true,
       intakePending: false,
     });
     expect(brandingForClientMock).toHaveBeenCalledWith("firm-1", "adv-1");
+    expect(firmNameMock).not.toHaveBeenCalled();
   });
 
   it("sets intakePending true when the client has an unsubmitted prefilled form", async () => {
