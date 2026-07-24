@@ -19,18 +19,38 @@ export const dynamic = "force-dynamic";
 const emptyToNull = (v: unknown) =>
   typeof v === "string" && v.trim() === "" ? null : v;
 
+// URL fields get the same "" -> null coercion, plus an explicit trim (a
+// whitespace-only value must still collapse to null, not fail validation)
+// and a scheme restriction to http(s) only. `website` in particular renders
+// as a clickable contact link in the client portal and in client-facing
+// PDFs, and a firm admin may set it on ANOTHER advisor's profile — a
+// javascript:/data:/vbscript: value would execute on click. Legacy
+// `http://` sites are allowed on purpose; only exotic schemes are excluded.
+const HTTP_PROTOCOL = /^https?$/;
+const trimToNull = (v: unknown): unknown => {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  return trimmed === "" ? null : trimmed;
+};
+function httpUrlField(max: number) {
+  return z.preprocess(
+    trimToNull,
+    z.string().url({ protocol: HTTP_PROTOCOL }).max(max).nullish(),
+  );
+}
+
 const brandFieldsSchema = z
   .object({
     brandName: z.preprocess(emptyToNull, z.string().max(120).nullish()),
-    logoUrl: z.preprocess(emptyToNull, z.string().url().max(2048).nullish()),
-    faviconUrl: z.preprocess(emptyToNull, z.string().url().max(2048).nullish()),
+    logoUrl: httpUrlField(2048),
+    faviconUrl: httpUrlField(2048),
     primaryColor: z.preprocess(
       emptyToNull,
       z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
     ),
     contactEmail: z.preprocess(emptyToNull, z.string().email().max(254).nullish()),
     contactPhone: z.preprocess(emptyToNull, z.string().max(40).nullish()),
-    website: z.preprocess(emptyToNull, z.string().url().max(2048).nullish()),
+    website: httpUrlField(2048),
     address: z.preprocess(emptyToNull, z.string().max(500).nullish()),
     emailFromName: z.preprocess(emptyToNull, z.string().max(120).nullish()),
     emailReplyTo: z.preprocess(emptyToNull, z.string().email().max(254).nullish()),
@@ -39,8 +59,8 @@ const brandFieldsSchema = z
 
 /** `?advisorUserId=` resolves the target; absent/blank/self all mean "me". */
 function resolveTarget(req: Request, selfUserId: string): string {
-  const raw = new URL(req.url).searchParams.get("advisorUserId");
-  return raw && raw.trim() !== "" ? raw : selfUserId;
+  const raw = new URL(req.url).searchParams.get("advisorUserId")?.trim();
+  return raw ? raw : selfUserId;
 }
 
 // GET /api/advisor-branding — the caller's own profile, or `?advisorUserId=`
@@ -100,6 +120,9 @@ export async function PUT(req: Request): Promise<Response> {
       resourceType: "advisor_profile",
       resourceId: target,
       firmId: orgId,
+      // Keys only — the values include contact details (email, phone,
+      // address) that don't belong in the audit trail.
+      metadata: { fieldsChanged: Object.keys(parsed.data) },
     });
 
     return NextResponse.json({ profile: row });

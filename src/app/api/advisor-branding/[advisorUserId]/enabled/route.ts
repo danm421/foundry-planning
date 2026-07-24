@@ -34,6 +34,9 @@ export async function PATCH(
       resourceType: "advisor_profile",
       resourceId: advisorUserId,
       firmId: orgId,
+      // Same action name covers both directions of this toggle — without
+      // this, the row can't tell a grant from a revoke.
+      metadata: { enabled: parsed.data.enabled },
     });
 
     return NextResponse.json({ ok: true, advisorUserId, enabled: parsed.data.enabled });

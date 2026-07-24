@@ -114,7 +114,28 @@ describe("PATCH /api/advisor-branding/[advisorUserId]/enabled", () => {
         resourceType: "advisor_profile",
         resourceId: "member-1",
         firmId: "firm-1",
+        metadata: { enabled: true },
       }),
+    );
+  });
+
+  it("admin PATCH revokes a member: 200, setAdvisorBrandingEnabled called with enabled=false, audit metadata says enabled: false", async () => {
+    requireOrgAdminOrOwnerMock.mockResolvedValue(undefined);
+    requireOrgAndUserMock.mockResolvedValue({ orgId: "firm-1", userId: "admin-1" });
+
+    const res = await PATCH(patchReq({ enabled: false }), {
+      params: Promise.resolve({ advisorUserId: "member-1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(setAdvisorBrandingEnabledMock).toHaveBeenCalledWith(
+      "firm-1",
+      "member-1",
+      false,
+      "admin-1",
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { enabled: false } }),
     );
   });
 
@@ -129,11 +150,44 @@ describe("PATCH /api/advisor-branding/[advisorUserId]/enabled", () => {
     expect(setAdvisorBrandingEnabledMock).not.toHaveBeenCalled();
     expect(recordAuditMock).not.toHaveBeenCalled();
   });
+
+  it("PATCH with enabled: \"yes\" (non-boolean) -> 400, never calls setAdvisorBrandingEnabled", async () => {
+    requireOrgAdminOrOwnerMock.mockResolvedValue(undefined);
+
+    const res = await PATCH(patchReq({ enabled: "yes" }), {
+      params: Promise.resolve({ advisorUserId: "member-1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(setAdvisorBrandingEnabledMock).not.toHaveBeenCalled();
+  });
+
+  it("PATCH with an empty body -> 400, never calls setAdvisorBrandingEnabled", async () => {
+    requireOrgAdminOrOwnerMock.mockResolvedValue(undefined);
+
+    const res = await PATCH(patchReq({}), {
+      params: Promise.resolve({ advisorUserId: "member-1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(setAdvisorBrandingEnabledMock).not.toHaveBeenCalled();
+  });
+
+  it("PATCH with an unknown field -> 400 (proves .strict()), never calls setAdvisorBrandingEnabled", async () => {
+    requireOrgAdminOrOwnerMock.mockResolvedValue(undefined);
+
+    const res = await PATCH(patchReq({ enabled: true, notARealField: "bad" }), {
+      params: Promise.resolve({ advisorUserId: "member-1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(setAdvisorBrandingEnabledMock).not.toHaveBeenCalled();
+  });
 });
 
 // ── PUT /api/advisor-branding ──────────────────────────────────────────────
 describe("PUT /api/advisor-branding", () => {
-  it("member PUT on own profile WITH brandingEnabled -> 200, upserts against own id, never consults the admin gate", async () => {
+  it("member PUT on own profile WITH brandingEnabled -> 200, upserts against own id, never consults the admin gate, records audit with fieldsChanged", async () => {
     getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
     requireOrgAdminOrOwnerMock.mockRejectedValue(new ForbiddenError()); // must never fire
 
@@ -146,6 +200,15 @@ describe("PUT /api/advisor-branding", () => {
       "member-1",
       expect.objectContaining({ brandName: "My Brand" }),
       "member-1",
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "advisor_branding.update",
+        resourceType: "advisor_profile",
+        resourceId: "member-1",
+        firmId: "firm-1",
+        metadata: expect.objectContaining({ fieldsChanged: ["brandName"] }),
+      }),
     );
   });
 
@@ -204,6 +267,33 @@ describe("PUT /api/advisor-branding", () => {
     const fieldsArg = upsertAdvisorProfileMock.mock.calls[0][2] as Record<string, unknown>;
     expect(fieldsArg).toHaveProperty("logoUrl");
     expect(fieldsArg.logoUrl).toBeNull();
+  });
+
+  it("PUT with a malformed emailReplyTo -> 400, never upserts", async () => {
+    getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
+
+    const res = await PUT(putReq({ emailReplyTo: "not-an-email" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("PUT with a malformed logoUrl -> 400, never upserts", async () => {
+    getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
+
+    const res = await PUT(putReq({ logoUrl: "not-a-url" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("PUT with website: javascript:alert(1) -> 400, never upserts", async () => {
+    getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
+
+    const res = await PUT(putReq({ website: "javascript:alert(1)" }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 });
 
