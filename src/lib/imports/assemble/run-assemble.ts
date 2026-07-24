@@ -7,6 +7,7 @@ import { runMatchingPass } from "@/lib/imports/match";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
 import { deriveGoals } from "./goals";
+import { applyIncomeTimingDefaults } from "./income-timing";
 import { mergeAcrossFiles } from "./merge-across-files";
 import { derivePlanBasics } from "./plan-basics";
 import { generateQuestions } from "./questions";
@@ -71,10 +72,15 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   const { importId, clientId, firmId, mode, scenarioId, fileResults, known, hasSpouse, taxReturn } = args;
 
   const { payload, mergedFileCount } = mergeAcrossFiles(fileResults);
-  const { assumptions } = fillAssumptions({ payload, mode, known });
+  const { payload: timedPayload, normalized: timingNormalizations } =
+    applyIncomeTimingDefaults(payload);
+  for (const n of timingNormalizations) {
+    timedPayload.warnings.push(`${n.incomeName}: ${n.reason}`);
+  }
+  const { assumptions } = fillAssumptions({ payload: timedPayload, mode, known });
 
   const annotated = await runMatchingPass({
-    payload,
+    payload: timedPayload,
     clientId,
     scenarioId,
     mode: mode === "existing" ? "updating" : "onboarding",
