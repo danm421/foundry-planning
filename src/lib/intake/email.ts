@@ -14,6 +14,7 @@ export async function sendIntakeFormEmail(args: {
   to: string;
   link: string;
   fromName?: string;
+  replyTo?: string;
   subject?: string;
   introBody?: string;
   advisorName?: string;
@@ -21,7 +22,7 @@ export async function sendIntakeFormEmail(args: {
   firmName?: string;
   clientName?: string;
 }): Promise<void> {
-  const { to, link, fromName, subject, introBody, advisorName, advisorEmail, firmName, clientName } = args;
+  const { to, link, fromName, replyTo, subject, introBody, advisorName, advisorEmail, firmName, clientName } = args;
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = buildIntakeFromHeader(fromName, firmName);
@@ -41,6 +42,7 @@ export async function sendIntakeFormEmail(args: {
       to,
       subject: resolveSubject(subject),
       html,
+      replyTo,
     });
   } catch (err) {
     console.error(
