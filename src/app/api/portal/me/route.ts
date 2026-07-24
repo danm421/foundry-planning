@@ -53,9 +53,8 @@ export async function GET(): Promise<Response> {
       }
     }
 
-    const [branding, legacyBranding, intakePending] = await Promise.all([
+    const [branding, intakePending] = await Promise.all([
       resolveIntakeBrandingForClient(row.firmId, row.advisorId),
-      getBranding(row.firmId),
       hasUnsubmittedPrefilledForm(clientId),
     ]);
 
@@ -64,10 +63,15 @@ export async function GET(): Promise<Response> {
     // to fall back to the Foundry lockup. But a firm's real name doesn't
     // depend on having a logo: a firm that has simply never uploaded one
     // still has a real name, so resolve it independently here rather than
-    // showing the generic default for every logo-less firm.
-    const name = branding
-      ? branding.firmName
-      : await resolveFirmName(row.firmId, legacyBranding?.displayName ?? null);
+    // showing the generic default for every logo-less firm. Kept lazy so the
+    // branded path never pays for a getBranding round-trip it won't read.
+    let name: string;
+    if (branding) {
+      name = branding.firmName;
+    } else {
+      const legacyBranding = await getBranding(row.firmId);
+      name = await resolveFirmName(row.firmId, legacyBranding?.displayName ?? null);
+    }
 
     const dto: PortalMeDTO = {
       client: { id: clientId, displayName, email },
