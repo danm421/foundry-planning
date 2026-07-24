@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
+  deleteAdvisorProfiles: vi.fn(),
   updateIntegrationConnection: vi.fn(),
   deleteIntegrationConnection: vi.fn(),
   updateFirm: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock("@/db", async () => {
           if (tbl === s.clientShares) return mocks.deleteClientShares();
           if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
           if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
+          if (tbl === s.advisorProfiles) return mocks.deleteAdvisorProfiles();
           if (tbl === s.integrationConnections) return mocks.deleteIntegrationConnection();
           return undefined;
         },
@@ -303,6 +305,7 @@ describe("purgeFirmById", () => {
       client_shares: mocks.deleteClientShares,
       planning_kb_chunks: mocks.deletePlanningKbChunks,
       forge_conversations: mocks.deleteForgeConversations,
+      advisor_profiles: mocks.deleteAdvisorProfiles,
     };
     // Both directions: the coverage list and the wiring map must be identical.
     expect(new Set(Object.keys(wiring))).toEqual(new Set(PURGED_FIRM_TABLES));

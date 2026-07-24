@@ -33,6 +33,7 @@ import {
   planningKbChunks,
   forgeConversations,
   integrationConnections,
+  advisorProfiles,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -245,6 +246,9 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
   await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
   await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  // Per-advisor branding (Task 14): leaf firm-scoped table, no FK to clients/
+  // crm_households, so nothing cascades it — must be deleted explicitly.
+  await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, firmId));
 
   // 4. Stripe customer (best-effort).
   if (stripeCustomerId) {
