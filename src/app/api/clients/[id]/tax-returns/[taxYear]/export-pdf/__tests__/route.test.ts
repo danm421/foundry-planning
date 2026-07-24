@@ -68,17 +68,6 @@ const brandingMocks = vi.hoisted(() => ({ resolveBrandingForClient: vi.fn() }));
 vi.mock("@/lib/branding/resolve-for-client", () => ({
   resolveBrandingForClient: brandingMocks.resolveBrandingForClient,
 }));
-// Not the interface under test (the route should route through
-// resolveBrandingForClient, not this firm-only resolver) — mocked so that a
-// pre-fix run fails on a value mismatch instead of crashing on the real
-// resolveBranding hitting the stubbed @/db.
-vi.mock("@/lib/branding/branding", () => ({
-  resolveBranding: vi.fn().mockResolvedValue({
-    firmName: "Firm Fallback (should not appear when advisor lookup wins)",
-    primaryColor: "#000000",
-    logoDataUrl: null,
-  }),
-}));
 
 vi.mock("@/lib/crm/vault-plans", () => ({
   savePlanToVault: vi.fn().mockResolvedValue(null),
@@ -139,7 +128,7 @@ describe("POST /api/clients/[id]/tax-returns/[taxYear]/export-pdf", () => {
     expect(doc.props.logoDataUrl).toBe("data:image/png;base64,ADV");
   });
 
-  it("scopes the advisor lookup to the client the route already loaded (different advisor per client)", async () => {
+  it("forwards the client's own advisorId (route performs no lookup — the client row already carries it)", async () => {
     requireClientAccessMock.mockResolvedValue({
       client: { id: "c1", crmHouseholdId: null, advisorId: "adv-other" },
       firmId: "firm_test",

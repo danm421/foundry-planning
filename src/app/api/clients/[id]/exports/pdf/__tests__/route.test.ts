@@ -43,9 +43,19 @@ vi.mock("@/lib/rate-limit", () => ({
   rateLimitErrorResponse: vi.fn(),
 }));
 
-// Task 11: the route resolves firmName via the client's advisor
-// (resolveBrandingForClient), not an inline `firms.displayName` query — so
-// there's no more @/db mock to serve here.
+// Guardrail, not a functional stub. Task 11 moved firmName resolution to
+// resolveBrandingForClient (mocked below), so this route no longer calls
+// @/db directly — but every worktree on this machine shares one dev Neon
+// branch, so a test that silently falls through to a real @/db call is a
+// real hazard, not just noise. Throw loudly if anything ever reaches it.
+vi.mock("@/db", () => ({
+  db: {
+    select: () => {
+      throw new Error("unexpected real DB access in test — @/db should be fully mocked in this suite");
+    },
+  },
+}));
+
 const brandingMocks = vi.hoisted(() => ({
   resolveBrandingForClient: vi.fn().mockResolvedValue({
     firmName: "Resolved Firm",

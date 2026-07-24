@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
 import { clients } from "@/db/schema";
 import type { ExportPdfBody } from "../render-presentation-pdf";
 
@@ -18,16 +19,6 @@ const dbMocks = vi.hoisted(() => ({
   where: vi.fn(),
 }));
 vi.mock("@/db", () => ({ db: { select: dbMocks.select } }));
-
-// Spy on the real `eq` so we can assert the advisor lookup is scoped by BOTH
-// clientId and firmId (org-scoping requirement), while every other consumer
-// of drizzle-orm in the module graph keeps its real behavior.
-const ormSpies = vi.hoisted(() => ({ eq: vi.fn() }));
-vi.mock("drizzle-orm", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("drizzle-orm")>();
-  ormSpies.eq.mockImplementation(actual.eq);
-  return { ...actual, eq: ormSpies.eq };
-});
 
 const brandingMocks = vi.hoisted(() => ({
   resolveBranding: vi.fn(),
@@ -126,12 +117,16 @@ describe("renderPresentationPdf — advisor-aware branding", () => {
     expect(doc.props.accentColor).toBe("#111111");
     expect(doc.props.firmLogoDataUrl).toBe("data:image/png;base64,ADV");
 
-    // Org-scoping: the lookup is scoped by BOTH clientId and firmId, never
-    // clientId alone.
+    // Org-scoping: assert on the actual predicate that reached `.where()`,
+    // built from the REAL `and`/`eq` — not just that `eq` was called with
+    // each column somewhere, which would still pass even if only one clause
+    // made it into the final `.where()` call. This is scoped by BOTH
+    // clientId and firmId, never clientId alone.
     expect(dbMocks.select).toHaveBeenCalledWith({ advisorId: clients.advisorId });
     expect(dbMocks.from).toHaveBeenCalledWith(clients);
-    expect(ormSpies.eq).toHaveBeenCalledWith(clients.id, CLIENT_ID);
-    expect(ormSpies.eq).toHaveBeenCalledWith(clients.firmId, FIRM_ID);
+    expect(dbMocks.where).toHaveBeenCalledWith(
+      and(eq(clients.id, CLIENT_ID), eq(clients.firmId, FIRM_ID)),
+    );
   });
 
   it("falls back to firm branding when the client row can't be found", async () => {
