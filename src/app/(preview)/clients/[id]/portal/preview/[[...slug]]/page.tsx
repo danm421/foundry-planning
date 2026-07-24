@@ -21,7 +21,7 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
-import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 
 interface Props {
@@ -64,7 +64,7 @@ export default async function PortalPreviewPage({
           .from(crmHouseholdContacts)
           .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
       : [],
-    resolveIntakeBranding(access.firmId),
+    resolveIntakeBrandingForClient(access.firmId, access.client.advisorId),
   ]);
 
   // Dispatch on slug. Empty / ["profile"] → Household.
