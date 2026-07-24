@@ -10,8 +10,17 @@ import type {
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildCashFlowChartSpec } from "../../charts/cashflow-chart-spec";
 import { filterYearsToRange } from "../../shared/year-filter";
+import {
+  liquidPortfolioActivity,
+  liquidPortfolioGrowth,
+  liquidPortfolioWeights,
+} from "@/engine/portfolio-snapshot";
 
-const PORTFOLIO_BUCKETS = [
+// Scope for the RMD column only — household + IIP-entity accounts. NOT the
+// liquid-portfolio set: `accessibleTrustAssets` accounts are non-IIP entities
+// whose RMD routes to entity checking rather than household income, so counting
+// them here would push the RMD bar above totalIncome again (F81).
+const RMD_BUCKETS = [
   "taxable", "cash", "retirement", "realEstate", "business", "lifeInsurance",
 ] as const;
 
@@ -24,8 +33,11 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
   const visibleYears = filterYearsToRange(years, options.range);
 
   const rows: CashFlowTableRow[] = visibleYears.map((py) => {
-    const ids = portfolioAccountIds(py);
-    const rmds = sumRmdAmounts(py, ids);
+    const rmds = sumRmdAmounts(py, rmdAccountIds(py));
+    // Computed once and shared: growth and activity must be measured over the
+    // same accounts and ownership shares that compose `portfolioAssets` below,
+    // or the row identity (assets = prior assets + growth + activity) breaks.
+    const weights = liquidPortfolioWeights(py);
     const otherInflows =
       py.income.business +
       py.income.trust +
@@ -47,8 +59,8 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
         savings: py.savings.total,
         totalExpenses: py.totalExpenses,
         netCashFlow: py.netCashFlow,
-        portfolioGrowth: portfolioGrowthTotal(py, ids),
-        portfolioActivity: portfolioActivityTotal(py, ids),
+        portfolioGrowth: liquidPortfolioGrowth(py, weights),
+        portfolioActivity: liquidPortfolioActivity(py, weights),
         // H1: canonical liquid investable total (engine field) — ties to the
         // portfolio chart bar height and the next-year BoY carry-forward.
         portfolioAssets: py.portfolioAssets.liquidTotal,
@@ -82,45 +94,22 @@ export function buildCashFlowPageData(input: BuildCashFlowInput): CashFlowPageDa
 // EVERY rmd-enabled ledger (projection.ts:1404), but entity-owned (non-IIP
 // trust) accounts route their RMD to entity checking, not to
 // householdRmdIncome/totalIncome. Counting them here would push the RMD bar
-// above totalIncome so the stacked total stops reconciling (F81). These are
-// the same `ids` the growth/activity columns already scope to.
+// above totalIncome so the stacked total stops reconciling (F81).
 function sumRmdAmounts(py: ProjectionYear, ids: Set<string>): number {
   let total = 0;
   for (const id of ids) total += py.accountLedgers?.[id]?.rmdAmount ?? 0;
   return total;
 }
 
-// Account ids appearing in any portfolio bucket — used to scope growth /
-// activity sums to the same accounts the in-app Cash Flow report counts.
-function portfolioAccountIds(py: ProjectionYear): Set<string> {
+// Account ids in a household / IIP-entity portfolio bucket — see RMD_BUCKETS.
+function rmdAccountIds(py: ProjectionYear): Set<string> {
   const ids = new Set<string>();
-  for (const bucket of PORTFOLIO_BUCKETS) {
+  for (const bucket of RMD_BUCKETS) {
     const byAcct = py.portfolioAssets[bucket] as Record<string, number> | undefined;
     if (!byAcct) continue;
     for (const id of Object.keys(byAcct)) ids.add(id);
   }
   return ids;
-}
-
-function portfolioGrowthTotal(py: ProjectionYear, ids: Set<string>): number {
-  let sum = 0;
-  for (const id of ids) sum += py.accountLedgers?.[id]?.growth ?? 0;
-  return sum;
-}
-
-// External (non-internal-transfer) additions minus distributions — same
-// netting the in-app drill-down uses so supplemental refill legs don't
-// inflate the activity column.
-function portfolioActivityTotal(py: ProjectionYear, ids: Set<string>): number {
-  let additions = 0;
-  let distributions = 0;
-  for (const id of ids) {
-    const led = py.accountLedgers?.[id];
-    if (!led) continue;
-    additions += led.contributions - (led.internalContributions ?? 0);
-    distributions += led.distributions - (led.internalDistributions ?? 0);
-  }
-  return additions - distributions;
 }
 
 function buildMarkers(

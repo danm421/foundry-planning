@@ -26,6 +26,14 @@ import {
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { isFullyEntityOwned } from "@/engine/ownership";
+import {
+  liquidBucketWeights,
+  liquidPortfolioAdditions,
+  liquidPortfolioDistributions,
+  liquidPortfolioGrowth,
+  liquidPortfolioWeights,
+  type LiquidPortfolioBucket,
+} from "@/engine/portfolio-snapshot";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
 import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
@@ -926,40 +934,41 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Portfolio growth helpers ──────────────────────────────────────────────
 
-  // Which account IDs appear in the portfolio snapshot for a given year. This is
-  // how we stay in sync with the engine's portfolio-inclusion rules (entity-owned
-  // accounts only if the entity is flagged includeInPortfolio).
+  // Each account's share of the liquid portfolio, built once per year — every
+  // growth/activity cell below reads it, so recomputing per cell would rescan
+  // the buckets thousands of times per render.
+  const weightsByYear = useMemo(() => {
+    const byYear = new Map<number, Map<string, number>>();
+    for (const y of years) byYear.set(y.year, liquidPortfolioWeights(y));
+    return byYear;
+  }, [years]);
+
+  const weightsFor = useCallback(
+    (r: ProjectionYear) => weightsByYear.get(r.year) ?? liquidPortfolioWeights(r),
+    [weightsByYear]
+  );
+
+  // Which account IDs make up the liquid portfolio for a given year. This is how
+  // we stay in sync with the engine's portfolio-inclusion rules (entity-owned
+  // accounts only if the entity is flagged includeInPortfolio or accessible).
   function portfolioAccountIds(r: ProjectionYear): Set<string> {
-    const ids = new Set<string>();
-    const buckets: (keyof ProjectionYear["portfolioAssets"])[] = [
-      "taxable",
-      "cash",
-      "retirement",
-      "realEstate",
-      "business",
-      "lifeInsurance",
-    ];
-    for (const bucket of buckets) {
-      const byAcct = r.portfolioAssets[bucket] as Record<string, number> | undefined;
-      if (!byAcct) continue;
-      for (const id of Object.keys(byAcct)) ids.add(id);
-    }
-    return ids;
+    return new Set(weightsFor(r).keys());
   }
 
+  // Growth/activity totals must be measured over the same accounts and ownership
+  // shares that compose `liquidTotal` — the figure the Portfolio Assets column
+  // shows and `portfolioBoy` rolls forward — or the row stops reconciling.
   function portfolioGrowthTotal(r: ProjectionYear): number {
-    let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.growth ?? 0;
-    return sum;
+    return liquidPortfolioGrowth(r, weightsFor(r));
   }
 
+  // Per-bucket slice of the same weighted total, so the growth drill-down's
+  // category columns add up to its Total column exactly.
   function growthByCategorySegment(r: ProjectionYear, segment: string): number {
-    const categoryKey = segment as keyof ProjectionYear["portfolioAssets"];
-    const byAcct = r.portfolioAssets[categoryKey] as Record<string, number> | undefined;
-    if (!byAcct) return 0;
-    let sum = 0;
-    for (const id of Object.keys(byAcct)) sum += r.accountLedgers[id]?.growth ?? 0;
-    return sum;
+    return liquidPortfolioGrowth(
+      r,
+      liquidBucketWeights(r, segment as LiquidPortfolioBucket),
+    );
   }
 
   // ── Portfolio activity helpers ─────────────────────────────────────────────
@@ -971,28 +980,27 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // keeps the drill numbers honest: the supplemental draw against a taxable
   // account no longer shows as a $X distribution while its mirror credit shows
   // as a $X addition on cash.
+  //
+  // Scaled by the account's portfolio share so the per-account drill columns sum
+  // to the Additions / Distributions totals below.
   function externalContributions(r: ProjectionYear, id: string): number {
     const led = r.accountLedgers[id];
     if (!led) return 0;
-    return led.contributions - (led.internalContributions ?? 0);
+    return (led.contributions - (led.internalContributions ?? 0)) * (weightsFor(r).get(id) ?? 0);
   }
 
   function externalDistributions(r: ProjectionYear, id: string): number {
     const led = r.accountLedgers[id];
     if (!led) return 0;
-    return led.distributions - (led.internalDistributions ?? 0);
+    return (led.distributions - (led.internalDistributions ?? 0)) * (weightsFor(r).get(id) ?? 0);
   }
 
   function additionsTotal(r: ProjectionYear): number {
-    let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += externalContributions(r, id);
-    return sum;
+    return liquidPortfolioAdditions(r, weightsFor(r));
   }
 
   function distributionsTotal(r: ProjectionYear): number {
-    let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += externalDistributions(r, id);
-    return sum;
+    return liquidPortfolioDistributions(r, weightsFor(r));
   }
 
   // Account IDs that had any addition/distribution over the whole projection, so
@@ -1885,7 +1893,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             col(
               `growth_src_${id}`,
               accountNames[id] ?? id,
-              (r) => r.accountLedgers[id]?.growth ?? 0,
+              // Portfolio share of the account's growth, so these columns sum to
+              // the subtype total. The ledger modal still shows the whole account.
+              (r) => (r.accountLedgers[id]?.growth ?? 0) * (weightsFor(r).get(id) ?? 0),
               (info) => {
                 const v = info.getValue() as number;
                 const row = info.row.original;
@@ -1920,15 +1930,20 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 1: category totals with drill buttons
+      // Level 1: category totals with drill buttons. Columns mirror
+      // LIQUID_PORTFOLIO_BUCKETS so they sum exactly to Total. Real estate and
+      // business appreciation is net worth, not portfolio growth — it lives on
+      // the balance sheet, and including it here is what used to leave the
+      // Portfolio Assets column unreconciled.
       return [
         ...baseColumns,
         numCol("growth_taxable", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => growthByCategorySegment(r, "taxable")),
         numCol("growth_cash", () => <DrillBtn segment="cash" label="Cash" />, (r) => growthByCategorySegment(r, "cash")),
         numCol("growth_retirement", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => growthByCategorySegment(r, "retirement")),
-        numCol("growth_real_estate", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => growthByCategorySegment(r, "realEstate")),
-        numCol("growth_business", () => <DrillBtn segment="business_assets" label="Business" />, (r) => growthByCategorySegment(r, "business")),
         numCol("growth_life_insurance", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => growthByCategorySegment(r, "lifeInsurance")),
+        // No drill button: accessibleTrustAssets is an ownership-routing bucket,
+        // not an account category, so accountsByCategory has no entry for it.
+        numCol("growth_accessible_trust", "Accessible Trust", (r) => growthByCategorySegment(r, "accessibleTrustAssets")),
         numCol("growth_total", "Total", (r) => portfolioGrowthTotal(r), true),
       ];
     }

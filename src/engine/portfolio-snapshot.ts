@@ -1,4 +1,4 @@
-import type { Account, GiftEvent, ProjectionYear } from "./types";
+import type { Account, AccountLedger, GiftEvent, ProjectionYear } from "./types";
 import { ownersForYear } from "./ownership";
 
 /** Minimal entity metadata the portfolio snapshot needs. The projection's
@@ -8,6 +8,25 @@ type PortfolioEntityMeta = {
   includeInPortfolio?: boolean;
   accessibleToClient?: boolean;
 };
+
+/**
+ * The buckets that compose `portfolioAssets.liquidTotal` — the canonical
+ * "Portfolio Assets" figure (H1). Declared once and consumed by every place
+ * that sums, rolls forward, or *explains* that total, so the composition can
+ * never drift between the balance and the flows that are supposed to explain it.
+ *
+ * Real estate, business, stock options and locked (non-accessible) trust assets
+ * are deliberately absent: they are net worth, not portfolio.
+ */
+export const LIQUID_PORTFOLIO_BUCKETS = [
+  "taxable",
+  "cash",
+  "retirement",
+  "lifeInsurance",
+  "accessibleTrustAssets",
+] as const;
+
+export type LiquidPortfolioBucket = (typeof LIQUID_PORTFOLIO_BUCKETS)[number];
 
 const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance" | "stockOptions"> = {
   taxable: "taxable",
@@ -138,12 +157,123 @@ export function computePortfolioSnapshot(args: {
 
   // H1: canonical liquid investable total — the reconciling "Portfolio Assets"
   // figure consumed by the chart, the summary cell, and next-year BoY.
-  portfolioAssets.liquidTotal =
-    portfolioAssets.taxableTotal +
-    portfolioAssets.cashTotal +
-    portfolioAssets.retirementTotal +
-    portfolioAssets.lifeInsuranceTotal +
-    portfolioAssets.accessibleTrustAssetsTotal;
+  portfolioAssets.liquidTotal = LIQUID_PORTFOLIO_BUCKETS.reduce(
+    (sum, b) => sum + portfolioAssets[`${b}Total`],
+    0,
+  );
 
   return portfolioAssets;
+}
+
+// ── Portfolio reconciliation ────────────────────────────────────────────────
+//
+// The cash-flow report asserts one row identity:
+//
+//   portfolioAssets[t] === portfolioAssets[t-1] + growth[t] + activity[t]
+//
+// `portfolioAssets` is `liquidTotal`, so growth and activity must be measured
+// over exactly the accounts — and exactly the ownership shares — that compose
+// `liquidTotal`. Two things make that non-trivial, and getting either wrong
+// leaves a silent, compounding gap in the report:
+//
+//  1. Account set. An account's *ledger* is whole-account, but only accounts in
+//     the liquid buckets belong here. Summing real-estate or business ledgers
+//     into "Portfolio Growth" credits the row with appreciation that never
+//     lands in `liquidTotal`; omitting `accessibleTrustAssets` does the reverse.
+//  2. Ownership share. A bucket holds the *owned fraction* of an account
+//     (`value × percent`), while the ledger's growth/contributions/distributions
+//     are for 100% of it. A half-owned account must contribute half its flows.
+
+/** The slice of a projection year these helpers read. */
+type PortfolioYear = Pick<ProjectionYear, "portfolioAssets" | "accountLedgers">;
+
+/** Per-account fraction of the whole-account ledger that rolls into `liquidTotal`. */
+export function liquidPortfolioWeights(py: PortfolioYear): Map<string, number> {
+  return bucketWeights(py, LIQUID_PORTFOLIO_BUCKETS);
+}
+
+/**
+ * Same, restricted to one bucket. Per-bucket weights sum to the whole-portfolio
+ * weight, so a drill-down broken out by bucket adds up to the total exactly.
+ */
+export function liquidBucketWeights(
+  py: PortfolioYear,
+  bucket: LiquidPortfolioBucket,
+): Map<string, number> {
+  return bucketWeights(py, [bucket]);
+}
+
+function bucketWeights(
+  py: PortfolioYear,
+  buckets: readonly LiquidPortfolioBucket[],
+): Map<string, number> {
+  const owned = new Map<string, number>();
+  for (const bucket of buckets) {
+    const byAcct = py.portfolioAssets?.[bucket] as Record<string, number> | undefined;
+    if (!byAcct) continue;
+    for (const [id, val] of Object.entries(byAcct)) {
+      owned.set(id, (owned.get(id) ?? 0) + val);
+    }
+  }
+  const weights = new Map<string, number>();
+  for (const [id, ownedVal] of owned) {
+    const endingValue = py.accountLedgers?.[id]?.endingValue ?? 0;
+    // A fully-drained account leaves the share indeterminate (0/0). Fall back to
+    // 100%, which is exact for the wholly-owned case and no worse than the
+    // unweighted behavior it replaces for the co-owned one.
+    weights.set(id, endingValue > 0 ? ownedVal / endingValue : 1);
+  }
+  return weights;
+}
+
+/** Each account's ledger amount, scaled to the share of it that is portfolio. */
+function sumWeighted(
+  py: PortfolioYear,
+  weights: Map<string, number>,
+  amountOf: (led: AccountLedger) => number,
+): number {
+  let sum = 0;
+  for (const [id, weight] of weights) {
+    const led = py.accountLedgers?.[id];
+    if (led) sum += amountOf(led) * weight;
+  }
+  return sum;
+}
+
+// Internal transfer legs (supplemental withdrawal refill, entity gap-fill) move
+// money *inside* the portfolio, so they must not register as outside money in or
+// out — hence the netting against the `internal*` counters.
+const additionOf = (led: AccountLedger) =>
+  led.contributions - (led.internalContributions ?? 0);
+const distributionOf = (led: AccountLedger) =>
+  led.distributions - (led.internalDistributions ?? 0);
+
+/** Growth credited to `liquidTotal` this year. */
+export function liquidPortfolioGrowth(
+  py: PortfolioYear,
+  weights: Map<string, number> = liquidPortfolioWeights(py),
+): number {
+  return sumWeighted(py, weights, (led) => led.growth);
+}
+
+/** External additions minus external distributions against `liquidTotal`. */
+export function liquidPortfolioActivity(
+  py: PortfolioYear,
+  weights: Map<string, number> = liquidPortfolioWeights(py),
+): number {
+  return liquidPortfolioAdditions(py, weights) - liquidPortfolioDistributions(py, weights);
+}
+
+export function liquidPortfolioAdditions(
+  py: PortfolioYear,
+  weights: Map<string, number> = liquidPortfolioWeights(py),
+): number {
+  return sumWeighted(py, weights, additionOf);
+}
+
+export function liquidPortfolioDistributions(
+  py: PortfolioYear,
+  weights: Map<string, number> = liquidPortfolioWeights(py),
+): number {
+  return sumWeighted(py, weights, distributionOf);
 }

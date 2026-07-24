@@ -101,7 +101,7 @@ import {
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
-import { computePortfolioSnapshot } from "./portfolio-snapshot";
+import { computePortfolioSnapshot, LIQUID_PORTFOLIO_BUCKETS } from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
@@ -7084,13 +7084,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.stockOptionsTotal;
     // H1: keep the canonical liquid total in sync after the re-bucket — it feeds
     // the chart/cell/BoY and includes accessibleTrustAssetsTotal, which this pass
-    // can change. Mirrors computePortfolioSnapshot.
-    year.portfolioAssets.liquidTotal =
-      year.portfolioAssets.taxableTotal +
-      year.portfolioAssets.cashTotal +
-      year.portfolioAssets.retirementTotal +
-      year.portfolioAssets.lifeInsuranceTotal +
-      year.portfolioAssets.accessibleTrustAssetsTotal;
+    // can change. Shares LIQUID_PORTFOLIO_BUCKETS with computePortfolioSnapshot
+    // so the composition can't drift between the two.
+    year.portfolioAssets.liquidTotal = LIQUID_PORTFOLIO_BUCKETS.reduce(
+      (sum, b) => sum + year.portfolioAssets[`${b}Total`],
+      0,
+    );
   }
 
   return years;
