@@ -456,7 +456,8 @@ export async function extractDocument(
         extracted.wills.length === 0 &&
         extracted.savings.length === 0 &&
         extracted.goals.length === 0 &&
-        !extracted.family
+        !extracted.family &&
+        !extracted.assumptions
     ) {
         warnings.push("No data could be extracted from this document. Try a different document type or the Detailed model.");
     }

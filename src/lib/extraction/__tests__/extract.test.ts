@@ -365,6 +365,146 @@ describe("extractDocument", () => {
     });
 });
 
+describe("extractDocument — flattenMultiPass savings/goals/assumptions", () => {
+    it("merges savings and goals rows from their multi-pass sections onto extracted.savings/extracted.goals", async () => {
+        // Classifier runs first (awaited before the per-section tasks are built),
+        // then the section prompts fire synchronously in schema-declared order
+        // (savings before goals) before either's promise resolves — so chained
+        // `mockImplementationOnce` calls land deterministically in that order.
+        mockedDocx.mockResolvedValueOnce(
+            "Savings & Goals\nJohn contributes 10% of salary to his 401k.\nCollege goal for Sam."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ savings: [[1, 1]], goals: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => // savings section prompt
+                JSON.stringify({
+                    savings: [
+                        { name: "401k", destinationAccountName: "Fidelity 401k", owner: "client", annualPercent: 0.1 },
+                    ],
+                })
+            )
+            .mockImplementationOnce(async () => // goals section prompt
+                JSON.stringify({
+                    goals: [{ kind: "education", name: "Sam's College", annualAmount: 30000 }],
+                })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "savings-goals.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.savings).toHaveLength(1);
+        expect(result.extracted.savings[0].destinationAccountName).toBe("Fidelity 401k");
+        expect(result.extracted.goals).toHaveLength(1);
+        expect(result.extracted.goals[0].name).toBe("Sam's College");
+    });
+
+    it("lifts a populated assumptions row onto extracted.assumptions with __provenance stripped", async () => {
+        mockedDocx.mockResolvedValueOnce(
+            "Plan Assumptions\nInflation: 3.00%\nRisk Tolerance: Moderate\nTarget Probability of Success: 80%"
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ assumptions: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => // assumptions section prompt
+                JSON.stringify({ inflationRate: 0.03, riskTolerance: "moderate", targetSuccessProbability: 0.8 })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "assumptions.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toEqual({
+            inflationRate: 0.03,
+            riskTolerance: "moderate",
+            targetSuccessProbability: 0.8,
+        });
+        expect(result.extracted.assumptions).not.toHaveProperty("__provenance");
+    });
+
+    it("leaves extracted.assumptions undefined when the assumptions section is empty", async () => {
+        mockedDocx.mockResolvedValueOnce(
+            "Income Summary\nJohn receives Social Security of $38,400 per year."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier - no assumptions range
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "income.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toBeUndefined();
+    });
+
+    it("does not write an empty assumptions object when the row's only key is __provenance", async () => {
+        // The section merge step in extractWithMultiPass spreads the model's
+        // parsed object, then unconditionally overwrites `__provenance` with the
+        // real {section, pageRange} metadata. If the model hallucinates a
+        // top-level key literally named "__provenance" (its only key), that
+        // overwrite leaves a row whose sole visible key is the real provenance
+        // object — flattenMultiPass must not lift that into an empty
+        // extracted.assumptions object.
+        mockedDocx.mockResolvedValueOnce("Plan Assumptions\nSome unparsable content.");
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ assumptions: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ __provenance: "hallucinated" })); // assumptions prompt
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "assumptions.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toBeUndefined();
+    });
+});
+
+describe("extractDocument — the 'nothing extracted' guard", () => {
+    it("does not warn 'No data could be extracted' on the single-pass path when only plan-level assumptions came back", async () => {
+        // Regression test for the guard omitting `assumptions`. This exercises
+        // the SINGLE-PASS path (not multi-pass, which returns before ever
+        // reaching this guard): a document whose one whole-document AI call
+        // yields ONLY assumptions (no accounts/incomes/expenses/etc., no
+        // family) must not be reported as having nothing extracted.
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({
+                assumptions: { inflationRate: 0.03, riskTolerance: "moderate" },
+            })
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "assumptions-only.pdf",
+            "account_statement",
+            "mini",
+        );
+
+        expect(result.extracted.assumptions).toEqual({
+            inflationRate: 0.03,
+            riskTolerance: "moderate",
+        });
+        expect(
+            result.warnings.some((w) => /No data could be extracted/i.test(w))
+        ).toBe(false);
+    });
+});
+
 describe("scanned-PDF vision OCR fallback", () => {
     beforeEach(() => {
         mockedVision.mockReset();
