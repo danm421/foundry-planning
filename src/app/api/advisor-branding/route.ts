@@ -40,46 +40,24 @@ function httpUrlField(max: number) {
   );
 }
 
-// `logoUrl`/`faviconUrl` are NOT free-text URLs — they may only ever name an
-// asset we uploaded ourselves. Two sinks assume it:
-//   - `branding.ts loadLogo()` does a bare server-side fetch(url) with no
-//     allowlist on every PDF export. A free-text value there is an
-//     authenticated blind SSRF with an image response channel.
-//   - `resolveIntakeBrandingForClient` hands the raw URL to the client
-//     portal, whose `img-src` allows only *.public.blob.vercel-storage.com —
-//     an external host renders today only because CSP is report-only.
-// The scheme restriction above says nothing about the HOST, so lock the host
-// here, at the source. `website` deliberately keeps `httpUrlField`: it is a
-// real external site and must stay general.
-// Anchored on both ends: `(^|\.)` stops `evilpublic.blob.…` and the trailing
-// `$` stops `public.blob.….com.evil.io`. Matching on `new URL().hostname`
-// (not the raw string) is what defeats the `https://ours@evil.io/` userinfo
-// trick. Uploads always land on a `<storeId>.` subdomain; the bare apex is
-// accepted too since it is still our host.
-const BLOB_HOST_RE = /(^|\.)public\.blob\.vercel-storage\.com$/;
-function blobAssetUrlField(max: number) {
-  return z.preprocess(
-    trimToNull,
-    z
-      .string()
-      .url({ protocol: HTTP_PROTOCOL })
-      .max(max)
-      .refine((v) => {
-        try {
-          return BLOB_HOST_RE.test(new URL(v).hostname);
-        } catch {
-          return false;
-        }
-      }, "Must be an asset uploaded through Foundry")
-      .nullish(),
-  );
-}
-
+// NOTE: `logoUrl` and `faviconUrl` are deliberately ABSENT from this schema.
+// They are written exclusively by `uploadAdvisorBrandingAsset` /
+// `removeAdvisorBrandingAsset`, which put the object in our own Blob store
+// and record the URL Blob returned. Because the schema is `.strict()`, a PUT
+// carrying either field now 400s — that is the contract, not an oversight.
+//
+// A URL an advisor can type cannot be made safe here by validating it. The
+// two columns feed `loadLogo()` (a bare server-side fetch on every PDF
+// export) and the client portal's `<img src>`, and — worse — they feed
+// `deleteBrandingAsset()` on the replace/remove paths, which will `del()` any
+// object in our public store given its URL. A host check cannot tell OUR
+// object from another tenant's: `*.public.blob.vercel-storage.com` is the
+// shared multi-tenant Blob hostname, and every firm's assets live in one
+// store. Making the columns unwritable from the API is the fix; validating
+// them was not.
 const brandFieldsSchema = z
   .object({
     brandName: z.preprocess(emptyToNull, z.string().max(120).nullish()),
-    logoUrl: blobAssetUrlField(2048),
-    faviconUrl: blobAssetUrlField(2048),
     primaryColor: z.preprocess(
       emptyToNull,
       z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),

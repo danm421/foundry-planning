@@ -258,15 +258,19 @@ describe("PUT /api/advisor-branding", () => {
   });
 
   it('PUT with "" for a URL field -> 200 and stores null, NOT ""', async () => {
+    // Was written against `logoUrl`, which is no longer a PUT-able field
+    // (see the host-lock removal below). Repointed to `website`, the URL
+    // field that remains — the property under test is the trimToNull
+    // preprocessor, which is shared and unchanged.
     getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
 
-    const res = await PUT(putReq({ logoUrl: "" }));
+    const res = await PUT(putReq({ website: "" }));
 
     expect(res.status).toBe(200);
     expect(upsertAdvisorProfileMock).toHaveBeenCalledTimes(1);
     const fieldsArg = upsertAdvisorProfileMock.mock.calls[0][2] as Record<string, unknown>;
-    expect(fieldsArg).toHaveProperty("logoUrl");
-    expect(fieldsArg.logoUrl).toBeNull();
+    expect(fieldsArg).toHaveProperty("website");
+    expect(fieldsArg.website).toBeNull();
   });
 
   it("PUT with a malformed emailReplyTo -> 400, never upserts", async () => {
@@ -278,10 +282,13 @@ describe("PUT /api/advisor-branding", () => {
     expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 
-  it("PUT with a malformed logoUrl -> 400, never upserts", async () => {
+  it("PUT with a malformed website URL -> 400, never upserts", async () => {
+    // Also repointed from `logoUrl`. Left on `logoUrl` it would still have
+    // gone green — but via `.strict()`, not URL validation, silently losing
+    // the malformed-URL coverage it was written for.
     getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
 
-    const res = await PUT(putReq({ logoUrl: "not-a-url" }));
+    const res = await PUT(putReq({ website: "not-a-url" }));
 
     expect(res.status).toBe(400);
     expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
@@ -297,100 +304,80 @@ describe("PUT /api/advisor-branding", () => {
   });
 });
 
-// ── logoUrl / faviconUrl host lock (Task 15a Step 3) ───────────────────────
+// ── logoUrl / faviconUrl are NOT PUT-able (Task 15a review, Finding A) ──
 //
-// These two columns feed `loadLogo()`, which does a bare server-side
-// fetch(url) with no allowlist, and `resolveIntakeBrandingForClient`, which
-// hands the raw URL to the client portal (where `img-src` allows only
-// *.public.blob.vercel-storage.com). Free-text URLs there are an
-// authenticated SSRF with an image response channel plus a CSP violation
-// waiting for the header to go enforcing. `website` is deliberately NOT
-// locked — it is a real external site.
-describe("PUT /api/advisor-branding — asset URL host lock", () => {
-  const BLOB = "https://abc123xyz.public.blob.vercel-storage.com/firms/f1/advisors/a1/branding/logo-Rk3.png";
+// These two columns feed `deleteBrandingAsset()` on the replace/remove paths,
+// which will `del()` ANY object in our public Blob store given its URL. A
+// host check cannot distinguish our object from another tenant's --
+// `*.public.blob.vercel-storage.com` is the shared multi-tenant Blob
+// hostname, and every firm's assets live in one store. So a validated
+// free-text URL still let an advisor point `logoUrl` at another firm's logo
+// and then call remove, permanently deleting it.
+//
+// The fix is that the fields are no longer part of the schema at all: they
+// are written only by the upload/remove server actions, from the URL Blob
+// itself returned. `.strict()` turns any PUT carrying them into a 400.
+describe("PUT /api/advisor-branding — logoUrl/faviconUrl are action-only", () => {
+  const BLOB =
+    "https://abc123xyz.public.blob.vercel-storage.com/firms/f1/advisors/a1/branding/logo-Rk3.png";
 
   beforeEach(() => {
     getAdvisorProfileMock.mockResolvedValue({ brandingEnabled: true });
   });
 
-  it("accepts a URL on our public blob host and stores it verbatim", async () => {
+  it("rejects logoUrl even when it IS a real blob URL -> 400, never upserts", async () => {
+    // The blob host is no longer a passport: this is exactly the shape a
+    // legitimate upload produces, and the API still refuses it.
     const res = await PUT(putReq({ logoUrl: BLOB }));
 
-    expect(res.status).toBe(200);
-    expect(upsertAdvisorProfileMock).toHaveBeenCalledWith(
-      "firm-1",
-      "member-1",
-      expect.objectContaining({ logoUrl: BLOB }),
-      "member-1",
-    );
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 
-  it("rejects a logoUrl on a foreign host -> 400, never upserts", async () => {
-    // The SSRF case: a well-formed https URL that is not ours.
-    const res = await PUT(putReq({ logoUrl: "https://evil.example.com/logo.png" }));
+  it("rejects faviconUrl on a blob URL -> 400, never upserts", async () => {
+    const res = await PUT(putReq({ faviconUrl: BLOB }));
 
     expect(res.status).toBe(400);
     expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 
-  it("rejects a logoUrl pointing at an internal address -> 400, never upserts", async () => {
-    const res = await PUT(putReq({ logoUrl: "http://169.254.169.254/latest/meta-data/" }));
-
-    expect(res.status).toBe(400);
-    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects a faviconUrl on a foreign host -> 400, never upserts", async () => {
-    // Proves the lock is on BOTH columns, not just the one that was tested.
-    const res = await PUT(putReq({ faviconUrl: "https://evil.example.com/fav.png" }));
-
-    expect(res.status).toBe(400);
-    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects a host that merely ENDS WITH our domain as a suffix -> 400", async () => {
-    // `evilpublic.blob.vercel-storage.com` passes an unanchored
-    // `endsWith`/`includes` check and is attacker-registrable.
+  it("rejects ANOTHER firm's blob URL -> 400 (the deletion attack, closed)", async () => {
+    // Lifted from a branded intake page's rendered <img src>. Under the old
+    // host lock this was accepted, and a follow-up remove would have del()'d
+    // the victim firm's live logo.
     const res = await PUT(
-      putReq({ logoUrl: "https://evilpublic.blob.vercel-storage.com/logo.png" }),
+      putReq({
+        logoUrl:
+          "https://abc123xyz.public.blob.vercel-storage.com/firms/VICTIM/advisors/v1/branding/logo-Zz9.png",
+      }),
     );
 
     expect(res.status).toBe(400);
     expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 
-  it("rejects a host that merely CONTAINS our domain as a prefix -> 400", async () => {
-    // `...vercel-storage.com.evil.io` passes a naive `includes` check.
-    const res = await PUT(
-      putReq({ logoUrl: "https://public.blob.vercel-storage.com.evil.io/logo.png" }),
-    );
-
-    expect(res.status).toBe(400);
-    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects our domain smuggled into the userinfo section -> 400", async () => {
-    // https://<userinfo>@evil.io/ — the real host is evil.io. Only a real
-    // URL parse (not a substring test) gets this right.
-    const res = await PUT(
-      putReq({ logoUrl: "https://abc.public.blob.vercel-storage.com@evil.io/logo.png" }),
-    );
-
-    expect(res.status).toBe(400);
-    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
-  });
-
-  it("still accepts explicit null on logoUrl (the clear path stays open)", async () => {
+  it("rejects logoUrl: null too — clearing goes through removeAdvisorBrandingAsset", async () => {
+    // `.strict()` keys off the KEY, not the value. Clearing must go through
+    // the action so the blob is deleted alongside the column.
     const res = await PUT(putReq({ logoUrl: null }));
 
-    expect(res.status).toBe(200);
-    const fields = upsertAdvisorProfileMock.mock.calls[0][2] as Record<string, unknown>;
-    expect(fields.logoUrl).toBeNull();
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
   });
 
-  it("still accepts an ordinary external URL for `website` (the lock is not over-broad)", async () => {
-    // Guards the opposite failure: a lock applied to every URL field would
-    // break the advisor's real website and pass every test above.
+  it("does not leak the two fields into fieldsChanged on an otherwise-valid PUT", async () => {
+    // A partial-strip implementation that dropped the keys instead of
+    // rejecting would return 200 here and quietly ignore the asset field.
+    const res = await PUT(putReq({ brandName: "Ok", logoUrl: BLOB }));
+
+    expect(res.status).toBe(400);
+    expect(upsertAdvisorProfileMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("still accepts an ordinary external URL for `website` (the field set was not over-pruned)", async () => {
+    // Guards the opposite failure: pruning every URL field would break the
+    // advisor's real website and pass every test above.
     const res = await PUT(putReq({ website: "https://advisor-firm.example.com/about" }));
 
     expect(res.status).toBe(200);

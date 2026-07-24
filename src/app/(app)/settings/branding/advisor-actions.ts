@@ -13,6 +13,7 @@ import {
   upsertAdvisorProfile,
 } from "@/lib/branding/advisor-profile";
 import { assertCanEditAdvisorBranding } from "@/lib/branding/advisor-authz";
+import { ForbiddenError } from "@/lib/authz";
 import { validateLogo, validateFavicon } from "@/lib/branding/validation";
 
 type ActionResult<T = unknown> =
@@ -22,7 +23,79 @@ type ActionResult<T = unknown> =
 const columnFor = (kind: BrandingKind) =>
   kind === "logo" ? ("logoUrl" as const) : ("faviconUrl" as const);
 
-async function tryDelete(url: string): Promise<void> {
+/**
+ * A server action must never throw: an uncaught error is rendered by the
+ * error boundary, white-screening the page instead of showing a message. The
+ * live case is an admin revoking the grant while the advisor has the page
+ * open — the next click would crash rather than explain.
+ *
+ * Only ForbiddenError is converted. Anything else (a Clerk outage, a DB
+ * error) still propagates: swallowing those would disguise an incident as a
+ * permissions problem.
+ */
+async function assertEditableOrResult(
+  orgId: string,
+  callerUserId: string,
+  target: string,
+): Promise<{ ok: false; error: string } | null> {
+  try {
+    await assertCanEditAdvisorBranding(orgId, callerUserId, target);
+    return null;
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return {
+        ok: false,
+        error: "You don't have permission to edit this advisor's branding.",
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * `deleteBrandingAsset` will `del()` ANY object in our public Blob store
+ * given its URL, and the URL it is handed comes straight out of a DB column
+ * that carries no constraint. Every firm's assets share one store, and
+ * `*.public.blob.vercel-storage.com` is Vercel's shared multi-tenant
+ * hostname — so a URL being "on the blob host" proves nothing about
+ * ownership. Confine the irreversible call to this advisor's own prefix.
+ *
+ * Redundant while `logoUrl`/`faviconUrl` are written only by the actions
+ * below — deliberately so. The 15a review found that exact assumption wrong
+ * once already; the dangerous operation should defend itself regardless of
+ * who writes the column.
+ *
+ * The trailing slash matters: without it, `.../advisors/adv_1/` would also
+ * match `.../advisors/adv_12/...`.
+ */
+function isOwnAdvisorAsset(
+  url: string,
+  firmId: string,
+  advisorUserId: string,
+): boolean {
+  try {
+    return new URL(url).pathname.startsWith(
+      `/firms/${firmId}/advisors/${advisorUserId}/`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort delete, confined to the advisor's own prefix. Never throws —
+ *  an orphaned blob is acceptable, failing the user's action is not. */
+async function tryDeleteOwnAsset(
+  url: string,
+  firmId: string,
+  advisorUserId: string,
+): Promise<void> {
+  if (!isOwnAdvisorAsset(url, firmId, advisorUserId)) {
+    console.error(
+      "[advisor-branding] refusing to delete a blob outside this advisor's prefix:",
+      url,
+    );
+    return;
+  }
   try {
     await deleteBrandingAsset(url);
   } catch (err) {
@@ -43,9 +116,11 @@ const resolveTarget = (advisorUserId: string | undefined, selfUserId: string) =>
  * granted advisor editing their own brand is the whole point of the feature.
  * That helper is the single copy of the rule shared with the PUT route.
  *
- * Uploading to our own store (rather than letting the advisor type a URL) is
- * what lets `PUT /api/advisor-branding` host-lock these two columns, which
- * closes an SSRF in `loadLogo()` and a CSP violation in the client portal.
+ * This is the ONLY way `logoUrl` is written — `PUT /api/advisor-branding`
+ * drops the field entirely. That is what closes the SSRF in `loadLogo()`, the
+ * CSP violation in the client portal, and the cross-firm blob deletion the
+ * 15a review found: the stored URL always comes from Blob's own response to
+ * an upload we performed, never from user input.
  */
 export async function uploadAdvisorBrandingAsset(
   kind: BrandingKind,
@@ -57,7 +132,8 @@ export async function uploadAdvisorBrandingAsset(
   if (!userId) return { ok: false, error: "Not signed in" };
 
   const target = resolveTarget(advisorUserId, userId);
-  await assertCanEditAdvisorBranding(orgId, userId, target);
+  const denied = await assertEditableOrResult(orgId, userId, target);
+  if (denied) return denied;
 
   const file = formData.get("file");
   if (!(file instanceof File)) return { ok: false, error: "No file uploaded" };
@@ -92,7 +168,7 @@ export async function uploadAdvisorBrandingAsset(
 
   await upsertAdvisorProfile(orgId, target, { [columnFor(kind)]: url }, userId);
 
-  if (oldUrl) await tryDelete(oldUrl);
+  if (oldUrl) await tryDeleteOwnAsset(oldUrl, orgId, target);
 
   await recordAudit({
     action: "advisor_branding.asset_changed",
@@ -118,14 +194,15 @@ export async function removeAdvisorBrandingAsset(
   if (!userId) return { ok: false, error: "Not signed in" };
 
   const target = resolveTarget(advisorUserId, userId);
-  await assertCanEditAdvisorBranding(orgId, userId, target);
+  const denied = await assertEditableOrResult(orgId, userId, target);
+  if (denied) return denied;
 
   const before = await getAdvisorProfile(orgId, target);
   const oldUrl = before?.[columnFor(kind)] ?? null;
   if (!oldUrl) return { ok: true, noop: true };
 
   await upsertAdvisorProfile(orgId, target, { [columnFor(kind)]: null }, userId);
-  await tryDelete(oldUrl);
+  await tryDeleteOwnAsset(oldUrl, orgId, target);
 
   await recordAudit({
     action: "advisor_branding.asset_changed",
