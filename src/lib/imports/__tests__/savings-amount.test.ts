@@ -30,4 +30,15 @@ describe("parseSavingsAmount", () => {
     expect(parsed).toEqual({ employerMatchPct: 0.5, employerMatchCap: 0.06 });
     expect(parsed).not.toHaveProperty("annualPercent");
   });
+
+  it("returns null when a cell contains both percent and dollar amount", () => {
+    expect(parseSavingsAmount("$3,000 per year (approximately 5% of salary)")).toBeNull();
+    expect(parseSavingsAmount("6% of salary or $3,000 per year, whichever is greater")).toBeNull();
+  });
+
+  it("still parses tiered match with dollar cap as tiered", () => {
+    const parsed = parseSavingsAmount("50.0% of the first 6.0% of salary, up to $5,000 per year");
+    expect(parsed).toEqual({ employerMatchPct: 0.5, employerMatchCap: 0.06 });
+    expect(parsed).not.toHaveProperty("annualAmount");
+  });
 });
