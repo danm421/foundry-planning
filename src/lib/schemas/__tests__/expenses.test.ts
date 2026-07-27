@@ -113,3 +113,31 @@ describe("expenseUpdateSchema", () => {
     }).success).toBe(false);
   });
 });
+
+describe("isGoal", () => {
+  const base = { type: "other", name: "Kitchen Remodel", startYear: 2033, endYear: 2033 };
+
+  it("defaults isGoal to false on create", () => {
+    const r = expenseCreateSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.isGoal).toBe(false);
+  });
+
+  it("accepts isGoal true on create", () => {
+    const r = expenseCreateSchema.safeParse({ ...base, isGoal: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.isGoal).toBe(true);
+  });
+
+  it("leaves isGoal undefined on update when omitted", () => {
+    const r = expenseUpdateSchema.safeParse({ name: "Renamed" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.isGoal).toBeUndefined();
+  });
+
+  it("accepts isGoal false on update", () => {
+    const r = expenseUpdateSchema.safeParse({ isGoal: false });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.isGoal).toBe(false);
+  });
+});
