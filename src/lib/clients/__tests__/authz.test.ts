@@ -202,7 +202,7 @@ describe("verifyClientAccess — siloing", () => {
   // before the share block, this test fails (asserts access:"shared", not
   // ok:false) even though the two tests above would still pass.
   it("non-owning advisor gains access via an active intra-firm share (fall-through)", async () => {
-    const sharePermission: "edit" = "edit";
+    const sharePermission = "edit" as const;
     await db.insert(clientShares).values({
       firmId: ORG,
       ownerUserId: ADV_A,
