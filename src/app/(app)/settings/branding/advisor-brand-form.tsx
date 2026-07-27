@@ -14,7 +14,7 @@ import {
 } from "./advisor-actions";
 import { AssetCard, toFileFormData } from "./brand-cards";
 
-type Initial = {
+export type AdvisorBrandInitial = {
   brandName: string | null;
   primaryColor: string | null;
   contactEmail: string | null;
@@ -26,6 +26,7 @@ type Initial = {
   logoUrl: string | null;
   faviconUrl: string | null;
 };
+type Initial = AdvisorBrandInitial;
 
 const FIELD_KEYS = [
   "brandName",
@@ -95,11 +96,15 @@ export default function AdvisorBrandForm({
   brandingEnabled,
   canEdit,
   advisorUserId,
+  subjectName,
 }: {
   initial: Initial;
   brandingEnabled: boolean;
   canEdit: boolean;
   advisorUserId?: string;
+  /** Set when an admin is editing another advisor's brand — switches the
+   *  grant-off notice to third person. Absent means "the caller's own". */
+  subjectName?: string;
 }) {
   const [fields, setFields] = useState<FieldValues>(() => toFieldValues(initial));
   const [saved, setSaved] = useState<FieldValues>(() => toFieldValues(initial));
@@ -207,8 +212,17 @@ export default function AdvisorBrandForm({
         <div className="flex items-start gap-2 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-[13px] text-ink">
           <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
           <span>
-            Your branding grant is off. You can set these up now, but clients won&apos;t see
-            them until it&apos;s enabled.
+            {subjectName ? (
+              <>
+                {subjectName}&apos;s branding grant is off. You can set these up now on
+                their behalf, but clients won&apos;t see them until it&apos;s enabled.
+              </>
+            ) : (
+              <>
+                Your branding grant is off. You can set these up now, but clients
+                won&apos;t see them until it&apos;s enabled.
+              </>
+            )}
           </span>
         </div>
       ) : null}

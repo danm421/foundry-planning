@@ -90,3 +90,51 @@ export async function renameFirm(formData: FormData): Promise<RenameFirmResult> 
   revalidatePath("/", "layout");
   return divergence ? { ok: true, divergenceWarning: true } : { ok: true };
 }
+
+export type SetBookSiloEnabledResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Toggle firm-wide book silo visibility: when on, org:member advisors see
+ * only their own book (plus anything shared with them); admins stay
+ * firm-wide either way. Default is off (legacy firm-wide) so no existing
+ * firm silently loses visibility on deploy.
+ *
+ * Uses `insert(...).onConflictDoUpdate(...)` rather than a bare
+ * `db.update(firms)` — unlike `renameFirm`, this write can be the very
+ * first row for a firm. `firms` rows are only ever inserted by
+ * `founder-init.ts` / `checkout-session-completed.ts`; a firm that reached
+ * this settings page without either path having run yet would make a bare
+ * UPDATE match zero rows and silently no-op (the toggle would look like it
+ * did nothing, forever, with no error). Every other `firms` column besides
+ * `firmId`/`bookSiloEnabled` is nullable or defaulted, so the insert is
+ * valid with just those two.
+ */
+export async function setBookSiloEnabled(enabled: boolean): Promise<SetBookSiloEnabledResult> {
+  await requireOrgAdminOrOwner();
+
+  const { userId, orgId } = await auth();
+  if (!userId || !orgId) {
+    return { ok: false, error: "No active org" };
+  }
+
+  await db
+    .insert(firms)
+    .values({ firmId: orgId, bookSiloEnabled: enabled })
+    .onConflictDoUpdate({
+      target: firms.firmId,
+      set: { bookSiloEnabled: enabled, updatedAt: new Date() },
+    });
+
+  await recordAudit({
+    action: "firm.book_silo_changed",
+    resourceType: "firm",
+    resourceId: orgId,
+    firmId: orgId,
+    metadata: { enabled },
+  });
+
+  // Visibility changes affect the sidebar and every client list, not just
+  // this page — same broad invalidation renameFirm uses.
+  revalidatePath("/", "layout");
+  return { ok: true };
+}

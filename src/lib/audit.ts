@@ -248,6 +248,7 @@ export type AuditAction =
   | "member.role_changed"
   // Firm-level lifecycle
   | "firm.name_changed"
+  | "firm.book_silo_changed"
   | "firm.archived"
   | "firm.purged"
   | "firm.founder_initialized"

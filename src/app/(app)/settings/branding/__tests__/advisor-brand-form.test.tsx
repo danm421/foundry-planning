@@ -126,4 +126,24 @@ describe("AdvisorBrandForm", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   });
+
+  it("shows the first-person grant-off notice when subjectName is absent (self mode)", () => {
+    render(
+      <AdvisorBrandForm initial={ALL_NULL_INITIAL} brandingEnabled={false} canEdit />,
+    );
+    expect(screen.getByText(/^Your branding grant is off\./)).toBeInTheDocument();
+  });
+
+  it("switches the grant-off notice to third person when subjectName is set (admin editing another advisor)", () => {
+    render(
+      <AdvisorBrandForm
+        initial={ALL_NULL_INITIAL}
+        brandingEnabled={false}
+        canEdit
+        subjectName="Pat Advisor"
+      />,
+    );
+    expect(screen.getByText(/^Pat Advisor's branding grant is off\./)).toBeInTheDocument();
+    expect(screen.queryByText(/^Your branding grant is off\./)).not.toBeInTheDocument();
+  });
 });
