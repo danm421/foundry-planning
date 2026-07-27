@@ -1569,6 +1569,13 @@
       "when": 1785173838494,
       "tag": "0223_handy_wraith",
       "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1785194729657,
+      "tag": "0224_vengeful_medusa",
+      "breakpoints": true
     }
   ]
 }
