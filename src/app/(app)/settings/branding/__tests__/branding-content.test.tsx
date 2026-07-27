@@ -49,9 +49,11 @@ vi.mock("../advisor-brand-form", () => ({
   ),
 }));
 vi.mock("../advisor-grant-list", () => ({
-  default: ({ rows }: { rows: Array<{ userId: string; brandingEnabled: boolean }> }) => (
-    <div data-testid="advisor-grant-list" data-rows={JSON.stringify(rows)} />
-  ),
+  default: ({
+    rows,
+  }: {
+    rows: Array<{ userId: string; brandingEnabled: boolean; isSelf: boolean }>;
+  }) => <div data-testid="advisor-grant-list" data-rows={JSON.stringify(rows)} />,
 }));
 
 import { BrandingContent } from "../branding-content";
@@ -102,7 +104,7 @@ describe("BrandingContent — member (non-admin) view", () => {
 });
 
 describe("BrandingContent — admin, own view (no advisorUserId)", () => {
-  it("renders the firm form, the admin's own brand form, and a grant list excluding the caller", async () => {
+  it("renders the firm form, the admin's own brand form, and a grant list that INCLUDES the caller, marked isSelf", async () => {
     const ui = await BrandingContent({
       orgId: "org_1",
       userId: "user_self",
@@ -116,8 +118,15 @@ describe("BrandingContent — admin, own view (no advisorUserId)", () => {
     expect(grantList).toBeTruthy();
     const rows = JSON.parse(grantList!.getAttribute("data-rows") ?? "[]");
     const ids = rows.map((r: { userId: string }) => r.userId);
-    expect(ids).not.toContain("user_self");
-    expect(ids).toEqual(["user_other", "user_no_profile"]);
+    // The caller is NOT excluded — a sole-admin firm must have some control
+    // surface that can enable their own grant, and the grant list switch is
+    // the only place `brandingEnabled` can be flipped.
+    expect(ids).toEqual(["user_self", "user_other", "user_no_profile"]);
+
+    const selfRow = rows.find((r: { userId: string }) => r.userId === "user_self");
+    expect(selfRow.isSelf).toBe(true);
+    const otherRow = rows.find((r: { userId: string }) => r.userId === "user_other");
+    expect(otherRow.isSelf).toBe(false);
 
     // The advisor with no advisor_profiles row yet must render as OFF, not
     // be omitted from the list.
@@ -167,5 +176,22 @@ describe("BrandingContent — admin editing another advisor via advisorUserId", 
     // Neither the firm form nor the grant list render in this single-advisor view.
     expect(container.querySelector("[data-testid='firm-branding-form']")).toBeNull();
     expect(container.querySelector("[data-testid='advisor-grant-list']")).toBeNull();
+  });
+
+  it("renders a not-a-member message and never the form when advisorUserId doesn't match any firm member", async () => {
+    const ui = await BrandingContent({
+      orgId: "org_1",
+      userId: "user_self",
+      isAdmin: true,
+      advisorUserId: "user_stray_not_a_member",
+    });
+    const { container, getByText, queryByText } = render(ui);
+
+    expect(getByText("That advisor is no longer a member of this firm.")).toBeInTheDocument();
+    expect(getByText(/Back to advisor list/)).toBeInTheDocument();
+    // No saveable form is rendered for a stray id — this is what stops a
+    // Save from creating an advisor_profiles row for a non-member.
+    expect(container.querySelector("[data-testid='advisor-brand-form']")).toBeNull();
+    expect(queryByText(/'s brand$/)).toBeNull();
   });
 });

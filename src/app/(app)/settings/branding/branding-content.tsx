@@ -33,19 +33,23 @@ interface Props {
   isAdmin: boolean;
   /**
    * `page.tsx` sets this only after confirming the caller is an admin —
-   * never wire a raw querystring value straight into this prop. This
-   * component re-checks `isAdmin` itself before honoring it anyway (see
-   * below); the page-level gate is the primary control, not the only one.
+   * never wire a raw querystring value straight into this prop. `isAdmin`
+   * below is the SAME boolean `page.tsx` already computed, passed down as a
+   * prop, not re-derived here — so the `isAdmin && advisorUserId` guard
+   * below is not a second independent authorization decision, just a
+   * defensive check against a future caller of this component that forgets
+   * to gate before rendering it. See the docblock on `AdminAdvisorBrandView`
+   * for what actually makes reading another advisor's profile here safe.
    */
   advisorUserId?: string;
 }
 
 export async function BrandingContent({ orgId, userId, isAdmin, advisorUserId }: Props) {
-  // Belt-and-suspenders on top of the page-level gate: even though
-  // `page.tsx` only ever sets `advisorUserId` for a verified admin, this
-  // component does not take that on faith for a call this security-
-  // sensitive — it re-checks `isAdmin` itself before entering the branch
-  // that reads another advisor's contact details.
+  // Defensive, not a second independent check (see the comment on
+  // `Props.advisorUserId` above) — `page.tsx` only ever sets `advisorUserId`
+  // for a verified admin, but this component doesn't assume that holds for
+  // every future caller before entering the branch that reads another
+  // advisor's contact details.
   if (isAdmin && advisorUserId) {
     // Awaited directly rather than used as `<AdminAdvisorBrandView />` JSX:
     // there's a single Suspense boundary for this whole page (in
@@ -86,21 +90,24 @@ export async function BrandingContent({ orgId, userId, isAdmin, advisorUserId }:
   // the row is created lazily by the first upsert (see
   // `listAdvisorProfiles`'s doc comment).
   //
-  // The caller themselves is excluded: their own grant is already the "Your
-  // brand" section above, and re-listing themselves here would point "Edit
-  // brand" at the admin-mode view of their own profile — a confusing detour
-  // around the section they're already looking at.
+  // The caller IS included, marked `isSelf` for a "you" label — the switch
+  // is the ONLY control in the product that can flip `brandingEnabled`
+  // (PATCH `/api/advisor-branding/[advisorUserId]/enabled`, unrestricted on
+  // its own target); excluding the caller here would leave a sole-admin
+  // firm with an editable "Your brand" form and a banner saying clients
+  // won't see it until enabled, but no surface anywhere that can enable it.
+  // One control surface for every advisor's grant, admin included, beats a
+  // second admin-only switch to keep in sync with this one.
   const brandingEnabledByUser = new Map(
     advisorProfiles.map((p) => [p.advisorUserId, p.brandingEnabled]),
   );
-  const grantRows = members
-    .filter((m) => m.userId !== userId)
-    .map((m) => ({
-      userId: m.userId,
-      displayName: m.displayName,
-      role: m.role,
-      brandingEnabled: brandingEnabledByUser.get(m.userId) ?? false,
-    }));
+  const grantRows = members.map((m) => ({
+    userId: m.userId,
+    displayName: m.displayName,
+    role: m.role,
+    brandingEnabled: brandingEnabledByUser.get(m.userId) ?? false,
+    isSelf: m.userId === userId,
+  }));
 
   return (
     <div className="flex flex-col gap-8">
@@ -179,19 +186,35 @@ async function AdminAdvisorBrandView({
     listFirmMembers(orgId),
   ]);
   const subject = members.find((m) => m.userId === advisorUserId);
-  const subjectName = subject?.displayName ?? "This advisor";
+
+  const backLink = (
+    <Link href="/settings/branding" className="w-fit text-sm text-ink-3 hover:text-ink">
+      ← Back to advisor list
+    </Link>
+  );
+
+  // `advisorUserId` is trusted to be admin-reachable (see the docblock
+  // above) but not to name an actual firm member — an admin can paste any
+  // string into the querystring. Without this guard, a stray id would
+  // silently render a saveable form and, on Save, create an
+  // `advisor_profiles` row for a non-member (org-scoped, so not a security
+  // issue, just junk data and a confusing blank form).
+  if (!subject) {
+    return (
+      <div className="flex flex-col gap-4">
+        {backLink}
+        <p className="text-sm text-ink-3">That advisor is no longer a member of this firm.</p>
+      </div>
+    );
+  }
+  const subjectName = subject.displayName;
   const brandingEnabled = profile?.brandingEnabled ?? false;
   const advisorInitial = toAdvisorInitial(profile);
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <Link
-          href="/settings/branding"
-          className="w-fit text-sm text-ink-3 hover:text-ink"
-        >
-          ← Back to advisor list
-        </Link>
+        {backLink}
         <h1 className="text-base font-medium text-ink">{subjectName}&apos;s brand</h1>
       </div>
 
