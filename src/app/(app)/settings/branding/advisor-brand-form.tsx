@@ -59,7 +59,11 @@ function isValidHttpUrl(v: string): boolean {
  *  rarely round-trips just to discover a 400. The server remains
  *  authoritative — `handleSave` also maps its `fieldErrors` onto the form. */
 function validateField(key: FieldKey, value: string): string | null {
-  if (value === "") return null; // blank clears the field on save — always valid
+  // Blank OR whitespace-only clears the field on save — always valid. Mirrors
+  // the server's `emptyToNull`/`trimToNull` preprocessors (route.ts:20-35),
+  // which treat an all-whitespace value as "not set" too; the client must
+  // not be stricter than the server it's mirroring.
+  if (value.trim() === "") return null;
   switch (key) {
     case "brandName":
     case "emailFromName":
@@ -114,11 +118,28 @@ export default function AdvisorBrandForm({
 
   function setField(key: FieldKey, value: string) {
     setFields((f) => ({ ...f, [key]: value }));
+    // A field the user is actively correcting shouldn't keep showing a
+    // stale red border until the next Save round-trip.
+    setErrors((e) => {
+      if (!(key in e)) return e;
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
   }
 
   function handleSave() {
+    // Only the keys that actually changed since the last successful save —
+    // never all eight. `upsertAdvisorProfile` builds `set: { ...payload }`
+    // (advisor-profile.ts), so an omitted key leaves that column alone, and
+    // the route's audit metadata (`fieldsChanged: Object.keys(parsed.data)`)
+    // stays a real signal instead of a constant list of all eight fields.
+    // A cleared field is still dirty, so it still travels as "".
+    const dirtyKeys = FIELD_KEYS.filter((key) => fields[key] !== saved[key]);
+    if (dirtyKeys.length === 0) return; // Save is disabled for this state; this is belt-and-suspenders against a stray form submit.
+
     const nextErrors: Partial<Record<FieldKey, string>> = {};
-    for (const key of FIELD_KEYS) {
+    for (const key of dirtyKeys) {
       const err = validateField(key, fields[key]);
       if (err) nextErrors[key] = err;
     }
@@ -129,6 +150,9 @@ export default function AdvisorBrandForm({
     }
     setErrors({});
 
+    const payload: Partial<FieldValues> = {};
+    for (const key of dirtyKeys) payload[key] = fields[key];
+
     const qs = advisorUserId ? `?advisorUserId=${encodeURIComponent(advisorUserId)}` : "";
     startTransition(async () => {
       let res: Response;
@@ -136,7 +160,7 @@ export default function AdvisorBrandForm({
         res = await fetch(`/api/advisor-branding${qs}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(fields),
+          body: JSON.stringify(payload),
         });
       } catch {
         setToast("Couldn't save. Check your connection and try again.");
@@ -155,8 +179,15 @@ export default function AdvisorBrandForm({
             const msgs = fieldErrors[key];
             if (msgs?.length) mapped[key] = msgs[0];
           }
-          setErrors(mapped);
-          setToast("Couldn't save — check the highlighted fields");
+          if (Object.keys(mapped).length > 0) {
+            setErrors(mapped);
+            setToast("Couldn't save — check the highlighted fields");
+          } else {
+            // No per-field issues to highlight (e.g. a `formErrors`-only
+            // 400) — don't tell the user to look at fields that aren't
+            // marked.
+            setToast("Couldn't save. Please try again.");
+          }
         } else if (res.status === 403) {
           setToast("You don't have permission to edit this branding.");
         } else {
@@ -214,7 +245,7 @@ export default function AdvisorBrandForm({
         }}
       >
         <section className="flex flex-col gap-4 rounded border border-hair p-4">
-          <h2 className="text-sm font-medium text-ink">Brand details</h2>
+          <h3 className="text-sm font-medium text-ink">Brand details</h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TextField
               label="Brand name"
@@ -269,10 +300,10 @@ export default function AdvisorBrandForm({
         </section>
 
         <section className="flex flex-col gap-4 rounded border border-hair p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-medium text-ink">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium text-ink">
             Intake invitation emails
             <FieldTooltip text="Applies to intake-form invitation emails only. Portal sign-in invitations are sent by our authentication provider and aren't brandable yet." />
-          </h2>
+          </h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TextField
               label="From name"

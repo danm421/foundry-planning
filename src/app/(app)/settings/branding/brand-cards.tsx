@@ -6,9 +6,11 @@ export type AssetResult = { ok: true; url: string } | { ok: false; error: string
 export type RemoveResult = { ok: true; noop?: true } | { ok: false; error: string };
 export type SaveResult = { ok: true } | { ok: false; error: string };
 
-/** The server actions take a `FormData` (so they can be called as plain
- *  server actions from a client component); every `AssetCard` caller needs
- *  this same one-line wrap around the `File` the card hands back. */
+/** `uploadBrandingAsset`/`uploadAdvisorBrandingAsset` (15a) take a
+ *  `FormData` — that's just their existing signature, not a requirement of
+ *  calling a server action from a client component (React 19 server actions
+ *  accept a `File` argument directly). Every `AssetCard` caller needs this
+ *  same one-line wrap around the `File` the card hands back to match it. */
 export function toFileFormData(file: File): FormData {
   const fd = new FormData();
   fd.set("file", file);
@@ -70,7 +72,7 @@ export function AssetCard({
   return (
     <section className="flex flex-col gap-3 rounded border border-hair p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-ink">{label}</h2>
+        <h3 className="text-sm font-medium text-ink">{label}</h3>
         {toast ? <span className="text-xs text-ink-3">{toast}</span> : null}
       </div>
       <div className="flex items-center gap-4">
@@ -154,7 +156,7 @@ export function ColorCard({
   return (
     <section className="flex flex-col gap-3 rounded border border-hair p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-ink">Primary color</h2>
+        <h3 className="text-sm font-medium text-ink">Primary color</h3>
         {toast ? <span className="text-xs text-ink-3">{toast}</span> : null}
       </div>
       <div className="flex items-center gap-3">

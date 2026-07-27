@@ -151,11 +151,15 @@ describe("ColorCard", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(null));
   });
 
-  it("surfaces the error and keeps Save disabled at the saved value on failure", async () => {
+  it("surfaces the error on failure and leaves Save enabled for a retry", async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: false, error: "Invalid color" });
     render(<ColorCard initial="#112233" onSave={onSave} />);
     fireEvent.change(screen.getByPlaceholderText("#0a2bff"), { target: { value: "#445566" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.getByText("Invalid color")).toBeInTheDocument());
+    // The value is still dirty (never got persisted), so Save must stay
+    // enabled — not "disabled at the saved value", which is what a stale
+    // savedValue on a failed attempt would incorrectly imply.
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 });
