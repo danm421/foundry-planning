@@ -71,3 +71,28 @@ describe("SettingsTabs", () => {
     expect(firmIdx).toBeGreaterThan(sharingIdx);
   });
 });
+
+describe("SettingsTabs — Branding tab", () => {
+  it("renders a Branding link for org:member", () => {
+    const { container } = render(<SettingsTabs {...BASE_PROPS} role="org:member" />);
+    const links = Array.from(container.querySelectorAll("a"));
+    const brandingLink = links.find((a) => a.textContent?.trim() === "Branding");
+    expect(brandingLink).toBeDefined();
+    expect(brandingLink?.getAttribute("href")).toBe("/settings/branding");
+  });
+
+  it("renders a Branding link for org:admin", () => {
+    const { container } = render(<SettingsTabs {...BASE_PROPS} role="org:admin" />);
+    const links = Array.from(container.querySelectorAll("a"));
+    const brandingLink = links.find((a) => a.textContent?.trim() === "Branding");
+    expect(brandingLink).toBeDefined();
+    expect(brandingLink?.getAttribute("href")).toBe("/settings/branding");
+  });
+
+  it("does not render a Branding link for null role (unauthenticated / no org)", () => {
+    const { container } = render(<SettingsTabs {...BASE_PROPS} role={null} />);
+    const links = Array.from(container.querySelectorAll("a"));
+    const brandingLink = links.find((a) => a.textContent?.trim() === "Branding");
+    expect(brandingLink).toBeUndefined();
+  });
+});

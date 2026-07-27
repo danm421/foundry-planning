@@ -1,27 +1,21 @@
 import { Suspense } from "react";
 import type { ReactElement } from "react";
 import { auth } from "@clerk/nextjs/server";
-import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
-import Forbidden from "../forbidden";
 import { BrandingContent } from "./branding-content";
 import BrandingSkeleton from "./loading-skeleton";
 
+// No role gate here: members render their own advisor brand form, admins get
+// the firm form *and* their own advisor form — see BrandingContent. The
+// admin-only firm surface is gated inside BrandingContent, not at the page.
 export default async function BrandingSettingsPage(): Promise<ReactElement> {
-  try {
-    await requireOrgAdminOrOwner();
-  } catch (err) {
-    if (err instanceof ForbiddenError) {
-      return <Forbidden requiredRole="admin or owner" />;
-    }
-    throw err;
+  const { orgId, userId, orgRole } = await auth();
+  if (!orgId || !userId) {
+    return <p className="text-sm text-ink-3">Sign in to manage branding.</p>;
   }
-
-  const { orgId } = await auth();
-  if (!orgId) return <Forbidden requiredRole="admin or owner" />;
 
   return (
     <Suspense fallback={<BrandingSkeleton />}>
-      <BrandingContent orgId={orgId} />
+      <BrandingContent orgId={orgId} userId={userId} isAdmin={orgRole === "org:admin"} />
     </Suspense>
   );
 }
