@@ -8,6 +8,7 @@ import {
   listRecentlyOpenedHouseholds,
 } from "@/lib/crm/households";
 import { CrmHouseholdSearch } from "@/components/crm-household-search";
+import { BookSwitcher } from "@/components/book-switcher";
 import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
 import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
@@ -56,7 +57,13 @@ export function buildSharedRows(
 export async function ClientsContent({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; status?: string; view?: string }>;
+  searchParams: Promise<{
+    search?: string;
+    status?: string;
+    view?: string;
+    /** Admin book-switcher: narrow the list to one advisor's book. */
+    advisor?: string;
+  }>;
 }) {
   const params = await searchParams;
   const { userId, orgRole } = await auth();
@@ -102,16 +109,23 @@ export async function ClientsContent({
 
   // ── Normal branch (recently opened / all / deleted) ───────────────────────
   const households = deletedView
-    ? await listCrmHouseholds({ search: params.search, status: params.status, deleted: true })
+    ? await listCrmHouseholds({
+        search: params.search,
+        status: params.status,
+        deleted: true,
+        viewAsAdvisorId: params.advisor,
+      })
     : recentView && userId
       ? await listRecentlyOpenedHouseholds({
           userId,
           search: params.search,
           status: params.status,
+          viewAsAdvisorId: params.advisor,
         })
       : await listCrmHouseholds({
           search: params.search,
           status: params.status,
+          viewAsAdvisorId: params.advisor,
         });
 
   const rows: UnifiedClientRow[] = households.map((h) => {
@@ -150,21 +164,24 @@ export async function ClientsContent({
           </Link>
         </div>
       </div>
-      <div className="mt-2 flex gap-4">
-        <Link href="/clients" className={recentView ? tabActive : tab}>
-          Recently opened
-        </Link>
-        <Link href="/clients?view=all" className={!recentView && !deletedView ? tabActive : tab}>
-          All
-        </Link>
-        <Link href="/clients?view=shared" className={tab}>
-          Shared with me
-        </Link>
-        {canManage && (
-          <Link href="/clients?view=deleted" className={deletedView ? tabActive : tab}>
-            Trash
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex gap-4">
+          <Link href="/clients" className={recentView ? tabActive : tab}>
+            Recently opened
           </Link>
-        )}
+          <Link href="/clients?view=all" className={!recentView && !deletedView ? tabActive : tab}>
+            All
+          </Link>
+          <Link href="/clients?view=shared" className={tab}>
+            Shared with me
+          </Link>
+          {canManage && (
+            <Link href="/clients?view=deleted" className={deletedView ? tabActive : tab}>
+              Trash
+            </Link>
+          )}
+        </div>
+        {canManage && <BookSwitcher />}
       </div>
       <CrmHouseholdSearch />
       <UnifiedClientsTable

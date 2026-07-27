@@ -4465,6 +4465,10 @@ export const firms = pgTable("firms", {
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),
   primaryColor: text("primary_color"),
+  // When true, org:member advisors see only their own book (+ shares).
+  // When false (default), advisors keep firm-wide visibility (legacy behavior).
+  // Admins are always firm-wide regardless. See spec: per-advisor-books-and-branding.
+  bookSiloEnabled: boolean("book_silo_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -4495,6 +4499,47 @@ export const staffAdvisorVisibility = pgTable(
     ),
   ],
 );
+
+// Per-advisor branding overrides + the admin "may customize branding" grant.
+// firmId is the Clerk org id (text, no FK — matches staff_advisor_visibility).
+// advisorUserId is the Clerk user id of the advisor. Every brand field is a
+// nullable override layered over the firm's branding; brandingEnabled=false
+// means "ignore overrides, use firm branding" regardless of stored values.
+export const advisorProfiles = pgTable(
+  "advisor_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    advisorUserId: text("advisor_user_id").notNull(),
+    brandingEnabled: boolean("branding_enabled").notNull().default(false),
+    brandName: text("brand_name"),
+    logoUrl: text("logo_url"),
+    faviconUrl: text("favicon_url"),
+    primaryColor: text("primary_color"),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    website: text("website"),
+    address: text("address"),
+    emailFromName: text("email_from_name"),
+    emailReplyTo: text("email_reply_to"),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("advisor_profiles_firm_advisor_uq").on(
+      t.firmId,
+      t.advisorUserId,
+    ),
+  ],
+);
+
+export type AdvisorProfileRow = InferSelectModel<typeof advisorProfiles>;
+export type NewAdvisorProfileRow = InferInsertModel<typeof advisorProfiles>;
 
 // One Stripe subscription per firm. UNIQUE filter ensures a firm can only
 // have one *live* sub at a time — canceled rows stay for history.

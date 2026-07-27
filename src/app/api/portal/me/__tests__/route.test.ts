@@ -13,6 +13,16 @@ const firmNameMock = vi.fn();
 vi.mock("@/lib/branding/branding", () => ({
   resolveFirmName: (id: string, cached: string | null) => firmNameMock(id, cached),
 }));
+// resolveIntakeBrandingForClient is the advisor-aware resolver (Task 10):
+// null means no usable logo ANYWHERE (advisor override or firm) — the route
+// falls back to the logo-independent name resolution (getBranding +
+// resolveFirmName, mocked above) in that case rather than showing a generic
+// default for every logo-less firm.
+const brandingForClientMock = vi.fn();
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveIntakeBrandingForClient: (firmId: string, advisorId: string) =>
+    brandingForClientMock(firmId, advisorId),
+}));
 vi.mock("@/db/schema", () => ({
   clients: { _name: "clients" },
   crmHouseholdContacts: { _name: "crm_household_contacts" },
@@ -44,30 +54,46 @@ beforeEach(() => {
   getBrandingMock.mockResolvedValue({ displayName: "Ethos Cached", logoUrl: "https://blob/logo.png" });
   firmNameMock.mockReset();
   firmNameMock.mockResolvedValue("Ethos Wealth");
+  brandingForClientMock.mockReset();
+  brandingForClientMock.mockResolvedValue({
+    logoUrl: "https://blob/logo.png",
+    firmName: "Ethos Wealth",
+    faviconUrl: null,
+  });
   intakePendingMock.mockReset();
   intakePendingMock.mockResolvedValue(false);
 });
 
 describe("GET /api/portal/me", () => {
-  it("returns client identity + firm branding for a bound client", async () => {
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
+  it("returns client identity + advisor-resolved firm branding for a bound client", async () => {
+    // Advisor-distinct values (deliberately different from the beforeEach
+    // legacy-path mocks) so this test can only pass if the DTO is actually
+    // built from the resolver's output — not from the legacy
+    // resolveFirmName/getBranding round-trip.
+    brandingForClientMock.mockResolvedValue({
+      logoUrl: "https://blob/advisor.png",
+      firmName: "Advisor Brand",
+      faviconUrl: null,
+    });
+    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
     selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
       client: { id: "c1", displayName: "Casey Cooper", email: "casey@example.com" },
-      firm: { name: "Ethos Wealth", logoUrl: "https://blob/logo.png" },
+      firm: { name: "Advisor Brand", logoUrl: "https://blob/advisor.png" },
       mode: "client",
       editEnabled: true,
       intakePending: false,
     });
-    expect(firmNameMock).toHaveBeenCalledWith("firm-1", "Ethos Cached");
+    expect(brandingForClientMock).toHaveBeenCalledWith("firm-1", "adv-1");
+    expect(firmNameMock).not.toHaveBeenCalled();
   });
 
   it("sets intakePending true when the client has an unsubmitted prefilled form", async () => {
     intakePendingMock.mockResolvedValue(true);
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
+    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
     selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
     const res = await GET();
     const body = await res.json();
@@ -75,9 +101,10 @@ describe("GET /api/portal/me", () => {
     expect(intakePendingMock).toHaveBeenCalled();
   });
 
-  it("degrades gracefully with no primary contact and no branding", async () => {
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1", portalEditEnabled: false }]);
+  it("degrades gracefully with no primary contact and no branding anywhere", async () => {
+    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: false }]);
     selectQueue.push([]); // no primary contact
+    brandingForClientMock.mockResolvedValue(null); // no logo, advisor or firm
     getBrandingMock.mockResolvedValue(null);
     firmNameMock.mockResolvedValue("Foundry Planning");
     const res = await GET();
@@ -85,6 +112,32 @@ describe("GET /api/portal/me", () => {
     expect(body.client.displayName).toBe("");
     expect(body.firm).toEqual({ name: "Foundry Planning", logoUrl: null });
     expect(body.editEnabled).toBe(false);
+  });
+
+  // Regression guard: resolveIntakeBrandingForClient collapses to `null`
+  // whenever there is no usable logo anywhere (advisor override or firm) —
+  // that's the right signal for the portal chrome to fall back to the
+  // Foundry lockup, but a firm's real name does NOT depend on having a logo.
+  // A logo-less firm must still see its own name here, not the generic
+  // "Foundry Planning" default (which is what naively mapping
+  // `branding?.firmName ?? <fallback>` would produce).
+  it("resolves the firm's real name even when it has no logo anywhere", async () => {
+    selectQueue.push([{ firmId: "firm-nologo", advisorId: "adv-2", crmHouseholdId: "hh-2", portalEditEnabled: true }]);
+    selectQueue.push([{ firstName: "Jamie", lastName: "Client", email: "jamie@example.com" }]);
+    brandingForClientMock.mockResolvedValue(null); // no advisor override, no firm logo
+    getBrandingMock.mockResolvedValue({
+      displayName: "Cached Meridian Wealth",
+      logoUrl: null,
+      faviconUrl: null,
+      primaryColor: null,
+    });
+    firmNameMock.mockResolvedValue("Meridian Wealth Live");
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(body.firm).toEqual({ name: "Meridian Wealth Live", logoUrl: null });
+    expect(firmNameMock).toHaveBeenCalledWith("firm-nologo", "Cached Meridian Wealth");
   });
 
   it("propagates auth errors through authErrorResponse", async () => {
@@ -100,12 +153,12 @@ describe("GET /api/portal/me", () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body).toEqual({ error: "Not found" });
-    expect(getBrandingMock).not.toHaveBeenCalled();
+    expect(brandingForClientMock).not.toHaveBeenCalled();
   });
 
   it("includes advisor mode in response when act-as advisor", async () => {
     resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "adv" });
-    selectQueue.push([{ firmId: "firm-1", crmHouseholdId: "hh-1" }]);
+    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1" }]);
     selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
     const res = await GET();
     expect(res.status).toBe(200);

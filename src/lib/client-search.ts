@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
 
 export interface ClientSearchResult {
   id: string;
@@ -12,11 +13,15 @@ const MAX_RESULTS = 8;
 export async function searchClients(
   query: string,
   firmId: string,
+  caller: { userId: string; orgRole: string | null | undefined },
 ): Promise<ClientSearchResult[]> {
   const trimmed = query.trim().toLowerCase();
   if (trimmed.length === 0) return [];
 
   const pattern = `%${trimmed}%`;
+
+  const visible = await resolveVisibleAdvisorIds(caller.userId, caller.orgRole, firmId);
+  const scope = advisorScopeCondition(clients.advisorId, visible);
 
   // CRM contacts are the sole source of truth for identity. Two-step query:
   // 1) Find households whose contacts match the query (any role). 2) Pull
@@ -28,6 +33,7 @@ export async function searchClients(
     .where(
       and(
         eq(clients.firmId, firmId),
+        ...(scope ? [scope] : []),
         or(
           ilike(crmHouseholdContacts.firstName, pattern),
           ilike(crmHouseholdContacts.lastName, pattern),
@@ -54,6 +60,7 @@ export async function searchClients(
     .where(
       and(
         eq(clients.firmId, firmId),
+        ...(scope ? [scope] : []),
         inArray(clients.crmHouseholdId, householdIds),
         or(
           eq(crmHouseholdContacts.role, "primary"),

@@ -71,7 +71,14 @@ export async function resolveFirmName(
   return cachedName?.trim() || "Foundry Planning";
 }
 
-async function loadLogo(url: string | null): Promise<string | null> {
+/**
+ * Fetches `url` and inlines it as a base64 data URL, rejecting anything that
+ * isn't a reasonably-sized PNG/JPEG. Exported so advisor-aware resolvers
+ * (`resolve-for-client.ts`) can inline an advisor's own logo through the
+ * exact same size/MIME/error handling as the firm logo — no duplicated
+ * inlining logic.
+ */
+export async function loadLogo(url: string | null): Promise<string | null> {
   if (!url) return null;
   try {
     const res = await fetch(url);

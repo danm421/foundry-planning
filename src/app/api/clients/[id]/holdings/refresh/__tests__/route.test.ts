@@ -11,7 +11,17 @@ vi.mock("@/db", () => {
     c.where = () => Promise.resolve(selectQueue.shift());
     return c;
   };
-  return { db: { select: () => chain(), execute: (q: unknown) => mockExecute(q) } };
+  return {
+    db: {
+      select: () => chain(),
+      execute: (q: unknown) => mockExecute(q),
+      // `requireClientEditAccess` → `callerMaySeeAdvisor` →
+      // `resolveVisibleAdvisorIds` reads `firms.book_silo_enabled` via
+      // `firmBookSiloEnabled`. No row → not siloed → firm-wide visibility,
+      // which is what this test assumes.
+      query: { firms: { findFirst: async () => undefined } },
+    },
+  };
 });
 
 const mockFetchEodCloses = vi.fn();

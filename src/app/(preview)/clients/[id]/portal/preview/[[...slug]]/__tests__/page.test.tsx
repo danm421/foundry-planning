@@ -52,7 +52,7 @@ vi.mock("@/components/portal/portal-preview-banner", () => ({
 vi.mock("@/lib/clients/authz", () => ({
   requireClientAccess: vi.fn(() =>
     Promise.resolve({
-      client: { crmHouseholdId: "h1", portalEditEnabled: true },
+      client: { crmHouseholdId: "h1", portalEditEnabled: true, advisorId: "adv1" },
       firmId: "f1",
       permission: "edit",
       access: "own",
@@ -85,8 +85,8 @@ vi.mock("next/navigation", () => ({
     throw new Error("NEXT_NOT_FOUND");
   }),
 }));
-vi.mock("@/lib/branding/branding", () => ({
-  resolveIntakeBranding: vi.fn(() =>
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveIntakeBrandingForClient: vi.fn(() =>
     Promise.resolve({
       logoUrl: "https://blob.example/logo.png",
       firmName: "Acme Wealth",
@@ -98,7 +98,7 @@ vi.mock("@/lib/branding/branding", () => ({
 import PreviewPage from "../page";
 import { notFound } from "next/navigation";
 import { requireClientAccess } from "@/lib/clients/authz";
-import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 
 async function renderPreview(slug: string[] | undefined) {
   const ui = await PreviewPage({ params: Promise.resolve({ id: "c1", slug }) });
@@ -158,9 +158,9 @@ describe("PortalPreview catch-all", () => {
     expect(node?.getAttribute("data-client")).toBe("c1");
   });
 
-  it("resolves firm branding and renders the letterhead strip", async () => {
+  it("resolves branding by the client's advisor and renders the letterhead strip", async () => {
     const { container } = await renderPreview(undefined);
-    expect(resolveIntakeBranding).toHaveBeenCalledWith("f1");
+    expect(resolveIntakeBrandingForClient).toHaveBeenCalledWith("f1", "adv1");
     const img = container.querySelector('img[alt="Acme Wealth"]');
     expect(img?.getAttribute("src")).toBe("https://blob.example/logo.png");
   });

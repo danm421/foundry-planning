@@ -43,17 +43,28 @@ vi.mock("@/lib/rate-limit", () => ({
   rateLimitErrorResponse: vi.fn(),
 }));
 
+// Guardrail, not a functional stub. Task 11 moved firmName resolution to
+// resolveBrandingForClient (mocked below), so this route no longer calls
+// @/db directly — but every worktree on this machine shares one dev Neon
+// branch, so a test that silently falls through to a real @/db call is a
+// real hazard, not just noise. Throw loudly if anything ever reaches it.
 vi.mock("@/db", () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve([{ displayName: "Test Firm", householdId: "hh-test" }]),
-          then: (resolve: (v: unknown) => unknown) => Promise.resolve([{ displayName: "Test Firm", householdId: "hh-test" }]).then(resolve),
-        }),
-      }),
-    }),
+    select: () => {
+      throw new Error("unexpected real DB access in test — @/db should be fully mocked in this suite");
+    },
   },
+}));
+
+const brandingMocks = vi.hoisted(() => ({
+  resolveBrandingForClient: vi.fn().mockResolvedValue({
+    firmName: "Resolved Firm",
+    primaryColor: "#b87f1f",
+    logoDataUrl: null,
+  }),
+}));
+vi.mock("@/lib/branding/resolve-for-client", () => ({
+  resolveBrandingForClient: brandingMocks.resolveBrandingForClient,
 }));
 
 // Phase-1b advisor gate. Returns a client carrying crmHouseholdId so the
@@ -61,7 +72,7 @@ vi.mock("@/db", () => ({
 // not via a second @/db query).
 vi.mock("@/lib/clients/authz", () => ({
   requireClientEditAccess: vi.fn().mockImplementation(async (clientId: string) => {
-    return { client: { id: clientId, crmHouseholdId: "hh-test" }, firmId: "firm_test", access: "own" };
+    return { client: { id: clientId, crmHouseholdId: "hh-test", advisorId: "adv-1" }, firmId: "firm_test", access: "own" };
   }),
 }));
 
@@ -197,6 +208,24 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(renderPdfMock).toHaveBeenCalledOnce();
+  });
+
+  it("resolves the firm name via the client's advisor (Task 11: replaces the inline firms.displayName query)", async () => {
+    brandingMocks.resolveBrandingForClient.mockResolvedValueOnce({
+      firmName: "Advisor Brand",
+      primaryColor: "#123456",
+      logoDataUrl: "data:image/png;base64,ADV",
+    });
+    const { renderToBuffer } = await import("@react-pdf/renderer");
+
+    const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });
+
+    expect(res.status).toBe(200);
+    // Positional args — client's own advisorId, scoped to the firm the route
+    // already resolved via requireClientEditAccess.
+    expect(brandingMocks.resolveBrandingForClient).toHaveBeenCalledWith("firm_test", "adv-1");
+    const doc = (renderToBuffer as ReturnType<typeof vi.fn>).mock.calls[0][0] as { props: { firmName: string } };
+    expect(doc.props.firmName).toBe("Advisor Brand");
   });
 
   it("captures the PDF export to the vault as reportType 'report:<id>'", async () => {

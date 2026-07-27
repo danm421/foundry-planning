@@ -28,6 +28,31 @@ export async function putBrandingAsset(args: PutArgs): Promise<{ url: string }> 
   return { url: result.url };
 }
 
+type PutAdvisorArgs = PutArgs & { advisorUserId: string };
+
+/**
+ * Upload a PER-ADVISOR branding asset under
+ *   firms/<firmId>/advisors/<advisorUserId>/branding/<kind>
+ *
+ * The `firms/<firmId>/` prefix is deliberate and load-bearing: the firm purge
+ * and any future prefix-listing key off it. The advisor segment keeps two
+ * advisors in one firm from sharing a slot. Same public store + random suffix
+ * as the firm-level asset — these are fetched unauthenticated by PDF
+ * renderers and email clients. Removal reuses `deleteBrandingAsset`.
+ */
+export async function putAdvisorBrandingAsset(
+  args: PutAdvisorArgs,
+): Promise<{ url: string }> {
+  const pathname = `firms/${args.firmId}/advisors/${args.advisorUserId}/branding/${args.kind}`;
+  const result = await put(pathname, args.bytes, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType: args.contentType,
+    token: publicBlobToken(),
+  });
+  return { url: result.url };
+}
+
 /**
  * Best-effort delete. Callers should swallow rejections (orphaned blob is
  * acceptable; failing the user's action because cleanup failed is not).

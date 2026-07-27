@@ -118,6 +118,11 @@ vi.mock("@/db", async () => {
         from: (t: unknown) => makeResult(rowsFor(t)),
       }),
       transaction: mockTransaction,
+      // `requireClientEditAccess` → `callerMaySeeAdvisor` →
+      // `resolveVisibleAdvisorIds` reads `firms.book_silo_enabled` via
+      // `firmBookSiloEnabled`. No row → not siloed → firm-wide visibility,
+      // which is what these tests assume.
+      query: { firms: { findFirst: async () => undefined } },
     },
   };
 });

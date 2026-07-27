@@ -332,6 +332,15 @@ const ALLOWLIST: Record<string, string> = {
     "advisor lifecycle — flips a draft form to expired; writes no live planning data",
   "src/app/api/data-collection/email-settings/route.ts":
     "advisor email-template config — writes only intake_email_settings (the advisor's own invitation copy), no live planning data; the send path POST /api/data-collection is itself sub-gated",
+
+  // Per-advisor branding (Task 14). Same shape as the email-settings exemption
+  // above: firm/advisor config, not live planning data, so a lapsed
+  // subscription shouldn't block fixing a broken brand field (e.g. a
+  // malformed emailReplyTo silently breaking intake-invite delivery).
+  "src/app/api/advisor-branding/route.ts":
+    "per-advisor branding config (logo/color/contact/email-from-reply-to) — writes only advisor_profiles, no live planning data",
+  "src/app/api/advisor-branding/[advisorUserId]/enabled/route.ts":
+    "admin-only branding grant toggle — writes only advisor_profiles.branding_enabled, no live planning data",
 };
 
 const MUTATION_VERBS = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;

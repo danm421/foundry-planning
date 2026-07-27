@@ -150,6 +150,10 @@ vi.mock("@/db", async () => {
   });
 
   const db = {
+    // `requireClientEditAccess` → `callerMaySeeAdvisor` → `resolveVisibleAdvisorIds`
+    // reads `firms.book_silo_enabled` via `firmBookSiloEnabled`. No row → not
+    // siloed → firm-wide visibility, which is what these tests assume.
+    query: { firms: { findFirst: async () => undefined } },
     select: (_cols?: unknown) => ({
       from: (t: unknown) => {
         const allRows = rowsFor(t);

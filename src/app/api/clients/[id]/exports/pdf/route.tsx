@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { db } from "@/db";
-import { firms } from "@/db/schema";
+import { resolveBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import {
@@ -46,9 +44,9 @@ export async function POST(
 ) {
   try {
     const { id: clientId } = await params;
-    const { client: _clientRow, firmId } = await requireClientEditAccess(clientId);
+    const { client, firmId } = await requireClientEditAccess(clientId);
     await requireActiveSubscriptionForFirm(firmId);
-    const crmHouseholdId = _clientRow.crmHouseholdId;
+    const crmHouseholdId = client.crmHouseholdId;
 
     const rl = await checkExportPdfRateLimit(firmId);
     if (!rl.allowed) {
@@ -122,11 +120,8 @@ export async function POST(
       });
     }
 
-    const [firm] = await db
-      .select({ displayName: firms.displayName })
-      .from(firms)
-      .where(eq(firms.firmId, firmId));
-    const firmName = firm?.displayName ?? "Foundry Planning";
+    const branding = await resolveBrandingForClient(firmId, client.advisorId);
+    const firmName = branding.firmName;
 
     const householdName = (data as { clientName?: string }).clientName ?? "Client";
 

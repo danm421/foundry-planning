@@ -4,6 +4,11 @@ const mockAuth = vi.fn();
 const mockUpdateOrg = vi.fn();
 const mockGetOrg = vi.fn();
 const mockDbUpdate = vi.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) }));
+const mockOnConflictDoUpdate = vi.fn(async (..._args: unknown[]) => undefined);
+const mockValues = vi.fn((v: unknown) => ({
+  onConflictDoUpdate: (o: unknown) => mockOnConflictDoUpdate(v, o),
+}));
+const mockDbInsert = vi.fn(() => ({ values: mockValues }));
 const mockRecordAudit = vi.fn(async (..._args: unknown[]) => {});
 const mockRevalidatePath = vi.fn();
 const mockRequireAdminOrOwner = vi.fn(async () => {});
@@ -18,10 +23,13 @@ vi.mock("@clerk/nextjs/server", () => ({
   }),
 }));
 vi.mock("@/db", () => ({
-  db: { update: () => mockDbUpdate() },
+  db: {
+    update: () => mockDbUpdate(),
+    insert: () => mockDbInsert(),
+  },
 }));
 vi.mock("@/db/schema", () => ({
-  firms: {},
+  firms: { firmId: "firms.firm_id" },
 }));
 vi.mock("drizzle-orm", () => ({
   eq: () => ({}),
@@ -37,7 +45,7 @@ vi.mock("@/lib/authz", () => ({
   ForbiddenError: class ForbiddenError extends Error {},
 }));
 
-import { renameFirm } from "../actions";
+import { renameFirm, setBookSiloEnabled } from "../actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -118,5 +126,64 @@ describe("renameFirm", () => {
     const { ForbiddenError } = await import("@/lib/authz");
     mockRequireAdminOrOwner.mockRejectedValueOnce(new ForbiddenError("nope"));
     await expect(renameFirm(fd("New Name"))).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("setBookSiloEnabled", () => {
+  it("re-throws ForbiddenError from authz (caller is responsible)", async () => {
+    const { ForbiddenError } = await import("@/lib/authz");
+    mockRequireAdminOrOwner.mockRejectedValueOnce(new ForbiddenError("nope"));
+    await expect(setBookSiloEnabled(true)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockDbInsert).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when there's no active org", async () => {
+    mockAuth.mockResolvedValue({ userId: null, orgId: null });
+    const result = await setBookSiloEnabled(true);
+    expect(result).toEqual({ ok: false, error: "No active org" });
+    expect(mockDbInsert).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
+  it("writes via insert(...).onConflictDoUpdate(...) — never a bare db.update(firms)", async () => {
+    const result = await setBookSiloEnabled(true);
+    expect(result).toEqual({ ok: true });
+    expect(mockDbInsert).toHaveBeenCalledTimes(1);
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+    expect(mockOnConflictDoUpdate).toHaveBeenCalledWith(
+      { firmId: "org_1", bookSiloEnabled: true },
+      expect.objectContaining({
+        target: "firms.firm_id",
+        set: expect.objectContaining({ bookSiloEnabled: true, updatedAt: expect.any(Date) }),
+      }),
+    );
+  });
+
+  it("records firm.book_silo_changed with metadata.enabled reflecting the new value — on", async () => {
+    await setBookSiloEnabled(true);
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "firm.book_silo_changed",
+        resourceType: "firm",
+        resourceId: "org_1",
+        firmId: "org_1",
+        metadata: { enabled: true },
+      }),
+    );
+  });
+
+  it("records firm.book_silo_changed with metadata.enabled reflecting the new value — off", async () => {
+    await setBookSiloEnabled(false);
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "firm.book_silo_changed",
+        metadata: { enabled: false },
+      }),
+    );
+  });
+
+  it("revalidates the whole layout, matching renameFirm's broad invalidation", async () => {
+    await setBookSiloEnabled(true);
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 });

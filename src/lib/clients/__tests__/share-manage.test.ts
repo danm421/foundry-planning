@@ -38,7 +38,6 @@ vi.mock("@/lib/db-helpers", () => ({
 
 vi.mock("../share-recipients", () => ({
   resolveRecipientByEmail: mockResolveRecipientByEmail,
-  isMemberOfFirm: mockIsMemberOfFirm,
 }));
 
 vi.mock("@/lib/audit", () => ({
@@ -46,7 +45,6 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 const mockResolveRecipientByEmail = vi.fn();
-const mockIsMemberOfFirm = vi.fn();
 const mockRecordAudit = vi.fn();
 
 // ---------------------------------------------------------------------------
@@ -185,21 +183,38 @@ describe("createShare", () => {
     }
   });
 
-  it("returns 409 when recipient is already a member of the owning firm", async () => {
+  it("allows sharing to a fellow firm member (intra-firm)", async () => {
+    // Recipient resolves to a user who IS already a member of the owner's firm —
+    // this must now succeed instead of being rejected with 409. There's no
+    // remaining code-level branch on firm membership, so this is intentionally
+    // near-identical to the plain insert test below — it documents the removed
+    // guard's absence rather than exercising distinct logic.
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
-    mockIsMemberOfFirm.mockResolvedValue(true);
+    const newShare = { id: SHARE_ID, scope: "all", firmId: FIRM_A, ownerUserId: ADVISOR_ID, clientId: null };
+    mockDb.insert.mockReturnValue(makeInsertChain([newShare]));
 
     const { createShare } = await import("../share-manage");
     const result = await createShare(baseArgs);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.share).toEqual(newShare);
+    }
+  });
+
+  it("rejects a self-share (recipient resolves to the owner's own userId)", async () => {
+    mockResolveRecipientByEmail.mockResolvedValue({ userId: ADVISOR_ID, email: "advisor@own.com" });
+
+    const { createShare } = await import("../share-manage");
+    const result = await createShare({ ...baseArgs, email: "advisor@own.com" });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.status).toBe(409);
+      expect(result.status).toBe(400);
     }
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it("inserts a valid share-all and calls recordAudit", async () => {
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
-    mockIsMemberOfFirm.mockResolvedValue(false);
     const newShare = { id: SHARE_ID, scope: "all", firmId: FIRM_A, ownerUserId: ADVISOR_ID, clientId: null };
     mockDb.insert.mockReturnValue(makeInsertChain([newShare]));
 
@@ -219,7 +234,6 @@ describe("createShare", () => {
 
   it("inserts a valid per-client share with scope:client", async () => {
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
-    mockIsMemberOfFirm.mockResolvedValue(false);
     const newShare = { id: SHARE_ID, scope: "client", firmId: FIRM_A, ownerUserId: ADVISOR_ID, clientId: CLIENT_ID };
     mockDb.insert.mockReturnValue(makeInsertChain([newShare]));
 
@@ -237,7 +251,6 @@ describe("createShare", () => {
 
   it("returns 409 on unique constraint violation (code 23505)", async () => {
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
-    mockIsMemberOfFirm.mockResolvedValue(false);
     const dupErr = Object.assign(new Error("duplicate key"), { code: "23505" });
     // Make .returning() throw
     const chain: Record<string, unknown> = {};
@@ -255,7 +268,6 @@ describe("createShare", () => {
 
   it("rethrows non-23505 DB errors", async () => {
     mockResolveRecipientByEmail.mockResolvedValue({ userId: RECIPIENT_ID, email: "recipient@other.com" });
-    mockIsMemberOfFirm.mockResolvedValue(false);
     const dbErr = new Error("connection timeout");
     const chain: Record<string, unknown> = {};
     chain.values = vi.fn().mockReturnValue(chain);

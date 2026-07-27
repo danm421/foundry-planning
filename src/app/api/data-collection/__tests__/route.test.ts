@@ -13,6 +13,14 @@ vi.mock("@/lib/clients/authz", () => ({
   }),
 }));
 
+// No advisor-brand row for any of this file's clients — the per-advisor
+// from-name/reply-to overlay is exercised by route-email-settings.test.ts.
+// Without this mock, the route's real getAdvisorProfile hits the @/db mock
+// below, whose db.query is undefined and throws.
+vi.mock("@/lib/branding/advisor-profile", () => ({
+  getAdvisorProfile: async () => null,
+}));
+
 vi.mock("@/lib/authz", () => ({
   requireActiveSubscriptionForFirm: async () => {},
   authErrorResponse: () => undefined,

@@ -248,6 +248,7 @@ export type AuditAction =
   | "member.role_changed"
   // Firm-level lifecycle
   | "firm.name_changed"
+  | "firm.book_silo_changed"
   | "firm.archived"
   | "firm.purged"
   | "firm.founder_initialized"
@@ -257,6 +258,12 @@ export type AuditAction =
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
   | "firm.branding_color_changed"
+  // Per-advisor branding (self edit gated by grant, admin override)
+  | "advisor_branding.update"
+  | "advisor_branding.grant"
+  // Advisor logo/favicon upload or removal (blob asset, not a field edit).
+  // metadata carries { kind, before, after } — blob URLs, not personal data.
+  | "advisor_branding.asset_changed"
   // CRM (lightweight household / contact / account records that may or
   // may not be linked to a planning client).
   | "crm.household.create"

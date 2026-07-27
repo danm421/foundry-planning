@@ -33,6 +33,9 @@ export const PURGED_FIRM_TABLES: readonly string[] = [
   "client_shares", // share-all rows have client_id NULL
   "planning_kb_chunks", // firm-level chunks have client_id NULL
   "forge_conversations", // global (non-client) conversations have client_id NULL
+  // new — per-advisor branding (Task 14): leaf table, no FK to clients/
+  // crm_households, so nothing cascades it.
+  "advisor_profiles",
 ];
 
 /** Removed transitively by a cascade purgeFirmById triggers — each has a

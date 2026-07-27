@@ -1,7 +1,11 @@
 import { cache } from "react";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { accounts, crmHouseholds } from "@/db/schema";
-import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import {
+  advisorScopeCondition,
+  resolveVisibleAdvisorIds,
+  applyBookSwitcher,
+} from "@/lib/visibility";
 import { AUM_ELIGIBLE_CATEGORIES } from "@/lib/accounts/aum";
 
 /** Task statuses that count as open for the due-this-week KPI and the feed. */
@@ -15,13 +19,21 @@ export type HouseholdConditions = Awaited<
  * Household-scoped WHERE conditions shared by the KPI queries and the
  * household-derived feed sources: advisor visibility + firm + not-deleted +
  * active/prospect.
+ *
+ * `viewAsAdvisorId` is the admin book-switcher's narrowing param — honored
+ * ONLY when `orgRole` is admin/owner (see `isFirmWideAdminRole`). A
+ * non-admin's value is ignored entirely: `narrowToAdvisor` REPLACES whatever
+ * visibility set it's given, so applying it to a non-admin's already-scoped
+ * set would widen their access rather than narrow it.
  */
 export const visibleHouseholdConditions = cache(async function visibleHouseholdConditions(
   firmId: string,
   userId: string,
   orgRole: string | null | undefined,
+  viewAsAdvisorId?: string,
 ) {
-  const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
+  let visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
+  visible = applyBookSwitcher(visible, orgRole, viewAsAdvisorId);
   const scope = advisorScopeCondition(crmHouseholds.advisorId, visible);
   const conditions = [
     eq(crmHouseholds.firmId, firmId),
