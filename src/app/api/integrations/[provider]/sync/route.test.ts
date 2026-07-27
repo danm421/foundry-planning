@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({
@@ -12,7 +12,15 @@ import { auth } from "@clerk/nextjs/server";
 import { checkIntegrationSyncLimit } from "@/lib/rate-limit";
 import { syncFirm } from "@/lib/integrations/sync";
 
-beforeEach(() => vi.clearAllMocks());
+const ORIGINAL_ORION_ENABLED = process.env.ORION_ENABLED;
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.ORION_ENABLED = "true";
+});
+afterEach(() => {
+  if (ORIGINAL_ORION_ENABLED === undefined) delete process.env.ORION_ENABLED;
+  else process.env.ORION_ENABLED = ORIGINAL_ORION_ENABLED;
+});
 
 function post(body: unknown = {}) {
   return new Request("https://app.test/api/integrations/orion/sync", {

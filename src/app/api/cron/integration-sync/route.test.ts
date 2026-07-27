@@ -8,9 +8,11 @@ import { syncFirm } from "@/lib/integrations/sync";
 import { GET } from "./route";
 
 const ORIGINAL_SCHWAB_ENABLED = process.env.SCHWAB_ENABLED;
+const ORIGINAL_ORION_ENABLED = process.env.ORION_ENABLED;
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s3cr3t";
+  process.env.ORION_ENABLED = "true";
   vi.clearAllMocks();
 });
 
@@ -19,6 +21,11 @@ afterEach(() => {
     delete process.env.SCHWAB_ENABLED;
   } else {
     process.env.SCHWAB_ENABLED = ORIGINAL_SCHWAB_ENABLED;
+  }
+  if (ORIGINAL_ORION_ENABLED === undefined) {
+    delete process.env.ORION_ENABLED;
+  } else {
+    process.env.ORION_ENABLED = ORIGINAL_ORION_ENABLED;
   }
 });
 
