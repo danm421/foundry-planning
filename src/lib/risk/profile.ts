@@ -64,30 +64,42 @@ function shouldLogEvent(
 export async function recomputeProfile(
   args: RecomputeArgs,
 ): Promise<ClientRiskProfileRow> {
-  const existing = await db.query.clientRiskProfiles.findFirst({
-    where: and(
-      eq(clientRiskProfiles.clientId, args.clientId),
-      eq(clientRiskProfiles.firmId, args.firmId),
-    ),
-  });
-
-  const merged = {
-    toleranceScore: existing?.toleranceScore ?? null,
-    capacityScore: existing?.capacityScore ?? null,
-    environmentAdj: existing?.environmentAdj ?? 0,
-    ...args.patch,
-  };
-
-  const result = computeProfile({
-    toleranceScore: merged.toleranceScore ?? null,
-    capacityScore: merged.capacityScore ?? null,
-    environmentAdj: merged.environmentAdj ?? 0,
-  });
-
-  const beforeScore = existing?.compositeScore ?? null;
-  const beforeLevel = existing?.compositeLevel ?? null;
-
   return db.transaction(async (tx) => {
+    // The read, the insert-vs-update branch it drives, and the event's
+    // before/after snapshot must all see the same row. `.for("update")`
+    // locks it for the rest of this transaction so a concurrent
+    // recomputeProfile call for the same client (e.g. the capacity cron
+    // racing an advisor's environment-adjustment route) blocks here instead
+    // of reading the same stale snapshot and each writing a composite that
+    // only reflects its own change -- same pattern as ownership.ts
+    // (_applyToAccount/_applyToLiability) and portal/vault-folders.ts.
+    const [existing] = await tx
+      .select()
+      .from(clientRiskProfiles)
+      .where(
+        and(
+          eq(clientRiskProfiles.clientId, args.clientId),
+          eq(clientRiskProfiles.firmId, args.firmId),
+        ),
+      )
+      .for("update");
+
+    const merged = {
+      toleranceScore: existing?.toleranceScore ?? null,
+      capacityScore: existing?.capacityScore ?? null,
+      environmentAdj: existing?.environmentAdj ?? 0,
+      ...args.patch,
+    };
+
+    const result = computeProfile({
+      toleranceScore: merged.toleranceScore ?? null,
+      capacityScore: merged.capacityScore ?? null,
+      environmentAdj: merged.environmentAdj ?? 0,
+    });
+
+    const beforeScore = existing?.compositeScore ?? null;
+    const beforeLevel = existing?.compositeLevel ?? null;
+
     const values = {
       ...args.patch,
       compositeScore: result.compositeScore,
@@ -105,9 +117,19 @@ export async function recomputeProfile(
         .returning();
       row = updated;
     } else {
+      // `.for("update")` locks nothing when the SELECT above matched zero
+      // rows, so two concurrent first-writes for the same client can both
+      // reach this branch. onConflictDoUpdate against the table's own
+      // client_risk_profiles_client_idx unique index (clientId) makes the
+      // second writer converge onto the first writer's row instead of
+      // dying on a unique-constraint violation.
       const [created] = await tx
         .insert(clientRiskProfiles)
         .values({ clientId: args.clientId, firmId: args.firmId, ...values })
+        .onConflictDoUpdate({
+          target: clientRiskProfiles.clientId,
+          set: values,
+        })
         .returning();
       row = created;
     }
@@ -135,12 +157,30 @@ export async function recomputeProfile(
   });
 }
 
-/** Create an empty profile row if none exists. Used before the first RTQ. */
+/**
+ * Create an empty profile row if none exists. Used before the first RTQ.
+ *
+ * Callers (Tasks 10-14) call this on every entry to the risk flow, so a
+ * profile usually already exists. Short-circuit on that case: routing an
+ * existing profile through recomputeProfile would still log a
+ * "profile_created" event under the always-log rule for that kind, even
+ * though nothing changed (beforeScore === afterScore, beforeLevel ===
+ * afterLevel) -- a no-op entry in what the schema calls the suitability
+ * audit trail.
+ */
 export async function ensureProfile(
   clientId: string,
   firmId: string,
   actorUserId: string | null,
 ): Promise<ClientRiskProfileRow> {
+  const existing = await db.query.clientRiskProfiles.findFirst({
+    where: and(
+      eq(clientRiskProfiles.clientId, clientId),
+      eq(clientRiskProfiles.firmId, firmId),
+    ),
+  });
+  if (existing) return existing;
+
   return recomputeProfile({
     clientId,
     firmId,

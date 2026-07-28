@@ -14,11 +14,32 @@ vi.mock("@/db", () => ({
     },
     transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
       cb({
+        // Mirrors `tx.select().from(...).where(...).for("update")`: the
+        // in-transaction read that replaced the pre-transaction
+        // `db.query....findFirst` lookup.
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              for: async () => (profileRow.current ? [profileRow.current] : []),
+            }),
+          }),
+        }),
         insert: () => ({
           values: (v: Record<string, unknown>) => {
-            if ("kind" in v) insertedEvents.push(v);
-            else profileRow.current = { ...v, id: "p1" };
-            return { returning: async () => [profileRow.current] };
+            if ("kind" in v) {
+              insertedEvents.push(v);
+              return { returning: async () => [null] };
+            }
+            // client_risk_profiles insert -- only reached via
+            // onConflictDoUpdate().returning() in the no-existing-row branch.
+            return {
+              onConflictDoUpdate: () => ({
+                returning: async () => {
+                  profileRow.current = { ...v, id: "p1" };
+                  return [profileRow.current];
+                },
+              }),
+            };
           },
         }),
         update: () => ({
@@ -36,7 +57,8 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { recomputeProfile } from "../profile";
+import { db } from "@/db";
+import { recomputeProfile, ensureProfile } from "../profile";
 
 const BASE = { clientId: "c1", firmId: "f1", actorUserId: "u1", reason: null };
 
@@ -101,5 +123,25 @@ describe("recomputeProfile", () => {
       capacity: 62,
       environmentAdj: 0,
     });
+  });
+});
+
+describe("ensureProfile", () => {
+  it("short-circuits when a profile already exists, writing no duplicate event", async () => {
+    const seeded = profileRow.current;
+    // `db.transaction` is a shared vi.fn() with call history from earlier
+    // tests in this file, so assert against a delta rather than "never
+    // called" -- what matters is that ensureProfile adds zero calls.
+    const txCallsBefore = vi.mocked(db.transaction).mock.calls.length;
+
+    const first = await ensureProfile("c1", "f1", "u1");
+    expect(insertedEvents).toHaveLength(0);
+    expect(vi.mocked(db.transaction).mock.calls).toHaveLength(txCallsBefore);
+    expect(first).toEqual(seeded);
+
+    const second = await ensureProfile("c1", "f1", "u1");
+    expect(insertedEvents).toHaveLength(0);
+    expect(vi.mocked(db.transaction).mock.calls).toHaveLength(txCallsBefore);
+    expect(second).toEqual(seeded);
   });
 });
