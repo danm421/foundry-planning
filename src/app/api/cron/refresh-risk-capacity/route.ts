@@ -9,8 +9,15 @@
 // client_risk_profiles. getOrComputeCapacity refreshes that snapshot whenever
 // anyone opens a household, but households nobody opens would keep a stale
 // score forever -- this sweep is the backstop.
+//
+// Candidate filter is a union, not a single column: recomputeProfile creates
+// a profile row on first capacity compute regardless of whether an RTQ was
+// ever completed, and an RTQ can be completed without anyone ever opening the
+// household's plan. Either column alone strands the other case's household
+// with a permanently stale capacity, so a row qualifies if it has a
+// tolerance score OR a capacity score.
 import { type NextRequest, NextResponse } from "next/server";
-import { isNotNull } from "drizzle-orm";
+import { isNotNull, or } from "drizzle-orm";
 import * as Sentry from "@sentry/nextjs";
 import { db } from "@/db";
 import { clientRiskProfiles } from "@/db/schema";
@@ -37,7 +44,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       firmId: clientRiskProfiles.firmId,
     })
     .from(clientRiskProfiles)
-    .where(isNotNull(clientRiskProfiles.toleranceScore));
+    .where(
+      or(
+        isNotNull(clientRiskProfiles.toleranceScore),
+        isNotNull(clientRiskProfiles.capacityScore),
+      ),
+    );
 
   let refreshed = 0;
   let failed = 0;
@@ -50,10 +62,14 @@ export async function GET(req: NextRequest): Promise<Response> {
       // A household with no plan, or a projection that throws, must not stop
       // the sweep for everyone behind it.
       failed++;
-      Sentry.captureException(err, {
-        tags: { job: "refresh-risk-capacity" },
-        extra: { clientId: row.clientId },
-      });
+      try {
+        Sentry.captureException(err, {
+          tags: { job: "refresh-risk-capacity" },
+          extra: { clientId: row.clientId },
+        });
+      } catch {
+        // best-effort telemetry
+      }
     }
   }
 
