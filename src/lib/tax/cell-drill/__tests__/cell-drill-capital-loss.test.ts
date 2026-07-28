@@ -76,19 +76,19 @@ describe("capital-loss rows in the income drill-down", () => {
     expect(rows.some((r) => r.id.startsWith("capital-loss"))).toBe(false);
   });
 
-  it("flags a carryforward that received no ordinary-income offset this year (flat-mode gap)", () => {
-    // deduction === 0 while cf > 0 is only reachable in flat tax-engine mode
-    // (calculateTaxYearFlat hardcodes deduction: 0 and passes carryforward
-    // through unchanged) — in bracket mode a nonzero carryforward-out
-    // requires shortTermLoss + longTermLoss > 0, which always pins
-    // deduction = min(that, limit) > 0. See netCapitalGainsAndLosses /
+  it("never claims a carryforward went un-offset — both tax modes now net", () => {
+    // C1 removed the flat-mode caveat: `calculateTaxYearFlat` runs the same
+    // §1222/§1211(b) netting as the bracket path, so `deduction === 0` while
+    // the carryforward is nonzero is unreachable (a nonzero carryforward-out
+    // requires shortTermLoss + longTermLoss > 0, which pins
+    // deduction = min(that, limit) > 0). See netCapitalGainsAndLosses /
     // computeCarryforwardOut in ../../capital-loss.ts.
     const rows = allRows(buildIncomeCellDrill(args({
       capitalLossDeduction: 0,
       capitalLossCarryforward: { shortTerm: 0, longTerm: 50_000 },
     })));
     const row = rows.find((r) => r.id === "capital-loss-carryforward")!;
-    expect(row.meta).toContain("No offset against ordinary income was applied this year.");
+    expect(row.meta).not.toContain("No offset against ordinary income");
   });
 
   it("puts capital-loss rows in a separate labeled group with a footnote, not the flow-row total", () => {

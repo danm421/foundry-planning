@@ -53,12 +53,12 @@ const DIRECT_CONFIG: Partial<Record<IncomeColumnKey, DirectConfig>> = {
  *  falls back to the non-MFS limit when filing status isn't populated by the
  *  caller (not every caller threads it through yet).
  *
- *  Known gap: in flat tax-engine mode (`PlanSettings.taxEngineMode`, not
- *  reachable here — not on `ProjectionYear`, `TaxResult`, or
- *  `CellDrillContext`) `capitalLossDeduction` is always 0 and the
- *  carryforward balance never moves year to year. The carryforward row's
- *  `meta` calls this out when `deduction === 0` so it doesn't read as a
- *  stalled paydown. */
+ *  Both tax-engine modes now run the same netting (`calculateTaxYearFlat`
+ *  gained it alongside `calculateTaxYear`), so `deduction === 0` while the
+ *  carryforward is nonzero is no longer reachable: a nonzero carryforward-out
+ *  requires shortTermLoss + longTermLoss > 0, which pins
+ *  deduction = min(that, limit) > 0. The former flat-mode caveat on the
+ *  carryforward row is gone with it. */
 function capitalLossRows(
   taxDetail: IncomeCellDrillArgs["year"]["taxDetail"],
   filingStatus: CellDrillContext["filingStatus"],
@@ -82,18 +82,11 @@ function capitalLossRows(
   }
 
   if (cf && (cf.shortTerm > 0 || cf.longTerm > 0)) {
-    // deduction === 0 while cf > 0 only happens in flat tax-engine mode —
-    // in bracket mode a nonzero carryforward-out requires a net loss that
-    // exceeded the annual limit, which always pins deduction at the limit.
-    const flatModeCaveat =
-      deduction === 0
-        ? " No offset against ordinary income was applied this year."
-        : "";
     rows.push({
       id: "capital-loss-carryforward",
       label: "Loss carried to next year",
       amount: cf.shortTerm + cf.longTerm,
-      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).${flatModeCaveat}`,
+      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).`,
     });
   }
 

@@ -22,7 +22,15 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  *     basis, equity events) previously FLOORED realized losses at zero and
  *     now recognize them instead, subject to the same cap — a new deduction
  *     that didn't exist before, the opposite direction of the first change.
- *     (2026-07-28)
+ *     The cap applies in BOTH tax-engine modes: `calculateTaxYearFlat` runs
+ *     the same netting, so flat-mode plans (the default mode) also see their
+ *     seeded Schedule D carryforward draw down $3,000/yr where it previously
+ *     sat frozen. §165(c) now disallows a real-estate loss unless the account
+ *     is explicitly rental/commercial (previously it keyed off the §121
+ *     home-sale-exclusion checkbox, which defaults OFF), and the `sale:`
+ *     drill-down row reports the post-§121/§165(c) taxable gain rather than
+ *     the raw gain — so a §121-excluded residence sale no longer shows an
+ *     itemized gain under a $0 total. (2026-07-28)
  */
 export const ENGINE_VERSION = 10;
 

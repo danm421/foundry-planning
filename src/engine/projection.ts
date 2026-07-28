@@ -1963,6 +1963,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Declared `let` so the Phase 3 entity-passthrough block can add its
     // passthrough total for flat-mode compatibility (bracket mode reads
     // taxDetail directly; flat mode reads taxableIncome).
+    // SIGNED capital gains folded into the `taxableIncome` scalar directly
+    // below, split by character. Flat mode backs this exact pair out and
+    // re-adds the §1222-netted figures, so it MUST be built from the same terms
+    // the fold uses and computed at the same point — `taxDetail.capitalGains`
+    // is a different number (later passes move one and not the other). Keep in
+    // lockstep with the fold below and with every `capitalGainsInTaxableIncome`
+    // adjustment at the YearTaxInput rebuild sites.
+    const capGainsInTaxableIncome = {
+      longTerm:
+        income.capitalGains +
+        grantorIncome.capitalGains +
+        transferResult.capitalGains +
+        reinvestmentResult.capitalGains +
+        saleResult.capitalGains +
+        businessSaleResult.capitalGains +
+        equityCapitalGains,
+      shortTerm: realizationSTCG + equityStCapitalGains,
+    };
     let taxableIncome =
       income.salaries +
       income.business +
@@ -3787,6 +3805,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
           capitalLossCarryforwardIn: capitalLossCarryforward,
+          // Unused on this path (the probe short-circuits above unless
+          // `useBracket`), but kept in lockstep with the `taxableIncome`
+          // expression above so it stays correct if the guard ever moves.
+          capitalGainsInTaxableIncome: {
+            longTerm: capGainsInTaxableIncome.longTerm + suppCapGains,
+            shortTerm: capGainsInTaxableIncome.shortTerm,
+          },
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: 0,
@@ -3958,6 +3983,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       itemizedDeductions,
       charityCarryforwardIn: charityCarryforward,
       capitalLossCarryforwardIn: capitalLossCarryforward,
+      capitalGainsInTaxableIncome: capGainsInTaxableIncome,
       charityGiftsThisYear,
       secaResult,
       transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5196,6 +5222,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
           capitalLossCarryforwardIn: capitalLossCarryforward,
+          // `seededTotal` is bracket-filler ORDINARY income — no capital-gain
+          // component, so the folded pair is unchanged.
+          capitalGainsInTaxableIncome: capGainsInTaxableIncome,
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5361,6 +5390,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
           capitalLossCarryforwardIn: capitalLossCarryforward,
+          // Supplemental draws recognize LONG-term gains (categorizeDraw books
+          // them into `taxDetail.capitalGains`), and the line above folds them
+          // into the scalar — so the folded pair must grow by the same amount.
+          capitalGainsInTaxableIncome: {
+            longTerm:
+              capGainsInTaxableIncome.longTerm
+              + supplementalPlan.recognizedIncome.capitalGains,
+            shortTerm: capGainsInTaxableIncome.shortTerm,
+          },
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5497,6 +5535,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             itemizedDeductions,
             charityCarryforwardIn: charityCarryforward,
             capitalLossCarryforwardIn: capitalLossCarryforward,
+            // Mirrors the hasChecking-loop input above.
+            capitalGainsInTaxableIncome: {
+              longTerm:
+                capGainsInTaxableIncome.longTerm
+                + supplementalPlan.recognizedIncome.capitalGains,
+              shortTerm: capGainsInTaxableIncome.shortTerm,
+            },
             charityGiftsThisYear,
             secaResult,
             transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5652,6 +5697,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           - equityOrdinaryIncome
           - equityCapitalGains
           - equityStCapitalGains,
+        // The counterfactual strips equity gains out of `taxableIncome`, so the
+        // declared folded pair has to shrink by the same amount or flat mode
+        // would back out gains that are no longer in the scalar.
+        capitalGainsInTaxableIncome: {
+          longTerm: finalTaxInput.capitalGainsInTaxableIncome.longTerm - equityCapitalGains,
+          shortTerm: finalTaxInput.capitalGainsInTaxableIncome.shortTerm - equityStCapitalGains,
+        },
         isoSpread: 0,
       };
       const counterfactual = computeTaxForYear(counterfactualInput);

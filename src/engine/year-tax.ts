@@ -35,6 +35,22 @@ export interface YearTaxInput {
   /** Prior-year capital-loss carryforward. Mutable across years; the output
    *  returns the new state. Mirrors charityCarryforwardIn. */
   capitalLossCarryforwardIn: import("../lib/tax/capital-loss").CapitalLossCarryforward;
+  /** SIGNED gross capital gains **already folded into the `taxableIncome`
+   *  scalar above**, split by character. FLAT MODE ONLY — bracket mode reads
+   *  `taxDetail` directly and ignores this.
+   *
+   *  Deliberately NOT derived from `taxDetail.capitalGains` /
+   *  `taxDetail.stCapitalGains`: the two are not equal. `taxableIncome` takes a
+   *  one-shot snapshot of a fixed set of terms, while `taxDetail` is mutated by
+   *  later passes that never touch the scalar (the non-grantor trust take-back,
+   *  the §664(c) CRT netting, note-receivable principal LTCG, prior-year
+   *  entity gap-fill carry-in, education-goal draws). Measured across the
+   *  engine suite, 35 of 103 projection-years with capital activity diverge, by
+   *  up to $4,000,000. Flat mode must back out what it actually folded in.
+   *
+   *  Required (not optional) on purpose: `tsc` is the completeness check that
+   *  every YearTaxInput rebuild keeps this in lockstep with `taxableIncome`. */
+  capitalGainsInTaxableIncome: { longTerm: number; shortTerm: number };
   /** SECA result (already computed upstream). `additionalMedicare` is the
    *  SE-side 0.9% surtax (IRC §1401(b)(2)) — added to flow.additionalMedicare
    *  and the federal/total tax here alongside seTax. */
@@ -220,9 +236,19 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         flatFederalRate: planSettings.flatFederalRate,
         flatStateRate: planSettings.flatStateRate,
         taxParams: resolved?.params ?? makeEmptyTaxParams(year),
+        // Deliberately computed from the PRE-netting `taxableIncome`. This line
+        // measures the slice of the year's CASH income (`income.total`) that
+        // never entered the taxable base — a §1211(b) capital-loss deduction is
+        // an offset against income that DID enter it (Form 1040 line 7 going
+        // negative), not a reclassification of income as non-taxable. Rebasing
+        // it on the post-netting figure would double-report the deduction:
+        // once as a reduction of `totalIncome`, again as "non-taxable" income.
         nonTaxableIncome:
           Math.max(0, totalIncome - taxableIncome) + (input.taxFreeRetirementIncome ?? 0),
         capitalLossCarryforwardIn,
+        longTermCapitalGains: input.capitalGainsInTaxableIncome.longTerm,
+        shortTermCapitalGains: input.capitalGainsInTaxableIncome.shortTerm,
+        filingStatus,
       });
 
   // Add transfer early-withdrawal penalty

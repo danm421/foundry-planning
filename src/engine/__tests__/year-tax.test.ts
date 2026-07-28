@@ -41,6 +41,7 @@ describe("computeTaxForYear", () => {
       interestIncomeForTax: 0,
       deductionBreakdownIn: null,
       capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
+      capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
     });
     expect(out.taxes).toBe(0);
     expect(out.charityDeductionThisYear).toBe(0);
@@ -76,6 +77,7 @@ describe("computeTaxForYear", () => {
       interestIncomeForTax: 0,
       deductionBreakdownIn: null,
       capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
+      capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
     });
 
     const base = computeTaxForYear(inputWith(0));
@@ -123,6 +125,7 @@ describe("computeTaxForYear", () => {
       interestIncomeForTax: 0,
       deductionBreakdownIn: null,
       capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
+      capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
     });
 
     // $400k SE earnings, $0 wages → SE tax + $1,524.60 SE-side surtax.
@@ -184,6 +187,7 @@ describe("computeTaxForYear", () => {
       interestIncomeForTax: 0,
       deductionBreakdownIn: null,
       capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
+      capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
     };
   }
 
@@ -302,6 +306,7 @@ describe("computeTaxForYear", () => {
       interestIncomeForTax: 0,
       deductionBreakdownIn: null,
       capitalLossCarryforwardIn: { shortTerm: 0, longTerm: 0 },
+      capitalGainsInTaxableIncome: { longTerm: 0, shortTerm: 0 },
     };
     // combined = 30000 + 0.5×40000 + 0 = 50000 (> MFJ base2 44000)
     //   taxable SS = 6000 + 0.85×(50000-44000) = 11100
