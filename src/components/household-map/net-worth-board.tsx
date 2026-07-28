@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
+import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { moneyLabel } from "@/lib/household-map/format";
 import type { BoardCallbacks, HouseholdMapProps, MapItem } from "@/lib/household-map/types";
 
@@ -25,6 +28,9 @@ export default function NetWorthBoard({
   canEdit,
   onAddAccount,
 }: HouseholdMapProps & BoardCallbacks) {
+  // Both the columns and the tray navigate; an active `?scenario=` must ride
+  // along or a scenario-active Map drops the advisor on the BASE balance sheet.
+  const withScenario = useScenarioPreservingHref();
   const hasSpouse = people.spouse !== null;
   const COLUMNS = hasSpouse
     ? (["client", "joint", "spouse"] as const)
@@ -37,12 +43,12 @@ export default function NetWorthBoard({
     return hasSpouse ? "Jointly Held" : "Joint";
   }
 
-  // Local to this board — the tray only ever needs these two destinations.
+  // Local to this board — cards only ever need these two destinations.
   function detailHrefFor(item: MapItem): string {
     if (!isNetWorthKind(item.kind)) {
-      return `/clients/${clientId}/details/income-expenses`;
+      return withScenario(`/clients/${clientId}/details/income-expenses`);
     }
-    return `/clients/${clientId}/details/net-worth`;
+    return withScenario(`/clients/${clientId}/details/net-worth`);
   }
 
   const trayItems = items.filter((i) => i.column === "tray" && isNetWorthKind(i.kind));
@@ -93,12 +99,19 @@ export default function NetWorthBoard({
               <div className="mb-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-ink-4">
                 {labelFor(col)}
               </div>
-              {/* Task 11: card clicks stay inert here — see the
-                  handleEditItem comment in household-map-view.tsx for why
-                  (accounts/liabilities need owners data this board's props
-                  don't carry, and can't safely be reconstructed). */}
+              {/* Cards LINK to the Net Worth detail page rather than opening
+                  AddAccountDialog/BusinessDialog in place. Those dialogs save a
+                  ~38-field full-row replace built from `AccountFormInitial`
+                  (see `accountToInitial` in balance-sheet-view.tsx), which
+                  merges engine rows, base rows and the `account_owners` join —
+                  strictly more than this board's account view carries, so any
+                  field it couldn't hydrate would be written back as the form's
+                  default. The balance sheet already routes business rows to
+                  BusinessDialog, so linking delegates instead of duplicating. */}
               {cards.map((c) => (
-                <MapCard key={c.id} item={c} />
+                <Link key={c.id} href={detailHrefFor(c)}>
+                  <MapCard item={c} />
+                </Link>
               ))}
               {canEdit && (
                 <button

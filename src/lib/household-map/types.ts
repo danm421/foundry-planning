@@ -1,5 +1,11 @@
 // src/lib/household-map/types.ts
 import type { MapGoal } from "./goals";
+import type {
+  AccountViewEngineFields,
+  ExpenseView,
+  IncomeView,
+  SavingsRuleView,
+} from "@/lib/scenario/view-adapters";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
  *  bottom strip for anything not owned by the client or spouse. */
@@ -71,6 +77,28 @@ export interface HouseholdMapProps {
   items: MapItem[];
   goals: MapGoal[];
   canEdit: boolean;
+
+  // ── Editor hydration rows ────────────────────────────────────────────────
+  // The Map renders SCENARIO-EFFECTIVE data (`loadEffectiveTree(..., scenario)`),
+  // so its editors must hydrate from the same tree. Fetching the base-case
+  // list-GETs instead would seed the forms with base values, and since a
+  // scenario-mode save REPLACES the change payload wholesale, every untouched
+  // field would overwrite that scenario's override. These rows come from the
+  // exact `effectiveTree` the cards are built from, keyed by id, so an edit
+  // made inside a scenario round-trips the scenario's own numbers.
+  // Consequence: this feature does ZERO client-side data fetching.
+
+  /** income id → scenario-effective row, for the quick-edit drawer. */
+  incomeRows: Record<string, IncomeView>;
+  /** expense id → scenario-effective row, for the quick-edit drawer. */
+  expenseRows: Record<string, ExpenseView>;
+  /** savings-rule id → scenario-effective row, for `SavingsRuleDialog`. */
+  savingsRuleRows: Record<string, SavingsRuleView>;
+  /** Every account, for `SavingsRuleDialog`'s target picker (it filters
+   *  eligibility itself via `isSavingsEligibleAccount`). Engine fields only —
+   *  a superset of the `{id, name, category, subType, ownerEntityId}` the
+   *  picker reads. */
+  accountOptions: AccountViewEngineFields[];
 }
 
 /**

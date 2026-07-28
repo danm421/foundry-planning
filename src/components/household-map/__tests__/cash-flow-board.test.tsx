@@ -40,6 +40,12 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     items: [],
     goals: [],
     canEdit: true,
+    // Editor hydration rows (see HouseholdMapProps). Empty by default — these
+    // boards render cards, they don't hydrate editors.
+    incomeRows: {},
+    expenseRows: {},
+    savingsRuleRows: {},
+    accountOptions: [],
     ...overrides,
   };
 }

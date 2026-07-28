@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import HouseholdMapView from "../household-map-view";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
+import type { ExpenseView, IncomeView, SavingsRuleView } from "@/lib/scenario/view-adapters";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -21,22 +22,31 @@ vi.mock("@/components/add-account-dialog", () => ({
 }));
 
 vi.mock("@/components/forms/savings-rule-dialog", () => ({
-  default: (props: { open: boolean; editing?: { id: string } }) => (
+  default: (props: { open: boolean; editing?: { id: string; annualAmount: string } }) => (
     <div
       data-testid="mock-savings-rule-dialog"
       data-open={String(props.open)}
       data-editing-id={props.editing?.id ?? ""}
+      data-editing-amount={props.editing?.annualAmount ?? ""}
     />
   ),
 }));
 
 vi.mock("../quick-edit-drawer", () => ({
-  default: (props: { target: { kind: string; id: string | null; presetColumn: string } }) => (
+  default: (props: {
+    target: {
+      kind: string;
+      id: string | null;
+      presetColumn: string;
+      row: { annualAmount: string } | null;
+    };
+  }) => (
     <div
       data-testid="mock-quick-edit-drawer"
       data-kind={props.target.kind}
       data-id={props.target.id ?? ""}
       data-preset-column={props.target.presetColumn}
+      data-row-amount={props.target.row?.annualAmount ?? ""}
     />
   ),
 }));
@@ -78,6 +88,56 @@ function goal(overrides: Partial<MapGoal> & Pick<MapGoal, "id">): MapGoal {
   };
 }
 
+function incomeRow(id: string, overrides: Partial<IncomeView> = {}): IncomeView {
+  return {
+    id,
+    type: "salary",
+    name: "Salary",
+    annualAmount: "90000",
+    startYear: 2026,
+    endYear: 2045,
+    owner: "client",
+    claimingAge: null,
+    growthRate: "0.03",
+    growthSource: "inflation",
+    startYearRef: null,
+    endYearRef: null,
+    ...overrides,
+  };
+}
+
+function expenseRow(id: string, overrides: Partial<ExpenseView> = {}): ExpenseView {
+  return {
+    id,
+    type: "other",
+    name: "Expense",
+    annualAmount: "24000",
+    startYear: 2026,
+    endYear: 2056,
+    growthRate: "0.03",
+    growthSource: "custom",
+    startYearRef: null,
+    endYearRef: null,
+    isGoal: false,
+    isDefault: false,
+    ...overrides,
+  };
+}
+
+function savingsRow(id: string, overrides: Partial<SavingsRuleView> = {}): SavingsRuleView {
+  return {
+    id,
+    accountId: "acct-1",
+    annualAmount: "5000",
+    startYear: 2026,
+    endYear: 2045,
+    employerMatchPct: null,
+    employerMatchCap: null,
+    employerMatchAmount: null,
+    ...overrides,
+  };
+}
+
 function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProps {
   return {
     clientId: "client-1",
@@ -90,14 +150,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     items: [],
     goals: [],
     canEdit: true,
+    incomeRows: {},
+    expenseRows: {},
+    savingsRuleRows: {},
+    accountOptions: [],
     ...overrides,
   };
 }
 
-const originalFetch = global.fetch;
-
 afterEach(() => {
-  global.fetch = originalFetch;
   vi.restoreAllMocks();
 });
 
@@ -106,7 +167,9 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     const items = [
       item({ id: "inc-1", kind: "income", column: "client", name: "Salary", value: 90000 }),
     ];
-    render(<HouseholdMapView {...baseProps({ items })} />);
+    render(
+      <HouseholdMapView {...baseProps({ items, incomeRows: { "inc-1": incomeRow("inc-1") } })} />,
+    );
 
     fireEvent.click(screen.getByText("Cash Flow"));
     fireEvent.click(screen.getByText("Salary"));
@@ -120,7 +183,11 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     const items = [
       item({ id: "exp-1", kind: "expense", column: "joint", name: "Mortgage payment", value: -24000 }),
     ];
-    render(<HouseholdMapView {...baseProps({ items })} />);
+    render(
+      <HouseholdMapView
+        {...baseProps({ items, expenseRows: { "exp-1": expenseRow("exp-1") } })}
+      />,
+    );
 
     fireEvent.click(screen.getByText("Cash Flow"));
     fireEvent.click(screen.getByText("Mortgage payment"));
@@ -130,32 +197,54 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(drawer.dataset.id).toBe("exp-1");
   });
 
-  it("clicking a savings card opens SavingsRuleDialog editing that specific rule", async () => {
-    global.fetch = vi.fn((url: string) => {
-      if (url.includes("/savings-rules")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "sav-1", accountId: "a1", annualAmount: "5000" }],
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => [] });
-    }) as unknown as typeof fetch;
+  it("hands the drawer the SCENARIO-EFFECTIVE row from props, not a base-case fetch", () => {
+    const items = [
+      item({ id: "exp-1", kind: "expense", column: "joint", name: "Mortgage payment", value: -31000 }),
+    ];
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items,
+          // The effective row carries the scenario's override, not the base value.
+          expenseRows: { "exp-1": expenseRow("exp-1", { annualAmount: "31000" }) },
+        })}
+      />,
+    );
 
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByText("Mortgage payment"));
+
+    expect(screen.getByTestId("mock-quick-edit-drawer").dataset.rowAmount).toBe("31000");
+  });
+
+  it("clicking a savings card opens SavingsRuleDialog editing that specific rule, hydrated from props", () => {
     const items = [
       item({ id: "sav-1", kind: "savings", column: "client", name: "401k contribution", value: -5000 }),
     ];
-    render(<HouseholdMapView {...baseProps({ items })} />);
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items,
+          savingsRuleRows: { "sav-1": savingsRow("sav-1", { annualAmount: "7500" }) },
+        })}
+      />,
+    );
 
     fireEvent.click(screen.getByText("Cash Flow"));
     fireEvent.click(screen.getByText("401k contribution"));
 
-    const dialog = await screen.findByTestId("mock-savings-rule-dialog");
+    const dialog = screen.getByTestId("mock-savings-rule-dialog");
     expect(dialog.dataset.editingId).toBe("sav-1");
+    expect(dialog.dataset.editingAmount).toBe("7500");
   });
 
   it("a goal card with an expenseId opens the drawer for that expense, kind 'expense'", () => {
     const g = goal({ id: "g1", side: "client", expenseId: "exp-42", title: "College fund" });
-    render(<HouseholdMapView {...baseProps({ goals: [g] })} />);
+    render(
+      <HouseholdMapView
+        {...baseProps({ goals: [g], expenseRows: { "exp-42": expenseRow("exp-42") } })}
+      />,
+    );
 
     fireEvent.click(screen.getByText("Goals"));
     fireEvent.click(screen.getByText("College fund"));
@@ -180,7 +269,11 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     const items = [
       item({ id: "inc-1", kind: "income", column: "client", name: "Salary", value: 90000 }),
     ];
-    render(<HouseholdMapView {...baseProps({ items, canEdit: false })} />);
+    render(
+      <HouseholdMapView
+        {...baseProps({ items, canEdit: false, incomeRows: { "inc-1": incomeRow("inc-1") } })}
+      />,
+    );
 
     fireEvent.click(screen.getByText("Cash Flow"));
 
@@ -199,7 +292,7 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(dialog.dataset.open).toBe("true");
   });
 
-  it("account and liability card clicks stay inert — a deliberate Task 11 decision (see report): opening AddAccountDialog/AddLiabilityDialog in edit mode needs an owners[] array these props don't carry, and reconstructing it risks silently overwriting real ownership on save", () => {
+  it("account and liability cards navigate to the Net Worth detail page instead of opening an in-place dialog", () => {
     const items = [
       item({ id: "a1", kind: "account", column: "client", name: "Brokerage account", value: 100000 }),
       item({
@@ -213,8 +306,13 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     ];
     render(<HouseholdMapView {...baseProps({ items })} />);
     // Default board is Net Worth.
-    expect(screen.queryByRole("button", { name: /Brokerage account/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Mortgage debt/ })).not.toBeInTheDocument();
+    const clientColumn = screen.getByTestId("column-client");
+    const links = within(clientColumn).getAllByRole("link");
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/clients/client-1/details/net-worth");
+    }
+    // Still no in-place account dialog — the full editor lives on that page.
     expect(screen.queryByTestId("mock-add-account-dialog")?.getAttribute("data-open")).not.toBe(
       "true",
     );

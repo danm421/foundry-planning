@@ -6,10 +6,7 @@ import GoalsBoard from "./goals-board";
 import CashFlowBoard from "./cash-flow-board";
 import QuickEditDrawer, { type QuickEditTarget } from "./quick-edit-drawer";
 import AddAccountDialog from "@/components/add-account-dialog";
-import SavingsRuleDialog, {
-  type SavingsRuleAccount,
-  type SavingsRuleRow,
-} from "@/components/forms/savings-rule-dialog";
+import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
@@ -49,121 +46,64 @@ function approximateMilestones(
   };
 }
 
-/** Raw `accounts` list-GET row → the light shape SavingsRuleDialog needs. */
-function toSavingsRuleAccount(a: {
-  id: string;
-  name: string;
-  category: string;
-  subType: string;
-  ownerEntityId?: string | null;
-}): SavingsRuleAccount {
-  return {
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    subType: a.subType,
-    ownerEntityId: a.ownerEntityId ?? null,
-  };
-}
-
 export default function HouseholdMapView(props: HouseholdMapProps) {
-  const { clientId, people, goals, canEdit } = props;
+  const { clientId, people, goals, canEdit, incomeRows, expenseRows, savingsRuleRows } = props;
   const [board, setBoard] = useState<(typeof BOARDS)[number]["key"]>("net-worth");
 
   const [drawerTarget, setDrawerTarget] = useState<QuickEditTarget | null>(null);
 
   const [savingsOpen, setSavingsOpen] = useState(false);
   const [savingsEditing, setSavingsEditing] = useState<SavingsRuleRow | undefined>(undefined);
-  const [savingsAccounts, setSavingsAccounts] = useState<SavingsRuleAccount[]>([]);
-  const [savingsLoadError, setSavingsLoadError] = useState<string | null>(null);
 
   const [addAccountOpen, setAddAccountOpen] = useState(false);
 
   const milestones = approximateMilestones(people, goals);
 
-  async function loadSavingsAccounts(): Promise<SavingsRuleAccount[]> {
-    const res = await fetch(`/api/clients/${clientId}/accounts`);
-    if (!res.ok) throw new Error("Failed to load accounts");
-    const rows = (await res.json()) as {
-      id: string;
-      name: string;
-      category: string;
-      subType: string;
-      ownerEntityId?: string | null;
-    }[];
-    return rows.map(toSavingsRuleAccount);
-  }
-
-  async function openSavingsCreate() {
-    setSavingsLoadError(null);
-    try {
-      const accounts = await loadSavingsAccounts();
-      setSavingsAccounts(accounts);
-      setSavingsEditing(undefined);
-      setSavingsOpen(true);
-    } catch {
-      setSavingsLoadError("Couldn't load accounts for the savings rule.");
-    }
-  }
-
-  async function openSavingsEdit(item: MapItem) {
-    setSavingsLoadError(null);
-    try {
-      const [accounts, rulesRes] = await Promise.all([
-        loadSavingsAccounts(),
-        fetch(`/api/clients/${clientId}/savings-rules`),
-      ]);
-      if (!rulesRes.ok) throw new Error("Failed to load savings rules");
-      const rules = (await rulesRes.json()) as SavingsRuleRow[];
-      const rule = rules.find((r) => r.id === item.id);
-      if (!rule) throw new Error("Savings rule not found");
-      setSavingsAccounts(accounts);
-      setSavingsEditing(rule);
-      setSavingsOpen(true);
-    } catch {
-      setSavingsLoadError("Couldn't load this savings rule.");
-    }
-  }
-
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
-  // account / liability / policy card clicks are DELIBERATELY left inert.
-  // AddAccountDialog/AddLiabilityDialog/BusinessDialog's `editing`/`business`
-  // props require `owners: AccountOwner[]` sourced from the `accountOwners`/
-  // `liabilityOwners` join tables (src/db/schema.ts) — no existing GET
-  // endpoint exposes that join (only raw single-table list GETs exist), and
-  // add-account-form.tsx submits `owners` UNCONDITIONALLY on every save
-  // (confirmed at forms/add-account-form.tsx's account-body construction), so
-  // opening edit mode with a reconstructed or default owners array would
-  // silently overwrite the real ownership split on the very next save — even
-  // one that only touches an unrelated field. Separately, a business-category
-  // account is indistinguishable from a real_estate account once mapped to
-  // `MapItem.category` (`map-content.tsx`'s `ACCOUNT_CATEGORY` collapses both
-  // to "property"), so the dialog-routing decision itself can't be made from
-  // `MapItem` alone. See the Task 11 report for the full writeup. The Net
-  // Worth board's per-column "+ Add" (create mode — no existing row to
-  // corrupt) is fully wired below.
+  // Every editor opened from here hydrates from `props`, which carry the
+  // SCENARIO-EFFECTIVE rows the cards themselves were built from. Nothing on
+  // this page fetches: the base-case list-GETs would seed the forms with base
+  // values, and a scenario-mode save replaces the change payload wholesale, so
+  // the untouched fields would silently overwrite the scenario's overrides.
+  //
+  // Net Worth cards are LINKS to `/details/net-worth` rather than in-place
+  // dialogs (see net-worth-board.tsx). Account/liability/business editing is a
+  // ~38-field full-row replace over an engine+base+`account_owners` merge
+  // (`balance-sheet-view.tsx`'s `accountToInitial`) — more than the Map's
+  // partial account view can honestly hydrate — and the balance sheet already
+  // routes business rows to `BusinessDialog`, so linking delegates rather than
+  // duplicates.
   function handleEditItem(item: MapItem) {
     if (!canEdit) return;
-    if (item.kind === "income" || item.kind === "expense") {
-      setDrawerTarget({ kind: item.kind, id: item.id, presetColumn: item.column });
+    if (item.kind === "income") {
+      const row = incomeRows[item.id];
+      if (row) setDrawerTarget({ kind: "income", id: item.id, row, presetColumn: item.column });
+    } else if (item.kind === "expense") {
+      const row = expenseRows[item.id];
+      if (row) setDrawerTarget({ kind: "expense", id: item.id, row, presetColumn: item.column });
     } else if (item.kind === "savings") {
-      void openSavingsEdit(item);
+      const rule = savingsRuleRows[item.id];
+      if (rule) {
+        setSavingsEditing(rule);
+        setSavingsOpen(true);
+      }
     }
-    // account / liability / policy: see comment above.
   }
 
   function handleEditGoalExpense(expenseId: string, presetColumn: MapColumn) {
     if (!canEdit) return;
-    setDrawerTarget({ kind: "expense", id: expenseId, presetColumn });
+    const row = expenseRows[expenseId];
+    if (row) setDrawerTarget({ kind: "expense", id: expenseId, row, presetColumn });
   }
 
   function handleAddFlow(kind: "income" | "expense" | "savings", column: MapColumn) {
     if (!canEdit) return;
     if (kind === "savings") {
-      void openSavingsCreate();
+      setSavingsEditing(undefined);
+      setSavingsOpen(true);
     } else {
-      setDrawerTarget({ kind, id: null, presetColumn: column });
+      setDrawerTarget({ kind, id: null, row: null, presetColumn: column });
     }
   }
 
@@ -205,12 +145,6 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         <CashFlowBoard {...props} onEditItem={handleEditItem} onAddFlow={handleAddFlow} />
       )}
 
-      {savingsLoadError && (
-        <p className="mt-3 text-xs text-crit" role="alert">
-          {savingsLoadError}
-        </p>
-      )}
-
       {drawerTarget && (
         <QuickEditDrawer
           key={`${drawerTarget.kind}:${drawerTarget.id ?? "new"}`}
@@ -226,7 +160,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
       {savingsOpen && (
         <SavingsRuleDialog
           clientId={clientId}
-          accounts={savingsAccounts}
+          accounts={props.accountOptions}
           open={savingsOpen}
           onOpenChange={(o) => {
             if (!o) {

@@ -15,6 +15,15 @@ import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
 import { formatCurrency } from "@/lib/cell-drill/format";
 import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import {
+  accountEngineToView,
+  expenseEngineToView,
+  incomeEngineToView,
+  savingsRuleEngineToView,
+  type ExpenseView,
+  type IncomeView,
+  type SavingsRuleView,
+} from "@/lib/scenario/view-adapters";
 import { assignColumn } from "@/lib/household-map/columns";
 import { buildMapGoals } from "@/lib/household-map/goals";
 import { moneyLabel } from "@/lib/household-map/format";
@@ -282,6 +291,23 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     ...effectiveTree.expenses.map((e: Expense) => expenseToMapItem(e, ctx)),
   ];
 
+  // Editor hydration rows — the SAME `effectiveTree` the cards above are built
+  // from, run through the house view-adapters (`@/lib/scenario/view-adapters`,
+  // the layer that exists so pages read through `loadEffectiveTree` instead of
+  // querying base rows). Client-side editors seed from these, never from the
+  // base-scoped list-GETs, so a save made while a scenario is active carries
+  // that scenario's values rather than clobbering them with base ones.
+  const incomeRows: Record<string, IncomeView> = Object.fromEntries(
+    effectiveTree.incomes.map((i: Income) => [i.id, incomeEngineToView(i)] as const),
+  );
+  const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
+    effectiveTree.expenses.map((e: Expense) => [e.id, expenseEngineToView(e)] as const),
+  );
+  const savingsRuleRows: Record<string, SavingsRuleView> = Object.fromEntries(
+    effectiveTree.savingsRules.map((s: SavingsRule) => [s.id, savingsRuleEngineToView(s)] as const),
+  );
+  const accountOptions = effectiveTree.accounts.map(accountEngineToView);
+
   const goals = buildMapGoals({
     expenses: effectiveTree.expenses,
     milestones,
@@ -354,6 +380,10 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       items={items}
       goals={goals}
       canEdit={permission === "edit"}
+      incomeRows={incomeRows}
+      expenseRows={expenseRows}
+      savingsRuleRows={savingsRuleRows}
+      accountOptions={accountOptions}
     />
   );
 }

@@ -1,8 +1,26 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import NetWorthBoard from "../net-worth-board";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+
+// `useScenarioPreservingHref` reads the URL's `?scenario=`. `vi.hoisted` so the
+// hoisted `vi.mock` factory can close over a value the tests mutate per case
+// (a bare `let` would be in its TDZ when the factory first runs).
+const nav = vi.hoisted(() => ({ scenario: null as string | null }));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => ({
+    get: (key: string) => (key === "scenario" ? nav.scenario : null),
+    toString: () => (nav.scenario ? `scenario=${nav.scenario}` : ""),
+  }),
+  usePathname: () => "/clients/client-1/details/map",
+}));
+
+afterEach(() => {
+  nav.scenario = null;
+});
 
 function person(overrides: Partial<MapPerson> = {}): MapPerson {
   return {
@@ -41,6 +59,12 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     items: [],
     goals: [],
     canEdit: true,
+    // Editor hydration rows (see HouseholdMapProps). Empty by default — these
+    // boards render cards, they don't hydrate editors.
+    incomeRows: {},
+    expenseRows: {},
+    savingsRuleRows: {},
+    accountOptions: [],
     ...overrides,
   };
 }
@@ -220,6 +244,56 @@ describe("NetWorthBoard", () => {
     expect(within(spouseColumn).getByText("Jordan")).toBeInTheDocument();
     expect(within(spouseColumn).getByRole("button", { name: "+ Add" })).toBeInTheDocument();
     expect(subtotalTextFor(container, "spouse")).toBe("Jordan · $0");
+  });
+
+  it("column account and liability cards are links to the Net Worth detail page", () => {
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", kind: "account", name: "Brokerage account" }),
+      item({
+        id: "l1",
+        column: "client",
+        kind: "liability",
+        category: "debt",
+        name: "Mortgage debt",
+      }),
+    ];
+
+    render(<NetWorthBoard {...baseProps({ items })} />);
+
+    const clientColumn = screen.getByTestId("column-client");
+    const links = within(clientColumn).getAllByRole("link");
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/clients/client-1/details/net-worth");
+    }
+    expect(within(links[0]).getByText("Brokerage account")).toBeInTheDocument();
+    expect(within(links[1]).getByText("Mortgage debt")).toBeInTheDocument();
+  });
+
+  it("card and tray links carry the active ?scenario= through — landing on the BASE balance sheet from a scenario-active Map is the bug this prevents", () => {
+    nav.scenario = "sc-9";
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", kind: "account", name: "Brokerage account" }),
+      item({
+        id: "t1",
+        column: "tray",
+        kind: "account",
+        category: "entity",
+        name: "Family LLC brokerage",
+        trayOwnerLabel: "Family LLC",
+      }),
+    ];
+
+    render(<NetWorthBoard {...baseProps({ items })} />);
+
+    expect(within(screen.getByTestId("column-client")).getByRole("link")).toHaveAttribute(
+      "href",
+      "/clients/client-1/details/net-worth?scenario=sc-9",
+    );
+    expect(within(screen.getByTestId("tray")).getByRole("link")).toHaveAttribute(
+      "href",
+      "/clients/client-1/details/net-worth?scenario=sc-9",
+    );
   });
 
   it("no entity-owned items — the tray is absent entirely, not an empty labelled strip", () => {
