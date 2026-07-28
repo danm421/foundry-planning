@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { MapContent } from "./map-content";
 import MapLoadingSkeleton from "./loading-skeleton";
+import DetailsPageShell from "@/components/details-page-shell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -11,8 +12,10 @@ export default async function HouseholdMapPage({ params, searchParams }: PagePro
   const { id } = await params;
   const { scenario } = await searchParams;
   return (
-    <Suspense fallback={<MapLoadingSkeleton />}>
-      <MapContent clientId={id} scenarioParam={scenario} />
-    </Suspense>
+    <DetailsPageShell clientId={id} scenarioId={scenario}>
+      <Suspense fallback={<MapLoadingSkeleton />}>
+        <MapContent clientId={id} scenarioParam={scenario} />
+      </Suspense>
+    </DetailsPageShell>
   );
 }

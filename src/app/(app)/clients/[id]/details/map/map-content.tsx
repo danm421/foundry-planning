@@ -111,12 +111,34 @@ function incomeToMapItem(income: Income, ctx: ColumnContext): MapItem {
   };
 }
 
-/** A percent-of-pay or contribute-max rule has no resolvable dollar amount
- *  without running the projection, so the card shows the rule instead. */
-function savingsValueLabel(rule: SavingsRule): string {
-  if (rule.contributeMax) return "IRS max";
-  if (rule.annualPercent != null) return `${Math.round(rule.annualPercent * 100)}% of pay`;
-  return moneyLabel(rule.annualAmount);
+/**
+ * `value` and `valueLabel` MUST come from the same branch — a card that shows
+ * one number while the engine subtotals another is the bug this fixes.
+ *
+ * Mirrors the engine's own resolution order (engine/projection.ts's
+ * resolvedByRuleId loop → engine/savings.ts resolveContributionAmount):
+ * scheduleOverrides[year] first, then contributeMax (IRS limit), then
+ * percent-of-pay, then flat annualAmount. Only the flat-dollar branch is
+ * resolvable here — contributeMax needs the owner's age + resolved IRS
+ * params, and percent-mode needs the owner's salary slice, and both of those
+ * live in the projection, not this page-shaped adapter. (scheduleOverrides is
+ * the same class of gap and is tracked separately, not fixed here.)
+ *
+ * So: contributeMax / percent-of-pay rules show the RULE as the label and
+ * contribute a literal `0` to subtotals — a card that shows a rule must not
+ * add a dollar figure the engine will overrule. Only the flat-dollar branch
+ * (the one case fully resolvable without the projection) contributes a real
+ * number, and since savings is an outflow it is negative, exactly like
+ * expenseToMapItem's outflows, so `items.reduce((s, i) => s + i.value, 0)`
+ * nets out correctly without any kind-specific special-casing by callers.
+ */
+function resolveSavings(rule: SavingsRule): { value: number; valueLabel: string } {
+  if (rule.contributeMax) return { value: 0, valueLabel: "IRS max" };
+  if (rule.annualPercent != null && rule.annualPercent > 0) {
+    return { value: 0, valueLabel: `${Math.round(rule.annualPercent * 100)}% of pay` };
+  }
+  const value = -rule.annualAmount;
+  return { value, valueLabel: moneyLabel(value) };
 }
 
 function savingsNoteChip(rule: SavingsRule): string | null {
@@ -132,13 +154,14 @@ function savingsToMapItem(
   ctx: ColumnContext,
 ): MapItem {
   const account = accountById.get(rule.accountId);
+  const { value, valueLabel } = resolveSavings(rule);
   return {
     id: rule.id,
     kind: "savings",
     category: "investments",
     name: account?.name ?? "Contribution",
-    value: rule.annualAmount,
-    valueLabel: savingsValueLabel(rule),
+    value,
+    valueLabel,
     ...assignColumn(account ?? { owners: [] }, ctx),
     noteChip: savingsNoteChip(rule),
   };

@@ -39,7 +39,17 @@ export interface MapItem {
   name: string;
   /** Pre-formatted for display, e.g. "$160,000" or "($10,000)". */
   valueLabel: string;
-  /** Signed, for subtotals. Liabilities are negative. */
+  /**
+   * Signed, for subtotals: `items.reduce((s, i) => s + i.value, 0)` must be
+   * correct for flow kinds with no kind-specific special-casing by the
+   * caller. Inflows (accounts, incomes) are positive. Outflows are negative
+   * — liabilities, expenses, AND savings, since a contribution is money
+   * leaving the household's cash flow just like an expense. A savings rule
+   * the projection alone can resolve (percent-of-pay, contribute-max — both
+   * need the owner's salary or IRS limit/age, which live in the engine, not
+   * this adapter) carries `0` here; the rule itself is shown in `valueLabel`
+   * instead of a number the engine would later overrule.
+   */
   value: number;
   column: MapColumn;
   splitChip: string | null;
