@@ -50,6 +50,7 @@ describe("scoreRtq", () => {
 
   it("throws on a missing or unrecognized answer", () => {
     const { loss_reaction: _omitted, ...missing } = ALL_MAX;
+    void _omitted;
     expect(() => scoreRtq(missing)).toThrow(/loss_reaction/);
     expect(() => scoreRtq({ ...ALL_MAX, loss_reaction: "bogus" })).toThrow(/loss_reaction/);
   });
@@ -59,6 +60,7 @@ describe("isCompleteRtq", () => {
   it("accepts a full answer set and rejects a partial one", () => {
     expect(isCompleteRtq(ALL_MAX)).toBe(true);
     const { experience: _omitted, ...partial } = ALL_MAX;
+    void _omitted;
     expect(isCompleteRtq(partial)).toBe(false);
   });
 });
