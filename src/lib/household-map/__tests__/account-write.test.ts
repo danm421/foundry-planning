@@ -85,11 +85,108 @@ describe("buildScenarioDesiredFields", () => {
   });
 
   it("never sends identity or tenancy fields", () => {
-    const fields = buildScenarioDesiredFields(row(), { value: "1" });
+    // linkedSource and beneficiaryDisplayName must be POPULATED here — the
+    // base row() fixture never sets them, so asserting their absence against
+    // an unset field is vacuous (it would pass even if NON_WRITABLE_KEYS were
+    // reduced to just {"id"}). See the mutation check recorded in the task
+    // report for this file.
+    const fields = buildScenarioDesiredFields(
+      row({ linkedSource: "plaid", beneficiaryDisplayName: "Ava Cooper" }),
+      { value: "1" },
+    );
     expect(fields).not.toHaveProperty("id");
-    expect(fields).not.toHaveProperty("clientId");
     expect(fields).not.toHaveProperty("linkedSource");
     expect(fields).not.toHaveProperty("beneficiaryDisplayName");
+    // `AccountRow` declares no `clientId` field at all today, so this
+    // assertion cannot fail by construction — it is a deliberate
+    // future-proofing canary, not dead weight. If someone later adds
+    // `clientId` to `AccountRow`, this line starts exercising it for real and
+    // forces a decision about whether it may ever be written back.
+    expect(fields).not.toHaveProperty("clientId");
+  });
+
+  it("emits exactly the writable field set for a fully-populated row — a future field silently going missing fails this instead of shipping quietly", () => {
+    const fullyPopulatedRow: AccountRow = {
+      id: "acct-1",
+      name: "IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      owner: "client",
+      value: "400000",
+      basis: "0",
+      linkedSource: "plaid",
+      rothValue: "0",
+      hsaCoverage: null,
+      growthRate: "0.062",
+      rmdEnabled: true,
+      countsTowardAum: false,
+      priorYearEndValue: "390000",
+      ownerEntityId: null,
+      growthSource: "model_portfolio",
+      modelPortfolioId: "mp-7",
+      tickerPortfolioId: null,
+      turnoverPct: "0",
+      overridePctOi: null,
+      overridePctLtCg: null,
+      overridePctQdiv: null,
+      overridePctTaxExempt: null,
+      annualPropertyTax: null,
+      propertyTaxGrowthRate: null,
+      propertyTaxGrowthSource: "custom",
+      isDefaultChecking: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-1", percent: 100 }],
+      titlingType: "jtwros",
+      parentAccountId: null,
+      grantorFamilyMemberId: null,
+      grantorName: null,
+      beneficiaryFamilyMemberId: null,
+      beneficiaryName: null,
+      rothRolloverEnabled: false,
+      rothRolloverStartYear: null,
+      rothRolloverAccountId: null,
+      beneficiaryDisplayName: "Ava Cooper",
+    };
+
+    const fields = buildScenarioDesiredFields(fullyPopulatedRow, { value: "1" });
+
+    expect(Object.keys(fields).sort()).toEqual(
+      [
+        "name",
+        "category",
+        "subType",
+        "value",
+        "basis",
+        "rothValue",
+        "hsaCoverage",
+        "growthRate",
+        "rmdEnabled",
+        "countsTowardAum",
+        "priorYearEndValue",
+        "ownerEntityId",
+        "growthSource",
+        "modelPortfolioId",
+        "tickerPortfolioId",
+        "turnoverPct",
+        "overridePctOi",
+        "overridePctLtCg",
+        "overridePctQdiv",
+        "overridePctTaxExempt",
+        "annualPropertyTax",
+        "propertyTaxGrowthRate",
+        "propertyTaxGrowthSource",
+        "isDefaultChecking",
+        "owners",
+        "titlingType",
+        "parentAccountId",
+        "grantorFamilyMemberId",
+        "grantorName",
+        "beneficiaryFamilyMemberId",
+        "beneficiaryName",
+        "rothRolloverEnabled",
+        "rothRolloverStartYear",
+        "rothRolloverAccountId",
+      ].sort(),
+    );
   });
 
   // The subtlest judgement call in this module: `owner` (singular) is the
