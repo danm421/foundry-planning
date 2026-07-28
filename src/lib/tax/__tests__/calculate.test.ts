@@ -65,6 +65,12 @@ function params2026(): TaxYearParameters {
     niitRate: 0.038,
     niitThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
     qbi: { thresholdMfj: 405000, thresholdSingleHohMfs: 201775, phaseInRangeMfj: 150000, phaseInRangeOther: 75000 },
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: 24500, ira401kCatchup50: 8000, ira401kCatchup6063: 11250,
       iraTradLimit: 7500, iraCatchup50: 1100,

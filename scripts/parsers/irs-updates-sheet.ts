@@ -241,6 +241,14 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
       phaseInRangeMfj: qbiPiMfj,
       phaseInRangeOther: qbiPiOther,
     },
+    // TODO(tax-thresholds-credits Task 2): this workbook parser doesn't source
+    // these yet — reseed populates them separately.
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: k401Elec,
       ira401kCatchup50: k401Cu50,

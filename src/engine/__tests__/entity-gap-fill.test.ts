@@ -61,6 +61,12 @@ const taxYearRow2026: TaxYearParameters = {
     phaseInRangeMfj: 100000,
     phaseInRangeOther: 50000,
   },
+  rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+  iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+               coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+  studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+  ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+  saversCredit: { mfj: [], single: [], hoh: [] },
   contribLimits: {
     ira401kElective: 23500, ira401kCatchup50: 7500, ira401kCatchup6063: 11250,
     iraTradLimit: 7000, iraCatchup50: 1000,

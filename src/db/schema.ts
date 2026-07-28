@@ -23,7 +23,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import type { BracketTier } from "@/lib/tax/types";
+import type { BracketTier, SaversCreditTier } from "@/lib/tax/types";
 import type { IrmaaTier } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
@@ -3989,6 +3989,33 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
   qbiThresholdSingleHohMfs: decimal("qbi_threshold_single_hoh_mfs", { precision: 12, scale: 2 }).notNull(),
   qbiPhaseInRangeMfj: decimal("qbi_phase_in_range_mfj", { precision: 12, scale: 2 }).notNull(),
   qbiPhaseInRangeOther: decimal("qbi_phase_in_range_other", { precision: 12, scale: 2 }).notNull(),
+
+  // ── Income-driven phase-outs (nullable until the threshold reseed) ────────
+  rothPhaseoutStartMfj: decimal("roth_phaseout_start_mfj", { precision: 12, scale: 2 }),
+  rothPhaseoutEndMfj: decimal("roth_phaseout_end_mfj", { precision: 12, scale: 2 }),
+  rothPhaseoutStartSingle: decimal("roth_phaseout_start_single", { precision: 12, scale: 2 }),
+  rothPhaseoutEndSingle: decimal("roth_phaseout_end_single", { precision: 12, scale: 2 }),
+
+  iraDeductCoveredStartMfj: decimal("ira_deduct_covered_start_mfj", { precision: 12, scale: 2 }),
+  iraDeductCoveredEndMfj: decimal("ira_deduct_covered_end_mfj", { precision: 12, scale: 2 }),
+  iraDeductCoveredStartSingle: decimal("ira_deduct_covered_start_single", { precision: 12, scale: 2 }),
+  iraDeductCoveredEndSingle: decimal("ira_deduct_covered_end_single", { precision: 12, scale: 2 }),
+  iraDeductSpousalStartMfj: decimal("ira_deduct_spousal_start_mfj", { precision: 12, scale: 2 }),
+  iraDeductSpousalEndMfj: decimal("ira_deduct_spousal_end_mfj", { precision: 12, scale: 2 }),
+
+  studentLoanMaxDeduction: decimal("student_loan_max_deduction", { precision: 10, scale: 2 }),
+  studentLoanPhaseoutStartMfj: decimal("student_loan_phaseout_start_mfj", { precision: 12, scale: 2 }),
+  studentLoanPhaseoutEndMfj: decimal("student_loan_phaseout_end_mfj", { precision: 12, scale: 2 }),
+  studentLoanPhaseoutStartSingle: decimal("student_loan_phaseout_start_single", { precision: 12, scale: 2 }),
+  studentLoanPhaseoutEndSingle: decimal("student_loan_phaseout_end_single", { precision: 12, scale: 2 }),
+
+  ctcPerChild: decimal("ctc_per_child", { precision: 10, scale: 2 }),
+  ctcRefundableMax: decimal("ctc_refundable_max", { precision: 10, scale: 2 }),
+  odcPerDependent: decimal("odc_per_dependent", { precision: 10, scale: 2 }),
+
+  saversCreditTiersMfj: jsonb("savers_credit_tiers_mfj").$type<SaversCreditTier[]>(),
+  saversCreditTiersSingle: jsonb("savers_credit_tiers_single").$type<SaversCreditTier[]>(),
+  saversCreditTiersHoh: jsonb("savers_credit_tiers_hoh").$type<SaversCreditTier[]>(),
 
   ira401kElective: decimal("ira_401k_elective", { precision: 10, scale: 2 }).notNull(),
   ira401kCatchup50: decimal("ira_401k_catchup_50", { precision: 10, scale: 2 }).notNull(),

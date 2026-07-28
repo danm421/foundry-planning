@@ -27,6 +27,12 @@ export interface CapGainsTier {
 
 export type CapGainsBracketsByStatus = Record<FilingStatus, CapGainsTier>;
 
+/** One Saver's Credit rate tier: `rate` applies while AGI <= `agiCeiling`. */
+export interface SaversCreditTier {
+  rate: number;
+  agiCeiling: number;
+}
+
 // Mirrors the DB row shape but with parsed numbers (DB returns decimal as string).
 export interface TaxYearParameters {
   year: number;
@@ -60,6 +66,44 @@ export interface TaxYearParameters {
     thresholdSingleHohMfs: number;
     phaseInRangeMfj: number;
     phaseInRangeOther: number;
+  };
+
+  /** IRC 408A(c)(3) Roth contribution MAGI phase-out. MFS is statutorily
+   *  $0-$10,000 and never indexed — see STATUTORY_FIXED.mfsPhaseoutRange. */
+  rothPhaseout: {
+    startMfj: number | null; endMfj: number | null;
+    startSingle: number | null; endSingle: number | null;
+  };
+
+  /** IRC 219(g) traditional-IRA deduction phase-outs.
+   *  `covered*` = the contributor is an active workplace-plan participant.
+   *  `spousal*` = the contributor is NOT covered but their spouse is. */
+  iraDeduct: {
+    coveredStartMfj: number | null; coveredEndMfj: number | null;
+    coveredStartSingle: number | null; coveredEndSingle: number | null;
+    spousalStartMfj: number | null; spousalEndMfj: number | null;
+  };
+
+  /** IRC 221 student-loan interest deduction. Disallowed entirely for MFS. */
+  studentLoan: {
+    maxDeduction: number | null;
+    startMfj: number | null; endMfj: number | null;
+    startSingle: number | null; endSingle: number | null;
+  };
+
+  /** IRC 24 child tax credit amounts. Phase-out THRESHOLDS are unindexed and
+   *  live in STATUTORY_FIXED; only the dollar amounts index. */
+  ctc: {
+    perChild: number | null;
+    refundableMax: number | null;
+    odcPerDependent: number | null;
+  };
+
+  /** IRC 25B Saver's Credit tiers, highest rate first. Empty = not seeded. */
+  saversCredit: {
+    mfj: SaversCreditTier[];
+    single: SaversCreditTier[];
+    hoh: SaversCreditTier[];
   };
 
   contribLimits: {

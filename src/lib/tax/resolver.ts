@@ -162,5 +162,13 @@ function inflateParams(base: TaxYearParameters, generalFactor: number, ssFactor:
     partDNationalBase: base.partDNationalBase ?? null,
     irmaaBracketsMfj: base.irmaaBracketsMfj ?? null,
     irmaaBracketsSingle: base.irmaaBracketsSingle ?? null,
+    // TODO(tax-thresholds-credits, future task): these pass through unchanged for
+    // out-of-table years. No task in this plan wires up indexing/inflation for
+    // them yet — same open gap as the Medicare premiums above.
+    rothPhaseout: base.rothPhaseout,
+    iraDeduct: base.iraDeduct,
+    studentLoan: base.studentLoan,
+    ctc: base.ctc,
+    saversCredit: base.saversCredit,
   };
 }
