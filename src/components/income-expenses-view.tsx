@@ -9,7 +9,8 @@ import SavingsRulesList from "./forms/savings-rules-list";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
-import { CurrencyInput, cleanInput, formatDisplay } from "./currency-input";
+import { CurrencyInput } from "./currency-input";
+import { InlineAmount } from "./forms/inline-amount";
 import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
@@ -2302,91 +2303,6 @@ function Group({
         <span className="text-xs text-gray-400">{total}</span>
       </div>
       <div className="divide-y divide-gray-800">{children}</div>
-    </div>
-  );
-}
-
-// Inline amount editor for a row. Renders the formatted value as a click-to-edit
-// button; on activation swaps in a compact currency input that commits on Enter
-// or blur and cancels on Escape. `onSave` returns whether the write succeeded so
-// we can keep the field calm on success and let the parent revert on failure.
-function InlineAmount({
-  amount,
-  onSave,
-  label,
-}: {
-  amount: number;
-  onSave: (next: number) => Promise<boolean>;
-  label: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  function begin() {
-    setDraft(amount ? String(amount) : "");
-    setEditing(true);
-  }
-
-  async function commit() {
-    if (saving) return;
-    const next = Number(cleanInput(draft) || "0");
-    if (!Number.isFinite(next) || next === amount) {
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    await onSave(next);
-    setSaving(false);
-    setEditing(false);
-  }
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          begin();
-        }}
-        className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-gray-100 hover:bg-gray-800 hover:ring-1 hover:ring-inset hover:ring-gray-600"
-        aria-label={`Edit amount for ${label}`}
-      >
-        {fmt(amount)}
-      </button>
-    );
-  }
-
-  return (
-    <div className="relative w-[104px]" onClick={(e) => e.stopPropagation()}>
-      <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
-      <input
-        ref={inputRef}
-        inputMode="decimal"
-        value={formatDisplay(draft)}
-        disabled={saving}
-        onChange={(e) => setDraft(cleanInput(e.target.value))}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            setEditing(false);
-          }
-        }}
-        className="w-full rounded-sm border border-gray-600 bg-gray-800 py-0.5 pl-4 pr-1.5 text-right text-sm text-gray-100 outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60"
-        aria-label={`Amount for ${label}`}
-      />
     </div>
   );
 }
