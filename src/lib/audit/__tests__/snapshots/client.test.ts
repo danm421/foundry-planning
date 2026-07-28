@@ -15,6 +15,8 @@ const row: typeof clients.$inferSelect = {
   spouseRetirementMonth: null,
   spouseLifeExpectancy: 90,
   filingStatus: "married_joint",
+  coveredByWorkplacePlan: "auto",
+  spouseCoveredByWorkplacePlan: "auto",
   riskTolerance: null,
   isPrivate: false,
   onboardingState: {},

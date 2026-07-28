@@ -287,6 +287,13 @@ export const familyRelationshipEnum = pgEnum("family_relationship", [
   "other",
 ]);
 
+// Shared by the three advisor-editable overrides below (family_members.claimed_as_dependent,
+// clients.covered_by_workplace_plan, clients.spouse_covered_by_workplace_plan). "auto" defers
+// to Task 11's inference (relationship/age for dependents; active employer retirement plan
+// participation for workplace coverage); "yes"/"no" force the value. Task 10 stores and edits
+// these only — no inference logic lives here.
+export const dependentOverrideEnum = pgEnum("dependent_override", ["auto", "yes", "no"]);
+
 export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
   "charity",
   "individual",
@@ -929,6 +936,12 @@ export const clients = pgTable("clients", {
   spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
+  // Advisor override for active-participant workplace-retirement-plan coverage
+  // (drives the IRA deduction phaseout / Saver's Credit eligibility). "auto"
+  // defers to Task 11's inference from that year's savings rules; "yes"/"no"
+  // force the value regardless of what the projection would infer.
+  coveredByWorkplacePlan: dependentOverrideEnum("covered_by_workplace_plan").notNull().default("auto"),
+  spouseCoveredByWorkplacePlan: dependentOverrideEnum("spouse_covered_by_workplace_plan").notNull().default("auto"),
   // Advisor-stated willingness to take risk. Nullable; selects the firm's tagged
   // model portfolio for the scenario's taxable+retirement buckets.
   riskTolerance: riskLevelEnum("risk_tolerance"),
@@ -1505,6 +1518,10 @@ export const familyMembers = pgTable("family_members", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name"),
   relationship: familyRelationshipEnum("relationship").notNull().default("child"),
+  // Advisor override for dependent-claim status, meaningful only when
+  // relationship is child/stepchild. "auto" defers to Task 11's inference
+  // (age under 17 in the tax year); "yes"/"no" force the value.
+  claimedAsDependent: dependentOverrideEnum("claimed_as_dependent").notNull().default("auto"),
   role: familyMemberRoleEnum("role").notNull().default("other"),
   dateOfBirth: date("date_of_birth"),
   domesticPartner: boolean("domestic_partner").notNull().default(false),

@@ -94,6 +94,7 @@ export async function loadFamilyViewStepData(
     notes: m.notes ?? null,
     domesticPartner: m.domesticPartner,
     inheritanceClassOverride: m.inheritanceClassOverride ?? {},
+    claimedAsDependent: m.claimedAsDependent,
   }));
 
   const ents: Entity[] = entityRows.map((e) => ({

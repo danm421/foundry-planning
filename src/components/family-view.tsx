@@ -39,6 +39,11 @@ type Relationship =
   | "other";
 export type EntityType = "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
 
+// Advisor override for dependent-claim status. "auto" defers to Task 11's
+// inference (relationship child/stepchild + age under 17 in the tax year);
+// "yes"/"no" force the value regardless of what the projection would infer.
+export type DependentOverride = "auto" | "yes" | "no";
+
 export interface FamilyMember {
   id: string;
   firstName: string;
@@ -50,6 +55,12 @@ export interface FamilyMember {
   notes: string | null;
   domesticPartner?: boolean;
   inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
+  // Optional so the many unrelated consumers of this type (beneficiary,
+  // insurance, gift, and wills dialogs) that reuse `FamilyMember` purely for
+  // name/relationship display don't have to carry a field they never touch.
+  // Real reads always populate it (NOT NULL, default "auto") — callers that
+  // care fall back to "auto" explicitly.
+  claimedAsDependent?: DependentOverride;
 }
 
 export interface NamePctRow {
@@ -252,6 +263,10 @@ const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   other: "Other",
 };
 
+// Task 11's dependent-eligible relationship set — the row select only makes
+// sense for members who could ever be claimed as a dependent.
+const DEPENDENT_ELIGIBLE_RELATIONSHIPS = new Set<Relationship>(["child", "stepchild"]);
+
 export const ENTITY_LABELS: Record<EntityType, string> = {
   trust: "Trust",
   llc: "LLC",
@@ -447,6 +462,30 @@ export default function FamilyView({
   };
   for (const m of members) byRel[m.relationship].push(m);
 
+  // Row-select handler for the dependent-claim override. Optimistic with
+  // rollback — mirrors the local-state pattern the dialog's onSaved already
+  // uses elsewhere in this file rather than relying solely on router.refresh().
+  async function handleClaimedAsDependentChange(member: FamilyMember, value: DependentOverride) {
+    const previous = member.claimedAsDependent;
+    setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: value } : x)));
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: "family_member",
+        targetId: member.id,
+        desiredFields: { claimedAsDependent: value },
+      },
+      {
+        url: `/api/clients/${clientId}/family-members/${member.id}`,
+        method: "PUT",
+        body: { claimedAsDependent: value },
+      },
+    );
+    if (!res.ok) {
+      setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: previous } : x)));
+    }
+  }
+
   return (
     <div className="space-y-8">
       {/* Primary household */}
@@ -548,11 +587,12 @@ export default function FamilyView({
                   <th className="px-4 py-2">Relationship</th>
                   <th className="px-4 py-2">Age</th>
                   <th className="px-4 py-2">Notes</th>
+                  <th className="px-4 py-2">Dependent</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {(["child", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
+                {(["child", "stepchild", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}
@@ -569,6 +609,27 @@ export default function FamilyView({
                       <td className="px-4 py-2 text-sm text-gray-300">{RELATIONSHIP_LABELS[m.relationship]}</td>
                       <td className="px-4 py-2 text-sm text-gray-300">{computeAge(m.dateOfBirth)}</td>
                       <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{m.notes ?? ""}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {DEPENDENT_ELIGIBLE_RELATIONSHIPS.has(m.relationship) ? (
+                          <select
+                            aria-label={`Claimed as dependent — ${m.firstName}`}
+                            value={m.claimedAsDependent ?? "auto"}
+                            disabled={!canEdit}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleClaimedAsDependentChange(m, e.target.value as DependentOverride);
+                            }}
+                            className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value="auto">Auto</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        ) : (
+                          <span className="text-gray-600">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 text-right">
                         {membersEdit && (
                           <button

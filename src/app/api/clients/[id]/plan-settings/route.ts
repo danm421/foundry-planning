@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { modelPortfolios, scenarios, planSettings } from "@/db/schema";
+import { modelPortfolios, scenarios, planSettings, clients, dependentOverrideEnum } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -113,6 +113,8 @@ export async function PUT(
       inflationRateSource,
       surplusSpendPct,
       surplusSaveAccountId,
+      coveredByWorkplacePlan,
+      spouseCoveredByWorkplacePlan,
     } = body;
 
     if (selectedBenchmarkPortfolioId) {
@@ -236,66 +238,109 @@ export async function PUT(
       );
     }
 
-    const [updated] = await db
-      .update(planSettings)
-      .set({
-        flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
-        flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
-        estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
-        flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
-        residenceState: "residenceState" in body ? (residenceState ?? null) : undefined,
-        irdTaxRate: irdTaxRate != null ? String(irdTaxRate) : undefined,
-        probateCostRate: probateCostRate != null ? String(probateCostRate) : undefined,
-        pvDiscountRate: "pvDiscountRate" in body
-          ? (pvDiscountRate === null ? null : String(pvDiscountRate))
-          : undefined,
-        outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
-        priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
-        priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
-        inflationRate: inflationRate != null ? String(inflationRate) : undefined,
-        taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
-        taxInflationRate: "taxInflationRate" in body
-          ? (taxInflationRate === null ? null : String(taxInflationRate))
-          : undefined,
-        lifetimeExemptionCap: "lifetimeExemptionCap" in body
-          ? (lifetimeExemptionCap === null ? null : String(lifetimeExemptionCap))
-          : undefined,
-        ssWageGrowthRate: "ssWageGrowthRate" in body
-          ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
-          : undefined,
-        medicarePremiumInflationRate: medicarePremiumInflationRate != null ? String(medicarePremiumInflationRate) : undefined,
-        medicarePremiumInflationEnabled: typeof medicarePremiumInflationEnabled === "boolean" ? medicarePremiumInflationEnabled : undefined,
-        planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
-        planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
-        defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
-        defaultGrowthCash: defaultGrowthCash != null ? String(defaultGrowthCash) : undefined,
-        defaultGrowthRetirement: defaultGrowthRetirement != null ? String(defaultGrowthRetirement) : undefined,
-        defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
-        defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
-        defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
-        growthSourceTaxable: growthSourceTaxable ?? undefined,
-        growthSourceCash: growthSourceCash ?? undefined,
-        growthSourceRetirement: growthSourceRetirement ?? undefined,
-        growthSourceRealEstate: growthSourceRealEstate ?? undefined,
-        growthSourceBusiness: growthSourceBusiness ?? undefined,
-        growthSourceLifeInsurance: growthSourceLifeInsurance ?? undefined,
-        modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
-        modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
-        modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
-        selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
-          ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
-          : undefined,
-        surplusSpendPct: surplusSpendPct != null ? String(surplusSpendPct) : undefined,
-        surplusSaveAccountId: "surplusSaveAccountId" in body
-          ? (surplusSaveAccountId === null ? null : surplusSaveAccountId)
-          : undefined,
-        inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
-          ? inflationRateSource
-          : undefined,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))
-      .returning();
+    for (const [field, value] of [
+      ["coveredByWorkplacePlan", coveredByWorkplacePlan],
+      ["spouseCoveredByWorkplacePlan", spouseCoveredByWorkplacePlan],
+    ] as const) {
+      if (value !== undefined && !dependentOverrideEnum.enumValues.includes(value)) {
+        return NextResponse.json(
+          { error: `${field} must be 'auto', 'yes', or 'no'` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // coveredByWorkplacePlan / spouseCoveredByWorkplacePlan live on `clients`
+    // (household-level, not scenario-level), not on `planSettings` — a second
+    // update against the right table, in the same transaction as the
+    // planSettings write so a mid-request failure can't leave one committed
+    // without the other.
+    type WorkplaceCoverage = { coveredByWorkplacePlan?: "auto" | "yes" | "no"; spouseCoveredByWorkplacePlan?: "auto" | "yes" | "no" };
+    const { updated, updatedClientFields } = await db.transaction(async (tx) => {
+      const [updatedRow] = await tx
+        .update(planSettings)
+        .set({
+          flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
+          flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
+          estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
+          flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
+          residenceState: "residenceState" in body ? (residenceState ?? null) : undefined,
+          irdTaxRate: irdTaxRate != null ? String(irdTaxRate) : undefined,
+          probateCostRate: probateCostRate != null ? String(probateCostRate) : undefined,
+          pvDiscountRate: "pvDiscountRate" in body
+            ? (pvDiscountRate === null ? null : String(pvDiscountRate))
+            : undefined,
+          outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
+          priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
+          priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
+          inflationRate: inflationRate != null ? String(inflationRate) : undefined,
+          taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
+          taxInflationRate: "taxInflationRate" in body
+            ? (taxInflationRate === null ? null : String(taxInflationRate))
+            : undefined,
+          lifetimeExemptionCap: "lifetimeExemptionCap" in body
+            ? (lifetimeExemptionCap === null ? null : String(lifetimeExemptionCap))
+            : undefined,
+          ssWageGrowthRate: "ssWageGrowthRate" in body
+            ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
+            : undefined,
+          medicarePremiumInflationRate: medicarePremiumInflationRate != null ? String(medicarePremiumInflationRate) : undefined,
+          medicarePremiumInflationEnabled: typeof medicarePremiumInflationEnabled === "boolean" ? medicarePremiumInflationEnabled : undefined,
+          planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
+          planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
+          defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
+          defaultGrowthCash: defaultGrowthCash != null ? String(defaultGrowthCash) : undefined,
+          defaultGrowthRetirement: defaultGrowthRetirement != null ? String(defaultGrowthRetirement) : undefined,
+          defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
+          defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
+          defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
+          growthSourceTaxable: growthSourceTaxable ?? undefined,
+          growthSourceCash: growthSourceCash ?? undefined,
+          growthSourceRetirement: growthSourceRetirement ?? undefined,
+          growthSourceRealEstate: growthSourceRealEstate ?? undefined,
+          growthSourceBusiness: growthSourceBusiness ?? undefined,
+          growthSourceLifeInsurance: growthSourceLifeInsurance ?? undefined,
+          modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
+          modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
+          modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
+          selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
+            ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
+            : undefined,
+          surplusSpendPct: surplusSpendPct != null ? String(surplusSpendPct) : undefined,
+          surplusSaveAccountId: "surplusSaveAccountId" in body
+            ? (surplusSaveAccountId === null ? null : surplusSaveAccountId)
+            : undefined,
+          inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
+            ? inflationRateSource
+            : undefined,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))
+        .returning();
+
+      if (!updatedRow) {
+        return { updated: null, updatedClientFields: {} as WorkplaceCoverage };
+      }
+
+      let clientFields: WorkplaceCoverage = {};
+      if (coveredByWorkplacePlan !== undefined || spouseCoveredByWorkplacePlan !== undefined) {
+        const [updatedClient] = await tx
+          .update(clients)
+          .set({
+            ...(coveredByWorkplacePlan !== undefined && { coveredByWorkplacePlan }),
+            ...(spouseCoveredByWorkplacePlan !== undefined && { spouseCoveredByWorkplacePlan }),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
+          .returning({
+            coveredByWorkplacePlan: clients.coveredByWorkplacePlan,
+            spouseCoveredByWorkplacePlan: clients.spouseCoveredByWorkplacePlan,
+          });
+        if (updatedClient) clientFields = updatedClient;
+      }
+
+      return { updated: updatedRow, updatedClientFields: clientFields };
+    });
 
     if (!updated) {
       return NextResponse.json({ error: "Plan settings not found" }, { status: 404 });
@@ -310,7 +355,18 @@ export async function PUT(
       metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId }),
     });
 
-    return NextResponse.json(updated);
+    if (Object.keys(updatedClientFields).length > 0) {
+      await recordAudit({
+        action: "client.update",
+        resourceType: "client",
+        resourceId: id,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, updatedClientFields),
+      });
+    }
+
+    return NextResponse.json({ ...updated, ...updatedClientFields });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

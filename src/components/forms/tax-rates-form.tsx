@@ -23,6 +23,8 @@ interface TaxRatesFormProps {
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
+  coveredByWorkplacePlan: "auto" | "yes" | "no";
+  spouseCoveredByWorkplacePlan: "auto" | "yes" | "no";
   hasSpouse: boolean;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -62,6 +64,13 @@ const STATE_OPTIONS = USPS_STATE_CODES
 
 const INPUT_CLS =
   "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+
+// Shared by the client + spouse workplace-plan-coverage selects below.
+const DEPENDENT_OVERRIDE_OPTIONS = [
+  { value: "auto", label: "Auto" },
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+] as const;
 
 function SectionTitle({ title, help }: { title: string; help?: string }) {
   return (
@@ -114,6 +123,8 @@ export default function TaxRatesForm({
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
   priorTaxableGiftsSpouse,
+  coveredByWorkplacePlan,
+  spouseCoveredByWorkplacePlan,
   hasSpouse,
   clientFirstName,
   spouseFirstName,
@@ -169,6 +180,13 @@ export default function TaxRatesForm({
       priorTaxableGiftsSpouse: hasSpouse
         ? String(Number(data.get("priorTaxableGiftsSpouse") ?? "0"))
         : "0",
+      coveredByWorkplacePlan: (data.get("coveredByWorkplacePlan") as string) ?? "auto",
+      // Mirrors priorTaxableGiftsSpouse above: the field isn't rendered when
+      // there's no spouse, so fall back to the schema default rather than
+      // reading a FormData key that was never on the page.
+      spouseCoveredByWorkplacePlan: hasSpouse
+        ? ((data.get("spouseCoveredByWorkplacePlan") as string) ?? "auto")
+        : "auto",
     };
 
     if (mode === "flat") {
@@ -262,6 +280,38 @@ export default function TaxRatesForm({
               ))}
             </select>
           </FieldRow>
+          <FieldRow
+            label="Covered by workplace plan"
+            help="Overrides the projection's inference (active 401(k)/403(b)/SIMPLE participation or employer match that year) for the IRA deduction phaseout and Saver's Credit eligibility. Auto defers to that inference."
+          >
+            <select
+              id="coveredByWorkplacePlan"
+              name="coveredByWorkplacePlan"
+              defaultValue={coveredByWorkplacePlan}
+              className={`${INPUT_CLS} max-w-[10rem]`}
+            >
+              {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </FieldRow>
+          {hasSpouse && (
+            <FieldRow
+              label={`${spouseFirstName ?? "Spouse"} covered by workplace plan`}
+              help="Same override, applied to the spouse's workplace-plan coverage."
+            >
+              <select
+                id="spouseCoveredByWorkplacePlan"
+                name="spouseCoveredByWorkplacePlan"
+                defaultValue={spouseCoveredByWorkplacePlan}
+                className={`${INPUT_CLS} max-w-[10rem]`}
+              >
+                {DEPENDENT_OVERRIDE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </FieldRow>
+          )}
         </FieldTable>
       </section>
 

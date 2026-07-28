@@ -28,6 +28,8 @@ const BASE_PROPS = {
   outOfHouseholdDniRate: "0.37",
   priorTaxableGiftsClient: "0",
   priorTaxableGiftsSpouse: "0",
+  coveredByWorkplacePlan: "auto" as const,
+  spouseCoveredByWorkplacePlan: "auto" as const,
   hasSpouse: false,
   clientFirstName: "Alice",
 };
@@ -115,5 +117,97 @@ describe("TaxRatesForm — PV discount rate field", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.pvDiscountRate).toBeNull();
+  });
+});
+
+describe("TaxRatesForm — workplace-plan coverage overrides (Task 10)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the client select with the persisted value inside the shared canEdit-gated fieldset (not a second, invented disabled mechanism) — kills a mutant that moves the select outside the fieldset or drops the fieldset's disabled binding", () => {
+    const { rerender } = render(
+      <ClientAccessProvider value={{ permission: "view", access: "shared" }}>
+        <TaxRatesForm {...BASE_PROPS} coveredByWorkplacePlan="yes" />
+      </ClientAccessProvider>,
+    );
+    let select = document.getElementById("coveredByWorkplacePlan") as HTMLSelectElement;
+    expect(select.value).toBe("yes");
+    // jsdom doesn't implement the fieldset-disabled cascade onto descendant
+    // controls' own `.disabled` IDL property, so assert on the fieldset
+    // ancestor itself — this is exactly the mechanism R6 requires reusing.
+    const fieldset = select.closest("fieldset");
+    expect(fieldset).not.toBeNull();
+    expect(fieldset?.disabled).toBe(true);
+
+    rerender(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <TaxRatesForm {...BASE_PROPS} coveredByWorkplacePlan="yes" />
+      </ClientAccessProvider>,
+    );
+    select = document.getElementById("coveredByWorkplacePlan") as HTMLSelectElement;
+    expect(select.closest("fieldset")?.disabled).toBe(false);
+  });
+
+  it("does not render the spouse select when hasSpouse is false, and renders it with its own persisted value when true — kills a mutant that always renders it or ignores hasSpouse", () => {
+    const { rerender } = render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <TaxRatesForm {...BASE_PROPS} hasSpouse={false} spouseCoveredByWorkplacePlan="no" />
+      </ClientAccessProvider>,
+    );
+    expect(document.getElementById("spouseCoveredByWorkplacePlan")).toBeNull();
+
+    rerender(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <TaxRatesForm {...BASE_PROPS} hasSpouse={true} spouseCoveredByWorkplacePlan="no" spouseFirstName="Beth" />
+      </ClientAccessProvider>,
+    );
+    const spouseSelect = document.getElementById("spouseCoveredByWorkplacePlan") as HTMLSelectElement;
+    expect(spouseSelect).not.toBeNull();
+    expect(spouseSelect.value).toBe("no");
+  });
+
+  it("submits distinct client/spouse values independently on save — kills a mutant that conflates the two fields or drops one of them (both start at the same default, so only a per-field, distinct-value check catches a dropped or swapped column)", async () => {
+    const { container } = render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <TaxRatesForm
+          {...BASE_PROPS}
+          hasSpouse={true}
+          coveredByWorkplacePlan="auto"
+          spouseCoveredByWorkplacePlan="auto"
+          spouseFirstName="Beth"
+        />
+      </ClientAccessProvider>,
+    );
+
+    fireEvent.change(document.getElementById("coveredByWorkplacePlan")!, { target: { value: "yes" } });
+    fireEvent.change(document.getElementById("spouseCoveredByWorkplacePlan")!, { target: { value: "no" } });
+    fireEvent.submit(container.querySelector("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.coveredByWorkplacePlan).toBe("yes");
+    expect(body.spouseCoveredByWorkplacePlan).toBe("no");
+  });
+
+  it("falls back to 'auto' for the spouse field when submitting without a spouse — mirrors priorTaxableGiftsSpouse's existing fallback idiom", async () => {
+    const { container } = render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <TaxRatesForm {...BASE_PROPS} hasSpouse={false} />
+      </ClientAccessProvider>,
+    );
+
+    fireEvent.submit(container.querySelector("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.spouseCoveredByWorkplacePlan).toBe("auto");
   });
 });
