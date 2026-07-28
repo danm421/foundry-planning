@@ -4,7 +4,8 @@ import type {
   IncomeCellDrillArgs,
   IncomeColumnKey,
 } from "./types";
-import { bySourceRows, resolveSourceLabel } from "./_shared";
+import { bySourceRows, formatCurrency, resolveSourceLabel } from "./_shared";
+import { CAPITAL_LOSS_ORDINARY_LIMIT } from "@/lib/tax/constants";
 
 const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   earnedIncome: "Earned Income",
@@ -33,6 +34,57 @@ const DIRECT_CONFIG: Partial<Record<IncomeColumnKey, DirectConfig>> = {
   qbi:               { sourceType: "qbi",              taxDetailKey: "qbi" },
 };
 
+/** Capital-loss rows appended to the LT/ST capital-gain drill-downs. Without
+ *  these the §1211(b) cap is invisible and a large loss producing only a
+ *  $3,000 deduction reads as a bug.
+ *
+ *  Uses the flat (non-MFS) limit unconditionally: filing status is not part
+ *  of `IncomeCellDrillArgs` (not on `ProjectionYear`, `TaxResult`, or
+ *  `CellDrillContext`) and threading a new argument through both callers
+ *  just for a tooltip is not worth it — MFS is rare enough that a wrong
+ *  limit in a tooltip is a smaller defect.
+ *
+ *  Known gap: in flat tax-engine mode (`PlanSettings.taxEngineMode`, also
+ *  not reachable here) `capitalLossDeduction` is always 0 and this
+ *  carryforward balance never moves year to year, so it can read as a
+ *  stalled paydown rather than "not modeled in flat mode." Left unfixed —
+ *  detecting flat mode would require the same kind of new plumbing. */
+function capitalLossRows(taxDetail: IncomeCellDrillArgs["year"]["taxDetail"]): CellDrillRow[] {
+  const rows: CellDrillRow[] = [];
+  const deduction = taxDetail?.capitalLossDeduction ?? 0;
+  const cf = taxDetail?.capitalLossCarryforward;
+  const disallowed = taxDetail?.disallowedCapitalLoss ?? 0;
+
+  if (deduction > 0) {
+    rows.push({
+      id: "capital-loss-deduction",
+      label: "Capital loss deduction",
+      amount: -deduction,
+      meta: `Net capital loss offsets ordinary income, limited to ${formatCurrency(CAPITAL_LOSS_ORDINARY_LIMIT)} per year (IRC §1211(b)).`,
+    });
+  }
+
+  if (cf && (cf.shortTerm > 0 || cf.longTerm > 0)) {
+    rows.push({
+      id: "capital-loss-carryforward",
+      label: "Loss carried to next year",
+      amount: cf.shortTerm + cf.longTerm,
+      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).`,
+    });
+  }
+
+  if (disallowed > 0) {
+    rows.push({
+      id: "capital-loss-disallowed",
+      label: "Capital loss — not deductible",
+      amount: 0,
+      meta: `${formatCurrency(disallowed)} loss on a personal residence. A loss on personal-use property is not deductible (IRC §165(c)).`,
+    });
+  }
+
+  return rows;
+}
+
 export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps {
   const { year, columnKey, ctx } = args;
   const title = `${COLUMN_LABEL[columnKey]} — ${year.year}`;
@@ -41,6 +93,9 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
   if (directCfg) {
     const total = (year.taxDetail?.[directCfg.taxDetailKey] as number | undefined) ?? 0;
     const rows = directRows(year, directCfg.sourceType, ctx);
+    if (columnKey === "capitalGains" || columnKey === "shortCapitalGains") {
+      rows.push(...capitalLossRows(year.taxDetail));
+    }
     return { title, total, groups: [{ rows }] };
   }
 

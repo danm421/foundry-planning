@@ -27,7 +27,10 @@ interface TaxRatesFormProps {
   capitalLossCarryforwardLt: string;
   /** Set when the LT default above was auto-filled from an analyzed tax
    *  return (rather than a previously-saved value) — renders a "from 20XX
-   *  return" hint. Null once the advisor has an actual stored value. */
+   *  return — needs review" hint, since `getLatestTaxReturn` returns the
+   *  newest row regardless of QA status and a freshly-extracted return is
+   *  `needs_review` until an advisor confirms it. Null once the advisor has
+   *  an actual stored value. */
   capitalLossCarryforwardLtSourceYear?: number | null;
   hasSpouse: boolean;
   clientFirstName?: string;
@@ -463,7 +466,7 @@ export default function TaxRatesForm({
               />
               {capitalLossCarryforwardLtSourceYear != null && (
                 <p className="mt-1 text-xs text-gray-500">
-                  from {capitalLossCarryforwardLtSourceYear} return
+                  from {capitalLossCarryforwardLtSourceYear} return — needs review
                 </p>
               )}
             </div>
