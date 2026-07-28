@@ -5,6 +5,7 @@ import {
   deriveAboveLineFromExpenses,
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
+  deriveStudentLoanInterest,
   derivePropertyTaxFromAccounts,
   aggregateDeductions,
   saltCap,
@@ -17,6 +18,7 @@ import {
   type AccountForPropertyTax,
 } from "../derive-deductions";
 import type { FilingStatus, TaxYearParameters } from "../types";
+import type { LiabilityType } from "@/engine/liability-kind";
 
 const isGrantorAlways = () => true;
 const isGrantorNever = () => false;
@@ -661,5 +663,125 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
       gate({ magi: 100000 }),
     );
     expect(res.aboveLine).toBe(0);
+  });
+});
+
+// ── Student-loan interest (above-line) ──────────────────────────────────────
+
+describe("deriveStudentLoanInterest", () => {
+  // MFJ 170,000-200,000 (width 30,000); single 85,000-100,000 (width 15,000).
+  // Every MAGI below is picked so (magi - start) / (end - start) lands on an
+  // exactly-representable binary64 fraction, making the expected dollar
+  // figures exact rather than nearly-exact.
+  const slParams = {
+    studentLoan: {
+      maxDeduction: 2500,
+      startMfj: 170000, endMfj: 200000,
+      startSingle: 85000, endSingle: 100000,
+    },
+  } as unknown as TaxYearParameters;
+
+  const noCapParams = {
+    studentLoan: {
+      maxDeduction: null,
+      startMfj: 170000, endMfj: 200000,
+      startSingle: 85000, endSingle: 100000,
+    },
+  } as unknown as TaxYearParameters;
+
+  const loan = (id: string, liabilityType: LiabilityType | null) => ({ id, liabilityType });
+
+  it("counts interest from student liabilities only", () => {
+    const res = deriveStudentLoanInterest(
+      2026,
+      [loan("mtg", "mortgage"), loan("sl", "student")],
+      { mtg: 9000, sl: 1200 },
+      100000, slParams, "married_joint",
+    );
+    // The 9,000 of mortgage interest belongs to the itemized path — it must not
+    // leak into the above-line figure, nor must any of this land in itemized.
+    expect(res).toEqual({ aboveLine: 1200, itemized: 0, saltPool: 0 });
+  });
+
+  it("ignores a legacy liability carrying no type", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("legacy", null)], { legacy: 2000 }, 100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("treats a student loan missing from the interest map as zero interest", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], {}, 100000, slParams, "married_joint",
+    );
+    // Not NaN: a liability with no accrual entry contributes nothing.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("denies the deduction to a married-filing-separately filer", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 50000, slParams, "married_separate",
+    );
+    // IRC 221(e)(2): disallowed outright, even at a MAGI far below the range.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("deducts the full interest below the phase-out range", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 1800 }, 100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1800);
+  });
+
+  it("reduces the deduction linearly inside the phase-out range", () => {
+    // MAGI 185,000 -> 15,000/30,000 = 0.5 exactly, so half survives.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 185000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1000);
+  });
+
+  it("zeroes the deduction at the top of the range", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 200000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("uses the caller's filing status to pick the range", () => {
+    // Single 85,000-100,000: MAGI 92,500 -> 7,500/15,000 = 0.5 exactly.
+    // Under the MFJ range the same MAGI would be fully deductible.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 92500, slParams, "single",
+    );
+    expect(res.aboveLine).toBe(1000);
+  });
+
+  it("applies the maxDeduction cap BEFORE the phase-out", () => {
+    // 4,000 paid -> capped to 2,500 -> x 0.5 = 1,250. Capping after the
+    // phase-out instead would yield min(4,000 x 0.5, 2,500) = 2,000.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 4000 }, 185000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1250);
+  });
+
+  it("treats a null maxDeduction as no cap, not as zero", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 3000 }, 100000, noCapParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(3000);
+  });
+
+  it("caps the household's student loans once, not once per loan", () => {
+    // 3 x 1,200 = 3,600 of interest against ONE $2,500 per-return cap.
+    // Calling the helper per liability would cap each at 2,500 and return 3,600.
+    const res = deriveStudentLoanInterest(
+      2026,
+      [loan("sl-1", "student"), loan("sl-2", "student"), loan("sl-3", "student")],
+      { "sl-1": 1200, "sl-2": 1200, "sl-3": 1200 },
+      100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(2500);
   });
 });

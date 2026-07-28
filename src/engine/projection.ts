@@ -56,6 +56,7 @@ import {
   deriveAboveLineFromExpenses,
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
+  deriveStudentLoanInterest,
   derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
@@ -3407,6 +3408,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
     if (useBracket) {
+      // Interim MAGI proxy for the IRC 221 student-loan phase-out. Real MAGI is
+      // not available at this point in the year loop — TODO(Task 11) owns MAGI
+      // ordering and replacing this. `taxableIncome` is gross taxable income
+      // BEFORE above-line adjustments, so it OVERSTATES MAGI and therefore
+      // over-gates the deduction. Over-gating is the safe direction: it can only
+      // withhold a deduction that is due, never invent one that is not.
+      const magiForStudentLoanInterest = taxableIncome;
+      const studentLoanInterestContribution = deriveStudentLoanInterest(
+        year,
+        currentLiabilities.map((l) => ({ id: l.id, liabilityType: l.liabilityType ?? null })),
+        // RAW accrued interest, deliberately NOT scaled by
+        // `liabilityOwnedByHouseholdAtYear` the way the mortgage source below
+        // is. A student loan is a personal obligation that a gift event cannot
+        // hand to an entity, so there is no entity share to strip. The
+        // asymmetry with the mortgage call is a decision, not an oversight.
+        liabResult.interestByLiability,
+        magiForStudentLoanInterest,
+        resolved!.params,
+        filingStatus
+      );
       const contributions = [
         deriveAboveLineFromSavings(
           year,
@@ -3483,8 +3504,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           planSettings.planStartYear
         ),
         sumItemizedFromEntries(year, data.deductions ?? []),
+        // APPEND-ONLY: `contributions` is read positionally below ([0], [1],
+        // [3], [4], [5]). New sources go on the end so no existing index moves.
+        studentLoanInterestContribution,
       ];
       // Estimate state income tax for SALT pool before aggregation.
+      // Student-loan interest is deliberately left OUT of preAGI. preAGI feeds
+      // the state-tax estimate, and the MAGI handed to the student-loan gate is
+      // itself derived from income — folding the gated result back in would make
+      // the two circular. Omitting it keeps the state estimate conservative.
       const preAGI = Math.max(0, taxableIncome - contributions[0].aboveLine - contributions[1].aboveLine - contributions[5].aboveLine);
       const estStateTax = preAGI * planSettings.flatStateRate;
       const stateIncomeTaxContribution: import("../lib/tax/derive-deductions").DeductionContribution = {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities } from "./fixtures";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
@@ -663,6 +663,41 @@ describe("projection — bracket/flat tax routing", () => {
     expect(bd).toBeDefined();
     expect(bd!.aboveLine.retirementContributions).toBe(23500);
     expect(bd!.aboveLine.total).toBe(bd!.aboveLine.retirementContributions + bd!.aboveLine.taggedExpenses + bd!.aboveLine.manualEntries);
+  });
+
+  it("routes student-loan interest into above-line deductions", () => {
+    // The student loan mirrors the fixture mortgage's balance/rate/term/start,
+    // so it accrues EXACTLY the interest the mortgage does. The mortgage's
+    // interest is what surfaces as belowLine.interestPaid (the student loan is
+    // excluded from that itemized figure by isInterestDeductible: false), which
+    // gives us the expected above-line figure without hand-amortizing.
+    // FIXTURE_TAX_PARAMS leaves `studentLoan` unseeded (null cap, null range),
+    // so the full amount is deductible — this pins the WIRING, not the gate.
+    const studentLoan = {
+      ...sampleLiabilities[0],
+      id: "liab-student",
+      name: "Student Loan",
+      liabilityType: "student" as const,
+      isInterestDeductible: false,
+    };
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+      liabilities: [...sampleLiabilities, studentLoan],
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const bd = years[0].deductionBreakdown;
+    expect(bd).toBeDefined();
+    const studentInterest = bd!.belowLine.interestPaid;
+    expect(studentInterest).toBeGreaterThan(0);
+    // NOTE: aboveLine has no `studentLoanInterest` component field yet, so the
+    // total deliberately exceeds the sum of the three named components. The
+    // preceding test pins the no-student-loan case where they do agree.
+    expect(bd!.aboveLine.total).toBe(
+      bd!.aboveLine.retirementContributions
+        + bd!.aboveLine.taggedExpenses
+        + bd!.aboveLine.manualEntries
+        + studentInterest
+    );
   });
 
   it("populates deductionBreakdown.belowLine with taxesPaid and interestPaid", () => {

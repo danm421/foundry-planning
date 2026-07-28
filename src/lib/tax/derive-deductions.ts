@@ -1,19 +1,21 @@
 /**
  * Pure helpers that derive deduction inputs for the bracket tax engine.
  *
- * Five sources aggregate into a unified DeductionContribution:
+ * Six sources aggregate into a unified DeductionContribution:
  *   1. Savings rules → 401k/IRA above-line (existing)
  *   2. Expenses tagged with a deductionType
  *   3. Manual client_deductions rows
  *   4. Mortgage interest from liabilities with isInterestDeductible
  *   5. Real estate account property taxes
+ *   6. Student-loan interest from `student` liabilities (IRC 221, above-line)
  *
  * All SALT contributions pool before a single statutory cap ($40k OBBBA 2026+,
  * $10k TCJA pre-2026). The cap is a flat dollar amount — no inflation.
  */
 
 import type { FilingStatus, TaxYearParameters } from "./types";
-import { traditionalIraDeductibleAmount } from "./thresholds";
+import type { LiabilityType } from "@/engine/liability-kind";
+import { studentLoanInterestDeduction, traditionalIraDeductibleAmount } from "./thresholds";
 
 // ── Contribution interface ──────────────────────────────────────────────────
 
@@ -315,4 +317,50 @@ export function derivePropertyTaxFromAccounts(
     total += acct.annualPropertyTax * Math.pow(1 + acct.propertyTaxGrowthRate, Math.max(0, elapsed));
   }
   return { aboveLine: 0, itemized: 0, saltPool: total };
+}
+
+// ── Source 6: Student-loan interest from liabilities ────────────────────────
+
+export interface StudentLoanForDeduction {
+  id: string;
+  liabilityType?: LiabilityType | null;
+}
+
+/**
+ * IRC 221 student-loan interest — an ABOVE-the-line adjustment, unlike the
+ * itemized mortgage interest in source 4. Two consequences of that statutory
+ * difference show up here:
+ *
+ *  1. No `isInterestDeductible` gate. That flag drives the itemized mortgage
+ *     path; student-loan interest is deductible by statute, not by user toggle.
+ *  2. The cap and phase-out are per RETURN, so every student liability's
+ *     interest is summed FIRST and gated with a single call. Gating per
+ *     liability would let a household with three loans deduct three caps.
+ *
+ * MFS denial and the null-cap case both live in `studentLoanInterestDeduction`
+ * — deliberately not re-derived here, since inferring MFS from the range
+ * sentinel is exactly backwards (see that function's docblock).
+ *
+ * `year` is forwarded to the gate for its year-aware range lookup. There is no
+ * per-liability year filter as in source 4: the caller already hands us one
+ * year's liabilities and one year's interest accruals.
+ */
+export function deriveStudentLoanInterest(
+  year: number,
+  liabilities: StudentLoanForDeduction[],
+  interestByLiability: Record<string, number>,
+  magi: number,
+  params: TaxYearParameters,
+  filingStatus: FilingStatus
+): DeductionContribution {
+  let interestPaid = 0;
+  for (const liab of liabilities) {
+    if (liab.liabilityType !== "student") continue;
+    interestPaid += interestByLiability[liab.id] ?? 0;
+  }
+  return {
+    aboveLine: studentLoanInterestDeduction(interestPaid, magi, year, params, filingStatus),
+    itemized: 0,
+    saltPool: 0,
+  };
 }
