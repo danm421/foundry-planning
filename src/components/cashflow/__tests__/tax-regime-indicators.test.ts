@@ -37,7 +37,7 @@ function makeYear(overrides: Partial<{
       flow: {
         aboveLineDeductions: 0, adjustedGrossIncome: 0, qbiDeduction: 0,
         belowLineDeductions: 0, taxableIncome: 0, incomeTaxBase: 0,
-        regularTaxCalc: 0, amtCredit: 0, taxCredits: 0,
+        regularTaxCalc: 0, amtCredit: 0, taxCredits: 0, refundableCredits: 0,
         regularFederalIncomeTax: 0, capitalGainsTax: 0,
         amtAdditional, niit, additionalMedicare, fica,
         stateTax: 0, totalFederalTax: 0, totalTax: 0,

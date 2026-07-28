@@ -9,6 +9,7 @@ import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
 import { computeStateIncomeTax } from "./state-income";
 import { getAdditionalStdDeduction, getObbbaSeniorBonus } from "./senior-deductions";
+import { computeCredits } from "./credits";
 
 export function calculateTaxYear(input: CalcInput): TaxResult {
   const p = input.taxParams;
@@ -215,14 +216,61 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   });
   const stateTax = stateResult.stateTax;
 
-  // 14. Roll-ups
-  const regularFederalIncomeTax = regularTaxCalc; // v1: no AMT credit, no tax credits
+  // 14. Federal credits (IRC 24 CTC/ACTC + ODC, 25A AOTC, 25B Saver's).
+  //
+  // `household` is optional and nothing supplies it yet (projection.ts assembly
+  // is a later task), so the common path here is "no household → no credits",
+  // which leaves the roll-up below identical to its pre-credit form.
+  //
+  // Chapter 1 subpart A tax — the only base personal credits may offset. Bound
+  // to ONE local deliberately: credits.ts clamps its nonrefundable total at
+  // whatever base it is handed, so if the figure passed in and the figure
+  // credits are subtracted from below ever drifted apart, the clamp would be
+  // computed against one base and applied against another and the roll-up's
+  // Math.max would silently absorb the inconsistency instead of failing.
+  // (Equals `regularFederalIncomeTax + capitalGainsTax + amtAdditional` — see
+  // the roll-up, where regularFederalIncomeTax is just regularTaxCalc.)
+  const subpartATaxBeforeCredits = regularTaxCalc + capitalGainsTax + amtAdditional;
+  const credits = input.household
+    ? computeCredits({
+        ...input.household,
+        // The REQUESTED year, never `p.year`: resolver.ts stamps params with the
+        // SOURCE year when it inflates an out-year forward, so reading the year
+        // off the params would report the SECURE 2.0 §103 Saver's Credit sunset
+        // as never arriving.
+        year: input.year,
+        filingStatus: fs,
+        params: p,
+        // MAGI *is* AGI for every household this engine can represent: statutory
+        // MAGI (IRC 24(b), 25A(d)) differs only by the §911/§931/§933
+        // foreign-earned-income exclusions, and CalcInput has no foreign-exclusion
+        // input at all. Exact for domestic filers, not an approximation — the
+        // apparent duplication is deliberate, don't collapse it.
+        magi: adjustedGrossIncome,
+        agi: adjustedGrossIncome,
+        earnedIncome,
+        taxBeforeCredits: subpartATaxBeforeCredits,
+      })
+    : null;
+  const nonrefundableCredits = credits?.nonrefundable ?? 0;
+  const refundableCredits = credits?.refundable ?? 0;
+
+  // 15. Roll-ups
+  // Stays the PRE-credit bracket tax: it is a reported line item meaning
+  // "regular bracket tax before credits", and netting credits here as well as
+  // in the total below would double-count them.
+  const regularFederalIncomeTax = regularTaxCalc; // v1: no AMT credit
+  // Nonrefundable personal credits offset chapter 1 subpart A tax ONLY. NIIT
+  // (§1411) and Additional Medicare (§3101(b)(2)) sit outside subpart A, so
+  // they are added AFTER the floor — folding them inside would let credits wipe
+  // out NIIT for any household with children. Refundable credits are subtracted
+  // OUTSIDE the floor, so an ACTC/AOTC refund shows up as a negative federal tax
+  // rather than being floored away.
   const totalFederalTax =
-    regularFederalIncomeTax +
-    capitalGainsTax +
-    amtAdditional +
+    Math.max(0, subpartATaxBeforeCredits - nonrefundableCredits) +
     niit +
-    additionalMedicare;
+    additionalMedicare -
+    refundableCredits;
   const totalTax = totalFederalTax + stateTax + ficaResult.total;
 
   return {
@@ -247,7 +295,8 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       incomeTaxBase,
       regularTaxCalc,
       amtCredit: 0,
-      taxCredits: 0,
+      taxCredits: nonrefundableCredits,
+      refundableCredits,
       regularFederalIncomeTax,
       capitalGainsTax,
       amtAdditional,

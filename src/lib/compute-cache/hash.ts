@@ -9,8 +9,10 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * 8: F3 locked-share clamp/cap + F4 orphaned-gain backstop (2026-07-18)
  * 9: F12 entity policy-row schedule + F10 termination effective balance + F13
  *    entity checking synthesis on the solver and scenario-load paths (2026-07-18)
+ * 10: federal credit layer (CTC/ACTC, ODC, AOTC, Saver's) wired into the
+ *    federal roll-up in calculate.ts (2026-07-28)
  */
-export const ENGINE_VERSION = 9;
+export const ENGINE_VERSION = 10;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

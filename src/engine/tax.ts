@@ -58,6 +58,7 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       regularTaxCalc: federal,
       amtCredit: 0,
       taxCredits: 0,
+      refundableCredits: 0,
       regularFederalIncomeTax: federal,
       capitalGainsTax: 0,
       amtAdditional: 0,

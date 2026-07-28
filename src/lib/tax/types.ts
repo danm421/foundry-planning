@@ -138,6 +138,29 @@ export interface TaxYearParameters {
   irmaaBracketsSingle?: IrmaaTier[] | null;
 }
 
+/**
+ * Household composition driving the federal credit layer (`credits.ts`).
+ *
+ * Carries ONLY what `calculateTaxYear` cannot derive for itself. `year`,
+ * `filingStatus`, `params`, `magi`/`agi`, `earnedIncome` and `taxBeforeCredits`
+ * are all already locals inside `calculateTaxYear` and are deliberately NOT
+ * restated here — a second source of truth for them would be a defect, not a
+ * convenience. Field names and types mirror `CreditsInput` verbatim so the call
+ * site is a copy, not a translation layer.
+ */
+export interface TaxHouseholdInput {
+  qualifyingChildren: number;
+  otherDependents: number;
+  /** One entry per student eligible THIS year. The IRC 25A(b)(2)(C) four-year
+   *  per-student cap is the CALLER's job: neither `credits.ts` nor
+   *  `calculateTaxYear` tracks how many years a student has already claimed. */
+  aotcStudents: { qualifiedExpenses: number }[];
+  /** IRC 25B elective-deferral / IRA contributions, per person. `credits.ts`
+   *  sums both entries with no filing-status filter, so whether a spouse figure
+   *  belongs on a non-MFJ return is decided HERE, by whoever builds this. */
+  retirementContributions: { client: number; spouse: number };
+}
+
 // Already-resolved engine input for one projection year.
 export interface CalcInput {
   year: number;
@@ -204,6 +227,10 @@ export interface CalcInput {
    *  Itemizing callers MUST supply this — when omitted it defaults to 0, understating AMTI
    *  (the SALT add-back is silently skipped). */
   saltDeducted?: number;
+  /** Household composition for the federal credit layer. Optional because dozens
+   *  of existing callers predate it — when absent no credits are computed and
+   *  the federal roll-up is identical to the pre-credit behaviour. */
+  household?: TaxHouseholdInput;
 }
 
 export interface TaxResult {
@@ -228,7 +255,18 @@ export interface TaxResult {
     incomeTaxBase: number;
     regularTaxCalc: number;
     amtCredit: number;
+    /** NONREFUNDABLE federal credits actually applied against tax — Saver's,
+     *  the AOTC's 60% part, ODC and CTC. Never exceeds
+     *  `regularFederalIncomeTax + capitalGainsTax + amtAdditional`, and never
+     *  offsets NIIT or Additional Medicare (both sit outside chapter 1
+     *  subpart A). 0 whenever `CalcInput.household` was absent. */
     taxCredits: number;
+    /** REFUNDABLE federal credits — ACTC plus the AOTC's 40% part. Reported
+     *  separately from `taxCredits` because it is subtracted OUTSIDE the
+     *  zero floor: a household whose refundable credits exceed its liability
+     *  legitimately ends with a NEGATIVE `totalFederalTax` (i.e. a refund),
+     *  and folding these dollars into `taxCredits` would floor them away. */
+    refundableCredits: number;
     regularFederalIncomeTax: number;
     capitalGainsTax: number;
     amtAdditional: number;
