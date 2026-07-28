@@ -4,6 +4,7 @@ import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
 import type { BindingConstraint } from "@/lib/risk/scoring";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
+import { CHIP_NEUTRAL } from "@/components/risk/risk-status-chips";
 import { ComponentCard } from "@/components/risk/component-card";
 import { CapacityBreakdown } from "@/components/risk/capacity-breakdown";
 import { RiskHistoryTable } from "@/components/risk/risk-history-table";
@@ -79,7 +80,10 @@ export async function RiskDetailContent({
                   {row.toleranceScore}
                 </span>
                 {flags.reviewDue && (
-                  <span className="chip border-warn/40 bg-warn/10 text-warn">Review due</span>
+                  // Same classification as the list page's RiskStatusChips: a
+                  // routine 12-month reminder is neutral, not a warning --
+                  // WARN is reserved for capacityConstrained/goalsOverReaching.
+                  <span className={`chip ${CHIP_NEUTRAL}`}>Review due</span>
                 )}
               </div>
               <p className="text-xs text-ink-3">
