@@ -99,6 +99,16 @@ describe("buildThresholdReport", () => {
     // Single-point (NIIT).
     expect(rows.find((r) => r.id === "niit")!.thresholdDisplay).toBe("$250,000");
 
+    // AMT exemption end is the ONLY row whose range depends on the `year`
+    // ARGUMENT rather than `params.year` (amtPhaseoutRate: 50% from 2026 per
+    // OBBBA §70106, 25% before). Hand-computed, not via the code under test:
+    // start 1,000,000 + exemption 140,200 / 0.5 = 1,280,400. This fixture's
+    // `params` has no `year` field, so swapping the `year` argument for
+    // `params.year` at the rangeFor call site would silently fall to the
+    // pre-2026 25% rate and render $1,000,000 - $1,560,800 instead — this
+    // assertion is what turns red under that mutation (R8).
+    expect(rows.find((r) => r.id === "amtExemption")!.thresholdDisplay).toBe("$1,000,000 - $1,280,400");
+
     // Charitable limit: 60% of the scenario's AGI, computed by hand here
     // (not by calling rangeFor/the code under test) — 0.6 * 300,000 = 180,000.
     expect(rows.find((r) => r.id === "charitableLimit")!.thresholdDisplay).toBe("$180,000");
