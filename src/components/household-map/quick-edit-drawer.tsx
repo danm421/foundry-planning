@@ -149,6 +149,13 @@ interface QuickEditDrawerProps {
    * the very next page refresh (which `useScenarioWriter` triggers on save).
    */
   milestones: ClientMilestones;
+  /**
+   * The plan's resolved inflation rate, for the growth radio's "inflation"
+   * label. Display-only — the engine re-resolves the effective rate at load
+   * time and nothing here persists it — but a hard-coded 3% told advisors on a
+   * 2.4% plan the wrong number.
+   */
+  resolvedInflationRate: number;
   onClose: () => void;
 }
 
@@ -158,6 +165,7 @@ export default function QuickEditDrawer({
   clientFirstName,
   spouseFirstName,
   milestones,
+  resolvedInflationRate,
   onClose,
 }: QuickEditDrawerProps) {
   const writer = useScenarioWriter(clientId);
@@ -372,9 +380,10 @@ export default function QuickEditDrawer({
                 customRate={growthRateDisplay}
                 // Display-only hint (matches GrowthSourceRadio's use everywhere
                 // else) — the engine re-resolves the actual inflation-sourced
-                // growth rate at load time, so an approximate constant here
-                // never gets persisted as the effective rate.
-                resolvedInflationRate={0.03}
+                // growth rate at load time, so nothing here is ever persisted
+                // as the effective rate. It is still the PLAN's rate, not a
+                // constant.
+                resolvedInflationRate={resolvedInflationRate}
                 onChange={({ value, customRate }) => {
                   setGrowthSource(value);
                   setGrowthRateDisplay(customRate);

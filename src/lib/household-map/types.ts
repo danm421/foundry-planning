@@ -94,6 +94,17 @@ export interface HouseholdMapProps {
   expenseRows: Record<string, ExpenseView>;
   /** savings-rule id → scenario-effective row, for `SavingsRuleDialog`. */
   savingsRuleRows: Record<string, SavingsRuleView>;
+  /**
+   * savings-rule id → its year-by-year contribution overrides, ascending.
+   * A SEPARATE map because `savingsRuleEngineToView` is a documented partial
+   * that does not carry `scheduleOverrides`. Without it `SavingsRuleDialog`
+   * opens with `hasSchedule=false` and an empty Schedule grid, hides its
+   * "Using custom schedule" banner, and the grid's raw-`fetch` PUT is a FULL
+   * replace — so adding one year to a 10-year schedule from the Map would
+   * collapse ten overrides into one. Mirrors `income-expenses-view.tsx`'s
+   * `ScheduleMap`. Rules with no overrides are simply absent.
+   */
+  savingsSchedules: Record<string, { year: number; amount: number }[]>;
   /** Every account, for `SavingsRuleDialog`'s target picker (it filters
    *  eligibility itself via `isSavingsEligibleAccount`). Engine fields only —
    *  a superset of the `{id, name, category, subType, ownerEntityId}` the
@@ -111,6 +122,17 @@ export interface HouseholdMapProps {
   familyMemberOptions: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   /** Entities offered as account owners in the same dialog. */
   entityOptions: { id: string; name: string }[];
+
+  /**
+   * The plan's resolved inflation rate (`effectiveTree.planSettings.
+   * inflationRate` — already resolved to the asset-class geometric return when
+   * the plan's inflation source is an asset class, not the raw column).
+   * Display-only: it labels the "inflation" growth option in the quick-edit
+   * drawer and `SavingsRuleDialog`. Nothing persists it; the engine re-resolves
+   * the effective rate on every load. It is still worth threading — the boards
+   * hard-coded 3% and told advisors on a 2.4% plan the wrong number.
+   */
+  resolvedInflationRate: number;
 }
 
 /**

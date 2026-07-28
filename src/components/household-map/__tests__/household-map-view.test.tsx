@@ -35,13 +35,21 @@ vi.mock("@/components/add-account-dialog", () => ({
   ),
 }));
 
+// `schedule` is captured too: the dialog's Schedule grid PUTs a FULL replace,
+// so opening a rule that has overrides with `schedule` undefined would show an
+// empty grid and let one edit collapse a ten-year schedule.
 vi.mock("@/components/forms/savings-rule-dialog", () => ({
-  default: (props: { open: boolean; editing?: { id: string; annualAmount: string } }) => (
+  default: (props: {
+    open: boolean;
+    editing?: { id: string; annualAmount: string };
+    schedule?: { year: number; amount: number }[];
+  }) => (
     <div
       data-testid="mock-savings-rule-dialog"
       data-open={String(props.open)}
       data-editing-id={props.editing?.id ?? ""}
       data-editing-amount={props.editing?.annualAmount ?? ""}
+      data-schedule={JSON.stringify(props.schedule ?? null)}
     />
   ),
 }));
@@ -167,7 +175,9 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     incomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
+    savingsSchedules: {},
     accountOptions: [],
+    resolvedInflationRate: 0.03,
     // Ownership context for AddAccountDialog. Non-empty by default because an
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save
     // 400 — see the "+ Add" test below.
@@ -305,6 +315,36 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     // And clicking it opens nothing.
     fireEvent.click(screen.getByText("Term policy premium"));
     expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
+  });
+
+  it("hands SavingsRuleDialog the rule's existing schedule — an empty grid would let one edit replace the whole thing", () => {
+    const items = [
+      item({ id: "sav-1", kind: "savings", column: "client", name: "401k contribution", value: 0 }),
+    ];
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items,
+          savingsRuleRows: { "sav-1": savingsRow("sav-1") },
+          savingsSchedules: {
+            "sav-1": [
+              { year: 2026, amount: 20000 },
+              { year: 2027, amount: 21000 },
+            ],
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByText("401k contribution"));
+
+    expect(screen.getByTestId("mock-savings-rule-dialog").dataset.schedule).toBe(
+      JSON.stringify([
+        { year: 2026, amount: 20000 },
+        { year: 2027, amount: 21000 },
+      ]),
+    );
   });
 
   it("a savings card with no hydration row opens no dialog and is not a button", () => {

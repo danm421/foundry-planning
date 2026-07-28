@@ -78,6 +78,7 @@ function renderExpense(row: ExpenseView) {
       clientFirstName="Alex"
       spouseFirstName="Jordan"
       milestones={milestones}
+      resolvedInflationRate={0.03}
       onClose={() => {}}
     />,
   );
@@ -146,6 +147,7 @@ describe("QuickEditDrawer — goal checkbox (Task 11 brief, Step 2)", () => {
         clientFirstName="Alex"
         spouseFirstName="Jordan"
         milestones={milestones}
+        resolvedInflationRate={0.03}
         onClose={() => {}}
       />,
     );

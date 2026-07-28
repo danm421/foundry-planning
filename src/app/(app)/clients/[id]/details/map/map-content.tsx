@@ -189,6 +189,24 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   const savingsRuleRows: Record<string, SavingsRuleView> = Object.fromEntries(
     effectiveTree.savingsRules.map((s: SavingsRule) => [s.id, savingsRuleEngineToView(s)] as const),
   );
+  // Built separately because `savingsRuleEngineToView` is a documented partial
+  // and does not carry `scheduleOverrides`. Engine shape is
+  // `Record<number, number>`; `SavingsRuleDialog` wants `{year, amount}[]`.
+  // Sorted explicitly — numeric-keyed object iteration is ascending-integer in
+  // practice, but the grid's ordering must not rest on that.
+  const savingsSchedules: Record<string, { year: number; amount: number }[]> = Object.fromEntries(
+    effectiveTree.savingsRules
+      .filter((s: SavingsRule) => s.scheduleOverrides && Object.keys(s.scheduleOverrides).length > 0)
+      .map(
+        (s: SavingsRule) =>
+          [
+            s.id,
+            Object.entries(s.scheduleOverrides!)
+              .map(([year, amount]) => ({ year: Number(year), amount }))
+              .sort((a, b) => a.year - b.year),
+          ] as const,
+      ),
+  );
   const accountOptions = effectiveTree.accounts.map(accountEngineToView);
 
   const goals = buildMapGoals({
@@ -266,7 +284,9 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       incomeRows={incomeRows}
       expenseRows={expenseRows}
       savingsRuleRows={savingsRuleRows}
+      savingsSchedules={savingsSchedules}
       accountOptions={accountOptions}
+      resolvedInflationRate={effectiveTree.planSettings.inflationRate}
       familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
         id: fmId,
         role,

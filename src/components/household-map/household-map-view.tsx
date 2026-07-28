@@ -181,6 +181,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           clientFirstName={people.client.firstName}
           spouseFirstName={people.spouse?.firstName ?? null}
           milestones={milestones}
+          resolvedInflationRate={props.resolvedInflationRate}
           onClose={() => setDrawerTarget(null)}
         />
       )}
@@ -201,7 +202,12 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
             setSavingsOpen(false);
             setSavingsEditing(undefined);
           }}
-          resolvedInflationRate={0.03}
+          // Without this the dialog opens with hasSchedule=false and an empty
+          // Schedule grid even for a rule that HAS overrides — and the grid's
+          // PUT is a full replace, so saving would collapse a 10-year schedule
+          // into whatever the advisor typed into the empty one.
+          schedule={savingsEditing ? props.savingsSchedules[savingsEditing.id] : undefined}
+          resolvedInflationRate={props.resolvedInflationRate}
         />
       )}
 
