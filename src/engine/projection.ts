@@ -3569,9 +3569,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       //   4. magiForStudentLoan = magiBase − iraDeduction. IRC 221(b)(2)(C)
       //      excludes only §221 itself, so the IRA deduction DOES reduce it.
       //   5. gate the student-loan deduction.
-      //   6. magiForRoth = magiBase − iraDeduction (per the task specification;
-      //      see the open statutory question at that line);
-      //      magiForCredits = the resulting AGI.
+      //   6. magiForRoth = magiBase. IRC 408A(c)(3)(B)(i) borrows 219(g)(3)'s
+      //      definition wholesale, so the IRA deduction is added back here just
+      //      as it is in step 2 — this is NOT step 4's figure. See the block at
+      //      that line for the citation and for why the two genuinely differ.
+      //   7. magiForCredits = the resulting AGI.
       //
       // Pass 1 over the savings rules is UNGATED, purely to ground magiBase: it
       // reports `traditionalIraPreTax` separately so the IRA slice can be added
@@ -3635,6 +3637,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         savingsContribution.aboveLine
         - (savingsUngated.aboveLine - savingsUngated.traditionalIraPreTax);
 
+      // Student-loan MAGI (IRC 221(b)(2)(C)). The traditional-IRA deduction IS
+      // subtracted here, because 221(b)(2)(C)(ii) computes AGI "after
+      // application of ... 219" — §221 has NO add-back for §219.
+      //
+      // ⚠️ DO NOT "make this consistent" with `magiForRoth` below, which does
+      // NOT subtract it. The asymmetry is the statute, not an oversight: §408A
+      // borrows §219(g)(3)'s definition (which excludes the IRA deduction),
+      // §221 does not. Collapsing the two reintroduces a defect that was found,
+      // ruled on and fixed on 2026-07-28. Each line carries its own citation.
       const magiForStudentLoan = magiBase - iraDeduction;
       const studentLoanInterestContribution = deriveStudentLoanInterest(
         year,
@@ -3650,27 +3661,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         filingStatus
       );
 
-      // Roth MAGI (IRC 408A(c)(3)(B)(i)).
+      // Roth MAGI (IRC 408A(c)(3)(B)(i)) — the traditional-IRA deduction is
+      // ADDED BACK, so this is `magiBase`, identical to `magiForIraDeduction`.
       //
-      // OPEN QUESTION, flagged not silently resolved: 408A(c)(3)(B)(i) defines
-      // this MAGI "in the same manner as under section 219(g)(3)", and
-      // 219(g)(3)(A)(ii) computes AGI "without regard to ... the deduction
-      // allowable under this section" — i.e. it ADDS the traditional-IRA
-      // deduction back, which would make this figure `magiBase`, the same as
-      // `magiForIraDeduction`. Pub 590-A Worksheet 2-1 reads the same way. The
-      // task's binding specification is `magiBase - iraDeduction`, so that is
-      // what ships; the divergence is bounded by the year's DEDUCTIBLE
-      // traditional-IRA contribution and is raised for a ruling rather than
-      // decided here. Contrast `magiForStudentLoan`, where 221(b)(2)(C)(ii)
-      // says AGI is computed "after application of ... 219", so subtracting the
-      // IRA deduction there is unambiguously right.
+      // 408A(c)(3)(B)(i) defines this MAGI "in the same manner as under section
+      // 219(g)(3)", and 219(g)(3)(A)(ii) computes AGI "without regard to ... the
+      // deduction allowable under this section" — the §219 deduction never
+      // reduces it. Pub 590-A Worksheet 2-1 line 2 reads the same way.
+      //
+      // HISTORY, so this is not "corrected" back: the task brief and resolution
+      // R13 both specified `magiBase - iraDeduction`, applying §221's rule to
+      // §408A. That was statutorily wrong; it shipped as specified, was flagged,
+      // and was AMENDED BY HUMAN RULING on 2026-07-28.
+      //
+      // Kept as its own binding rather than aliased to `magiForIraDeduction`:
+      // they are distinct statutory concepts (219(g)(3) vs 408A(c)(3)(B)(i))
+      // that happen to coincide, they are reported separately on
+      // `ThresholdFacts`, and only one of them would move if either statute did.
+      // Contrast `magiForStudentLoan` above, which DOES subtract the IRA
+      // deduction — see the comment there.
       //
       // PASS 2 of `applyContributionLimits`: only `backdoorByRuleId` and
       // `adjustments` are taken from it. `cappedByRuleId` deliberately stays
       // the pass-1 value — it is provably invariant to `magiForRoth` (see the
       // pass-1 comment), and taking it from here would make the deduction
       // assembly above depend on its own output.
-      const magiForRoth = magiBase - iraDeduction;
+      const magiForRoth = magiBase;
       const rothGated = applyContributionLimits({
         year,
         rules: data.savingsRules,

@@ -410,6 +410,52 @@ describe("gate: the Roth phase-out resolves against the year's real MAGI", () =>
     expect(years[0].thresholdFacts!.magiForRoth).toBe(220_000);
     expect(years[0].contributionAdjustments).toBeUndefined();
   });
+
+  it("adds the traditional-IRA deduction back before gating — IRC 408A(c)(3)(B)(i)", () => {
+    // The ONLY fixture on which the Roth MAGI and the student-loan MAGI diverge:
+    // it needs a traditional-IRA deduction that actually SURVIVES, which needs a
+    // household nobody's workplace plan covers.
+    //
+    // Salary 248,000; 3,500 traditional IRA + 3,500 Roth IRA (7,000 exactly, the
+    // age-based IRA cap, so the age pass rescales nothing); coverage overridden
+    // to "no" on both sides so IRC 219(g)(1) never triggers.
+    //   magiBase = 248,000 (the IRA slice is added back into it by construction)
+    //   iraDeduction = 3,500 (uncovered -> fully deductible)
+    //   magiForRoth        = 248,000  <- statute: 219(g)(3)(A)(ii) adds it back
+    //   magiForStudentLoan = 244,500  <- 221(b)(2)(C)(ii) does NOT
+    // 248,000 is past the 246,000 MFJ ceiling -> allowed 0 -> the WHOLE 3,500 is
+    // re-tagged as a backdoor conversion.
+    //
+    // Under the superseded `magiBase - iraDeduction` spec this MAGI was 244,500,
+    // inside the band, and this test goes red — MEASURED, by running it against
+    // that formula: fraction 8,500/10,000 = 0.85, so the allowance is
+    // roundReducedLimit(7,000 x (1 - 0.85)) and the backdoor came out 2,440, not
+    // the 3,500 asserted below. (2,440 rather than a tidy 2,450 because
+    // 1 - 0.85 = 0.15000000000000002, which rounds UP a ten — R16's float trap
+    // in the wild. The figure asserted here is immune to it: past the ceiling
+    // the allowance is a hard 0 and no fraction is taken at all.)
+    // So this discriminates the statute from the spec it replaced, not merely a
+    // wired gate from an inert one.
+    const years = runProjection(build({
+      client: { ...CLIENT, coveredByWorkplacePlan: "no", spouseCoveredByWorkplacePlan: "no" },
+      accounts: [CHECKING, ACCT_IRA, ACCT_ROTH],
+      incomes: [salary(248_000)],
+      savingsRules: [
+        rule({ id: "sav-ira", accountId: "acct-ira", annualAmount: 3_500 }),
+        rule({ id: "sav-roth", accountId: "acct-roth", annualAmount: 3_500 }),
+      ],
+    }));
+    const f = years[0].thresholdFacts!;
+    // Non-vacuity guard: if the deduction did not survive, iraDeduction would be
+    // 0 and the two MAGIs would coincide whichever formula were in force.
+    expect(years[0].deductionBreakdown!.aboveLine.retirementContributions).toBe(3_500);
+    expect(f.magiForRoth).toBe(248_000);
+    expect(f.magiForRoth).toBe(f.magiForIraDeduction);
+    expect(f.magiForStudentLoan).toBe(244_500);
+    // Exact, not `toBeCloseTo`: past the ceiling the allowance is a hard 0, so
+    // the pro-rata scale is exactly 0 and no fraction is ever taken (R16).
+    expect(years[0].contributionAdjustments!.backdoorByRuleId["sav-roth"]).toBe(3_500);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -747,12 +793,13 @@ describe("thresholdFacts rides on the projection year", () => {
     }));
     const f = years[0].thresholdFacts!;
     expect(f.magiForIraDeduction).toBe(190_000);
-    // Both are `magiBase - iraDeduction` today, so they are always equal — but
-    // neither equals magiForIraDeduction once an IRA deduction survives (see
-    // the gate-3 block for that case). NB: whether the Roth MAGI should in fact
-    // add the IRA deduction back, per IRC 408A(c)(3)(B)(i) -> 219(g)(3)(A)(ii),
-    // is an open question raised in the task report; this test pins the
-    // specified behaviour, not a statutory conclusion.
+    // All four coincide here ONLY because iraDeduction is 0, so this case cannot
+    // tell the three formulas apart. The two that DO diverge are pinned where
+    // the divergence is observable, each against its own statute:
+    //   magiForStudentLoan = magiBase - iraDeduction  (IRC 221(b)(2)(C)(ii)) ->
+    //     "lets the IRA deduction reduce it" in the gate-3 block;
+    //   magiForRoth        = magiBase                 (IRC 408A(c)(3)(B)(i)) ->
+    //     "adds the traditional-IRA deduction back" in the gate-1 block.
     expect(f.magiForStudentLoan).toBe(190_000);
     expect(f.magiForRoth).toBe(190_000);
     // No student-loan interest at all here, so AGI == the student-loan MAGI.
