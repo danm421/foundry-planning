@@ -460,3 +460,13 @@ export function DataCollectionIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function RiskIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <path d="M3 15a9 9 0 0 1 18 0" />
+      <path d="M12 15l4-4" />
+      <circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
