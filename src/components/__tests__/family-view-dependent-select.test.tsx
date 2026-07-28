@@ -209,6 +209,34 @@ describe("FamilyView — claimed-as-dependent row select", () => {
   );
 
   it(
+    "reverts the displayed value and surfaces an error when the write rejects (network failure) — kills a " +
+      "mutant that drops the try/catch around writer.submit, leaving the optimistic value stuck and the " +
+      "advisor with no feedback when the request never reaches the server",
+    async () => {
+      writerSubmit.mockRejectedValueOnce(new Error("network down"));
+
+      await act(async () => {
+        render(
+          <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+            <FamilyView {...baseProps()} />
+          </ClientAccessProvider>,
+        );
+      });
+      const select = screen.getByLabelText(/claimed as dependent — bob/i) as HTMLSelectElement;
+      expect(select.value).toBe("yes");
+
+      await act(async () => {
+        fireEvent.change(select, { target: { value: "no" } });
+      });
+
+      // Reverted: the optimistic "no" must not stick once the write rejects.
+      expect(select.value).toBe("yes");
+      // An error must be visible to the advisor, not just swallowed.
+      expect(screen.getByText("network down")).toBeTruthy();
+    },
+  );
+
+  it(
     "does NOT open the member edit dialog from a click or change on the select, but a click elsewhere on the " +
       "same row does — the stopPropagation regression guard (R5), with a control proving the dialog CAN open",
     async () => {

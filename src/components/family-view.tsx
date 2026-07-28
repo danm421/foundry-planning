@@ -357,6 +357,7 @@ export default function FamilyView({
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [membersEdit, setMembersEdit] = useState(false);
+  const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
@@ -394,7 +395,6 @@ export default function FamilyView({
   }, [clientId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount fetch; setRevocableTrusts only runs after the awaited fetch resolves (no synchronous cascade). Re-fetched explicitly via the dialog's onSaved.
     void fetchRevocableTrusts();
   }, [fetchRevocableTrusts]);
 
@@ -465,24 +465,35 @@ export default function FamilyView({
   // Row-select handler for the dependent-claim override. Optimistic with
   // rollback — mirrors the local-state pattern the dialog's onSaved already
   // uses elsewhere in this file rather than relying solely on router.refresh().
+  // try/catch + single rollback path mirrors this file's own convention for a
+  // fetch-then-persist handler (see the external-beneficiary row's submit()).
   async function handleClaimedAsDependentChange(member: FamilyMember, value: DependentOverride) {
     const previous = member.claimedAsDependent;
     setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: value } : x)));
-    const res = await writer.submit(
-      {
-        op: "edit",
-        targetKind: "family_member",
-        targetId: member.id,
-        desiredFields: { claimedAsDependent: value },
-      },
-      {
-        url: `/api/clients/${clientId}/family-members/${member.id}`,
-        method: "PUT",
-        body: { claimedAsDependent: value },
-      },
-    );
-    if (!res.ok) {
+    setClaimedAsDependentError(null);
+    try {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "family_member",
+          targetId: member.id,
+          desiredFields: { claimedAsDependent: value },
+        },
+        {
+          url: `/api/clients/${clientId}/family-members/${member.id}`,
+          method: "PUT",
+          body: { claimedAsDependent: value },
+        },
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `Failed to save (HTTP ${res.status})`);
+      }
+    } catch (e) {
       setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: previous } : x)));
+      setClaimedAsDependentError(
+        e instanceof Error ? e.message : "Failed to save dependent-claim status",
+      );
     }
   }
 
@@ -576,6 +587,12 @@ export default function FamilyView({
           </div>
         </header>
 
+        {claimedAsDependentError && (
+          <p className="mb-3 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">
+            {claimedAsDependentError}
+          </p>
+        )}
+
         {members.length === 0 ? (
           <EmptyState label="No family members added yet." />
         ) : (
@@ -627,7 +644,7 @@ export default function FamilyView({
                             <option value="no">No</option>
                           </select>
                         ) : (
-                          <span className="text-gray-600">—</span>
+                          <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2 text-right">

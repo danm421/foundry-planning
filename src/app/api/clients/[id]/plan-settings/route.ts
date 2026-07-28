@@ -336,7 +336,15 @@ export async function PUT(
             coveredByWorkplacePlan: clients.coveredByWorkplacePlan,
             spouseCoveredByWorkplacePlan: clients.spouseCoveredByWorkplacePlan,
           });
-        if (updatedClient) clientFields = updatedClient;
+        // requireClientEditAccess already proved this client/firm pair exists,
+        // so a zero-row match here means something changed underneath us
+        // (row deleted, or the predicate widened) — throw rather than
+        // silently returning 200 with these two columns unchanged. Inside the
+        // transaction, this rolls back the planSettings write too.
+        if (!updatedClient) {
+          throw new Error(`clients row not found for update (id=${id}, firmId=${firmId})`);
+        }
+        clientFields = updatedClient;
       }
 
       return { updated: updatedRow, updatedClientFields: clientFields };
