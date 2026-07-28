@@ -149,8 +149,14 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
             </button>
           ))}
         </div>
+        {/* NOT labelled "Net Worth". This figure is every account minus every
+            liability; `/details/net-worth` reports a deliberately narrower
+            number — it drops entity/trust-owned accounts, all 529s (a completed
+            gift under §529 is never household property) and zero-value term
+            policies. The Task 8 ruling is that the two must not be forced to
+            agree, so the label says what this one actually is instead. */}
         <span className="rounded-md bg-card-2 px-3 py-1.5 text-xs font-semibold text-ink">
-          Net Worth · {props.netWorthLabel}
+          Total assets − debts · {props.netWorthLabel}
         </span>
       </div>
 
@@ -199,8 +205,26 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         />
       )}
 
+      {/* `familyMembers` is load-bearing, not decorative: without it
+          AddAccountForm's `defaultOwners` is empty, OwnershipEditor renders no
+          owner rows, and the POST 400s at "owners must have at least one
+          entry" with no way forward from the dialog. The remaining ~16 props
+          the balance sheet passes (categoryDefaults, modelPortfolios,
+          assetClasses, …) only widen the CREATE form's choices; the "link,
+          don't wire" ruling covers editing an existing row, where a partial
+          hydration would write defaults over real values. Creating has nothing
+          to clobber. */}
       <AddAccountDialog
         clientId={clientId}
+        entities={props.entityOptions}
+        familyMembers={props.familyMemberOptions}
+        ownerNames={{
+          clientName: people.client.firstName,
+          spouseName: people.spouse?.firstName ?? null,
+        }}
+        clientFirstName={people.client.firstName}
+        spouseFirstName={people.spouse?.firstName}
+        milestones={milestones}
         open={addAccountOpen}
         onOpenChange={setAddAccountOpen}
       />

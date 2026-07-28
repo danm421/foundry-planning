@@ -15,9 +15,23 @@ vi.mock("next/navigation", () => ({
 // Mock the dialogs/drawer at the module boundary and capture the props each
 // was rendered with, so assertions can prove ROUTING (which editor opened,
 // for which id) rather than merely "something opened".
+// The mock captures `familyMembers`/`entities` as well as `open`. Asserting
+// only `open` is what let the dialog ship mounted with neither: AddAccountForm
+// then had an empty `defaultOwners`, OwnershipEditor rendered no owner rows,
+// and the create POST 400'd at "owners must have at least one entry" with no
+// path forward from the dialog.
 vi.mock("@/components/add-account-dialog", () => ({
-  default: (props: { open: boolean }) => (
-    <div data-testid="mock-add-account-dialog" data-open={String(props.open)} />
+  default: (props: {
+    open: boolean;
+    familyMembers?: { id: string; role: string }[];
+    entities?: { id: string }[];
+  }) => (
+    <div
+      data-testid="mock-add-account-dialog"
+      data-open={String(props.open)}
+      data-family-member-roles={(props.familyMembers ?? []).map((f) => f.role).join(",")}
+      data-entity-count={String((props.entities ?? []).length)}
+    />
   ),
 }));
 
@@ -154,6 +168,14 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     expenseRows: {},
     savingsRuleRows: {},
     accountOptions: [],
+    // Ownership context for AddAccountDialog. Non-empty by default because an
+    // EMPTY familyMemberOptions is the exact shape that made the dialog's save
+    // 400 — see the "+ Add" test below.
+    familyMemberOptions: [
+      { id: "fm-client", role: "client", firstName: "Alex" },
+      { id: "fm-spouse", role: "spouse", firstName: "Jordan" },
+    ],
+    entityOptions: [{ id: "ent-1", name: "Sample Family Trust" }],
     ...overrides,
   };
 }
@@ -342,7 +364,7 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
   });
 
-  it("Net Worth board's '+ Add' opens AddAccountDialog in create mode, plain (no column/category preset — AddAccountDialog has no prop for one)", () => {
+  it("Net Worth board's '+ Add' opens AddAccountDialog WITH the ownership context its save needs (no column/category preset — AddAccountDialog has no prop for one)", () => {
     render(<HouseholdMapView {...baseProps()} />);
     // Default board is Net Worth.
     const addButtons = screen.getAllByRole("button", { name: "+ Add" });
@@ -350,6 +372,11 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
 
     const dialog = screen.getByTestId("mock-add-account-dialog");
     expect(dialog.dataset.open).toBe("true");
+    // A "client" family member is the one prop the create path cannot save
+    // without: AddAccountForm seeds `defaultOwners` from it, and an empty
+    // owners[] is a hard 400 from `ownership.ts`.
+    expect(dialog.dataset.familyMemberRoles).toContain("client");
+    expect(dialog.dataset.entityCount).toBe("1");
   });
 
   it("account and liability cards navigate to the Net Worth detail page instead of opening an in-place dialog", () => {

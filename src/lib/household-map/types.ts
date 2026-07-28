@@ -99,6 +99,18 @@ export interface HouseholdMapProps {
    *  a superset of the `{id, name, category, subType, ownerEntityId}` the
    *  picker reads. */
   accountOptions: AccountViewEngineFields[];
+
+  /**
+   * Ownership context for the Net Worth board's "+ Add" → `AddAccountDialog`.
+   * NOT optional: with no `familyMembers` the form's `defaultOwners` is empty,
+   * `OwnershipEditor` renders no owner rows, `canSave` still passes on the name
+   * alone, and the POST 400s at `ownership.ts`'s "owners must have at least one
+   * entry". Three of those buttons render on the DEFAULT board, so the dialog
+   * has to arrive already able to save.
+   */
+  familyMemberOptions: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
+  /** Entities offered as account owners in the same dialog. */
+  entityOptions: { id: string; name: string }[];
 }
 
 /**

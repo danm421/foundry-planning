@@ -267,6 +267,12 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       expenseRows={expenseRows}
       savingsRuleRows={savingsRuleRows}
       accountOptions={accountOptions}
+      familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
+        id: fmId,
+        role,
+        firstName,
+      }))}
+      entityOptions={entityRows.map((e) => ({ id: e.id, name: e.name }))}
     />
   );
 }

@@ -65,6 +65,8 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     expenseRows: {},
     savingsRuleRows: {},
     accountOptions: [],
+    familyMemberOptions: [],
+    entityOptions: [],
     ...overrides,
   };
 }
