@@ -1,0 +1,257 @@
+// @vitest-environment jsdom
+import { describe, it, expect } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import CashFlowBoard from "../cash-flow-board";
+import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+
+function person(overrides: Partial<MapPerson> = {}): MapPerson {
+  return {
+    familyMemberId: "fm-default",
+    firstName: "Alex",
+    age: 45,
+    retirementYear: 2045,
+    birthYear: 1980,
+    ...overrides,
+  };
+}
+
+function item(overrides: Partial<MapItem> & Pick<MapItem, "id" | "column" | "kind">): MapItem {
+  return {
+    category: "investments",
+    name: "Item",
+    valueLabel: "$0",
+    value: 0,
+    splitChip: null,
+    trayOwnerLabel: null,
+    noteChip: null,
+    ...overrides,
+  };
+}
+
+function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProps {
+  return {
+    clientId: "client-1",
+    people: {
+      client: person({ familyMemberId: "fm-client", firstName: "Alex" }),
+      spouse: person({ familyMemberId: "fm-spouse", firstName: "Jordan" }),
+      children: [],
+    },
+    netWorthLabel: "$500,000",
+    items: [],
+    goals: [],
+    canEdit: true,
+    ...overrides,
+  };
+}
+
+/** Mirrors `net-worth-board.test.tsx`'s `subtotalTextFor` — one `<b>` per
+ *  band (the bold subtotal), so its parent's full text content is the
+ *  reliable way to assert a combined "label · $amount" string across the
+ *  split text nodes. */
+function subtotalTextFor(container: HTMLElement, bandKey: string): string | null {
+  const bandEl = container.querySelector(`[data-testid="band-${bandKey}"]`);
+  const bold = bandEl?.querySelector("b");
+  return bold?.parentElement?.textContent ?? null;
+}
+
+describe("CashFlowBoard", () => {
+  it("each kind lands in its own band, not the others", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-1", kind: "income", column: "client", name: "Salary", value: 90000 }),
+      item({ id: "sav-1", kind: "savings", column: "client", name: "401k contribution", value: -9000 }),
+      item({ id: "exp-1", kind: "expense", column: "joint", name: "Mortgage payment", value: -24000 }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items })} />);
+
+    const incomeBand = screen.getByTestId("band-income");
+    const savingsBand = screen.getByTestId("band-savings");
+    const expenseBand = screen.getByTestId("band-expense");
+
+    expect(within(incomeBand).getByText("Salary")).toBeInTheDocument();
+    expect(within(incomeBand).queryByText("401k contribution")).not.toBeInTheDocument();
+    expect(within(incomeBand).queryByText("Mortgage payment")).not.toBeInTheDocument();
+
+    expect(within(savingsBand).getByText("401k contribution")).toBeInTheDocument();
+    expect(within(savingsBand).queryByText("Salary")).not.toBeInTheDocument();
+    expect(within(savingsBand).queryByText("Mortgage payment")).not.toBeInTheDocument();
+
+    expect(within(expenseBand).getByText("Mortgage payment")).toBeInTheDocument();
+    expect(within(expenseBand).queryByText("Salary")).not.toBeInTheDocument();
+    expect(within(expenseBand).queryByText("401k contribution")).not.toBeInTheDocument();
+  });
+
+  it("cards land in the owner column their `column` says, asserted by DOM position", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+      item({ id: "inc-joint", kind: "income", column: "joint", name: "Rental income", value: 18000 }),
+      item({ id: "inc-spouse", kind: "income", column: "spouse", name: "Jordan salary", value: 70000 }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items })} />);
+
+    const clientCol = screen.getByTestId("band-income-column-client");
+    const jointCol = screen.getByTestId("band-income-column-joint");
+    const spouseCol = screen.getByTestId("band-income-column-spouse");
+
+    expect(within(clientCol).getByText("Alex salary")).toBeInTheDocument();
+    expect(within(clientCol).queryByText("Rental income")).not.toBeInTheDocument();
+    expect(within(clientCol).queryByText("Jordan salary")).not.toBeInTheDocument();
+
+    expect(within(jointCol).getByText("Rental income")).toBeInTheDocument();
+    expect(within(jointCol).queryByText("Alex salary")).not.toBeInTheDocument();
+    expect(within(jointCol).queryByText("Jordan salary")).not.toBeInTheDocument();
+
+    expect(within(spouseCol).getByText("Jordan salary")).toBeInTheDocument();
+    expect(within(spouseCol).queryByText("Alex salary")).not.toBeInTheDocument();
+    expect(within(spouseCol).queryByText("Rental income")).not.toBeInTheDocument();
+  });
+
+  // The amendment's whole purpose: an entity-owned flow (`column: "tray"`)
+  // must render in its band's tray row and must NOT be dropped — nor may it
+  // leak into an owner column. This is the strongest test in the file.
+  it("an entity-owned income flow renders in the Income band's tray row, not a column, and is not dropped", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+      item({
+        id: "inc-tray",
+        kind: "income",
+        column: "tray",
+        name: "S-Corp distribution",
+        value: 120000,
+        valueLabel: "$120,000",
+        trayOwnerLabel: "Acme Consulting S-Corp",
+      }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items })} />);
+
+    const tray = screen.getByTestId("band-income-tray");
+    expect(within(tray).getByText("S-Corp distribution")).toBeInTheDocument();
+    // The tray-owner label is the card's chip — must actually be displayed.
+    expect(within(tray).getByText("Acme Consulting S-Corp")).toBeInTheDocument();
+
+    // Must not have leaked into any owner column.
+    expect(
+      within(screen.getByTestId("band-income-column-client")).queryByText("S-Corp distribution"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("band-income-column-joint")).queryByText("S-Corp distribution"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("band-income-column-spouse")).queryByText("S-Corp distribution"),
+    ).not.toBeInTheDocument();
+
+    // And it must count in the Income band's subtotal (90,000 + 120,000).
+    expect(subtotalTextFor(document.body, "income")).toBe("Income · $210,000");
+  });
+
+  it("an entity-owned expense flow renders in the Expenses band's tray row, not a column, and is not dropped", () => {
+    const items: MapItem[] = [
+      item({ id: "exp-joint", kind: "expense", column: "joint", name: "Household rent", value: -24000 }),
+      item({
+        id: "exp-tray",
+        kind: "expense",
+        column: "tray",
+        name: "S-Corp office lease",
+        value: -18000,
+        valueLabel: "($18,000)",
+        trayOwnerLabel: "Acme Consulting S-Corp",
+      }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items })} />);
+
+    const tray = screen.getByTestId("band-expense-tray");
+    expect(within(tray).getByText("S-Corp office lease")).toBeInTheDocument();
+    expect(within(tray).getByText("Acme Consulting S-Corp")).toBeInTheDocument();
+
+    expect(
+      within(screen.getByTestId("band-expense-column-client")).queryByText("S-Corp office lease"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("band-expense-column-joint")).queryByText("S-Corp office lease"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("band-expense-column-spouse")).queryByText("S-Corp office lease"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Savings band subtotal is arithmetically correct with signed values, including an unresolvable rule (value 0)", () => {
+    const items: MapItem[] = [
+      // Flat-dollar 401k contribution — outflow, negative.
+      item({
+        id: "sav-flat",
+        kind: "savings",
+        column: "client",
+        name: "401k contribution",
+        value: -12000,
+        valueLabel: "($12,000)",
+      }),
+      // Percent-of-pay rule — unresolvable without the projection: value 0,
+      // the rule shown in valueLabel instead.
+      item({
+        id: "sav-pct",
+        kind: "savings",
+        column: "joint",
+        name: "Roth IRA",
+        value: 0,
+        valueLabel: "20% of pay",
+      }),
+      // Entity-funded contribution, routed to the tray — must still count.
+      item({
+        id: "sav-tray",
+        kind: "savings",
+        column: "tray",
+        name: "SEP-IRA contribution",
+        value: -3000,
+        valueLabel: "($3,000)",
+        trayOwnerLabel: "Acme Consulting S-Corp",
+      }),
+    ];
+
+    const { container } = render(<CashFlowBoard {...baseProps({ items })} />);
+
+    // -12,000 + 0 + -3,000 = -15,000 → "($15,000)" via moneyLabel, not
+    // formatCurrency (which would render a bare negative, not parens).
+    expect(subtotalTextFor(container, "savings")).toBe("Savings · ($15,000)");
+  });
+
+  it("an empty owner column in a band renders the dashed add placeholder", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+      item({ id: "inc-joint", kind: "income", column: "joint", name: "Rental income", value: 18000 }),
+      // No income item in the spouse column — it's empty.
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items, canEdit: true })} />);
+
+    const spouseCol = screen.getByTestId("band-income-column-spouse");
+    expect(within(spouseCol).getByRole("button", { name: "+ add" })).toBeInTheDocument();
+
+    // Non-empty columns must NOT show the placeholder.
+    expect(
+      within(screen.getByTestId("band-income-column-client")).queryByRole("button", { name: "+ add" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("single-client household renders two owner columns (client, joint), not three", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+    ];
+
+    render(
+      <CashFlowBoard
+        {...baseProps({
+          people: { client: person({ firstName: "Alex" }), spouse: null, children: [] },
+          items,
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("band-income-column-client")).toBeInTheDocument();
+    expect(screen.getByTestId("band-income-column-joint")).toBeInTheDocument();
+    expect(screen.queryByTestId("band-income-column-spouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Jordan")).not.toBeInTheDocument();
+  });
+});
