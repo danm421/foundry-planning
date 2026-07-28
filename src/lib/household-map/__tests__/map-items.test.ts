@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   expenseToMapItem,
   flowAssignment,
+  incomeToMapItem,
   isHydratableExpense,
   isHydratableIncome,
   resolveSavings,
@@ -16,6 +17,23 @@ const ctx: ColumnContext = {
   nameByFamilyMemberId: new Map([[CLIENT_FM, "Dan"]]),
   nameByEntityId: new Map([["ent-1", "Sample Family Trust"]]),
 };
+
+/** Business-account name lookup — `flowAssignment` needs it to label a
+ *  business-owned flow's tray card. Mirrors the `accountById` map the map route
+ *  already builds for `savingsToMapItem`. */
+const accountById = new Map([["acct-biz", { name: "Mueller Consulting LLC" }]]);
+
+const income = (over: Partial<Income> = {}): Income => ({
+  id: "inc-1",
+  type: "salary",
+  name: "Salary",
+  annualAmount: 90000,
+  startYear: 2026,
+  endYear: 2045,
+  growthRate: 0.03,
+  owner: "client",
+  ...over,
+});
 
 const savingsRule = (over: Partial<SavingsRule> = {}): SavingsRule => ({
   id: "rule-1",
@@ -70,18 +88,62 @@ describe("resolveSavings", () => {
 
 describe("flowAssignment", () => {
   it("trays an entity-owned flow with the entity's name", () => {
-    const r = flowAssignment("ent-1", "joint", ctx);
+    const r = flowAssignment({ ownerEntityId: "ent-1" }, "joint", accountById, ctx);
     expect(r).toEqual({ column: "tray", splitChip: null, trayOwnerLabel: "Sample Family Trust" });
   });
 
   it("falls back to 'Entity-owned' when the entity id isn't in nameByEntityId", () => {
-    const r = flowAssignment("ent-unknown", "joint", ctx);
+    const r = flowAssignment({ ownerEntityId: "ent-unknown" }, "joint", accountById, ctx);
     expect(r).toEqual({ column: "tray", splitChip: null, trayOwnerLabel: "Entity-owned" });
   });
 
-  it("uses the household column when there is no owning entity", () => {
-    const r = flowAssignment(undefined, "joint", ctx);
+  // Business-owned rows reach household cash ONLY through the business's
+  // distribution sweep (engine/projection.ts), so drawing the raw amount in a
+  // principal's column double-counts it against the distribution the engine
+  // actually reports — the same reason income-expenses-view excludes
+  // ownerAccountId rows from its household totals.
+  it("trays a business-account-owned flow with the business account's name", () => {
+    const r = flowAssignment({ ownerAccountId: "acct-biz" }, "client", accountById, ctx);
+    expect(r).toEqual({ column: "tray", splitChip: null, trayOwnerLabel: "Mueller Consulting LLC" });
+  });
+
+  it("falls back to 'Business-owned' when the account id isn't in accountById", () => {
+    const r = flowAssignment({ ownerAccountId: "acct-gone" }, "client", accountById, ctx);
+    expect(r).toEqual({ column: "tray", splitChip: null, trayOwnerLabel: "Business-owned" });
+  });
+
+  it("prefers the entity label when a row carries both owners", () => {
+    const r = flowAssignment(
+      { ownerEntityId: "ent-1", ownerAccountId: "acct-biz" },
+      "joint",
+      accountById,
+      ctx,
+    );
+    expect(r.trayOwnerLabel).toBe("Sample Family Trust");
+  });
+
+  it("uses the household column when there is no non-household owner", () => {
+    const r = flowAssignment({}, "joint", accountById, ctx);
     expect(r).toEqual({ column: "joint", splitChip: null, trayOwnerLabel: null });
+  });
+});
+
+describe("incomeToMapItem", () => {
+  it("places a household income in its owner's column", () => {
+    expect(incomeToMapItem(income(), accountById, ctx).column).toBe("client");
+  });
+
+  // $200k of S-corp gross revenue in the Joint column, while
+  // /details/income-expenses shows only the $80k distribution, is a $120k gap
+  // where the Map's number is the one the engine does NOT use.
+  it("trays business-account-owned revenue instead of counting it as the owner's income", () => {
+    const item = incomeToMapItem(
+      income({ type: "business", name: "S-corp revenue", ownerAccountId: "acct-biz" }),
+      accountById,
+      ctx,
+    );
+    expect(item.column).toBe("tray");
+    expect(item.trayOwnerLabel).toBe("Mueller Consulting LLC");
   });
 });
 
@@ -91,18 +153,6 @@ describe("editor hydration eligibility", () => {
   // the ONLY thing that makes a Map card clickable (`isItemEditable` in
   // household-map-view.tsx). Excluding a row here is a data-loss guard, not a
   // cosmetic one — see the doc comments on the predicates.
-  const income = (over: Partial<Income> = {}): Income => ({
-    id: "inc-1",
-    type: "salary",
-    name: "Salary",
-    annualAmount: 90000,
-    startYear: 2026,
-    endYear: 2045,
-    growthRate: 0.03,
-    owner: "client",
-    ...over,
-  });
-
   it("admits an ordinary salary income", () => {
     expect(isHydratableIncome(income())).toBe(true);
   });
@@ -144,18 +194,18 @@ describe("expenseToMapItem", () => {
   });
 
   it("carries a negative value since expenses are outflows", () => {
-    const item = expenseToMapItem(expense({ annualAmount: 12000 }), ctx);
+    const item = expenseToMapItem(expense({ annualAmount: 12000 }), accountById, ctx);
     expect(item.value).toBe(-12000);
     expect(item.valueLabel).toBe("($12,000)");
   });
 
   it("adds a 'for {name}' noteChip when forFamilyMemberId resolves", () => {
-    const item = expenseToMapItem(expense({ forFamilyMemberId: CLIENT_FM }), ctx);
+    const item = expenseToMapItem(expense({ forFamilyMemberId: CLIENT_FM }), accountById, ctx);
     expect(item.noteChip).toBe("for Dan");
   });
 
   it("has a null noteChip when there is no forFamilyMemberId", () => {
-    const item = expenseToMapItem(expense(), ctx);
+    const item = expenseToMapItem(expense(), accountById, ctx);
     expect(item.noteChip).toBeNull();
   });
 });

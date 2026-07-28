@@ -49,27 +49,52 @@ export function toMapItem(
 
 /**
  * Incomes and expenses have no `owners[]` — ownership is a single enum (income)
- * or implicitly the household (expense), plus an optional owning entity. An
- * entity-owned flow trays for the same reason `assignColumn` trays an
- * entity-owned asset: the board has no honest way to draw it in a principal's
- * column.
+ * or implicitly the household (expense), plus at most one non-household owner:
+ * an entity (`ownerEntityId`) or a top-level business account
+ * (`ownerAccountId`, the business-as-asset model). Both tray, for the same
+ * reason `assignColumn` trays an entity-owned asset: the board has no honest
+ * way to draw them in a principal's column, and their raw amounts are not
+ * household cash.
+ *
+ * The business-account case matters as much as the entity case. Business-owned
+ * rows reach household cash ONLY via the business's distribution sweep
+ * (`src/engine/projection.ts` ~:758-788), so drawing $200k of S-corp gross
+ * revenue in the Joint column double-counts against the $80k distribution the
+ * engine actually reports — and `/details/income-expenses` excludes them from
+ * its household totals for exactly this reason
+ * (`income-expenses-view.tsx`'s `householdIncome`/`householdExpense`).
+ *
+ * Entity wins when a row somehow carries both (the engine treats them as
+ * mutually exclusive); that mirrors `assignColumn`'s rule-1-first ordering.
  */
 export function flowAssignment(
-  ownerEntityId: string | undefined,
+  flow: { ownerEntityId?: string; ownerAccountId?: string },
   householdColumn: MapColumn,
+  accountById: ReadonlyMap<string, Pick<Account, "name">>,
   ctx: ColumnContext,
 ): ColumnAssignment {
-  if (ownerEntityId) {
+  if (flow.ownerEntityId) {
     return {
       column: "tray",
       splitChip: null,
-      trayOwnerLabel: ctx.nameByEntityId.get(ownerEntityId) ?? "Entity-owned",
+      trayOwnerLabel: ctx.nameByEntityId.get(flow.ownerEntityId) ?? "Entity-owned",
+    };
+  }
+  if (flow.ownerAccountId) {
+    return {
+      column: "tray",
+      splitChip: null,
+      trayOwnerLabel: accountById.get(flow.ownerAccountId)?.name ?? "Business-owned",
     };
   }
   return { column: householdColumn, splitChip: null, trayOwnerLabel: null };
 }
 
-export function incomeToMapItem(income: Income, ctx: ColumnContext): MapItem {
+export function incomeToMapItem(
+  income: Income,
+  accountById: ReadonlyMap<string, Pick<Account, "name">>,
+  ctx: ColumnContext,
+): MapItem {
   return {
     id: income.id,
     kind: "income",
@@ -77,7 +102,7 @@ export function incomeToMapItem(income: Income, ctx: ColumnContext): MapItem {
     name: income.name,
     value: income.annualAmount,
     valueLabel: moneyLabel(income.annualAmount),
-    ...flowAssignment(income.ownerEntityId, income.owner, ctx),
+    ...flowAssignment(income, income.owner, accountById, ctx),
     noteChip: null,
   };
 }
@@ -189,7 +214,11 @@ export function savingsToMapItem(
 
 /** Expenses are household-level: they land in `joint` unless an entity pays
  *  them. Outflows carry a negative `value` so board subtotals net out. */
-export function expenseToMapItem(expense: Expense, ctx: ColumnContext): MapItem {
+export function expenseToMapItem(
+  expense: Expense,
+  accountById: ReadonlyMap<string, Pick<Account, "name">>,
+  ctx: ColumnContext,
+): MapItem {
   const value = -expense.annualAmount;
   const forName = expense.forFamilyMemberId
     ? ctx.nameByFamilyMemberId.get(expense.forFamilyMemberId)
@@ -201,7 +230,7 @@ export function expenseToMapItem(expense: Expense, ctx: ColumnContext): MapItem 
     name: expense.name,
     value,
     valueLabel: moneyLabel(value),
-    ...flowAssignment(expense.ownerEntityId, "joint", ctx),
+    ...flowAssignment(expense, "joint", accountById, ctx),
     noteChip: forName ? `for ${forName}` : null,
   };
 }

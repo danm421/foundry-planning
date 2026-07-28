@@ -133,9 +133,9 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     ...effectiveTree.liabilities.map((l: Liability) =>
       toMapItem(l, "liability", "debt", -l.balance, ctx),
     ),
-    ...effectiveTree.incomes.map((i: Income) => incomeToMapItem(i, ctx)),
+    ...effectiveTree.incomes.map((i: Income) => incomeToMapItem(i, accountById, ctx)),
     ...effectiveTree.savingsRules.map((s: SavingsRule) => savingsToMapItem(s, accountById, ctx)),
-    ...effectiveTree.expenses.map((e: Expense) => expenseToMapItem(e, ctx)),
+    ...effectiveTree.expenses.map((e: Expense) => expenseToMapItem(e, accountById, ctx)),
   ];
 
   // Editor hydration rows — the SAME `effectiveTree` the cards above are built
