@@ -3,9 +3,10 @@
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { textareaClassName, fieldLabelClassName } from "@/components/forms/input-styles";
-
-const ADJ_MIN = -25;
-const ADJ_MAX = 25;
+// The same bound ENVIRONMENT_SCHEMA and the DB check constraint enforce. Import
+// it rather than restating it so the slider cannot drift from the two gates
+// behind it. scoring.ts is pure -- no DB or Next imports -- so it is safe here.
+import { ENV_ADJ_MIN, ENV_ADJ_MAX } from "@/lib/risk/scoring";
 
 function formatAdjustment(adj: number): string {
   if (adj > 0) return `+${adj}`;
@@ -90,8 +91,8 @@ export function EnvironmentEditor({ clientId, adjustment, reason }: EnvironmentE
         <input
           id={sliderId}
           type="range"
-          min={ADJ_MIN}
-          max={ADJ_MAX}
+          min={ENV_ADJ_MIN}
+          max={ENV_ADJ_MAX}
           step={1}
           value={value}
           onChange={(e) => setValue(Number(e.target.value))}
