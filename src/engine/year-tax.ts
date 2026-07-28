@@ -32,6 +32,9 @@ export interface YearTaxInput {
   charityCarryforwardIn: CharityCarryforward;
   /** charity gifts to apply this year, bucketed */
   charityGiftsThisYear: { amount: number; bucket: CharityBucket }[];
+  /** Prior-year capital-loss carryforward. Mutable across years; the output
+   *  returns the new state. Mirrors charityCarryforwardIn. */
+  capitalLossCarryforwardIn: import("../lib/tax/capital-loss").CapitalLossCarryforward;
   /** SECA result (already computed upstream). `additionalMedicare` is the
    *  SE-side 0.9% surtax (IRC §1401(b)(2)) — added to flow.additionalMedicare
    *  and the federal/total tax here alongside seTax. */
@@ -74,6 +77,8 @@ export interface YearTaxOutput {
   marginalCombinedRate: number;
   /** new carryforward state (advances year-to-year) */
   charityCarryforwardOut: CharityCarryforward;
+  /** New capital-loss carryforward state (advances year-to-year). */
+  capitalLossCarryforwardOut: import("../lib/tax/capital-loss").CapitalLossCarryforward;
   /** deduction breakdown (charity-patched if charity deducted this year) */
   deductionBreakdown: DeductionBreakdown | null;
   /** charity AGI used (diagnostic) */
@@ -89,6 +94,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     aboveLineDeductions, itemizedDeductions: itemizedIn,
     charityCarryforwardIn, charityGiftsThisYear, secaResult,
     transferEarlyWithdrawalPenalty, interestIncomeForTax, deductionBreakdownIn,
+    capitalLossCarryforwardIn,
     retirementBreakdown, contrib529, primaryAge, spouseAge, isoSpread,
   } = input;
 
@@ -207,6 +213,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         // (IRC §56(b)(1)(A)(ii)) → added back to AMTI for itemizers. The breakdown's
         // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
         saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
+        capitalLossCarryforwardIn,
       })
     : calculateTaxYearFlat({
         taxableIncome,
@@ -215,6 +222,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         taxParams: resolved?.params ?? makeEmptyTaxParams(year),
         nonTaxableIncome:
           Math.max(0, totalIncome - taxableIncome) + (input.taxFreeRetirementIncome ?? 0),
+        capitalLossCarryforwardIn,
       });
 
   // Add transfer early-withdrawal penalty
@@ -251,5 +259,6 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     deductionBreakdown: deductionBreakdownOut,
     charityAgi,
     charityDeductionThisYear,
+    capitalLossCarryforwardOut: taxResult.capitalLoss.carryforwardOut,
   };
 }
