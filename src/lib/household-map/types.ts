@@ -72,3 +72,27 @@ export interface HouseholdMapProps {
   goals: MapGoal[];
   canEdit: boolean;
 }
+
+/**
+ * Task 11 editing hooks. `HouseholdMapProps` is assembled server-side and
+ * crosses the server→client boundary as plain data — functions cannot travel
+ * that boundary, so these callbacks are a SEPARATE client-only type, created
+ * and consumed entirely inside `household-map-view.tsx` and the boards it
+ * renders. Never merge this into `HouseholdMapProps`.
+ */
+export interface BoardCallbacks {
+  /** A card was clicked for an existing item — open the item's editor. Boards
+   *  never decide which dialog opens; they just report the click. */
+  onEditItem?: (item: MapItem) => void;
+  /** A goal card was clicked. `expenseId` is null for a life milestone (not
+   *  editable — GoalsBoard must not call this then). `presetColumn` mirrors
+   *  the goal's side ("client"/"spouse"/"joint" are valid `MapColumn`s). */
+  onEditGoalExpense?: (expenseId: string, presetColumn: MapColumn) => void;
+  /** A band/column "+ add" placeholder was clicked (Cash Flow board). `kind`
+   *  distinguishes income/expense (→ the quick-edit drawer) from savings
+   *  (→ SavingsRuleDialog); `column` seeds the create-mode preset. */
+  onAddFlow?: (kind: "income" | "expense" | "savings", column: MapColumn) => void;
+  /** Net Worth board's per-column "+ Add" — opens AddAccountDialog in create
+   *  mode. No owner/column preset: AddAccountDialog has no prop for one. */
+  onAddAccount?: () => void;
+}

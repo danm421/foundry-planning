@@ -2,7 +2,7 @@ import Link from "next/link";
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
 import { moneyLabel } from "@/lib/household-map/format";
-import type { HouseholdMapProps, MapItem } from "@/lib/household-map/types";
+import type { BoardCallbacks, HouseholdMapProps, MapItem } from "@/lib/household-map/types";
 
 /** account/liability/policy → the Net Worth detail page; income/savings/expense
  *  → Inflows & Outflows. Flow-kind items only ever land here via the tray (an
@@ -18,7 +18,13 @@ function isNetWorthKind(kind: MapItem["kind"]): boolean {
  * plus a tray for anything owned by a trust, business, or family member other
  * than the two principals.
  */
-export default function NetWorthBoard({ clientId, people, items, canEdit }: HouseholdMapProps) {
+export default function NetWorthBoard({
+  clientId,
+  people,
+  items,
+  canEdit,
+  onAddAccount,
+}: HouseholdMapProps & BoardCallbacks) {
   const hasSpouse = people.spouse !== null;
   const COLUMNS = hasSpouse
     ? (["client", "joint", "spouse"] as const)
@@ -87,15 +93,17 @@ export default function NetWorthBoard({ clientId, people, items, canEdit }: Hous
               <div className="mb-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-ink-4">
                 {labelFor(col)}
               </div>
+              {/* Task 11: card clicks stay inert here — see the
+                  handleEditItem comment in household-map-view.tsx for why
+                  (accounts/liabilities need owners data this board's props
+                  don't carry, and can't safely be reconstructed). */}
               {cards.map((c) => (
                 <MapCard key={c.id} item={c} />
               ))}
               {canEdit && (
                 <button
                   type="button"
-                  onClick={() => {
-                    // Task 11 wires this
-                  }}
+                  onClick={() => onAddAccount?.()}
                   className="rounded-md border border-dashed border-hair px-2 py-1 text-center text-[10px] text-ink-3 hover:text-ink-2"
                 >
                   + Add

@@ -1,7 +1,7 @@
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
 import { moneyLabel } from "@/lib/household-map/format";
-import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
+import type { BoardCallbacks, HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 
 const BANDS = [
   { key: "income", label: "Income", kinds: ["income"] },
@@ -30,7 +30,13 @@ type OwnerColumn = Exclude<MapColumn, "tray">;
  * (expenses AND savings contributions) negative, unresolvable savings rules
  * carry `0` and show the rule in `valueLabel` instead.
  */
-export default function CashFlowBoard({ people, items, canEdit }: HouseholdMapProps) {
+export default function CashFlowBoard({
+  people,
+  items,
+  canEdit,
+  onEditItem,
+  onAddFlow,
+}: HouseholdMapProps & BoardCallbacks) {
   const hasSpouse = people.spouse !== null;
   const COLUMNS: OwnerColumn[] = hasSpouse ? ["client", "joint", "spouse"] : ["client", "joint"];
   const gridCols = hasSpouse ? "grid-cols-[74px_repeat(3,1fr)]" : "grid-cols-[74px_repeat(2,1fr)]";
@@ -74,15 +80,17 @@ export default function CashFlowBoard({ people, items, canEdit }: HouseholdMapPr
                     className="flex flex-col gap-1.5"
                   >
                     {cards.map((c) => (
-                      <MapCard key={c.id} item={c} />
+                      <MapCard
+                        key={c.id}
+                        item={c}
+                        onClick={canEdit ? () => onEditItem?.(c) : undefined}
+                      />
                     ))}
                     {/* Step 2 — empty cells are add targets. */}
                     {cards.length === 0 && canEdit && (
                       <button
                         type="button"
-                        onClick={() => {
-                          // Task 11 wires this
-                        }}
+                        onClick={() => onAddFlow?.(band.key, col)}
                         className="min-h-7 rounded-md border border-dashed border-hair text-[10px] text-ink-4 hover:border-hair-2 hover:text-ink-3"
                       >
                         + add
@@ -103,7 +111,11 @@ export default function CashFlowBoard({ people, items, canEdit }: HouseholdMapPr
                   Held by trusts, businesses &amp; other family members
                 </div>
                 {trayItems.map((c) => (
-                  <MapCard key={c.id} item={c} />
+                  <MapCard
+                    key={c.id}
+                    item={c}
+                    onClick={canEdit ? () => onEditItem?.(c) : undefined}
+                  />
                 ))}
               </div>
             )}

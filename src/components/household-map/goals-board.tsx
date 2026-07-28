@@ -1,6 +1,6 @@
 import { ageForYear } from "@/lib/age-year";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
-import type { HouseholdMapProps } from "@/lib/household-map/types";
+import type { BoardCallbacks, HouseholdMapProps } from "@/lib/household-map/types";
 
 /** Which side of the spine a card sits on. "left"/"right" mirror the accent
  *  border + text alignment; "joint" centres both. */
@@ -29,22 +29,45 @@ const SIDE_LAYOUT: Record<GoalCardSide, string> = {
 interface GoalCardProps {
   goal: MapGoal;
   side: GoalCardSide;
+  /** Set only when the card is editable — a life milestone (expenseId null)
+   *  or a read-only viewer never gets one. */
+  onClick?: () => void;
 }
 
-/** One goal card. No editing affordances here — Task 11 owns click routing. */
-function GoalCard({ goal, side }: GoalCardProps) {
+/**
+ * One goal card. Editable goals (expenseId set) render as a button that opens
+ * the quick-edit drawer for the underlying expense; life milestones
+ * (expenseId null) render as a plain, non-interactive div — there is nothing
+ * to edit.
+ */
+function GoalCard({ goal, side, onClick }: GoalCardProps) {
   const style = KIND_STYLE[goal.kind];
-
-  return (
-    <div
-      data-testid={`goal-card-${side}-${goal.id}`}
-      style={{ borderColor: style.border }}
-      className={`rounded-lg bg-card-2 py-2 ${SIDE_LAYOUT[side]}`}
-    >
+  const className = `rounded-lg bg-card-2 py-2 ${SIDE_LAYOUT[side]}`;
+  const body = (
+    <>
       <div className="text-[9px] font-bold uppercase tracking-wider text-ink-4">{style.label}</div>
       <div className="text-xs font-medium text-ink">{goal.title}</div>
       {goal.detail ? <div className="mt-0.5 text-[10px] text-ink-3">{goal.detail}</div> : null}
-    </div>
+    </>
+  );
+
+  if (!onClick) {
+    return (
+      <div data-testid={`goal-card-${side}-${goal.id}`} style={{ borderColor: style.border }} className={className}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid={`goal-card-${side}-${goal.id}`}
+      style={{ borderColor: style.border }}
+      onClick={onClick}
+      className={`${className} w-full hover:bg-card-hover`}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -67,7 +90,12 @@ function GoalYearLabel({ year, ages }: { year: number; ages: string }) {
  * visibly straddles the spine (a joint goal has no side to hang off of and
  * must not be silently dropped).
  */
-export default function GoalsBoard({ people, goals }: HouseholdMapProps) {
+export default function GoalsBoard({
+  people,
+  goals,
+  canEdit,
+  onEditGoalExpense,
+}: HouseholdMapProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
    *  from `new Date()` inside this component, which would drift a Jan-1 DOB
    *  by a year across timezones. */
@@ -78,6 +106,13 @@ export default function GoalsBoard({ people, goals }: HouseholdMapProps) {
     }
     const spouseAge = ageForYear(people.spouse.birthYear, year);
     return `${clientAge ?? "—"} / ${spouseAge ?? "—"}`;
+  }
+
+  /** A life milestone (expenseId null) is never editable regardless of
+   *  `canEdit` — there is no expense behind it to open. */
+  function clickHandlerFor(g: MapGoal): (() => void) | undefined {
+    if (!canEdit || g.expenseId === null) return undefined;
+    return () => onEditGoalExpense?.(g.expenseId!, g.side);
   }
 
   return (
@@ -93,7 +128,7 @@ export default function GoalsBoard({ people, goals }: HouseholdMapProps) {
             >
               <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
               <div className="w-full max-w-[60%]">
-                <GoalCard goal={g} side="joint" />
+                <GoalCard goal={g} side="joint" onClick={clickHandlerFor(g)} />
               </div>
             </div>
           );
@@ -104,9 +139,17 @@ export default function GoalsBoard({ people, goals }: HouseholdMapProps) {
             data-testid={`goal-row-${g.id}`}
             className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
           >
-            {g.side === "client" ? <GoalCard goal={g} side="left" /> : <div />}
+            {g.side === "client" ? (
+              <GoalCard goal={g} side="left" onClick={clickHandlerFor(g)} />
+            ) : (
+              <div />
+            )}
             <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-            {g.side === "spouse" ? <GoalCard goal={g} side="right" /> : <div />}
+            {g.side === "spouse" ? (
+              <GoalCard goal={g} side="right" onClick={clickHandlerFor(g)} />
+            ) : (
+              <div />
+            )}
           </div>
         );
       })}
