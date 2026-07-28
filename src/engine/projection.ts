@@ -4015,14 +4015,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // their own return, whatever the override column says.
         if (fm.role === "client" || fm.role === "spouse") continue;
         const claim = fm.claimedAsDependent ?? "auto";
-        // `resolveAgeInYear` returns a MAGIC 50 for a missing DOB — a product
-        // default, not an age. Guarded explicitly so "not a qualifying child"
-        // is the answer for the right reason, and stays right if that default
-        // ever moves below 17.
+        // `resolveAgeInYear` is `year - birthYear`, bounded at NEITHER end, and
+        // each end is wrong for its own reason — hence two guards, not one:
+        //  - MISSING DOB yields a MAGIC 50: a product default, not an age. A
+        //    DOB-less child is excluded BECAUSE the DOB is missing, not because
+        //    50 happens not to be under 17 — the right answer for the right
+        //    reason, which stays right if that default ever moves below 17.
+        //  - DOB AFTER the tax year yields a NEGATIVE age, which is also "under
+        //    17". Modelling a not-yet-born child (usually to hang an education
+        //    goal off) is a normal advisor action and the family-member API
+        //    stores `dateOfBirth` unvalidated, so this is reachable data rather
+        //    than corruption.
+        const age = fm.dateOfBirth != null ? resolveAgeInYear(fm.dateOfBirth, year) : null;
+        // IRC 151/152 allow a dependent only for an individual who EXISTS in the
+        // tax year — a child born DURING it is a dependent for the whole year,
+        // one born after it is not yet a person the return can claim. So an
+        // unborn member is skipped OUTRIGHT rather than merely failing the
+        // qualifying-child test: `claimedAsDependent: "yes"` asserts that
+        // someone IS claimed, never that they exist, so it must not fall through
+        // and promote them to an Other Dependent on the `else if` below.
+        if (age != null && age < 0) continue;
         const isQualifyingChild =
           QUALIFYING_CHILD_RELATIONSHIPS.has(fm.relationship)
-          && fm.dateOfBirth != null
-          && resolveAgeInYear(fm.dateOfBirth, year) < QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE
+          && age != null
+          && age < QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE
           && claim !== "no";
         if (isQualifyingChild) qualifyingChildren++;
         else if (claim === "yes") otherDependents++;

@@ -143,6 +143,15 @@ const CHECKING = acct({
   isDefaultChecking: true,
 });
 const ACCT_401K = acct({ id: "acct-401k", category: "retirement", subType: "401k" });
+// Spouse-owned, so `resolveWorkplaceCoverage("spouse")` can infer TRUE from a
+// rule against it — without one, a `spouseCoveredByWorkplacePlan: "no"` fixture
+// asserts nothing, because "auto" would infer false anyway.
+const ACCT_401K_SPOUSE = acct({
+  id: "acct-401k-spouse",
+  category: "retirement",
+  subType: "401k",
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+});
 const ACCT_IRA = acct({ id: "acct-ira", category: "retirement", subType: "traditional_ira" });
 const ACCT_ROTH = acct({ id: "acct-roth", category: "retirement", subType: "roth_ira" });
 
@@ -383,7 +392,7 @@ describe("gate: the Roth phase-out resolves against the year's real MAGI", () =>
   it("re-tags the whole disallowed contribution as a backdoor conversion", () => {
     const years = runProjection(fixture);
     expect(years[0].thresholdFacts!.magiForRoth).toBe(280_000);
-    expect(years[0].contributionAdjustments!.backdoorByRuleId["sav-roth"]).toBeCloseTo(7_000, 6);
+    expect(years[0].contributionAdjustments!.backdoorByRuleId["sav-roth"]).toBe(7_000);
     expect(
       years[0].contributionAdjustments!.adjustments.filter((a) => a.reason === "roth_magi_backdoor"),
     ).toHaveLength(1);
@@ -392,7 +401,7 @@ describe("gate: the Roth phase-out resolves against the year's real MAGI", () =>
   it("leaves the CONTRIBUTION itself untouched — the gate re-tags, it never reduces", () => {
     const years = runProjection(fixture);
     // The money still lands in the Roth account; only its tax route differs.
-    expect(years[0].savings.byAccount["acct-roth"]).toBeCloseTo(7_000, 6);
+    expect(years[0].savings.byAccount["acct-roth"]).toBe(7_000);
   });
 
   it("emits nothing for the same household below the range", () => {
@@ -580,6 +589,36 @@ describe("gate: family_members.claimed_as_dependent reaches the credit layer", (
     expect(claimed.qualifyingChildren).toBe(0);
   });
 
+  it("does NOT treat a member born after the tax year as a dependent of either kind", () => {
+    // `resolveAgeInYear` is `year - birthYear` with no lower bound, so a 2030
+    // DOB reads as age -4 in 2026 — which satisfies "under 17". The count alone
+    // said 1 and the household collected a full $2,000 of CTC for a child who
+    // does not exist yet, so the DOLLARS are asserted here too: a count-only
+    // assertion is what let this through the first time.
+    const unborn = child({ id: "fm-unborn", dateOfBirth: "2030-06-01" });
+    const h = householdFor([unborn]);
+    expect(h.qualifyingChildren).toBe(0);
+    expect(h.otherDependents).toBe(0);
+    expect(
+      runProjection(build({ incomes: [salary(60_000)], familyMembers: [...FMS, unborn] }))[0]
+        .taxResult!.flow.taxCredits,
+    ).toBe(0);
+
+    // An explicit "yes" does not promote them to an Other Dependent either. The
+    // column asserts that someone IS claimed, never that they exist, so the
+    // guard skips the member outright instead of only failing the child test.
+    const unbornClaimed = child({
+      id: "fm-unborn", dateOfBirth: "2030-06-01", claimedAsDependent: "yes",
+    });
+    const claimed = householdFor([unbornClaimed]);
+    expect(claimed.qualifyingChildren).toBe(0);
+    expect(claimed.otherDependents).toBe(0);
+    expect(
+      runProjection(build({ incomes: [salary(60_000)], familyMembers: [...FMS, unbornClaimed] }))[0]
+        .taxResult!.flow.taxCredits,
+    ).toBe(0);
+  });
+
   it("does NOT treat a child with no date of birth as a qualifying child", () => {
     // `resolveAgeInYear` answers 50 for a missing DOB — a product default, not
     // an age. A DOB-less child must be excluded because the DOB is missing, not
@@ -601,18 +640,27 @@ describe("gate: family_members.claimed_as_dependent reaches the credit layer", (
   it("varies all three override columns at once and moves all three outputs", () => {
     // R17: no fixture may leave every override at its "auto" default, or the
     // whole surface is asserted vacuously.
+    //
+    // The spouse's 401(k) rule is what makes the `"no"` arm mean anything: with
+    // it, `"auto"` WOULD infer coveredSpouse true, so the override is genuinely
+    // reversing an inference rather than agreeing with it. Verified by flipping
+    // the column to "auto" and watching this test go red.
     const years = runProjection(build({
       client: { ...CLIENT, coveredByWorkplacePlan: "yes", spouseCoveredByWorkplacePlan: "no" },
+      accounts: [CHECKING, ACCT_401K, ACCT_IRA, ACCT_401K_SPOUSE],
       familyMembers: [
         ...FMS,
         child({ claimedAsDependent: "no" }),
         adultChild({ claimedAsDependent: "yes" }),
       ],
-      savingsRules: [rule({ id: "sav-ira", accountId: "acct-ira", annualAmount: 6_000 })],
+      savingsRules: [
+        rule({ id: "sav-ira", accountId: "acct-ira", annualAmount: 6_000 }),
+        rule({ id: "sav-401k-spouse", accountId: "acct-401k-spouse", annualAmount: 5_000 }),
+      ],
     }));
     const h = years[0].thresholdFacts!.household;
     expect(h.coveredSelf).toBe(true);       // from "yes"
-    expect(h.coveredSpouse).toBe(false);    // from "no"
+    expect(h.coveredSpouse).toBe(false);    // from "no", against a TRUE inference
     expect(h.qualifyingChildren).toBe(0);   // the under-17 child was excluded
     expect(h.otherDependents).toBe(1);      // the adult child was included
   });
@@ -703,8 +751,8 @@ describe("AOTC students: named by an education goal, capped at four claimed year
       familyMembers: [...FMS, student],
       expenses: [goal()],
     }));
-    expect(years[0].taxResult!.flow.refundableCredits).toBeCloseTo(1_000, 6);
-    expect(years[0].taxResult!.flow.taxCredits).toBeCloseTo(1_500, 6);
+    expect(years[0].taxResult!.flow.refundableCredits).toBe(1_000);
+    expect(years[0].taxResult!.flow.taxCredits).toBe(1_500);
   });
 });
 
@@ -913,8 +961,8 @@ describe("the three dependent/student counts come from three DIFFERENT members",
     const credits = years[0].taxResult!.flow;
     // CTC 2,000 + ODC 500 + AOTC nonrefundable 1,500 = 4,000 of nonrefundable,
     // plus the AOTC's 1,000 refundable slice.
-    expect(credits.taxCredits).toBeCloseTo(4_000, 6);
-    expect(credits.refundableCredits).toBeCloseTo(1_000, 6);
+    expect(credits.taxCredits).toBe(4_000);
+    expect(credits.refundableCredits).toBe(1_000);
   });
 });
 
