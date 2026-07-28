@@ -4,7 +4,6 @@ import {
   clients,
   crmHouseholdContacts,
   scenarios,
-  accounts,
   liabilities,
   entities,
   entityOwners,
@@ -24,7 +23,9 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
-import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { controllingEntity } from "@/engine/ownership";
+import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
+import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
 
 interface NetWorthContentProps {
   clientId: string;
@@ -83,28 +84,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     notesReceivableRows,
     fundPortfolioOptions,
   ] = await Promise.all([
-    db
-      .select({
-        id: accounts.id,
-        growthSource: accounts.growthSource,
-        modelPortfolioId: accounts.modelPortfolioId,
-        tickerPortfolioId: accounts.tickerPortfolioId,
-        turnoverPct: accounts.turnoverPct,
-        overridePctOi: accounts.overridePctOi,
-        overridePctLtCg: accounts.overridePctLtCg,
-        overridePctQdiv: accounts.overridePctQdiv,
-        overridePctTaxExempt: accounts.overridePctTaxExempt,
-        annualPropertyTax: accounts.annualPropertyTax,
-        propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
-        propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
-        countsTowardAum: accounts.countsTowardAum,
-        // Linked-account indicator: identify integration-fed rows.
-        source: accounts.source,
-        plaidItemId: accounts.plaidItemId,
-        externalProvider: accounts.externalProvider,
-      })
-      .from(accounts)
-      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
+    loadAccountMetaRows(id, scenario.id),
     db
       .select({
         id: liabilities.id,
@@ -148,13 +128,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
   // `externalProvider === "orion"` drives the Orion label. Base-scoped like the
   // metadata above, so scenario-added accounts (no entry) correctly read as
   // manual with no badge.
-  const linkedSourceById = new Map<string, "plaid" | "orion">();
-  for (const r of accountMetaRows) {
-    if (r.plaidItemId != null) linkedSourceById.set(r.id, "plaid");
-    else if (r.externalProvider === "orion" || r.source === "orion") {
-      linkedSourceById.set(r.id, "orion");
-    }
-  }
+  const linkedSourceById = linkedSourceMapFrom(accountMetaRows);
 
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -212,78 +186,11 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
-  // Derive owner key for UI display from owners[].
-  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
-  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
-  function _ownerKeyOf(acct: (typeof effectiveTree.accounts)[number]): string {
-    const cfm = controllingFamilyMember(acct);
-    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
-    if (cfm === _clientFmId && _clientFmId != null) return "client";
-    return "joint";
-  }
-
-  // 529 / education_savings display name for the Assets-card 529 group:
-  // the designated beneficiary's family-member first+last name when set,
-  // else the free-text beneficiaryName. Returns null for every other
-  // category (education529 is undefined) and for a 529 with neither field
-  // set (shouldn't happen — the API requires one — but the UI falls back to
-  // "Unnamed beneficiary" for display).
-  function beneficiaryDisplayNameFor(
-    edu: { beneficiaryFamilyMemberId?: string | null; beneficiaryName?: string | null } | undefined,
-  ): string | null {
-    if (!edu) return null;
-    if (edu.beneficiaryFamilyMemberId) {
-      const fm = familyMemberRows.find((m) => m.id === edu.beneficiaryFamilyMemberId);
-      if (fm) return `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`;
-    }
-    return edu.beneficiaryName ?? null;
-  }
-
-  const accountProps: AccountRow[] = effectiveTree.accounts.map((a) => {
-    const meta = accountMetaById.get(a.id);
-    return {
-      id: a.id,
-      name: a.name,
-      category: a.category as AccountRow["category"],
-      subType: a.subType,
-      owner: _ownerKeyOf(a),
-      value: String(a.value),
-      basis: String(a.basis),
-      linkedSource: linkedSourceById.get(a.id) ?? null,
-      rothValue: a.rothValue != null ? String(a.rothValue) : null,
-      hsaCoverage: a.hsaCoverage ?? null,
-      growthRate: a.growthRate == null ? null : String(a.growthRate),
-      rmdEnabled: a.rmdEnabled ?? null,
-      priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
-      ownerEntityId: controllingEntity(a) ?? null,
-      // From meta, not from `a` — the engine Account type never carries this.
-      countsTowardAum: meta?.countsTowardAum ?? false,
-      growthSource: meta?.growthSource ?? "default",
-      modelPortfolioId: meta?.modelPortfolioId ?? null,
-      tickerPortfolioId: meta?.tickerPortfolioId ?? null,
-      turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),
-      overridePctOi: meta?.overridePctOi == null ? null : String(meta.overridePctOi),
-      overridePctLtCg: meta?.overridePctLtCg == null ? null : String(meta.overridePctLtCg),
-      overridePctQdiv: meta?.overridePctQdiv == null ? null : String(meta.overridePctQdiv),
-      overridePctTaxExempt:
-        meta?.overridePctTaxExempt == null ? null : String(meta.overridePctTaxExempt),
-      annualPropertyTax: meta?.annualPropertyTax == null ? null : String(meta.annualPropertyTax),
-      propertyTaxGrowthRate:
-        meta?.propertyTaxGrowthRate == null ? null : String(meta.propertyTaxGrowthRate),
-      propertyTaxGrowthSource: meta?.propertyTaxGrowthSource ?? "custom",
-      isDefaultChecking: a.isDefaultChecking ?? false,
-      owners: a.owners,
-      titlingType: a.titlingType,
-      parentAccountId: a.parentAccountId ?? null,
-      grantorFamilyMemberId: a.education529?.grantorFamilyMemberId ?? null,
-      grantorName: a.education529?.grantorName ?? null,
-      beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
-      beneficiaryName: a.education529?.beneficiaryName ?? null,
-      rothRolloverEnabled: a.education529?.rothRolloverEnabled ?? false,
-      rothRolloverStartYear: a.education529?.rothRolloverStartYear ?? null,
-      rothRolloverAccountId: a.education529?.rothRolloverAccountId ?? null,
-      beneficiaryDisplayName: beneficiaryDisplayNameFor(a.education529),
-    };
+  const accountProps: AccountRow[] = buildAccountRows({
+    accounts: effectiveTree.accounts,
+    familyMembers: effectiveTree.familyMembers ?? [],
+    accountMetaById,
+    linkedSourceById,
   });
 
   const liabilityProps: LiabilityRow[] = effectiveTree.liabilities.map((l) => {
@@ -369,47 +276,11 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     }
   }
 
-  const flatRate = (rawRate: string, source: string | undefined): string =>
-    source === "inflation" ? String(resolvedInflationRate) : String(rawRate);
-
-  const investableEffectiveRate = (
-    source: string | undefined,
-    portfolioId: string | null | undefined,
-    customRate: string,
-  ): string => {
-    if (source === "inflation") return String(resolvedInflationRate);
-    if (source === "model_portfolio" && portfolioId) {
-      const mp = modelPortfolioOptions.find((p) => p.id === portfolioId);
-      if (mp) return String(mp.blendedReturn);
-    }
-    return String(customRate);
-  };
-
-  const categoryDefaults = settings
-    ? {
-        taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
-        cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
-        retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-        education_savings: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-        annuity: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
-        real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
-        business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
-        stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),
-        life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
-        notes_receivable: "0",
-      }
-    : {
-        taxable: "0.07",
-        cash: "0.02",
-        retirement: "0.07",
-        education_savings: "0.07",
-        annuity: "0.04",
-        real_estate: "0.04",
-        business: "0.05",
-        stock_options: "0.07",
-        life_insurance: "0.03",
-        notes_receivable: "0",
-      };
+  const categoryDefaults = categoryDefaultRates(
+    settings,
+    modelPortfolioOptions,
+    resolvedInflationRate,
+  );
 
   return (
     <BalanceSheetView

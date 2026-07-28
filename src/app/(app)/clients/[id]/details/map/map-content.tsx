@@ -1,7 +1,15 @@
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
+import {
+  assetClasses,
+  crmHouseholdContacts,
+  entities,
+  familyMembers,
+  modelPortfolioAllocations,
+  planSettings,
+  scenarios,
+} from "@/db/schema";
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
@@ -17,6 +25,14 @@ import {
   type IncomeView,
   type SavingsRuleView,
 } from "@/lib/scenario/view-adapters";
+import {
+  buildAccountRows,
+  linkedSourceMapFrom,
+  loadAccountMetaRows,
+} from "@/lib/accounts/load-account-rows";
+import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
+import { loadImportGrowthContext } from "@/lib/investments/growth-context";
+import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import { buildMapGoals } from "@/lib/household-map/goals";
 import { moneyLabel } from "@/lib/household-map/format";
 import {
@@ -77,20 +93,52 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     );
   }
 
-  const [entityRows, familyMemberRows, { effectiveTree }] = await Promise.all([
-    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-    db
-      .select({
-        id: familyMembers.id,
-        role: familyMembers.role,
-        firstName: familyMembers.firstName,
-        dateOfBirth: familyMembers.dateOfBirth,
-      })
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id))
-      .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-  ]);
+  const [
+    entityRows,
+    familyMemberRows,
+    { effectiveTree },
+    accountMetaRows,
+    growthContext,
+    settingsRows,
+    assetClassRows,
+    allocationRows,
+  ] =
+    await Promise.all([
+      db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+      db
+        .select({
+          id: familyMembers.id,
+          role: familyMembers.role,
+          firstName: familyMembers.firstName,
+          dateOfBirth: familyMembers.dateOfBirth,
+        })
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, id))
+        .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
+      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+      // Both take the BASE scenario id, not `scenarioParam`, and both are
+      // correct for opposite reasons.
+      //
+      //   `loadAccountMetaRows` is base-scoped BY DESIGN — the scenario overlay
+      //   is a separate step (`loadOverlaidAccountMeta` below), because scenario
+      //   account metadata lives in `scenario_changes` payloads rather than in
+      //   duplicated `accounts` rows.
+      //
+      //   `loadImportGrowthContext` reads `plan_settings` with a direct
+      //   `(clientId, scenarioId)` equality. Only the base scenario has a row,
+      //   so a non-base id returns ZERO rows and the function degrades silently:
+      //   `resolvedInflationRate` collapses to 0% and every `categoryDefaults`
+      //   entry goes null. `net-worth-content.tsx` scopes its own plan-settings
+      //   select the same way — do not "fix" either of these to `scenarioParam`.
+      loadAccountMetaRows(id, scenario.id),
+      loadImportGrowthContext(id, firmId, scenario.id),
+      db
+        .select()
+        .from(planSettings)
+        .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+      db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+      db.select().from(modelPortfolioAllocations),
+    ]);
 
   // Everything the boards, milestones and person nodes read comes from ONE
   // provenance: the scenario-effective tree. Retirement age, plan-end age, life
@@ -209,6 +257,79 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   );
   const accountOptions = effectiveTree.accounts.map(accountEngineToView);
 
+  // The COMPLETE per-account row: scenario-effective engine accounts merged
+  // with the scenario-overlaid view-only metadata the engine type discards.
+  // `accountOptions` above is `accountEngineToView`, a documented PARTIAL that
+  // drops `growthSource` / `modelPortfolioId` — anything reading or writing
+  // growth reads THIS map instead. Keyed by id because the boards look rows up
+  // per card, not by iterating.
+  const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
+  const accountRows = Object.fromEntries(
+    buildAccountRows({
+      accounts: effectiveTree.accounts,
+      familyMembers: effectiveTree.familyMembers ?? [],
+      accountMetaById,
+      linkedSourceById: linkedSourceMapFrom(accountMetaRows),
+    }).map((r) => [r.id, r]),
+  );
+
+  // Per-category default RATES (decimal strings, all ten categories) — the
+  // shared extraction the Net Worth page uses, so the Map's "Plan default"
+  // option cannot quote a different number than the account dialog does.
+  // Distinct from `growthContext.categoryDefaults`, which is a display-label
+  // map covering three categories.
+  const categoryDefaultRates = buildCategoryDefaultRates(
+    settingsRows[0],
+    growthContext.modelPortfolios,
+    growthContext.resolvedInflationRate,
+  );
+
+  // Built exactly as `net-worth-content.tsx` builds them for the same dialog:
+  // `geometricReturn` and `weight` parsed to numbers, and `slug` carried (the
+  // form keys its inflation asset class off it). The plan's snippet passed the
+  // raw Drizzle strings and omitted the slug.
+  const assetClassOptions = assetClassRows.map((ac) => ({
+    id: ac.id,
+    name: ac.name,
+    slug: ac.slug,
+    geometricReturn: parseFloat(ac.geometricReturn),
+  }));
+
+  const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};
+  for (const a of allocationRows) {
+    (portfolioAllocationsMap[a.modelPortfolioId] ??= []).push({
+      assetClassId: a.assetClassId,
+      weight: parseFloat(a.weight),
+    });
+  }
+
+  // The dialog labels "Plan default" with the portfolio backing that category.
+  // `growthContext.categoryDefaults` already carries name + blended pct per
+  // category; reshape it rather than re-deriving. It covers only taxable / cash
+  // / retirement — the dialog treats a missing category as having no named
+  // default, which is correct.
+  const categoryDefaultSources: Record<
+    string,
+    { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }
+  > = {};
+  for (const [category, d] of Object.entries(growthContext.categoryDefaults)) {
+    categoryDefaultSources[category] = d.portfolioName
+      ? {
+          source: "model_portfolio",
+          portfolioName: d.portfolioName,
+          blendedReturn: d.blendedReturnPct != null ? d.blendedReturnPct / 100 : undefined,
+        }
+      : { source: "inflation" };
+  }
+
+  const accountRowList = Object.values(accountRows);
+  const businessOptions = accountRowList
+    .filter((a) => a.category === "business" && a.parentAccountId == null)
+    .map((a) => ({ id: a.id, name: a.name }));
+  const rothIraAccountOptions = accountRowList
+    .filter((a) => a.subType === "roth_ira")
+    .map((a) => ({ id: a.id, name: a.name }));
+
   const goals = buildMapGoals({
     expenses: effectiveTree.expenses,
     milestones,
@@ -286,6 +407,14 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
       accountOptions={accountOptions}
+      accountRows={accountRows}
+      growthContext={growthContext}
+      categoryDefaultRates={categoryDefaultRates}
+      assetClassOptions={assetClassOptions}
+      portfolioAllocationsMap={portfolioAllocationsMap}
+      categoryDefaultSources={categoryDefaultSources}
+      businessOptions={businessOptions}
+      rothIraAccountOptions={rothIraAccountOptions}
       resolvedInflationRate={effectiveTree.planSettings.inflationRate}
       familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
         id: fmId,

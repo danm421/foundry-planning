@@ -303,7 +303,11 @@ function LinkedSourceBadge({ source }: { source: LinkedSource }) {
   );
 }
 
-function accountToInitial(a: AccountRow): AccountFormInitial {
+/** Exported for the Household Map's edit pencil, which opens this same dialog
+ *  from `accountRows` (`lib/accounts/load-account-rows.ts` builds the identical
+ *  merged row this page uses). Keep it the single hydration path — a second,
+ *  parallel adapter is how the two editors start disagreeing. */
+export function accountToInitial(a: AccountRow): AccountFormInitial {
   return {
     id: a.id,
     name: a.name,

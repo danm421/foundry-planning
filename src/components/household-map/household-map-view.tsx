@@ -6,10 +6,19 @@ import GoalsBoard from "./goals-board";
 import CashFlowBoard from "./cash-flow-board";
 import QuickEditDrawer, { type QuickEditTarget } from "./quick-edit-drawer";
 import AddAccountDialog from "@/components/add-account-dialog";
+import { accountToInitial } from "@/components/balance-sheet-view";
+import { useRouter } from "next/navigation";
+import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import {
+  buildBasePayload,
+  buildScenarioDesiredFields,
+  type AccountPatch,
+} from "@/lib/household-map/account-write";
 
 const BOARDS = [
   { key: "net-worth", label: "Net Worth" },
@@ -58,6 +67,73 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
 
   const milestones = approximateMilestones(people, goals);
+
+  const writer = useScenarioWriter(clientId);
+  const router = useRouter();
+  const withScenario = useScenarioPreservingHref();
+
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const editingRow = editingAccountId ? props.accountRows[editingAccountId] : null;
+
+  /**
+   * The pencil. Ordinary accounts open `AddAccountDialog` in place, hydrated by
+   * the same `accountToInitial` the balance sheet uses.
+   *
+   * Top-level business rows NAVIGATE to the balance sheet instead of opening
+   * `BusinessDialog` here (controller resolution R13). The plan called for the
+   * dialog, but its `allAccounts` / `allLiabilities` / `incomes` / `expenses`
+   * props are all optional, and the Map carries none of them — it has account
+   * rows but no liability rows and no flow rows. Mounting it anyway renders the
+   * Assets and Flows tabs EMPTY, which reads as "this business owns nothing"
+   * rather than "this editor wasn't given the data". A business's SUB-accounts
+   * (parentAccountId set) are ordinary accounts and take the normal dialog.
+   */
+  function handleEditAccount(accountId: string) {
+    const row = props.accountRows[accountId];
+    if (!row) return;
+    if (row.category === "business" && row.parentAccountId == null) {
+      router.push(withScenario(`/clients/${clientId}/details/net-worth`));
+      return;
+    }
+    setEditingAccountId(accountId);
+  }
+
+  /**
+   * Persist one inline account edit. Base mode sends only what changed;
+   * scenario mode sends the WHOLE row. That asymmetry is deliberate and
+   * load-bearing — `applyEntityEdit` replaces the change payload wholesale, so
+   * a narrow scenario write would delete every sibling override on the account.
+   * See `lib/household-map/account-write.ts`, which owns both payloads and the
+   * `growthRate: null` rule (R9) that keeps a value edit from zeroing the
+   * account's growth for the whole projection.
+   *
+   * `useScenarioWriter().submit` resolves to the raw `Response`, so `res.ok` is
+   * the native property — there is no bespoke result object to read.
+   */
+  async function handleSaveAccountField(
+    accountId: string,
+    patch: AccountPatch,
+  ): Promise<boolean> {
+    const row = props.accountRows[accountId];
+    // No hydrated row means nothing can build the scenario payload, and a
+    // narrow write would be exactly the clobber above. Refuse rather than
+    // guess.
+    if (!row) return false;
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: "account",
+        targetId: accountId,
+        desiredFields: buildScenarioDesiredFields(row, patch),
+      },
+      {
+        url: `/api/clients/${clientId}/accounts/${accountId}`,
+        method: "PUT",
+        body: buildBasePayload(patch),
+      },
+    );
+    return res.ok;
+  }
 
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
@@ -160,7 +236,14 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         </span>
       </div>
 
-      {board === "net-worth" && <NetWorthBoard {...props} onAddAccount={handleAddAccount} />}
+      {board === "net-worth" && (
+        <NetWorthBoard
+          {...props}
+          onAddAccount={handleAddAccount}
+          onSaveAccountField={handleSaveAccountField}
+          onEditAccount={handleEditAccount}
+        />
+      )}
       {board === "goals" && (
         <GoalsBoard {...props} onEditGoalExpense={handleEditGoalExpense} />
       )}
@@ -234,6 +317,39 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         open={addAccountOpen}
         onOpenChange={setAddAccountOpen}
       />
+
+      {/* Conditionally mounted so every open is a fresh session — the form
+          hydrates from `editing` on mount only. Prop names mirror the balance
+          sheet's own edit-mode call site (`editing`, not `initial`). */}
+      {editingRow && (
+        <AddAccountDialog
+          clientId={clientId}
+          editing={accountToInitial(editingRow)}
+          entities={props.entityOptions}
+          businesses={props.businessOptions}
+          rothIraAccounts={props.rothIraAccountOptions}
+          familyMembers={props.familyMemberOptions}
+          // `categoryDefaultRates` (rate strings, all ten categories) — NOT
+          // `growthContext.categoryDefaults`, which is a different shape
+          // ({portfolioName, blendedReturnPct}) for three categories only.
+          categoryDefaults={props.categoryDefaultRates}
+          modelPortfolios={props.growthContext.modelPortfolios}
+          fundPortfolios={props.growthContext.fundPortfolios}
+          assetClasses={props.assetClassOptions}
+          portfolioAllocationsMap={props.portfolioAllocationsMap}
+          categoryDefaultSources={props.categoryDefaultSources}
+          ownerNames={{
+            clientName: people.client.firstName,
+            spouseName: people.spouse?.firstName ?? null,
+          }}
+          clientFirstName={people.client.firstName}
+          spouseFirstName={people.spouse?.firstName}
+          milestones={milestones}
+          resolvedInflationRate={props.resolvedInflationRate}
+          open
+          onOpenChange={(o) => !o && setEditingAccountId(null)}
+        />
+      )}
     </div>
   );
 }

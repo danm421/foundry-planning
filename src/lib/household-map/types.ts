@@ -6,6 +6,10 @@ import type {
   IncomeView,
   SavingsRuleView,
 } from "@/lib/scenario/view-adapters";
+import type { AccountRow } from "@/components/balance-sheet-view";
+import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { AccountPatch } from "./account-write";
+import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
  *  bottom strip for anything not owned by the client or spouse. */
@@ -116,6 +120,69 @@ export interface HouseholdMapProps {
   accountOptions: AccountViewEngineFields[];
 
   /**
+   * The COMPLETE per-account row, keyed by id — engine fields merged with
+   * scenario-overlaid view-only metadata (`lib/accounts/load-account-rows.ts`).
+   *
+   * Distinct from `accountOptions`, which is `accountEngineToView` — a
+   * documented PARTIAL that drops `growthSource` / `modelPortfolioId`. Anything
+   * reading or writing growth must use THIS map, not that array.
+   *
+   * Load-bearing for three things: the rate shown on each card, the full field
+   * set a scenario write must carry (see `lib/household-map/account-write.ts`),
+   * and hydrating the real account dialog via `accountToInitial`.
+   *
+   * Liabilities are absent by construction. Life-insurance rows are present but
+   * out of scope — boards gate on `growthEditModeFor(category)`.
+   */
+  accountRows: Record<string, AccountRow>;
+
+  /** Model portfolios, fund portfolios, per-category defaults and the resolved
+   *  inflation rate — the labels the growth dropdown renders. Same shape
+   *  `loadImportGrowthContext` returns.
+   *
+   *  NAMING TRAP: `growthContext.categoryDefaults` is
+   *  `Record<string, {portfolioName, blendedReturnPct}>` — display labels. It is
+   *  NOT the `categoryDefaultRates` map (a `Record<string, string>` of raw
+   *  rates) that Task 7 adds. Different shape, different purpose, similar name. */
+  growthContext: GrowthContext;
+
+  /**
+   * Per-category default growth rate as a DECIMAL STRING, e.g.
+   * `categoryDefaultRates("retirement")` -> "0.062". Covers all ten account
+   * categories, and already collapses each category's configured source
+   * (inflation / model portfolio / flat custom) down to one effective rate —
+   * `lib/investments/category-default-rates.ts`, shared with the Net Worth page
+   * so the two cannot drift.
+   *
+   * NAMING TRAP: this is NOT `growthContext.categoryDefaults`. That one is
+   * `Record<string, {portfolioName, blendedReturnPct}>` — display labels for
+   * three categories only. Similar name, different shape, different coverage.
+   */
+  categoryDefaultRates: CategoryDefaultRateMap;
+
+  /** Remaining `AddAccountDialog` edit-mode context. Create mode only needed
+   *  `familyMemberOptions` + `entityOptions`; editing an EXISTING row needs the
+   *  growth dropdown's full vocabulary too, or a saved edit writes the form's
+   *  defaults over real values. */
+  // Shapes mirror what `net-worth-content.tsx` already builds for the same
+  // dialog: `geometricReturn` and `weight` are PARSED numbers, and the asset
+  // class carries its `slug`. The plan's snippet had all three as raw Drizzle
+  // strings without the slug, which `AddAccountDialog` rejects.
+  assetClassOptions: { id: string; name: string; slug: string | null; geometricReturn: number }[];
+  portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]>;
+  /** The portfolio NAME backing each category's default, for the dialog's
+   *  "Plan default" label. Derived from `growthContext.categoryDefaults`, which
+   *  is the right source for it — the dialog wants the name, not the rate. */
+  categoryDefaultSources: Record<
+    string,
+    { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }
+  >;
+  /** Top-level business accounts, offered as a parent when re-parenting. */
+  businessOptions: { id: string; name: string }[];
+  /** Roth IRA accounts, for the 529 Roth-rollover target picker. */
+  rothIraAccountOptions: { id: string; name: string }[];
+
+  /**
    * Ownership context for the Net Worth board's "+ Add" → `AddAccountDialog`.
    * NOT optional: with no `familyMembers` the form's `defaultOwners` is empty,
    * `OwnershipEditor` renders no owner rows, `canSave` still passes on the name
@@ -170,4 +237,11 @@ export interface BoardCallbacks {
   /** Net Worth board's per-column "+ Add" — opens AddAccountDialog in create
    *  mode. No owner/column preset: AddAccountDialog has no prop for one. */
   onAddAccount?: () => void;
+  /** Persist a narrow change to one account. The board reports WHAT changed;
+   *  `household-map-view` decides how it is written (base vs scenario payload —
+   *  see `lib/household-map/account-write.ts`). Resolves false on failure so the
+   *  editor can revert. */
+  onSaveAccountField?: (accountId: string, patch: AccountPatch) => Promise<boolean>;
+  /** The card's pencil was clicked — open the full account editor. */
+  onEditAccount?: (accountId: string) => void;
 }

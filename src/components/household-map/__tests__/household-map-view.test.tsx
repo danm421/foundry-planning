@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import HouseholdMapView from "../household-map-view";
+import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
 import type { ExpenseView, IncomeView, SavingsRuleView } from "@/lib/scenario/view-adapters";
@@ -177,6 +178,25 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     accountOptions: [],
+    // Required on `HouseholdMapProps` as of Task 5. This board does not read
+    // either one — they are here so the fixture typechecks against the shared
+    // props type, which is the point of having a shared props type.
+    accountRows: {},
+    growthContext: {
+      modelPortfolios: [],
+      fundPortfolios: [],
+      resolvedInflationRate: 0.025,
+      categoryDefaults: {},
+    },
+    // The real fallback map (all ten categories) rather than a hand-rolled
+    // literal — `CategoryDefaultRateMap` requires every key, and calling the
+    // shipped function keeps the fixture honest if those defaults ever move.
+    categoryDefaultRates: buildCategoryDefaultRates(undefined, [], 0),
+    assetClassOptions: [],
+    portfolioAllocationsMap: {},
+    categoryDefaultSources: {},
+    businessOptions: [],
+    rothIraAccountOptions: [],
     resolvedInflationRate: 0.03,
     // Ownership context for AddAccountDialog. Non-empty by default because an
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import NetWorthBoard from "../net-worth-board";
+import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+import type { AccountRow } from "@/components/balance-sheet-view";
 
 // `useScenarioPreservingHref` reads the URL's `?scenario=`. `vi.hoisted` so the
 // hoisted `vi.mock` factory can close over a value the tests mutate per case
@@ -66,11 +69,45 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     accountOptions: [],
+    accountRows: {},
+    // Controller resolution R3: Task 5 adds ONLY `accountRows` and
+    // `growthContext`. The plan's snippet also seeds `categoryDefaultRates: {}`
+    // here, but that prop is not declared on `HouseholdMapProps` until Task 7 —
+    // adding it now would be an excess property and would not compile.
+    growthContext: {
+      modelPortfolios: [],
+      fundPortfolios: [],
+      resolvedInflationRate: 0.025,
+      categoryDefaults: {},
+    },
+    // The real fallback map (all ten categories) rather than a hand-rolled
+    // literal — `CategoryDefaultRateMap` requires every key, and calling the
+    // shipped function keeps the fixture honest if those defaults ever move.
+    categoryDefaultRates: buildCategoryDefaultRates(undefined, [], 0),
+    assetClassOptions: [],
+    portfolioAllocationsMap: {},
+    categoryDefaultSources: {},
+    businessOptions: [],
+    rothIraAccountOptions: [],
     resolvedInflationRate: 0.03,
     familyMemberOptions: [],
     entityOptions: [],
     ...overrides,
   };
+}
+
+function accountRow(overrides: Partial<AccountRow> & { id: string }): AccountRow {
+  return {
+    name: "IRA",
+    category: "retirement",
+    subType: "traditional_ira",
+    owner: "client",
+    value: "400000",
+    basis: "0",
+    growthRate: "0.062",
+    growthSource: "default",
+    ...overrides,
+  } as AccountRow;
 }
 
 /** The subtotal line is `{label} · <b>{moneyLabel(subtotal)}</b>` — the bold
@@ -308,5 +345,274 @@ describe("NetWorthBoard", () => {
 
     expect(screen.queryByTestId("tray")).not.toBeInTheDocument();
     expect(screen.queryByText(/Held by trusts/)).not.toBeInTheDocument();
+  });
+});
+
+describe("growth rate display", () => {
+  it("shows the resolved rate on an in-scope account card", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+      />,
+    );
+    expect(screen.getByText("6.20%")).toBeInTheDocument();
+  });
+
+  it("shows no rate for a liability card", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+      />,
+    );
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
+
+  it("shows no rate for a life-insurance policy — policies are out of scope", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "acct-li",
+              column: "client",
+              name: "Whole Life",
+              kind: "account",
+              category: "insurance",
+            }),
+          ],
+          accountRows: { "acct-li": accountRow({ id: "acct-li", category: "life_insurance" }) },
+        })}
+      />,
+    );
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
+
+  it("shows the rate on a tray card too", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "acct-tray",
+              column: "tray",
+              name: "Trust Brokerage",
+              kind: "account",
+              trayOwnerLabel: "Smith Family Trust",
+            }),
+          ],
+          accountRows: { "acct-tray": accountRow({ id: "acct-tray", growthRate: "0.048" }) },
+        })}
+      />,
+    );
+    expect(screen.getByText("4.80%")).toBeInTheDocument();
+  });
+});
+
+describe("inline value editing", () => {
+  it("saves a typed value through onSaveAccountField", async () => {
+    const onSaveAccountField = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={onSaveAccountField}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Edit amount for IRA/ }));
+    await user.clear(screen.getByRole("textbox"));
+    await user.type(screen.getByRole("textbox"), "500000{Enter}");
+
+    expect(onSaveAccountField).toHaveBeenCalledWith("acct-1", { value: "500000" });
+  });
+
+  it("renders a plain value when canEdit is false", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: false,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for IRA/ })).not.toBeInTheDocument();
+  });
+
+  it("renders a plain value when no save handler is wired", () => {
+    // A board rendered without a writer must not offer an editable-looking
+    // field that silently discards the edit.
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for IRA/ })).not.toBeInTheDocument();
+  });
+
+  it("offers no editor on a liability card — liabilities have no hydrated row", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for Mortgage/ })).not.toBeInTheDocument();
+  });
+
+  // Every Net Worth card is wrapped in a `<Link>`. `stopPropagation` alone
+  // stops React handlers but NOT the browser's default action, so without a
+  // `preventDefault` the first click on the amount navigates to the Net Worth
+  // page instead of opening the editor. `fireEvent` returns false exactly when
+  // the event was canceled, which is what makes this assertion falsifiable.
+  it("does not let the click navigate the card's enclosing link", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: /Edit amount for IRA/ });
+    expect(trigger.closest("a")).not.toBeNull();
+    expect(fireEvent.click(trigger)).toBe(false);
+  });
+});
+
+describe("edit pencil", () => {
+  it("calls onEditAccount when the pencil is clicked", async () => {
+    const onEditAccount = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={onEditAccount}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Edit IRA/ }));
+    expect(onEditAccount).toHaveBeenCalledWith("acct-1");
+  });
+
+  it("renders no pencil for a liability", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit Mortgage/ })).not.toBeInTheDocument();
+  });
+
+  it("no longer wraps an editable account card in a navigating link", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /IRA/ })).not.toBeInTheDocument();
+  });
+
+  // The plan said to drop the <Link> from every card. Liabilities and
+  // synthesized policy rows get no pencil (they have no hydrated row), so doing
+  // that would leave them completely inert — no editor AND no navigation. They
+  // keep the link.
+  it("KEEPS the link on cards that get no pencil", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Mortgage/ })).toHaveAttribute(
+      "href",
+      "/clients/client-1/details/net-worth",
+    );
+  });
+
+  it("keeps the link on an account card when the board cannot edit", () => {
+    // No pencil to fall back on, so navigation has to survive.
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: false,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /IRA/ })).toBeInTheDocument();
   });
 });
