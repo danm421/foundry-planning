@@ -59,7 +59,13 @@ export function linkedSourceMapFrom(rows: AccountMetaRow[]): Map<string, LinkedS
 export interface BuildAccountRowsArgs {
   /** `effectiveTree.accounts` — scenario applied, growthRate already resolved. */
   accounts: readonly EngineAccountLike[];
-  /** `effectiveTree.familyMembers`, for 529 beneficiary display names. */
+  /** `effectiveTree.familyMembers` — serves BOTH owner-key resolution
+   *  (client/spouse) and the 529 beneficiary display name. Pre-extraction the
+   *  beneficiary lookup read a separate, base-scoped `familyMembers` query
+   *  instead; consolidating both onto this single scenario-effective list is
+   *  deliberate (the page is scenario-effective throughout), and means a
+   *  scenario that renames or adds a 529 beneficiary now shows the
+   *  scenario-effective name, not the base one. */
   familyMembers: readonly { id: string; role: string; firstName: string; lastName?: string | null }[];
   accountMetaById: ReadonlyMap<string, AccountMeta>;
   linkedSourceById: ReadonlyMap<string, LinkedSource>;
