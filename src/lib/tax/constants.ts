@@ -46,6 +46,25 @@ export const ROUNDING_STEPS: Record<string, number> = {
 
   // SS wage base: $300 per SSA formula
   ssWageBase: 300,
+
+  // Threshold/credit phase-out ranges: $1,000 steps
+  "rothPhaseout.startMfj": 1000,
+  "rothPhaseout.endMfj": 1000,
+  "rothPhaseout.startSingle": 1000,
+  "rothPhaseout.endSingle": 1000,
+  "iraDeduct.coveredStartMfj": 1000,
+  "iraDeduct.coveredEndMfj": 1000,
+  "iraDeduct.coveredStartSingle": 1000,
+  "iraDeduct.coveredEndSingle": 1000,
+  "iraDeduct.spousalStartMfj": 1000,
+  "iraDeduct.spousalEndMfj": 1000,
+  "studentLoan.startMfj": 1000,
+  "studentLoan.endMfj": 1000,
+  "studentLoan.startSingle": 1000,
+  "studentLoan.endSingle": 1000,
+  "ctc.perChild": 100,
+  "ctc.refundableMax": 100,
+  // studentLoan.maxDeduction and ctc.odcPerDependent are NOT indexed.
 };
 
 // Floor a number to the nearest step (e.g., floorToStep(8278.78, 500) = 8000).
@@ -64,6 +83,38 @@ export const STATUTORY_FIXED = {
   addlMedicareThresholdMfj: 250000,
   addlMedicareThresholdSingle: 200000,
   addlMedicareThresholdMfs: 125000,
+
+  // IRC 24(b) — unindexed since TCJA. Reduction is $50 per $1,000 OR FRACTION.
+  ctcPhaseoutThresholdMfj: 400000,
+  ctcPhaseoutThresholdOther: 200000,
+  ctcReductionPerStep: 50,
+  ctcReductionStep: 1000,
+
+  // IRC 25A(i)/(b) — unindexed since 2009.
+  aotcMaxPerStudent: 2500,
+  aotcFullCreditExpenses: 2000,   // 100% of the first $2,000
+  aotcPartialCreditExpenses: 2000, // 25% of the next $2,000
+  aotcPartialRate: 0.25,
+  aotcPhaseoutStartMfj: 160000,
+  aotcPhaseoutEndMfj: 180000,
+  aotcPhaseoutStartOther: 80000,
+  aotcPhaseoutEndOther: 90000,
+  aotcRefundableRate: 0.4,
+  aotcRefundableCap: 1000,
+  aotcMaxYearsPerStudent: 4,
+
+  // IRC 408A(c)(3)(B) / 219(g)(3)(B) — MFS range, never indexed.
+  mfsPhaseoutStart: 0,
+  mfsPhaseoutEnd: 10000,
+
+  // IRC 25B — per-person contribution considered.
+  saversMaxContributionPerPerson: 2000,
+  /** SECURE 2.0 §103 replaces the credit with the Saver's Match after 2026. */
+  saversCreditLastYear: 2026,
+
+  // IRC 24(d) — ACTC earned-income formula.
+  actcEarnedIncomeFloor: 2500,
+  actcEarnedIncomeRate: 0.15,
 } as const;
 
 // AMT exemption phase-out rate.
