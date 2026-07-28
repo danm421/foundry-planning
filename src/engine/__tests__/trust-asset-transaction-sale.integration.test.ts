@@ -254,13 +254,22 @@ describe("Trust-owned business sale", () => {
 
     const year2030 = runProjection(data).find((y) => y.year === 2030)!;
 
-    // The trust's own 1041 pass is handed the loss...
-    expect(year2030.trustTaxByEntity?.get("slat-3")?.recognizedCapGains ?? 0)
-      .toBeLessThan(0);
-    // ...so the household must not keep it as well.
+    // The household must not keep the trust's loss.
     expect(
       year2030.taxDetail!.capitalGains,
       "the trust's $4M loss stayed on the household 1040",
     ).toBeCloseTo(0, 6);
+
+    // C2: the loss is routed to the 1041 pass, which clamps it at zero rather
+    // than booking a NEGATIVE tax. Before the clamp this trust reported
+    // total: −$200,000 — a figure that is published to tax-detail-flow-table
+    // and entity-cashflow. Asserting the trust's tax total (not just
+    // recognizedCapGains) is what this test was missing when the bug shipped.
+    const trustTax = year2030.trustTaxByEntity?.get("slat-3");
+    expect(trustTax).toBeDefined();
+    expect(trustTax!.recognizedCapGains).toBe(0);
+    expect(trustTax!.federalCapGainsTax).toBe(0);
+    expect(trustTax!.stateTax).toBeGreaterThanOrEqual(0);
+    expect(trustTax!.total).toBeGreaterThanOrEqual(0);
   });
 });

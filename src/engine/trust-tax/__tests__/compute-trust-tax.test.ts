@@ -115,6 +115,44 @@ describe("computeTrustTax", () => {
     expect(r.total).toBe(0);
   });
 
+  /**
+   * C2. Task 6 un-floored `asset-transactions.ts` `capitalGain`, and Task 9
+   * made the household take-back symmetric, so `assetTransactionGains` can now
+   * carry a NEGATIVE gain into the 1041 pass. Unguarded, that refunded the
+   * trust's ordinary bracket usage at cap-gains rates (uncapped), drove
+   * `stateTax` negative, and could take `total` below zero — a published
+   * figure (tax-detail-flow-table, entity-cashflow). §1211(b) applies to
+   * trusts and allows at most $3,000; clamping at zero restores exactly the
+   * pre-branch behaviour (`item.capitalGain` used to be floored at source).
+   */
+  it("clamps a negative recognizedCapGains at zero rather than refunding tax", () => {
+    const common = {
+      entityId: "t1",
+      retainedOrdinary: 100_000,
+      retainedDividends: 0,
+      trustIncomeBrackets: trustIncome2026,
+      trustCapGainsBrackets: trustCapGains2026,
+      niitRate: 0.038,
+      niitThreshold: 16_250,
+      flatStateRate: 0.05,
+    };
+    const withLoss = computeTrustTax({ ...common, recognizedCapGains: -50_000 });
+    const withZero = computeTrustTax({ ...common, recognizedCapGains: 0 });
+
+    expect(withLoss.recognizedCapGains).toBe(0);
+    // Every component, not just the total — a mutant can conserve the total
+    // while re-partitioning it across the four legs.
+    expect(withLoss.federalOrdinaryTax).toBeCloseTo(withZero.federalOrdinaryTax, 6);
+    expect(withLoss.federalCapGainsTax).toBe(0);
+    expect(withLoss.niit).toBeCloseTo(withZero.niit, 6);
+    expect(withLoss.stateTax).toBeCloseTo(withZero.stateTax, 6);
+    expect(withLoss.total).toBeCloseTo(withZero.total, 6);
+    // Non-vacuous: the floored figures are all genuinely non-zero.
+    expect(withZero.federalOrdinaryTax).toBeGreaterThan(0);
+    expect(withZero.niit).toBeGreaterThan(0);
+    expect(withZero.stateTax).toBeCloseTo(5_000, 6);
+  });
+
   it("sums all four tax components into total", () => {
     const r = computeTrustTax({
       entityId: "t1",
