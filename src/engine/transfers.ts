@@ -3,6 +3,19 @@ import { classifyTransferTax } from "./tax-classification";
 import { controllingFamilyMember } from "./ownership";
 
 // ============================================================================
+// Basis Clamping
+// ============================================================================
+
+/** Basis credited to a transfer's TARGET account. Clamped to the dollars
+ *  actually moved: an underwater source produces basisReturn > actualAmount
+ *  (a $10k draw can consume $20k of basis), and crediting the raw figure would
+ *  manufacture phantom basis on the target and a fake loss on its next sale.
+ *  The SOURCE still sheds the full basisReturn — only the credit is clamped. */
+export function creditTransferBasis(basisReturn: number, actualAmount: number): number {
+  return Math.max(0, Math.min(basisReturn, actualAmount));
+}
+
+// ============================================================================
 // Public Types
 // ============================================================================
 
@@ -126,8 +139,9 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
       const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
       basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
-      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + taxResult.basisReturn;
-      basisMoved = taxResult.basisReturn;
+      const basisCredited = creditTransferBasis(taxResult.basisReturn, actualAmount);
+      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + basisCredited;
+      basisMoved = basisCredited;
       if (freshBasisMap) {
         const consumed = Math.min(sourceFresh, actualAmount);
         freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);
