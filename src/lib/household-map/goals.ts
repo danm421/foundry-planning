@@ -152,6 +152,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
   // set it. `spouseEnd` is undefined for a single client.
   const spouseEnd = m.spouseEnd ?? -Infinity;
   const spouseOutlives = spouseEnd > m.clientEnd;
+  const planEndAge = spouseOutlives ? client.spouseLifeExpectancy : client.lifeExpectancy;
   goals.push({
     id: "milestone:plan_end",
     year: spouseOutlives ? spouseEnd : m.clientEnd,
@@ -160,7 +161,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
     title: spouseOutlives
       ? `${client.spouseFirstName}'s life expectancy`
       : `${client.firstName}'s life expectancy`,
-    detail: `age ${spouseOutlives ? client.spouseLifeExpectancy : client.lifeExpectancy}`,
+    detail: planEndAge != null ? `age ${planEndAge}` : null,
     expenseId: null,
     forFamilyMemberName: null,
   });

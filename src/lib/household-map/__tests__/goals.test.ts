@@ -144,4 +144,14 @@ describe("buildMapGoals", () => {
     expect(byId.get("expense:b")).toBe("purchase");
     expect(byId.get("expense:c")).toBe("household");
   });
+
+  it("omits the age from plan-end detail when the outliving spouse's life expectancy is unknown", () => {
+    const goals = buildMapGoals({
+      ...base,
+      milestones: { ...milestones, clientEnd: 2058, spouseEnd: 2066 },
+      client: { ...base.client, spouseLifeExpectancy: null },
+    });
+    const planEnd = goals.find((g) => g.id === "milestone:plan_end");
+    expect(planEnd?.detail).toBe(null);
+  });
 });
