@@ -45,8 +45,21 @@ describe("categoryDefaultRates", () => {
   });
 
   it("returns the hardcoded fallback map when the plan has no settings row", () => {
-    const rates = categoryDefaultRates(undefined, portfolios, 0.025);
-    expect(rates.taxable).toBe("0.07");
-    expect(Object.keys(rates)).toHaveLength(10);
+    // Verbatim from the pre-extraction ternary's settings-falsy branch
+    // (net-worth-content.tsx at base dd88d58bf) — checked against that
+    // source, not against category-default-rates.ts's own constant, so a
+    // transcription error in the constant can't confirm itself here.
+    expect(categoryDefaultRates(undefined, portfolios, 0.025)).toEqual({
+      taxable: "0.07",
+      cash: "0.02",
+      retirement: "0.07",
+      education_savings: "0.07",
+      annuity: "0.04",
+      real_estate: "0.04",
+      business: "0.05",
+      stock_options: "0.07",
+      life_insurance: "0.03",
+      notes_receivable: "0",
+    });
   });
 });
