@@ -215,6 +215,24 @@ describe("rothIraAllowedContribution", () => {
     // MFS range is 0-10000; magi 5000 is the midpoint -> half of 7000 = 3500.
     expect(rothIraAllowedContribution(5000, 7000, 2026, params, "married_separate")).toBe(3500);
   });
+
+  it("caps the $200 floor at the age-based limit when that limit is itself under $200", () => {
+    // Same 100-short-of-end position as the earlier floor test, but with an
+    // ageBasedLimit of only $100 (a real state under IRC 408A(c)(2): a same-year
+    // traditional-IRA contribution can shrink the Roth room below $200).
+    // Un-capped floor math would raise this to $200 -- an excess contribution.
+    // reduced = 100 * (100/10000) = 1 -> ceil to $10 = 10 -> floored to 200 ->
+    // capped at the $100 ceiling.
+    expect(rothIraAllowedContribution(251900, 100, 2026, params, "married_joint")).toBe(100);
+  });
+
+  it("phases out using the single MAGI range, not the MFJ range", () => {
+    // Single range is 153000-168000 (width 15000); magi 160500 is the
+    // midpoint -> half of 7000 = 3500. A transposed MFJ/single ternary would
+    // read 160500 against the MFJ range (242000-252000) and return the full
+    // $7000 instead.
+    expect(rothIraAllowedContribution(160500, 7000, 2026, params, "single")).toBe(3500);
+  });
 });
 
 describe("traditionalIraDeductibleAmount", () => {
@@ -270,6 +288,32 @@ describe("traditionalIraDeductibleAmount", () => {
     // through the covered-MFS range (0-10000) and phases it to 3500 at magi 5000.
     expect(traditionalIraDeductibleAmount(5000, 7000, false, true, 2026, params, "married_separate")).toBe(3500);
   });
+
+  it("gives a not-covered single filer the full contribution — no spouse exists to be covered", () => {
+    // rangeFor("iraDeductSpousal", ...) would also return NA for "single",
+    // but for the unrelated reason that the item is MFJ-only, not because
+    // it's unseeded. This must be decided on filing status, not inferred
+    // from that NA -- pinned here so a later change can't silently start
+    // reading a seeded spousal range for a filer who has no spouse.
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, false, true, 2026, params, "single")).toBe(7000);
+  });
+
+  it("caps the $200 floor at the contribution when that contribution is itself under $200", () => {
+    // Same 100-short-of-end covered-MFJ position as the earlier floor test,
+    // but with a $100 contribution. Un-capped floor math would raise this to
+    // $200 -- more than was ever contributed.
+    // reduced = 100 * (100/20000) = 0.5 -> ceil to $10 = 10 -> floored to 200
+    // -> capped at the $100 ceiling.
+    expect(traditionalIraDeductibleAmount(148900, 100, true, false, 2026, params, "married_joint")).toBe(100);
+  });
+
+  it("phases out using the covered-single MAGI range, not the covered-MFJ range", () => {
+    // Covered-single range is 81000-91000 (width 10000); magi 86000 is the
+    // midpoint -> half of 7000 = 3500. A transposed MFJ/single ternary would
+    // read 86000 against the MFJ range (129000-149000) and return the full
+    // $7000 instead.
+    expect(traditionalIraDeductibleAmount(86000, 7000, true, false, 2026, params, "single")).toBe(3500);
+  });
 });
 
 describe("studentLoanInterestDeduction", () => {
@@ -314,5 +358,13 @@ describe("studentLoanInterestDeduction", () => {
     // If the cap were applied after (or not at all), this would be 2666.6667.
     expect(studentLoanInterestDeduction(4000, 185000, 2026, params, "married_joint"))
       .toBeCloseTo(1666.6667, 4);
+  });
+
+  it("phases out using the single MAGI range, not the MFJ range", () => {
+    // Single range is 85000-100000 (width 15000); magi 92500 is the midpoint
+    // -> half of the $2500 cap = 1250. A transposed MFJ/single ternary would
+    // read 92500 against the MFJ range (175000-205000) and return the full
+    // $2500 instead.
+    expect(studentLoanInterestDeduction(2500, 92500, 2026, params, "single")).toBe(1250);
   });
 });

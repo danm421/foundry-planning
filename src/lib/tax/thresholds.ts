@@ -286,14 +286,31 @@ export function rothIraAllowedContribution(
  * `rangeFor("iraDeductSpousal", …)` returns NA_RANGE for every non-MFJ filing
  * status (IRC 219(g)(7)'s spousal exception applies only to a joint return —
  * the paragraph says so explicitly). That NA means "genuinely inapplicable
- * here," never "unseeded" — so it must NOT be read as "don't gate." Per Pub
- * 590-A, a non-covered MFS filer whose spouse IS covered isn't exempt from
- * the phase-out: IRC 219(g)(1) triggers on either spouse being covered, and
- * 219(g)(3)(B)(iii) then fixes the MFS range at the same narrow $0-$10,000
- * band as a covered MFS filer, regardless of which spouse is the one covered.
- * `rangeFor("iraDeductCovered", …)` already returns that narrow band for MFS
- * unconditionally (see its own isMfs short-circuit), so MFS is routed there
- * — decided on filing status alone, never inferred from the sentinel.
+ * here," never "unseeded" — so it must NOT be inferred from the sentinel.
+ * Two non-MFJ cases can reach this function with `coveredSpouse` true, and
+ * each is decided explicitly on filing status, before `rangeFor` is called:
+ *
+ *  - MFS: per Pub 590-A, a non-covered MFS filer whose spouse IS covered
+ *    isn't exempt from the phase-out — IRC 219(g)(1) triggers on either
+ *    spouse being covered, and 219(g)(3)(B)(iii) then fixes the MFS range at
+ *    the same narrow $0-$10,000 band as a covered MFS filer, regardless of
+ *    which spouse is the one covered. `rangeFor("iraDeductCovered", …)`
+ *    already returns that narrow band for MFS unconditionally (its own
+ *    isMfs short-circuit), so MFS is routed there.
+ *  - Single/HOH: no spouse exists to be a covered participant, so IRC
+ *    219(g)(1) is never triggered by one — full deduction, no gating, and no
+ *    call into `rangeFor("iraDeductSpousal", …)` at all.
+ *    NOT modeled: a MARRIED taxpayer filing HOH via the "considered
+ *    unmarried" six-month-apart test, whose spouse IS covered. IRC
+ *    219(g)(4)'s living-apart relief requires the ENTIRE year, which the
+ *    six-month HOH test doesn't guarantee, so such a filer arguably should
+ *    still phase out. Unresolvable here — it depends on how a later task
+ *    derives `coveredSpouse` for an HOH household — so it's flagged, not
+ *    implemented.
+ *
+ * Once both are routed away, every remaining path (covered-MFJ/single/HOH,
+ * spousal-MFJ) reads a nullable params column, so an NA reaching the check
+ * below always means "not seeded yet."
  */
 export function traditionalIraDeductibleAmount(
   magi: number, contribution: number, coveredSelf: boolean, coveredSpouse: boolean,
@@ -301,13 +318,15 @@ export function traditionalIraDeductibleAmount(
 ): number {
   if (!coveredSelf && !coveredSpouse) return contribution;
 
+  // No spouse exists to be a covered participant, so IRC 219(g)(1) is not
+  // triggered by one. Decided here, on filing status alone — not inferred
+  // from rangeFor("iraDeductSpousal", ...)'s NA, which fires for this same
+  // case but for the unrelated reason that it's an MFJ-only item.
+  if (!coveredSelf && !isMfj(filingStatus) && !isMfs(filingStatus)) return contribution;
+
   const item: ThresholdItemId =
     coveredSelf || isMfs(filingStatus) ? "iraDeductCovered" : "iraDeductSpousal";
   const range = rangeFor(item, year, params, filingStatus);
-  // Every remaining path here (covered-MFJ/single/HOH, spousal-MFJ) reads a
-  // nullable params column — an NA reaching this point always means "not
-  // seeded yet," since the genuinely-inapplicable non-MFJ spousal case was
-  // already routed away above.
   if (isNaRange(range) || range.end == null) return contribution;
   if (magi <= range.start) return contribution;
   if (magi >= range.end) return 0;
