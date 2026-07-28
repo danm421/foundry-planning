@@ -1,8 +1,18 @@
 import type { ReactNode } from "react";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { planSettings } from "@/db/schema";
 import { requireClientAccess } from "@/lib/clients/authz";
 import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
 import { band, type BindingConstraint } from "@/lib/risk/scoring";
+import { resolveScenarioId } from "@/lib/compute-cache/resolve-scenario-id";
+import { resolveRiskPortfolioId } from "@/lib/cma/resolve-risk-portfolio";
+import {
+  describeMismatch,
+  effectiveScenarioPortfolioId,
+  type MismatchState,
+} from "@/lib/risk/portfolio-mismatch";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
 import { CHIP_NEUTRAL } from "@/components/risk/risk-status-chips";
 import { ComponentCard } from "@/components/risk/component-card";
@@ -11,6 +21,7 @@ import { RiskHistoryTable } from "@/components/risk/risk-history-table";
 import { ManualToleranceDialog } from "@/components/risk/manual-tolerance-dialog";
 import { EnvironmentEditor } from "@/components/risk/environment-editor";
 import { RtqDialog } from "@/components/risk/rtq-dialog";
+import { PortfolioMismatch } from "@/components/risk/portfolio-mismatch";
 
 const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
   rtq_client: "Client RTQ",
@@ -61,6 +72,34 @@ export async function RiskDetailContent({
   // Read AFTER getOrComputeCapacity so the row reflects whatever that call
   // just recomputed and wrote.
   const { row, flags, events, unreviewedNotes } = await getRiskProfileDetail(clientId);
+
+  // A household with no base scenario / plan settings throws inside
+  // resolveScenarioId -- same "not an error page" treatment as the capacity
+  // guard above. Falling back to `no_profile` renders nothing rather than
+  // crashing a page that works fine for a planless household today.
+  let mismatch: MismatchState = { kind: "no_profile" };
+  if (row.compositeLevel) {
+    try {
+      const baseScenarioId = await resolveScenarioId(clientId, "base");
+      const [settings] = await db
+        .select({
+          growthSourceTaxable: planSettings.growthSourceTaxable,
+          growthSourceRetirement: planSettings.growthSourceRetirement,
+          modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
+          modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
+        })
+        .from(planSettings)
+        .where(eq(planSettings.scenarioId, baseScenarioId));
+      const profilePortfolioId = await resolveRiskPortfolioId(firmId, row.compositeLevel);
+      mismatch = describeMismatch({
+        compositeLevel: row.compositeLevel,
+        profilePortfolioId,
+        scenarioPortfolioId: effectiveScenarioPortfolioId(settings ?? null),
+      });
+    } catch {
+      mismatch = { kind: "no_profile" };
+    }
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -147,6 +186,8 @@ export async function RiskDetailContent({
           </div>
         </ComponentCard>
       </div>
+
+      <PortfolioMismatch clientId={clientId} state={mismatch} />
 
       {unreviewedNotes.length > 0 && (
         <div className="rounded-lg border border-warn/40 bg-warn/10 p-4">
