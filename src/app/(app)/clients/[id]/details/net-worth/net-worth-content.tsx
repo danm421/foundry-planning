@@ -25,6 +25,7 @@ import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
 import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
+import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
 
 interface NetWorthContentProps {
   clientId: string;
@@ -275,47 +276,11 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     }
   }
 
-  const flatRate = (rawRate: string, source: string | undefined): string =>
-    source === "inflation" ? String(resolvedInflationRate) : String(rawRate);
-
-  const investableEffectiveRate = (
-    source: string | undefined,
-    portfolioId: string | null | undefined,
-    customRate: string,
-  ): string => {
-    if (source === "inflation") return String(resolvedInflationRate);
-    if (source === "model_portfolio" && portfolioId) {
-      const mp = modelPortfolioOptions.find((p) => p.id === portfolioId);
-      if (mp) return String(mp.blendedReturn);
-    }
-    return String(customRate);
-  };
-
-  const categoryDefaults = settings
-    ? {
-        taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
-        cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
-        retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-        education_savings: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-        annuity: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
-        real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
-        business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
-        stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),
-        life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
-        notes_receivable: "0",
-      }
-    : {
-        taxable: "0.07",
-        cash: "0.02",
-        retirement: "0.07",
-        education_savings: "0.07",
-        annuity: "0.04",
-        real_estate: "0.04",
-        business: "0.05",
-        stock_options: "0.07",
-        life_insurance: "0.03",
-        notes_receivable: "0",
-      };
+  const categoryDefaults = categoryDefaultRates(
+    settings,
+    modelPortfolioOptions,
+    resolvedInflationRate,
+  );
 
   return (
     <BalanceSheetView

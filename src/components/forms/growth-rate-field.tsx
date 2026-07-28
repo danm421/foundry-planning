@@ -6,7 +6,7 @@ import type { GrowthSource } from "@/lib/investments/allocation";
 
 /** Categories whose growth can be driven by a custom asset mix (and that show the asset-mix tab). */
 export const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
-const INFLATION_CATEGORIES = ["cash", "taxable", "retirement"];
+export const INFLATION_CATEGORIES = ["cash", "taxable", "retirement"];
 
 export interface GrowthRateModelPortfolio {
   id: string;
