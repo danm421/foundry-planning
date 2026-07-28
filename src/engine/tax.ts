@@ -23,6 +23,9 @@ export interface FlatCalcInput {
    *  the tax-detail UI columns reflect the client's actual non-taxable flows
    *  rather than reading as stub zeros. */
   nonTaxableIncome?: number;
+  /** Passed through untouched. Flat mode has no capital-gain detail, so the
+   *  carryforward must survive rather than silently reset to zero. */
+  capitalLossCarryforwardIn?: import("../lib/tax/capital-loss").CapitalLossCarryforward;
 }
 
 /**
@@ -78,6 +81,14 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       effectiveFederalRate: input.flatFederalRate,
       bracketsUsed: input.taxParams,
       inflationFactor: 1.0,
+    },
+    capitalLoss: {
+      deduction: 0,
+      carryforwardConsumed: 0,
+      carryforwardOut:
+        input.capitalLossCarryforwardIn ?? { shortTerm: 0, longTerm: 0 },
+      shortTermLoss: 0,
+      longTermLoss: 0,
     },
   };
 }

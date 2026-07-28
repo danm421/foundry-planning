@@ -9,28 +9,48 @@ import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
 import { computeStateIncomeTax } from "./state-income";
 import { getAdditionalStdDeduction, getObbbaSeniorBonus } from "./senior-deductions";
+import {
+  netCapitalGainsAndLosses,
+  computeCarryforwardOut,
+  emptyCapitalLossCarryforward,
+} from "./capital-loss";
 
 export function calculateTaxYear(input: CalcInput): TaxResult {
   const p = input.taxParams;
   const fs = input.filingStatus;
 
-  // 1. Categorize income
+  // 1. Categorize income.
+  //
+  // §1222 netting runs FIRST, before totalIncome/AGI. A net capital loss
+  // reduces AGI, and AGI drives §86 SS taxability, NIIT, IRMAA MAGI, QBI
+  // thresholds and state GTI — so netting here means none of those call sites
+  // need to know losses exist.
+  const netting = netCapitalGainsAndLosses({
+    longTermGain: input.longTermCapitalGains,
+    shortTermGain: input.shortTermCapitalGains,
+    carryforwardIn: input.capitalLossCarryforwardIn ?? emptyCapitalLossCarryforward(),
+    filingStatus: fs,
+  });
+  const capitalLossDeduction = netting.capitalLossDeduction;
+
   const earnedIncome = input.earnedIncome;
   const interestIncome = input.interestIncome ?? 0;
   // Ordinary bucket for bracket tax = non-qual div + RMDs/IRA dists + interest
-  // + STCG (ST gains taxed as ordinary). Interest is tracked separately only
-  // so NIIT can pick it up.
-  const ordinaryIncome = input.ordinaryIncome + interestIncome + input.shortTermCapitalGains;
+  // + net STCG (ST gains taxed as ordinary). Interest is tracked separately
+  // only so NIIT can pick it up.
+  const ordinaryIncome =
+    input.ordinaryIncome + interestIncome + netting.netShortTermGain;
   const dividends = input.qualifiedDividends;
-  const capitalGains = input.longTermCapitalGains;
-  const shortCapitalGains = input.shortTermCapitalGains;
+  const capitalGains = netting.netLongTermGain;
+  const shortCapitalGains = netting.netShortTermGain;
 
   // 2. SS taxability. Per IRS Pub 915 the "combined income" test uses AGI —
   // i.e. gross taxable income minus above-the-line adjustments — not raw
   // gross. Using gross over-taxes SS for clients making traditional 401(k) /
   // HSA contributions, because those dollars would have come out before AGI.
   const grossOther =
-    earnedIncome + ordinaryIncome + dividends + capitalGains + input.qbiIncome;
+    earnedIncome + ordinaryIncome + dividends + capitalGains + input.qbiIncome
+    - capitalLossDeduction;
   const otherIncomeForSs = Math.max(0, grossOther - input.aboveLineDeductions);
   const taxableSocialSecurity = calcTaxableSocialSecurity({
     ssGross: input.socialSecurityGross,
@@ -45,13 +65,16 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const nonTaxableIncome =
     input.taxExemptIncome + (input.taxFreeRetirementIncome ?? 0) + nonTaxableSs;
 
+  // The §1211(b) deduction is a negative line inside total income (Form 1040
+  // line 7 goes negative), NOT a below-line deduction.
   const totalIncome =
     earnedIncome +
     taxableSocialSecurity +
     ordinaryIncome +
     dividends +
     capitalGains +
-    input.qbiIncome;
+    input.qbiIncome -
+    capitalLossDeduction;
   const grossTotalIncome = totalIncome + nonTaxableIncome;
 
   // 3. AGI
@@ -94,6 +117,16 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
 
   // 6. Final taxable income
   const taxableIncome = Math.max(0, taxableIncomeBeforeQbi - qbiDeduction);
+
+  // §1212(b)(2): the carryover is computed as though only the usable slice of
+  // the deduction was consumed. Must be UNFLOORED — clamping to zero here
+  // would burn carryforward a zero-income year never actually used.
+  const taxableIncomeUnfloored =
+    adjustedGrossIncome - belowLineDeductions - seniorBonus - qbiDeduction;
+  const { carryforwardOut, carryforwardConsumed } = computeCarryforwardOut(
+    netting,
+    taxableIncomeUnfloored + capitalLossDeduction,
+  );
 
   // 7. Income tax base = taxable income minus LTCG and qual div (taxed separately)
   const incomeTaxBase = Math.max(0, taxableIncome - capitalGains - dividends);
@@ -151,11 +184,14 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // (iii), interest and net gains from dispositions of property are both
   // part of net investment income. IRA distributions, RMDs, and SE earnings
   // stay excluded (they're separately excluded by §1411(c)(5)&(6)).
-  const niitInvestmentClean =
-    input.qualifiedDividends +
-    input.longTermCapitalGains +
-    input.shortTermCapitalGains +
-    interestIncome;
+  // Netted figures, not the raw inputs — NIIT must not be charged on gains a
+  // loss already erased. Per Reg. §1.1411-4(d) the §1211(b) deduction also
+  // reduces net investment income.
+  const niitInvestmentClean = Math.max(
+    0,
+    dividends + capitalGains + shortCapitalGains + interestIncome
+      - capitalLossDeduction,
+  );
   const niitThreshold = fs === "married_joint" ? p.niitThreshold.mfj
                        : fs === "married_separate" ? p.niitThreshold.mfs
                        : p.niitThreshold.single;
@@ -268,6 +304,13 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       inflationFactor: input.inflationFactor,
     },
     state: stateResult,
+    capitalLoss: {
+      deduction: capitalLossDeduction,
+      carryforwardConsumed,
+      carryforwardOut,
+      shortTermLoss: netting.shortTermLoss,
+      longTermLoss: netting.longTermLoss,
+    },
   };
 }
 
