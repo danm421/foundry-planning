@@ -55,6 +55,20 @@ describe("capital losses inside calculateTaxYear", () => {
     expect(r.flow.niit).toBe(0);
   });
 
+  it("charges NIIT on interest a capital loss cannot shelter", () => {
+    const r = calculateTaxYear(baseInput({
+      earnedIncome: 300_000, interestIncome: 100_000, longTermCapitalGains: -80_000,
+    }));
+    // §1211(b) caps the deduction at $3,000 — the other $77,000 of loss is
+    // carried forward, NOT netted against investment income for NIIT
+    // purposes (Form 8960 line 5d: net gain floors at 0, it cannot go
+    // negative and shelter unrelated interest). NII = 100,000 interest -
+    // 3,000 deduction = 97,000. MAGI = 300,000 + 100,000 - 3,000 = 397,000;
+    // excess over the $250,000 MFJ threshold = 147,000 > 97,000, so NII is
+    // the limiting figure (not excess-over-threshold).
+    expect(r.flow.niit).toBeCloseTo(97_000 * 0.038, 6);
+  });
+
   it("consumes prior-year carryforward against this year's gain", () => {
     const r = calculateTaxYear(baseInput({
       longTermCapitalGains: 20_000,

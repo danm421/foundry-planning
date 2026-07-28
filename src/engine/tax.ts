@@ -85,8 +85,11 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
     capitalLoss: {
       deduction: 0,
       carryforwardConsumed: 0,
-      carryforwardOut:
-        input.capitalLossCarryforwardIn ?? { shortTerm: 0, longTerm: 0 },
+      // Fresh object either way — a year-loop that mutates carryforwardOut
+      // must never corrupt the caller's input.capitalLossCarryforwardIn.
+      carryforwardOut: input.capitalLossCarryforwardIn
+        ? { ...input.capitalLossCarryforwardIn }
+        : { shortTerm: 0, longTerm: 0 },
       shortTermLoss: 0,
       longTermLoss: 0,
     },
