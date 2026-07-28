@@ -311,6 +311,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
       <AssumptionsClient
         clientId={id}
         riskTolerance={clientRow.riskTolerance}
+        filingStatus={clientRow.filingStatus}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),

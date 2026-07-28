@@ -165,8 +165,9 @@ export function supplementalDrawSources(
   for (const draw of draws) {
     // Signed: an underwater taxable draw recognizes a LOSS, and
     // planSupplementalWithdrawal folds it into the recognized-income TOTAL
-    // unconditionally (:244). Gating on `> 0` here dropped the row while the
-    // total kept the loss, so the drill-down contradicted its own total.
+    // unconditionally (`totalCapGains += draw.capitalGains`, in the draw loop
+    // below). Gating on `> 0` here dropped the row while the total kept the
+    // loss, so the drill-down contradicted its own total.
     // `!== 0` is also the -0 guard — `-0 !== 0` is false.
     //
     // ONE key still suffices: categorizeDraw sets at most one of

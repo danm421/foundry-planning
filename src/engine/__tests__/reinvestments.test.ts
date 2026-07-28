@@ -156,6 +156,50 @@ describe("applyReinvestments", () => {
     expect(basisMap.a1).toBeCloseTo(100_000);
   });
 
+  /**
+   * Ledger 52 — Task 6 un-floored `realizedGain`, so a sell-and-rebuy of an
+   * UNDERWATER sleeve now realizes a LOSS and steps basis DOWN. That is a
+   * direction-flipped mutation of `basisMap` with no coverage at all: nothing
+   * asserted that basis moves the right way, or that the loss reaches the
+   * caller signed rather than floored at zero.
+   */
+  it("realizes a LOSS on an underwater switch and steps basis DOWN", () => {
+    // value 40k against a 100k basis → 60k underwater.
+    const basisMap = { a1: 100_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: true, soldFractionByAccount: { a1: 1 } }),
+      ],
+      accounts: [taxableAccount("a1")],
+      accountBalances: { a1: 40_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    expect(result.capitalGains).toBeCloseTo(-60_000);
+    expect(result.byReinvestment["ri-1"].capitalGains).toBeCloseTo(-60_000);
+    // Basis steps DOWN to the value at the switch — this is what makes the
+    // model converge with §1091 on total gain by the final sale.
+    expect(basisMap.a1).toBeCloseTo(40_000);
+  });
+
+  it("steps basis down only by the sold FRACTION of an underwater sleeve", () => {
+    const basisMap = { a1: 100_000 };
+    const result = applyReinvestments({
+      reinvestments: [
+        reinvestment({ realizeTaxesOnSwitch: true, soldFractionByAccount: { a1: 0.25 } }),
+      ],
+      accounts: [taxableAccount("a1")],
+      accountBalances: { a1: 40_000 },
+      basisMap,
+      accountLedgers: {},
+      year: 2030,
+    });
+    // (40,000 − 100,000) × 0.25 = −15,000
+    expect(result.capitalGains).toBeCloseTo(-15_000);
+    expect(basisMap.a1).toBeCloseTo(85_000);
+  });
+
   it("realizes nothing when realizeTaxesOnSwitch is false", () => {
     const basisMap = { a1: 60_000 };
     const result = applyReinvestments({

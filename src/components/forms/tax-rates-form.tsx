@@ -6,6 +6,11 @@ import { PercentInput } from "@/components/percent-input";
 import { CurrencyInput } from "@/components/currency-input";
 import { HelpTip } from "@/components/help-tip";
 import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
+import {
+  CAPITAL_LOSS_ORDINARY_LIMIT,
+  CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
+} from "@/lib/tax/constants";
+import type { FilingStatus } from "@/lib/tax/types";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
 import { useClientAccess } from "@/components/client-access-provider";
 
@@ -32,6 +37,11 @@ interface TaxRatesFormProps {
    *  `needs_review` until an advisor confirms it. Null once the advisor has
    *  an actual stored value. */
   capitalLossCarryforwardLtSourceYear?: number | null;
+  /** Drives the §1211(b) limit quoted in the carryforward field help —
+   *  $1,500 for married-filing-separately, $3,000 otherwise. Optional: falls
+   *  back to the non-MFS limit, mirroring `capitalLossRows` in
+   *  `lib/tax/cell-drill/income-breakdown.ts`. */
+  filingStatus?: FilingStatus;
   hasSpouse: boolean;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -126,6 +136,7 @@ export default function TaxRatesForm({
   capitalLossCarryforwardSt,
   capitalLossCarryforwardLt,
   capitalLossCarryforwardLtSourceYear,
+  filingStatus,
   hasSpouse,
   clientFirstName,
   spouseFirstName,
@@ -143,6 +154,17 @@ export default function TaxRatesForm({
   const [residenceStateValue, setResidenceStateValue] = useState<USPSStateCode | "">(
     residenceState ?? "",
   );
+
+  // §1211(b) annual ordinary-income offset. Both carryforward fields quoted a
+  // hardcoded "$3,000" — the same MFS error already fixed in the drill-down
+  // tooltip.
+  const capitalLossLimit =
+    filingStatus === "married_separate"
+      ? CAPITAL_LOSS_ORDINARY_LIMIT_MFS
+      : CAPITAL_LOSS_ORDINARY_LIMIT;
+  const capitalLossHelp =
+    "From Schedule D of the client's most recent return. Offsets future gains, " +
+    `plus up to $${capitalLossLimit.toLocaleString("en-US")} of ordinary income per year.`;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -442,7 +464,7 @@ export default function TaxRatesForm({
         <FieldTable>
           <FieldRow
             label="Short-term"
-            help="From Schedule D of the client's most recent return. Offsets future gains, plus up to $3,000 of ordinary income per year."
+            help={capitalLossHelp}
           >
             <div className="max-w-[12rem]">
               <CurrencyInput
@@ -455,7 +477,7 @@ export default function TaxRatesForm({
           </FieldRow>
           <FieldRow
             label="Long-term"
-            help="From Schedule D of the client's most recent return. Offsets future gains, plus up to $3,000 of ordinary income per year."
+            help={capitalLossHelp}
           >
             <div className="max-w-[12rem]">
               <CurrencyInput

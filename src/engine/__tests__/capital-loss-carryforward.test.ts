@@ -154,6 +154,28 @@ describe("capital-loss carryforward across projection years", () => {
     expect(years[1].taxDetail?.capitalLossCarryforward?.longTerm).toBe(44_000);
   });
 
+  /**
+   * Ledger 24 — all three scenarios above seed `shortTerm: 0`, so §1212(b)'s
+   * SHORT-term-first absorption ordering was never proven end-to-end: an
+   * implementation that absorbed long-term first would pass every one of them.
+   */
+  it("absorbs SHORT-term loss first when both characters are seeded", () => {
+    const data = baseScenario();
+    data.planSettings.planEndYear = 2026;
+    data.planSettings.capitalLossCarryforwardShortTerm = 5_000;
+    data.planSettings.capitalLossCarryforwardLongTerm = 20_000;
+
+    const years = runProjection(data);
+
+    // §1212(b): the $3,000 deduction comes entirely out of the 5,000 of
+    // short-term loss. Long-term is untouched.
+    expect(years[0].taxDetail?.capitalLossDeduction).toBe(3_000);
+    expect(years[0].taxDetail?.capitalLossCarryforward).toEqual({
+      shortTerm: 2_000,
+      longTerm: 20_000,
+    });
+  });
+
   it("expires half the carryforward at first death (Rev. Rul. 74-175)", () => {
     // Client born 1960 with LE 67 → first death in 2027. Spouse born 1962 with
     // LE 95 → 2057, outside the 2026-2029 horizon, so no FINAL death fires.

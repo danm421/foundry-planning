@@ -79,7 +79,7 @@ import {
   applyBusinessSales,
   _resetSyntheticIdCounter,
 } from "./asset-transactions";
-import type { BusinessSalesResult } from "./asset-transactions";
+import type { AssetSalesResult, BusinessSalesResult } from "./asset-transactions";
 import { createEquityState, computeEquityYear } from "./equity/tax-events";
 import { applyEquityYear } from "./equity/apply";
 import { remainingGrantValue } from "./equity/valuation";
@@ -1185,13 +1185,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Sales happen on the first day of the year: the sold asset doesn't earn
     // growth this year, and sale proceeds land in the cash account in time to
     // earn the year's cash growth.
-    let saleResult = {
+    // Annotated rather than inferred: the inline literal used to re-declare
+    // `breakdown`'s row shape by hand, and had already drifted (it was missing
+    // `disallowedLoss` and `fractionSold`). `AssetSalesResult` is the one
+    // source of truth.
+    let saleResult: AssetSalesResult = {
       capitalGains: 0,
       homeSaleExclusionTotal: 0,
       disallowedLosses: 0,
-      removedAccountIds: [] as string[],
-      removedLiabilityIds: [] as string[],
-      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; homeSaleExclusionApplied: number; taxableCapitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
+      removedAccountIds: [],
+      removedLiabilityIds: [],
+      breakdown: [],
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const sales = allSales;

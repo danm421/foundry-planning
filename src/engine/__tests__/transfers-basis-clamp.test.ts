@@ -18,6 +18,9 @@ describe("creditTransferBasis — §165 underwater transfer guard", () => {
   });
 
   it("never returns a negative credit", () => {
-    expect(creditTransferBasis(0, 10_000)).toBe(0);
+    // Ledger 36: `0` passed vacuously — `Math.min(0, 10_000)` is already 0, so
+    // the `Math.max(0, ...)` floor was never exercised. A negative input is.
+    expect(creditTransferBasis(-1, 10_000)).toBe(0);
+    expect(creditTransferBasis(-25_000, 10_000)).toBe(0);
   });
 });

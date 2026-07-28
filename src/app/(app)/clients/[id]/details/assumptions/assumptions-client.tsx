@@ -18,6 +18,7 @@ import type {
 } from "@/components/deductions-derived-summary";
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 import { type RiskLevel } from "@/lib/risk-levels";
+import type { FilingStatus } from "@/lib/tax/types";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -94,6 +95,9 @@ interface ModelPortfolioOption {
 interface AssumptionsClientProps {
   clientId: string;
   riskTolerance?: string | null;
+  /** Household filing status — quoted in the §1211(b) capital-loss field help
+   *  ($1,500 for MFS, $3,000 otherwise). */
+  filingStatus?: FilingStatus;
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
@@ -123,6 +127,7 @@ const TABS = [
 export default function AssumptionsClient({
   clientId,
   riskTolerance,
+  filingStatus,
   settings,
   accounts,
   withdrawalStrategies,
@@ -161,6 +166,7 @@ export default function AssumptionsClient({
             capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
             capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
             capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}
+            filingStatus={filingStatus}
             hasSpouse={Boolean(spouseFirstName)}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

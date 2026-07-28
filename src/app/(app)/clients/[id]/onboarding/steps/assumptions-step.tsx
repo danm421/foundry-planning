@@ -228,6 +228,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
   return (
     <AssumptionsClient
       clientId={clientId}
+      filingStatus={clientRow.filingStatus}
       settings={{
         flatFederalRate: String(settings.flatFederalRate),
         flatStateRate: String(settings.flatStateRate),

@@ -135,7 +135,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     // re-derived) so the per-entry ledger basis below approximates the basisMap
     // mutation. For taxable/cash sources in normal cases (source has a gain or
     // break-even basis ratio), this approximation is exact. However, the source
-    // debit at line 141 already uses Math.max(0, ...) which can make the source's
+    // debit below already uses Math.max(0, ...) which can make the source's
     // basisMap decrease diverge from the raw taxResult.basisReturn in the
     // opposite direction. Once Task 6 removes the capital-gain ratio floor,
     // basisReturn can exceed actualAmount (underwater source), and basisMoved
