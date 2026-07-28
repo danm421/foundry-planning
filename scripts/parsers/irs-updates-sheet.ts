@@ -63,12 +63,18 @@ export async function parseIrsUpdatesSheet(filePath: string): Promise<TaxYearPar
   const simple = parseSection(rows, "SIMPLE IRA Contribution", 2);
   const hsa = parseSection(rows, "HSA Contribution Limits", 7);
   const qbi = parseSection(rows, "Section 199A QBI Deduction", 4);
+  const roth = parseSection(rows, "Roth IRA Contribution MAGI Phase-out", 4);
+  const iraDeduct = parseSection(rows, "Traditional IRA Deduction Phase-out", 6);
+  const studentLoan = parseSection(rows, "Student Loan Interest Deduction", 5);
+  const ctc = parseSection(rows, "Child Tax Credit Amounts", 3);
+  const savers = parseSection(rows, "Savers Credit Income Tiers", 3);
 
   const years = Object.keys(stdDeduction).map(Number).sort();
   return years.map((year) => buildYearParams(year, {
     ssMedicare, stdDeduction, amtExempt, amtBreakpoint, amtPhaseout,
     incomeBracketsByStatus, capGainsByStatus, trustOrdinary, trustCapGains,
     k401, ira, simple, hsa, qbi,
+    roth, iraDeduct, studentLoan, ctc, savers,
   }));
 }
 
@@ -193,6 +199,23 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
   const [hsaSelf, hsaFam, hsaCu55] = raw.hsa[year];
   const [qbiMfj, qbiOther, qbiPiMfj, qbiPiOther] = raw.qbi[year];
 
+  const [rothStartMfj, rothEndMfj, rothStartSingle, rothEndSingle] = raw.roth[year];
+  const [idCovStartMfj, idCovEndMfj, idCovStartSingle, idCovEndSingle,
+         idSpStartMfj, idSpEndMfj] = raw.iraDeduct[year];
+  const [slMax, slStartMfj, slEndMfj, slStartSingle, slEndSingle] = raw.studentLoan[year];
+  const [ctcPerChild, ctcRefundable, odcAmount] = raw.ctc[year];
+  const [sav50, sav20, sav10] = raw.savers[year];
+
+  // The workbook stores only the joint-return ceilings. IRC 25B(b)(2) derives the
+  // rest: head-of-household ceilings are 75% of joint, all other filers 50%. The
+  // joint figure is already rounded to the nearest $500 by the COLA in 25B(b)(3),
+  // so both multiples land on whole dollars and match the IRS-published tables.
+  const saversTiers = (scale: number) => [
+    { rate: 0.5, agiCeiling: Math.round((sav50 ?? 0) * scale) },
+    { rate: 0.2, agiCeiling: Math.round((sav20 ?? 0) * scale) },
+    { rate: 0.1, agiCeiling: Math.round((sav10 ?? 0) * scale) },
+  ];
+
   // Trust ordinary brackets (4 tiers, 3 thresholds from workbook cols 1-3).
   const trustIncomeBrackets = buildBracketsFromThresholds(
     TRUST_BRACKET_RATES,
@@ -241,14 +264,23 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
       phaseInRangeMfj: qbiPiMfj,
       phaseInRangeOther: qbiPiOther,
     },
-    // TODO(tax-thresholds-credits Task 2): this workbook parser doesn't source
-    // these yet — reseed populates them separately.
-    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
-    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
-                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
-    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
-    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
-    saversCredit: { mfj: [], single: [], hoh: [] },
+    rothPhaseout: {
+      startMfj: rothStartMfj, endMfj: rothEndMfj,
+      startSingle: rothStartSingle, endSingle: rothEndSingle,
+    },
+    iraDeduct: {
+      coveredStartMfj: idCovStartMfj, coveredEndMfj: idCovEndMfj,
+      coveredStartSingle: idCovStartSingle, coveredEndSingle: idCovEndSingle,
+      spousalStartMfj: idSpStartMfj, spousalEndMfj: idSpEndMfj,
+    },
+    studentLoan: {
+      maxDeduction: slMax, startMfj: slStartMfj, endMfj: slEndMfj,
+      startSingle: slStartSingle, endSingle: slEndSingle,
+    },
+    ctc: { perChild: ctcPerChild, refundableMax: ctcRefundable, odcPerDependent: odcAmount },
+    saversCredit: {
+      mfj: saversTiers(1), single: saversTiers(0.5), hoh: saversTiers(0.75),
+    },
     contribLimits: {
       ira401kElective: k401Elec,
       ira401kCatchup50: k401Cu50,
