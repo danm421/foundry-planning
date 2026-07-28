@@ -2453,7 +2453,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const item of saleResult.breakdown) {
       // §664(c): itemize only the non-CRT share — the drill-down must reconcile
       // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
-      const householdGain = item.capitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+      //
+      // i3: itemize `taxableCapitalGain`, NOT the raw `capitalGain`. The total
+      // this row sits under sums `saleResult.capitalGains`, which is
+      // Σ taxableCapitalGain (post-§121, post-§165(c)). Using the raw figure
+      // emitted a −$200,000 row under a $0 total for a residence sold below
+      // basis, and a +$200,000 row under a $0 total for a §121-excluded gain.
+      const householdGain =
+        item.taxableCapitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
       if (householdGain !== 0) {
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: householdGain };
       }
@@ -2476,10 +2483,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (eq.ordinaryIncome > 0) {
         taxDetail.bySource[`equity-vest:${planId}`] = { type: "earned_income", amount: eq.ordinaryIncome };
       }
-      if (eq.capitalGains > 0) {
+      // i4: `!== 0`, same reason as the three loops above — `:2001-2002` folds
+      // these into taxDetail.capitalGains / .stCapitalGains UNCONDITIONALLY, so
+      // a `> 0` gate drops the row while the total keeps the loss. Task 6 made
+      // the LT leg newly negative-reachable (equity/tax-events.ts, a qualifying
+      // ISO disposition below basis).
+      if (eq.capitalGains !== 0) {
         taxDetail.bySource[`equity-ltcg:${planId}`] = { type: "capital_gains", amount: eq.capitalGains };
       }
-      if (eq.stCapitalGains > 0) {
+      if (eq.stCapitalGains !== 0) {
         taxDetail.bySource[`equity-stcg:${planId}`] = { type: "stcg", amount: eq.stCapitalGains };
       }
     }

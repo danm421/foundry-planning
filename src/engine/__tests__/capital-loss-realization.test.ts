@@ -53,6 +53,10 @@ describe("taxable withdrawal loss realization", () => {
 function sellInput(
   category: "taxable" | "real_estate",
   qualifiesForHomeSaleExclusion: boolean,
+  // Ledger 54: the real-estate variants used to carry subType "brokerage",
+  // so the fixture did not mean what its test names claimed. §165(c) now keys
+  // off the subType, which makes it load-bearing rather than decorative.
+  subType: string = category === "real_estate" ? "primary_residence" : "brokerage",
 ): ApplyAssetSalesInput {
   return {
     sales: [{
@@ -62,7 +66,7 @@ function sellInput(
     }],
     accounts: [
       {
-        id: "asset", name: "Asset", category, subType: "brokerage",
+        id: "asset", name: "Asset", category, subType,
         titlingType: "jtwros", value: 300_000, basis: 500_000,
         growthRate: 0, rmdEnabled: false,
         owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
@@ -102,15 +106,42 @@ describe("asset-sale loss realization", () => {
     expect(r.disallowedLosses).toBeCloseTo(200_000, 2);
   });
 
-  it("allows the loss on investment real estate (flag off)", () => {
-    const r = applyAssetSales(sellInput("real_estate", false));
+  /**
+   * i2 — §165(c) used to fail OPEN. The disallowance keyed off
+   * `sale.qualifiesForHomeSaleExclusion`, whose checkbox is labelled
+   * "Qualifies for home-sale GAIN exclusion (§121)" and defaults UNCHECKED. An
+   * advisor modelling a vacation home sold below basis has no reason to tick a
+   * box about excluding gain, so the loss was booked as fully deductible and
+   * fed a $3,000/yr deduction plus carryforward for decades. The default is now
+   * inverted: real estate is personal-use unless the account says otherwise.
+   */
+  it("disallows the loss on a vacation home even with the §121 box UNCHECKED", () => {
+    const r = applyAssetSales(sellInput("real_estate", false, "other"));
+    expect(r.breakdown[0].capitalGain).toBeCloseTo(-200_000, 2);
+    expect(r.breakdown[0].taxableCapitalGain).toBe(0);
+    expect(r.breakdown[0].disallowedLoss).toBeCloseTo(200_000, 2);
+    expect(r.capitalGains).toBe(0);
+  });
+
+  it("allows the loss on real estate explicitly held as a rental", () => {
+    const r = applyAssetSales(sellInput("real_estate", false, "rental_property"));
+    expect(r.breakdown[0].taxableCapitalGain).toBeCloseTo(-200_000, 2);
+    expect(r.disallowedLosses).toBe(0);
+  });
+
+  it("allows the loss on commercial real estate", () => {
+    const r = applyAssetSales(sellInput("real_estate", false, "commercial_property"));
     expect(r.breakdown[0].taxableCapitalGain).toBeCloseTo(-200_000, 2);
     expect(r.disallowedLosses).toBe(0);
   });
 
   it("still applies the §121 exclusion on a GAIN", () => {
     const input = sellInput("real_estate", true);
+    // Ledger 54: keep the account's own `basis` in step with the basisMap
+    // override, or the fixture claims a $200k gain while the account still
+    // says it is $200k underwater.
     input.basisMap = { asset: 100_000 };  // $200k gain
+    input.accounts[0].basis = 100_000;
     const r = applyAssetSales(input);
     expect(r.breakdown[0].homeSaleExclusionApplied).toBeCloseTo(200_000, 2);
     expect(r.breakdown[0].taxableCapitalGain).toBe(0);
@@ -205,5 +236,69 @@ describe("capital-loss drill-down itemization", () => {
     // reconcile to the total it sits under.
     expect(y0.taxDetail!.capitalGains).toBeCloseTo(-10_000, 6);
     expect(gainRow!.amount + lossRow!.amount).toBeCloseTo(y0.taxDetail!.capitalGains, 6);
+  });
+
+  /**
+   * i3 — the `sale:` row itemized the RAW `item.capitalGain` while the total it
+   * sits under sums the post-§121 / post-§165(c) `taxableCapitalGain`. A
+   * residence sold $200k below basis emitted a −$200,000 row under a $0 total:
+   * the exact itemization-contradicts-its-total defect Task 9 existed to
+   * remove, in a NEW instance created by Task 6's own §165(c) work.
+   */
+  const residence = (id: string, value: number, basis: number): Account => ({
+    id,
+    name: id,
+    category: "real_estate",
+    subType: "primary_residence",
+    titlingType: "jtwros",
+    value,
+    basis,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  });
+
+  function runResidenceSale(value: number, basis: number, qualifies: boolean) {
+    const base = buildClientData({
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    return runProjection({
+      ...base,
+      accounts: [checking, residence("home", value, basis)],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "tx-home",
+          name: "Sell home",
+          type: "sell",
+          year: 2026,
+          accountId: "home",
+          overrideSaleValue: value,
+          overrideBasis: basis,
+          proceedsAccountId: "chk",
+          qualifiesForHomeSaleExclusion: qualifies,
+        },
+      ],
+    })[0];
+  }
+
+  it("itemizes the §165(c)-disallowed residence loss as 0, matching its total", () => {
+    const y0 = runResidenceSale(300_000, 500_000, false);
+    expect(y0.taxDetail!.capitalGains).toBeCloseTo(0, 6);
+    const row = y0.taxDetail!.bySource["sale:tx-home"];
+    // Either omitted (the `!== 0` gate) or present at 0 — never −200,000 under
+    // a $0 total.
+    expect(row?.amount ?? 0).toBeCloseTo(0, 6);
+  });
+
+  it("itemizes a §121-excluded residence GAIN as 0, matching its total", () => {
+    const y0 = runResidenceSale(500_000, 300_000, true);
+    expect(y0.taxDetail!.capitalGains).toBeCloseTo(0, 6);
+    const row = y0.taxDetail!.bySource["sale:tx-home"];
+    expect(row?.amount ?? 0).toBeCloseTo(0, 6);
   });
 });

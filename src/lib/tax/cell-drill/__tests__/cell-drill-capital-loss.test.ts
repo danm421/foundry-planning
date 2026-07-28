@@ -32,6 +32,77 @@ function allRows(p: ReturnType<typeof buildIncomeCellDrill>) {
   return p.groups.flatMap((g) => g.rows);
 }
 
+/**
+ * i1 — the LT/ST Cap Gains cells render `taxResult.income.capitalGains` /
+ * `.shortCapitalGains`, which are the §1222-NETTED figures (floored at 0 by
+ * `calculate.ts`). The drill-down used to total the RAW SIGNED
+ * `taxDetail.capitalGains`, so with any prior-year carryforward the modal
+ * contradicted the cell the advisor clicked to open it.
+ */
+function argsWithTaxResult(
+  taxDetail: Record<string, unknown>,
+  income: Record<string, number>,
+): IncomeCellDrillArgs {
+  const year = {
+    year: 2030,
+    taxDetail: { capitalGains: 0, stCapitalGains: 0, bySource: {}, ...taxDetail },
+    taxResult: { income: { capitalGains: 0, shortCapitalGains: 0, ...income } },
+  } as unknown as ProjectionYear;
+  return { year, columnKey: "capitalGains", ctx };
+}
+
+describe("i1 — the drill total matches the cell it opened from", () => {
+  it("totals the NETTED gain, not the raw signed taxDetail figure", () => {
+    // The feature's own target user: $50,000 of gains this year against a
+    // $30,000 seeded Schedule D carryover. Cell shows $20,000.
+    const props = buildIncomeCellDrill(
+      argsWithTaxResult(
+        {
+          capitalGains: 50_000,
+          bySource: { "sale:tx1": { type: "capital_gains", amount: 50_000 } },
+        },
+        { capitalGains: 20_000 },
+      ),
+    );
+    expect(props.total).toBe(20_000);
+  });
+
+  it("emits a reconciling row so the itemization still adds up", () => {
+    const props = buildIncomeCellDrill(
+      argsWithTaxResult(
+        {
+          capitalGains: 50_000,
+          bySource: { "sale:tx1": { type: "capital_gains", amount: 50_000 } },
+          capitalLossCarryforward: { shortTerm: 0, longTerm: 0 },
+        },
+        { capitalGains: 20_000 },
+      ),
+    );
+    const rows = allRows(props);
+    const reconcile = rows.find((r) => r.id === "capital-loss-netting");
+    expect(reconcile, "no reconciling row between the itemized rows and the total").toBeDefined();
+    expect(reconcile!.amount).toBe(-30_000);
+    // Itemized rows + the reconciling row === the total the modal displays.
+    const itemized = props.groups[0].rows.reduce((s, r) => s + r.amount, 0);
+    expect(itemized + reconcile!.amount).toBe(props.total);
+  });
+
+  it("adds no reconciling row when netting changed nothing", () => {
+    const rows = allRows(
+      buildIncomeCellDrill(
+        argsWithTaxResult(
+          {
+            capitalGains: 50_000,
+            bySource: { "sale:tx1": { type: "capital_gains", amount: 50_000 } },
+          },
+          { capitalGains: 50_000 },
+        ),
+      ),
+    );
+    expect(rows.some((r) => r.id === "capital-loss-netting")).toBe(false);
+  });
+});
+
 describe("capital-loss rows in the income drill-down", () => {
   it("shows the capped deduction and the amount carried forward", () => {
     const rows = allRows(buildIncomeCellDrill(args({
@@ -104,7 +175,7 @@ describe("capital-loss rows in the income drill-down", () => {
       "capital-loss-carryforward",
     ]);
     expect(props.footnote).toBeTruthy();
-    expect(props.footnote).toContain("outside the total");
+    expect(props.footnote).toContain("sit outside it");
   });
 
   it("uses the $1,500 MFS limit in the deduction tooltip when filing status is married_separate", () => {

@@ -310,20 +310,34 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     // IRC §121 home-sale exclusion. Applied only when the flag is set AND
     // the sold account's category is "real_estate" — the category gate is a
     // safety net against an errant true on a non-real-estate transaction.
-    //
-    // §165(c): a loss on personal-use property is never deductible. The
-    // home-sale-exclusion flag is our proxy for personal use — imperfect for
-    // vacation/second homes (see spec), so the disallowed amount is reported
-    // rather than silently dropped.
     const isPersonalUseRealEstate =
       soldAccount?.category === "real_estate" && !!sale.qualifiesForHomeSaleExclusion;
+
+    // §165(c): a loss on personal-use property is never deductible.
+    //
+    // The §121 flag is the WRONG proxy on the LOSS side and fails OPEN. Its
+    // checkbox reads "Qualifies for home-sale GAIN exclusion (§121)" and
+    // defaults UNCHECKED, so an advisor modelling a vacation home sold below
+    // basis has no reason to tick it — and the loss was booked as fully
+    // deductible, feeding a $3,000/yr §1211(b) deduction plus a §1212(b)
+    // carryforward for decades on a loss the Code bars outright.
+    //
+    // The default is therefore INVERTED for real estate: personal-use unless
+    // the account's subType explicitly says the property is held for
+    // investment. The disallowed amount is reported (`disallowedLoss`) rather
+    // than silently dropped.
+    const isInvestmentRealEstate =
+      soldAccount?.subType === "rental_property" ||
+      soldAccount?.subType === "commercial_property";
+    const lossDisallowedUnderSec165 =
+      soldAccount?.category === "real_estate" && !isInvestmentRealEstate;
 
     let homeSaleExclusionApplied = 0;
     let disallowedLoss = 0;
     let taxableCapitalGain: number;
 
     if (capitalGain < 0) {
-      if (isPersonalUseRealEstate) {
+      if (lossDisallowedUnderSec165) {
         disallowedLoss = -capitalGain;
         taxableCapitalGain = 0;
       } else {
