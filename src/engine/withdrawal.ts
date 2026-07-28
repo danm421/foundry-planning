@@ -163,8 +163,20 @@ export function supplementalDrawSources(
     (out[key] ??= { type, amount: 0 }).amount += amount;
   };
   for (const draw of draws) {
+    // Signed: an underwater taxable draw recognizes a LOSS, and
+    // planSupplementalWithdrawal folds it into the recognized-income TOTAL
+    // unconditionally (:244). Gating on `> 0` here dropped the row while the
+    // total kept the loss, so the drill-down contradicted its own total.
+    // `!== 0` is also the -0 guard — `-0 !== 0` is false.
+    //
+    // ONE key still suffices: categorizeDraw sets at most one of
+    // ordinaryIncome / capitalGains per draw (its branches are per-account-
+    // category and mutually exclusive), and `add` only ever merges draws on the
+    // same account, which share that category. So the ternary picks between
+    // alternatives that cannot co-occur — unlike the education draw, which
+    // aggregates across accounts and genuinely needed splitting.
     const recognized = draw.ordinaryIncome + draw.capitalGains;
-    if (recognized > 0) {
+    if (recognized !== 0) {
       add(`withdrawal:${draw.accountId}`, draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains", recognized);
     }
     // Separate key so a mixed draw can carry both a taxable and a tax-free row.

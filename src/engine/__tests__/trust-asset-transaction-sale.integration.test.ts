@@ -259,7 +259,7 @@ describe("Trust-owned business sale", () => {
       .toBeLessThan(0);
     // ...so the household must not keep it as well.
     expect(
-      year2030.taxDetail?.capitalGains ?? 0,
+      year2030.taxDetail!.capitalGains,
       "the trust's $4M loss stayed on the household 1040",
     ).toBeCloseTo(0, 6);
   });

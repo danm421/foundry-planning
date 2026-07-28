@@ -4708,7 +4708,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // §1222 netting like any other realized loss. Ordinary income and capital
       // gains are booked as SEPARATE bySource rows — a single keyed row could
       // only carry one type, silently discarding the other.
-      if (drawResult.ordinaryIncome > 0) taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
+      taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
       taxDetail.capitalGains += drawResult.capitalGains;
       if (drawResult.ordinaryIncome !== 0) {
         taxDetail.bySource[`education:${goal.id}`] = {

@@ -325,7 +325,7 @@ describe("CRT §664(c) exemption — signed sale results", () => {
     // Gating the §664(c) subtraction on `> 0` skipped it for a loss, leaving
     // the household holding the exempt trust's −$500k.
     expect(
-      saleYear.taxDetail?.capitalGains ?? 0,
+      saleYear.taxDetail!.capitalGains,
       "the CRT's sale LOSS was deducted on the household 1040",
     ).toBe(0);
     expect(
