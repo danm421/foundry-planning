@@ -16,6 +16,7 @@ import {
   type LiabilityForDeduction,
   type AccountForPropertyTax,
 } from "../derive-deductions";
+import type { FilingStatus, TaxYearParameters } from "../types";
 
 const isGrantorAlways = () => true;
 const isGrantorNever = () => false;
@@ -512,5 +513,153 @@ describe("deriveAboveLineFromSavings — HSA", () => {
       r1: 4400,
     });
     expect(res.aboveLine).toBe(4400);
+  });
+});
+
+// ── Traditional-IRA MAGI gate ───────────────────────────────────────────────
+
+describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
+  // MFJ covered 129,000-149,000 (width 20,000); single covered 81,000-91,000
+  // (width 10,000); MFJ spousal 242,000-252,000.
+  const gateParams = {
+    iraDeduct: {
+      coveredStartMfj: 129000, coveredEndMfj: 149000,
+      coveredStartSingle: 81000, coveredEndSingle: 91000,
+      spousalStartMfj: 242000, spousalEndMfj: 252000,
+    },
+  } as unknown as TaxYearParameters;
+
+  /** Default: MFJ, self covered, MAGI above the top of the covered range. */
+  const gate = (
+    over: Partial<{ magi: number; coveredSelf: boolean; coveredSpouse: boolean; filingStatus: FilingStatus }> = {}
+  ) => ({
+    magi: 200000,
+    coveredSelf: true,
+    coveredSpouse: false,
+    params: gateParams,
+    filingStatus: "married_joint" as FilingStatus,
+    ...over,
+  });
+
+  const ACCT_HSA: AccountForDeduction = {
+    id: "acct-hsa", subType: "hsa", category: "retirement", ownerEntityId: null,
+  };
+
+  it("zeroes the deduction for a covered contributor above the range", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined, gate(),
+    );
+    // MAGI 200,000 >= 149,000 -> fully phased out.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("leaves a 401(k) rule untouched at the same MAGI", () => {
+    const rules = [makeRule("acct-401k", 24500), makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_401K, ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined, gate(),
+    );
+    // The IRA's 7,500 is gated away; the 401(k) deferral is never MAGI-limited.
+    expect(res.aboveLine).toBe(24500);
+  });
+
+  it("leaves 403(b), HSA and 'other' retirement rules untouched at the same MAGI", () => {
+    const rules = [
+      makeRule("acct-403b", 22500),
+      makeRule("acct-hsa", 4000),
+      makeRule("acct-other-ret", 10000),
+    ];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_403B, ACCT_HSA, ACCT_OTHER_RETIREMENT], isGrantorAlways,
+      undefined, undefined, gate(),
+    );
+    expect(res.aboveLine).toBe(36500);
+  });
+
+  it("does not gate at all when iraGate is omitted", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways);
+    expect(res.aboveLine).toBe(7500);
+  });
+
+  it("aggregates traditional IRA rules so Pub 590-A rounding applies once", () => {
+    // MAGI 147,750 -> fraction 18,750/20,000 = 0.9375, so 6.25% survives.
+    // Aggregated: 6,000 x 0.0625 = 375 -> rounded up to 380.
+    // Per-rule would be 2,000 x 0.0625 = 125 -> floored to 200 each = 600.
+    const rules = [
+      makeRule("acct-ira", 2000),
+      makeRule("acct-ira", 2000),
+      makeRule("acct-ira", 2000),
+    ];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 147750 }),
+    );
+    expect(res.aboveLine).toBe(380);
+  });
+
+  it("gates the pre-tax portion of a split rule, not the gross contribution", () => {
+    // 10,000 with rothPercent 0.4 -> 6,000 pre-tax.
+    // 6,000 x 0.0625 = 375 -> 380. Gating the gross 10,000 would give 630.
+    const rules = [makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 147750 }),
+    );
+    expect(res.aboveLine).toBe(380);
+  });
+
+  it("never deducts more than the pre-tax portion below the range", () => {
+    const rules = [makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 100000 }),
+    );
+    // Below 129,000 the full contribution is deductible — but "full" is the
+    // 6,000 pre-tax portion, never the 10,000 gross.
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  it("does not gate when neither spouse is a covered participant", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 5000000, coveredSelf: false, coveredSpouse: false }),
+    );
+    expect(res.aboveLine).toBe(7500);
+  });
+
+  it("applies the spousal range when only the spouse is covered", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 200000, coveredSelf: false, coveredSpouse: true }),
+    );
+    // 200,000 is below the spousal range's 242,000 start — full deduction.
+    // Reading the flags in the wrong order would apply the covered range and
+    // zero this out.
+    expect(res.aboveLine).toBe(7500);
+  });
+
+  it("uses the caller's filing status for the range", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 86000, filingStatus: "single" }),
+    );
+    // Single range 81,000-91,000: halfway through -> 7,500 x 0.5 = 3,750.
+    // Under the MFJ range this MAGI would be fully deductible.
+    expect(res.aboveLine).toBe(3750);
+  });
+
+  it("never reaches the gate for a rule the existing guards already skip", () => {
+    // isDeductible=false at a MAGI the gate would otherwise pass through in
+    // full — the rule must not reach the traditional-IRA accumulator.
+    const rules = [makeRule("acct-ira", 7500, 2026, 2076, { isDeductible: false })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 100000 }),
+    );
+    expect(res.aboveLine).toBe(0);
   });
 });

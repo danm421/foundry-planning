@@ -12,6 +12,9 @@
  * $10k TCJA pre-2026). The cap is a flat dollar amount — no inflation.
  */
 
+import type { FilingStatus, TaxYearParameters } from "./types";
+import { traditionalIraDeductibleAmount } from "./thresholds";
+
 // ── Contribution interface ──────────────────────────────────────────────────
 
 export interface DeductionContribution {
@@ -99,10 +102,22 @@ export function deriveAboveLineFromSavings(
   // Optional pre-resolved (and possibly contribution-limit-capped) amount per
   // rule. When present, overrides the internal percent/annualAmount
   // resolution so the deduction reflects the capped contribution.
-  overriddenAmountByRuleId?: Record<string, number>
+  overriddenAmountByRuleId?: Record<string, number>,
+  // Optional IRC 219(g) MAGI phase-out inputs. Absent → traditional IRA
+  // contributions are deducted in full, preserving pre-gate behaviour.
+  iraGate?: {
+    magi: number;
+    coveredSelf: boolean;
+    coveredSpouse: boolean;
+    params: TaxYearParameters;
+    filingStatus: FilingStatus;
+  }
 ): DeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   let total = 0;
+  // Traditional IRA contributions accumulate separately so the MAGI gate below
+  // can be applied ONCE to their sum. Everything else is never MAGI-limited.
+  let traditionalIraPreTax = 0;
   for (const rule of savingsRules) {
     if (year < rule.startYear || year > rule.endYear) continue;
     const acct = accountById.get(rule.accountId);
@@ -127,8 +142,43 @@ export function deriveAboveLineFromSavings(
     }
     // When overridden, `amount` is the total (possibly capped) contribution —
     // the Roth split still applies to it to isolate the pre-tax portion.
-    total += amount * (1 - (rule.rothPercent ?? 0));
+    const preTax = amount * (1 - (rule.rothPercent ?? 0));
+    if (acct.subType === "traditional_ira") traditionalIraPreTax += preTax;
+    else total += preTax;
   }
+
+  // ── IRC 219(g) traditional-IRA gate ──────────────────────────────────────
+  // Two limitations, both consequences of what this module can see:
+  //
+  //  1. Owner identity is unavailable here. `AccountForDeduction` carries no
+  //     family member, and `iraGate` supplies a single household-level
+  //     coveredSelf/coveredSpouse pair. So a married couple where only one
+  //     spouse is an active workplace-plan participant gets ONE phase-out
+  //     range applied to their combined contributions, whereas IRC 219(g)
+  //     gives the covered and the non-covered spouse different ranges
+  //     (`iraDeductCovered` vs `iraDeductSpousal`). Resolving it needs either
+  //     owner information in this module or two separate calls — deferred.
+  //
+  //  2. Pub 590-A's $10 round-up / $200 floor is therefore applied once per
+  //     HOUSEHOLD, not once per taxpayer. Contributions are aggregated before
+  //     the single call on purpose: gating per rule would apply the $200 floor
+  //     once per RULE, so three small rules deep in the phase-out would deduct
+  //     3 x $200 instead of $200. The proportional reduction itself is linear,
+  //     so aggregating is otherwise arithmetically identical.
+  if (traditionalIraPreTax !== 0) {
+    total += iraGate
+      ? traditionalIraDeductibleAmount(
+          iraGate.magi,
+          traditionalIraPreTax,
+          iraGate.coveredSelf,
+          iraGate.coveredSpouse,
+          year,
+          iraGate.params,
+          iraGate.filingStatus
+        )
+      : traditionalIraPreTax;
+  }
+
   return { aboveLine: total, itemized: 0, saltPool: 0 };
 }
 
