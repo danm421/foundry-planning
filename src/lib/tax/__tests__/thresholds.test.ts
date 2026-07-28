@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { rangeFor, statusFor, THRESHOLD_ITEMS, isNaRange } from "../thresholds";
+import {
+  rangeFor, statusFor, THRESHOLD_ITEMS, isNaRange,
+  rothIraAllowedContribution, traditionalIraDeductibleAmount, studentLoanInterestDeduction,
+} from "../thresholds";
 import type { ThresholdFacts, ThresholdHousehold } from "../thresholds";
 import type { TaxYearParameters } from "../types";
 
@@ -177,5 +180,139 @@ describe("statusFor", () => {
     expect(statusFor("aotc", facts({
       household: { ...household, filingStatus: "married_separate" },
     }))).toBe("na");
+  });
+});
+
+describe("rothIraAllowedContribution", () => {
+  it("does not gate when the Roth phaseout params are unseeded — returns the full age-based limit", () => {
+    const bare = {
+      ...params,
+      rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    } as TaxYearParameters;
+    expect(rothIraAllowedContribution(9_000_000, 7000, 2026, bare, "married_joint")).toBe(7000);
+  });
+
+  it("is full exactly at the range start", () => {
+    expect(rothIraAllowedContribution(242000, 7000, 2026, params, "married_joint")).toBe(7000);
+  });
+
+  it("is zero exactly at the range end", () => {
+    expect(rothIraAllowedContribution(252000, 7000, 2026, params, "married_joint")).toBe(0);
+  });
+
+  it("rounds the reduced limit UP to the nearest $10, not down", () => {
+    // start 242000, end 252000, width 10000; magi 33 into the range.
+    // reduced = 7000 * (1 - 33/10000) = 6976.9 -> ceil to nearest $10 = 6980 (not 6970).
+    expect(rothIraAllowedContribution(242033, 7000, 2026, params, "married_joint")).toBe(6980);
+  });
+
+  it("raises the reduced limit to the $200 floor at high MAGI inside the range", () => {
+    // 100 short of the end: reduced = 7000 * (100/10000) = 70 -> floored up to 200.
+    expect(rothIraAllowedContribution(251900, 7000, 2026, params, "married_joint")).toBe(200);
+  });
+
+  it("uses the statutory $0-$10,000 MFS range, not the seeded MFJ/single values", () => {
+    // MFS range is 0-10000; magi 5000 is the midpoint -> half of 7000 = 3500.
+    expect(rothIraAllowedContribution(5000, 7000, 2026, params, "married_separate")).toBe(3500);
+  });
+});
+
+describe("traditionalIraDeductibleAmount", () => {
+  it("returns the full contribution when neither spouse is covered, regardless of MAGI — IRC 219(g)(1)", () => {
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, false, false, 2026, params, "married_joint")).toBe(7000);
+  });
+
+  it("does not gate when the covered-MFJ params are unseeded", () => {
+    const bare = {
+      ...params,
+      iraDeduct: { ...params.iraDeduct, coveredStartMfj: null, coveredEndMfj: null },
+    } as TaxYearParameters;
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, true, false, 2026, bare, "married_joint")).toBe(7000);
+  });
+
+  it("is full exactly at the covered-MFJ range start", () => {
+    expect(traditionalIraDeductibleAmount(129000, 7000, true, false, 2026, params, "married_joint")).toBe(7000);
+  });
+
+  it("is zero exactly at the covered-MFJ range end", () => {
+    expect(traditionalIraDeductibleAmount(149000, 7000, true, false, 2026, params, "married_joint")).toBe(0);
+  });
+
+  it("rounds the reduced covered-MFJ deduction UP to the nearest $10, not down", () => {
+    // start 129000, end 149000, width 20000; magi 33 into the range.
+    // reduced = 7000 * (1 - 33/20000) = 6988.45 -> ceil to nearest $10 = 6990 (not 6980).
+    expect(traditionalIraDeductibleAmount(129033, 7000, true, false, 2026, params, "married_joint")).toBe(6990);
+  });
+
+  it("raises the reduced covered-MFJ deduction to the $200 floor at high MAGI inside the range", () => {
+    // 100 short of the end: reduced = 7000 * (100/20000) = 35 -> floored up to 200.
+    expect(traditionalIraDeductibleAmount(148900, 7000, true, false, 2026, params, "married_joint")).toBe(200);
+  });
+
+  it("gives a not-covered contributor with a covered spouse the spousal range, not the covered range", () => {
+    // Spousal range is 242000-252000 (width 10000), entirely distinct from the
+    // covered range (129000-149000). 247000 is the spousal range's midpoint ->
+    // half of 7000 = 3500. A wrong implementation reading the covered range
+    // would treat 247000 as past its end (149000) and return 0 instead.
+    expect(traditionalIraDeductibleAmount(247000, 7000, false, true, 2026, params, "married_joint")).toBe(3500);
+  });
+
+  it("uses the narrow covered-MFS range for a covered self filing MFS", () => {
+    // MFS statutory range is 0-10000; magi 5000 is the midpoint -> half of 7000 = 3500.
+    expect(traditionalIraDeductibleAmount(5000, 7000, true, false, 2026, params, "married_separate")).toBe(3500);
+  });
+
+  it("routes a not-covered MFS filer with a covered spouse to the SAME narrow MFS range, not the MFJ-only spousal range", () => {
+    // rangeFor("iraDeductSpousal", ...) returns NA for MFS -- genuinely
+    // inapplicable (IRC 219(g)(7)'s spousal exception is MFJ-only), not
+    // unseeded. A wrong implementation that read that NA as "unseeded, don't
+    // gate" would return the full $7000 here; the correct answer routes
+    // through the covered-MFS range (0-10000) and phases it to 3500 at magi 5000.
+    expect(traditionalIraDeductibleAmount(5000, 7000, false, true, 2026, params, "married_separate")).toBe(3500);
+  });
+});
+
+describe("studentLoanInterestDeduction", () => {
+  it("returns $0 for MFS regardless of interest paid or MAGI — IRC 221(e)(2)", () => {
+    expect(studentLoanInterestDeduction(999_999, 0, 2026, params, "married_separate")).toBe(0);
+  });
+
+  it("does not gate when the MFJ range params are unseeded — returns the capped amount", () => {
+    const bare = {
+      ...params,
+      studentLoan: { ...params.studentLoan, startMfj: null, endMfj: null },
+    } as TaxYearParameters;
+    expect(studentLoanInterestDeduction(3000, 9_000_000, 2026, bare, "married_joint")).toBe(2500);
+  });
+
+  it("does not cap the deduction when maxDeduction is null", () => {
+    const uncapped = {
+      ...params,
+      studentLoan: { ...params.studentLoan, maxDeduction: null },
+    } as TaxYearParameters;
+    expect(studentLoanInterestDeduction(5000, 170000, 2026, uncapped, "married_joint")).toBe(5000);
+  });
+
+  it("is the full capped amount exactly at the range start", () => {
+    expect(studentLoanInterestDeduction(2500, 175000, 2026, params, "married_joint")).toBe(2500);
+  });
+
+  it("is zero exactly at the range end", () => {
+    expect(studentLoanInterestDeduction(2500, 205000, 2026, params, "married_joint")).toBe(0);
+  });
+
+  it("phases linearly with no $10/$200 rounding", () => {
+    // start 175000, end 205000, width 30000; magi 10000 into the range ->
+    // fraction 1/3 -> capped 2500 * (2/3) = 1666.6667, not rounded to a $10 step.
+    expect(studentLoanInterestDeduction(2500, 185000, 2026, params, "married_joint"))
+      .toBeCloseTo(1666.6667, 4);
+  });
+
+  it("caps interest at maxDeduction BEFORE applying the phase-out", () => {
+    // interest paid ($4000) exceeds the $2500 cap; cap first, then phase.
+    // capped 2500 at magi 185000 (1/3 into the range) -> 2500 * (2/3) = 1666.6667.
+    // If the cap were applied after (or not at all), this would be 2666.6667.
+    expect(studentLoanInterestDeduction(4000, 185000, 2026, params, "married_joint"))
+      .toBeCloseTo(1666.6667, 4);
   });
 });

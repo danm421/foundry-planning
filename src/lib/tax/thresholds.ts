@@ -256,3 +256,89 @@ export function statusFor(item: ThresholdItemId, f: ThresholdFacts): ThresholdSt
   if (income >= range.end) return "out";
   return "partial";
 }
+
+/** Pub 590-A Worksheets 2-1/2-2: round the reduced limit UP to the nearest $10;
+ *  if it lands above $0 but under $200, raise it to $200. */
+function roundReducedLimit(reduced: number, ceiling: number): number {
+  if (reduced <= 0) return 0;
+  const rounded = Math.ceil(reduced / 10) * 10;
+  return Math.min(ceiling, rounded < 200 ? 200 : rounded);
+}
+
+export function rothIraAllowedContribution(
+  magi: number, ageBasedLimit: number, year: number,
+  params: TaxYearParameters, filingStatus: FilingStatus,
+): number {
+  // No household argument: the Roth range never depends on one.
+  const range = rangeFor("rothIra", year, params, filingStatus);
+  if (isNaRange(range) || range.end == null) return ageBasedLimit; // unseeded: don't gate
+  if (magi <= range.start) return ageBasedLimit;
+  if (magi >= range.end) return 0;
+  const fraction = (magi - range.start) / (range.end - range.start);
+  return roundReducedLimit(ageBasedLimit * (1 - fraction), ageBasedLimit);
+}
+
+/**
+ * IRC 219(g)(1): the phase-out only applies when the taxpayer or their spouse
+ * is an active participant in a workplace retirement plan — neither covered
+ * means the full contribution is deductible with no MAGI limit at all.
+ *
+ * `rangeFor("iraDeductSpousal", …)` returns NA_RANGE for every non-MFJ filing
+ * status (IRC 219(g)(7)'s spousal exception applies only to a joint return —
+ * the paragraph says so explicitly). That NA means "genuinely inapplicable
+ * here," never "unseeded" — so it must NOT be read as "don't gate." Per Pub
+ * 590-A, a non-covered MFS filer whose spouse IS covered isn't exempt from
+ * the phase-out: IRC 219(g)(1) triggers on either spouse being covered, and
+ * 219(g)(3)(B)(iii) then fixes the MFS range at the same narrow $0-$10,000
+ * band as a covered MFS filer, regardless of which spouse is the one covered.
+ * `rangeFor("iraDeductCovered", …)` already returns that narrow band for MFS
+ * unconditionally (see its own isMfs short-circuit), so MFS is routed there
+ * — decided on filing status alone, never inferred from the sentinel.
+ */
+export function traditionalIraDeductibleAmount(
+  magi: number, contribution: number, coveredSelf: boolean, coveredSpouse: boolean,
+  year: number, params: TaxYearParameters, filingStatus: FilingStatus,
+): number {
+  if (!coveredSelf && !coveredSpouse) return contribution;
+
+  const item: ThresholdItemId =
+    coveredSelf || isMfs(filingStatus) ? "iraDeductCovered" : "iraDeductSpousal";
+  const range = rangeFor(item, year, params, filingStatus);
+  // Every remaining path here (covered-MFJ/single/HOH, spousal-MFJ) reads a
+  // nullable params column — an NA reaching this point always means "not
+  // seeded yet," since the genuinely-inapplicable non-MFJ spousal case was
+  // already routed away above.
+  if (isNaRange(range) || range.end == null) return contribution;
+  if (magi <= range.start) return contribution;
+  if (magi >= range.end) return 0;
+  const fraction = (magi - range.start) / (range.end - range.start);
+  return roundReducedLimit(contribution * (1 - fraction), contribution);
+}
+
+/**
+ * IRC 221(e)(2) disallows the deduction outright for MFS filers — decided
+ * BEFORE consulting `rangeFor` at all. `rangeFor("studentLoanInterest", …)`
+ * also returns NA_RANGE for MFS, using the SAME sentinel that unseeded
+ * params produce elsewhere; reading that NA as "unseeded, don't gate" would
+ * hand an MFS filer the full deduction Congress denies them — exactly
+ * backwards. Only once MFS is ruled out does a later NA mean "unseeded."
+ */
+export function studentLoanInterestDeduction(
+  interestPaid: number, magi: number, year: number,
+  params: TaxYearParameters, filingStatus: FilingStatus,
+): number {
+  if (isMfs(filingStatus)) return 0;
+
+  // Never treat a null cap as $0 — that would silently zero a real deduction.
+  const cap = params.studentLoan.maxDeduction;
+  const capped = cap == null ? interestPaid : Math.min(interestPaid, cap);
+
+  const range = rangeFor("studentLoanInterest", year, params, filingStatus);
+  // MFS (the only genuinely-inapplicable case) was already ruled out above,
+  // so any NA reaching here can only mean "not seeded yet" — don't gate.
+  if (isNaRange(range) || range.end == null) return capped;
+  if (magi <= range.start) return capped;
+  if (magi >= range.end) return 0;
+  const fraction = (magi - range.start) / (range.end - range.start);
+  return capped * (1 - fraction); // linear, no rounding — Pub 590-A's $10 rule is IRA-specific
+}
