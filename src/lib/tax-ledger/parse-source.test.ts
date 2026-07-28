@@ -50,6 +50,38 @@ describe("parseHouseholdSource", () => {
     const r = parseHouseholdSource("withdrawal:acct1", { type: "ordinary_income", amount: 10000 }, ctx);
     expect(r).toMatchObject({ type: "Withdrawal", account: "Traditional IRA" });
   });
+  it("parses the education-funding capital-gain key without leaking the goal UUID", () => {
+    // The generic <acctId>:<kind> fallback would render this as
+    // account "education_capital" / description "<GOAL-UUID>".
+    const r = parseHouseholdSource(
+      "education_capital:3f1b0c2a-0000-4000-8000-000000000001",
+      { type: "capital_gains", amount: -15000 },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      type: "Education Funding",
+      description: "Capital gain",
+      character: "long_term_gain",
+      account: null,
+      amount: -15000,
+      taxable: true,
+    });
+  });
+  it("parses the education-funding taxable-distribution key without leaking the goal UUID", () => {
+    const r = parseHouseholdSource(
+      "education:3f1b0c2a-0000-4000-8000-000000000001",
+      { type: "ordinary_income", amount: 5000 },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      type: "Education Funding",
+      description: "Taxable distribution",
+      character: "ordinary",
+      account: null,
+      amount: 5000,
+      taxable: true,
+    });
+  });
   it("parses a tax-free withdrawal slice as a non-taxable row", () => {
     const r = parseHouseholdSource("withdrawal_tax_free:acct1", { type: "tax_free", amount: 289366 }, ctx);
     expect(r).toMatchObject({

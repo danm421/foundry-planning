@@ -983,6 +983,14 @@ export const loadClientDataWithContext = cache(
       taxEngineMode: settings.taxEngineMode,
       taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
       lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? parseFloat(settings.lifetimeExemptionCap) : null,
+      capitalLossCarryforwardShortTerm:
+        settings.capitalLossCarryforwardSt != null
+          ? parseFloat(settings.capitalLossCarryforwardSt)
+          : null,
+      capitalLossCarryforwardLongTerm:
+        settings.capitalLossCarryforwardLt != null
+          ? parseFloat(settings.capitalLossCarryforwardLt)
+          : null,
       ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
       outOfHouseholdRate: settings.outOfHouseholdDniRate != null ? parseFloat(settings.outOfHouseholdDniRate) : undefined,
       priorTaxableGifts: {

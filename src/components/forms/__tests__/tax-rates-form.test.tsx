@@ -28,6 +28,8 @@ const BASE_PROPS = {
   outOfHouseholdDniRate: "0.37",
   priorTaxableGiftsClient: "0",
   priorTaxableGiftsSpouse: "0",
+  capitalLossCarryforwardSt: "0",
+  capitalLossCarryforwardLt: "0",
   hasSpouse: false,
   clientFirstName: "Alice",
 };
@@ -115,5 +117,27 @@ describe("TaxRatesForm — PV discount rate field", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.pvDiscountRate).toBeNull();
+  });
+});
+
+describe("TaxRatesForm — capital-loss carryforward field help", () => {
+  it("quotes the $3,000 §1211(b) limit by default", () => {
+    renderForm();
+    const tips = screen.getAllByLabelText(/Offsets future gains/);
+    // Both the short-term and long-term fields carry the help.
+    expect(tips).toHaveLength(2);
+    for (const t of tips) {
+      expect(t.getAttribute("aria-label")).toContain("$3,000");
+    }
+  });
+
+  it("quotes the $1,500 limit for married-filing-separately", () => {
+    renderForm({ filingStatus: "married_separate" } as Partial<typeof BASE_PROPS>);
+    const tips = screen.getAllByLabelText(/Offsets future gains/);
+    expect(tips).toHaveLength(2);
+    for (const t of tips) {
+      expect(t.getAttribute("aria-label")).toContain("$1,500");
+      expect(t.getAttribute("aria-label")).not.toContain("$3,000");
+    }
   });
 });

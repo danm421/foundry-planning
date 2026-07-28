@@ -9,8 +9,30 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * 8: F3 locked-share clamp/cap + F4 orphaned-gain backstop (2026-07-18)
  * 9: F12 entity policy-row schedule + F10 termination effective balance + F13
  *    entity checking synthesis on the solver and scenario-load paths (2026-07-18)
+ * 10: capital-loss support — §1222 netting, §1211(b) $3,000/$1,500(MFS)
+ *     annual ordinary-income cap, §1212(b) indefinite carryforward (halved
+ *     at first death, zeroed at final death), §165(c) personal-use-property
+ *     loss disallowance. Two pre-existing sources of loss — Monte Carlo
+ *     down-year account growth (projection.ts) and non-qualifying equity
+ *     dispositions (equity/tax-events.ts) — previously flowed straight into
+ *     taxable income as an UNCLAMPED, unlimited ordinary-income offset; they
+ *     are now subject to the $3,000/$1,500 cap, so Monte Carlo success rates
+ *     DROP slightly on this bump — the prior numbers over-deducted. Six
+ *     other sites (withdrawal draws, asset sales, transfer/reinvestment
+ *     basis, equity events) previously FLOORED realized losses at zero and
+ *     now recognize them instead, subject to the same cap — a new deduction
+ *     that didn't exist before, the opposite direction of the first change.
+ *     The cap applies in BOTH tax-engine modes: `calculateTaxYearFlat` runs
+ *     the same netting, so flat-mode plans (the default mode) also see their
+ *     seeded Schedule D carryforward draw down $3,000/yr where it previously
+ *     sat frozen. §165(c) now disallows a real-estate loss unless the account
+ *     is explicitly rental/commercial (previously it keyed off the §121
+ *     home-sale-exclusion checkbox, which defaults OFF), and the `sale:`
+ *     drill-down row reports the post-§121/§165(c) taxable gain rather than
+ *     the raw gain — so a §121-excluded residence sale no longer shows an
+ *     itemized gain under a $0 total. (2026-07-28)
  */
-export const ENGINE_VERSION = 9;
+export const ENGINE_VERSION = 10;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

@@ -22,6 +22,12 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   if (sourceId.startsWith("education_tax_free:")) {
     return "Education funding — non-taxable distribution";
   }
+  if (sourceId.startsWith("education_capital:")) {
+    return "Education funding — capital gain";
+  }
+  if (sourceId.startsWith("education:")) {
+    return "Education funding — taxable distribution";
+  }
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
     const name = ctx.rothConversionNames?.[cid];

@@ -3,6 +3,19 @@ import { classifyTransferTax } from "./tax-classification";
 import { controllingFamilyMember } from "./ownership";
 
 // ============================================================================
+// Basis Clamping
+// ============================================================================
+
+/** Basis credited to a transfer's TARGET account. Clamped to the dollars
+ *  actually moved: an underwater source produces basisReturn > actualAmount
+ *  (a $10k draw can consume $20k of basis), and crediting the raw figure would
+ *  manufacture phantom basis on the target and a fake loss on its next sale.
+ *  The SOURCE still sheds the full basisReturn — only the credit is clamped. */
+export function creditTransferBasis(basisReturn: number, actualAmount: number): number {
+  return Math.max(0, Math.min(basisReturn, actualAmount));
+}
+
+// ============================================================================
 // Public Types
 // ============================================================================
 
@@ -119,15 +132,28 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     // Spec 2026-05-11. Retirement-source transfers have basisReturn=0 — preserve
     // their existing proportional basis movement.
     // Signed basis that moved source → target this transfer. Captured (not
-    // re-derived) so the per-entry ledger basis below matches the basisMap
-    // mutation. Taxable/cash: the conserved basisReturn the target gained.
-    // Retirement: the proportional figure _updateBasis already computed.
+    // re-derived) so the per-entry ledger basis below approximates the basisMap
+    // mutation. For taxable/cash sources in normal cases (source has a gain or
+    // break-even basis ratio), this approximation is exact. However, the source
+    // debit below already uses Math.max(0, ...) which can make the source's
+    // basisMap decrease diverge from the raw taxResult.basisReturn in the
+    // opposite direction. Once Task 6 removes the capital-gain ratio floor,
+    // basisReturn can exceed actualAmount (underwater source), and basisMoved
+    // will be clamped by creditTransferBasis. In that case, basisMoved will match
+    // the TARGET's basisMap mutation exactly, but will no longer match the
+    // SOURCE's (source still loses full basisReturn), and the source-side ledger
+    // entry will understate the basis shed. This is flagged for resolution when
+    // Task 6 lands if needed—the asymmetry is acceptable if source-side ledger
+    // "what left for target" semantics is preferable to "raw basis shed".
     let basisMoved: number;
     if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
       const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
       basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
-      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + taxResult.basisReturn;
-      basisMoved = taxResult.basisReturn;
+      const basisCredited = creditTransferBasis(taxResult.basisReturn, actualAmount);
+      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + basisCredited;
+      // basisCredited is clamped to actualAmount to prevent phantom basis on the target
+      // once Task 6 removes the capital-gain ratio floor (underwater source scenario).
+      basisMoved = basisCredited;
       if (freshBasisMap) {
         const consumed = Math.min(sourceFresh, actualAmount);
         freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);

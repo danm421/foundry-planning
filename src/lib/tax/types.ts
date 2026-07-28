@@ -160,6 +160,9 @@ export interface CalcInput {
    *  Itemizing callers MUST supply this — when omitted it defaults to 0, understating AMTI
    *  (the SALT add-back is silently skipped). */
   saltDeducted?: number;
+  /** Prior-year capital-loss carryforward (§1212(b)), by character. Optional
+   *  for back-compat — omitting it nets with no carryover. */
+  capitalLossCarryforwardIn?: import("./capital-loss").CapitalLossCarryforward;
 }
 
 export interface TaxResult {
@@ -218,4 +221,14 @@ export interface TaxResult {
   /** State income-tax detail (bracket-mode engine). Always populated;
    *  when residenceState is null, contains the fallback flat-rate result. */
   state?: import("./state-income").StateIncomeTaxResult;
+  /** §1211/§1212 capital-loss detail. `deduction` is the ordinary-income
+   *  offset actually taken; `carryforwardConsumed` may be SMALLER when taxable
+   *  income could not absorb it (§1212(b)(2)). */
+  capitalLoss: {
+    deduction: number;
+    carryforwardConsumed: number;
+    carryforwardOut: import("./capital-loss").CapitalLossCarryforward;
+    shortTermLoss: number;
+    longTermLoss: number;
+  };
 }

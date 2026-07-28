@@ -228,6 +228,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
   return (
     <AssumptionsClient
       clientId={clientId}
+      filingStatus={clientRow.filingStatus}
       settings={{
         flatFederalRate: String(settings.flatFederalRate),
         flatStateRate: String(settings.flatStateRate),
@@ -263,6 +264,11 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
         priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
         priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+        capitalLossCarryforwardSt: settings.capitalLossCarryforwardSt ?? "",
+        capitalLossCarryforwardLt: settings.capitalLossCarryforwardLt ?? "",
+        // Onboarding runs before tax-return analysis is realistically in place;
+        // the tax-return autofill hint (assumptions-content.tsx) doesn't apply here.
+        capitalLossCarryforwardLtSourceYear: null,
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
         medicarePremiumInflationRate:

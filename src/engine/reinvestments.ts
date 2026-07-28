@@ -11,7 +11,8 @@ export interface ReinvestmentsInput {
 }
 
 export interface ReinvestmentsResult {
-  /** Long-term capital gains realized by switches this year. */
+  /** Signed long-term capital gains realized by switches this year — negative
+   *  when an underwater sleeve was sold and rebought. */
   capitalGains: number;
   byReinvestment: Record<string, { capitalGains: number; label: string }>;
 }
@@ -41,9 +42,19 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
         const bal = input.accountBalances[acct.id] ?? 0;
         const basis = input.basisMap[acct.id] ?? 0;
         const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
-        const realizedGain = Math.max(0, bal - basis) * fraction;
-        if (realizedGain > 0) {
-          input.basisMap[acct.id] = basis + realizedGain; // sell-and-rebuy step-up
+        // Signed: a sell-and-rebuy of an underwater sleeve realizes a LOSS and
+        // steps basis DOWN. No §1091 wash-sale test is applied. This is a TIMING
+        // difference, not a permanent overstatement: the basis step-down below
+        // (basis = basis + realizedGain) means the model and §1091 converge on the
+        // same total gain by the final sale. With B = basis before the switch,
+        // V = value at the switch, L = V - B the realized loss, and P = final
+        // proceeds: the model recognizes L now and P - V later (total P - B);
+        // §1091 disallows L, keeps basis at B, and recognizes P - B later. Both
+        // equal P - B, because B + L = V. The loss is simply recognized earlier
+        // than §1091 permits (documented limitation, see spec known-gaps).
+        const realizedGain = (bal - basis) * fraction;
+        if (realizedGain !== 0) {
+          input.basisMap[acct.id] = basis + realizedGain;
           capitalGains += realizedGain;
           byReinvestmentGains += realizedGain;
         }

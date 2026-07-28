@@ -232,7 +232,7 @@ function _classifyRothDistribution(
  * - The remainder is gained pro-rata against the *legacy* pool:
  *     legacyValue = sourceAccountValue − sourceFreshBasis
  *     legacyBasis = sourceAccountBasis − sourceFreshBasis
- *     gainRatio   = clamp(0,1, 1 − legacyBasis / legacyValue)
+ *     gainRatio   = min(1, 1 − legacyBasis / legacyValue)   // signed; may be negative
  */
 function _calcLotOrderedRealization(
   amount: number,
@@ -246,11 +246,14 @@ function _calcLotOrderedRealization(
   const legacyDraw = amount - freshDraw;
   const legacyValue = sourceAccountValue - fresh;
   const legacyBasis = sourceAccountBasis - fresh;
+  // Signed — mirrors categorizeDraw. Below 0 = underwater lot, realizing loss.
   let gainRatio = 0;
   if (legacyValue > 0) {
-    gainRatio = Math.max(0, Math.min(1, 1 - legacyBasis / legacyValue));
+    gainRatio = Math.min(1, 1 - legacyBasis / legacyValue);
   }
-  const capitalGain = legacyDraw * gainRatio;
+  // Guard the multiply — mirrors categorizeDraw: a signed ratio times a zero
+  // legacy draw would otherwise hand back -0.
+  const capitalGain = legacyDraw === 0 ? 0 : legacyDraw * gainRatio;
   const basisReturn = freshDraw + legacyDraw * (1 - gainRatio);
   return { capitalGain, basisReturn };
 }
