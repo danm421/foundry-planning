@@ -409,7 +409,8 @@ export type AuditAction =
   | "portal.folder.delete"
   // Risk profiles
   | "risk_profile.tolerance_manual"
-  | "risk_profile.environment_changed";
+  | "risk_profile.environment_changed"
+  | "risk_profile.rtq_completed";
 
 type Args = {
   action: AuditAction;
