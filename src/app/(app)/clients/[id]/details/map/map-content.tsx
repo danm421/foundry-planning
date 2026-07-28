@@ -307,12 +307,18 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
 
   const today = new Date();
   const spouseFirstName = effectiveTree.client.spouseName ?? null;
+  const clientBirthYear = birthYearFromDob(client.dateOfBirth);
+  // Same CRM spouse-contact DOB (`client.spouseDob`) that feeds `age` below
+  // and gates `milestones.spouseEnd` — must not diverge (see the
+  // `spouseFirstName` note near `buildMapGoals` below).
+  const spouseBirthYear = birthYearFromDob(client.spouseDob);
   const people = {
     client: {
       familyMemberId: familyMemberRows.find((f) => f.role === "client")?.id ?? null,
       firstName: effectiveTree.client.firstName,
       age: ageOnDate(client.dateOfBirth, today),
-      retirementYear: yearForAge(birthYearFromDob(client.dateOfBirth), client.retirementAge),
+      retirementYear: yearForAge(clientBirthYear, client.retirementAge),
+      birthYear: clientBirthYear,
     } satisfies MapPerson,
     spouse: spouseFirstName
       ? ({
@@ -322,20 +328,22 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
           retirementYear:
             client.spouseRetirementAge == null
               ? null
-              : yearForAge(birthYearFromDob(client.spouseDob), client.spouseRetirementAge),
+              : yearForAge(spouseBirthYear, client.spouseRetirementAge),
+          birthYear: spouseBirthYear,
         } satisfies MapPerson)
       : null,
     children: familyMemberRows
       .filter((f) => f.role === "child")
-      .map(
-        (f) =>
-          ({
-            familyMemberId: f.id,
-            firstName: f.firstName,
-            age: ageOnDate(f.dateOfBirth, today),
-            retirementYear: null,
-          }) satisfies MapPerson,
-      ),
+      .map((f) => {
+        const birthYear = birthYearFromDob(f.dateOfBirth);
+        return {
+          familyMemberId: f.id,
+          firstName: f.firstName,
+          age: ageOnDate(f.dateOfBirth, today),
+          retirementYear: null,
+          birthYear,
+        } satisfies MapPerson;
+      }),
   };
 
   return (

@@ -10,6 +10,7 @@ function person(overrides: Partial<MapPerson> = {}): MapPerson {
     firstName: "Alex",
     age: 45,
     retirementYear: 2045,
+    birthYear: 1980,
     ...overrides,
   };
 }

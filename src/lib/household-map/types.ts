@@ -29,6 +29,11 @@ export interface MapPerson {
   firstName: string;
   age: number | null;
   retirementYear: number | null;
+  /** Calendar year of birth. Sliced from the DOB string (see
+   *  `birthYearFromDob` in `@/lib/age-year`) rather than derived from `age` +
+   *  the current year, so boards can compute a person's age in an arbitrary
+   *  future/past year without redoing that timezone-sensitive math. */
+  birthYear: number | null;
 }
 
 /** One card on a board. Assembled server-side by the map route's adapters. */
