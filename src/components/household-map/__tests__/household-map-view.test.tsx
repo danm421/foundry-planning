@@ -187,6 +187,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
       resolvedInflationRate: 0.025,
       categoryDefaults: {},
     },
+    categoryDefaultRates: {},
     resolvedInflationRate: 0.03,
     // Ownership context for AddAccountDialog. Non-empty by default because an
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save

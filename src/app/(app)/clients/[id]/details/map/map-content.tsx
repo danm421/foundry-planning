@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
+import { crmHouseholdContacts, entities, familyMembers, planSettings, scenarios } from "@/db/schema";
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
@@ -24,6 +24,7 @@ import {
 } from "@/lib/accounts/load-account-rows";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
+import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import { buildMapGoals } from "@/lib/household-map/goals";
 import { moneyLabel } from "@/lib/household-map/format";
 import {
@@ -84,7 +85,14 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     );
   }
 
-  const [entityRows, familyMemberRows, { effectiveTree }, accountMetaRows, growthContext] =
+  const [
+    entityRows,
+    familyMemberRows,
+    { effectiveTree },
+    accountMetaRows,
+    growthContext,
+    settingsRows,
+  ] =
     await Promise.all([
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
       db
@@ -114,6 +122,10 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       //   select the same way — do not "fix" either of these to `scenarioParam`.
       loadAccountMetaRows(id, scenario.id),
       loadImportGrowthContext(id, firmId, scenario.id),
+      db
+        .select()
+        .from(planSettings)
+        .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     ]);
 
   // Everything the boards, milestones and person nodes read comes from ONE
@@ -249,6 +261,17 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     }).map((r) => [r.id, r]),
   );
 
+  // Per-category default RATES (decimal strings, all ten categories) — the
+  // shared extraction the Net Worth page uses, so the Map's "Plan default"
+  // option cannot quote a different number than the account dialog does.
+  // Distinct from `growthContext.categoryDefaults`, which is a display-label
+  // map covering three categories.
+  const categoryDefaultRates = buildCategoryDefaultRates(
+    settingsRows[0],
+    growthContext.modelPortfolios,
+    growthContext.resolvedInflationRate,
+  );
+
   const goals = buildMapGoals({
     expenses: effectiveTree.expenses,
     milestones,
@@ -328,6 +351,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       accountOptions={accountOptions}
       accountRows={accountRows}
       growthContext={growthContext}
+      categoryDefaultRates={categoryDefaultRates}
       resolvedInflationRate={effectiveTree.planSettings.inflationRate}
       familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
         id: fmId,

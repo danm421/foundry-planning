@@ -47,13 +47,17 @@ export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
   const mode = growthEditModeFor(args.category);
   if (mode === "none") return [];
 
-  const inflationLabel = `${(args.resolvedInflationRate * 100).toFixed(2)}% - Inflation rate`;
+  const inflationLabel = `${(args.resolvedInflationRate * 100).toFixed(2)}% \u2014 Inflation rate`;
 
   if (mode === "custom_only") return [{ value: "custom", label: "Custom %" }];
   if (mode === "inflation_custom") {
+    // Order mirrors the real editor at `add-account-form.tsx` (the real_estate
+    // branch renders Custom % first, then Inflation rate). Controller
+    // resolution R11: this module exists to mirror the form, and mirroring
+    // includes the order the advisor reads.
     return [
-      { value: "inflation", label: inflationLabel },
       { value: "custom", label: "Custom %" },
+      { value: "inflation", label: inflationLabel },
     ];
   }
 
@@ -62,23 +66,23 @@ export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
       value: "default",
       label:
         args.defaultPctForCategory !== null
-          ? `${args.defaultPctForCategory}% - Plan default`
+          ? `${args.defaultPctForCategory}% \u2014 Plan default`
           : "Plan default",
     },
   ];
   for (const mp of args.modelPortfolios) {
-    out.push({ value: `mp:${mp.id}`, label: `${(mp.blendedReturn * 100).toFixed(2)}% - ${mp.name}` });
+    out.push({ value: `mp:${mp.id}`, label: `${(mp.blendedReturn * 100).toFixed(2)}% \u2014 ${mp.name}` });
   }
   for (const fp of args.fundPortfolios) {
     if (fp.blendedReturnPct === null) continue; // needs classified holdings
-    out.push({ value: `tp:${fp.id}`, label: `${fp.blendedReturnPct.toFixed(2)}% - ${fp.name}` });
+    out.push({ value: `tp:${fp.id}`, label: `${fp.blendedReturnPct.toFixed(2)}% \u2014 ${fp.name}` });
   }
   if (ASSET_MIX_CATEGORIES.includes(args.category) && !args.hideAssetMix) {
     out.push({
       value: "asset_mix",
       label:
         args.assetMixBlendedPct !== null
-          ? `${args.assetMixBlendedPct.toFixed(2)}% - Asset mix (custom)`
+          ? `${args.assetMixBlendedPct.toFixed(2)}% \u2014 Asset mix (custom)`
           : "Asset mix (custom)",
     });
   }

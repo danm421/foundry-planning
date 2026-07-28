@@ -61,9 +61,15 @@ describe("growthOptionsFor", () => {
     expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "custom"]);
   });
 
-  it("offers only inflation and custom for real_estate", () => {
-    const values = growthOptionsFor({ category: "real_estate", ...ctx }).map((o) => o.value);
-    expect(values).toEqual(["inflation", "custom"]);
+  it("orders real_estate as [custom, inflation], matching the form (R11)", () => {
+    // The real editor at add-account-form.tsx renders Custom % first, then
+    // Inflation rate. Same options in the opposite order is exactly the
+    // "two editors disagree" gap this module exists to close, so the ORDER is
+    // asserted, not just the membership.
+    expect(growthOptionsFor({ category: "real_estate", ...ctx }).map((o) => o.value)).toEqual([
+      "custom",
+      "inflation",
+    ]);
   });
 
   it("offers only custom for business", () => {
@@ -82,7 +88,10 @@ describe("growthOptionsFor", () => {
 
   it("labels model portfolios with a two-decimal blended return", () => {
     const opts = growthOptionsFor({ category: "taxable", ...ctx });
-    expect(opts.find((o) => o.value === "mp:mp-2")?.label).toBe("7.24% - Growth");
+    // EM DASH, not a hyphen: every option label in the real editors
+    // (`growth-rate-field.tsx`, `add-account-form.tsx`) uses one, and this
+    // module exists to mirror them.
+    expect(opts.find((o) => o.value === "mp:mp-2")?.label).toBe("7.24% \u2014 Growth");
   });
 });
 

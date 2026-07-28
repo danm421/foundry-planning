@@ -58,6 +58,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
       resolvedInflationRate: 0.025,
       categoryDefaults: {},
     },
+    categoryDefaultRates: {},
     resolvedInflationRate: 0.03,
     familyMemberOptions: [],
     entityOptions: [],

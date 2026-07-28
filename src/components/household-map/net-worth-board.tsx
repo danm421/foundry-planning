@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import MapCard from "./map-card";
+import GrowthRateCell from "./growth-rate-cell";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import PersonNode from "./person-node";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { moneyLabel } from "@/lib/household-map/format";
-import { formatGrowthPct } from "@/lib/household-map/growth-options";
 import type { BoardCallbacks, HouseholdMapProps, MapItem } from "@/lib/household-map/types";
 
 /** account/liability/policy → the Net Worth detail page; income/savings/expense
@@ -29,6 +29,9 @@ export default function NetWorthBoard({
   items,
   canEdit,
   accountRows,
+  growthContext,
+  categoryDefaultRates,
+  resolvedInflationRate,
   onAddAccount,
   onSaveAccountField,
 }: HouseholdMapProps & BoardCallbacks) {
@@ -55,7 +58,19 @@ export default function NetWorthBoard({
   function rateSlotFor(item: MapItem) {
     const row = accountRows[item.id];
     if (!row || row.category === "life_insurance") return null;
-    return <span className="tabular text-[11px] text-ink-3">{formatGrowthPct(row.growthRate)}</span>;
+    return (
+      <GrowthRateCell
+        row={row}
+        growthContext={growthContext}
+        categoryDefaultRates={categoryDefaultRates}
+        // The SCENARIO-EFFECTIVE rate, not `growthContext.resolvedInflationRate`
+        // — that one is loaded against the base scenario id. See the prop's doc
+        // comment on GrowthRateCell.
+        resolvedInflationRate={resolvedInflationRate}
+        canEdit={canEdit && onSaveAccountField != null}
+        onSave={(patch) => onSaveAccountField!(item.id, patch)}
+      />
+    );
   }
 
   /** The inline value editor, or null to fall back to the plain label. Gated on

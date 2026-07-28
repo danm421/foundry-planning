@@ -146,6 +146,20 @@ export interface HouseholdMapProps {
   growthContext: GrowthContext;
 
   /**
+   * Per-category default growth rate as a DECIMAL STRING, e.g.
+   * `categoryDefaultRates("retirement")` -> "0.062". Covers all ten account
+   * categories, and already collapses each category's configured source
+   * (inflation / model portfolio / flat custom) down to one effective rate —
+   * `lib/investments/category-default-rates.ts`, shared with the Net Worth page
+   * so the two cannot drift.
+   *
+   * NAMING TRAP: this is NOT `growthContext.categoryDefaults`. That one is
+   * `Record<string, {portfolioName, blendedReturnPct}>` — display labels for
+   * three categories only. Similar name, different shape, different coverage.
+   */
+  categoryDefaultRates: Record<string, string>;
+
+  /**
    * Ownership context for the Net Worth board's "+ Add" → `AddAccountDialog`.
    * NOT optional: with no `familyMembers` the form's `defaultOwners` is empty,
    * `OwnershipEditor` renders no owner rows, `canSave` still passes on the name
