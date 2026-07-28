@@ -1,0 +1,166 @@
+// @vitest-environment jsdom
+import { describe, it, expect } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import NetWorthBoard from "../net-worth-board";
+import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+
+function person(overrides: Partial<MapPerson> = {}): MapPerson {
+  return {
+    familyMemberId: "fm-default",
+    firstName: "Alex",
+    age: 45,
+    retirementYear: 2045,
+    ...overrides,
+  };
+}
+
+function item(overrides: Partial<MapItem> & Pick<MapItem, "id" | "column">): MapItem {
+  return {
+    kind: "account",
+    category: "investments",
+    name: "Item",
+    valueLabel: "$0",
+    value: 0,
+    splitChip: null,
+    trayOwnerLabel: null,
+    noteChip: null,
+    ...overrides,
+  };
+}
+
+function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProps {
+  return {
+    clientId: "client-1",
+    people: {
+      client: person({ familyMemberId: "fm-client", firstName: "Alex" }),
+      spouse: person({ familyMemberId: "fm-spouse", firstName: "Jordan" }),
+      children: [],
+    },
+    netWorthLabel: "$500,000",
+    items: [],
+    goals: [],
+    canEdit: true,
+    ...overrides,
+  };
+}
+
+/** The subtotal line is `{label} · <b>{formatCurrency(subtotal)}</b>` — the
+ *  bold total is the only `<b>` this component renders, so its parent's full
+ *  text content is the reliable way to assert a combined "label · $amount"
+ *  string across the split text nodes. */
+function subtotalTextFor(container: HTMLElement, col: string): string | null {
+  const columnEl = container.querySelector(`[data-testid="column-${col}"]`);
+  const bold = columnEl?.querySelector("b");
+  return bold?.parentElement?.textContent ?? null;
+}
+
+describe("NetWorthBoard", () => {
+  it("married household — renders three columns, a tray, and correct subtotals (including a mixed sign column)", () => {
+    const items: MapItem[] = [
+      // Client column: account + liability — pins the signed-value contract.
+      item({ id: "a1", column: "client", kind: "account", value: 100000, valueLabel: "$100,000" }),
+      item({
+        id: "l1",
+        column: "client",
+        kind: "liability",
+        category: "debt",
+        value: -30000,
+        valueLabel: "($30,000)",
+      }),
+      item({ id: "a2", column: "joint", value: 50000, valueLabel: "$50,000" }),
+      item({
+        id: "l2",
+        column: "spouse",
+        kind: "liability",
+        category: "debt",
+        value: -20000,
+        valueLabel: "($20,000)",
+      }),
+      // Tray: entity-owned account, must not bleed into any column's subtotal.
+      item({
+        id: "t1",
+        column: "tray",
+        kind: "account",
+        category: "entity",
+        name: "Family LLC brokerage",
+        value: 999999,
+        valueLabel: "$999,999",
+        trayOwnerLabel: "Family LLC",
+      }),
+    ];
+
+    const { container } = render(<NetWorthBoard {...baseProps({ items })} />);
+
+    expect(screen.getByTestId("column-client")).toBeInTheDocument();
+    expect(screen.getByTestId("column-joint")).toBeInTheDocument();
+    expect(screen.getByTestId("column-spouse")).toBeInTheDocument();
+
+    // Signed-value arithmetic: 100,000 + (-30,000) = 70,000.
+    expect(subtotalTextFor(container, "client")).toBe("Alex · $70,000");
+    expect(subtotalTextFor(container, "joint")).toBe("Jointly Held · $50,000");
+    expect(subtotalTextFor(container, "spouse")).toBe("Jordan · -$20,000");
+
+    // Tray renders, is labelled, and does not affect any column subtotal.
+    const tray = screen.getByTestId("tray");
+    expect(within(tray).getByText("Family LLC brokerage")).toBeInTheDocument();
+    expect(within(tray).getByRole("link")).toHaveAttribute(
+      "href",
+      "/clients/client-1/details/net-worth",
+    );
+  });
+
+  it("single client — one centred node, no bracket/'Jointly Held', two columns only", () => {
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", value: 100000, valueLabel: "$100,000" }),
+    ];
+
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          people: { client: person({ firstName: "Alex" }), spouse: null, children: [] },
+          items,
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("Jordan")).not.toBeInTheDocument();
+    expect(screen.queryByText("Jointly Held")).not.toBeInTheDocument();
+
+    expect(screen.getByTestId("column-client")).toBeInTheDocument();
+    expect(screen.getByTestId("column-joint")).toBeInTheDocument();
+    expect(screen.queryByTestId("column-spouse")).not.toBeInTheDocument();
+
+    // The connector leg grid must have exactly two legs, not three.
+    expect(screen.getByTestId("net-worth-legs").children).toHaveLength(2);
+  });
+
+  it("an empty column still renders its header, add control, and a $0 subtotal — the leg must not dangle", () => {
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", value: 100000, valueLabel: "$100,000" }),
+      // No items in "spouse" — that column is empty.
+    ];
+
+    const { container } = render(<NetWorthBoard {...baseProps({ items, canEdit: true })} />);
+
+    // Leg count is unaffected by an empty column — still three legs for three columns.
+    expect(screen.getByTestId("net-worth-legs").children).toHaveLength(3);
+
+    const spouseColumn = screen.getByTestId("column-spouse");
+    expect(within(spouseColumn).getByText("Jordan")).toBeInTheDocument();
+    expect(within(spouseColumn).getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+    expect(subtotalTextFor(container, "spouse")).toBe("Jordan · $0");
+  });
+
+  it("no entity-owned items — the tray is absent entirely, not an empty labelled strip", () => {
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", value: 100000, valueLabel: "$100,000" }),
+      item({ id: "a2", column: "joint", value: 50000, valueLabel: "$50,000" }),
+      item({ id: "a3", column: "spouse", value: 75000, valueLabel: "$75,000" }),
+    ];
+
+    render(<NetWorthBoard {...baseProps({ items })} />);
+
+    expect(screen.queryByTestId("tray")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Held by trusts/)).not.toBeInTheDocument();
+  });
+});
