@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import GrowthInflationForm from "../growth-inflation-form";
 import { ClientAccessProvider } from "@/components/client-access-provider";
@@ -39,47 +39,23 @@ function renderForm(overrides?: Partial<React.ComponentProps<typeof GrowthInflat
   );
 }
 
-// Category rows have no <label htmlFor> association — locate each category's
-// <select> via its visible label text and the shared ROW_GRID ancestor.
-function categorySelect(label: string): HTMLSelectElement {
-  return screen.getByText(label).closest(".grid")!.querySelector("select") as HTMLSelectElement;
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
+// Risk tolerance moved from an editable <select> + "Apply to portfolios"
+// button here to a read-only display -- mutating it now happens on
+// /risk/[clientId] (Tasks 10-13). This tab only shows the current composite
+// level and links out.
 
-describe("GrowthInflationForm — risk tolerance control", () => {
-  it("Apply fills taxable+retirement from the tagged portfolio, leaves cash", () => {
-    renderForm({
-      modelPortfolios: [{ id: "pf1", name: "Mod", blendedReturn: 0.06, riskLevel: "moderate" }],
-    });
+describe("GrowthInflationForm — risk tolerance display", () => {
+  it("shows the composite level read-only, with a link to the risk profile", () => {
+    renderForm({ riskLevel: "moderate" });
 
-    fireEvent.change(screen.getByLabelText(/risk tolerance/i), { target: { value: "moderate" } });
-    fireEvent.click(screen.getByRole("button", { name: /apply to portfolios/i }));
-
-    expect(categorySelect("Taxable").value).toBe("mp:pf1");
-    expect(categorySelect("Retirement").value).toBe("mp:pf1");
-    // Cash is deliberately untouched — still whatever it defaulted to.
-    expect(categorySelect("Cash").value).toBe("custom");
+    expect(screen.getByText("Moderate")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /manage risk profile/i });
+    expect(link).toHaveAttribute("href", "/risk/test-client-id");
   });
 
-  it("shows an untagged note when the chosen rung has no tagged portfolio, and Apply is a no-op", () => {
-    renderForm({
-      modelPortfolios: [{ id: "pf1", name: "Mod", blendedReturn: 0.06, riskLevel: "moderate" }],
-    });
-
-    fireEvent.change(screen.getByLabelText(/risk tolerance/i), { target: { value: "aggressive" } });
-
-    expect(screen.getByText(/No Aggressive model tagged/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /apply to portfolios/i }));
-    expect(categorySelect("Taxable").value).toBe("custom");
-    expect(categorySelect("Retirement").value).toBe("custom");
-  });
-
-  it("does not render the untagged note when nothing is selected", () => {
-    renderForm({
-      modelPortfolios: [{ id: "pf1", name: "Mod", blendedReturn: 0.06, riskLevel: "moderate" }],
-    });
-    expect(screen.queryByText(/model tagged/i)).not.toBeInTheDocument();
+  it("shows 'Not established' when no risk level is set", () => {
+    renderForm({ riskLevel: null });
+    expect(screen.getByText("Not established")).toBeInTheDocument();
   });
 });

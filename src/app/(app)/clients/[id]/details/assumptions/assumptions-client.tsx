@@ -90,7 +90,10 @@ interface ModelPortfolioOption {
 
 interface AssumptionsClientProps {
   clientId: string;
-  riskTolerance?: string | null;
+  /** The household's composite risk level (Task 9+), falling back to the
+   *  legacy `clients.riskTolerance` column when no profile row exists yet --
+   *  resolved by the server component so this stays a plain read-only value. */
+  riskLevel?: RiskLevel | null;
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
@@ -119,7 +122,7 @@ const TABS = [
 
 export default function AssumptionsClient({
   clientId,
-  riskTolerance,
+  riskLevel,
   settings,
   accounts,
   withdrawalStrategies,
@@ -164,7 +167,7 @@ export default function AssumptionsClient({
         {activeTab === "growth-inflation" && (
           <GrowthInflationForm
             clientId={clientId}
-            riskTolerance={riskTolerance}
+            riskLevel={riskLevel}
             inflationRate={settings.inflationRate}
             inflationRateSource={settings.inflationRateSource}
             resolvedInflationRate={resolvedInflationRate}

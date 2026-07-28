@@ -11,6 +11,7 @@ import {
   clientCmaOverrides,
   clientDeductions,
   crmHouseholdContacts,
+  clientRiskProfiles,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -71,6 +72,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     allocationRows,
     assetClassRows,
     deductionRows,
+    riskProfileRows,
     { effectiveTree },
   ] = await Promise.all([
     db
@@ -93,8 +95,18 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
       .select()
       .from(clientDeductions)
       .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id))),
+    // Nothing in the risk-profile plan syncs `clients.risk_tolerance` from the
+    // composite level, so the legacy column would go stale the moment an
+    // advisor changes tolerance on /risk. Prefer the composite level; fall
+    // back to the legacy column only when no profile row exists yet.
+    db
+      .select({ compositeLevel: clientRiskProfiles.compositeLevel })
+      .from(clientRiskProfiles)
+      .where(and(eq(clientRiskProfiles.clientId, id), eq(clientRiskProfiles.firmId, firmId))),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
   ]);
+
+  const riskLevel = riskProfileRows[0]?.compositeLevel ?? clientRow.riskTolerance;
 
   const accountRows = effectiveTree.accounts;
   const savingsRows = effectiveTree.savingsRules;
@@ -272,7 +284,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
 
       <AssumptionsClient
         clientId={id}
-        riskTolerance={clientRow.riskTolerance}
+        riskLevel={riskLevel}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),
