@@ -177,6 +177,16 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     accountOptions: [],
+    // Required on `HouseholdMapProps` as of Task 5. This board does not read
+    // either one — they are here so the fixture typechecks against the shared
+    // props type, which is the point of having a shared props type.
+    accountRows: {},
+    growthContext: {
+      modelPortfolios: [],
+      fundPortfolios: [],
+      resolvedInflationRate: 0.025,
+      categoryDefaults: {},
+    },
     resolvedInflationRate: 0.03,
     // Ownership context for AddAccountDialog. Non-empty by default because an
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save

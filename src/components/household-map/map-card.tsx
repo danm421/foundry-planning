@@ -17,6 +17,10 @@ interface MapCardProps {
   /** Optional glyph rendered ahead of the name. */
   icon?: ReactNode;
   onClick?: () => void;
+  /** Growth rate, rendered between the name and the value. Net Worth board only. */
+  rateSlot?: ReactNode;
+  /** Trailing affordance (the edit pencil). Net Worth board only. */
+  actionSlot?: ReactNode;
 }
 
 /**
@@ -25,7 +29,13 @@ interface MapCardProps {
  * the free-form note when both are present — an item sitting in the tray or on
  * an uneven split needs to say why before it says anything else.
  */
-export default function MapCard({ item, icon, onClick }: MapCardProps) {
+export default function MapCard({
+  item,
+  icon,
+  onClick,
+  rateSlot,
+  actionSlot,
+}: MapCardProps) {
   const chip = item.trayOwnerLabel ?? item.splitChip ?? item.noteChip;
   const body = (
     <>
@@ -38,8 +48,13 @@ export default function MapCard({ item, icon, onClick }: MapCardProps) {
           </span>
         ) : null}
       </span>
-      <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-ink-2">
-        {item.valueLabel}
+      {/* `tabular` (the design system's mono-numeral class) replaces the raw
+          `tabular-nums` utility so the rate and the value align on the same
+          numeral width once both slots are filled. */}
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {rateSlot}
+        <span className="text-xs font-semibold tabular text-ink-2">{item.valueLabel}</span>
+        {actionSlot}
       </span>
     </>
   );

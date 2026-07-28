@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import NetWorthBoard from "../net-worth-board";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+import type { AccountRow } from "@/components/balance-sheet-view";
 
 // `useScenarioPreservingHref` reads the URL's `?scenario=`. `vi.hoisted` so the
 // hoisted `vi.mock` factory can close over a value the tests mutate per case
@@ -66,11 +67,36 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     accountOptions: [],
+    accountRows: {},
+    // Controller resolution R3: Task 5 adds ONLY `accountRows` and
+    // `growthContext`. The plan's snippet also seeds `categoryDefaultRates: {}`
+    // here, but that prop is not declared on `HouseholdMapProps` until Task 7 —
+    // adding it now would be an excess property and would not compile.
+    growthContext: {
+      modelPortfolios: [],
+      fundPortfolios: [],
+      resolvedInflationRate: 0.025,
+      categoryDefaults: {},
+    },
     resolvedInflationRate: 0.03,
     familyMemberOptions: [],
     entityOptions: [],
     ...overrides,
   };
+}
+
+function accountRow(overrides: Partial<AccountRow> & { id: string }): AccountRow {
+  return {
+    name: "IRA",
+    category: "retirement",
+    subType: "traditional_ira",
+    owner: "client",
+    value: "400000",
+    basis: "0",
+    growthRate: "0.062",
+    growthSource: "default",
+    ...overrides,
+  } as AccountRow;
 }
 
 /** The subtotal line is `{label} · <b>{moneyLabel(subtotal)}</b>` — the bold
@@ -308,5 +334,79 @@ describe("NetWorthBoard", () => {
 
     expect(screen.queryByTestId("tray")).not.toBeInTheDocument();
     expect(screen.queryByText(/Held by trusts/)).not.toBeInTheDocument();
+  });
+});
+
+describe("growth rate display", () => {
+  it("shows the resolved rate on an in-scope account card", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+      />,
+    );
+    expect(screen.getByText("6.20%")).toBeInTheDocument();
+  });
+
+  it("shows no rate for a liability card", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+      />,
+    );
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
+
+  it("shows no rate for a life-insurance policy — policies are out of scope", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "acct-li",
+              column: "client",
+              name: "Whole Life",
+              kind: "account",
+              category: "insurance",
+            }),
+          ],
+          accountRows: { "acct-li": accountRow({ id: "acct-li", category: "life_insurance" }) },
+        })}
+      />,
+    );
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
+
+  it("shows the rate on a tray card too", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          items: [
+            item({
+              id: "acct-tray",
+              column: "tray",
+              name: "Trust Brokerage",
+              kind: "account",
+              trayOwnerLabel: "Smith Family Trust",
+            }),
+          ],
+          accountRows: { "acct-tray": accountRow({ id: "acct-tray", growthRate: "0.048" }) },
+        })}
+      />,
+    );
+    expect(screen.getByText("4.80%")).toBeInTheDocument();
   });
 });

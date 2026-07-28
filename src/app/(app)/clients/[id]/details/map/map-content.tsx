@@ -17,6 +17,13 @@ import {
   type IncomeView,
   type SavingsRuleView,
 } from "@/lib/scenario/view-adapters";
+import {
+  buildAccountRows,
+  linkedSourceMapFrom,
+  loadAccountMetaRows,
+} from "@/lib/accounts/load-account-rows";
+import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
+import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import { buildMapGoals } from "@/lib/household-map/goals";
 import { moneyLabel } from "@/lib/household-map/format";
 import {
@@ -77,20 +84,37 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     );
   }
 
-  const [entityRows, familyMemberRows, { effectiveTree }] = await Promise.all([
-    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-    db
-      .select({
-        id: familyMembers.id,
-        role: familyMembers.role,
-        firstName: familyMembers.firstName,
-        dateOfBirth: familyMembers.dateOfBirth,
-      })
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id))
-      .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
-    loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
-  ]);
+  const [entityRows, familyMemberRows, { effectiveTree }, accountMetaRows, growthContext] =
+    await Promise.all([
+      db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+      db
+        .select({
+          id: familyMembers.id,
+          role: familyMembers.role,
+          firstName: familyMembers.firstName,
+          dateOfBirth: familyMembers.dateOfBirth,
+        })
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, id))
+        .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
+      loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+      // Both take the BASE scenario id, not `scenarioParam`, and both are
+      // correct for opposite reasons.
+      //
+      //   `loadAccountMetaRows` is base-scoped BY DESIGN — the scenario overlay
+      //   is a separate step (`loadOverlaidAccountMeta` below), because scenario
+      //   account metadata lives in `scenario_changes` payloads rather than in
+      //   duplicated `accounts` rows.
+      //
+      //   `loadImportGrowthContext` reads `plan_settings` with a direct
+      //   `(clientId, scenarioId)` equality. Only the base scenario has a row,
+      //   so a non-base id returns ZERO rows and the function degrades silently:
+      //   `resolvedInflationRate` collapses to 0% and every `categoryDefaults`
+      //   entry goes null. `net-worth-content.tsx` scopes its own plan-settings
+      //   select the same way — do not "fix" either of these to `scenarioParam`.
+      loadAccountMetaRows(id, scenario.id),
+      loadImportGrowthContext(id, firmId, scenario.id),
+    ]);
 
   // Everything the boards, milestones and person nodes read comes from ONE
   // provenance: the scenario-effective tree. Retirement age, plan-end age, life
@@ -209,6 +233,22 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   );
   const accountOptions = effectiveTree.accounts.map(accountEngineToView);
 
+  // The COMPLETE per-account row: scenario-effective engine accounts merged
+  // with the scenario-overlaid view-only metadata the engine type discards.
+  // `accountOptions` above is `accountEngineToView`, a documented PARTIAL that
+  // drops `growthSource` / `modelPortfolioId` — anything reading or writing
+  // growth reads THIS map instead. Keyed by id because the boards look rows up
+  // per card, not by iterating.
+  const accountMetaById = await loadOverlaidAccountMeta(id, accountMetaRows, scenarioParam);
+  const accountRows = Object.fromEntries(
+    buildAccountRows({
+      accounts: effectiveTree.accounts,
+      familyMembers: effectiveTree.familyMembers ?? [],
+      accountMetaById,
+      linkedSourceById: linkedSourceMapFrom(accountMetaRows),
+    }).map((r) => [r.id, r]),
+  );
+
   const goals = buildMapGoals({
     expenses: effectiveTree.expenses,
     milestones,
@@ -286,6 +326,8 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
       accountOptions={accountOptions}
+      accountRows={accountRows}
+      growthContext={growthContext}
       resolvedInflationRate={effectiveTree.planSettings.inflationRate}
       familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
         id: fmId,

@@ -5,6 +5,7 @@ import MapCard from "./map-card";
 import PersonNode from "./person-node";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { moneyLabel } from "@/lib/household-map/format";
+import { formatGrowthPct } from "@/lib/household-map/growth-options";
 import type { BoardCallbacks, HouseholdMapProps, MapItem } from "@/lib/household-map/types";
 
 /** account/liability/policy → the Net Worth detail page; income/savings/expense
@@ -26,6 +27,7 @@ export default function NetWorthBoard({
   people,
   items,
   canEdit,
+  accountRows,
   onAddAccount,
 }: HouseholdMapProps & BoardCallbacks) {
   // Both the columns and the tray navigate; an active `?scenario=` must ride
@@ -41,6 +43,17 @@ export default function NetWorthBoard({
     if (col === "client") return people.client.firstName || "Client";
     if (col === "spouse") return people.spouse?.firstName || "Spouse";
     return hasSpouse ? "Jointly Held" : "Joint";
+  }
+
+  /** The rate chip for a card, or null when the item has no growth to show.
+   *  Liabilities fall out automatically — they have no `accountRows` entry.
+   *  Policies are excluded explicitly: they DO have a row, but they are out of
+   *  scope for the Map. `stock_options` is NOT excluded — display is universal
+   *  even where editing is not. */
+  function rateSlotFor(item: MapItem) {
+    const row = accountRows[item.id];
+    if (!row || row.category === "life_insurance") return null;
+    return <span className="tabular text-[11px] text-ink-3">{formatGrowthPct(row.growthRate)}</span>;
   }
 
   // Local to this board — cards only ever need these two destinations.
@@ -110,7 +123,7 @@ export default function NetWorthBoard({
                   BusinessDialog, so linking delegates instead of duplicating. */}
               {cards.map((c) => (
                 <Link key={c.id} href={detailHrefFor(c)} className="group">
-                  <MapCard item={c} />
+                  <MapCard item={c} rateSlot={rateSlotFor(c)} />
                 </Link>
               ))}
               {canEdit && (
@@ -139,7 +152,7 @@ export default function NetWorthBoard({
           <div className="grid grid-cols-3 gap-1.5">
             {trayItems.map((c) => (
               <Link key={c.id} href={detailHrefFor(c)} className="group">
-                <MapCard item={c} />
+                <MapCard item={c} rateSlot={rateSlotFor(c)} />
               </Link>
             ))}
           </div>

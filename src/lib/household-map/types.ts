@@ -6,6 +6,8 @@ import type {
   IncomeView,
   SavingsRuleView,
 } from "@/lib/scenario/view-adapters";
+import type { AccountRow } from "@/components/balance-sheet-view";
+import type { GrowthContext } from "@/lib/investments/growth-context";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
  *  bottom strip for anything not owned by the client or spouse. */
@@ -114,6 +116,33 @@ export interface HouseholdMapProps {
    *  a superset of the `{id, name, category, subType, ownerEntityId}` the
    *  picker reads. */
   accountOptions: AccountViewEngineFields[];
+
+  /**
+   * The COMPLETE per-account row, keyed by id — engine fields merged with
+   * scenario-overlaid view-only metadata (`lib/accounts/load-account-rows.ts`).
+   *
+   * Distinct from `accountOptions`, which is `accountEngineToView` — a
+   * documented PARTIAL that drops `growthSource` / `modelPortfolioId`. Anything
+   * reading or writing growth must use THIS map, not that array.
+   *
+   * Load-bearing for three things: the rate shown on each card, the full field
+   * set a scenario write must carry (see `lib/household-map/account-write.ts`),
+   * and hydrating the real account dialog via `accountToInitial`.
+   *
+   * Liabilities are absent by construction. Life-insurance rows are present but
+   * out of scope — boards gate on `growthEditModeFor(category)`.
+   */
+  accountRows: Record<string, AccountRow>;
+
+  /** Model portfolios, fund portfolios, per-category defaults and the resolved
+   *  inflation rate — the labels the growth dropdown renders. Same shape
+   *  `loadImportGrowthContext` returns.
+   *
+   *  NAMING TRAP: `growthContext.categoryDefaults` is
+   *  `Record<string, {portfolioName, blendedReturnPct}>` — display labels. It is
+   *  NOT the `categoryDefaultRates` map (a `Record<string, string>` of raw
+   *  rates) that Task 7 adds. Different shape, different purpose, similar name. */
+  growthContext: GrowthContext;
 
   /**
    * Ownership context for the Net Worth board's "+ Add" → `AddAccountDialog`.
