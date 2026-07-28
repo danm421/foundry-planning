@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rangeFor, statusFor, THRESHOLD_ITEMS } from "../thresholds";
+import { rangeFor, statusFor, THRESHOLD_ITEMS, isNaRange } from "../thresholds";
 import type { ThresholdFacts, ThresholdHousehold } from "../thresholds";
 import type { TaxYearParameters } from "../types";
 
@@ -91,6 +91,22 @@ describe("rangeFor", () => {
       expect(() => rangeFor(item.id, 2026, params, "married_joint", household)).not.toThrow();
     }
   });
+
+  it("returns not-applicable for AOTC when filing MFS — IRC 25A(g)(6)", () => {
+    expect(isNaRange(rangeFor("aotc", 2026, params, "married_separate", household))).toBe(true);
+  });
+
+  it("still returns the MFJ and single AOTC ranges untouched by the MFS fix", () => {
+    expect(rangeFor("aotc", 2026, params, "married_joint", household))
+      .toEqual({ start: 160000, end: 180000 });
+    expect(rangeFor("aotc", 2026, params, "single", household))
+      .toEqual({ start: 80000, end: 90000 });
+  });
+
+  it("isNaRange distinguishes the NA sentinel from a real range", () => {
+    expect(isNaRange(rangeFor("aotc", 2026, params, "married_separate", household))).toBe(true);
+    expect(isNaRange(rangeFor("aotc", 2026, params, "married_joint", household))).toBe(false);
+  });
 });
 
 describe("statusFor", () => {
@@ -153,6 +169,12 @@ describe("statusFor", () => {
 
   it("is na for the student-loan deduction when filing MFS", () => {
     expect(statusFor("studentLoanInterest", facts({
+      household: { ...household, filingStatus: "married_separate" },
+    }))).toBe("na");
+  });
+
+  it("is na for AOTC when filing MFS — IRC 25A(g)(6)", () => {
+    expect(statusFor("aotc", facts({
       household: { ...household, filingStatus: "married_separate" },
     }))).toBe("na");
   });

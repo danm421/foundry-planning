@@ -85,7 +85,7 @@ const isMfs = (fs: FilingStatus) => fs === "married_separate";
 
 /** Sentinel for "this item has no computable range for this household/year". */
 const NA_RANGE: ThresholdRange = { start: Number.NaN, end: null };
-const isNaRange = (r: ThresholdRange) => Number.isNaN(r.start);
+export const isNaRange = (r: ThresholdRange) => Number.isNaN(r.start);
 
 /**
  * `year` drives the AMT exemption phase-out rate (25% pre-2026, 50% from 2026
@@ -169,6 +169,7 @@ export function rangeFor(
     }
 
     case "aotc":
+      if (isMfs(filingStatus)) return NA_RANGE;   // IRC 25A(g)(6): denied to MFS filers
       return isMfj(filingStatus)
         ? { start: S.aotcPhaseoutStartMfj, end: S.aotcPhaseoutEndMfj }
         : { start: S.aotcPhaseoutStartOther, end: S.aotcPhaseoutEndOther };
@@ -229,7 +230,7 @@ function applies(item: ThresholdItemId, f: ThresholdFacts): boolean {
                                     && !isMfs(h.filingStatus);
     case "qbi":                 return h.hasQbi;
     case "niit":                return h.hasInvestmentIncome;
-    case "aotc":                return h.aotcStudents > 0;
+    case "aotc":                return h.aotcStudents > 0 && !isMfs(h.filingStatus);
     case "ctc":                 return h.qualifyingChildren > 0 || h.otherDependents > 0;
     case "saversCredit":        return f.year <= STATUTORY_FIXED.saversCreditLastYear;
     case "amtExemption":
