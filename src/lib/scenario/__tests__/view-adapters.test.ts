@@ -175,6 +175,36 @@ describe("view-adapters", () => {
       expect(view.forFamilyMemberId).toBeNull();
       expect(view.dedicatedAccountIds).toEqual([]);
     });
+
+    // isGoal is a real persisted column (expenses.is_goal). A form hydrated
+    // from this adapter submits every field it renders, so dropping the flag
+    // here silently un-goals the row on the next save.
+    it("carries isGoal through when the advisor flagged the expense as a goal", () => {
+      const expense: EngineExpense = {
+        id: "e5",
+        type: "other",
+        name: "New boat",
+        annualAmount: 60_000,
+        startYear: 2032,
+        endYear: 2032,
+        growthRate: 0.03,
+        isGoal: true,
+      };
+      expect(expenseEngineToView(expense).isGoal).toBe(true);
+    });
+
+    it("defaults isGoal to false when the engine row omits it", () => {
+      const expense: EngineExpense = {
+        id: "e6",
+        type: "living",
+        name: "Groceries",
+        annualAmount: 12_000,
+        startYear: 2026,
+        endYear: 2056,
+        growthRate: 0.03,
+      };
+      expect(expenseEngineToView(expense).isGoal).toBe(false);
+    });
   });
 
   describe("savingsRuleEngineToView", () => {

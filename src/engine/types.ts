@@ -988,6 +988,10 @@ export interface Expense {
   startYearRef?: string | null;
   endYearRef?: string | null;
   growthSource?: string | null;
+  /** Advisor-set flag surfacing this expense on the Household Map Goals board.
+   *  Presentation only — engine math ignores it. Education rows are treated as
+   *  goals regardless of this flag; see src/lib/household-map/goals.ts. */
+  isGoal?: boolean;
 }
 
 export interface ExtraPayment {
