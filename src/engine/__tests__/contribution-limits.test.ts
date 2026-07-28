@@ -68,6 +68,11 @@ const HSA_PARAMS: TaxYearParameters = {
   },
 };
 
+// Every age-cap test below passes `magiForRoth: 0` + `filingStatus: "single"`.
+// PARAMS_2025 / HSA_PARAMS leave `rothPhaseout` unseeded, so the Roth MAGI gate
+// short-circuits and those cases stay purely about the age-based caps. The gate
+// itself is exercised in its own describe block, against ROTH_PARAMS.
+
 const clientInfoAge40: ClientInfo = {
   firstName: "Alex",
   lastName: "X",
@@ -197,6 +202,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 10_000 },
     });
     expect(cappedByRuleId.r1).toBe(10_000);
@@ -212,6 +219,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     expect(cappedByRuleId.r1).toBe(23_500);
@@ -234,6 +243,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 15_000, r2: 10_000, r3: 5_000 },
     });
     // Total = 30,000 > 23,500 cap. Scale = 23_500 / 30_000.
@@ -254,6 +265,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge55,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     expect(cappedByRuleId.r1).toBe(31_000);
@@ -268,6 +281,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge62,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     expect(cappedByRuleId.r1).toBe(34_750);
@@ -282,6 +297,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 5_000, r2: 5_000 },
     });
     // Total 10_000 > 7_000 cap. Scale = 0.7.
@@ -298,6 +315,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 30_000, r2: 10_000 },
     });
     expect(cappedByRuleId.r1).toBe(23_500);
@@ -318,6 +337,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 30_000, r2: 10_000 },
       familyMembers,
     });
@@ -335,6 +356,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     expect(cappedByRuleId.r1).toBe(100_000);
@@ -353,6 +376,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 50_000, r2: 10_000 },
     });
     expect(cappedByRuleId.r1).toBe(50_000); // untouched
@@ -379,6 +404,8 @@ describe("applyContributionLimits", () => {
       accounts: [nonRetirementAcct],
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 1_000_000 },
     });
     expect(cappedByRuleId.r1).toBe(1_000_000);
@@ -394,6 +421,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     // Out of range → no cap applied
@@ -410,6 +439,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client: clientInfoAge62, // client 62 → super catch-up
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 100_000 },
     });
     expect(cappedByRuleId.r1).toBe(34_750);
@@ -446,6 +477,8 @@ describe("applyContributionLimits", () => {
       accounts,
       client,
       taxYearParams: PARAMS_2025,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { rA: 30_000, rB: 30_000, rC: 30_000 },
     });
     // Combined deferral bucket = 90k > 23.5k limit. Scale = 23_500 / 90_000.
@@ -500,6 +533,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 6_000 },
     });
     expect(cappedByRuleId.r1).toBeCloseTo(4_400, 2);
@@ -516,6 +551,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 20_000 },
     });
     expect(cappedByRuleId.r1).toBeCloseTo(8_750, 2);
@@ -530,6 +567,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client: clientInfoAge55,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 20_000 },
     });
     expect(cappedByRuleId.r1).toBeCloseTo(9_750, 2);
@@ -544,6 +583,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client: clientInfoAge40,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 3_000 },
     });
     expect(cappedByRuleId.r1).toBe(3_000);
@@ -575,6 +616,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 8_750, r2: 8_750 }, // each contributes the family max
       familyMembers: SPOUSE_FMS_AGE40,
     });
@@ -593,6 +636,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 20_000, r2: 20_000 },
       familyMembers: SPOUSE_FMS_AGE55,
     });
@@ -611,6 +656,8 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 20_000 },
       familyMembers: SPOUSE_FMS_AGE40,
     });
@@ -627,9 +674,232 @@ describe("applyContributionLimits HSA bucket", () => {
       accounts,
       client,
       taxYearParams: HSA_PARAMS,
+      magiForRoth: 0,
+      filingStatus: "single",
       resolvedByRuleId: { r1: 20_000 },
       familyMembers: SPOUSE_FMS_AGE55,
     });
     expect(cappedByRuleId.r1).toBeCloseTo(9_750, 2);
+  });
+});
+
+// ── Roth MAGI gate (IRC 408A(c)(3)) ─────────────────────────────────────────
+// The disallowed portion is re-tagged as a backdoor contribution, never
+// dropped — the money still reaches the Roth account via conversion. So
+// `cappedByRuleId` must be byte-for-byte what the age-based pass left it at;
+// only `backdoorByRuleId` + `adjustments` record the direct/backdoor split.
+
+describe("applyContributionLimits Roth MAGI gate", () => {
+  // Real 2025 bands (Notice 2024-80): single 150k-165k, MFJ 236k-246k.
+  // PARAMS_2025 leaves `rothPhaseout` null, which the helper reads as
+  // "not seeded — don't gate", so these tests need the bands filled in.
+  const ROTH_PARAMS: TaxYearParameters = {
+    ...PARAMS_2025,
+    rothPhaseout: {
+      startMfj: 236_000,
+      endMfj: 246_000,
+      startSingle: 150_000,
+      endSingle: 165_000,
+    },
+  };
+
+  const FMS_AGE40 = [
+    { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other" as const, firstName: "Client", lastName: null, dateOfBirth: "1985-01-01" },
+    { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other" as const, firstName: "Spouse", lastName: null, dateOfBirth: "1985-01-01" },
+  ];
+
+  it("leaves a below-the-range contribution entirely direct", () => {
+    const accounts = [acct("a1", "roth_ira", "client")];
+    const rules = [rule("r1", "a1")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 7_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 100_000, // well below the 150,000 single start
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBe(7_000);
+    expect(backdoorByRuleId).toEqual({});
+    expect(adjustments).toHaveLength(0);
+  });
+
+  it("splits an inside-the-range contribution into direct + backdoor without touching cappedByRuleId", () => {
+    // MAGI 155,000 → 5,000 of the way into the 15,000-wide single band, i.e.
+    // 1/3 phased out. Reduced limit = 7,000 x 2/3 = 4,666.67, which Pub 590-A
+    // Worksheet 2-2 rounds UP to the next $10 → 4,670 allowed direct.
+    // The remaining 7,000 - 4,670 = 2,330 is the backdoor portion.
+    const accounts = [acct("a1", "roth_ira", "client")];
+    const rules = [rule("r1", "a1")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 7_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 155_000,
+      filingStatus: "single",
+    });
+    // The account still receives the full 7,000 — the gate re-tags, never drops.
+    expect(cappedByRuleId.r1).toBe(7_000);
+    expect(backdoorByRuleId.r1).toBeCloseTo(2_330, 2);
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]).toMatchObject({
+      ruleId: "r1",
+      accountId: "a1",
+      owner: "client",
+      group: "ira",
+      reason: "roth_magi_backdoor",
+      originalAmount: 7_000,
+      cappedAmount: 4_670,
+      limit: 4_670,
+    });
+  });
+
+  it("tags the whole contribution as backdoor at or above the top of the range", () => {
+    const accounts = [acct("a1", "roth_ira", "client")];
+    const rules = [rule("r1", "a1")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 7_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 200_000, // above the 165,000 single end
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBe(7_000);
+    expect(backdoorByRuleId.r1).toBeCloseTo(7_000, 2);
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]).toMatchObject({
+      ruleId: "r1",
+      reason: "roth_magi_backdoor",
+      originalAmount: 7_000,
+      cappedAmount: 0,
+      limit: 0,
+    });
+  });
+
+  it("bypasses the gate entirely when applyContributionLimit is false", () => {
+    const accounts = [acct("a1", "roth_ira", "client")];
+    const rules = [rule("r1", "a1", { applyContributionLimit: false })];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 20_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 200_000, // fully phased out — but the rule opts out
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBe(20_000);
+    expect(backdoorByRuleId).toEqual({});
+    expect(adjustments).toHaveLength(0);
+  });
+
+  it("applies ONE allowed limit per owner across that owner's Roth rules", () => {
+    // 4,000 + 3,000 = 7,000, exactly the age-40 IRA bucket cap, so the
+    // age-based pass changes nothing. Allowed direct at MAGI 155,000 is 4,670
+    // for the PERSON, not per rule — gating each rule separately would let
+    // the full 7,000 through direct, since neither 4,000 nor 3,000 exceeds
+    // 4,670 on its own.
+    const accounts = [acct("a1", "roth_ira", "client"), acct("a2", "roth_ira", "client")];
+    const rules = [rule("r1", "a1"), rule("r2", "a2")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 4_000, r2: 3_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 155_000,
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBe(4_000);
+    expect(cappedByRuleId.r2).toBe(3_000);
+    // Backdoor is split pro rata: 4,000 x (2,330/7,000) and 3,000 x (2,330/7,000).
+    expect(backdoorByRuleId.r1).toBeCloseTo(1_331.4286, 2);
+    expect(backdoorByRuleId.r2).toBeCloseTo(998.5714, 2);
+    expect(backdoorByRuleId.r1 + backdoorByRuleId.r2).toBeCloseTo(2_330, 2);
+    expect(adjustments).toHaveLength(2);
+  });
+
+  it("gates each owner against their own limit rather than one household pool", () => {
+    // MFJ MAGI 241,000 is the midpoint of the 236k-246k band → 50% phased
+    // out → 7,000 x 0.5 = 3,500 allowed direct FOR EACH SPOUSE. Pooling both
+    // spouses into one 14,000 bucket against a single 3,500 allowance would
+    // report 5,250 of backdoor per rule instead of 3,500.
+    const accounts = [acct("a1", "roth_ira", "client"), acct("a2", "roth_ira", "spouse")];
+    const rules = [rule("r1", "a1"), rule("r2", "a2")];
+    const { cappedByRuleId, backdoorByRuleId } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: { ...clientInfoAge40, spouseDob: "1985-01-01" },
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 7_000, r2: 7_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 241_000,
+      filingStatus: "married_joint",
+    });
+    expect(cappedByRuleId.r1).toBe(7_000);
+    expect(cappedByRuleId.r2).toBe(7_000);
+    expect(backdoorByRuleId.r1).toBeCloseTo(3_500, 2);
+    expect(backdoorByRuleId.r2).toBeCloseTo(3_500, 2);
+  });
+
+  it("gates the POST-age-cap amount and leaves cappedByRuleId at the age-capped figure", () => {
+    // 6,000 + 6,000 = 12,000 against the 7,000 age-40 IRA cap → each rule is
+    // scaled to 3,500 first. The Roth gate then runs on 3,500, not 6,000, so
+    // the household's backdoor total is 7,000 — not the 12,000 a gate reading
+    // `resolvedByRuleId` would report. `cappedByRuleId` stays at 3,500 each.
+    const accounts = [acct("a1", "roth_ira", "client"), acct("a2", "roth_ira", "client")];
+    const rules = [rule("r1", "a1"), rule("r2", "a2")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 6_000, r2: 6_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 200_000, // fully phased out
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBeCloseTo(3_500, 2);
+    expect(cappedByRuleId.r2).toBeCloseTo(3_500, 2);
+    expect(backdoorByRuleId.r1).toBeCloseTo(3_500, 2);
+    expect(backdoorByRuleId.r2).toBeCloseTo(3_500, 2);
+    expect(adjustments.filter((a) => a.reason === "age_limit")).toHaveLength(2);
+    expect(adjustments.filter((a) => a.reason === "roth_magi_backdoor")).toHaveLength(2);
+  });
+
+  it("does not gate a traditional IRA contribution", () => {
+    const accounts = [acct("a1", "traditional_ira", "client")];
+    const rules = [rule("r1", "a1")];
+    const { cappedByRuleId, backdoorByRuleId, adjustments } = applyContributionLimits({
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 7_000 },
+      familyMembers: FMS_AGE40,
+      magiForRoth: 200_000,
+      filingStatus: "single",
+    });
+    expect(cappedByRuleId.r1).toBe(7_000);
+    expect(backdoorByRuleId).toEqual({});
+    expect(adjustments).toHaveLength(0);
   });
 });

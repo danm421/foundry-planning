@@ -3355,6 +3355,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxYearParams: resolved.params,
           resolvedByRuleId,
           familyMembers: data.familyMembers ?? [],
+          // The year's real Roth MAGI isn't available at this point — AGI is
+          // derived further down and depends on these very contributions.
+          // Wiring the household assembly + MAGI ordering is a separate task;
+          // 0 is below every phase-out range, so the Roth gate is inert here
+          // and behaviour is exactly what it was before the gate existed.
+          magiForRoth: 0,
+          filingStatus,
         })
       : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
     const cappedByRuleId = capResult.cappedByRuleId;

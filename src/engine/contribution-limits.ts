@@ -1,7 +1,8 @@
 import type { Account, ClientInfo, FamilyMember, SavingsRule } from "./types";
 import { controllingFamilyMember } from "./ownership";
 import { itemProrationGate } from "./retirement-proration";
-import type { TaxYearParameters } from "../lib/tax/types";
+import type { FilingStatus, TaxYearParameters } from "../lib/tax/types";
+import { rothIraAllowedContribution } from "../lib/tax/thresholds";
 
 /** 401(k) / 403(b) family of payroll-deduction retirement accounts. The IRS
  *  applies ONE combined employee deferral limit across all of these per person. */
@@ -100,6 +101,11 @@ export interface CapAdjustment {
   originalAmount: number;
   cappedAmount: number;
   limit: number;
+  /** Which rule produced this entry. `age_limit` means the contribution was
+   *  actually REDUCED to the annual IRS ceiling. `roth_magi_backdoor` means
+   *  nothing was reduced — the amount above `cappedAmount` is simply routed
+   *  through a backdoor conversion instead of a direct Roth contribution. */
+  reason: "age_limit" | "roth_magi_backdoor";
 }
 
 export interface ApplyLimitsInput {
@@ -114,25 +120,42 @@ export interface ApplyLimitsInput {
   resolvedByRuleId: Record<string, number>;
   /** Household family members — used to derive per-person owner key from owners[]. */
   familyMembers?: FamilyMember[];
+  /** MAGI for the Roth phase-out (IRC 408A(c)(3)(C)(i)) — the household's, for
+   *  the year. Only the Roth gate reads it. */
+  magiForRoth: number;
+  /** Filing status for THIS projection year. Must be the caller's year-varying
+   *  status (a surviving spouse's changes mid-projection), NOT the static
+   *  `client.filingStatus`. */
+  filingStatus: FilingStatus;
 }
 
 export interface ApplyLimitsResult {
   /** Rule-id → final (capped, or unchanged) contribution for the year. */
   cappedByRuleId: Record<string, number>;
-  /** One entry per rule that was actually reduced by a cap. */
+  /** One entry per rule that was reduced by a cap or split by the Roth gate. */
   adjustments: CapAdjustment[];
+  /** Rule-id → the portion of `cappedByRuleId` that the Roth MAGI phase-out
+   *  disallows as a DIRECT contribution and that therefore has to arrive as a
+   *  backdoor conversion. Only rules with a non-zero backdoor portion appear.
+   *  It is a slice of `cappedByRuleId`, never an addition to it. */
+  backdoorByRuleId: Record<string, number>;
 }
 
 /** Aggregates per owner+group, compares to the per-owner limit, and scales
  *  each contributing rule down proportionally when the group is over. Rules
  *  with `applyContributionLimit === false` bypass the cap entirely AND do
- *  not count against the group bucket. */
+ *  not count against the group bucket.
+ *
+ *  A second pass then applies the Roth MAGI gate to the post-cap amounts. That
+ *  one re-tags rather than reduces — see the block comment on it below. */
 export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsResult {
-  const { year, rules, accounts, client, taxYearParams, resolvedByRuleId, familyMembers } = input;
+  const { year, rules, accounts, client, taxYearParams, resolvedByRuleId, familyMembers,
+          magiForRoth, filingStatus } = input;
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const cappedByRuleId: Record<string, number> = { ...resolvedByRuleId };
   const adjustments: CapAdjustment[] = [];
+  const backdoorByRuleId: Record<string, number> = {};
 
   // Derive FM ids for principal owner classification.
   const clientFmId = (familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
@@ -265,9 +288,77 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
         originalAmount: original,
         cappedAmount: capped,
         limit,
+        reason: "age_limit",
       });
     }
   }
 
-  return { cappedByRuleId, adjustments };
+  // ── Roth MAGI gate (IRC 408A(c)(3)) ──────────────────────────────────────
+  // Above the phase-out band a taxpayer may not contribute to a Roth IRA
+  // DIRECTLY. They can still get the money in, by contributing to a
+  // traditional IRA and converting — the "backdoor Roth". So the disallowed
+  // remainder is re-tagged, not dropped: `cappedByRuleId` is untouched here
+  // and account balances are identical either way. Only the tax treatment of
+  // the remainder differs, and that is what `backdoorByRuleId` carries.
+  //
+  // Runs on the POST-age-cap amounts: the statutory Roth allowance can never
+  // exceed the annual IRA limit the previous pass already enforced.
+  //
+  // Known simplifications:
+  //  - IRC 408(d)(2) pro-rata rule is NOT modeled. A conversion is treated as
+  //    tax-free. A client holding pre-tax traditional IRA balances converts a
+  //    blended pre-tax/after-tax share and owes tax on the pre-tax part, which
+  //    this misses.
+  //  - IRC 408A(c)(2) reduces the Roth limit by the SAME year's traditional
+  //    IRA contributions. That is handled only insofar as the shared IRA
+  //    bucket above already caps the combined traditional + Roth total; the
+  //    Roth allowance itself is computed against the full age-based limit.
+
+  // The allowance is per PERSON, so collect each owner's Roth rules and gate
+  // the owner's total once. Guards mirror the bucket pass exactly — in
+  // particular a rule with `applyContributionLimit === false` opts out of the
+  // gate as well as the cap.
+  const rothRulesByOwner = new Map<OwnerKey, { ruleId: string; accountId: string }[]>();
+  for (const rule of rules) {
+    if (!itemProrationGate(rule, year, client).include) continue;
+    if (rule.applyContributionLimit === false) continue;
+    const acct = accountById.get(rule.accountId);
+    if (!acct || acct.subType !== "roth_ira") continue;
+    if ((cappedByRuleId[rule.id] ?? 0) <= 0) continue;
+    const owner = ownerKeyFor(acct);
+    const list = rothRulesByOwner.get(owner) ?? [];
+    list.push({ ruleId: rule.id, accountId: acct.id });
+    rothRulesByOwner.set(owner, list);
+  }
+
+  for (const [owner, ownerRules] of rothRulesByOwner) {
+    const total = ownerRules.reduce((sum, r) => sum + cappedByRuleId[r.ruleId], 0);
+    const allowed = rothIraAllowedContribution(
+      magiForRoth,
+      limits[owner].ira,
+      year,
+      taxYearParams,
+      filingStatus
+    );
+    if (total <= allowed) continue;
+    // Split each rule pro rata so the owner's DIRECT total lands on `allowed`.
+    const directScale = allowed / total;
+    for (const { ruleId, accountId } of ownerRules) {
+      const amount = cappedByRuleId[ruleId];
+      const direct = amount * directScale;
+      backdoorByRuleId[ruleId] = amount - direct;
+      adjustments.push({
+        ruleId,
+        accountId,
+        owner,
+        group: "ira",
+        originalAmount: amount,
+        cappedAmount: direct,
+        limit: allowed,
+        reason: "roth_magi_backdoor",
+      });
+    }
+  }
+
+  return { cappedByRuleId, adjustments, backdoorByRuleId };
 }
