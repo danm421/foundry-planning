@@ -47,6 +47,12 @@ function GoalCard({ goal, side, onClick }: GoalCardProps) {
     <>
       <div className="text-[9px] font-bold uppercase tracking-wider text-ink-4">{style.label}</div>
       <div className="text-xs font-medium text-ink">{goal.title}</div>
+      {/* Beneficiary. Without it two children's "College" goals render as
+          near-identical cards differing only by year, and `sideOf()` attributes
+          both to a parent — the data was already on MapGoal, just unrendered. */}
+      {goal.forFamilyMemberName ? (
+        <div className="mt-0.5 text-[10px] text-ink-3">for {goal.forFamilyMemberName}</div>
+      ) : null}
       {goal.detail ? <div className="mt-0.5 text-[10px] text-ink-3">{goal.detail}</div> : null}
     </>
   );
@@ -94,6 +100,7 @@ export default function GoalsBoard({
   people,
   goals,
   canEdit,
+  expenseRows,
   onEditGoalExpense,
 }: HouseholdMapProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
@@ -108,10 +115,20 @@ export default function GoalsBoard({
     return `${clientAge ?? "—"} / ${spouseAge ?? "—"}`;
   }
 
-  /** A life milestone (expenseId null) is never editable regardless of
-   *  `canEdit` — there is no expense behind it to open. */
+  /**
+   * A life milestone (expenseId null) is never editable regardless of
+   * `canEdit` — there is no expense behind it to open. Neither is a goal whose
+   * expense has no hydration row: that is the same writability test the Cash
+   * Flow board applies via `isItemEditable`, and it's the reason a synthesized
+   * `source: "policy"` row renders inert instead of as a button whose Save
+   * could never land. `handleEditGoalExpense` already refuses to open the
+   * drawer for those, so without this check the card would look clickable and
+   * silently do nothing. Read straight off `expenseRows` — `isItemEditable`
+   * takes a `MapItem` and this board only has `MapGoal`s.
+   */
   function clickHandlerFor(g: MapGoal): (() => void) | undefined {
     if (!canEdit || g.expenseId === null) return undefined;
+    if (!(g.expenseId in expenseRows)) return undefined;
     return () => onEditGoalExpense?.(g.expenseId!, g.side);
   }
 
@@ -153,7 +170,11 @@ export default function GoalsBoard({
           </div>
         );
       })}
-      {goals.length <= 3 && (
+      {/* Gated on real, expense-backed goals — not on a card count. The three
+          life milestones are always present (two for an unmarried household),
+          so a count threshold kept telling a household that already has a goal
+          how to add one. */}
+      {!goals.some((g) => g.expenseId !== null) && (
         <p className="mt-4 text-center text-xs text-ink-4">
           Tick “Show as a goal” on any expense to add it here.
         </p>

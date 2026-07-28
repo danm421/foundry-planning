@@ -140,22 +140,77 @@ describe("GoalsBoard", () => {
     expect(within(row).queryByText(/\//)).not.toBeInTheDocument();
   });
 
-  it("renders the hint when goals.length <= 3 and hides it once a fourth goal is added", () => {
-    const goals3 = [
+  // The hint is gated on real, expense-backed goals rather than a card count.
+  // A count threshold showed it to an unmarried household (two milestones) even
+  // once that household had a genuine goal, and hid it from a married household
+  // with three milestones and none.
+  it("renders the hint while there are only life milestones, however many", () => {
+    const milestonesOnly = [
       goal({ id: "g1", year: 2026 }),
       goal({ id: "g2", year: 2027 }),
       goal({ id: "g3", year: 2028 }),
+      goal({ id: "g4", year: 2029 }),
     ];
-    const { rerender } = render(<GoalsBoard {...baseProps({ goals: goals3 })} />);
+    render(<GoalsBoard {...baseProps({ goals: milestonesOnly })} />);
     expect(
       screen.getByText("Tick “Show as a goal” on any expense to add it here."),
     ).toBeInTheDocument();
+  });
 
-    const goals4 = [...goals3, goal({ id: "g4", year: 2029 })];
-    rerender(<GoalsBoard {...baseProps({ goals: goals4 })} />);
+  it("hides the hint as soon as ONE expense-backed goal exists, even in a two-card household", () => {
+    const goals = [goal({ id: "g1", year: 2026 }), goal({ id: "g2", year: 2027, expenseId: "exp-1" })];
+    render(<GoalsBoard {...baseProps({ goals })} />);
     expect(
       screen.queryByText("Tick “Show as a goal” on any expense to add it here."),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders the beneficiary name so two children's identical goals are distinguishable", () => {
+    const goals = [
+      goal({ id: "g-kelly", year: 2040, title: "College", forFamilyMemberName: "Kelly" }),
+      goal({ id: "g-sam", year: 2043, title: "College", forFamilyMemberName: "Sam" }),
+    ];
+    render(<GoalsBoard {...baseProps({ goals })} />);
+
+    expect(
+      within(screen.getByTestId("goal-row-g-kelly")).getByText("for Kelly"),
+    ).toBeInTheDocument();
+    expect(within(screen.getByTestId("goal-row-g-sam")).getByText("for Sam")).toBeInTheDocument();
+  });
+
+  // Same writability test the Cash Flow board applies via `isItemEditable`:
+  // `handleEditGoalExpense` already refuses to open the drawer for an expense
+  // with no hydration row, so without this the card looks clickable and
+  // silently does nothing.
+  it("a goal whose expense has no hydration row is not a button", () => {
+    const g = goal({ id: "g-orphan", expenseId: "exp-gone", title: "Orphaned goal" });
+    render(<GoalsBoard {...baseProps({ goals: [g] })} />);
+
+    expect(screen.queryByRole("button", { name: /Orphaned goal/ })).not.toBeInTheDocument();
+  });
+
+  it("a goal whose expense DOES have a hydration row is a button", () => {
+    const g = goal({ id: "g-live", expenseId: "exp-1", title: "New roof" });
+    render(
+      <GoalsBoard
+        {...baseProps({
+          goals: [g],
+          expenseRows: {
+            "exp-1": {
+              id: "exp-1",
+              type: "other",
+              name: "New roof",
+              annualAmount: "20000",
+              startYear: 2030,
+              endYear: 2030,
+              growthRate: "0.03",
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /New roof/ })).toBeInTheDocument();
   });
 
   const KIND_CASES: { kind: GoalKind; label: string; border: string }[] = [
