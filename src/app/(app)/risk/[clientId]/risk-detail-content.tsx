@@ -2,12 +2,14 @@ import type { ReactNode } from "react";
 import { requireClientAccess } from "@/lib/clients/authz";
 import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
-import type { BindingConstraint } from "@/lib/risk/scoring";
+import { band, type BindingConstraint } from "@/lib/risk/scoring";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
 import { CHIP_NEUTRAL } from "@/components/risk/risk-status-chips";
 import { ComponentCard } from "@/components/risk/component-card";
 import { CapacityBreakdown } from "@/components/risk/capacity-breakdown";
 import { RiskHistoryTable } from "@/components/risk/risk-history-table";
+import { ManualToleranceDialog } from "@/components/risk/manual-tolerance-dialog";
+import { EnvironmentEditor } from "@/components/risk/environment-editor";
 
 const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
   rtq_client: "Client RTQ",
@@ -17,8 +19,9 @@ const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
 
 const DASH = <span className="text-ink-3">—</span>;
 
-// Every mutation surface on this page is wired up in Tasks 10-13. This task
-// is read-only, so every action button below renders disabled.
+// Every mutation surface on this page is wired up in Tasks 10-13. "Send
+// questionnaire" and "Fill out now" (Tasks 11/13) still render disabled;
+// "Set manually" and environment "Edit" are wired up as of Task 10.
 const DISABLED_BTN =
   "rounded-md border border-hair px-2.5 py-1 text-xs text-ink-3 opacity-50 cursor-not-allowed";
 
@@ -106,9 +109,10 @@ export async function RiskDetailContent({
             <button type="button" disabled title="Coming soon" className={DISABLED_BTN}>
               Fill out now
             </button>
-            <button type="button" disabled title="Coming soon" className={DISABLED_BTN}>
-              Set manually
-            </button>
+            <ManualToleranceDialog
+              clientId={clientId}
+              currentLevel={row.toleranceScore !== null ? band(row.toleranceScore) : null}
+            />
           </div>
         </ComponentCard>
 
@@ -136,9 +140,11 @@ export async function RiskDetailContent({
           </span>
           <p className="text-sm text-ink-2">{row.environmentReason ?? DASH}</p>
           <div className="pt-1">
-            <button type="button" disabled title="Coming soon" className={DISABLED_BTN}>
-              Edit
-            </button>
+            <EnvironmentEditor
+              clientId={clientId}
+              adjustment={row.environmentAdj}
+              reason={row.environmentReason}
+            />
           </div>
         </ComponentCard>
       </div>
