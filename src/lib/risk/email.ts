@@ -17,6 +17,15 @@ import { buildIntakeEmailHtml, buildIntakeFromHeader } from "@/lib/intake/email-
 
 const RTQ_EMAIL_SUBJECT = "A few questions about your comfort with investment risk";
 
+// Passed as buildIntakeEmailHtml's `introBody` override -- without it the
+// template falls back to DEFAULT_INTAKE_INTRO (@/lib/intake/defaults), which
+// describes an unrelated financial-intake form ("income, savings, accounts,
+// and goals... 10-15 minutes"). This is short and specific to the RTQ instead.
+const RTQ_EMAIL_INTRO =
+  "{{advisorName}} has sent you a short questionnaire about your comfort " +
+  "with investment risk. It's five questions and takes about two minutes -- " +
+  "there are no wrong answers, just what feels true for you.";
+
 export async function sendRiskQuestionnaireEmail(args: {
   to: string;
   link: string;
@@ -41,7 +50,14 @@ export async function sendRiskQuestionnaireEmail(args: {
 
   try {
     const resend = new Resend(apiKey);
-    const html = buildIntakeEmailHtml({ link, advisorName, advisorEmail, firmName, clientName });
+    const html = buildIntakeEmailHtml({
+      link,
+      introBody: RTQ_EMAIL_INTRO,
+      advisorName,
+      advisorEmail,
+      firmName,
+      clientName,
+    });
     await resend.emails.send({
       from,
       to,
