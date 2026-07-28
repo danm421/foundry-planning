@@ -57,6 +57,13 @@ beforeEach(() => {
     );
 });
 
+// A verbatim statement registration header — the reported complaint. 73 chars
+// raw, and still 63 once the masked account fragment is stripped, so BOTH the
+// number-stripping and the 60-char cap have to fire for the assertions below
+// to hold.
+const LONG_REGISTRATION_NAME =
+    "JOHN A SMITH & JANE B SMITH REVOCABLE LIVING TRUST ROLLOVER IRA XXXX-1234";
+
 describe("extractDocument", () => {
     it("extracts from a PDF with auto-detection", async () => {
         const result = await extractDocument(
@@ -368,11 +375,7 @@ describe("extractDocument", () => {
         mockedCallAI.mockResolvedValueOnce(
             JSON.stringify({
                 accounts: [
-                    {
-                        name: "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234",
-                        category: "retirement",
-                        value: 500000,
-                    },
+                    { name: LONG_REGISTRATION_NAME, category: "retirement", value: 500000 },
                 ],
                 liabilities: [],
             }),
@@ -385,6 +388,33 @@ describe("extractDocument", () => {
             "mini",
         );
 
+        expect(result.extracted.accounts[0].name).not.toContain("XXXX-1234");
+        expect(result.extracted.accounts[0].name.length).toBeLessThanOrEqual(60);
+    });
+
+    it("condenses long account names on the multi-pass route too", async () => {
+        // The fact_finder / comprehensive route returns flattenMultiPass output
+        // well before the single-pass assembly site, so it needs its own
+        // condensing pass — otherwise long names reach the review wizard by
+        // exactly the path an eMoney/MoneyGuidePro fact-finder takes.
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ accounts: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>  // accounts section
+                JSON.stringify({
+                    accounts: [
+                        { name: LONG_REGISTRATION_NAME, category: "retirement", value: 500000 },
+                    ],
+                }),
+            );
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "report.pdf", "auto", "mini", "pdf", false, /* comprehensive */ true,
+        );
+
+        // Guards against the assertions below going vacuous if this ever falls
+        // back to single-pass — that path is already covered by the test above.
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.extracted.accounts).toHaveLength(1);
         expect(result.extracted.accounts[0].name).not.toContain("XXXX-1234");
         expect(result.extracted.accounts[0].name.length).toBeLessThanOrEqual(60);
     });

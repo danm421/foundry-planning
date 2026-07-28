@@ -132,6 +132,24 @@ function flattenMultiPass(
     return out;
 }
 
+/**
+ * Backstop for the account-statement prompt's short-name rule. Prompt
+ * compliance is probabilistic, so every payload-assembly site runs this before
+ * returning — that way the condensed name is what reaches the review wizard,
+ * both merge paths, and the account-matching pass.
+ *
+ * `extracted.accounts` is cast off a loose zod schema that does not check
+ * per-field types, so a non-string `name` is reachable at runtime and is left
+ * untouched rather than coerced.
+ */
+function condenseAccountNames(
+    accounts: ExtractionResult["extracted"]["accounts"],
+): ExtractionResult["extracted"]["accounts"] {
+    return accounts.map((a) =>
+        typeof a.name === "string" ? { ...a, name: condenseAccountName(a.name) } : a,
+    );
+}
+
 function getFileExtension(fileName: string): string {
     return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -341,6 +359,7 @@ export async function extractDocument(
         });
         if (multi) {
             const extracted = flattenMultiPass(multi);
+            extracted.accounts = condenseAccountNames(extracted.accounts);
             warnings.push(...multi.warnings);
             return {
                 documentType,
@@ -421,12 +440,7 @@ export async function extractDocument(
         family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
     };
 
-    // Backstop for the prompt's short-name rule. Applied here — at payload
-    // assembly — so the condensed name reaches the review wizard, both merge
-    // paths, and the matching pass. Prompt compliance is probabilistic.
-    extracted.accounts = extracted.accounts.map((a) =>
-        typeof a.name === "string" ? { ...a, name: condenseAccountName(a.name) } : a,
-    );
+    extracted.accounts = condenseAccountNames(extracted.accounts);
 
     // Complete any holdings table the model truncated. Only fires per-account
     // when holdings materially undershoot the stated value (continuation passes).
