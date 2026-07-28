@@ -9,6 +9,7 @@ import type {
 import type { AccountRow } from "@/components/balance-sheet-view";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { AccountPatch } from "./account-write";
+import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
  *  bottom strip for anything not owned by the client or spouse. */
@@ -157,7 +158,29 @@ export interface HouseholdMapProps {
    * `Record<string, {portfolioName, blendedReturnPct}>` — display labels for
    * three categories only. Similar name, different shape, different coverage.
    */
-  categoryDefaultRates: Record<string, string>;
+  categoryDefaultRates: CategoryDefaultRateMap;
+
+  /** Remaining `AddAccountDialog` edit-mode context. Create mode only needed
+   *  `familyMemberOptions` + `entityOptions`; editing an EXISTING row needs the
+   *  growth dropdown's full vocabulary too, or a saved edit writes the form's
+   *  defaults over real values. */
+  // Shapes mirror what `net-worth-content.tsx` already builds for the same
+  // dialog: `geometricReturn` and `weight` are PARSED numbers, and the asset
+  // class carries its `slug`. The plan's snippet had all three as raw Drizzle
+  // strings without the slug, which `AddAccountDialog` rejects.
+  assetClassOptions: { id: string; name: string; slug: string | null; geometricReturn: number }[];
+  portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]>;
+  /** The portfolio NAME backing each category's default, for the dialog's
+   *  "Plan default" label. Derived from `growthContext.categoryDefaults`, which
+   *  is the right source for it — the dialog wants the name, not the rate. */
+  categoryDefaultSources: Record<
+    string,
+    { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }
+  >;
+  /** Top-level business accounts, offered as a parent when re-parenting. */
+  businessOptions: { id: string; name: string }[];
+  /** Roth IRA accounts, for the 529 Roth-rollover target picker. */
+  rothIraAccountOptions: { id: string; name: string }[];
 
   /**
    * Ownership context for the Net Worth board's "+ Add" → `AddAccountDialog`.
@@ -219,4 +242,6 @@ export interface BoardCallbacks {
    *  see `lib/household-map/account-write.ts`). Resolves false on failure so the
    *  editor can revert. */
   onSaveAccountField?: (accountId: string, patch: AccountPatch) => Promise<boolean>;
+  /** The card's pencil was clicked — open the full account editor. */
+  onEditAccount?: (accountId: string) => void;
 }

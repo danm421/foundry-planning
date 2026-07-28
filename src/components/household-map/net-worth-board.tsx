@@ -3,6 +3,10 @@
 import Link from "next/link";
 import MapCard from "./map-card";
 import GrowthRateCell from "./growth-rate-cell";
+// The app has no lucide dependency — icons are hand-rolled SVGs in
+// `components/icons.tsx`, which is where the rest of this board's glyphs come
+// from. The plan called for lucide's Pencil; this is the same glyph.
+import { PencilIcon } from "@/components/icons";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import PersonNode from "./person-node";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -34,6 +38,7 @@ export default function NetWorthBoard({
   resolvedInflationRate,
   onAddAccount,
   onSaveAccountField,
+  onEditAccount,
 }: HouseholdMapProps & BoardCallbacks) {
   // Both the columns and the tray navigate; an active `?scenario=` must ride
   // along or a scenario-active Map drops the advisor on the BASE balance sheet.
@@ -88,6 +93,62 @@ export default function NetWorthBoard({
         onSave={(next) => onSaveAccountField(item.id, { value: String(next) })}
         className="min-w-[72px] rounded-sm px-1 py-0.5 text-right text-xs font-semibold tabular text-ink-2 hover:bg-card hover:ring-1 hover:ring-inset hover:ring-hair-2"
       />
+    );
+  }
+
+  /** The pencil. Opens the full account editor — the same dialog the balance
+   *  sheet uses, hydrated from the same merged row. Only account cards get one:
+   *  liabilities and synthesized policy rows have no `accountRows` entry, and
+   *  they keep their link instead (see the card loop below). */
+  function actionSlotFor(item: MapItem) {
+    const row = accountRows[item.id];
+    if (!row || !canEdit || !onEditAccount) return null;
+    return (
+      <button
+        type="button"
+        aria-label={`Edit ${item.name}`}
+        title={`Edit ${item.name}`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onEditAccount(item.id);
+        }}
+        className="text-ink-4 hover:text-accent"
+      >
+        <PencilIcon width={12} height={12} strokeWidth={1.5} />
+      </button>
+    );
+  }
+
+  /** An account card edits in place; everything else still navigates. */
+  function isEditableAccountCard(item: MapItem): boolean {
+    return accountRows[item.id] != null && canEdit && onEditAccount != null;
+  }
+
+  /** One card, wrapped in a link only when it has nowhere better to go. */
+  function renderCard(c: MapItem) {
+    const card = (
+      <MapCard
+        item={c}
+        rateSlot={rateSlotFor(c)}
+        valueSlot={valueSlotFor(c)}
+        actionSlot={actionSlotFor(c)}
+      />
+    );
+    // Account cards used to link to /details/net-worth because this board could
+    // not hydrate the account dialog. It can now — `accountRows` carries the
+    // full merged row (lib/accounts/load-account-rows.ts) — so the pencil opens
+    // the real editor in place and the link would only fight the inline
+    // editors for the click.
+    //
+    // Liabilities and synthesized policy rows get NO pencil (no hydrated row),
+    // so they KEEP the link. Dropping it for every card would leave them inert:
+    // no editor, no navigation, nothing.
+    if (isEditableAccountCard(c)) return <div key={c.id}>{card}</div>;
+    return (
+      <Link key={c.id} href={detailHrefFor(c)} className="group">
+        {card}
+      </Link>
     );
   }
 
@@ -147,20 +208,7 @@ export default function NetWorthBoard({
               <div className="mb-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-ink-4">
                 {labelFor(col)}
               </div>
-              {/* Cards LINK to the Net Worth detail page rather than opening
-                  AddAccountDialog/BusinessDialog in place. Those dialogs save a
-                  ~38-field full-row replace built from `AccountFormInitial`
-                  (see `accountToInitial` in balance-sheet-view.tsx), which
-                  merges engine rows, base rows and the `account_owners` join —
-                  strictly more than this board's account view carries, so any
-                  field it couldn't hydrate would be written back as the form's
-                  default. The balance sheet already routes business rows to
-                  BusinessDialog, so linking delegates instead of duplicating. */}
-              {cards.map((c) => (
-                <Link key={c.id} href={detailHrefFor(c)} className="group">
-                  <MapCard item={c} rateSlot={rateSlotFor(c)} valueSlot={valueSlotFor(c)} />
-                </Link>
-              ))}
+              {cards.map(renderCard)}
               {canEdit && (
                 <button
                   type="button"
@@ -185,11 +233,7 @@ export default function NetWorthBoard({
             Held by trusts, businesses &amp; other family members
           </div>
           <div className="grid grid-cols-3 gap-1.5">
-            {trayItems.map((c) => (
-              <Link key={c.id} href={detailHrefFor(c)} className="group">
-                <MapCard item={c} rateSlot={rateSlotFor(c)} valueSlot={valueSlotFor(c)} />
-              </Link>
-            ))}
+            {trayItems.map(renderCard)}
           </div>
         </div>
       )}

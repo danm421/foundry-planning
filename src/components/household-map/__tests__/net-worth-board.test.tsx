@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import NetWorthBoard from "../net-worth-board";
+import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { AccountRow } from "@/components/balance-sheet-view";
 
@@ -79,7 +80,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
       resolvedInflationRate: 0.025,
       categoryDefaults: {},
     },
-    categoryDefaultRates: {},
+    // The real fallback map (all ten categories) rather than a hand-rolled
+    // literal — `CategoryDefaultRateMap` requires every key, and calling the
+    // shipped function keeps the fixture honest if those defaults ever move.
+    categoryDefaultRates: buildCategoryDefaultRates(undefined, [], 0),
+    assetClassOptions: [],
+    portfolioAllocationsMap: {},
+    categoryDefaultSources: {},
+    businessOptions: [],
+    rothIraAccountOptions: [],
     resolvedInflationRate: 0.03,
     familyMemberOptions: [],
     entityOptions: [],
@@ -505,5 +514,105 @@ describe("inline value editing", () => {
     const trigger = screen.getByRole("button", { name: /Edit amount for IRA/ });
     expect(trigger.closest("a")).not.toBeNull();
     expect(fireEvent.click(trigger)).toBe(false);
+  });
+});
+
+describe("edit pencil", () => {
+  it("calls onEditAccount when the pencil is clicked", async () => {
+    const onEditAccount = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={onEditAccount}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Edit IRA/ }));
+    expect(onEditAccount).toHaveBeenCalledWith("acct-1");
+  });
+
+  it("renders no pencil for a liability", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit Mortgage/ })).not.toBeInTheDocument();
+  });
+
+  it("no longer wraps an editable account card in a navigating link", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /IRA/ })).not.toBeInTheDocument();
+  });
+
+  // The plan said to drop the <Link> from every card. Liabilities and
+  // synthesized policy rows get no pencil (they have no hydrated row), so doing
+  // that would leave them completely inert — no editor AND no navigation. They
+  // keep the link.
+  it("KEEPS the link on cards that get no pencil", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Mortgage/ })).toHaveAttribute(
+      "href",
+      "/clients/client-1/details/net-worth",
+    );
+  });
+
+  it("keeps the link on an account card when the board cannot edit", () => {
+    // No pencil to fall back on, so navigation has to survive.
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: false,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /IRA/ })).toBeInTheDocument();
   });
 });
