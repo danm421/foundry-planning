@@ -6,6 +6,7 @@ import {
 } from "@/lib/risk/token-guard";
 import { resolveIntakeBranding, type IntakeBranding } from "@/lib/branding/branding";
 import { IntakeBrandingHeader } from "@/components/intake/branding-header";
+import { IntakeThankYou } from "@/components/intake/thank-you";
 import { RtqClient } from "./rtq-client";
 
 // ─── Public risk questionnaire page ──────────────────────────────────────────
@@ -33,8 +34,14 @@ export async function generateMetadata({
 }
 
 // ─── Unusable-link state ──────────────────────────────────────────────────────
+// "already_submitted" is not handled here -- it reuses IntakeThankYou below,
+// the same shared screen src/app/intake/[token]/page.tsx shows for a
+// submitted/applied form, since the client has already completed this
+// questionnaire and there's nothing more to say than "thank you" again.
 
-const FAILURE_COPY: Record<TokenFailureReason, { eyebrow: string; heading: string; body: string }> = {
+type UnusableLinkReason = Exclude<TokenFailureReason, "already_submitted">;
+
+const FAILURE_COPY: Record<UnusableLinkReason, { eyebrow: string; heading: string; body: string }> = {
   not_found: {
     eyebrow: "Link not found",
     heading: "This link isn't valid",
@@ -45,18 +52,13 @@ const FAILURE_COPY: Record<TokenFailureReason, { eyebrow: string; heading: strin
     heading: "This link is no longer active",
     body: "The invitation link has expired. Please contact your advisor to receive a new one.",
   },
-  already_submitted: {
-    eyebrow: "Already submitted",
-    heading: "You've already completed this questionnaire",
-    body: "Thanks — your answers were received. If you need to make changes, contact your advisor.",
-  },
 };
 
 function Unavailable({
   reason,
   branding,
 }: {
-  reason: TokenFailureReason;
+  reason: UnusableLinkReason;
   branding: IntakeBranding | null;
 }) {
   const copy = FAILURE_COPY[reason];
@@ -95,8 +97,12 @@ export default async function RiskQuestionnairePage({
 
   const verdict = classifyToken(row, new Date());
   if (!verdict.ok) {
+    if (verdict.reason === "already_submitted") {
+      // row is non-null whenever classifyToken returns "already_submitted".
+      return <IntakeThankYou recipientName={row!.recipientName ?? null} branding={branding} />;
+    }
     return <Unavailable reason={verdict.reason} branding={branding} />;
   }
 
-  return <RtqClient token={token} branding={branding} />;
+  return <RtqClient token={token} recipientName={row!.recipientName ?? null} branding={branding} />;
 }

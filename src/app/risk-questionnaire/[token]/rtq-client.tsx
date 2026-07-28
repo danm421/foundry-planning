@@ -4,10 +4,15 @@ import { useState } from "react";
 import { RtqForm } from "@/components/risk/rtq-form";
 import { RTQ_V1, type RtqAnswers } from "@/lib/risk/rtq";
 import { IntakeBrandingHeader } from "@/components/intake/branding-header";
+import { IntakeThankYou } from "@/components/intake/thank-you";
 import type { IntakeBranding } from "@/lib/branding/branding";
 
 interface RtqClientProps {
   token: string;
+  /** The token row's recipientName, if the advisor supplied one when sending
+   *  the link -- greets the client by name on the post-submit screen, same as
+   *  the intake flow's IntakeClient. */
+  recipientName: string | null;
   /** Firm letterhead; null renders the Foundry Planning lockup. */
   branding: IntakeBranding | null;
 }
@@ -18,7 +23,7 @@ interface RtqClientProps {
  * fetch-free (also used by the advisor-administered RtqDialog), so this is
  * the only place that knows the public route's URL and status codes.
  */
-export function RtqClient({ token, branding }: RtqClientProps) {
+export function RtqClient({ token, recipientName, branding }: RtqClientProps) {
   const [submitted, setSubmitted] = useState(false);
 
   async function handleSubmit(answers: RtqAnswers, environmentNote: string | undefined) {
@@ -51,24 +56,7 @@ export function RtqClient({ token, branding }: RtqClientProps) {
   }
 
   if (submitted) {
-    return (
-      <div className="flex min-h-screen flex-col bg-paper">
-        <IntakeBrandingHeader branding={branding} />
-        <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-          <div className="max-w-md">
-            <p className="mb-3 font-mono text-xs uppercase tracking-widest text-ink-3">
-              Submitted
-            </p>
-            <h1 className="mb-4 text-3xl font-semibold tracking-tight text-ink">
-              Thank you<span className="text-accent">.</span>
-            </h1>
-            <p className="text-base leading-relaxed text-ink-2">
-              Your answers have been received. Your advisor will be in touch soon.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <IntakeThankYou recipientName={recipientName} branding={branding} />;
   }
 
   return (
