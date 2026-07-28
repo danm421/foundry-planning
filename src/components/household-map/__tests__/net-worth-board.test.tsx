@@ -44,10 +44,10 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
   };
 }
 
-/** The subtotal line is `{label} · <b>{formatCurrency(subtotal)}</b>` — the
- *  bold total is the only `<b>` this component renders, so its parent's full
- *  text content is the reliable way to assert a combined "label · $amount"
- *  string across the split text nodes. */
+/** The subtotal line is `{label} · <b>{moneyLabel(subtotal)}</b>` — the bold
+ *  total is the only `<b>` this component renders, so its parent's full text
+ *  content is the reliable way to assert a combined "label · $amount" string
+ *  across the split text nodes. */
 function subtotalTextFor(container: HTMLElement, col: string): string | null {
   const columnEl = container.querySelector(`[data-testid="column-${col}"]`);
   const bold = columnEl?.querySelector("b");
@@ -98,7 +98,7 @@ describe("NetWorthBoard", () => {
     // Signed-value arithmetic: 100,000 + (-30,000) = 70,000.
     expect(subtotalTextFor(container, "client")).toBe("Alex · $70,000");
     expect(subtotalTextFor(container, "joint")).toBe("Jointly Held · $50,000");
-    expect(subtotalTextFor(container, "spouse")).toBe("Jordan · -$20,000");
+    expect(subtotalTextFor(container, "spouse")).toBe("Jordan · ($20,000)");
 
     // Tray renders, is labelled, and does not affect any column subtotal.
     const tray = screen.getByTestId("tray");
@@ -107,6 +107,76 @@ describe("NetWorthBoard", () => {
       "href",
       "/clients/client-1/details/net-worth",
     );
+  });
+
+  it("excludes flow-kind items (income/savings/expense) from both a real column's cards/subtotal and the tray", () => {
+    const items: MapItem[] = [
+      // Real client-column asset — the only thing that should count.
+      item({ id: "a1", column: "client", kind: "account", value: 100000, valueLabel: "$100,000" }),
+      // Flow-kind items wrongly assigned to a real column — a regression that
+      // dropped the kind filter would render these cards AND inflate the
+      // subtotal by their (oversized, deliberately-obvious) values.
+      item({
+        id: "leak-income",
+        column: "client",
+        kind: "income",
+        name: "Leaked salary",
+        value: 999000,
+        valueLabel: "$999,000",
+      }),
+      item({
+        id: "leak-savings",
+        column: "client",
+        kind: "savings",
+        name: "Leaked 401k contribution",
+        value: -888000,
+        valueLabel: "$888,000",
+      }),
+      item({
+        id: "leak-expense",
+        column: "client",
+        kind: "expense",
+        name: "Leaked rent",
+        value: -777000,
+        valueLabel: "$777,000",
+      }),
+      // Legitimate tray item (entity-owned account) — must still render.
+      item({
+        id: "tray-real",
+        column: "tray",
+        kind: "account",
+        category: "entity",
+        name: "Family LLC brokerage",
+        value: 50000,
+        valueLabel: "$50,000",
+        trayOwnerLabel: "Family LLC",
+      }),
+      // Flow-kind item wrongly assigned to the tray — must not render there.
+      item({
+        id: "leak-tray-income",
+        column: "tray",
+        kind: "income",
+        name: "Leaked trust income",
+        value: 12345,
+        valueLabel: "$12,345",
+        trayOwnerLabel: "Family Trust",
+      }),
+    ];
+
+    const { container } = render(<NetWorthBoard {...baseProps({ items })} />);
+
+    // Column: only the real account counts, both in the DOM and the subtotal.
+    const clientColumn = screen.getByTestId("column-client");
+    expect(within(clientColumn).queryByText("Leaked salary")).not.toBeInTheDocument();
+    expect(within(clientColumn).queryByText("Leaked 401k contribution")).not.toBeInTheDocument();
+    expect(within(clientColumn).queryByText("Leaked rent")).not.toBeInTheDocument();
+    expect(subtotalTextFor(container, "client")).toBe("Alex · $100,000");
+
+    // Tray: the real entity-owned account renders; the flow-kind item does not.
+    const tray = screen.getByTestId("tray");
+    expect(within(tray).getByText("Family LLC brokerage")).toBeInTheDocument();
+    expect(within(tray).queryByText("Leaked trust income")).not.toBeInTheDocument();
+    expect(within(tray).getAllByRole("link")).toHaveLength(1);
   });
 
   it("single client — one centred node, no bracket/'Jointly Held', two columns only", () => {

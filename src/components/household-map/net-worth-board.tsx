@@ -1,7 +1,7 @@
 import Link from "next/link";
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
-import { formatCurrency } from "@/lib/cell-drill/format";
+import { moneyLabel } from "@/lib/household-map/format";
 import type { HouseholdMapProps, MapItem } from "@/lib/household-map/types";
 
 /** account/liability/policy → the Net Worth detail page; income/savings/expense
@@ -102,7 +102,7 @@ export default function NetWorthBoard({ clientId, people, items, canEdit }: Hous
                 </button>
               )}
               <div className="mt-0.5 border-t border-hair pt-1.5 text-right text-[10px] text-ink-3">
-                {labelFor(col)} · <b className="text-ink">{formatCurrency(subtotal)}</b>
+                {labelFor(col)} · <b className="text-ink">{moneyLabel(subtotal)}</b>
               </div>
             </div>
           );

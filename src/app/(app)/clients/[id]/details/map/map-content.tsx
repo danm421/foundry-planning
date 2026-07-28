@@ -17,6 +17,7 @@ import { buildClientMilestones } from "@/lib/milestones";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { assignColumn } from "@/lib/household-map/columns";
 import { buildMapGoals } from "@/lib/household-map/goals";
+import { moneyLabel } from "@/lib/household-map/format";
 import type {
   ColumnAssignment,
   ColumnContext,
@@ -32,13 +33,6 @@ import HouseholdMapView from "@/components/household-map/household-map-view";
 // the flat `MapItem` the boards render. Column placement is the one piece of
 // real logic and it lives in `@/lib/household-map/columns`.
 // ──────────────────────────────────────────────────────────────────────────
-
-/** "$160,000" / "($10,000)" — negatives in accounting parens, per MapItem. */
-function moneyLabel(value: number): string {
-  if (value < 0) return `(${formatCurrency(-value)})`;
-  // Negating a zero balance yields `-0`, which Intl renders as "-$0".
-  return formatCurrency(value === 0 ? 0 : value);
-}
 
 /** Account category → the board's visual category (drives the card's hue). */
 const ACCOUNT_CATEGORY: Record<Account["category"], MapItem["category"]> = {
