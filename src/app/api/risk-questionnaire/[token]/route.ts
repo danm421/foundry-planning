@@ -15,7 +15,7 @@ import {
   checkIntakeSubmitRateLimit,
   rateLimitErrorResponse,
 } from "@/lib/rate-limit";
-import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
+import { requireActiveSubscriptionForFirmNoSession, ForbiddenError } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { RTQ_SUBMIT_SCHEMA } from "@/lib/risk/schema";
 import { isCompleteRtq, scoreRtq } from "@/lib/risk/rtq";
@@ -63,8 +63,15 @@ export async function POST(
   // 3. Firm-active gate -- a firm whose subscription lapsed should not
   // accept new live planning writes. Checked after the token is confirmed
   // live and before any write.
+  //
+  // MUST be the NoSession variant. This route is unauthenticated by design, so
+  // `auth()` yields userId === null on every real request; the session-bound
+  // requireActiveSubscriptionForFirm opens with `if (!userId) throw new
+  // UnauthorizedError()` (authz.ts, pinned by authz.test.ts "no userId throws
+  // UnauthorizedError"), which the catch below does NOT handle -- it would 500
+  // every submission. Do not "align" this with the advisor routes.
   try {
-    await requireActiveSubscriptionForFirm(questionnaire.firmId);
+    await requireActiveSubscriptionForFirmNoSession(questionnaire.firmId);
   } catch (e) {
     if (e instanceof ForbiddenError) {
       return NextResponse.json({ error: "Subscription inactive." }, { status: 403 });
@@ -76,7 +83,18 @@ export async function POST(
   // `clientId`) is the whole route's authority boundary: everything about
   // who this submission belongs to comes from the token's row, never the
   // request body.
-  const parsed = RTQ_SUBMIT_SCHEMA.safeParse(await req.json());
+  //
+  // req.json() is guarded: on a public surface a malformed or absent body is a
+  // caller error (400), not a server error. Unguarded it throws SyntaxError,
+  // which nothing here catches -> 500. Mirrors intake/[token]/submit/route.ts.
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = RTQ_SUBMIT_SCHEMA.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid body", details: parsed.error.flatten() },
