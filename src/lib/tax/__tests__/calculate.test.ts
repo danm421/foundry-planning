@@ -938,3 +938,118 @@ describe("calculateTaxYear — credits: NIIT is outside the credit-offsettable b
     expect(result.flow.totalFederalTax).toBe(-1_320);
   });
 });
+
+describe("calculateTaxYear — credits: absent-household identity with ALL FIVE terms nonzero", () => {
+  // Review round 2, Important 1. The other absent-household fixture has
+  // amtAdditional === 0, so dropping `+ amtAdditional` from the roll-up's base
+  // survives it. Here every one of the five terms is nonzero, so the identity
+  // actually constrains all five.
+  //
+  // MFJ: wages 310000 + qual div 50000 + LTCG 20000, itemized 80000 of which
+  // 40000 is SALT, ISO spread 250000 (the file's F7 shape, plus investment
+  // income so NIIT and the 0.9% surtax also fire).
+  //   AGI 380000; itemized 80000 > std 32200 → taxableIncome 300000
+  //   incomeTaxBase = 300000 - 20000 - 50000 = 230000
+  //   regularTaxCalc = 2480 + 9120 + 24453 + (230000-211950)×.24 = 4332 → 40385
+  //   capGains: preferential 70000 stacked 230000→300000, all 15% → 10500
+  //   AMTI = 300000 + 40000 SALT add-back + 250000 ISO = 590000
+  //     taxable AMTI = 590000 - 140200 = 449800; LTCG slice 70000
+  //     ordinary 379800 → 244500×.26 = 63570 + 135300×.28 = 37884 → 101454
+  //     cap-gains portion 10500 → TMT 111954
+  //     amtAdditional = 111954 - (40385 + 10500 = 50885) = 61069
+  //   niit = min(70000, 380000-250000) × .038 = 70000×.038 = 2660
+  //   additionalMedicare = (310000-250000) × .009 = 540
+  //   total = 40385 + 10500 + 61069 + 2660 + 540 = 115154
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 310_000,
+    qualifiedDividends: 50_000,
+    longTermCapitalGains: 20_000,
+    itemizedDeductions: 80_000,
+    saltDeducted: 40_000,
+    isoSpread: 250_000,
+    flatStateRate: 0,
+  }));
+
+  it("has every component term nonzero (non-vacuous)", () => {
+    expect(result.flow.regularFederalIncomeTax).toBe(40_385);
+    expect(result.flow.capitalGainsTax).toBe(10_500);
+    expect(result.flow.amtAdditional).toBe(61_069);
+    expect(result.flow.niit).toBe(2_660);
+    expect(result.flow.additionalMedicare).toBe(540);
+  });
+
+  it("totalFederalTax is exactly the sum of all five, with no credits", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(0);
+    expect(result.flow.totalFederalTax).toBe(
+      result.flow.regularFederalIncomeTax +
+      result.flow.capitalGainsTax +
+      result.flow.amtAdditional +
+      result.flow.niit +
+      result.flow.additionalMedicare,
+    );
+    expect(result.flow.totalFederalTax).toBe(115_154);
+  });
+});
+
+describe("calculateTaxYear — credits: the credit base is all THREE subpart-A terms", () => {
+  // Review round 2, Important 2. In every other credit-bearing fixture
+  // capitalGainsTax and amtAdditional are both 0, so R5's "same three terms"
+  // is only ever exercised on regularTaxCalc — narrowing the argument at the
+  // computeCredits call to `regularTaxCalc` alone survives them all.
+  //
+  // Here bracket tax is small but cap-gains tax and AMT are large, so a
+  // narrowed base changes how much CTC is absorbed as nonrefundable versus
+  // spilling into refundable ACTC.
+  //
+  // MFJ: wages 60000 + LTCG 300000, ISO spread 400000, 3 qualifying children.
+  //   AGI 360000; std 32200 → taxableIncome 327800
+  //   incomeTaxBase = 327800 - 300000 = 27800
+  //   regularTaxCalc = 24800×.10 + 3000×.12 = 2480 + 360 = 2840
+  //   capGains: preferential 300000 stacked 27800→327800
+  //             (327800-99200) × .15 = 228600×.15 = 34290
+  //   AMTI = 327800 + 32200 std add-back + 400000 ISO = 760000
+  //     taxable AMTI = 619800; LTCG slice 300000 → ordinary 319800
+  //     244500×.26 = 63570 + 75300×.28 = 21084 → 84654
+  //     cap-gains portion = calcCapGainsTax(300000, base 27800) = 34290
+  //     TMT = 118944 → amtAdditional = 118944 - (2840 + 34290 = 37130) = 81814
+  //   niit = min(300000, 360000-250000) × .038 = 110000×.038 = 4180
+  //   subpartA base = 2840 + 34290 + 81814 = 118944  (NOT 2840, and NOT 37130)
+  //   CTC 3 × 2000 = 6000, MAGI 360000 < 400000 → no phase-down.
+  //     118944 of tax easily absorbs all 6000 → nonrefundable 6000, ACTC 0
+  //   total = max(0, 118944 - 6000) + 4180 = 112944 + 4180 = 117124
+  //
+  // Narrowed to regularTaxCalc alone (2840): only 2840 of CTC is absorbed and
+  // 3160 spills to ACTC → taxCredits 2840, refundableCredits 3160. The TOTAL is
+  // unchanged at 117124 — the outer Math.max absorbs it silently, exactly as R5
+  // warns — so the split, not the total, is what pins this.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 60_000,
+    longTermCapitalGains: 300_000,
+    isoSpread: 400_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+    },
+  }));
+
+  it("has nonzero cap-gains tax AND nonzero AMT alongside the bracket tax", () => {
+    expect(result.flow.regularFederalIncomeTax).toBe(2_840);
+    expect(result.flow.capitalGainsTax).toBe(34_290);
+    expect(result.flow.amtAdditional).toBe(81_814);
+    expect(result.flow.niit).toBe(4_180);
+  });
+
+  it("absorbs the full CTC against all three terms, leaving nothing refundable", () => {
+    expect(result.flow.taxCredits).toBe(6_000);
+    expect(result.flow.refundableCredits).toBe(0);
+  });
+
+  it("rolls up to the credit-reduced total", () => {
+    expect(result.flow.totalFederalTax).toBe(117_124);
+  });
+});
