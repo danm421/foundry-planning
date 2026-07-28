@@ -8,6 +8,10 @@ import { authErrorResponse } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
+// @allow-firm-scope-exception — firm scoping is enforced by requireClientEditAccess(id),
+// which verifies the target client belongs to the caller's firm (throws ForbiddenError
+// otherwise) before any mutation. The literal getOrgId/requireOrgId grep doesn't see this.
+
 const MODES = ["detailed", "map"] as const;
 type ViewMode = (typeof MODES)[number];
 
