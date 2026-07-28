@@ -1773,6 +1773,8 @@ export interface DeductionBreakdown {
     retirementContributions: number;
     taggedExpenses: number;
     manualEntries: number;
+    /** IRC 221 student-loan interest, post-cap and post-MAGI-phase-out. */
+    studentLoanInterest: number;
     total: number;
     bySource: Record<string, { label: string; amount: number }>;
   };

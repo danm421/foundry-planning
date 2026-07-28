@@ -689,15 +689,62 @@ describe("projection — bracket/flat tax routing", () => {
     expect(bd).toBeDefined();
     const studentInterest = bd!.belowLine.interestPaid;
     expect(studentInterest).toBeGreaterThan(0);
-    // NOTE: aboveLine has no `studentLoanInterest` component field yet, so the
-    // total deliberately exceeds the sum of the three named components. The
-    // preceding test pins the no-student-loan case where they do agree.
+    expect(bd!.aboveLine.studentLoanInterest).toBe(studentInterest);
+    // The named components still sum to the total — `studentLoanInterest` is
+    // the fourth of them. The preceding test pins the same invariant for a
+    // household with no student loan.
     expect(bd!.aboveLine.total).toBe(
       bd!.aboveLine.retirementContributions
         + bd!.aboveLine.taggedExpenses
         + bd!.aboveLine.manualEntries
-        + studentInterest
+        + bd!.aboveLine.studentLoanInterest
     );
+  });
+
+  it("never deducts the same student-loan interest twice", () => {
+    // A liability flagged BOTH liabilityType: "student" AND isInterestDeductible
+    // must be deducted once — above the line — and never also as Schedule A
+    // interest. Above-line and itemized are mutually exclusive for the same
+    // interest dollars (IRC 221 vs the Schedule A mortgage-interest deduction).
+    //
+    // Control run: the same fixture with the mortgage ALONE, giving one loan's
+    // year-1 interest without hand-amortizing (and robust to the engine's
+    // accrual convention). The student loan is a clone of that mortgage, so it
+    // accrues exactly the same interest — which makes the arithmetic explicit:
+    // itemized must be 1x the control, not 2x.
+    const bracketSettings = {
+      ...basePlanSettings,
+      taxEngineMode: "bracket" as const,
+      planStartYear: 2026,
+      planEndYear: 2026,
+    };
+    const controlYears = runProjection({
+      ...buildClientData({ planSettings: bracketSettings }),
+      taxYearRows: FIXTURE_TAX_PARAMS,
+    });
+    const mortgageInterest = controlYears[0].deductionBreakdown!.belowLine.interestPaid;
+    expect(mortgageInterest).toBeGreaterThan(0);
+
+    const deductibleStudentLoan = {
+      ...sampleLiabilities[0],
+      id: "liab-student-deductible",
+      name: "Student Loan",
+      liabilityType: "student" as const,
+      isInterestDeductible: true,
+    };
+    const years = runProjection({
+      ...buildClientData({
+        planSettings: bracketSettings,
+        liabilities: [...sampleLiabilities, deductibleStudentLoan],
+      }),
+      taxYearRows: FIXTURE_TAX_PARAMS,
+    });
+    const bd = years[0].deductionBreakdown!;
+    // Above the line: the student loan's own interest, in full.
+    expect(bd.aboveLine.studentLoanInterest).toBe(mortgageInterest);
+    // Itemized: the MORTGAGE's interest only. Without the student-type
+    // exclusion at the call site this would be 2x `mortgageInterest`.
+    expect(bd.belowLine.interestPaid).toBe(mortgageInterest);
   });
 
   it("populates deductionBreakdown.belowLine with taxesPaid and interestPaid", () => {

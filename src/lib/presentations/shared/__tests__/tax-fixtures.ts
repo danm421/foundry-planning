@@ -58,7 +58,8 @@ export function makeDeductionBreakdown(over: {
 } = {}): DeductionBreakdown {
   return {
     aboveLine: {
-      retirementContributions: 0, taggedExpenses: 0, manualEntries: 0, total: 0,
+      retirementContributions: 0, taggedExpenses: 0, manualEntries: 0,
+      studentLoanInterest: 0, total: 0,
       bySource: {}, ...over.aboveLine,
     },
     belowLine: {

@@ -18,6 +18,7 @@ const ABOVE_STACK: Array<{ key: string; label: string; color: string; pick: (a: 
   { key: "retirementContributions", label: "Retirement Contributions", color: dataLight.blue, pick: (a) => a?.retirementContributions ?? 0 },
   { key: "taggedExpenses",          label: "Tagged Expenses",          color: dataLight.green, pick: (a) => a?.taggedExpenses ?? 0 },
   { key: "manualEntries",           label: "Manual Entries",           color: dataLight.orange, pick: (a) => a?.manualEntries ?? 0 },
+  { key: "studentLoanInterest",     label: "Student Loan Interest",    color: dataLight.purple, pick: (a) => a?.studentLoanInterest ?? 0 },
 ];
 
 export interface BuildTaxAboveLineDrillInput {
@@ -37,6 +38,7 @@ export function buildTaxAboveLineDrillData(input: BuildTaxAboveLineDrillInput): 
     { key: "retirementContributions", header: "Retirement\nContributions", width: 64 },
     { key: "taggedExpenses",          header: "Tagged\nExpenses",          width: 56 },
     { key: "manualEntries",           header: "Manual\nEntries",           width: 56 },
+    { key: "studentLoanInterest",     header: "Student Loan\nInterest",     width: 64 },
     { key: "total",                   header: "Total",                     width: 56, strong: true },
   ];
 
@@ -48,6 +50,7 @@ export function buildTaxAboveLineDrillData(input: BuildTaxAboveLineDrillInput): 
         retirementContributions: a?.retirementContributions ?? 0,
         taggedExpenses: a?.taggedExpenses ?? 0,
         manualEntries: a?.manualEntries ?? 0,
+        studentLoanInterest: a?.studentLoanInterest ?? 0,
         total: a?.total ?? 0,
       },
     };

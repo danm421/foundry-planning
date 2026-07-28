@@ -171,6 +171,12 @@ function aboveLineColumns(years: ProjectionYear[]): Column[] {
       value: (y) => y.deductionBreakdown?.aboveLine.manualEntries ?? 0,
     },
     {
+      key: "al_student_loan",
+      label: "Student Loan Interest",
+      tooltip: "Interest on student liabilities, after the annual cap and the MAGI phase-out.",
+      value: (y) => y.deductionBreakdown?.aboveLine.studentLoanInterest ?? 0,
+    },
+    {
       key: "al_total",
       label: "Above-Line Total",
       tooltip: "Sum of all above-line deduction sources.",

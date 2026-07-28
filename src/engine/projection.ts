@@ -3469,7 +3469,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }))),
         deriveMortgageInterestFromLiabilities(
           year,
-          currentLiabilities.map((l) => ({
+          // Student loans are excluded even when flagged isInterestDeductible:
+          // above-line and itemized are mutually exclusive for the same interest
+          // dollars (IRC 221 vs the Schedule A mortgage-interest deduction), and
+          // `deriveStudentLoanInterest` already claimed them above the line.
+          currentLiabilities.filter((l) => l.liabilityType !== "student").map((l) => ({
             id: l.id,
             isInterestDeductible: l.isInterestDeductible ?? false,
             startYear: l.startYear,
@@ -3528,6 +3532,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const retirementContributions = contributions[0].aboveLine;
       const expenseAboveLine = contributions[1].aboveLine;
       const manualAboveLine = contributions[5].aboveLine;
+      const studentLoanAboveLine = studentLoanInterestContribution.aboveLine;
 
       // Below-line per-category split from source data
       let charitable = 0;
@@ -3585,6 +3590,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           retirementContributions,
           taggedExpenses: expenseAboveLine,
           manualEntries: manualAboveLine,
+          studentLoanInterest: studentLoanAboveLine,
           total: aboveLineDeductions,
           bySource: aboveLineBySource,
         },
