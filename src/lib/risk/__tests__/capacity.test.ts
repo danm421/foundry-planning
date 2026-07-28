@@ -24,6 +24,19 @@ describe("capacityFactors", () => {
     expect(Math.round(sum * 100)).toBe(computeCapacityScore(INPUTS));
   });
 
+  it("checks the horizon factor at a non-saturating horizon", () => {
+    // INPUTS.horizonYears (33) exceeds the 30-year ceiling, so its horizon
+    // factor saturates to 1 and a curve change (e.g. /30 -> /25, which also
+    // still saturates at 33) would slip past both assertions above. A
+    // horizon below the ceiling pins the factor to an exact, non-saturated
+    // value so a curve-shape change is caught here.
+    const nonSaturating = { ...INPUTS, horizonYears: 15 };
+    const f = capacityFactors(nonSaturating);
+    expect(f.horizon).toBeCloseTo(CAPACITY_WEIGHTS.horizon * (15 / 30), 4);
+    const sum = f.horizon + f.buffer + f.withdrawal + f.incomeFloor;
+    expect(Math.round(sum * 100)).toBe(computeCapacityScore(nonSaturating));
+  });
+
   it("clamps each factor to its own weight ceiling", () => {
     const f = capacityFactors({
       horizonYears: 90,

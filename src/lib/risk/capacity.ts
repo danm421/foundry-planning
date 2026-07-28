@@ -1,8 +1,12 @@
 // src/lib/risk/capacity.ts
 //
-// Capacity for the risk profile. Reuses computeCapacityScore from the insights
-// battery unchanged; the only addition is the per-factor breakdown the detail
-// page shows so an advisor can see WHY capacity is 41.
+// Capacity for the risk profile. Reuses computeCapacityScore from the
+// insights battery unchanged. The per-factor breakdown the detail page shows
+// (so an advisor can see WHY capacity is 41) lives in risk-capacity.ts as
+// `capacityFactors` -- computeCapacityScore is defined in terms of it, so
+// there is exactly one place the four weighted curves are written down.
+// Re-exported here so this module's public surface is unchanged for the
+// existing test import and any future UI import.
 //
 // There is no persisted projection and no plan-save hook -- runProjection is a
 // pure engine function called at read time from ~10 sites. withComputeCache
@@ -19,17 +23,12 @@ import { deriveInsightInputs } from "@/lib/insights/derive";
 import {
   computeCapacityScore,
   computeRequiredGrowthPct,
-  CAPACITY_WEIGHTS,
-  type CapacityInputs,
+  capacityFactors,
+  type CapacityFactors,
 } from "@/lib/insights/risk-capacity";
 import { recomputeProfile } from "./profile";
 
-export interface CapacityFactors {
-  horizon: number;
-  buffer: number;
-  withdrawal: number;
-  incomeFloor: number;
-}
+export { capacityFactors, type CapacityFactors } from "@/lib/insights/risk-capacity";
 
 export interface CapacityResult {
   capacityScore: number;
@@ -37,26 +36,18 @@ export interface CapacityResult {
   factors: CapacityFactors;
 }
 
-const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
-
-/**
- * The same four factors computeCapacityScore blends, kept separate so the UI
- * can show the breakdown. Formulas mirror risk-capacity.ts exactly -- if that
- * file's curves change, this must change with it (the sum test catches drift).
- */
-export function capacityFactors(i: CapacityInputs): CapacityFactors {
-  return {
-    horizon: CAPACITY_WEIGHTS.horizon * clamp01(i.horizonYears / 30),
-    buffer: CAPACITY_WEIGHTS.buffer * clamp01((i.fundingScore - 0.8) / 0.7),
-    withdrawal: CAPACITY_WEIGHTS.withdrawal * clamp01(1 - i.withdrawalRate / 0.06),
-    incomeFloor: CAPACITY_WEIGHTS.incomeFloor * clamp01(i.guaranteedIncomeCoverage),
-  };
-}
-
 /**
  * Compute (or serve cached) capacity for a household's base scenario, then
  * write it onto the profile through recomputeProfile so the Risk list's
  * denormalized snapshot stays in step.
+ *
+ * recomputeProfile runs INSIDE the `compute` callback below -- only on an
+ * actual cache miss (or forceRefresh), never on a cache hit -- so a page view
+ * that hits cache doesn't re-lock and rewrite client_risk_profiles for no
+ * reason. It also means a profile-write failure prevents the cache row from
+ * being written (withComputeCache persists only after `compute` resolves), so
+ * the next call retries both instead of stranding a stale profile behind a
+ * cached-but-never-recorded result.
  */
 export async function getOrComputeCapacity(args: {
   clientId: string;
@@ -80,7 +71,7 @@ export async function getOrComputeCapacity(args: {
     equityReturn,
   });
 
-  const result = await withComputeCache<CapacityResult>({
+  return withComputeCache<CapacityResult>({
     firmId: args.firmId,
     clientId: args.clientId,
     realScenarioId,
@@ -106,27 +97,28 @@ export async function getOrComputeCapacity(args: {
         equityReturn,
       });
 
-      return {
+      const result: CapacityResult = {
         capacityScore: computeCapacityScore(capacity),
         requiredGrowthPct: computeRequiredGrowthPct(required),
         factors: capacityFactors(capacity),
       };
+
+      // Only reached on an actual compute -- see the doc comment above.
+      await recomputeProfile({
+        clientId: args.clientId,
+        firmId: args.firmId,
+        actorUserId: null,
+        kind: "capacity_changed",
+        reason: "plan change",
+        patch: {
+          capacityScore: result.capacityScore,
+          requiredGrowthPct: result.requiredGrowthPct,
+          capacityFactors: result.factors,
+          capacityComputedAt: new Date(),
+        },
+      });
+
+      return result;
     },
   });
-
-  await recomputeProfile({
-    clientId: args.clientId,
-    firmId: args.firmId,
-    actorUserId: null,
-    kind: "capacity_changed",
-    reason: "plan change",
-    patch: {
-      capacityScore: result.capacityScore,
-      requiredGrowthPct: result.requiredGrowthPct,
-      capacityFactors: result.factors,
-      capacityComputedAt: new Date(),
-    },
-  });
-
-  return result;
 }

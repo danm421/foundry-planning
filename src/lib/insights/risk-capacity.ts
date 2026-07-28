@@ -47,16 +47,37 @@ export const VERDICT_TOLERANCE_PCT = 5;
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
+/**
+ * The four weighted contributions computeCapacityScore blends, exposed
+ * separately so the risk-profile detail page can show the breakdown of WHY
+ * capacity is what it is -- without a second, drift-prone copy of these
+ * curves living in `src/lib/risk/capacity.ts`. computeCapacityScore is
+ * defined in terms of this function.
+ */
+export interface CapacityFactors {
+  horizon: number;
+  buffer: number;
+  withdrawal: number;
+  incomeFloor: number;
+}
+
+export function capacityFactors(i: CapacityInputs): CapacityFactors {
+  return {
+    horizon: CAPACITY_WEIGHTS.horizon * clamp01(i.horizonYears / 30), // 30+ yrs → full
+    buffer: CAPACITY_WEIGHTS.buffer * clamp01((i.fundingScore - 0.8) / 0.7), // 0.8→0, 1.5→1
+    withdrawal:
+      CAPACITY_WEIGHTS.withdrawal * clamp01(1 - i.withdrawalRate / 0.06), // 0%→1, 6%→0
+    incomeFloor:
+      CAPACITY_WEIGHTS.incomeFloor * clamp01(i.guaranteedIncomeCoverage), // 100%+→1
+  };
+}
+
 export function computeCapacityScore(i: CapacityInputs): number {
-  const horizonFactor = clamp01(i.horizonYears / 30); // 30+ yrs → full
-  const bufferFactor = clamp01((i.fundingScore - 0.8) / 0.7); // 0.8→0, 1.5→1
-  const withdrawalFactor = clamp01(1 - i.withdrawalRate / 0.06); // 0%→1, 6%→0
-  const incomeFloorFactor = clamp01(i.guaranteedIncomeCoverage); // 100%+→1
-  const score =
-    CAPACITY_WEIGHTS.horizon * horizonFactor +
-    CAPACITY_WEIGHTS.buffer * bufferFactor +
-    CAPACITY_WEIGHTS.withdrawal * withdrawalFactor +
-    CAPACITY_WEIGHTS.incomeFloor * incomeFloorFactor;
+  // Same summation order as the pre-refactor inline version (horizon, buffer,
+  // withdrawal, incomeFloor) so floating-point association -- and therefore
+  // the result -- is unchanged.
+  const f = capacityFactors(i);
+  const score = f.horizon + f.buffer + f.withdrawal + f.incomeFloor;
   return Math.round(score * 100);
 }
 
