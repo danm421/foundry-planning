@@ -21,6 +21,7 @@ import { RiskHistoryTable } from "@/components/risk/risk-history-table";
 import { ManualToleranceDialog } from "@/components/risk/manual-tolerance-dialog";
 import { EnvironmentEditor } from "@/components/risk/environment-editor";
 import { RtqDialog } from "@/components/risk/rtq-dialog";
+import { SendRtqDialog } from "@/components/risk/send-rtq-dialog";
 import { PortfolioMismatch } from "@/components/risk/portfolio-mismatch";
 
 const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
@@ -29,13 +30,16 @@ const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
 };
 
+const SUBJECT_LABELS: Record<"primary" | "spouse", string> = {
+  primary: "Primary",
+  spouse: "Spouse",
+};
+
 const DASH = <span className="text-ink-3">—</span>;
 
-// Every mutation surface on this page is wired up in Tasks 10-13. "Send
-// questionnaire" (Task 13) still renders disabled; "Set manually" and
-// environment "Edit" are wired up as of Task 10, "Fill out now" as of Task 11.
-const DISABLED_BTN =
-  "rounded-md border border-hair px-2.5 py-1 text-xs text-ink-3 opacity-50 cursor-not-allowed";
+// Every mutation surface on this page is wired up in Tasks 10-13: "Set
+// manually" and environment "Edit" as of Task 10, "Fill out now" as of Task
+// 11, "Send questionnaire" as of Task 13.
 
 function formatDate(d: Date | null): ReactNode {
   return d ? <span className="tabular">{new Date(d).toISOString().slice(0, 10)}</span> : DASH;
@@ -71,7 +75,8 @@ export async function RiskDetailContent({
 
   // Read AFTER getOrComputeCapacity so the row reflects whatever that call
   // just recomputed and wrote.
-  const { row, flags, events, unreviewedNotes } = await getRiskProfileDetail(clientId);
+  const { row, flags, events, unreviewedNotes, pendingRtqs, contacts } =
+    await getRiskProfileDetail(clientId);
 
   // A household with no base scenario / plan settings throws inside
   // resolveScenarioId -- same "not an error page" treatment as the capacity
@@ -142,10 +147,21 @@ export async function RiskDetailContent({
               )}
             </>
           )}
+          {pendingRtqs.length > 0 && (
+            <ul className="space-y-0.5">
+              {pendingRtqs.map((p) => (
+                <li key={p.subject} className="text-xs text-ink-3">
+                  {SUBJECT_LABELS[p.subject]} questionnaire sent {formatDate(p.sentAt)}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="flex flex-wrap gap-2 pt-1">
-            <button type="button" disabled title="Coming soon" className={DISABLED_BTN}>
-              Send questionnaire
-            </button>
+            <SendRtqDialog
+              clientId={clientId}
+              hasSpouse={contacts.spouse !== null}
+              contacts={contacts}
+            />
             <RtqDialog clientId={clientId} />
             <ManualToleranceDialog
               clientId={clientId}

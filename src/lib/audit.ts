@@ -411,7 +411,8 @@ export type AuditAction =
   | "risk_profile.tolerance_manual"
   | "risk_profile.environment_changed"
   | "risk_profile.rtq_completed"
-  | "risk_profile.portfolio_applied";
+  | "risk_profile.portfolio_applied"
+  | "risk_profile.rtq_sent";
 
 type Args = {
   action: AuditAction;

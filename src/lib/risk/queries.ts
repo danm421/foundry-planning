@@ -3,13 +3,14 @@
 // snapshot read off `client_risk_profiles` -- never a live recompute -- so the
 // list page can render without running a projection per household.
 import { db } from "@/db";
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
 import {
   clients,
   crmHouseholds,
+  crmHouseholdContacts,
   clientRiskProfiles,
   clientRiskProfileEvents,
   riskQuestionnaires,
@@ -162,11 +163,34 @@ export interface RiskDetailRow extends RiskListRow {
   environmentReason: string | null;
 }
 
+/** A currently-live emailed link -- status "sent", not yet submitted/expired. */
+export interface PendingRtq {
+  subject: "primary" | "spouse";
+  sentAt: Date | null;
+  expiresAt: Date | null;
+}
+
+/** Prefill source for the send-questionnaire dialog: the household's CRM
+ *  contact for that subject, if one exists. */
+export interface RtqContact {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+}
+
 export interface RiskDetail {
   row: RiskDetailRow;
   flags: RiskListFlags;
   events: ClientRiskProfileEventRow[];
   unreviewedNotes: Array<{ id: string; note: string; submittedAt: Date | null }>;
+  /** Currently-open ("sent") emailed questionnaires, one entry per subject at
+   *  most (the send route expires the prior one before inserting a new row).
+   *  Sibling field rather than a column on RiskDetailRow -- see the note on
+   *  RiskDetailRow above about keeping that shape frozen. */
+  pendingRtqs: PendingRtq[];
+  /** The household's primary/spouse CRM contacts, keyed by subject -- null
+   *  when that role has no contact on the household. */
+  contacts: { primary: RtqContact | null; spouse: RtqContact | null };
 }
 
 /**
@@ -195,6 +219,9 @@ export async function getRiskProfileDetail(clientId: string): Promise<RiskDetail
       spouseToleranceScore: clientRiskProfiles.spouseToleranceScore,
       capacityComputedAt: clientRiskProfiles.capacityComputedAt,
       environmentReason: clientRiskProfiles.environmentReason,
+      // Only used to thread the contacts read below -- destructured out
+      // before `row` is built so it never lands on RiskDetailRow's shape.
+      crmHouseholdId: clients.crmHouseholdId,
     })
     .from(clients)
     .innerJoin(crmHouseholds, eq(crmHouseholds.id, clients.crmHouseholdId))
@@ -208,13 +235,15 @@ export async function getRiskProfileDetail(clientId: string): Promise<RiskDetail
     throw new Error(`No household found for client ${clientId}`);
   }
 
+  const { crmHouseholdId, ...detailFields } = profileRow;
+
   const row: RiskDetailRow = {
-    ...profileRow,
-    bindingConstraint: profileRow.bindingConstraint ?? "none",
-    environmentAdj: profileRow.environmentAdj ?? 0,
+    ...detailFields,
+    bindingConstraint: detailFields.bindingConstraint ?? "none",
+    environmentAdj: detailFields.environmentAdj ?? 0,
   };
 
-  const [events, noteRows] = await Promise.all([
+  const [events, noteRows, pendingRtqRows, contactRows] = await Promise.all([
     db
       .select()
       .from(clientRiskProfileEvents)
@@ -241,7 +270,44 @@ export async function getRiskProfileDetail(clientId: string): Promise<RiskDetail
           isNull(riskQuestionnaires.environmentNoteReviewedAt),
         ),
       ),
+    db
+      .select({
+        subject: riskQuestionnaires.subject,
+        sentAt: riskQuestionnaires.sentAt,
+        expiresAt: riskQuestionnaires.expiresAt,
+      })
+      .from(riskQuestionnaires)
+      .where(
+        and(
+          eq(riskQuestionnaires.clientId, clientId),
+          eq(riskQuestionnaires.firmId, firmId),
+          eq(riskQuestionnaires.status, "sent"),
+        ),
+      ),
+    db
+      .select({
+        role: crmHouseholdContacts.role,
+        firstName: crmHouseholdContacts.firstName,
+        lastName: crmHouseholdContacts.lastName,
+        email: crmHouseholdContacts.email,
+      })
+      .from(crmHouseholdContacts)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, crmHouseholdId),
+          inArray(crmHouseholdContacts.role, ["primary", "spouse"]),
+        ),
+      ),
   ]);
+
+  // The two partial unique indexes on crm_household_contacts (one primary,
+  // one spouse per household) guarantee at most one row per bucket here.
+  const contacts: RiskDetail["contacts"] = { primary: null, spouse: null };
+  for (const c of contactRows) {
+    const contact: RtqContact = { firstName: c.firstName, lastName: c.lastName, email: c.email };
+    if (c.role === "primary") contacts.primary = contact;
+    else if (c.role === "spouse") contacts.spouse = contact;
+  }
 
   return {
     row,
@@ -254,5 +320,7 @@ export async function getRiskProfileDetail(clientId: string): Promise<RiskDetail
       note: n.note as string,
       submittedAt: n.submittedAt,
     })),
+    pendingRtqs: pendingRtqRows,
+    contacts,
   };
 }
