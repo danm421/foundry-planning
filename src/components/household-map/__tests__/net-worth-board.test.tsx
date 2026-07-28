@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import NetWorthBoard from "../net-worth-board";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { AccountRow } from "@/components/balance-sheet-view";
@@ -408,5 +409,100 @@ describe("growth rate display", () => {
       />,
     );
     expect(screen.getByText("4.80%")).toBeInTheDocument();
+  });
+});
+
+describe("inline value editing", () => {
+  it("saves a typed value through onSaveAccountField", async () => {
+    const onSaveAccountField = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={onSaveAccountField}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Edit amount for IRA/ }));
+    await user.clear(screen.getByRole("textbox"));
+    await user.type(screen.getByRole("textbox"), "500000{Enter}");
+
+    expect(onSaveAccountField).toHaveBeenCalledWith("acct-1", { value: "500000" });
+  });
+
+  it("renders a plain value when canEdit is false", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: false,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for IRA/ })).not.toBeInTheDocument();
+  });
+
+  it("renders a plain value when no save handler is wired", () => {
+    // A board rendered without a writer must not offer an editable-looking
+    // field that silently discards the edit.
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for IRA/ })).not.toBeInTheDocument();
+  });
+
+  it("offers no editor on a liability card — liabilities have no hydrated row", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit amount for Mortgage/ })).not.toBeInTheDocument();
+  });
+
+  // Every Net Worth card is wrapped in a `<Link>`. `stopPropagation` alone
+  // stops React handlers but NOT the browser's default action, so without a
+  // `preventDefault` the first click on the amount navigates to the Net Worth
+  // page instead of opening the editor. `fireEvent` returns false exactly when
+  // the event was canceled, which is what makes this assertion falsifiable.
+  it("does not let the click navigate the card's enclosing link", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onSaveAccountField={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: /Edit amount for IRA/ });
+    expect(trigger.closest("a")).not.toBeNull();
+    expect(fireEvent.click(trigger)).toBe(false);
   });
 });

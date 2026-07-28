@@ -85,6 +85,15 @@ export function InlineAmount({
       <button
         type="button"
         onClick={(e) => {
+          // BOTH are required, and they do different jobs. `stopPropagation`
+          // keeps an ancestor's React onClick from firing; `preventDefault`
+          // cancels the browser's DEFAULT action. On the Household Map this
+          // button renders inside a `<Link>`, and an anchor navigates on the
+          // default action — which `stopPropagation` does not touch. Without
+          // the preventDefault, clicking the amount to edit it navigates away
+          // to the Net Worth page instead. Harmless where there is no anchor:
+          // a `type="button"` click has no default action of its own.
+          e.preventDefault();
           e.stopPropagation();
           begin();
         }}
@@ -100,7 +109,17 @@ export function InlineAmount({
   }
 
   return (
-    <div className="relative w-[104px]" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="relative w-[104px]"
+      // Same pairing as the trigger above: clicking into the open input must
+      // not navigate the enclosing `<Link>`. `preventDefault` on a CLICK does
+      // not block focus (focus is decided on mousedown), so the field still
+      // takes the caret.
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
       {mode === "currency" && (
         <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-ink-3">
           $

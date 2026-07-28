@@ -10,6 +10,12 @@ import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savin
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import {
+  buildBasePayload,
+  buildScenarioDesiredFields,
+  type AccountPatch,
+} from "@/lib/household-map/account-write";
 
 const BOARDS = [
   { key: "net-worth", label: "Net Worth" },
@@ -58,6 +64,45 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
 
   const milestones = approximateMilestones(people, goals);
+
+  const writer = useScenarioWriter(clientId);
+
+  /**
+   * Persist one inline account edit. Base mode sends only what changed;
+   * scenario mode sends the WHOLE row. That asymmetry is deliberate and
+   * load-bearing — `applyEntityEdit` replaces the change payload wholesale, so
+   * a narrow scenario write would delete every sibling override on the account.
+   * See `lib/household-map/account-write.ts`, which owns both payloads and the
+   * `growthRate: null` rule (R9) that keeps a value edit from zeroing the
+   * account's growth for the whole projection.
+   *
+   * `useScenarioWriter().submit` resolves to the raw `Response`, so `res.ok` is
+   * the native property — there is no bespoke result object to read.
+   */
+  async function handleSaveAccountField(
+    accountId: string,
+    patch: AccountPatch,
+  ): Promise<boolean> {
+    const row = props.accountRows[accountId];
+    // No hydrated row means nothing can build the scenario payload, and a
+    // narrow write would be exactly the clobber above. Refuse rather than
+    // guess.
+    if (!row) return false;
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: "account",
+        targetId: accountId,
+        desiredFields: buildScenarioDesiredFields(row, patch),
+      },
+      {
+        url: `/api/clients/${clientId}/accounts/${accountId}`,
+        method: "PUT",
+        body: buildBasePayload(patch),
+      },
+    );
+    return res.ok;
+  }
 
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
@@ -160,7 +205,13 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         </span>
       </div>
 
-      {board === "net-worth" && <NetWorthBoard {...props} onAddAccount={handleAddAccount} />}
+      {board === "net-worth" && (
+        <NetWorthBoard
+          {...props}
+          onAddAccount={handleAddAccount}
+          onSaveAccountField={handleSaveAccountField}
+        />
+      )}
       {board === "goals" && (
         <GoalsBoard {...props} onEditGoalExpense={handleEditGoalExpense} />
       )}

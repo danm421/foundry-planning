@@ -8,6 +8,7 @@ import type {
 } from "@/lib/scenario/view-adapters";
 import type { AccountRow } from "@/components/balance-sheet-view";
 import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { AccountPatch } from "./account-write";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
  *  bottom strip for anything not owned by the client or spouse. */
@@ -199,4 +200,9 @@ export interface BoardCallbacks {
   /** Net Worth board's per-column "+ Add" — opens AddAccountDialog in create
    *  mode. No owner/column preset: AddAccountDialog has no prop for one. */
   onAddAccount?: () => void;
+  /** Persist a narrow change to one account. The board reports WHAT changed;
+   *  `household-map-view` decides how it is written (base vs scenario payload —
+   *  see `lib/household-map/account-write.ts`). Resolves false on failure so the
+   *  editor can revert. */
+  onSaveAccountField?: (accountId: string, patch: AccountPatch) => Promise<boolean>;
 }

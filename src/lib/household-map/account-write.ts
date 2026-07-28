@@ -58,6 +58,12 @@ const NON_WRITABLE_KEYS = new Set<keyof AccountRow>([
   "linkedSource",
   "beneficiaryDisplayName",
   "owner",
+  // Derived, exactly like `owner`: `buildAccountRows` computes it as
+  // `controllingEntity(a)`. It exists on neither the engine `Account` nor
+  // `AccountMeta`, so no reader on either side of a scenario write consumes it
+  // — it would only ever diff as `{from: undefined, to: …}` and bloat the
+  // payload. (Controller resolution R10.)
+  "ownerEntityId",
 ]);
 
 export function buildBasePayload(patch: AccountPatch): Record<string, unknown> {
@@ -81,7 +87,33 @@ export function buildScenarioDesiredFields(
     if (v === undefined) continue;
     out[k] = v;
   }
-  return { ...out, ...patch };
+  const merged: Record<string, unknown> = { ...out, ...patch };
+
+  // NEVER emit `growthRate: null`. `AccountRow.growthRate` is null for every
+  // account whose rate is DERIVED (model_portfolio, ticker_portfolio,
+  // asset_mix, default, inflation) — null means "this view carries no rate",
+  // an ABSENCE, not a value of zero.
+  //
+  // Emitting it is not cosmetic. The diff becomes
+  // `growthRate: {from: <number>, to: null}`; `coerceEditValue` passes null
+  // through untouched (`typeof null !== "string"`); `applyEdit` writes it onto
+  // the RESOLVED engine account; and `projection.ts` then computes
+  // `currentBalance * null === 0` and hits `if (growth === 0) continue`. The
+  // account's growth is zero for the entire projection, silently. Nothing
+  // repairs it — `resolveAddPayload` gates re-resolution on `opType === "add"`,
+  // so `edit` ops never get it. Proven with a controlled engine probe; see
+  // controller resolution R9.
+  //
+  // Omitting the key leaves `applyEdit` untouching `growthRate`, so the
+  // effective tree keeps its correctly-resolved base number.
+  //
+  // NOTE FOR THE GROWTH-SOURCE EDITOR: this makes a value edit safe, but it
+  // does NOT make a scenario growth-SOURCE switch correct — nothing re-resolves
+  // an edit, so switching to a different portfolio leaves the old resolved
+  // rate. To change the rate in a scenario you must send a real number here.
+  if (merged.growthRate == null) delete merged.growthRate;
+
+  return merged;
 }
 
 /** Turn a raw `<select>` value into the fields to persist. Reuses the form's

@@ -21,6 +21,8 @@ interface MapCardProps {
   rateSlot?: ReactNode;
   /** Trailing affordance (the edit pencil). Net Worth board only. */
   actionSlot?: ReactNode;
+  /** Replaces the formatted value. Used for the inline editor. */
+  valueSlot?: ReactNode;
 }
 
 /**
@@ -35,6 +37,7 @@ export default function MapCard({
   onClick,
   rateSlot,
   actionSlot,
+  valueSlot,
 }: MapCardProps) {
   const chip = item.trayOwnerLabel ?? item.splitChip ?? item.noteChip;
   const body = (
@@ -53,7 +56,9 @@ export default function MapCard({
           numeral width once both slots are filled. */}
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {rateSlot}
-        <span className="text-xs font-semibold tabular text-ink-2">{item.valueLabel}</span>
+        {valueSlot ?? (
+          <span className="text-xs font-semibold tabular text-ink-2">{item.valueLabel}</span>
+        )}
         {actionSlot}
       </span>
     </>

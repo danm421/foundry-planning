@@ -75,6 +75,53 @@ describe("buildScenarioDesiredFields", () => {
     expect(fields.modelPortfolioId).toBeNull();
   });
 
+  // Controller resolution R9. `growthRate: null` is not a rate of zero, it is
+  // the view saying it carries no rate — but the engine cannot tell the
+  // difference. Sending it makes `projection.ts` compute
+  // `currentBalance * null === 0`, so the account's growth is zero for the
+  // ENTIRE projection, silently, and nothing re-resolves an `edit` op.
+  //
+  // These four cases are deliberately paired. The "omits" cases alone are
+  // vacuous — a function that dropped `growthRate` unconditionally would pass
+  // every one of them. The "still emits" case is what makes them mean
+  // something, and `not.toHaveProperty` (not `toBeNull`) is what distinguishes
+  // an absent key from a null one.
+  describe("growthRate: null is never emitted (R9)", () => {
+    it("omits growthRate when the row's rate is derived (null) and only the value changed", () => {
+      const fields = buildScenarioDesiredFields(row({ growthRate: null }), { value: "500000" });
+      expect(fields).not.toHaveProperty("growthRate");
+      // The rest of the row must still be there — this is an omission of one
+      // key, not a bail-out.
+      expect(fields.value).toBe("500000");
+      expect(fields.growthSource).toBe("model_portfolio");
+    });
+
+    it("omits growthRate when the PATCH nulls it, even though the row carries a rate", () => {
+      const fields = buildScenarioDesiredFields(row({ growthRate: "0.062" }), {
+        growthSource: "inflation",
+        growthRate: null,
+      });
+      expect(fields).not.toHaveProperty("growthRate");
+      expect(fields.growthSource).toBe("inflation");
+    });
+
+    it("STILL EMITS growthRate when the row carries a real custom rate", () => {
+      const fields = buildScenarioDesiredFields(
+        row({ growthRate: "0.055", growthSource: "custom" }),
+        { value: "1" },
+      );
+      expect(fields.growthRate).toBe("0.055");
+    });
+
+    it("STILL EMITS growthRate when the patch supplies a real rate over a derived row", () => {
+      const fields = buildScenarioDesiredFields(row({ growthRate: null }), {
+        growthSource: "custom",
+        growthRate: "0.09",
+      });
+      expect(fields.growthRate).toBe("0.09");
+    });
+  });
+
   it("carries every other overridable field untouched", () => {
     const fields = buildScenarioDesiredFields(row({ rmdEnabled: false, basis: "12345" }), {
       value: "1",
@@ -91,12 +138,20 @@ describe("buildScenarioDesiredFields", () => {
     // reduced to just {"id"}). See the mutation check recorded in the task
     // report for this file.
     const fields = buildScenarioDesiredFields(
-      row({ linkedSource: "plaid", beneficiaryDisplayName: "Ava Cooper" }),
+      row({
+        linkedSource: "plaid",
+        beneficiaryDisplayName: "Ava Cooper",
+        // Populated with a REAL id, not null: `buildScenarioDesiredFields`
+        // skips `undefined` but not `null`, so a null here would be emitted
+        // and the assertion below would be testing nothing. (R10.)
+        ownerEntityId: "ent-3",
+      }),
       { value: "1" },
     );
     expect(fields).not.toHaveProperty("id");
     expect(fields).not.toHaveProperty("linkedSource");
     expect(fields).not.toHaveProperty("beneficiaryDisplayName");
+    expect(fields).not.toHaveProperty("ownerEntityId");
     // `AccountRow` declares no `clientId` field at all today, so this
     // assertion cannot fail by construction — it is a deliberate
     // future-proofing canary, not dead weight. If someone later adds
@@ -121,7 +176,7 @@ describe("buildScenarioDesiredFields", () => {
       rmdEnabled: true,
       countsTowardAum: false,
       priorYearEndValue: "390000",
-      ownerEntityId: null,
+      ownerEntityId: "ent-3",
       growthSource: "model_portfolio",
       modelPortfolioId: "mp-7",
       tickerPortfolioId: null,
@@ -162,7 +217,6 @@ describe("buildScenarioDesiredFields", () => {
         "rmdEnabled",
         "countsTowardAum",
         "priorYearEndValue",
-        "ownerEntityId",
         "growthSource",
         "modelPortfolioId",
         "tickerPortfolioId",
