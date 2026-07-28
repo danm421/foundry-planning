@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import CashFlowBoard from "../cash-flow-board";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
@@ -259,5 +259,51 @@ describe("CashFlowBoard", () => {
     expect(screen.getByTestId("band-income-column-joint")).toBeInTheDocument();
     expect(screen.queryByTestId("band-income-column-spouse")).not.toBeInTheDocument();
     expect(screen.queryByText("Jordan")).not.toBeInTheDocument();
+  });
+
+  // `canEdit` is a permission; `isItemEditable` is per-row writability. A row
+  // the caller can't write (a synthesized life-insurance premium) must LOOK
+  // inert, not merely behave inertly once clicked — so the board must not
+  // render it as a button at all.
+  it("honours isItemEditable per card: a non-editable row renders plain, its editable sibling stays a button", () => {
+    const items: MapItem[] = [
+      item({ id: "exp-real", kind: "expense", column: "joint", name: "Mortgage payment", value: -24000 }),
+      item({
+        id: "premium-abc",
+        kind: "expense",
+        column: "joint",
+        category: "insurance",
+        name: "Term policy premium",
+        value: -1200,
+      }),
+    ];
+    const onEditItem = vi.fn();
+
+    const { container } = render(
+      <CashFlowBoard
+        {...baseProps({ items, canEdit: true })}
+        onEditItem={onEditItem}
+        isItemEditable={(i) => !i.id.startsWith("premium-")}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Term policy premium/ })).not.toBeInTheDocument();
+
+    screen.getByText("Term policy premium").click();
+    expect(onEditItem).not.toHaveBeenCalled();
+
+    // The inert card is still in the DOM and still in the band subtotal.
+    expect(subtotalTextFor(container, "expense")).toBe("Expenses \u00b7 ($25,200)");
+  });
+
+  it("with no isItemEditable supplied every card stays clickable — boards render standalone", () => {
+    const items: MapItem[] = [
+      item({ id: "exp-real", kind: "expense", column: "joint", name: "Mortgage payment", value: -24000 }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items, canEdit: true })} onEditItem={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
   });
 });

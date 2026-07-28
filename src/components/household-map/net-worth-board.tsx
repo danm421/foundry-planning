@@ -109,7 +109,7 @@ export default function NetWorthBoard({
                   default. The balance sheet already routes business rows to
                   BusinessDialog, so linking delegates instead of duplicating. */}
               {cards.map((c) => (
-                <Link key={c.id} href={detailHrefFor(c)}>
+                <Link key={c.id} href={detailHrefFor(c)} className="group">
                   <MapCard item={c} />
                 </Link>
               ))}
@@ -138,7 +138,7 @@ export default function NetWorthBoard({
           </div>
           <div className="grid grid-cols-3 gap-1.5">
             {trayItems.map((c) => (
-              <Link key={c.id} href={detailHrefFor(c)}>
+              <Link key={c.id} href={detailHrefFor(c)} className="group">
                 <MapCard item={c} />
               </Link>
             ))}

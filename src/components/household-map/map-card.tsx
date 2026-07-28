@@ -41,7 +41,11 @@ export default function MapCard({ item, icon, onClick }: MapCardProps) {
     </>
   );
 
-  const className = `flex w-full items-center gap-2.5 rounded-lg border border-hair border-l-2 bg-card-2 px-3 py-2 text-left ${CATEGORY_BORDER[item.category]}`;
+  // `group-hover:` is inert unless an ancestor carries `group` — it exists so a
+  // card wrapped in a <Link> (Net Worth board) gets the same hover affordance
+  // the onClick/<button> branch below adds for itself. Without it a navigating
+  // card looks identical to a read-only one.
+  const className = `flex w-full items-center gap-2.5 rounded-lg border border-hair border-l-2 bg-card-2 px-3 py-2 text-left group-hover:bg-card-hover ${CATEGORY_BORDER[item.category]}`;
 
   if (!onClick) return <div className={className}>{body}</div>;
   return (

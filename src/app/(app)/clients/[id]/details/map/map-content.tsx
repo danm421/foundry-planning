@@ -297,11 +297,27 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // querying base rows). Client-side editors seed from these, never from the
   // base-scoped list-GETs, so a save made while a scenario is active carries
   // that scenario's values rather than clobbering them with base ones.
+  //
+  // Synthesized life-insurance rows (`source: "policy"` — `premium-<uuid>`
+  // expenses from `insurance-policies/premium-expense.ts`, `policy-income-<uuid>`
+  // incomes from `policy-income.ts`) are re-derived from the life-insurance
+  // accounts on every load and have NO DB row, so neither write path can accept
+  // them: the base PUT hits a uuid column and 500s, and the scenario changes
+  // route rejects the id outright at `targetId: z.string().uuid()`. They get no
+  // hydration entry — which is what makes their cards render non-interactive
+  // (see `isItemEditable` in household-map-view.tsx). They deliberately STAY in
+  // `items` above: a premium is a real outflow, and dropping it would understate
+  // the Cash Flow band subtotal. A visibly non-editable card beats a silently
+  // missing one.
   const incomeRows: Record<string, IncomeView> = Object.fromEntries(
-    effectiveTree.incomes.map((i: Income) => [i.id, incomeEngineToView(i)] as const),
+    effectiveTree.incomes
+      .filter((i: Income) => i.source !== "policy")
+      .map((i: Income) => [i.id, incomeEngineToView(i)] as const),
   );
   const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
-    effectiveTree.expenses.map((e: Expense) => [e.id, expenseEngineToView(e)] as const),
+    effectiveTree.expenses
+      .filter((e: Expense) => e.source !== "policy")
+      .map((e: Expense) => [e.id, expenseEngineToView(e)] as const),
   );
   const savingsRuleRows: Record<string, SavingsRuleView> = Object.fromEntries(
     effectiveTree.savingsRules.map((s: SavingsRule) => [s.id, savingsRuleEngineToView(s)] as const),

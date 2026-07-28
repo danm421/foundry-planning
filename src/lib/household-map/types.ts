@@ -112,6 +112,15 @@ export interface BoardCallbacks {
   /** A card was clicked for an existing item — open the item's editor. Boards
    *  never decide which dialog opens; they just report the click. */
   onEditItem?: (item: MapItem) => void;
+  /**
+   * Whether THIS card can open an editor. Distinct from `canEdit`, which is a
+   * permission: a row can be perfectly permitted and still not writable.
+   * Synthesized `source: "policy"` premiums/income exist only in the effective
+   * tree — no write route accepts their non-uuid ids — so their cards must
+   * render non-interactive rather than as a button that silently does nothing.
+   * Absent = every card is editable (boards render standalone in tests).
+   */
+  isItemEditable?: (item: MapItem) => boolean;
   /** A goal card was clicked. `expenseId` is null for a life milestone (not
    *  editable — GoalsBoard must not call this then). `presetColumn` mirrors
    *  the goal's side ("client"/"spouse"/"joint" are valid `MapColumn`s). */

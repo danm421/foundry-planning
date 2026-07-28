@@ -36,8 +36,19 @@ export default function CashFlowBoard({
   canEdit,
   onEditItem,
   onAddFlow,
+  isItemEditable,
 }: HouseholdMapProps & BoardCallbacks) {
   const hasSpouse = people.spouse !== null;
+
+  /** `undefined` renders a plain card instead of a button (see MapCard). A row
+   *  the caller can't write — a synthesized life-insurance premium, say — must
+   *  look inert, not merely behave inertly once clicked. */
+  function clickHandlerFor(item: MapItem): (() => void) | undefined {
+    if (!canEdit) return undefined;
+    if (!(isItemEditable?.(item) ?? true)) return undefined;
+    return () => onEditItem?.(item);
+  }
+
   const COLUMNS: OwnerColumn[] = hasSpouse ? ["client", "joint", "spouse"] : ["client", "joint"];
   const gridCols = hasSpouse ? "grid-cols-[74px_repeat(3,1fr)]" : "grid-cols-[74px_repeat(2,1fr)]";
 
@@ -80,11 +91,7 @@ export default function CashFlowBoard({
                     className="flex flex-col gap-1.5"
                   >
                     {cards.map((c) => (
-                      <MapCard
-                        key={c.id}
-                        item={c}
-                        onClick={canEdit ? () => onEditItem?.(c) : undefined}
-                      />
+                      <MapCard key={c.id} item={c} onClick={clickHandlerFor(c)} />
                     ))}
                     {/* Step 2 — empty cells are add targets. */}
                     {cards.length === 0 && canEdit && (
@@ -111,11 +118,7 @@ export default function CashFlowBoard({
                   Held by trusts, businesses &amp; other family members
                 </div>
                 {trayItems.map((c) => (
-                  <MapCard
-                    key={c.id}
-                    item={c}
-                    onClick={canEdit ? () => onEditItem?.(c) : undefined}
-                  />
+                  <MapCard key={c.id} item={c} onClick={clickHandlerFor(c)} />
                 ))}
               </div>
             )}

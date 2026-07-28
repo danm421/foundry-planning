@@ -74,6 +74,23 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   // partial account view can honestly hydrate — and the balance sheet already
   // routes business rows to `BusinessDialog`, so linking delegates rather than
   // duplicates.
+  //
+  // A hydration row is also the writability test. `effectiveTree` carries
+  // SYNTHESIZED rows that have no DB row at all — `source: "policy"` premiums
+  // and policy income, re-derived from life-insurance accounts on every load —
+  // and `map-content.tsx` deliberately keeps their cards (a premium is a real
+  // outflow that must keep counting toward the band subtotal) while omitting
+  // their hydration entries. Boards ask this before making a card clickable, so
+  // those cards render plain rather than as a button whose Save could never
+  // land (base PUT → 500 on a uuid column; scenario POST → 400 from
+  // `targetId: z.string().uuid()`).
+  function isItemEditable(item: MapItem): boolean {
+    if (item.kind === "income") return item.id in incomeRows;
+    if (item.kind === "expense") return item.id in expenseRows;
+    if (item.kind === "savings") return item.id in savingsRuleRows;
+    return false;
+  }
+
   function handleEditItem(item: MapItem) {
     if (!canEdit) return;
     if (item.kind === "income") {
@@ -142,7 +159,12 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         <GoalsBoard {...props} onEditGoalExpense={handleEditGoalExpense} />
       )}
       {board === "cash-flow" && (
-        <CashFlowBoard {...props} onEditItem={handleEditItem} onAddFlow={handleAddFlow} />
+        <CashFlowBoard
+          {...props}
+          onEditItem={handleEditItem}
+          onAddFlow={handleAddFlow}
+          isItemEditable={isItemEditable}
+        />
       )}
 
       {drawerTarget && (

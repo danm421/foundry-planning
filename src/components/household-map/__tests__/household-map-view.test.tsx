@@ -238,6 +238,66 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(dialog.dataset.editingAmount).toBe("7500");
   });
 
+  // `effectiveTree` synthesizes `source: "policy"` rows (premium-<uuid> expenses,
+  // policy-income-<uuid> incomes) that have no DB row, so no write route accepts
+  // their ids. `map-content.tsx` gives them no hydration entry — but the card
+  // must stay, because a premium is a real outflow and dropping it would
+  // understate the band. Non-interactive, not absent.
+  it("a synthesized policy row (no hydration entry) renders inert — not a button — yet still counts in the band subtotal", () => {
+    const items = [
+      item({
+        id: "exp-1",
+        kind: "expense",
+        column: "joint",
+        name: "Mortgage payment",
+        value: -24000,
+      }),
+      item({
+        id: "premium-3f1c2b7e-0000-4000-8000-000000000000",
+        kind: "expense",
+        column: "joint",
+        category: "insurance",
+        name: "Term policy premium",
+        value: -1200,
+      }),
+    ];
+    render(
+      <HouseholdMapView
+        // Only the real expense gets a hydration row — exactly what
+        // map-content.tsx's `source !== "policy"` filter produces.
+        {...baseProps({ items, expenseRows: { "exp-1": expenseRow("exp-1") } })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+
+    const band = screen.getByTestId("band-expense");
+    // Still rendered, and still in the subtotal: 24,000 + 1,200.
+    expect(within(band).getByText("Term policy premium")).toBeInTheDocument();
+    expect(band.querySelector("b")?.textContent).toBe("($25,200)");
+
+    // The writable sibling IS a button; the synthesized row is NOT.
+    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Term policy premium/ })).not.toBeInTheDocument();
+
+    // And clicking it opens nothing.
+    fireEvent.click(screen.getByText("Term policy premium"));
+    expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
+  });
+
+  it("a savings card with no hydration row opens no dialog and is not a button", () => {
+    const items = [
+      item({ id: "sav-orphan", kind: "savings", column: "client", name: "Orphan contribution" }),
+    ];
+    render(<HouseholdMapView {...baseProps({ items })} />);
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+
+    expect(screen.queryByRole("button", { name: /Orphan contribution/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Orphan contribution"));
+    expect(screen.queryByTestId("mock-savings-rule-dialog")).not.toBeInTheDocument();
+  });
+
   it("a goal card with an expenseId opens the drawer for that expense, kind 'expense'", () => {
     const g = goal({ id: "g1", side: "client", expenseId: "exp-42", title: "College fund" });
     render(
