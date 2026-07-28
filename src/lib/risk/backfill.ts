@@ -39,3 +39,22 @@ export function planBackfill(rows: BackfillSource[]): BackfillEntry[] {
   }
   return out;
 }
+
+/**
+ * Drop entries for clients that already have a risk profile row.
+ *
+ * This is not just re-run hygiene. A profile can already exist from a
+ * completed RTQ or a prior manual edit; blindly writing this script's
+ * band-center estimate over it would destroy real data with a coarser one.
+ * It also makes the backfill script safe to re-run after a partial failure:
+ * recomputeProfile's upsert is idempotent for the client_risk_profiles row,
+ * but it always logs a profile_created event -- shouldLogEvent only
+ * suppresses capacity_changed -- so without this filter a re-run would
+ * double-log the suitability audit trail for every already-processed client.
+ */
+export function excludeAlreadyProfiled(
+  entries: BackfillEntry[],
+  existingProfileClientIds: ReadonlySet<string>,
+): BackfillEntry[] {
+  return entries.filter((e) => !existingProfileClientIds.has(e.clientId));
+}

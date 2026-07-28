@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planBackfill } from "../backfill";
+import { planBackfill, excludeAlreadyProfiled } from "../backfill";
 import { computeProfile } from "../scoring";
 import { RISK_LEVELS } from "@/lib/risk-levels";
 
@@ -37,5 +37,28 @@ describe("planBackfill", () => {
     expect(entry.patch.toleranceConfirmedAt).toEqual(new Date("2025-03-04T00:00:00Z"));
     expect(entry.patch.environmentAdj).toBe(0);
     expect(entry.patch.capacityScore).toBeUndefined();
+  });
+});
+
+describe("excludeAlreadyProfiled", () => {
+  const entries = planBackfill([
+    { id: "a", firmId: "f", riskTolerance: "moderate", updatedAt: new Date("2026-01-01") },
+    { id: "b", firmId: "f", riskTolerance: "aggressive", updatedAt: new Date("2026-01-01") },
+  ]);
+
+  it("drops an entry whose client already has a profile", () => {
+    const out = excludeAlreadyProfiled(entries, new Set(["a"]));
+    expect(out).toHaveLength(1);
+    expect(out[0].clientId).toBe("b");
+  });
+
+  it("keeps an entry whose client has no existing profile", () => {
+    const out = excludeAlreadyProfiled(entries, new Set(["z"]));
+    expect(out).toEqual(entries);
+  });
+
+  it("changes nothing when the existing-profile set is empty", () => {
+    const out = excludeAlreadyProfiled(entries, new Set());
+    expect(out).toEqual(entries);
   });
 });
