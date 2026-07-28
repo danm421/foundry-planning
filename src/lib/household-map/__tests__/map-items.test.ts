@@ -46,13 +46,27 @@ const savingsRule = (over: Partial<SavingsRule> = {}): SavingsRule => ({
 });
 
 describe("resolveSavings", () => {
-  // Table over all four branches of resolveSavings' resolution order
-  // (scheduleOverrides is a separate, untracked-here gap — see the doc
-  // comment on resolveSavings in map-items.ts). Branch 3 (annualPercent
-  // === 0 falling through to the flat branch) is the one that shipped as
-  // a real bug earlier on this branch — the guard is `!= null && > 0`,
-  // not just `!= null`.
+  // Table over every branch of resolveSavings' resolution order, which mirrors
+  // the engine's (engine/savings.ts resolveContributionAmount). Branch 3
+  // (annualPercent === 0 falling through to the flat branch) is the one that
+  // shipped as a real bug earlier on this branch — the guard is
+  // `!= null && > 0`, not just `!= null`.
   it.each([
+    [
+      "scheduleOverrides wins over every other mode, including contributeMax",
+      savingsRule({
+        scheduleOverrides: { 2026: 20000, 2027: 21000 },
+        contributeMax: true,
+        annualPercent: 0.1,
+        annualAmount: 9999,
+      }),
+      { value: 0, valueLabel: "Custom schedule" },
+    ],
+    [
+      "an EMPTY scheduleOverrides is not a schedule — falls through",
+      savingsRule({ scheduleOverrides: {}, annualAmount: 6000 }),
+      { value: -6000, valueLabel: "($6,000)" },
+    ],
     [
       "contributeMax true → IRS max label, zero value",
       savingsRule({ contributeMax: true, annualPercent: 0.1, annualAmount: 9999 }),
@@ -202,6 +216,20 @@ describe("expenseToMapItem", () => {
   it("adds a 'for {name}' noteChip when forFamilyMemberId resolves", () => {
     const item = expenseToMapItem(expense({ forFamilyMemberId: CLIENT_FM }), accountById, ctx);
     expect(item.noteChip).toBe("for Dan");
+  });
+
+  // `debt` maps to --color-crit, the app's ERROR red. A groceries card wearing
+  // it reads as an alert; only liabilities are debt.
+  it("gives an ordinary living expense the household hue, not the error-red debt hue", () => {
+    expect(expenseToMapItem(expense({ type: "living" }), accountById, ctx).category).toBe(
+      "household",
+    );
+  });
+
+  it("keeps insurance expenses on the insurance hue", () => {
+    expect(expenseToMapItem(expense({ type: "insurance" }), accountById, ctx).category).toBe(
+      "insurance",
+    );
   });
 
   it("has a null noteChip when there is no forFamilyMemberId", () => {

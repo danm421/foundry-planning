@@ -114,21 +114,26 @@ export function incomeToMapItem(
  * Mirrors the engine's own resolution order (engine/projection.ts's
  * resolvedByRuleId loop → engine/savings.ts resolveContributionAmount):
  * scheduleOverrides[year] first, then contributeMax (IRS limit), then
- * percent-of-pay, then flat annualAmount. Only the flat-dollar branch is
- * resolvable here — contributeMax needs the owner's age + resolved IRS
- * params, and percent-mode needs the owner's salary slice, and both of those
- * live in the projection, not this page-shaped adapter. (scheduleOverrides is
- * the same class of gap and is tracked separately, not fixed here.)
+ * percent-of-pay, then flat annualAmount. Only the flat-dollar branch resolves
+ * to a NUMBER here — contributeMax needs the owner's age + resolved IRS
+ * params, percent-mode needs the owner's salary slice, and a schedule is
+ * year-by-year while a card shows one figure; all three live in the
+ * projection, not this page-shaped adapter.
  *
- * So: contributeMax / percent-of-pay rules show the RULE as the label and
- * contribute a literal `0` to subtotals — a card that shows a rule must not
- * add a dollar figure the engine will overrule. Only the flat-dollar branch
- * (the one case fully resolvable without the projection) contributes a real
- * number, and since savings is an outflow it is negative, exactly like
- * expenseToMapItem's outflows, so `items.reduce((s, i) => s + i.value, 0)`
- * nets out correctly without any kind-specific special-casing by callers.
+ * So: schedule / contributeMax / percent-of-pay rules show the RULE as the
+ * label and contribute a literal `0` to subtotals — a card that shows a rule
+ * must not add a dollar figure the engine will overrule. Only the flat-dollar
+ * branch contributes a real number, and since savings is an outflow it is
+ * negative, exactly like expenseToMapItem's outflows, so
+ * `items.reduce((s, i) => s + i.value, 0)` nets out correctly without any
+ * kind-specific special-casing by callers.
  */
 export function resolveSavings(rule: SavingsRule): { value: number; valueLabel: string } {
+  // FIRST, matching the engine's resolution order: a schedule beats every
+  // other mode, so a rule with one must never advertise its flat annualAmount.
+  if (rule.scheduleOverrides && Object.keys(rule.scheduleOverrides).length > 0) {
+    return { value: 0, valueLabel: "Custom schedule" };
+  }
   if (rule.contributeMax) return { value: 0, valueLabel: "IRS max" };
   if (rule.annualPercent != null && rule.annualPercent > 0) {
     return { value: 0, valueLabel: `${Math.round(rule.annualPercent * 100)}% of pay` };
@@ -226,7 +231,10 @@ export function expenseToMapItem(
   return {
     id: expense.id,
     kind: "expense",
-    category: expense.type === "insurance" ? "insurance" : "debt",
+    // NOT "debt" — that hue is `--color-crit`, the app's error red, and an
+    // ordinary groceries or rent card should not read as an alert. Only
+    // liabilities are debt.
+    category: expense.type === "insurance" ? "insurance" : "household",
     name: expense.name,
     value,
     valueLabel: moneyLabel(value),

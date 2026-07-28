@@ -4,9 +4,12 @@ import type { MapItem } from "@/lib/household-map/types";
 const CATEGORY_BORDER: Record<MapItem["category"], string> = {
   investments: "border-l-[color:var(--color-cat-income)]",
   property: "border-l-[color:var(--color-cat-portfolio)]",
+  // Reserved for actual debt (liabilities). `--color-crit` is the app's ERROR
+  // red, so an ordinary grocery card wearing it reads as an alert — everyday
+  // outflows use `household` below.
   debt: "border-l-[color:var(--color-crit)]",
+  household: "border-l-[color:var(--color-cat-transactions)]",
   insurance: "border-l-[color:var(--color-cat-insurance)]",
-  entity: "border-l-[color:var(--color-cat-life)]",
 };
 
 interface MapCardProps {

@@ -45,8 +45,12 @@ export interface MapPerson {
 /** One card on a board. Assembled server-side by the map route's adapters. */
 export interface MapItem {
   id: string;
-  kind: "account" | "liability" | "policy" | "income" | "savings" | "expense";
-  category: "investments" | "property" | "debt" | "insurance" | "entity";
+  /** No `"policy"` member: policy-SOURCED rows do exist on the board, but they
+   *  arrive as synthesized expenses/incomes and carry `kind: "expense"` /
+   *  `"income"`. A `"policy"` member with no producer only invites
+   *  `item.kind === "policy"` guards that never fire. */
+  kind: "account" | "liability" | "income" | "savings" | "expense";
+  category: "investments" | "property" | "debt" | "household" | "insurance";
   name: string;
   /** Pre-formatted for display, e.g. "$160,000" or "($10,000)". */
   valueLabel: string;

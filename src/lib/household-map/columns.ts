@@ -68,9 +68,12 @@ export function assignColumn(thing: OwnedThing, ctx: ColumnContext): ColumnAssig
     );
     if (clientRow && spouseRow) {
       const even = Math.abs(clientRow.percent - spouseRow.percent) < EPSILON;
+      // The second side is DERIVED, not rounded independently: rounding both
+      // sides of a 50.5/49.5 split gives "51/50", a chip that sums to 101.
+      const clientPct = pct(clientRow.percent);
       return {
         column: "joint",
-        splitChip: even ? null : `${pct(clientRow.percent)}/${pct(spouseRow.percent)}`,
+        splitChip: even ? null : `${clientPct}/${100 - clientPct}`,
         trayOwnerLabel: null,
       };
     }

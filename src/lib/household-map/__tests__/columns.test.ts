@@ -52,6 +52,13 @@ describe("assignColumn", () => {
     expect(r.splitChip).toBe("30/70");
   });
 
+  // Rounding each side independently turns 50.5/49.5 into "51/50" — a chip
+  // that sums to 101. The second side is derived from the first instead.
+  it("keeps the chip's two halves summing to 100 when both sides round up", () => {
+    const r = assignColumn({ owners: [fm(CLIENT_FM, 0.505), fm(SPOUSE_FM, 0.495)] }, ctx);
+    expect(r.splitChip).toBe("51/49");
+  });
+
   it("sends an entity-owned item to the tray with the entity name", () => {
     const r = assignColumn(
       { owners: [{ kind: "entity", entityId: "ent-1", percent: 1 }] },
