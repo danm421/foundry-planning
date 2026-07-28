@@ -2393,8 +2393,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
       householdCarryInCapGains;
-    if (crtSaleGainTotal > 0) {
-      taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - crtSaleGainTotal);
+    // §664(c) is symmetric: the CRT's share of this year's sale results — gain OR
+    // loss — belongs to the tax-exempt trust, never the household 1040. Gating on
+    // `> 0` would leave the household holding the trust's loss. The result is NOT
+    // floored: a household net capital loss is now a legitimate value that §1222
+    // netting and the §1211(b) cap consume downstream.
+    if (crtSaleGainTotal !== 0) {
+      taxDetail.capitalGains -= crtSaleGainTotal;
     }
     // §165(c) losses disallowed on personal-use property. Display only — they
     // never enter §1222 netting, so they are reported alongside the gains they
@@ -2423,16 +2428,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.taxable };
       }
     }
+    // The three capital-gain itemization loops below gate on `!== 0`, not `> 0`:
+    // a loss row omitted from the drill-down doesn't merely hide detail, it makes
+    // the itemization CONTRADICT the signed total it sits under. `!== 0` is also
+    // the -0 guard — `-0 !== 0` is false, so a negative zero is skipped.
     for (const item of saleResult.breakdown) {
       // §664(c): itemize only the non-CRT share — the drill-down must reconcile
       // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
       const householdGain = item.capitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
-      if (householdGain > 0) {
+      if (householdGain !== 0) {
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: householdGain };
       }
     }
     for (const item of businessSaleResult.breakdown) {
-      if (item.totalCapitalGain > 0) {
+      if (item.totalCapitalGain !== 0) {
         taxDetail.bySource[`business_sale:${item.transactionId}`] = {
           type: "capital_gains",
           amount: item.totalCapitalGain,
@@ -2440,7 +2449,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
-      if (info.capitalGains > 0) {
+      if (info.capitalGains !== 0) {
         taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
       }
     }
@@ -2543,14 +2552,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Trust-owned gains from same-year sales were added to household taxDetail
-      // at line ~1124 (full saleResult.capitalGains) and need to be subtracted
+      // at :2393 (full saleResult.capitalGains) and need to be subtracted
       // back out so the bracket engine doesn't tax them twice (trust pays its
       // own 1041 cap-gains tax). Carry-in gains were never added to household
       // taxDetail in the first place, so exclude them from the subtraction.
       const carryInTotal = nonGrantorCarryInGains.reduce((s, g) => s + g.gain, 0);
       const sameYearTrustGains = assetTransactionGains.reduce((s, g) => s + g.gain, 0) - carryInTotal;
-      if (sameYearTrustGains > 0) {
-        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - sameYearTrustGains);
+      // Symmetric with the household ADD at :2393, which booked the FULL
+      // saleResult.capitalGains including the trust's share. A `> 0` gate would
+      // take back only gains, leaving the household holding a loss that the 1041
+      // pass is simultaneously being handed. Not floored — see the §664(c) note above.
+      if (sameYearTrustGains !== 0) {
+        taxDetail.capitalGains -= sameYearTrustGains;
       }
 
       // Build trustLiquidity from current accountBalances for each trust.
@@ -4690,12 +4703,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Taxable components feed the year's tax (mostly zero — 529 is tax-free).
+      // capitalGains is SIGNED (categorizeDraw, withdrawal.ts:98): an underwater
+      // taxable dedicated account funds the goal at a LOSS, which must reach
+      // §1222 netting like any other realized loss. Ordinary income and capital
+      // gains are booked as SEPARATE bySource rows — a single keyed row could
+      // only carry one type, silently discarding the other.
       if (drawResult.ordinaryIncome > 0) taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
-      if (drawResult.capitalGains > 0) taxDetail.capitalGains += drawResult.capitalGains;
-      if (drawResult.ordinaryIncome > 0 || drawResult.capitalGains > 0) {
+      taxDetail.capitalGains += drawResult.capitalGains;
+      if (drawResult.ordinaryIncome !== 0) {
         taxDetail.bySource[`education:${goal.id}`] = {
-          type: drawResult.capitalGains > 0 ? "capital_gains" : "ordinary_income",
-          amount: drawResult.capitalGains > 0 ? drawResult.capitalGains : drawResult.ordinaryIncome,
+          type: "ordinary_income",
+          amount: drawResult.ordinaryIncome,
+        };
+      }
+      if (drawResult.capitalGains !== 0) {
+        taxDetail.bySource[`education_capital:${goal.id}`] = {
+          type: "capital_gains",
+          amount: drawResult.capitalGains,
         };
       }
 

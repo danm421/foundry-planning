@@ -296,3 +296,85 @@ describe("CRT §664(c) exemption — sale of appreciated corpus", () => {
     ).toBeUndefined();
   });
 });
+
+/**
+ * Task 9 §2 — §664(c) is SYMMETRIC. The CRT's share of a sale result belongs to
+ * the tax-exempt trust whether it is a gain or a loss, and the household figure
+ * left behind is no longer floored at zero: a net household capital loss is a
+ * legitimate value that §1222 netting and the §1211(b) cap consume downstream.
+ */
+describe("CRT §664(c) exemption — signed sale results", () => {
+  /** The CRT's diversifying sale, re-priced BELOW its $1M basis. */
+  const buildCrtLossSale = () => {
+    const data = buildCrtLifecycleFixture({
+      ...BASE_CRT,
+      realizationCorpus: true,
+      crtSale: true,
+      isGrantor: false,
+    });
+    const sale = data.assetTransactions!.find(
+      (t) => t.id === CRT_FIXTURE_IDS.CRT_SALE_TXN_ID,
+    )!;
+    sale.overrideSaleValue = 500_000; // basis stays $1M → a $500k LOSS
+    return data;
+  };
+
+  it("a CRT sale at a LOSS does not dump the trust's loss on the household 1040", () => {
+    const saleYear = runProjection(buildCrtLossSale()).find((y) => y.year === 2027)!;
+
+    // Gating the §664(c) subtraction on `> 0` skipped it for a loss, leaving
+    // the household holding the exempt trust's −$500k.
+    expect(
+      saleYear.taxDetail?.capitalGains ?? 0,
+      "the CRT's sale LOSS was deducted on the household 1040",
+    ).toBe(0);
+    expect(
+      saleYear.taxDetail?.bySource?.[`sale:${CRT_FIXTURE_IDS.CRT_SALE_TXN_ID}`],
+      "the CRT's exempt loss is itemized on the household 1040 drill-down",
+    ).toBeUndefined();
+  });
+
+  it("a household loss larger than the exempt CRT gain stays NEGATIVE (no floor)", () => {
+    const data = buildCrtLifecycleFixture({
+      ...BASE_CRT,
+      realizationCorpus: true,
+      crtSale: true, // CRT sells for a +$1M gain (exempt)
+      isGrantor: false,
+    });
+    // A household-owned brokerage sold the same year for a $1.5M LOSS — bigger
+    // than the CRT's exempt gain, so the post-subtraction household figure is
+    // negative and the old Math.max(0, …) floor destroyed it.
+    data.accounts.push({
+      id: "hh-underwater",
+      name: "Personal Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 1_000_000,
+      basis: 2_500_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      isDefaultChecking: false,
+      owners: [
+        { kind: "family_member", familyMemberId: CRT_FIXTURE_IDS.CLIENT_FM_ID, percent: 1 },
+      ],
+    });
+    data.assetTransactions!.push({
+      id: "hh-underwater-sale",
+      name: "Personal brokerage sale at a loss",
+      type: "sell",
+      year: 2027,
+      accountId: "hh-underwater",
+      overrideSaleValue: 1_000_000,
+      overrideBasis: 2_500_000,
+      proceedsAccountId: CRT_FIXTURE_IDS.HOUSEHOLD_CHECKING_ID,
+    });
+
+    const saleYear = runProjection(data).find((y) => y.year === 2027)!;
+
+    expect(
+      saleYear.taxDetail?.capitalGains ?? 0,
+      "the household's own $1.5M loss was floored away by the §664(c) clamp",
+    ).toBeCloseTo(-1_500_000, 6);
+  });
+});

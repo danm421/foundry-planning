@@ -43,9 +43,15 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
         const basis = input.basisMap[acct.id] ?? 0;
         const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
         // Signed: a sell-and-rebuy of an underwater sleeve realizes a LOSS and
-        // steps basis DOWN. No §1091 wash-sale test — a reinvestment changes
-        // the allocation, so the replacement is not substantially identical
-        // (documented limitation, see spec).
+        // steps basis DOWN. No §1091 wash-sale test is applied. This is a TIMING
+        // difference, not a permanent overstatement: the basis step-down below
+        // (basis = basis + realizedGain) means the model and §1091 converge on the
+        // same total gain by the final sale. With B = basis before the switch,
+        // V = value at the switch, L = V - B the realized loss, and P = final
+        // proceeds: the model recognizes L now and P - V later (total P - B);
+        // §1091 disallows L, keeps basis at B, and recognizes P - B later. Both
+        // equal P - B, because B + L = V. The loss is simply recognized earlier
+        // than §1091 permits (documented limitation, see spec known-gaps).
         const realizedGain = (bal - basis) * fraction;
         if (realizedGain !== 0) {
           input.basisMap[acct.id] = basis + realizedGain;

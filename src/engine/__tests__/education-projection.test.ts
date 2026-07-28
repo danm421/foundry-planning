@@ -146,8 +146,10 @@ describe("applyEducationFunding", () => {
 
     expect(goal.dedicatedWithdrawal).toBe(20000);
     expect(goal.shortfall).toBe(0);
-    // The full $20k draw is capital gains (basis 0) and must reach the tax detail.
-    const src = y0.taxDetail!.bySource["education:edu"];
+    // The full $20k draw is capital gains (basis 0) and must reach the tax
+    // detail. Task 9 §1: the capital-gain component is keyed `education_capital:`
+    // so it can coexist with an ordinary-income row for the same goal.
+    const src = y0.taxDetail!.bySource["education_capital:edu"];
     expect(src).toBeDefined();
     expect(src!.type).toBe("capital_gains");
     expect(src!.amount).toBeCloseTo(20000, 6);
@@ -230,5 +232,93 @@ describe("applyEducationFunding", () => {
     // basisEoY − basisBoY === Σ entries[].basis
     const sumEntryBasis = led.entries.reduce((s, e) => s + (e.basis ?? 0), 0);
     expect((led.basisEoY ?? 0) - (led.basisBoY ?? 0)).toBeCloseTo(sumEntryBasis, 6);
+  });
+});
+
+/**
+ * Task 9 §1 — the education draw is the eighth gain floor. `categorizeDraw`
+ * (withdrawal.ts:98) returns a SIGNED capitalGains, so an underwater taxable
+ * dedicated account funds the goal at a LOSS. That loss has to reach §1222
+ * netting like any other realized loss, and it has to be itemized under its own
+ * `education_capital:` bySource key — a single key per goal can only carry one
+ * `type`, so a draw producing both components silently discarded one of them.
+ */
+describe("applyEducationFunding — signed capital gains on the draw", () => {
+  // 2:1 underwater — every dollar drawn realizes an equal-and-opposite loss
+  // (legacyGainRatio = 1 − 60000/30000 = −1).
+  const underwaterBrokerage: Account = {
+    id: "brk-edu",
+    name: "Edu Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 30000,
+    basis: 60000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  it("an underwater taxable dedicated account books a capital LOSS into the year's tax", () => {
+    const data = makeData(
+      [checking, underwaterBrokerage],
+      eduExpense({ dedicatedAccountIds: ["brk-edu"] }),
+    );
+    const y0 = runProjection(data)[0];
+    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+
+    expect(goal.dedicatedWithdrawal).toBe(20000);
+    expect(goal.shortfall).toBe(0);
+
+    // The $20k draw realizes a $20k LOSS, which must reach the year's tax
+    // detail rather than being dropped by a `> 0` gate.
+    expect(y0.taxDetail!.capitalGains).toBeCloseTo(-20000, 6);
+
+    const src = y0.taxDetail!.bySource["education_capital:edu"];
+    expect(src).toBeDefined();
+    expect(src!.type).toBe("capital_gains");
+    expect(src!.amount).toBeCloseTo(-20000, 6);
+
+    // No ordinary income on a taxable draw → no ordinary-income row.
+    expect(y0.taxDetail!.bySource["education:edu"]).toBeUndefined();
+  });
+
+  it("a draw with BOTH ordinary income and a capital loss books two separate rows", () => {
+    // $5k traditional IRA drawn first (100% ordinary income), then $15k from
+    // the 2:1 underwater brokerage (−$15k capital loss). One bySource key
+    // could only carry one type; the loss used to vanish entirely because the
+    // ternary picked `ordinary_income` whenever capitalGains was not > 0.
+    const eduIra: Account = {
+      id: "ira-edu",
+      name: "Edu IRA",
+      category: "retirement",
+      subType: "traditional_ira",
+      titlingType: "jtwros",
+      value: 5000,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const data = makeData(
+      [checking, eduIra, underwaterBrokerage],
+      eduExpense({ dedicatedAccountIds: ["ira-edu", "brk-edu"] }),
+    );
+    const y0 = runProjection(data)[0];
+    const goal = y0.educationGoals!.find((g) => g.goalId === "edu")!;
+
+    expect(goal.dedicatedWithdrawal).toBe(20000);
+
+    const ordinary = y0.taxDetail!.bySource["education:edu"];
+    expect(ordinary).toBeDefined();
+    expect(ordinary!.type).toBe("ordinary_income");
+    expect(ordinary!.amount).toBeCloseTo(5000, 6);
+
+    const capital = y0.taxDetail!.bySource["education_capital:edu"];
+    expect(capital).toBeDefined();
+    expect(capital!.type).toBe("capital_gains");
+    expect(capital!.amount).toBeCloseTo(-15000, 6);
+
+    expect(y0.taxDetail!.capitalGains).toBeCloseTo(-15000, 6);
   });
 });

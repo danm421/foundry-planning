@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { categorizeDraw } from "../withdrawal";
 import { applyAssetSales } from "../asset-transactions";
 import type { ApplyAssetSalesInput } from "../asset-transactions";
+import { runProjection } from "../projection";
+import { basePlanSettings, buildClientData } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import type { Account } from "../types";
 
@@ -113,5 +115,95 @@ describe("asset-sale loss realization", () => {
     expect(r.breakdown[0].homeSaleExclusionApplied).toBeCloseTo(200_000, 2);
     expect(r.breakdown[0].taxableCapitalGain).toBe(0);
     expect(r.breakdown[0].disallowedLoss).toBe(0);
+  });
+});
+
+/**
+ * Task 9 §4 — the drill-down `bySource` gates. These are display-only, but a
+ * `> 0` gate does not merely OMIT the loss rows, it makes the drill-down
+ * CONTRADICT the total it sits under: a year netting to −$10k rendered as a
+ * lone +$50k row.
+ */
+describe("capital-loss drill-down itemization", () => {
+  const brokerage = (id: string, value: number, basis: number): Account => ({
+    id,
+    name: id,
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value,
+    basis,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  });
+
+  const checking: Account = {
+    id: "chk",
+    name: "Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 100_000,
+    basis: 100_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    isDefaultChecking: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  it("itemizes BOTH sale rows and reconciles their sum to the year's net capital gains", () => {
+    // +$50k on one sale, −$60k on another, same year → net −$10k.
+    const base = buildClientData({
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const y0 = runProjection({
+      ...base,
+      accounts: [checking, brokerage("winner", 150_000, 100_000), brokerage("loser", 40_000, 100_000)],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "tx-gain",
+          name: "Sell winner",
+          type: "sell",
+          year: 2026,
+          accountId: "winner",
+          overrideSaleValue: 150_000,
+          overrideBasis: 100_000,
+          proceedsAccountId: "chk",
+        },
+        {
+          id: "tx-loss",
+          name: "Sell loser",
+          type: "sell",
+          year: 2026,
+          accountId: "loser",
+          overrideSaleValue: 40_000,
+          overrideBasis: 100_000,
+          proceedsAccountId: "chk",
+        },
+      ],
+    })[0];
+
+    const bySource = y0.taxDetail!.bySource;
+    const gainRow = bySource["sale:tx-gain"];
+    const lossRow = bySource["sale:tx-loss"];
+
+    expect(gainRow).toBeDefined();
+    expect(gainRow!.type).toBe("capital_gains");
+    expect(gainRow!.amount).toBeCloseTo(50_000, 6);
+
+    expect(lossRow, "the loss sale was dropped from the drill-down").toBeDefined();
+    expect(lossRow!.type).toBe("capital_gains");
+    expect(lossRow!.amount).toBeCloseTo(-60_000, 6);
+
+    // Stated as an equality so it cannot pass vacuously: the itemization must
+    // reconcile to the total it sits under.
+    expect(y0.taxDetail!.capitalGains).toBeCloseTo(-10_000, 6);
+    expect(gainRow!.amount + lossRow!.amount).toBeCloseTo(y0.taxDetail!.capitalGains, 6);
   });
 });
