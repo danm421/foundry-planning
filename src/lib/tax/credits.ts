@@ -147,11 +147,18 @@ interface CtcOdcPhaseout {
  * `min(afterPhaseout, remainingTaxAtThatPoint)` regardless of how the
  * reduction (or the subsequent tax-offset) is split between ODC and CTC —
  * consuming ODC-then-CTC in sequence, each capped at its own remaining
- * amount, always sums to the same total as one combined cap would. That
- * means Schedule 8812 line 16a's aggregate "combined credit minus combined
- * amount used" and this module's own ODC-first bookkeeping are provably
- * identical for every input — see `computeCredits` below, where `unused` is
- * computed the aggregate way.
+ * amount, always sums to the same total as one combined cap would.
+ *
+ * R6 CORRECTION (post Task-8-review): that total-invariance does NOT extend
+ * to Schedule 8812's aggregate ACTC leftover the way the original comment
+ * here claimed. "Combined leftover minus combined used" (R6) equals the
+ * CTC-only leftover ONLY WHEN `perChild >= refundableMax` — true for every
+ * statutorily-seeded year (2000 >= 1700), which is exactly why the original
+ * claim of universal equivalence looked safe and wasn't. When `perChild` is
+ * unseeded (R2: null -> 0), ODC amounts can leak into the aggregate leftover
+ * and get refunded as ACTC despite ODC never being refundable and the CTC
+ * itself being zero. `computeCredits` guards this with an explicit
+ * `ctcAfter - ctcNonrefundableUsed` clamp — see the comment there.
  */
 function computeCtcOdcPhaseout(input: CreditsInput): CtcOdcPhaseout {
   const S = STATUTORY_FIXED;
@@ -203,14 +210,24 @@ export function computeCredits(input: CreditsInput): CreditsResult {
   const ctcNonrefundableUsed = Math.min(ctcAfter, remainingTax);
   remainingTax -= ctcNonrefundableUsed;
 
-  // Schedule 8812 line 16a/16b (R6): the combined after-phaseout CTC+ODC
-  // amount minus whatever combined amount actually offset tax, capped at
-  // (qualifying children x refundableMax) and at the earned-income formula.
-  // ODC is never refundable — its own leftover, if any, is simply lost, which
-  // is why this is the AGGREGATE leftover and not just the CTC's own slice
-  // (see computeCtcOdcPhaseout's docblock for why the two are equal anyway).
+  // Schedule 8812 line 16a/16b (R6, CORRECTED post Task-8-review): the
+  // combined after-phaseout CTC+ODC amount minus whatever combined amount
+  // actually offset tax — but clamped to the CTC's OWN remaining after-
+  // phaseout slice, `ctcAfter - ctcNonrefundableUsed`. ODC is never
+  // refundable, so its leftover must never leak into this figure.
+  //
+  // The clamp is a no-op whenever `perChild >= refundableMax` (every
+  // statutorily-seeded year: 2000 >= 1700) — in that regime the unclamped
+  // aggregate and the CTC-only slice always agree. It stops mattering only
+  // when `perChild` is unseeded (R2: null -> 0), where `refundableMax` can
+  // exceed the CTC's own (zero) slice and the unclamped aggregate would
+  // otherwise pay out ODC amounts as a refundable credit the CTC never
+  // earned (the original, wrong claim this comment used to make).
   const refundableMax = input.params.ctc.refundableMax ?? 0;
-  const unused = afterPhaseout - (odcUsed + ctcNonrefundableUsed);
+  const unused = Math.min(
+    afterPhaseout - (odcUsed + ctcNonrefundableUsed),
+    ctcAfter - ctcNonrefundableUsed,
+  );
   const actc = Math.min(
     unused,
     input.qualifyingChildren * refundableMax,

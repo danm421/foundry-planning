@@ -97,6 +97,24 @@ describe("computeCredits — CTC/ODC phase-down", () => {
     expect(result.byCredit.ctcNonrefundable).toBe(0);
   });
 
+  it("does not manufacture a refundable ACTC out of ODC amounts when perChild is unseeded and CTC itself is zero (R6 CORRECTION)", () => {
+    // Mutant killed: reverting `unused` to the unclamped aggregate
+    // (`afterPhaseout - (odcUsed + ctcNonrefundableUsed)`, no ctcAfter clamp)
+    // reintroduces this exact defect. With perChild null, ctcGross/ctcAfter
+    // are both 0, so the CTC earns nothing — but the unclamped aggregate
+    // leftover is driven entirely by ODC (1,500 = 3 * 500), which then flows
+    // out as a $1,500 *refundable* credit despite ODC never being refundable
+    // and the household's CTC being exactly $0. Exact repro from the review.
+    const perChildUnseeded = {
+      ...params, ctc: { perChild: null, refundableMax: 1700, odcPerDependent: 500 },
+    } as unknown as TaxYearParameters;
+    const result = computeCredits(baseInput({
+      params: perChildUnseeded, qualifyingChildren: 2, otherDependents: 3,
+      taxBeforeCredits: 0, earnedIncome: 150000,
+    }));
+    expect(result.byCredit.ctcRefundable).toBe(0);
+  });
+
   it("yields 0, never NaN, when both ctc.perChild and odcPerDependent are unseeded", () => {
     // Mutant killed: dropping the `?? 0` fallback, producing `null * n` = NaN.
     const unseeded = {
@@ -159,17 +177,24 @@ describe("computeCredits — ACTC (Schedule 8812 line 16a)", () => {
   });
 
   it("consumes nonrefundable credits in order Saver's -> AOTC -> ODC -> CTC (R4)", () => {
-    // Mutant killed: swapping the ODC/CTC processing order — the leftover $200
-    // of tax would land on ctcNonrefundable instead of odc.
+    // Mutant killed: swapping Saver's and AOTC's processing order. Saver's
+    // pool is 1,000 (0.5*2000); AOTC-nonrefundable pool is 1,500. At
+    // taxBeforeCredits 2,000, the CORRECT order pays Saver's in full (1,000)
+    // and leaves only 1,000 of the remaining 1,000 tax for AOTC (partial:
+    // 1,000 of its 1,500 pool). A swapped order would instead pay AOTC in
+    // full (1,500) and leave only 500 for Saver's — savers 500 / aotc 1,500,
+    // the reverse split of what's asserted below. (The previous fixture used
+    // taxBeforeCredits 2,700, which covers 1000+1500=2,500 in full regardless
+    // of order, so a Saver's<->AOTC swap changed no assertion.)
     const result = computeCredits(baseInput({
       retirementContributions: { client: 2000, spouse: 0 }, agi: 30000,
       aotcStudents: [{ qualifiedExpenses: 4000 }],
       qualifyingChildren: 1, otherDependents: 1,
-      taxBeforeCredits: 2700, // 1000 (savers) + 1500 (aotc nonref) + 200 (partial ODC)
+      taxBeforeCredits: 2000,
     }));
     expect(result.byCredit.saversCredit).toBe(1000);
-    expect(result.byCredit.aotcNonrefundable).toBe(1500);
-    expect(result.byCredit.odc).toBe(200);
+    expect(result.byCredit.aotcNonrefundable).toBe(1000);
+    expect(result.byCredit.odc).toBe(0);
     expect(result.byCredit.ctcNonrefundable).toBe(0);
   });
 });
@@ -282,8 +307,10 @@ describe("computeCredits — Saver's Credit (IRC 25B)", () => {
   });
 
   it("uses the head-of-household tier table for HOH filers (R9 routing)", () => {
-    // Mutant killed: routing HOH to the single table instead of hoh (30000 in
-    // the HOH table is a 0.5-rate tier, but 50000 in the single table is not).
+    // Mutant killed: routing HOH to the single table instead of hoh. At AGI
+    // 35,000 the HOH table's 0.5-rate tier (ceiling 36,000) applies, giving
+    // 1,000; the single table (24,000/26,000/40,000) would instead land in
+    // its 0.1-rate tier (ceiling 40,000), giving 200.
     const result = computeCredits(baseInput({
       filingStatus: "head_of_household", agi: 35000,
       retirementContributions: { client: 2000, spouse: 0 }, taxBeforeCredits: 100000,
@@ -293,24 +320,41 @@ describe("computeCredits — Saver's Credit (IRC 25B)", () => {
 });
 
 describe("computeCredits — byCredit structural invariants (R4)", () => {
+  // taxBeforeCredits: 5000 is chosen so all four nonrefundable credits are
+  // non-zero — Saver's (pool 1,500, fully paid), AOTC-nonrefundable (pool
+  // 1,500, fully paid), ODC (pool 500, fully paid), CTC-nonrefundable (pool
+  // 2,000, partially paid — 1,500 of the remaining 1,500 tax). A smaller
+  // taxBeforeCredits (e.g. the previous 3,000) left ODC and CTC-nonrefundable
+  // both at 0, making the invariant vacuous for those two terms: a mutant
+  // that dropped either from the final sum still passed.
   const richFixture = () => computeCredits(baseInput({
-    qualifyingChildren: 1, otherDependents: 1, taxBeforeCredits: 3000,
+    qualifyingChildren: 1, otherDependents: 1, taxBeforeCredits: 5000,
     aotcStudents: [{ qualifiedExpenses: 4000 }],
     retirementContributions: { client: 2000, spouse: 1000 }, agi: 30000,
   }));
 
-  it("nonrefundable equals the sum of the four nonrefundable byCredit fields", () => {
+  it("nonrefundable equals the sum of the four nonrefundable byCredit fields, all four non-zero", () => {
     // Mutant killed: a typo in the final `nonrefundable:` sum (e.g. dropping a
-    // term, or double-counting one) that diverges from the reported breakdown.
+    // term, or double-counting one) that diverges from the reported
+    // breakdown. The total is also pinned against a value computed BY HAND
+    // from the fixture (not read off a test run), so a mutant that corrupts
+    // BOTH the sum and every individual byCredit field identically the same
+    // way still cannot hide: it would have to reproduce 5000 exactly.
     const result = richFixture();
-    const { saversCredit, aotcNonrefundable, odc, ctcNonrefundable } = result.byCredit;
-    expect(result.nonrefundable).toBe(saversCredit + aotcNonrefundable + odc + ctcNonrefundable);
+    expect(result.byCredit.saversCredit).toBe(1500); // 0.5 * (2000 + 1000)
+    expect(result.byCredit.aotcNonrefundable).toBe(1500); // 60% of the $2,500 capped, unphased credit
+    expect(result.byCredit.odc).toBe(500); // 1 * 500, no phase-out at magi 100,000
+    expect(result.byCredit.ctcNonrefundable).toBe(1500); // pool 2,000, only 1,500 of tax left after the other three
+    expect(result.nonrefundable).toBe(5000);
   });
 
   it("refundable equals the sum of the two refundable byCredit fields", () => {
     // Mutant killed: a typo in the final `refundable:` sum, e.g. summing
-    // ctcNonrefundable instead of ctcRefundable.
+    // ctcNonrefundable instead of ctcRefundable. Both terms are hand-computed
+    // independently, not read off `result.byCredit`.
     const result = richFixture();
-    expect(result.refundable).toBe(result.byCredit.aotcRefundable + result.byCredit.ctcRefundable);
+    expect(result.byCredit.aotcRefundable).toBe(1000); // 40% of the $2,500 capped, unphased credit
+    expect(result.byCredit.ctcRefundable).toBe(500); // afterPhaseout 2500 - used 2000 = 500 unused, under both caps
+    expect(result.refundable).toBe(1500);
   });
 });
