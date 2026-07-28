@@ -13,13 +13,19 @@ const ctx: CellDrillContext = { accountNames: {}, incomes: [], accounts: [] };
  * `income-breakdown.test.ts` in this same directory casts for the same
  * reason. Only `year` is cast; `ctx` and `columnKey` are real, fully-typed
  * values, narrower than the brief's whole-args cast.
+ *
+ * `ctxOverride` lets a test swap in a `filingStatus` (e.g. MFS) without
+ * disturbing the default `ctx` used by every other test in this file.
  */
-function args(taxDetail: Record<string, unknown>): IncomeCellDrillArgs {
+function args(
+  taxDetail: Record<string, unknown>,
+  ctxOverride: CellDrillContext = ctx,
+): IncomeCellDrillArgs {
   const year = {
     year: 2030,
     taxDetail: { capitalGains: 0, stCapitalGains: 0, bySource: {}, ...taxDetail },
   } as unknown as ProjectionYear;
-  return { year, columnKey: "capitalGains", ctx };
+  return { year, columnKey: "capitalGains", ctx: ctxOverride };
 }
 
 function allRows(p: ReturnType<typeof buildIncomeCellDrill>) {
@@ -58,7 +64,57 @@ describe("capital-loss rows in the income drill-down", () => {
   });
 
   it("adds no rows when there is no loss activity", () => {
-    const rows = allRows(buildIncomeCellDrill(args({ capitalGains: 50_000 })));
+    // Explicit zeros (not omitted fields) — this exercises the `> 0` guards
+    // for real, rather than passing vacuously via `?? 0` / `cf === undefined`
+    // defaults on fields that were never wired up.
+    const rows = allRows(buildIncomeCellDrill(args({
+      capitalGains: 50_000,
+      capitalLossDeduction: 0,
+      capitalLossCarryforward: { shortTerm: 0, longTerm: 0 },
+      disallowedCapitalLoss: 0,
+    })));
     expect(rows.some((r) => r.id.startsWith("capital-loss"))).toBe(false);
+  });
+
+  it("flags a carryforward that received no ordinary-income offset this year (flat-mode gap)", () => {
+    // deduction === 0 while cf > 0 is only reachable in flat tax-engine mode
+    // (calculateTaxYearFlat hardcodes deduction: 0 and passes carryforward
+    // through unchanged) — in bracket mode a nonzero carryforward-out
+    // requires shortTermLoss + longTermLoss > 0, which always pins
+    // deduction = min(that, limit) > 0. See netCapitalGainsAndLosses /
+    // computeCarryforwardOut in ../../capital-loss.ts.
+    const rows = allRows(buildIncomeCellDrill(args({
+      capitalLossDeduction: 0,
+      capitalLossCarryforward: { shortTerm: 0, longTerm: 50_000 },
+    })));
+    const row = rows.find((r) => r.id === "capital-loss-carryforward")!;
+    expect(row.meta).toContain("No offset against ordinary income was applied this year.");
+  });
+
+  it("puts capital-loss rows in a separate labeled group with a footnote, not the flow-row total", () => {
+    const props = buildIncomeCellDrill(args({
+      capitalLossDeduction: 3_000,
+      capitalLossCarryforward: { shortTerm: 0, longTerm: 77_000 },
+    }));
+    expect(props.groups).toHaveLength(2);
+    expect(props.groups[0].label).toBeUndefined(); // the flow-row group is unlabeled, as before
+    expect(props.groups[1].label).toBe("Capital Loss Carryover");
+    expect(props.groups[1].rows.map((r) => r.id)).toEqual([
+      "capital-loss-deduction",
+      "capital-loss-carryforward",
+    ]);
+    expect(props.footnote).toBeTruthy();
+    expect(props.footnote).toContain("outside the total");
+  });
+
+  it("uses the $1,500 MFS limit in the deduction tooltip when filing status is married_separate", () => {
+    const mfsCtx: CellDrillContext = { ...ctx, filingStatus: "married_separate" };
+    const rows = allRows(buildIncomeCellDrill(args(
+      { capitalLossDeduction: 1_500, capitalLossCarryforward: { shortTerm: 0, longTerm: 10_000 } },
+      mfsCtx,
+    )));
+    const row = rows.find((r) => r.id === "capital-loss-deduction")!;
+    expect(row.meta).toContain("$1,500");
+    expect(row.meta).not.toContain("$3,000");
   });
 });

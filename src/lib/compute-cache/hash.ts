@@ -12,11 +12,17 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * 10: capital-loss support — §1222 netting, §1211(b) $3,000/$1,500(MFS)
  *     annual ordinary-income cap, §1212(b) indefinite carryforward (halved
  *     at first death, zeroed at final death), §165(c) personal-use-property
- *     loss disallowance. Realized losses at six sites (withdrawal draws,
- *     asset sales, transfer/reinvestment basis, equity events) previously
- *     floored at zero and were deducted against ordinary income with NO
- *     limit, so Monte Carlo success rates DROP slightly on this bump — the
- *     prior numbers over-deducted. (2026-07-28)
+ *     loss disallowance. Two pre-existing sources of loss — Monte Carlo
+ *     down-year account growth (projection.ts) and non-qualifying equity
+ *     dispositions (equity/tax-events.ts) — previously flowed straight into
+ *     taxable income as an UNCLAMPED, unlimited ordinary-income offset; they
+ *     are now subject to the $3,000/$1,500 cap, so Monte Carlo success rates
+ *     DROP slightly on this bump — the prior numbers over-deducted. Six
+ *     other sites (withdrawal draws, asset sales, transfer/reinvestment
+ *     basis, equity events) previously FLOORED realized losses at zero and
+ *     now recognize them instead, subject to the same cap — a new deduction
+ *     that didn't exist before, the opposite direction of the first change.
+ *     (2026-07-28)
  */
 export const ENGINE_VERSION = 10;
 

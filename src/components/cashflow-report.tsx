@@ -2725,6 +2725,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             accounts: clientData?.accounts ?? [],
             entities: clientData?.entities ?? [],
             rothConversions: clientData?.rothConversions ?? [],
+            filingStatus: clientData?.client.filingStatus,
           }}
         />
       )}

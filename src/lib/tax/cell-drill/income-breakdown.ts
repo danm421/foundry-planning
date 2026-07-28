@@ -1,11 +1,15 @@
 import type {
+  CellDrillContext,
   CellDrillProps,
   CellDrillRow,
   IncomeCellDrillArgs,
   IncomeColumnKey,
 } from "./types";
 import { bySourceRows, formatCurrency, resolveSourceLabel } from "./_shared";
-import { CAPITAL_LOSS_ORDINARY_LIMIT } from "@/lib/tax/constants";
+import {
+  CAPITAL_LOSS_ORDINARY_LIMIT,
+  CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
+} from "@/lib/tax/constants";
 
 const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   earnedIncome: "Earned Income",
@@ -34,42 +38,62 @@ const DIRECT_CONFIG: Partial<Record<IncomeColumnKey, DirectConfig>> = {
   qbi:               { sourceType: "qbi",              taxDetailKey: "qbi" },
 };
 
-/** Capital-loss rows appended to the LT/ST capital-gain drill-downs. Without
- *  these the §1211(b) cap is invisible and a large loss producing only a
- *  $3,000 deduction reads as a bug.
+/** Capital-loss rows shown in their own group, separate from the LT/ST
+ *  capital-gain rows that sum to `total`. Without these the §1211(b) cap is
+ *  invisible and a large loss producing only a $3,000 deduction reads as a
+ *  bug.
  *
- *  Uses the flat (non-MFS) limit unconditionally: filing status is not part
- *  of `IncomeCellDrillArgs` (not on `ProjectionYear`, `TaxResult`, or
- *  `CellDrillContext`) and threading a new argument through both callers
- *  just for a tooltip is not worth it — MFS is rare enough that a wrong
- *  limit in a tooltip is a smaller defect.
+ *  These rows deliberately do NOT roll into the LT/ST gain group: the
+ *  deduction offsets ORDINARY income (Form 1040 line 7), not LT/ST capital
+ *  gains, and the carryforward is a cross-year BALANCE, not a this-year
+ *  flow. See `buildIncomeCellDrill`'s caller, which puts them in a labeled
+ *  sibling group with a footnote rather than appending them to `rows`.
  *
- *  Known gap: in flat tax-engine mode (`PlanSettings.taxEngineMode`, also
- *  not reachable here) `capitalLossDeduction` is always 0 and this
- *  carryforward balance never moves year to year, so it can read as a
- *  stalled paydown rather than "not modeled in flat mode." Left unfixed —
- *  detecting flat mode would require the same kind of new plumbing. */
-function capitalLossRows(taxDetail: IncomeCellDrillArgs["year"]["taxDetail"]): CellDrillRow[] {
+ *  Uses `ctx.filingStatus` to pick the $3,000 vs $1,500(MFS) §1211(b) limit;
+ *  falls back to the non-MFS limit when filing status isn't populated by the
+ *  caller (not every caller threads it through yet).
+ *
+ *  Known gap: in flat tax-engine mode (`PlanSettings.taxEngineMode`, not
+ *  reachable here — not on `ProjectionYear`, `TaxResult`, or
+ *  `CellDrillContext`) `capitalLossDeduction` is always 0 and the
+ *  carryforward balance never moves year to year. The carryforward row's
+ *  `meta` calls this out when `deduction === 0` so it doesn't read as a
+ *  stalled paydown. */
+function capitalLossRows(
+  taxDetail: IncomeCellDrillArgs["year"]["taxDetail"],
+  filingStatus: CellDrillContext["filingStatus"],
+): CellDrillRow[] {
   const rows: CellDrillRow[] = [];
   const deduction = taxDetail?.capitalLossDeduction ?? 0;
   const cf = taxDetail?.capitalLossCarryforward;
   const disallowed = taxDetail?.disallowedCapitalLoss ?? 0;
+  const limit =
+    filingStatus === "married_separate"
+      ? CAPITAL_LOSS_ORDINARY_LIMIT_MFS
+      : CAPITAL_LOSS_ORDINARY_LIMIT;
 
   if (deduction > 0) {
     rows.push({
       id: "capital-loss-deduction",
       label: "Capital loss deduction",
       amount: -deduction,
-      meta: `Net capital loss offsets ordinary income, limited to ${formatCurrency(CAPITAL_LOSS_ORDINARY_LIMIT)} per year (IRC §1211(b)).`,
+      meta: `Net capital loss offsets ordinary income, limited to ${formatCurrency(limit)} per year (IRC §1211(b)).`,
     });
   }
 
   if (cf && (cf.shortTerm > 0 || cf.longTerm > 0)) {
+    // deduction === 0 while cf > 0 only happens in flat tax-engine mode —
+    // in bracket mode a nonzero carryforward-out requires a net loss that
+    // exceeded the annual limit, which always pins deduction at the limit.
+    const flatModeCaveat =
+      deduction === 0
+        ? " No offset against ordinary income was applied this year."
+        : "";
     rows.push({
       id: "capital-loss-carryforward",
       label: "Loss carried to next year",
       amount: cf.shortTerm + cf.longTerm,
-      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).`,
+      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).${flatModeCaveat}`,
     });
   }
 
@@ -93,10 +117,21 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
   if (directCfg) {
     const total = (year.taxDetail?.[directCfg.taxDetailKey] as number | undefined) ?? 0;
     const rows = directRows(year, directCfg.sourceType, ctx);
+    const groups: CellDrillProps["groups"] = [{ rows }];
+    let footnote: string | undefined;
     if (columnKey === "capitalGains" || columnKey === "shortCapitalGains") {
-      rows.push(...capitalLossRows(year.taxDetail));
+      const lossRows = capitalLossRows(year.taxDetail, ctx.filingStatus);
+      if (lossRows.length > 0) {
+        // Separate, labeled group — these rows do NOT sum into `total` (the
+        // deduction offsets ordinary income, and the carryforward is a
+        // cross-year balance), so they must not silently break the
+        // sum(rows) === total invariant the main group upholds.
+        groups.push({ label: "Capital Loss Carryover", rows: lossRows });
+        footnote =
+          "Capital-loss items above sit outside the total — the deduction offsets ordinary income (not LT/ST gains) and the carryforward is a year-end balance, not income earned this year.";
+      }
     }
-    return { title, total, groups: [{ rows }] };
+    return { title, total, groups, footnote };
   }
 
   if (columnKey === "taxableSocialSecurity") {

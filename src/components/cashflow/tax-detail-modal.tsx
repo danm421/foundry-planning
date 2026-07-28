@@ -24,6 +24,7 @@ import type {
   RothConversion,
   NoteReceivable,
 } from "@/engine/types";
+import type { FilingStatus } from "@/lib/tax/types";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -43,6 +44,7 @@ interface TaxDetailModalProps {
     entities?: EntitySummary[];
     rothConversions?: RothConversion[];
     notesReceivable?: NoteReceivable[];
+    filingStatus?: FilingStatus;
   };
 }
 
@@ -87,6 +89,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
         },
         {},
       ),
+      filingStatus: clientData.filingStatus,
     }),
     [
       clientData.accounts,
@@ -94,6 +97,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
       clientData.entities,
       clientData.rothConversions,
       clientData.notesReceivable,
+      clientData.filingStatus,
     ],
   );
 
