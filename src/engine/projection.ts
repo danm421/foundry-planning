@@ -47,6 +47,7 @@ import {
 } from "./liability-schedules";
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
+import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
 import {
   buildAnnualExclusionMap,
   type AnnualExclusionRow,
@@ -857,6 +858,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], planSettings);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
+  // §1212(b) capital-loss carryforward. Seeded from the client's Schedule D
+  // carryover, then advanced exactly ONCE per year at the single commit point
+  // below (beside `charityCarryforward`) — never inside the iterative
+  // supplemental-withdrawal solve, whose probes would compound it per iteration.
+  let capitalLossCarryforward: CapitalLossCarryforward = {
+    shortTerm: Math.max(0, planSettings.capitalLossCarryforwardShortTerm ?? 0),
+    longTerm: Math.max(0, planSettings.capitalLossCarryforwardLongTerm ?? 0),
+  };
 
   // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
   // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
@@ -3758,6 +3767,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: 0,
@@ -3928,6 +3938,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       aboveLineDeductions,
       itemizedDeductions,
       charityCarryforwardIn: charityCarryforward,
+      capitalLossCarryforwardIn: capitalLossCarryforward,
       charityGiftsThisYear,
       secaResult,
       transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5154,6 +5165,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5318,6 +5330,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5453,6 +5466,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             aboveLineDeductions,
             itemizedDeductions,
             charityCarryforwardIn: charityCarryforward,
+            capitalLossCarryforwardIn: capitalLossCarryforward,
             charityGiftsThisYear,
             secaResult,
             transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5545,8 +5559,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const finalTaxResult = taxOutForIter.taxResult;
     const finalTaxes = taxOutForIter.taxes;
     charityCarryforward = taxOutForIter.charityCarryforwardOut;
+    // The ONLY write-back of the capital-loss carryforward. Must stay here,
+    // outside the iterative supplemental-withdrawal solve above.
+    capitalLossCarryforward = taxOutForIter.capitalLossCarryforwardOut;
     deductionBreakdownResult = taxOutForIter.deductionBreakdown ?? undefined;
     const supplementalEarlyPenalty = supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+
+    // Record the end-of-year state for the drill-down. Set on `taxDetail`
+    // BEFORE `finalTaxDetail` spreads it below, so the supplemental-draw copy
+    // carries it too.
+    taxDetail.capitalLossCarryforward = { ...capitalLossCarryforward };
+    taxDetail.capitalLossDeduction = finalTaxResult.capitalLoss.deduction;
 
     // Layer supplemental recognized income onto taxDetail for the year output.
     const finalTaxDetail =
@@ -6714,6 +6737,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           firstDeathSurvivor === "spouse" ? (client.spouseLifeExpectancy ?? 95) : (client.lifeExpectancy ?? 95),
       });
 
+      // Rev. Rul. 74-175: a capital-loss carryover dies with the taxpayer and
+      // cannot pass to the estate or the surviving spouse. The death year's
+      // return is still joint (this runs after `years.push()` above, so that
+      // year already took its full §1211(b) offset). The engine has no
+      // per-spouse loss pool, so halve it on a joint plan. Approximation —
+      // documented in the spec.
+      capitalLossCarryforward = {
+        shortTerm: capitalLossCarryforward.shortTerm / 2,
+        longTerm: capitalLossCarryforward.longTerm / 2,
+      };
+
       // Death-event creates synthetic accounts/liabilities mid-projection with
       // legacy ownership fields populated but `owners[]` empty. Normalize so
       // subsequent year iterations read fractional ownership consistently.
@@ -6826,6 +6860,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
       });
+
+      // Rev. Rul. 74-175 with no survivor: the whole carryover expires. The
+      // loop breaks at the end of this block, so nothing reads it again today
+      // — kept for the same reason as the entity-map sync a few lines down:
+      // post-death state stays honest for any future post-loop read.
+      capitalLossCarryforward = { shortTerm: 0, longTerm: 0 };
 
       // Same normalization as first-death — keeps fractional reads consistent
       // for the truncated final-year processing below.
