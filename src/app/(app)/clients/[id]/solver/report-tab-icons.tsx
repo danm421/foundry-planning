@@ -104,3 +104,16 @@ export function BalanceSheetIcon(props: SVGProps<SVGSVGElement>): ReactElement {
     </svg>
   );
 }
+
+/** Thresholds — Lucide `list-checks` (fixed checklist of phase-out status). */
+export function ThresholdsIcon(props: SVGProps<SVGSVGElement>): ReactElement {
+  return (
+    <svg {...base} aria-hidden="true" {...props}>
+      <path d="M13 5h8" />
+      <path d="M13 12h8" />
+      <path d="M13 19h8" />
+      <path d="m3 17 2 2 4-4" />
+      <path d="m3 7 2 2 4-4" />
+    </svg>
+  );
+}

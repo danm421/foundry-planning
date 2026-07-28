@@ -63,6 +63,21 @@ describe("resolveReportLayout", () => {
     expect(out[0].visible).toBe(true);
   });
 
+  it("[Task 13] appends thresholds as visible to a layout stored before this release", () => {
+    // The pre-release canonical id list, spelled out literally (NOT derived
+    // from REPORT_KEYS minus "thresholds") so this test doesn't silently
+    // follow any future change to the canonical list — it pins the actual
+    // shape an existing advisor's stored jsonb layout has today.
+    const preReleaseIds = [
+      "portfolio", "cashflow", "taxBracket", "lifeInsurance", "estate",
+      "monteCarlo", "education", "balanceSheet", "summaries",
+    ];
+    const stored = preReleaseIds.map((id) => ({ id, visible: true }));
+    const out = resolveReportLayout(stored);
+    expect(out.map((e) => e.id)).toEqual([...preReleaseIds, "thresholds"]);
+    expect(out.find((e) => e.id === "thresholds")!.visible).toBe(true);
+  });
+
   it("treats a corrupted non-array stored value as empty → canonical defaults", () => {
     // A jsonb row that somehow isn't an array must not throw the for…of.
     const out = resolveReportLayout({ nope: true } as never);

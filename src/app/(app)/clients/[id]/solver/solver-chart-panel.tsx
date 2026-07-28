@@ -25,6 +25,7 @@ import {
   EducationIcon,
   SummariesIcon,
   BalanceSheetIcon,
+  ThresholdsIcon,
 } from "./report-tab-icons";
 import { ReportCustomizePopover, type ReportMeta } from "./report-customize-popover";
 import {
@@ -38,6 +39,7 @@ import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
 import { EducationReportPanel } from "@/components/solver/education/education-report-panel";
 import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
+import { SolverThresholdsPanel } from "./solver-thresholds-panel";
 
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
@@ -57,6 +59,7 @@ export const REPORT_TABS: {
   { id: "education", label: "Education", short: "Education", icon: EducationIcon },
   { id: "balanceSheet", label: "Balance Sheet", short: "Bal Sheet", icon: BalanceSheetIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
+  { id: "thresholds", label: "Thresholds", short: "Thresholds", icon: ThresholdsIcon },
 ];
 
 // Shared by the tab strip and the customize popover — one label/short/icon
@@ -395,6 +398,20 @@ export function SolverChartPanel({
           expenses={workingTree.expenses}
           returnStats={educationReturnStats}
           seed={educationSeed}
+        />
+        {recalculating}
+      </div>
+    );
+  }
+
+  if (tab === "thresholds") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <SolverThresholdsPanel
+          years={currentProjection}
+          baseProjection={baseProjection}
+          workingTree={workingTree}
         />
         {recalculating}
       </div>
