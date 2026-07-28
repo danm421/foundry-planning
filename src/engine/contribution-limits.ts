@@ -14,6 +14,20 @@ const IRA_SUB_TYPES = new Set(["traditional_ira", "roth_ira"]);
 /** HSA — its own per-person limit, depending on coverage tier + a 55+ catch-up. */
 const HSA_SUB_TYPES = new Set(["hsa"]);
 
+/** Slack on the Roth gate's over-limit test, in dollars.
+ *
+ *  The age-based pass scales a bucket by `original * (limit / total)`, and
+ *  those products routinely sum to one ULP ABOVE `limit` — e.g. rules of 25
+ *  and 7,825 against a 7,000 cap land on 7,000.000000000001. When an owner's
+ *  whole IRA bucket is Roth, that overshoot IS the gate's `total`, while
+ *  `allowed` is exactly the un-nudged age-based limit. A strict `<=` would
+ *  then fire the gate on float noise alone, emitting ~1e-12 backdoor amounts
+ *  and phantom adjustment rows for a client nowhere near the phase-out.
+ *
+ *  A millionth of a dollar is orders of magnitude below any split worth
+ *  reporting and orders of magnitude above the ~1e-12 noise floor. */
+const ROTH_GATE_EPSILON = 1e-6;
+
 type OwnerKey = "client" | "spouse" | "joint";
 type LimitGroup = "deferral" | "ira" | "hsa" | "none";
 
@@ -340,7 +354,7 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
       taxYearParams,
       filingStatus
     );
-    if (total <= allowed) continue;
+    if (total <= allowed + ROTH_GATE_EPSILON) continue;
     // Split each rule pro rata so the owner's DIRECT total lands on `allowed`.
     const directScale = allowed / total;
     for (const { ruleId, accountId } of ownerRules) {

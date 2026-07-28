@@ -3357,9 +3357,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           familyMembers: data.familyMembers ?? [],
           // The year's real Roth MAGI isn't available at this point — AGI is
           // derived further down and depends on these very contributions.
-          // Wiring the household assembly + MAGI ordering is a separate task;
-          // 0 is below every phase-out range, so the Roth gate is inert here
-          // and behaviour is exactly what it was before the gate existed.
+          // Wiring the household assembly + MAGI ordering is a separate task.
+          //
+          // Why 0 is inert, precisely: it sits below every phase-out range, so
+          // each owner's allowance comes back as their full age-based IRA
+          // limit — the very figure the age-based pass has already capped that
+          // owner's Roth total at — so the gate emits no adjustments and no
+          // backdoor entries. Separately, the gate never writes
+          // `cappedByRuleId`, which is the only field this call site reads.
           magiForRoth: 0,
           filingStatus,
         })
