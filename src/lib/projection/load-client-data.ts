@@ -1477,6 +1477,10 @@ export const loadClientDataWithContext = cache(
       dateOfBirth: f.dateOfBirth ?? null,
       domesticPartner: f.domesticPartner,
       inheritanceClassOverride: f.inheritanceClassOverride ?? {},
+      // Advisor override for IRC 24 dependent status. NOT NULL with an "auto"
+      // default in the schema, so the `??` only covers a row read through a
+      // narrower select.
+      claimedAsDependent: f.claimedAsDependent ?? "auto",
     }));
 
     const clientInfo = {
@@ -1493,6 +1497,10 @@ export const loadClientDataWithContext = cache(
       spouseRetirementMonth: client.spouseRetirementMonth ?? undefined,
       spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
       filingStatus: client.filingStatus,
+      // IRC 219(g)(5) active-participant overrides. NOT NULL with an "auto"
+      // default in the schema; the `??` only covers a narrower select.
+      coveredByWorkplacePlan: client.coveredByWorkplacePlan ?? "auto",
+      spouseCoveredByWorkplacePlan: client.spouseCoveredByWorkplacePlan ?? "auto",
     };
 
     // Base-plan overrides (scenario_id IS NULL). Scenario-specific overrides

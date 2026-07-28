@@ -969,4 +969,50 @@ describe("applyContributionLimits Roth MAGI gate", () => {
     expect(backdoorByRuleId).toEqual({});
     expect(adjustments).toHaveLength(0);
   });
+
+  // ── `cappedByRuleId` is invariant to `magiForRoth` (Task 11 R5) ───────────
+  // projection.ts resolves this call BEFORE the year's MAGI is known, because
+  // `cappedByRuleId` is an input to the deduction assembly that produces the
+  // MAGI. That ordering is only sound if the Roth pass cannot move
+  // `cappedByRuleId` — which is what lets projection.ts take `cappedByRuleId`
+  // from a first, MAGI-less call and `backdoorByRuleId` / `adjustments` from a
+  // second call made once the real MAGI exists. Pinned here rather than left as
+  // a comment: a future write to `cappedByRuleId` inside the Roth pass would
+  // silently make the projection's deduction assembly circular.
+  it("leaves cappedByRuleId invariant to magiForRoth while backdoorByRuleId moves", () => {
+    // Two rules over the 7,000 IRA cap so the AGE pass genuinely rewrites
+    // `cappedByRuleId` — an all-under-cap fixture would make the deep-equal
+    // vacuous by comparing two copies of the untouched input.
+    const accounts = [acct("a1", "roth_ira", "client"), acct("a2", "traditional_ira", "client")];
+    const rules = [rule("r1", "a1"), rule("r2", "a2")];
+    const shared = {
+      year: 2025,
+      rules,
+      accounts,
+      client: clientInfoAge40,
+      taxYearParams: ROTH_PARAMS,
+      resolvedByRuleId: { r1: 6_000, r2: 4_000 }, // 10,000 against a 7,000 cap
+      familyMembers: HOUSEHOLD_FMS,
+      filingStatus: "single" as const,
+    };
+    const below = applyContributionLimits({ ...shared, magiForRoth: 0 });
+    const above = applyContributionLimits({ ...shared, magiForRoth: 500_000 });
+
+    // The age pass DID rewrite both entries (6,000 × 0.7 and 4,000 × 0.7).
+    expect(below.cappedByRuleId.r1).toBeCloseTo(4_200, 9);
+    expect(below.cappedByRuleId.r2).toBeCloseTo(2_800, 9);
+    expect(above.cappedByRuleId).toEqual(below.cappedByRuleId);
+
+    // …and the Roth gate genuinely fires on one side and not the other, so the
+    // deep-equal above is not comparing two identical no-op runs.
+    expect(below.backdoorByRuleId).toEqual({});
+    expect(above.backdoorByRuleId.r1).toBeCloseTo(4_200, 9); // 500k is past 165k → all backdoor
+    expect(above.backdoorByRuleId).not.toEqual(below.backdoorByRuleId);
+    expect(above.adjustments.filter((a) => a.reason === "roth_magi_backdoor")).toHaveLength(1);
+    expect(below.adjustments.filter((a) => a.reason === "roth_magi_backdoor")).toHaveLength(0);
+    // The age-limit adjustments are identical on both sides, so taking the
+    // WHOLE `adjustments` array from the second call loses nothing.
+    expect(above.adjustments.filter((a) => a.reason === "age_limit"))
+      .toEqual(below.adjustments.filter((a) => a.reason === "age_limit"));
+  });
 });

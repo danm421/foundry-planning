@@ -731,6 +731,7 @@ describe("calculateTaxYear — credits: nonrefundable clamped at tax, refundable
       otherDependents: 0,
       aotcStudents: [],
       retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -774,6 +775,7 @@ describe("calculateTaxYear — credits: Saver's sunset keys off the REQUESTED ye
     otherDependents: 0,
     aotcStudents: [],
     retirementContributions: { client: 2000, spouse: 0 },
+    selfEmploymentEarnings: 0,
   };
   const in2026 = calculateTaxYear(makeInput({
     year: 2026, earnedIncome: 50_000, taxParams: params2026WithCredits(),
@@ -818,6 +820,7 @@ describe("calculateTaxYear — credits: ACTC earned-income floor uses earned inc
       otherDependents: 0,
       aotcStudents: [],
       retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -852,6 +855,7 @@ describe("calculateTaxYear — credits: AOTC splits across the nonrefundable/ref
       otherDependents: 0,
       aotcStudents: [{ qualifiedExpenses: 4_000 }],
       retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -878,6 +882,7 @@ describe("calculateTaxYear — credits: unseeded credit columns mean ZERO, never
       otherDependents: 2,
       aotcStudents: [],
       retirementContributions: { client: 2_000, spouse: 2_000 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -922,6 +927,7 @@ describe("calculateTaxYear — credits: NIIT is outside the credit-offsettable b
       otherDependents: 0,
       aotcStudents: [],
       retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -1034,6 +1040,7 @@ describe("calculateTaxYear — credits: the credit base is all THREE subpart-A t
       otherDependents: 0,
       aotcStudents: [],
       retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
     },
   }));
 
@@ -1051,5 +1058,87 @@ describe("calculateTaxYear — credits: the credit base is all THREE subpart-A t
 
   it("rolls up to the credit-reduced total", () => {
     expect(result.flow.totalFederalTax).toBe(117_124);
+  });
+});
+
+describe("calculateTaxYear — credits: earned income for the ACTC is wages PLUS net SE earnings", () => {
+  // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): "earned income" for the refundable CTC is
+  // wages PLUS net earnings from self-employment. `CalcInput.earnedIncome` is
+  // W-2 wages ONLY — it feeds calcFica and calcAdditionalMedicare, and widening
+  // it would double-charge FICA against income that `year-tax.ts` already taxes
+  // through SECA. So the SE figure rides on `household.selfEmploymentEarnings`
+  // and is added at the credits call site only.
+  //
+  // MFJ, $0 wages, $40,000 of net Schedule C, 2 qualifying children, itemizing
+  // $40,000 so there is NO tax liability for the CTC to offset:
+  //   AGI 40,000; itemized 40,000 > std 32,200 -> taxableIncome 0
+  //   regularTaxCalc 0, capGains 0, AMT 0 -> taxBeforeCredits 0
+  //   CTC gross = 2 x 2,000 = 4,000; MAGI 40,000 < 400,000 -> no phase-down
+  //   nonrefundable used = min(4,000, 0) = 0
+  //   ACTC = min(4,000 - 0, 2 x 1,700 = 3,400, 0.15 x (40,000 - 2,500) = 5,625)
+  //        = 3,400
+  const householdBase = {
+    qualifyingChildren: 2,
+    otherDependents: 0,
+    aotcStudents: [],
+    retirementContributions: { client: 0, spouse: 0 },
+  };
+  const inputBase = {
+    earnedIncome: 0,
+    ordinaryIncome: 40_000,   // Schedule C net, which IS in AGI
+    itemizedDeductions: 40_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+  };
+
+  const withSe = calculateTaxYear(makeInput({
+    ...inputBase,
+    household: { ...householdBase, selfEmploymentEarnings: 40_000 },
+  }));
+  const withoutSe = calculateTaxYear(makeInput({
+    ...inputBase,
+    household: { ...householdBase, selfEmploymentEarnings: 0 },
+  }));
+
+  it("has no liability for the nonrefundable part to offset", () => {
+    expect(withSe.flow.taxableIncome).toBe(0);
+    expect(withSe.flow.regularFederalIncomeTax).toBe(0);
+    expect(withSe.flow.capitalGainsTax).toBe(0);
+    expect(withSe.flow.amtAdditional).toBe(0);
+    expect(withSe.flow.taxCredits).toBe(0);
+  });
+
+  it("pays the ACTC out of the SE earnings", () => {
+    expect(withSe.flow.refundableCredits).toBe(3_400);
+  });
+
+  it("pays NOTHING when the SE earnings are missing — the pre-R10 behaviour", () => {
+    // 0.15 x max(0, 0 - 2,500) = 0, so the whole ACTC is choked off. This is the
+    // assertion that fails if the credits call site stops adding SE earnings.
+    expect(withoutSe.flow.refundableCredits).toBe(0);
+  });
+
+  it("leaves FICA and the Additional Medicare surtax on WAGES only", () => {
+    // Both read `earnedIncome`, which stays $0. Widening that field instead
+    // would have charged 15.3% here on income SECA already taxes.
+    expect(withSe.flow.fica).toBe(0);
+    expect(withSe.flow.additionalMedicare).toBe(0);
+    expect(withSe.flow.fica).toBe(withoutSe.flow.fica);
+  });
+
+  it("lets the refund drive totalFederalTax negative", () => {
+    expect(withSe.flow.totalFederalTax).toBe(-3_400);
+  });
+
+  it("ignores a negative SE figure rather than reducing wage earned income", () => {
+    // A Schedule C LOSS does not reduce 32(c)(2) earned income below wages —
+    // `Math.max(0, ...)` at the call site. Mirrors tax-analysis/adapter.ts:66.
+    const withLoss = calculateTaxYear(makeInput({
+      ...inputBase,
+      earnedIncome: 40_000,
+      ordinaryIncome: 0,
+      household: { ...householdBase, selfEmploymentEarnings: -25_000 },
+    }));
+    expect(withLoss.flow.refundableCredits).toBe(3_400);
   });
 });

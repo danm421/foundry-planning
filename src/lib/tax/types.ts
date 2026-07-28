@@ -146,7 +146,10 @@ export interface TaxYearParameters {
  * are all already locals inside `calculateTaxYear` and are deliberately NOT
  * restated here — a second source of truth for them would be a defect, not a
  * convenience. Field names and types mirror `CreditsInput` verbatim so the call
- * site is a copy, not a translation layer.
+ * site is a copy, not a translation layer — with ONE deliberate exception,
+ * `selfEmploymentEarnings`, which `CreditsInput` does not carry because the
+ * credit layer wants it already folded into `earnedIncome`. `calculate.ts` does
+ * that fold, at the credits call and nowhere else.
  */
 export interface TaxHouseholdInput {
   qualifyingChildren: number;
@@ -159,6 +162,22 @@ export interface TaxHouseholdInput {
    *  sums both entries with no filing-status filter, so whether a spouse figure
    *  belongs on a non-MFJ return is decided HERE, by whoever builds this. */
   retirementContributions: { client: number; spouse: number };
+  /**
+   * Net earnings from self-employment for the year (Schedule C / SE net, a
+   * LOSS being negative). Carried separately from `CalcInput.earnedIncome`
+   * because the two feed different statutes:
+   *
+   *  - `CalcInput.earnedIncome` is W-2 WAGES ONLY. It drives `calcFica` and
+   *    `calcAdditionalMedicare`, and SE income is already taxed through SECA in
+   *    `year-tax.ts` — widening that field would double-charge both.
+   *  - IRC 24(d)(1)(B)(i) -> 32(c)(2)(A) "earned income" for the refundable CTC
+   *    IS wages plus net SE earnings, so the credit layer adds this in (floored
+   *    at 0: a Schedule C loss never reduces earned income below wages).
+   *
+   * Required, not optional: a silently-omitted 0 here zeroes the ACTC for every
+   * self-employed household, which is exactly the defect this field fixes.
+   */
+  selfEmploymentEarnings: number;
 }
 
 // Already-resolved engine input for one projection year.
@@ -296,6 +315,20 @@ export interface TaxResult {
     effectiveFederalRate: number;
     bracketsUsed: TaxYearParameters;
     inflationFactor: number;
+    /** Taxable income BEFORE the §199A deduction — the figure IRC 199A(e)(2)
+     *  tests against the QBI threshold, and not recoverable from `flow`
+     *  (`flow.taxableIncome` is post-QBI and floored at 0). Bracket mode only;
+     *  the flat path computes no QBI. */
+    taxableIncomeBeforeQbi?: number;
+    /** Alternative minimum taxable income (Form 6251 line 4) — what the AMT
+     *  exemption phase-out tests. Exposed rather than reconstructed by callers:
+     *  the add-back depends on which below-line deduction was actually taken.
+     *  Bracket mode only. */
+    amti?: number;
+    /** Net investment income for IRC §1411 — qualified dividends + LTCG + STCG
+     *  + taxable interest, the same figure `calcNiit` is handed. Bracket mode
+     *  only. */
+    netInvestmentIncome?: number;
   };
   /** State income-tax detail (bracket-mode engine). Always populated;
    *  when residenceState is null, contains the fallback flat-rate result. */

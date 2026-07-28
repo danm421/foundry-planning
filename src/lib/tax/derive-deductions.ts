@@ -92,6 +92,25 @@ export interface AccountForDeduction {
   ownerEntityId?: string | null;
 }
 
+/**
+ * `DeductionContribution` plus the traditional-IRA slice, broken out.
+ *
+ * The caller needs the IRA subtotal to build `magiBase` — total income minus
+ * every above-line deduction EXCEPT the traditional-IRA and student-loan ones
+ * (IRC 219(g)(3)(A)). Re-deriving it outside this module would mean copying
+ * six inclusion guards (retirement category, DEDUCTIBLE_ELIGIBLE_SUBTYPES, the
+ * isDeductible/HSA split, the grantor check, the override resolution and the
+ * Roth split) — so it is exposed here instead, from the one loop that already
+ * computes it.
+ *
+ * The value is the UNGATED pre-tax contribution: it is what the IRC 219(g)
+ * phase-out is applied TO, not what survives it. It is therefore identical on a
+ * gated and an ungated call — only `aboveLine` moves.
+ */
+export type SavingsDeductionContribution = DeductionContribution & {
+  traditionalIraPreTax: number;
+};
+
 export function deriveAboveLineFromSavings(
   year: number,
   savingsRules: SavingsRuleForDeduction[],
@@ -114,7 +133,7 @@ export function deriveAboveLineFromSavings(
     params: TaxYearParameters;
     filingStatus: FilingStatus;
   }
-): DeductionContribution {
+): SavingsDeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   let total = 0;
   // Traditional IRA contributions accumulate separately so the MAGI gate below
@@ -181,7 +200,7 @@ export function deriveAboveLineFromSavings(
       : traditionalIraPreTax;
   }
 
-  return { aboveLine: total, itemized: 0, saltPool: 0 };
+  return { aboveLine: total, itemized: 0, saltPool: 0, traditionalIraPreTax };
 }
 
 // ── Source 2: Expenses tagged with deductionType ────────────────────────────

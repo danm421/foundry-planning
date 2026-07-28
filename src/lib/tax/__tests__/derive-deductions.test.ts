@@ -18,6 +18,7 @@ import {
   type AccountForPropertyTax,
 } from "../derive-deductions";
 import type { FilingStatus, TaxYearParameters } from "../types";
+import { traditionalIraDeductibleAmount } from "../thresholds";
 import type { LiabilityType } from "@/engine/liability-kind";
 
 const isGrantorAlways = () => true;
@@ -663,6 +664,67 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
       gate({ magi: 100000 }),
     );
     expect(res.aboveLine).toBe(0);
+  });
+
+  // ── The exposed traditional-IRA split (Task 11 R3/R4) ────────────────────
+  // `projection.ts` needs the traditional-IRA subtotal to build `magiBase`
+  // (total income minus every above-line deduction EXCEPT the IRA and the
+  // student-loan one). Re-deriving it there would mean copying six inclusion
+  // guards; exposing it here keeps one source of truth.
+
+  it("exposes the pre-tax traditional-IRA subtotal alongside the merged aboveLine", () => {
+    // Three distinct non-zero addends so no term can go vacuous: a 401(k)
+    // deferral (never IRA), a split IRA rule (Roth slice excluded), and a
+    // whole-pre-tax IRA rule.
+    const rules = [
+      makeRule("acct-401k", 24500),
+      makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 }), // 6,000 pre-tax
+      makeRule("acct-ira", 1500),
+    ];
+    const accounts = [ACCT_401K, ACCT_TRADITIONAL_IRA];
+    const res = deriveAboveLineFromSavings(2026, rules, accounts, isGrantorAlways);
+    expect(res.traditionalIraPreTax).toBe(7500); // 6,000 + 1,500
+    expect(res.aboveLine).toBe(32000);           // 24,500 + 7,500, ungated
+    // The non-IRA remainder is what `magiBase` adds back.
+    expect(res.aboveLine - res.traditionalIraPreTax).toBe(24500);
+  });
+
+  it("reports the SAME traditional-IRA subtotal gated and ungated, and gates only that component", () => {
+    // R4's required invariant: the non-IRA component is byte-identical across
+    // the ungated call (which grounds magiBase) and the gated call (which
+    // feeds aggregateDeductions). Only the IRA slice may move.
+    const rules = [
+      makeRule("acct-401k", 24500),
+      makeRule("acct-ira", 6000),
+    ];
+    const accounts = [ACCT_401K, ACCT_TRADITIONAL_IRA];
+    // MAGI 147,750 -> surviving fraction 18,750/20,000 = 0.9375, so 6.25%
+    // survives: 6,000 x 0.0625 = 375, rounded up to 380 (Pub 590-A).
+    const ungated = deriveAboveLineFromSavings(2026, rules, accounts, isGrantorAlways);
+    const gated = deriveAboveLineFromSavings(
+      2026, rules, accounts, isGrantorAlways, undefined, undefined, gate({ magi: 147750 }),
+    );
+
+    const expectedGatedIra = traditionalIraDeductibleAmount(
+      147750, ungated.traditionalIraPreTax, true, false, 2026, gateParams, "married_joint",
+    );
+    expect(expectedGatedIra).toBe(380);
+    // Non-vacuous on both sides: the gate genuinely bit, and there IS a
+    // non-IRA component that must survive it untouched.
+    expect(expectedGatedIra).toBeLessThan(ungated.traditionalIraPreTax);
+    expect(ungated.aboveLine - ungated.traditionalIraPreTax).toBe(24500);
+
+    expect(gated.aboveLine - expectedGatedIra).toBe(ungated.aboveLine - ungated.traditionalIraPreTax);
+    expect(gated.traditionalIraPreTax).toBe(ungated.traditionalIraPreTax);
+    expect(gated.aboveLine).toBe(24880); // 24,500 + 380
+  });
+
+  it("reports a zero subtotal when the household contributes to no traditional IRA", () => {
+    const res = deriveAboveLineFromSavings(
+      2026, [makeRule("acct-401k", 24500)], [ACCT_401K], isGrantorAlways,
+    );
+    expect(res.traditionalIraPreTax).toBe(0);
+    expect(res.aboveLine).toBe(24500);
   });
 });
 

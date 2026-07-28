@@ -248,7 +248,14 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
         // apparent duplication is deliberate, don't collapse it.
         magi: adjustedGrossIncome,
         agi: adjustedGrossIncome,
-        earnedIncome,
+        // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): earned income for the refundable
+        // CTC is wages PLUS net self-employment earnings. This is the ONLY
+        // place the two are combined — `earnedIncome` stays wages-only
+        // everywhere else (it feeds calcFica / calcAdditionalMedicare above,
+        // and SE income is taxed through SECA in year-tax.ts). Floored at 0 so
+        // a Schedule C loss can't shrink wage earned income. Same idiom as
+        // tax-analysis/adapter.ts's `wages + max(0, scheduleCNet)`.
+        earnedIncome: earnedIncome + Math.max(0, input.household.selfEmploymentEarnings),
         taxBeforeCredits: subpartATaxBeforeCredits,
       })
     : null;
@@ -315,6 +322,14 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       effectiveFederalRate: grossTotalIncome > 0 ? totalFederalTax / grossTotalIncome : 0,
       bracketsUsed: p,
       inflationFactor: input.inflationFactor,
+      // Three income measures the Thresholds report tests but `flow` cannot
+      // supply: taxableIncome there is post-QBI and floored, AMTI's add-back
+      // depends on which below-line deduction won, and NII is a different
+      // subset of income again. Surfaced from the locals that already computed
+      // them so no caller has to re-derive (and drift from) them.
+      taxableIncomeBeforeQbi,
+      amti,
+      netInvestmentIncome: niitInvestmentClean,
     },
     state: stateResult,
   };
