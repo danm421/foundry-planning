@@ -1,13 +1,7 @@
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  crmHouseholdContacts,
-  entities,
-  familyMembers,
-  planSettings,
-  scenarios,
-} from "@/db/schema";
+import { crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
@@ -83,7 +77,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     );
   }
 
-  const [entityRows, familyMemberRows, settingsRows, { effectiveTree }] = await Promise.all([
+  const [entityRows, familyMemberRows, { effectiveTree }] = await Promise.all([
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
     db
       .select({
@@ -95,24 +89,42 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       .from(familyMembers)
       .where(eq(familyMembers.clientId, id))
       .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
-    db
-      .select()
-      .from(planSettings)
-      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
   ]);
 
-  const settings = settingsRows[0];
-  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
-  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  // Everything the boards, milestones and person nodes read comes from ONE
+  // provenance: the scenario-effective tree. Retirement age, plan-end age, life
+  // expectancy and both plan-horizon years are all scenario-overridable —
+  // `mutations-to-scenario-changes.ts` writes them as `targetKind: "client"` /
+  // `planSettings.*`, and `applyChanges.ts` applies both as singletons — so
+  // reading them off the raw client row (or off a planSettings query pinned to
+  // the BASE scenario id) made a solver "retire at 62" scenario render scenario
+  // numbers on the boards while the Goals board's "Alex retires" milestone and
+  // the PersonNode still showed the base year.
+  //
+  // `dateOfBirth` / `spouseDob` deliberately stay on their CRM-contact source
+  // (`client`, gated above): identity is not scenario-overridable.
+  //
+  // No `?? currentYear` fallback on the two horizon years any more: the old
+  // query could return zero rows, but `loadEffectiveTree` throws
+  // `ProjectionInputError` when a client has no plan_settings row, and both
+  // columns are NOT NULL. A fallback here would only mislead a reader into
+  // thinking they can be absent.
+  const effectiveClient = effectiveTree.client;
+  const { planStartYear, planEndYear } = effectiveTree.planSettings;
+  const retirementAge = effectiveClient.retirementAge;
+  const planEndAge = effectiveClient.planEndAge;
+  const lifeExpectancy = effectiveClient.lifeExpectancy ?? client.lifeExpectancy;
+  const spouseRetirementAge = effectiveClient.spouseRetirementAge ?? null;
+  const spouseLifeExpectancy = effectiveClient.spouseLifeExpectancy ?? null;
 
   const milestones = buildClientMilestones(
     {
       dateOfBirth: client.dateOfBirth,
-      retirementAge: client.retirementAge,
-      planEndAge: client.planEndAge,
+      retirementAge,
+      planEndAge,
       spouseDob: client.spouseDob,
-      spouseRetirementAge: client.spouseRetirementAge,
+      spouseRetirementAge,
     },
     planStartYear,
     planEndYear,
@@ -183,16 +195,16 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     expenses: effectiveTree.expenses,
     milestones,
     client: {
-      firstName: effectiveTree.client.firstName,
-      retirementAge: client.retirementAge,
-      lifeExpectancy: client.lifeExpectancy,
+      firstName: effectiveClient.firstName,
+      retirementAge,
+      lifeExpectancy,
       // `spouseName` is the spouse CRM contact's firstName — the same row whose
       // dateOfBirth gates `milestones.spouseEnd` above. They cannot diverge, so
       // the unguarded `${spouseFirstName}'s life expectancy` title in goals.ts
       // stays safe. Do not source this name from anywhere else.
-      spouseFirstName: effectiveTree.client.spouseName ?? null,
-      spouseRetirementAge: client.spouseRetirementAge,
-      spouseLifeExpectancy: client.spouseLifeExpectancy,
+      spouseFirstName: effectiveClient.spouseName ?? null,
+      spouseRetirementAge,
+      spouseLifeExpectancy,
     },
     familyMemberNamesById: ctx.nameByFamilyMemberId,
   });
@@ -203,7 +215,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     effectiveTree.liabilities.reduce((sum, l) => sum + l.balance, 0);
 
   const today = new Date();
-  const spouseFirstName = effectiveTree.client.spouseName ?? null;
+  const spouseFirstName = effectiveClient.spouseName ?? null;
   const clientBirthYear = birthYearFromDob(client.dateOfBirth);
   // Same CRM spouse-contact DOB (`client.spouseDob`) that feeds `age` below
   // and gates `milestones.spouseEnd` — must not diverge (see the
@@ -212,9 +224,9 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   const people = {
     client: {
       familyMemberId: familyMemberRows.find((f) => f.role === "client")?.id ?? null,
-      firstName: effectiveTree.client.firstName,
+      firstName: effectiveClient.firstName,
       age: ageOnDate(client.dateOfBirth, today),
-      retirementYear: yearForAge(clientBirthYear, client.retirementAge),
+      retirementYear: yearForAge(clientBirthYear, retirementAge),
       birthYear: clientBirthYear,
     } satisfies MapPerson,
     spouse: spouseFirstName
@@ -223,9 +235,9 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
           firstName: spouseFirstName,
           age: ageOnDate(client.spouseDob, today),
           retirementYear:
-            client.spouseRetirementAge == null
+            spouseRetirementAge == null
               ? null
-              : yearForAge(spouseBirthYear, client.spouseRetirementAge),
+              : yearForAge(spouseBirthYear, spouseRetirementAge),
           birthYear: spouseBirthYear,
         } satisfies MapPerson)
       : null,
