@@ -115,7 +115,7 @@ function capitalLossRows(
       id: "capital-loss-disallowed",
       label: "Capital loss — not deductible",
       amount: 0,
-      meta: `${formatCurrency(disallowed)} loss on a personal residence. A loss on personal-use property is not deductible (IRC §165(c)).`,
+      meta: `${formatCurrency(disallowed)} loss on personal-use property, which is not deductible (IRC §165(c)).`,
     });
   }
 

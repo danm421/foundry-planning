@@ -2398,9 +2398,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         crtShare += owner.percent;
       }
       if (crtShare > 0) {
+        // i5: net out the POST-§165(c) / post-§121 `taxableCapitalGain`, NOT the
+        // raw signed `capitalGain`. The household ADD below books
+        // `saleResult.capitalGains`, which is Σ taxableCapitalGain — so
+        // subtracting the raw figure takes back something that was never added.
+        // A CRT-owned residence sold $4M below basis has taxableCapitalGain 0
+        // (the loss is disallowed) but capitalGain −$4M, and the raw net-out
+        // turned that into a PHANTOM +$4,000,000 household gain. This map also
+        // feeds the `sale:` drill-down row below, so the raw figure itemized the
+        // same phantom gain and made the contradiction self-consistent.
         crtSaleGainByTxn.set(
           item.transactionId,
-          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.capitalGain * crtShare,
+          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableCapitalGain * crtShare,
         );
       }
     }
@@ -2420,6 +2429,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // `> 0` would leave the household holding the trust's loss. The result is NOT
     // floored: a household net capital loss is now a legitimate value that §1222
     // netting and the §1211(b) cap consume downstream.
+    //
+    // The amount netted is the CRT's share of the POST-§165(c) / post-§121
+    // `taxableCapitalGain` (i5), matching the ADD immediately above — a share
+    // whose loss the Code already disallowed is 0 on BOTH sides, not −$4M on one.
     if (crtSaleGainTotal !== 0) {
       taxDetail.capitalGains -= crtSaleGainTotal;
     }
@@ -2569,9 +2582,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // subtracted via sameYearTrustGains and then dropped by
           // collectTrustIncome.
           if (!nonGrantorTrustIds.has(owner.entityId)) continue;
+          // i5: pro-rate the POST-§165(c) / post-§121 `taxableCapitalGain`, not
+          // the raw signed `capitalGain`. This figure is subtracted back off the
+          // household total via `sameYearTrustGains` below, and the household ADD
+          // booked Σ taxableCapitalGain — a raw figure here subtracts a loss the
+          // household was never charged for. See the note on that subtraction.
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
-            gain: item.capitalGain * owner.percent,
+            gain: item.taxableCapitalGain * owner.percent,
           });
         }
       }
@@ -2586,16 +2604,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Trust-owned gains from same-year sales were added to household taxDetail
-      // at :2393 (full saleResult.capitalGains) and need to be subtracted
-      // back out so the bracket engine doesn't tax them twice (trust pays its
-      // own 1041 cap-gains tax). Carry-in gains were never added to household
-      // taxDetail in the first place, so exclude them from the subtraction.
+      // via `saleResult.capitalGains` and need to be subtracted back out so the
+      // bracket engine doesn't tax them twice (trust pays its own 1041 cap-gains
+      // tax). Carry-in gains were never added to household taxDetail in the
+      // first place, so exclude them from the subtraction.
       const carryInTotal = nonGrantorCarryInGains.reduce((s, g) => s + g.gain, 0);
       const sameYearTrustGains = assetTransactionGains.reduce((s, g) => s + g.gain, 0) - carryInTotal;
-      // Symmetric with the household ADD at :2393, which booked the FULL
-      // saleResult.capitalGains including the trust's share. A `> 0` gate would
-      // take back only gains, leaving the household holding a loss that the 1041
-      // pass is simultaneously being handed. Not floored — see the §664(c) note above.
+      // Symmetric with the household ADD, which booked `saleResult.capitalGains`
+      // — Σ taxableCapitalGain, i.e. POST-§121 and POST-§165(c) — including the
+      // trust's share. The take-back is built on the same post-§165(c) basis
+      // (i5); pro-rating the RAW `capitalGain` instead subtracted a disallowed
+      // trust loss that was never added, inventing household gain out of nothing.
+      // A `> 0` gate would take back only gains, leaving the household holding a
+      // loss that the 1041 pass is simultaneously being handed. Not floored —
+      // see the §664(c) note above.
       if (sameYearTrustGains !== 0) {
         taxDetail.capitalGains -= sameYearTrustGains;
       }

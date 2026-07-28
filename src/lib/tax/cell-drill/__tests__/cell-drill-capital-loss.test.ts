@@ -124,14 +124,18 @@ describe("capital-loss rows in the income drill-down", () => {
     expect(row.meta).toContain("long-term");
   });
 
-  it("reports a disallowed personal-residence loss without deducting it", () => {
+  it("reports a disallowed personal-use loss without deducting it", () => {
     const rows = allRows(buildIncomeCellDrill(args({
       capitalLossDeduction: 0,
       disallowedCapitalLoss: 40_000,
     })));
     const row = rows.find((r) => r.id === "capital-loss-disallowed")!;
     expect(row.amount).toBe(0);
-    expect(row.meta).toContain("personal residence");
+    // §165(c) also disallows the loss on a commercial/`other`-tagged property
+    // the advisor never marked as held for investment, so the copy must not
+    // assert the property was a RESIDENCE — only that it was personal-use.
+    expect(row.meta).toContain("personal-use property");
+    expect(row.meta).not.toContain("personal residence");
   });
 
   it("adds no rows when there is no loss activity", () => {
