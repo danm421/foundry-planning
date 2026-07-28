@@ -21,6 +21,8 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { getLatestTaxReturn } from "@/lib/tax-returns/store";
+import { parseRowFacts } from "@/lib/tax-returns/db";
 
 interface AssumptionsContentProps {
   clientId: string;
@@ -118,6 +120,33 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
         No plan settings found.
       </div>
     );
+  }
+
+  // Auto-fill the long-term capital loss carryforward from the client's most
+  // recently analyzed tax return when no value has been entered/saved yet.
+  // getLatestTaxReturn is NOT itself firm-scoped, so it may only be called
+  // after client access has already been authorized (the clientRow lookup
+  // above). Best-effort — a missing/unreadable return must never break this
+  // page; it just means no autofill hint is shown.
+  let capitalLossCarryforwardLtDefault = settings.capitalLossCarryforwardLt ?? "0";
+  let capitalLossCarryforwardLtSourceYear: number | null = null;
+  if (settings.capitalLossCarryforwardLt == null) {
+    try {
+      const latestTaxReturn = await getLatestTaxReturn(id);
+      if (latestTaxReturn) {
+        const { facts } = parseRowFacts(latestTaxReturn);
+        const carryover = facts?.carryovers.capitalLossCarryover;
+        if (carryover != null) {
+          capitalLossCarryforwardLtDefault = String(carryover);
+          capitalLossCarryforwardLtSourceYear = latestTaxReturn.taxYear;
+        }
+      }
+    } catch (err) {
+      console.error(
+        "AssumptionsContent: tax return read failed (best-effort, no autofill):",
+        err,
+      );
+    }
   }
 
   const [firmInflationAc] = await db
@@ -310,6 +339,9 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
           priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
           priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+          capitalLossCarryforwardSt: String(settings.capitalLossCarryforwardSt ?? "0"),
+          capitalLossCarryforwardLt: capitalLossCarryforwardLtDefault,
+          capitalLossCarryforwardLtSourceYear,
           surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
           surplusSaveAccountId: settings.surplusSaveAccountId,
         }}

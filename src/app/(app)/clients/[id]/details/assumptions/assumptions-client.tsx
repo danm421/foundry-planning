@@ -77,6 +77,9 @@ export interface AssumptionsSettings {
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
+  capitalLossCarryforwardSt: string;
+  capitalLossCarryforwardLt: string;
+  capitalLossCarryforwardLtSourceYear: number | null;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
 }
@@ -155,6 +158,9 @@ export default function AssumptionsClient({
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
+            capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
+            capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
+            capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}
             hasSpouse={Boolean(spouseFirstName)}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

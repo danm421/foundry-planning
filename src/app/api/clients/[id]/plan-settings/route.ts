@@ -85,6 +85,8 @@ export async function PUT(
       outOfHouseholdDniRate,
       priorTaxableGiftsClient,
       priorTaxableGiftsSpouse,
+      capitalLossCarryforwardSt,
+      capitalLossCarryforwardLt,
       inflationRate,
       taxEngineMode,
       taxInflationRate,
@@ -210,6 +212,19 @@ export async function PUT(
       );
     }
 
+    if (typeof capitalLossCarryforwardSt === "number" && capitalLossCarryforwardSt < 0) {
+      return NextResponse.json(
+        { error: "capitalLossCarryforwardSt must be non-negative" },
+        { status: 400 },
+      );
+    }
+    if (typeof capitalLossCarryforwardLt === "number" && capitalLossCarryforwardLt < 0) {
+      return NextResponse.json(
+        { error: "capitalLossCarryforwardLt must be non-negative" },
+        { status: 400 },
+      );
+    }
+
     if (lifetimeExemptionCap != null) {
       const cap = Number(lifetimeExemptionCap);
       if (!Number.isFinite(cap) || cap < 0) {
@@ -252,6 +267,10 @@ export async function PUT(
         outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
         priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
         priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
+        capitalLossCarryforwardSt:
+          capitalLossCarryforwardSt != null ? String(capitalLossCarryforwardSt) : undefined,
+        capitalLossCarryforwardLt:
+          capitalLossCarryforwardLt != null ? String(capitalLossCarryforwardLt) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body

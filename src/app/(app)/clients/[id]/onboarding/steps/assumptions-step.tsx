@@ -263,6 +263,11 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
         priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
         priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+        capitalLossCarryforwardSt: String(settings.capitalLossCarryforwardSt ?? "0"),
+        capitalLossCarryforwardLt: String(settings.capitalLossCarryforwardLt ?? "0"),
+        // Onboarding runs before tax-return analysis is realistically in place;
+        // the tax-return autofill hint (assumptions-content.tsx) doesn't apply here.
+        capitalLossCarryforwardLtSourceYear: null,
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
         medicarePremiumInflationRate:

@@ -23,6 +23,12 @@ interface TaxRatesFormProps {
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
+  capitalLossCarryforwardSt: string;
+  capitalLossCarryforwardLt: string;
+  /** Set when the LT default above was auto-filled from an analyzed tax
+   *  return (rather than a previously-saved value) — renders a "from 20XX
+   *  return" hint. Null once the advisor has an actual stored value. */
+  capitalLossCarryforwardLtSourceYear?: number | null;
   hasSpouse: boolean;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -114,6 +120,9 @@ export default function TaxRatesForm({
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
   priorTaxableGiftsSpouse,
+  capitalLossCarryforwardSt,
+  capitalLossCarryforwardLt,
+  capitalLossCarryforwardLtSourceYear,
   hasSpouse,
   clientFirstName,
   spouseFirstName,
@@ -169,6 +178,8 @@ export default function TaxRatesForm({
       priorTaxableGiftsSpouse: hasSpouse
         ? String(Number(data.get("priorTaxableGiftsSpouse") ?? "0"))
         : "0",
+      capitalLossCarryforwardSt: String(Number(data.get("capitalLossCarryforwardSt") ?? "0")),
+      capitalLossCarryforwardLt: String(Number(data.get("capitalLossCarryforwardLt") ?? "0")),
     };
 
     if (mode === "flat") {
@@ -410,6 +421,43 @@ export default function TaxRatesForm({
               </div>
             </FieldRow>
           )}
+        </FieldTable>
+      </section>
+
+      <section>
+        <SectionTitle title="Capital loss carryforward" />
+        <FieldTable>
+          <FieldRow
+            label="Short-term"
+            help="From Schedule D of the client's most recent return. Offsets future gains, plus up to $3,000 of ordinary income per year."
+          >
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="capitalLossCarryforwardSt"
+                name="capitalLossCarryforwardSt"
+                defaultValue={capitalLossCarryforwardSt}
+                className={INPUT_CLS}
+              />
+            </div>
+          </FieldRow>
+          <FieldRow
+            label="Long-term"
+            help="From Schedule D of the client's most recent return. Offsets future gains, plus up to $3,000 of ordinary income per year."
+          >
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="capitalLossCarryforwardLt"
+                name="capitalLossCarryforwardLt"
+                defaultValue={capitalLossCarryforwardLt}
+                className={INPUT_CLS}
+              />
+              {capitalLossCarryforwardLtSourceYear != null && (
+                <p className="mt-1 text-xs text-gray-500">
+                  from {capitalLossCarryforwardLtSourceYear} return
+                </p>
+              )}
+            </div>
+          </FieldRow>
         </FieldTable>
       </section>
 

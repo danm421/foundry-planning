@@ -28,6 +28,8 @@ const BASE_PROPS = {
   outOfHouseholdDniRate: "0.37",
   priorTaxableGiftsClient: "0",
   priorTaxableGiftsSpouse: "0",
+  capitalLossCarryforwardSt: "0",
+  capitalLossCarryforwardLt: "0",
   hasSpouse: false,
   clientFirstName: "Alice",
 };
