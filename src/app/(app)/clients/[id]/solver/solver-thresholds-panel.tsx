@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildThresholdReport } from "@/lib/reports/threshold-report-data";
 import { resolveThresholdParams } from "@/lib/solver/threshold-params";
-import type { ThresholdStatus } from "@/lib/tax/thresholds";
+import type { ThresholdItemId, ThresholdStatus } from "@/lib/tax/thresholds";
 
 interface Props {
   /** Live scenario ("Alternative") projection years. */
@@ -16,12 +16,40 @@ interface Props {
   workingTree: ClientData;
 }
 
+// Generic labels. Correct for the ten BENEFIT rows, where "out" means the
+// benefit has phased away. Wrong for a BURDEN row — a point threshold whose
+// "out" means a tax/limit now bites, not that something desirable is gone.
 const STATUS_LABEL: Record<ThresholdStatus, string> = {
   full: "Full",
   partial: "Partial",
   out: "Phased Out",
   na: "N/A",
 };
+
+// Per-item overrides for burden-type items where the generic labels above
+// read backwards. `niit` is a point threshold (rangeFor(...).end == null):
+// "out" (income >= the threshold) means the 3.8% surtax applies; "full"
+// means it doesn't. "Phased Out" / "Full" would tell an advisor the exact
+// opposite of what's true.
+//
+// EVERY genuine point-threshold item — excluding charitableLimit, which
+// statusFor() always resolves to "full" and so never reaches this map — MUST
+// have an entry here. That invariant is pinned by a guard test in
+// solver-thresholds-panel.test.ts: it walks THRESHOLD_ITEMS, calls
+// rangeFor() for each, and fails the day a new point-threshold item (a range
+// whose `end` is null) ships without a deliberate label decision here.
+const ITEM_STATUS_LABEL_OVERRIDES: Partial<
+  Record<ThresholdItemId, Partial<Record<ThresholdStatus, string>>>
+> = {
+  niit: { full: "Does Not Apply", out: "Applies" },
+};
+
+/** Resolve the display label for one status cell, honoring any per-item
+ *  override (see `ITEM_STATUS_LABEL_OVERRIDES` above). Exported so the guard
+ *  test can assert every point-threshold item has a deliberate override. */
+export function resolveStatusLabel(id: ThresholdItemId, status: ThresholdStatus): string {
+  return ITEM_STATUS_LABEL_OVERRIDES[id]?.[status] ?? STATUS_LABEL[status];
+}
 
 const STATUS_CLASS: Record<ThresholdStatus, string> = {
   full: "text-good",
@@ -30,10 +58,10 @@ const STATUS_CLASS: Record<ThresholdStatus, string> = {
   na: "text-ink-4",
 };
 
-function StatusCell({ status }: { status: ThresholdStatus }) {
+function StatusCell({ id, status }: { id: ThresholdItemId; status: ThresholdStatus }) {
   return (
     <span className={`text-[12px] font-medium ${STATUS_CLASS[status]}`}>
-      {STATUS_LABEL[status]}
+      {resolveStatusLabel(id, status)}
     </span>
   );
 }
@@ -131,10 +159,10 @@ export function SolverThresholdsPanel({ years, baseProjection, workingTree }: Pr
                   <td className="px-3 py-2 text-ink">{r.label}</td>
                   <td className="tabular px-3 py-2 text-right text-ink-2">{r.thresholdDisplay}</td>
                   <td className="border-l border-hair px-3 py-2 text-right">
-                    <StatusCell status={r.alternativeStatus} />
+                    <StatusCell id={r.id} status={r.alternativeStatus} />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <StatusCell status={r.originalStatus} />
+                    <StatusCell id={r.id} status={r.originalStatus} />
                   </td>
                 </tr>
               ))}
