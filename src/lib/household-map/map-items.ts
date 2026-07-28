@@ -112,6 +112,55 @@ export function resolveSavings(rule: SavingsRule): { value: number; valueLabel: 
   return { value, valueLabel: moneyLabel(value) };
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Editor hydration eligibility
+//
+// A hydration entry in `HouseholdMapProps.incomeRows` / `.expenseRows` is what
+// makes a card clickable (see `isItemEditable` in household-map-view.tsx). The
+// two predicates below decide who gets one. Both exclusions are about writes
+// that would DESTROY data, not writes that would merely fail — the excluded
+// rows keep their CARD and keep counting toward the band subtotal.
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Whether an income may open the Map's quick-edit drawer.
+ *
+ * 1. `source: "policy"` — `policy-income-<uuid>` rows re-derived from
+ *    life-insurance accounts on every load. No DB row exists, so no write path
+ *    accepts them (base PUT hits a uuid column and 500s; the scenario changes
+ *    route rejects the id at `targetId: z.string().uuid()`).
+ *
+ * 2. `type: "social_security"` — the drawer submits a FIXED nine-key
+ *    `desiredFields` body (`quick-edit-drawer.tsx` handleSave) and the scenario
+ *    changes-writer treats that body as a WHOLESALE REPLACE: `buildFieldDiff`
+ *    iterates only the keys present, and the result is stored as
+ *    `payload: diff` (`lib/scenario/changes-writer.ts`). An SS income carries
+ *    five fields the drawer never renders — `claimingAge`, `claimingAgeMonths`,
+ *    `claimingAgeMode`, `piaMonthly`, `ssBenefitMode`, all written by
+ *    `social-security-dialog.tsx`'s payload — so opening an SS card inside a
+ *    "Claim at 70" scenario and pressing Save with NO edits makes every
+ *    submitted field equal base, the diff empty, and the whole scenario edit
+ *    row is deleted: the scenario silently reverts to claiming at FRA and the
+ *    projection, Monte Carlo and solver all move with it. The Map is the only
+ *    surface that exposes SS as a generic editable card;
+ *    `income-expenses-view.tsx` (`nonSsIncomeList`) excludes it from its own
+ *    nine-field dialog for exactly this reason.
+ *
+ * The complete fix — spreading the untouched fields of the effective row back
+ * into the body — needs `IncomeView` widened first (it has no
+ * `claimingAgeMode`), so the exclusion is the correct guard for now.
+ */
+export function isHydratableIncome(income: Pick<Income, "source" | "type">): boolean {
+  return income.source !== "policy" && income.type !== "social_security";
+}
+
+/** Expense counterpart of `isHydratableIncome`. Only the synthesized
+ *  `premium-<uuid>` policy rows are excluded — no expense type carries a field
+ *  set the drawer fails to render the way social security does. */
+export function isHydratableExpense(expense: Pick<Expense, "source">): boolean {
+  return expense.source !== "policy";
+}
+
 export function savingsNoteChip(rule: SavingsRule): string | null {
   if (rule.employerMatchAmount != null) return `${formatCurrency(rule.employerMatchAmount)} match`;
   if (rule.employerMatchPct != null) return `${Math.round(rule.employerMatchPct * 100)}% match`;

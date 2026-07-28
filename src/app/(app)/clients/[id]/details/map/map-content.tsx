@@ -29,6 +29,8 @@ import {
   ACCOUNT_CATEGORY,
   expenseToMapItem,
   incomeToMapItem,
+  isHydratableExpense,
+  isHydratableIncome,
   savingsToMapItem,
   toMapItem,
 } from "@/lib/household-map/map-items";
@@ -143,25 +145,33 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // base-scoped list-GETs, so a save made while a scenario is active carries
   // that scenario's values rather than clobbering them with base ones.
   //
-  // Synthesized life-insurance rows (`source: "policy"` — `premium-<uuid>`
-  // expenses from `insurance-policies/premium-expense.ts`, `policy-income-<uuid>`
-  // incomes from `policy-income.ts`) are re-derived from the life-insurance
-  // accounts on every load and have NO DB row, so neither write path can accept
-  // them: the base PUT hits a uuid column and 500s, and the scenario changes
-  // route rejects the id outright at `targetId: z.string().uuid()`. They get no
-  // hydration entry — which is what makes their cards render non-interactive
-  // (see `isItemEditable` in household-map-view.tsx). They deliberately STAY in
-  // `items` above: a premium is a real outflow, and dropping it would understate
-  // the Cash Flow band subtotal. A visibly non-editable card beats a silently
-  // missing one.
+  // Two classes of row deliberately get NO hydration entry, and both keep their
+  // card — `isHydratableIncome` / `isHydratableExpense` in
+  // `@/lib/household-map/map-items` own the rule and document it in full:
+  //
+  //   1. Synthesized life-insurance rows (`source: "policy"` — `premium-<uuid>`
+  //      expenses from `insurance-policies/premium-expense.ts`,
+  //      `policy-income-<uuid>` incomes from `policy-income.ts`) have no DB row,
+  //      so neither write path can accept them.
+  //   2. Social-security incomes. The quick-edit drawer submits a fixed
+  //      nine-key body and the scenario changes-writer replaces the change
+  //      payload WHOLESALE, so a no-op Save from the Map would delete a
+  //      "claim at 70" scenario's edit row outright.
+  //
+  // Both keep their cards on purpose: a premium is a real outflow and an SS
+  // benefit is real income, so dropping either would understate a band
+  // subtotal. Missing the hydration entry is what makes those cards render
+  // non-interactive (see `isItemEditable` in household-map-view.tsx). A visibly
+  // non-editable card beats a silently missing one — or a silently destructive
+  // one.
   const incomeRows: Record<string, IncomeView> = Object.fromEntries(
     effectiveTree.incomes
-      .filter((i: Income) => i.source !== "policy")
+      .filter(isHydratableIncome)
       .map((i: Income) => [i.id, incomeEngineToView(i)] as const),
   );
   const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
     effectiveTree.expenses
-      .filter((e: Expense) => e.source !== "policy")
+      .filter(isHydratableExpense)
       .map((e: Expense) => [e.id, expenseEngineToView(e)] as const),
   );
   const savingsRuleRows: Record<string, SavingsRuleView> = Object.fromEntries(
