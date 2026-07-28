@@ -1,6 +1,6 @@
 {
-  "id": "074754b0-7ec2-4513-b480-5f36542d718c",
-  "prevId": "7f0a2ae1-b6cd-4ee0-86c1-9fdf6fff419d",
+  "id": "7f0a2ae1-b6cd-4ee0-86c1-9fdf6fff419d",
+  "prevId": "75eb1f1f-9cca-4c84-87ab-d4c26a230792",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13446,18 +13446,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "capital_loss_carryforward_lt": {
-          "name": "capital_loss_carryforward_lt",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "capital_loss_carryforward_st": {
-          "name": "capital_loss_carryforward_st",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

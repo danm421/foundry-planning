@@ -104,6 +104,7 @@ export async function createExpenseForClient(args: {
         institutionState: p.institutionState ?? null,
         institutionName: p.institutionName ?? null,
         forFamilyMemberId: p.forFamilyMemberId ?? null,
+        isGoal: p.isGoal ?? false,
       })
       .returning();
     if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
@@ -220,6 +221,7 @@ export async function updateExpenseForClient(args: {
         ...(p.institutionState !== undefined && { institutionState: p.institutionState ?? null }),
         ...(p.institutionName !== undefined && { institutionName: p.institutionName ?? null }),
         ...(p.forFamilyMemberId !== undefined && { forFamilyMemberId: p.forFamilyMemberId ?? null }),
+        ...(p.isGoal !== undefined && { isGoal: p.isGoal }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)))

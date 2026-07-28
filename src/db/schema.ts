@@ -323,6 +323,8 @@ export const familyMemberRoleEnum = pgEnum("family_member_role", [
   "other",
 ]);
 
+export const detailsViewModeEnum = pgEnum("details_view_mode", ["detailed", "map"]);
+
 export const ownerKindEnum = pgEnum("owner_kind", ["family_member", "entity"]);
 
 export const trustEndsEnum = pgEnum("trust_ends", [
@@ -938,6 +940,10 @@ export const clients = pgTable("clients", {
   onboardingState: jsonb("onboarding_state").notNull().default({}),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   quickStartState: jsonb("quick_start_state").notNull().default({}),
+  // Which Details surface this household opens in. "map" = the person-centric
+  // Household Map; "detailed" = the sidebar + dense pages. A property of the
+  // household, not the advisor — a simple household stays simple for everyone.
+  detailsViewMode: detailsViewModeEnum("details_view_mode").notNull().default("detailed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   crmHouseholdId: uuid("crm_household_id")
@@ -2659,6 +2665,10 @@ export const expenses = pgTable("expenses", {
   payShortfallOutOfPocket: boolean("pay_shortfall_out_of_pocket")
     .notNull()
     .default(false),
+  // Advisor-set flag: show this expense as a goal on the Household Map's Goals
+  // board. Education rows are always treated as goals regardless of this flag —
+  // see src/lib/household-map/goals.ts. Presentation only; the engine ignores it.
+  isGoal: boolean("is_goal").notNull().default(false),
   // Optional free-text labels (no cost-lookup DB in v1).
   institutionState: text("institution_state"),
   institutionName: text("institution_name"),

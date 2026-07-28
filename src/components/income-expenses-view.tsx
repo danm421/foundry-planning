@@ -99,6 +99,7 @@ interface Expense {
   institutionName?: string | null;
   forFamilyMemberId?: string | null;
   dedicatedAccountIds?: string[];
+  isGoal?: boolean;
 }
 
 interface SavingsRule {
@@ -1092,6 +1093,7 @@ function ExpenseDialog({
     editing?.endsAtMedicareEligibilityOwner ?? null
   );
   const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(editing?.payShortfallOutOfPocket ?? false);
+  const [isGoal, setIsGoal] = useState<boolean>(editing?.isGoal ?? false);
   const [institutionState, setInstitutionState] = useState<string>(editing?.institutionState ?? "");
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
@@ -1190,6 +1192,7 @@ function ExpenseDialog({
       institutionName: type === "education" ? (institutionName || null) : null,
       forFamilyMemberId: type === "education" ? (forFamilyMemberId || null) : null,
       dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
+      isGoal: type === "education" ? true : isGoal,
     };
 
     try {
@@ -1289,6 +1292,20 @@ function ExpenseDialog({
               </p>
             )}
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-ink-2">
+            <input
+              type="checkbox"
+              checked={type === "education" ? true : isGoal}
+              disabled={type === "education"}
+              onChange={(e) => setIsGoal(e.target.checked)}
+              className="accent-[color:var(--color-accent)]"
+            />
+            Show as a goal
+            {type === "education" && (
+              <span className="text-xs text-ink-4">— education expenses always are</span>
+            )}
+          </label>
 
           {type === "education" && (
             <div className="space-y-3 rounded-md border border-gray-700 bg-gray-900/40 p-3">
@@ -1683,6 +1700,7 @@ export default function IncomeExpensesView({
       endYearRef: expense.endYearRef ?? null,
       deductionType: expense.deductionType ?? null,
       endsAtMedicareEligibilityOwner: expense.endsAtMedicareEligibilityOwner ?? null,
+      isGoal: expense.isGoal ?? false,
     };
     const prevAmount = expense.annualAmount;
     setExpenseList((list) =>
