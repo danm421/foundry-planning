@@ -22,10 +22,15 @@ export default function DetailsViewModeToggle({
   const [pending, startTransition] = useTransition();
   // Optimistic: the segmented control should move the instant it's clicked.
   const [shown, setShown] = useState<Mode>(mode);
+  // Busy guard: covers the whole fetch window (not just the post-success
+  // transition) so a second click can't fire a concurrent PATCH before the
+  // first one resolves. See task-6 fix round 1 for the race this closes.
+  const [busy, setBusy] = useState(false);
 
   async function pick(next: Mode) {
-    if (next === shown || pending) return;
+    if (next === shown || busy) return;
     const previous = shown;
+    setBusy(true);
     setShown(next);
     try {
       const res = await fetch(`/api/clients/${clientId}/view-mode`, {
@@ -41,6 +46,8 @@ export default function DetailsViewModeToggle({
     } catch {
       setShown(previous);
       showToast({ message: "Couldn't switch view" });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -56,7 +63,7 @@ export default function DetailsViewModeToggle({
           type="button"
           aria-pressed={shown === m}
           onClick={() => pick(m)}
-          disabled={pending}
+          disabled={pending || busy}
           className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
             shown === m ? "bg-card text-accent" : "text-ink-3 hover:text-ink-2"
           }`}
