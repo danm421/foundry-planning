@@ -9,10 +9,14 @@
  * Covers:
  * 1. Negative capitalLossCarryforwardSt is rejected (400, no DB write).
  * 2. Negative capitalLossCarryforwardLt is rejected (400, no DB write).
- * 3. Positive values are persisted as decimal strings.
- * 4. Omitting both fields leaves them unset (undefined) in the update payload
+ * 3. Negative / NaN sent as a string is rejected the same way (400, no DB
+ *    write) — the sole production caller sends strings, not numbers.
+ * 4. Positive values are persisted as decimal strings.
+ * 5. Omitting both fields leaves them unset (undefined) in the update payload
  *    — a null-means-"not entered" column must never be silently zeroed by an
  *    unrelated save.
+ * 6. An explicit null is accepted (not rejected by the non-negative guard)
+ *    and persisted as a literal null, clearing a previously-entered value.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -87,7 +91,7 @@ function makeRequest(body: unknown) {
   }) as unknown as import("next/server").NextRequest;
 }
 
-const ctx = { params: Promise.resolve({ id: CLIENT_ID }) };
+const ctx: { params: Promise<{ id: string }> } = { params: Promise.resolve({ id: CLIENT_ID }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,7 +101,7 @@ beforeEach(() => {
 
 describe("PUT /api/clients/[id]/plan-settings — capital loss carryforward", () => {
   it("rejects a negative capitalLossCarryforwardSt (400, no DB write)", async () => {
-    const res = await PUT(makeRequest({ capitalLossCarryforwardSt: -100 }), ctx as never);
+    const res = await PUT(makeRequest({ capitalLossCarryforwardSt: -100 }), ctx);
 
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -106,7 +110,7 @@ describe("PUT /api/clients/[id]/plan-settings — capital loss carryforward", ()
   });
 
   it("rejects a negative capitalLossCarryforwardLt (400, no DB write)", async () => {
-    const res = await PUT(makeRequest({ capitalLossCarryforwardLt: -1 }), ctx as never);
+    const res = await PUT(makeRequest({ capitalLossCarryforwardLt: -1 }), ctx);
 
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -114,10 +118,32 @@ describe("PUT /api/clients/[id]/plan-settings — capital loss carryforward", ()
     expect(updateCalls).toHaveLength(0);
   });
 
+  // The sole production caller (tax-rates-form.tsx) sends these fields as
+  // strings (`String(Number(raw))`), never as numbers — a `typeof x ===
+  // "number"` guard never sees them. These two cases reproduce that wire
+  // format.
+  it("rejects a negative capitalLossCarryforwardSt sent as a string (400, no DB write)", async () => {
+    const res = await PUT(makeRequest({ capitalLossCarryforwardSt: "-5000" }), ctx);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/capitalLossCarryforwardSt/);
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it('rejects "NaN" sent as a string for capitalLossCarryforwardSt (400, no DB write)', async () => {
+    const res = await PUT(makeRequest({ capitalLossCarryforwardSt: "NaN" }), ctx);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/capitalLossCarryforwardSt/);
+    expect(updateCalls).toHaveLength(0);
+  });
+
   it("saves positive values as decimal strings and records an audit entry", async () => {
     const res = await PUT(
       makeRequest({ capitalLossCarryforwardSt: 5000, capitalLossCarryforwardLt: 12000.5 }),
-      ctx as never,
+      ctx,
     );
 
     expect(res.status).toBe(200);
@@ -128,11 +154,28 @@ describe("PUT /api/clients/[id]/plan-settings — capital loss carryforward", ()
   });
 
   it("omitting both fields leaves them unset in the update payload", async () => {
-    const res = await PUT(makeRequest({}), ctx as never);
+    const res = await PUT(makeRequest({}), ctx);
 
     expect(res.status).toBe(200);
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].capitalLossCarryforwardSt).toBeUndefined();
     expect(updateCalls[0].capitalLossCarryforwardLt).toBeUndefined();
+  });
+
+  // An explicit null means "clear the stored value back to not-entered" (as
+  // opposed to omitting the key, which leaves the stored value untouched).
+  // The non-negative guard above must not treat null as an invalid number —
+  // it must pass through to the update payload as a literal null so the
+  // Step 6 tax-return autofill can re-trigger on the next page load.
+  it("accepts an explicit null and clears the stored value (200, literal null in payload)", async () => {
+    const res = await PUT(
+      makeRequest({ capitalLossCarryforwardSt: null, capitalLossCarryforwardLt: null }),
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].capitalLossCarryforwardSt).toBeNull();
+    expect(updateCalls[0].capitalLossCarryforwardLt).toBeNull();
   });
 });

@@ -178,8 +178,18 @@ export default function TaxRatesForm({
       priorTaxableGiftsSpouse: hasSpouse
         ? String(Number(data.get("priorTaxableGiftsSpouse") ?? "0"))
         : "0",
-      capitalLossCarryforwardSt: String(Number(data.get("capitalLossCarryforwardSt") ?? "0")),
-      capitalLossCarryforwardLt: String(Number(data.get("capitalLossCarryforwardLt") ?? "0")),
+      capitalLossCarryforwardSt: (() => {
+        const raw = ((data.get("capitalLossCarryforwardSt") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? String(n) : null;
+      })(),
+      capitalLossCarryforwardLt: (() => {
+        const raw = ((data.get("capitalLossCarryforwardLt") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? String(n) : null;
+      })(),
     };
 
     if (mode === "flat") {
