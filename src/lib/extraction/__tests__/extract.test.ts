@@ -363,6 +363,31 @@ describe("extractDocument", () => {
         expect(h[1].name).toContain("912828ZZ9");
         expect(h[2].name).toBe("Cash");
     });
+
+    it("condenses long extracted account names", async () => {
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({
+                accounts: [
+                    {
+                        name: "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234",
+                        category: "retirement",
+                        value: 500000,
+                    },
+                ],
+                liabilities: [],
+            }),
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini",
+        );
+
+        expect(result.extracted.accounts[0].name).not.toContain("XXXX-1234");
+        expect(result.extracted.accounts[0].name.length).toBeLessThanOrEqual(60);
+    });
 });
 
 describe("scanned-PDF vision OCR fallback", () => {

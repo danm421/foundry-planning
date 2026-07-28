@@ -29,6 +29,7 @@ import {
 import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
 import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
+import { condenseAccountName } from "./condense-account-name";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
@@ -419,6 +420,13 @@ export async function extractDocument(
         wills: (Array.isArray(safe.wills) ? safe.wills : []) as unknown as ExtractionResult["extracted"]["wills"],
         family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
     };
+
+    // Backstop for the prompt's short-name rule. Applied here — at payload
+    // assembly — so the condensed name reaches the review wizard, both merge
+    // paths, and the matching pass. Prompt compliance is probabilistic.
+    extracted.accounts = extracted.accounts.map((a) =>
+        typeof a.name === "string" ? { ...a, name: condenseAccountName(a.name) } : a,
+    );
 
     // Complete any holdings table the model truncated. Only fires per-account
     // when holdings materially undershoot the stated value (continuation passes).
