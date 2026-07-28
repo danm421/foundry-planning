@@ -766,11 +766,15 @@ describe("deriveStudentLoanInterest", () => {
     expect(res.aboveLine).toBe(1250);
   });
 
-  it("treats a null maxDeduction as no cap, not as zero", () => {
+  // PREMISE CHANGED. This test previously read "treats a null maxDeduction as no
+  // cap, not as zero" and expected the full 3,000. A null cap now resolves to
+  // IRC 221(b)(1)'s statutory $2,500 inside `studentLoanInterestDeduction`.
+  // The "not as zero" half of the original premise still holds.
+  it("falls back to the statutory $2,500 cap when maxDeduction is unseeded", () => {
     const res = deriveStudentLoanInterest(
       2026, [loan("sl", "student")], { sl: 3000 }, 100000, noCapParams, "married_joint",
     );
-    expect(res.aboveLine).toBe(3000);
+    expect(res.aboveLine).toBe(2500);
   });
 
   it("caps the household's student loans once, not once per loan", () => {

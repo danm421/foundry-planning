@@ -103,6 +103,11 @@ export const STATUTORY_FIXED = {
   aotcRefundableCap: 1000,
   aotcMaxYearsPerStudent: 4,
 
+  // IRC 221(b)(1) — the student-loan interest ceiling. Fixed at $2,500 since
+  // inception and never inflation-indexed (unlike the 221(b)(2) MAGI range,
+  // which is). Serves as the fallback when the DB column is unseeded.
+  studentLoanMaxDeduction: 2500,
+
   // IRC 408A(c)(3)(B) / 219(g)(3)(B) — MFS range, never indexed.
   mfsPhaseoutStart: 0,
   mfsPhaseoutEnd: 10000,

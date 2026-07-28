@@ -670,9 +670,15 @@ describe("projection — bracket/flat tax routing", () => {
     // so it accrues EXACTLY the interest the mortgage does. The mortgage's
     // interest is what surfaces as belowLine.interestPaid (the student loan is
     // excluded from that itemized figure by isInterestDeductible: false), which
-    // gives us the expected above-line figure without hand-amortizing.
-    // FIXTURE_TAX_PARAMS leaves `studentLoan` unseeded (null cap, null range),
-    // so the full amount is deductible — this pins the WIRING, not the gate.
+    // gives us the loan's gross accrual without hand-amortizing.
+    //
+    // FIXTURE_TAX_PARAMS leaves every `studentLoan` column null — the state of
+    // the DB today. Unseeded is NOT benign here: the two halves resolve
+    // DIFFERENTLY on purpose. The cap falls back to IRC 221(b)(1)'s statutory
+    // $2,500 (fixed, never indexed, so a null can only mean "not seeded"),
+    // while the inflation-indexed phase-out range has no constant to fall back
+    // to and so still does not gate. Net unseeded behaviour, asserted below:
+    // CAPPED at $2,500, NOT phased out.
     const studentLoan = {
       ...sampleLiabilities[0],
       id: "liab-student",
@@ -687,9 +693,11 @@ describe("projection — bracket/flat tax routing", () => {
     const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
     const bd = years[0].deductionBreakdown;
     expect(bd).toBeDefined();
-    const studentInterest = bd!.belowLine.interestPaid;
-    expect(studentInterest).toBeGreaterThan(0);
-    expect(bd!.aboveLine.studentLoanInterest).toBe(studentInterest);
+    const accruedInterest = bd!.belowLine.interestPaid;
+    // ~19,181 of accrual — comfortably over the ceiling, so the cap binds and
+    // the assertion below would catch a regression back to "unseeded = uncapped".
+    expect(accruedInterest).toBeGreaterThan(2500);
+    expect(bd!.aboveLine.studentLoanInterest).toBe(2500);
     // The named components still sum to the total — `studentLoanInterest` is
     // the fourth of them. The preceding test pins the same invariant for a
     // household with no student loan.
@@ -740,10 +748,13 @@ describe("projection — bracket/flat tax routing", () => {
       taxYearRows: FIXTURE_TAX_PARAMS,
     });
     const bd = years[0].deductionBreakdown!;
-    // Above the line: the student loan's own interest, in full.
-    expect(bd.aboveLine.studentLoanInterest).toBe(mortgageInterest);
+    // Above the line: the student loan's interest, at the statutory ceiling
+    // (FIXTURE_TAX_PARAMS leaves maxDeduction null, which falls back to $2,500).
+    expect(mortgageInterest).toBeGreaterThan(2500);
+    expect(bd.aboveLine.studentLoanInterest).toBe(2500);
     // Itemized: the MORTGAGE's interest only. Without the student-type
-    // exclusion at the call site this would be 2x `mortgageInterest`.
+    // exclusion at the call site this would be 2x `mortgageInterest`. Note the
+    // cap does NOT hide the double-count — this figure is uncapped either way.
     expect(bd.belowLine.interestPaid).toBe(mortgageInterest);
   });
 

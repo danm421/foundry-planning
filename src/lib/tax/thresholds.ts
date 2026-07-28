@@ -348,9 +348,20 @@ export function studentLoanInterestDeduction(
 ): number {
   if (isMfs(filingStatus)) return 0;
 
-  // Never treat a null cap as $0 — that would silently zero a real deduction.
-  const cap = params.studentLoan.maxDeduction;
-  const capped = cap == null ? interestPaid : Math.min(interestPaid, cap);
+  // An unseeded cap falls back to the statute — the ONE place this module
+  // narrows the standing "unseeded -> don't gate, return the full amount" rule,
+  // and deliberately so. IRC 221(b)(1)'s $2,500 is FIXED and never
+  // inflation-indexed, so a null here cannot mean "awaiting this year's indexed
+  // value" the way a null phase-out bound can; it can only mean "not seeded",
+  // and the statute already supplies the answer. Treating it as "no cap"
+  // instead would deduct a household's ENTIRE student-loan interest — ~$13,000
+  // on a $200k balance at 6.5%, against a $2,500 ceiling.
+  //
+  // The RANGE below keeps the standing rule: those bounds ARE indexed, there is
+  // no constant to fall back to, so unseeded still means "don't gate". Net
+  // behaviour against an unseeded DB is therefore capped but not phased out.
+  const cap = params.studentLoan.maxDeduction ?? STATUTORY_FIXED.studentLoanMaxDeduction;
+  const capped = Math.min(interestPaid, cap);
 
   const range = rangeFor("studentLoanInterest", year, params, filingStatus);
   // MFS (the only genuinely-inapplicable case) was already ruled out above,

@@ -329,12 +329,46 @@ describe("studentLoanInterestDeduction", () => {
     expect(studentLoanInterestDeduction(3000, 9_000_000, 2026, bare, "married_joint")).toBe(2500);
   });
 
-  it("does not cap the deduction when maxDeduction is null", () => {
+  // PREMISE CHANGED. This test previously read "does not cap the deduction when
+  // maxDeduction is null" and expected the full 5,000 — i.e. a null cap meant NO
+  // cap. It now resolves to IRC 221(b)(1)'s statutory $2,500. See the fallback's
+  // comment in thresholds.ts for why this one field narrows the module's
+  // standing "unseeded -> don't gate" rule.
+  it("falls back to the statutory $2,500 cap when maxDeduction is unseeded", () => {
     const uncapped = {
       ...params,
       studentLoan: { ...params.studentLoan, maxDeduction: null },
     } as TaxYearParameters;
-    expect(studentLoanInterestDeduction(5000, 170000, 2026, uncapped, "married_joint")).toBe(5000);
+    // magi 170000 is below the MFJ range start (175000) — no phase-out, so this
+    // isolates the cap. Still never $0: a null cap must not zero the deduction.
+    expect(studentLoanInterestDeduction(5000, 170000, 2026, uncapped, "married_joint")).toBe(2500);
+  });
+
+  it("prefers a seeded maxDeduction over the statutory fallback", () => {
+    // A seeded 3,000 must win. Hardcoding 2500 at the Math.min, or applying
+    // `?? 2500` to the RESULT rather than to the cap, would return 2500 here.
+    const seeded = {
+      ...params,
+      studentLoan: { ...params.studentLoan, maxDeduction: 3000 },
+    } as TaxYearParameters;
+    expect(studentLoanInterestDeduction(5000, 170000, 2026, seeded, "married_joint")).toBe(3000);
+  });
+
+  it("caps at the statutory $2,500 but does NOT phase out when cap AND range are unseeded", () => {
+    // Exactly the shape of the DB today: every studentLoan column NULL. The two
+    // halves resolve differently ON PURPOSE — the cap has a fixed statutory
+    // constant to fall back to, the inflation-indexed range bounds do not.
+    const bare = {
+      ...params,
+      studentLoan: {
+        maxDeduction: null, startMfj: null, endMfj: null,
+        startSingle: null, endSingle: null,
+      },
+    } as TaxYearParameters;
+    // ~$13,000 of interest (a $200k med-school balance at 6.5%) at a MAGI far
+    // past any real phase-out: capped to 2,500 — not the full 13,000, and not
+    // gated to 0.
+    expect(studentLoanInterestDeduction(13000, 9_000_000, 2026, bare, "married_joint")).toBe(2500);
   });
 
   it("is the full capped amount exactly at the range start", () => {
