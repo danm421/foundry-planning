@@ -173,7 +173,10 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       if (lot.grantType === "iso" && lot.exerciseYear != null) {
         const qualifying = year - lot.grantYear >= 3 && year - lot.exerciseYear >= 2;
         if (qualifying) {
-          res.capitalGains += ROUND(shares * Math.max(0, f - lot.basisPerShare));
+          // Signed — a qualifying ISO disposition below basis is a genuine
+          // long-term capital loss. (The non-ISO branch below was already
+          // signed; this branch was the outlier.)
+          res.capitalGains += ROUND(shares * (f - lot.basisPerShare));
         } else {
           // Disqualifying disposition (IRC §422(c)(2)/§421, Pub 525): ordinary income is the
           // LESSER of the exercise-date bargain element or the actual gain on sale. A drop after

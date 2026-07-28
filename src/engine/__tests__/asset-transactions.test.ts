@@ -367,11 +367,18 @@ describe("applyAssetSales — home-sale exclusion (§121)", () => {
     expect(result.breakdown[0].homeSaleExclusionApplied).toBe(0);
   });
 
-  it("applies no exclusion on a loss sale (gain floored at 0)", () => {
+  it("disallows the loss on a personal residence sold below basis (§165(c))", () => {
+    // sale value 250,000 < basis 300,000 → underwater by 50,000.
+    // capitalGain = 250,000 − 0 costs − 300,000 = −50,000. The account is a
+    // primary residence and the §121 flag is set, so §165(c) disallows the
+    // whole loss: nothing reaches taxable gains and no §121 exclusion applies.
     const result = runSale(250_000, 300_000, "single", { qualifies: true });
+    expect(result.breakdown[0].capitalGain).toBe(-50_000);
+    expect(result.breakdown[0].disallowedLoss).toBe(50_000);
+    expect(result.breakdown[0].taxableCapitalGain).toBe(0);
     expect(result.capitalGains).toBe(0);
+    expect(result.disallowedLosses).toBe(50_000);
     expect(result.homeSaleExclusionTotal).toBe(0);
-    expect(result.breakdown[0].capitalGain).toBe(0);
   });
 });
 

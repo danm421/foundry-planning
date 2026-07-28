@@ -60,7 +60,8 @@ export interface SellAccountFractionResult {
   transactionCosts: number;
   /** Net proceeds = saleValue − transactionCosts − mortgagePaidOff. */
   netProceeds: number;
-  /** Raw capital gain (saleValue − basis, floored at 0), before any exclusion. */
+  /** Raw signed capital gain (saleValue − transactionCosts − basis), before any
+   *  exclusion or §165(c) disallowance. Negative when sold below basis. */
   capitalGain: number;
   mortgagePaidOff: number;
   /** Set when this sale fully drained the account (fraction ≥ 1 or residual < $1). */
@@ -100,9 +101,11 @@ export function sellAccountFraction(
   const costFlat = transactionCostFlat ?? 0;
   const transactionCosts = costPct + costFlat;
 
-  // Amount-realized treatment: selling costs reduce the amount realized, so the
-  // gain is (saleValue − transactionCosts) − basis, floored at 0.
-  const capitalGain = Math.max(0, saleValue - transactionCosts - basis);
+  // Signed. Selling costs reduce the amount realized, so a sale below basis
+  // produces a loss net of those costs. §165(c) disallowance for personal-use
+  // property is applied by the caller (applyAssetSales), which knows the
+  // account category and the home-sale-exclusion flag.
+  const capitalGain = saleValue - transactionCosts - basis;
 
   // Net proceeds after costs
   let netProceeds = saleValue - transactionCosts;
@@ -169,12 +172,17 @@ export interface AssetSaleBreakdown {
   basis: number;
   transactionCosts: number;
   netProceeds: number;
-  /** Capital gain net of selling costs (saleValue − transactionCosts − basis, floored at 0), before the home-sale exclusion. */
+  /** Signed capital gain net of selling costs (saleValue − transactionCosts −
+   *  basis), before the home-sale exclusion or the §165(c) disallowance.
+   *  Negative when the asset sold below basis. */
   capitalGain: number;
   /** IRC §121 exclusion actually applied to this sale (0 unless the flag was set
    *  AND the account was real-estate AND there was gain to exclude). */
   homeSaleExclusionApplied: number;
-  /** Gain that actually flows into taxable capital gains for the year. */
+  /** IRC §165(c) loss disallowed because the property was personal-use
+   *  (positive magnitude; 0 on a gain or on investment property). */
+  disallowedLoss: number;
+  /** Gain (or allowed loss) that actually flows into taxable capital gains for the year. */
   taxableCapitalGain: number;
   mortgagePaidOff: number;
   proceedsAccountId: string;
@@ -183,10 +191,14 @@ export interface AssetSaleBreakdown {
 }
 
 export interface AssetSalesResult {
-  /** Sum of taxable capital gains (already reduced by any home-sale exclusions applied). */
+  /** Signed sum of taxable capital gains (already reduced by any home-sale
+   *  exclusions applied, and excluding §165(c)-disallowed losses). */
   capitalGains: number;
   /** Sum of §121 exclusions applied across all sales this year. */
   homeSaleExclusionTotal: number;
+  /** Sum of §165(c) personal-use losses disallowed across all sales this year
+   *  (positive magnitude). Display only — never reduces taxable gains. */
+  disallowedLosses: number;
   removedAccountIds: string[];
   removedLiabilityIds: string[];
   breakdown: AssetSaleBreakdown[];
@@ -225,6 +237,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
   } = input;
 
   let totalCapitalGains = 0;
+  let totalDisallowedLosses = 0;
   let homeSaleExclusionTotal = 0;
   const removedAccountIds: string[] = [];
   const removedLiabilityIds: string[] = [];
@@ -245,7 +258,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       transactionId: sale.id,
       accountId: sourceAccountId ?? "",
       saleValue: 0, basis: 0, transactionCosts: 0, netProceeds: 0,
-      capitalGain: 0, homeSaleExclusionApplied: 0, taxableCapitalGain: 0,
+      capitalGain: 0, homeSaleExclusionApplied: 0, disallowedLoss: 0, taxableCapitalGain: 0,
       mortgagePaidOff: 0, proceedsAccountId: "",
       fractionSold: sale.fractionSold ?? 1,
     };
@@ -297,17 +310,35 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     // IRC §121 home-sale exclusion. Applied only when the flag is set AND
     // the sold account's category is "real_estate" — the category gate is a
     // safety net against an errant true on a non-real-estate transaction.
+    //
+    // §165(c): a loss on personal-use property is never deductible. The
+    // home-sale-exclusion flag is our proxy for personal use — imperfect for
+    // vacation/second homes (see spec), so the disallowed amount is reported
+    // rather than silently dropped.
+    const isPersonalUseRealEstate =
+      soldAccount?.category === "real_estate" && !!sale.qualifiesForHomeSaleExclusion;
+
     let homeSaleExclusionApplied = 0;
-    if (
-      sale.qualifiesForHomeSaleExclusion &&
-      soldAccount?.category === "real_estate" &&
-      capitalGain > 0
-    ) {
-      homeSaleExclusionApplied = Math.min(capitalGain, homeSaleExclusionCap(filingStatus));
-      homeSaleExclusionTotal += homeSaleExclusionApplied;
+    let disallowedLoss = 0;
+    let taxableCapitalGain: number;
+
+    if (capitalGain < 0) {
+      if (isPersonalUseRealEstate) {
+        disallowedLoss = -capitalGain;
+        taxableCapitalGain = 0;
+      } else {
+        taxableCapitalGain = capitalGain;
+      }
+    } else {
+      if (isPersonalUseRealEstate) {
+        homeSaleExclusionApplied = Math.min(capitalGain, homeSaleExclusionCap(filingStatus));
+        homeSaleExclusionTotal += homeSaleExclusionApplied;
+      }
+      taxableCapitalGain = capitalGain - homeSaleExclusionApplied;
     }
-    const taxableCapitalGain = capitalGain - homeSaleExclusionApplied;
+
     totalCapitalGains += taxableCapitalGain;
+    totalDisallowedLosses += disallowedLoss;
 
     // Route net proceeds to destination account. An explicit proceedsAccountId
     // always wins. Otherwise, a fully-entity-owned source account routes to the
@@ -347,6 +378,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       netProceeds,
       capitalGain,
       homeSaleExclusionApplied,
+      disallowedLoss,
       taxableCapitalGain,
       mortgagePaidOff,
       proceedsAccountId,
@@ -357,6 +389,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
   return {
     capitalGains: totalCapitalGains,
     homeSaleExclusionTotal,
+    disallowedLosses: totalDisallowedLosses,
     removedAccountIds,
     removedLiabilityIds,
     breakdown,
@@ -673,7 +706,8 @@ export function applyBusinessSales(input: ApplyBusinessSalesInput): BusinessSale
     const operatingValue = sale.overrideSaleValue ?? business.value ?? 0;
     const operatingBasis = sale.overrideBasis ?? business.basis ?? 0;
     const operatingGross = f * operatingValue;
-    const operatingGain = Math.max(0, f * (operatingValue - operatingBasis));
+    // Signed: a business sold below its inside basis realizes a genuine loss.
+    const operatingGain = f * (operatingValue - operatingBasis);
 
     // Cascade through child accounts (parentAccountId === business.id).
     // Children are 100% owned by the parent so the per-owner walk used by

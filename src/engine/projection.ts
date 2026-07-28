@@ -1188,6 +1188,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let saleResult = {
       capitalGains: 0,
       homeSaleExclusionTotal: 0,
+      disallowedLosses: 0,
       removedAccountIds: [] as string[],
       removedLiabilityIds: [] as string[],
       breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; homeSaleExclusionApplied: number; taxableCapitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
@@ -2395,6 +2396,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (crtSaleGainTotal > 0) {
       taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - crtSaleGainTotal);
     }
+    // §165(c) losses disallowed on personal-use property. Display only — they
+    // never enter §1222 netting, so they are reported alongside the gains they
+    // were excluded from rather than silently dropped.
+    taxDetail.disallowedCapitalLoss =
+      (taxDetail.disallowedCapitalLoss ?? 0) + saleResult.disallowedLosses;
     if (householdCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",

@@ -85,13 +85,17 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     const legacyValue = balance - fresh;
     const legacyBasis = basis - fresh;
 
+    // Signed: a ratio below 0 means the lot is underwater and the draw
+    // realizes a proportional LOSS. Capped above at 1 (basis cannot go
+    // negative), uncapped below — a 2x-basis account yields a ratio of -1.
     let legacyGainRatio = 0;
     if (legacyValue > 0) {
-      const raw = 1 - legacyBasis / legacyValue;
-      legacyGainRatio = Math.max(0, Math.min(1, raw));
+      legacyGainRatio = Math.min(1, 1 - legacyBasis / legacyValue);
     }
 
-    const capitalGains = legacyDraw * legacyGainRatio;
+    // Guard the multiply: with a signed (possibly negative) ratio, a zero
+    // legacy draw would otherwise hand back -0, which formats as "-$0.00".
+    const capitalGains = legacyDraw === 0 ? 0 : legacyDraw * legacyGainRatio;
     const basisReturn = freshDraw + legacyDraw * (1 - legacyGainRatio);
     return { ...empty, capitalGains, basisReturn };
   }

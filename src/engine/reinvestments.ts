@@ -11,7 +11,8 @@ export interface ReinvestmentsInput {
 }
 
 export interface ReinvestmentsResult {
-  /** Long-term capital gains realized by switches this year. */
+  /** Signed long-term capital gains realized by switches this year — negative
+   *  when an underwater sleeve was sold and rebought. */
   capitalGains: number;
   byReinvestment: Record<string, { capitalGains: number; label: string }>;
 }
@@ -41,9 +42,13 @@ export function applyReinvestments(input: ReinvestmentsInput): ReinvestmentsResu
         const bal = input.accountBalances[acct.id] ?? 0;
         const basis = input.basisMap[acct.id] ?? 0;
         const fraction = ri.soldFractionByAccount[acct.id] ?? 0;
-        const realizedGain = Math.max(0, bal - basis) * fraction;
-        if (realizedGain > 0) {
-          input.basisMap[acct.id] = basis + realizedGain; // sell-and-rebuy step-up
+        // Signed: a sell-and-rebuy of an underwater sleeve realizes a LOSS and
+        // steps basis DOWN. No §1091 wash-sale test — a reinvestment changes
+        // the allocation, so the replacement is not substantially identical
+        // (documented limitation, see spec).
+        const realizedGain = (bal - basis) * fraction;
+        if (realizedGain !== 0) {
+          input.basisMap[acct.id] = basis + realizedGain;
           capitalGains += realizedGain;
           byReinvestmentGains += realizedGain;
         }
