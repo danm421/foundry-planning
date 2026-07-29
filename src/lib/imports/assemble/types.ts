@@ -17,7 +17,8 @@ export type PlanBasicsProvenance =
   | "client_record" // read off the clients row (refresh)
   | "build_request" // came in as a build_plan argument (new build)
   | "document"      // extracted from an uploaded file
-  | "derived";      // computed; `reason` is required and is final copy
+  | "derived"       // computed; `reason` is required and is final copy
+  | "estimated";    // supplied from outside the document; always advisor-verified
 
 export interface PlanBasicsField<T> {
   value: T | null;

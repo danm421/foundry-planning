@@ -12,8 +12,13 @@ export interface DeriveGoalsInput {
   payload: ImportPayload;
 }
 
-/** Deterministic id from the funding account name — no Math.random. */
-function goalId(accountName: string): string {
+/**
+ * Deterministic id from the funding account name — no Math.random.
+ * Exported so `applyDecisions` (planner fold, Task 14) can derive the same
+ * `edu:`-prefixed id from a planner-proposed education goal's name without
+ * duplicating the slugify rule.
+ */
+export function goalId(accountName: string): string {
   return `edu:${accountName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 }
 

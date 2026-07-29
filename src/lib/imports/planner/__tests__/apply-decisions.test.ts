@@ -1,0 +1,233 @@
+import { describe, expect, it } from "vitest";
+import { emptyImportPayload } from "../../types";
+import { emptyPlanBasics } from "../../assemble/plan-basics";
+import { applyDecisions } from "../apply-decisions";
+import type { PlanningDecisions } from "../types";
+
+const EMPTY: PlanningDecisions = {
+  version: 1, assumptions: {}, savings: [], socialSecurity: [],
+  goals: [], incomeTiming: [], questions: [], notes: [],
+};
+const KNOWN = { hasSpouse: true, primaryDob: "1987-11-21", spouseDob: "1989-09-25" };
+
+describe("applyDecisions", () => {
+  it("writes retirement ages onto planBasics with their reasons", () => {
+    const { payload } = applyDecisions({
+      payload: emptyImportPayload(),
+      known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        assumptions: {
+          retirementAge: { value: 64, provenance: "document", reason: "Stated in the Profile table." },
+          spouseRetirementAge: { value: 60, provenance: "derived", reason: "Document states 60-62; planned at the earlier end." },
+        },
+      },
+    });
+    expect(payload.planBasics?.retirementAge).toEqual({
+      value: 64, provenance: "document", reason: "Stated in the Profile table.",
+    });
+    expect(payload.planBasics?.spouseRetirementAge?.value).toBe(60);
+  });
+
+  it("adds a savings row the planner found in prose", () => {
+    const { payload } = applyDecisions({
+      payload: emptyImportPayload(),
+      known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        savings: [{
+          accountName: "Zach 401(k)", owner: "client",
+          annualPercent: { value: 0.1, provenance: "document", reason: "Contributing 10%." },
+          employerMatchPct: { value: 1, provenance: "derived", reason: "4% company match read as dollar-for-dollar on the first 4%." },
+          employerMatchCap: { value: 0.04, provenance: "document", reason: "Company match 4%." },
+          dedicatedAccountNames: [],
+        } as never],
+      },
+    });
+    expect(payload.savings).toHaveLength(1);
+    expect(payload.savings[0]).toMatchObject({
+      destinationAccountName: "Zach 401(k)", annualPercent: 0.1, employerMatchCap: 0.04,
+    });
+  });
+
+  it("a planner savings decision replaces the extracted row for the same account", () => {
+    const base = {
+      ...emptyImportPayload(),
+      savings: [{
+        name: "extracted", destinationAccountName: "Zach 401(k)",
+        annualPercent: 0.03, match: { kind: "new" as const },
+      }],
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        savings: [{
+          accountName: "Zach 401(k)", owner: "client",
+          annualPercent: { value: 0.1, provenance: "document", reason: "Contributing 10%." },
+        } as never],
+      },
+    });
+    expect(payload.savings).toHaveLength(1);
+    expect(payload.savings[0].annualPercent).toBe(0.1);
+  });
+
+  it("applies an income timing override by name", () => {
+    const base = {
+      ...emptyImportPayload(),
+      incomes: [{ name: "Zach's Salary", type: "salary" as const, endYearRef: "client_retirement" as const, match: { kind: "new" as const } }],
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        incomeTiming: [{
+          incomeName: "Zach's Salary",
+          endYearRef: { value: "client_ss_70", provenance: "document", reason: "Plans to consult until 70." },
+        }],
+      },
+    });
+    expect(payload.incomes[0].endYearRef).toBe("client_ss_70");
+  });
+
+  it("converts planner questions to assemble questions", () => {
+    const { questions } = applyDecisions({
+      payload: emptyImportPayload(), known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        questions: [{ id: "q:retirement_age", field: "client.retirementAge", prompt: "What retirement age?", options: ["62", "64"] }],
+      },
+    });
+    expect(questions).toEqual([{
+      id: "q:retirement_age", kind: "missing", field: "client.retirementAge",
+      prompt: "What retirement age?", options: ["62", "64"],
+    }]);
+  });
+
+  it("writes social security onto planBasics", () => {
+    const { payload } = applyDecisions({
+      payload: emptyImportPayload(), known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        socialSecurity: [{
+          owner: "client", basis: "estimated_from_income",
+          piaMonthly: { value: 3200, provenance: "derived", reason: "Estimated from $166,750 over 35 years." },
+          claimingAge: { value: 64, provenance: "document", reason: "Start collecting at retirement." },
+        }],
+      },
+    });
+    expect(payload.planBasics?.socialSecurity[0]).toMatchObject({ owner: "client" });
+    expect(payload.planBasics?.socialSecurity[0].pia.value).toBe(3200);
+  });
+
+  it("is pure - the input payload is not mutated", () => {
+    const input = emptyImportPayload();
+    applyDecisions({
+      payload: input, known: KNOWN,
+      decisions: { ...EMPTY, assumptions: { retirementAge: { value: 64, provenance: "document", reason: "x" } } },
+    });
+    expect(input.planBasics).toBeUndefined();
+  });
+
+  // ── R5: authorized additional coverage beyond the brief's seven ──
+
+  it("does not overwrite a planBasics field whose provenance is already 'stated'", () => {
+    const base = {
+      ...emptyImportPayload(),
+      planBasics: {
+        ...emptyPlanBasics(),
+        retirementAge: { value: 67, provenance: "stated" as const },
+      },
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        assumptions: {
+          retirementAge: { value: 64, provenance: "document", reason: "Stated in the Profile table." },
+        },
+      },
+    });
+    expect(payload.planBasics?.retirementAge).toEqual({ value: 67, provenance: "stated" });
+  });
+
+  it("matches a planner savings decision to an extracted row despite case and punctuation differences", () => {
+    const base = {
+      ...emptyImportPayload(),
+      savings: [{
+        name: "extracted", destinationAccountName: "ZACH 401K",
+        annualPercent: 0.03, match: { kind: "new" as const },
+      }],
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        savings: [{
+          accountName: "Zach 401(k)", owner: "client",
+          annualPercent: { value: 0.1, provenance: "document", reason: "Contributing 10%." },
+        } as never],
+      },
+    });
+    expect(payload.savings).toHaveLength(1);
+    expect(payload.savings[0].annualPercent).toBe(0.1);
+  });
+
+  it("clears an existing endYear when an income timing override sets endYearRef, so the ref wins", () => {
+    const base = {
+      ...emptyImportPayload(),
+      incomes: [{ name: "Zach's Salary", type: "salary" as const, endYear: 2050, match: { kind: "new" as const } }],
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        incomeTiming: [{
+          incomeName: "Zach's Salary",
+          endYearRef: { value: "client_ss_70", provenance: "document", reason: "Plans to consult until 70." },
+        }],
+      },
+    });
+    expect(payload.incomes[0].endYearRef).toBe("client_ss_70");
+    expect(payload.incomes[0].endYear).toBeUndefined();
+  });
+
+  it("appends an education goal and a one_time expense from goal decisions", () => {
+    const { payload } = applyDecisions({
+      payload: emptyImportPayload(), known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        goals: [
+          {
+            kind: "education",
+            name: { value: "Zach College", provenance: "derived", reason: "Named for the funding 529." },
+            annualAmount: { value: 30000, provenance: "estimated", reason: "Advisor-provided estimate." },
+            startYear: { value: 2032, provenance: "document", reason: "First year of college stated in the plan." },
+            endYear: { value: 2035, provenance: "document", reason: "Last year of college stated in the plan." },
+            dedicatedAccountNames: ["Zach 529"],
+          },
+          {
+            kind: "one_time",
+            name: { value: "New Roof", provenance: "document", reason: "Stated as a planned expense." },
+            annualAmount: { value: 25000, provenance: "document", reason: "Stated cost." },
+            startYear: { value: 2030, provenance: "document", reason: "Stated year." },
+            endYear: { value: 2030, provenance: "document", reason: "One-time, so ends the same year." },
+            dedicatedAccountNames: [],
+          },
+        ],
+      },
+    });
+
+    expect(payload.goals?.education).toHaveLength(1);
+    expect(payload.goals?.education[0].id).toBe("edu:zach-college");
+    expect(payload.goals?.education[0].name).toEqual({
+      value: "Zach College", provenance: "derived", reason: "Named for the funding 529.",
+    });
+
+    expect(payload.expenses).toHaveLength(1);
+    expect(payload.expenses[0]).toMatchObject({
+      name: "New Roof", type: "other", annualAmount: 25000, startYear: 2030, endYear: 2030,
+      match: { kind: "new" },
+    });
+  });
+});
