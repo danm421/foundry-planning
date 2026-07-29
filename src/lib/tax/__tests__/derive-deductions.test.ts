@@ -11,6 +11,7 @@ import {
   saltCap,
   type SavingsRuleForDeduction,
   type AccountForDeduction,
+  type IraOwnerKey,
   type ClientDeductionRow,
   type DeductionContribution,
   type ExpenseForDeduction,
@@ -538,11 +539,16 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
    *  is a literal so the phase-out arithmetic stays readable. */
   const GATE_ANNUAL_LIMIT = 7000;
 
-  /** Default: MFJ, self covered, MAGI above the top of the covered range. */
+  /** Default: MFJ, self covered, MAGI above the top of the covered range.
+   *
+   *  The spouse's basis is 0 because no fixture in this describe sets
+   *  `iraOwner` — every account defaults to the client, so a non-zero spouse
+   *  basis would be a ceiling for a bucket that never receives a
+   *  contribution. The per-owner split itself is exercised below. */
   const gate = (
     over: Partial<{
       magi: number; coveredSelf: boolean; coveredSpouse: boolean;
-      filingStatus: FilingStatus; annualLimit: number;
+      filingStatus: FilingStatus; annualLimitByOwner: Record<IraOwnerKey, number>;
     }> = {}
   ) => ({
     magi: 200000,
@@ -550,7 +556,7 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
     coveredSpouse: false,
     params: gateParams,
     filingStatus: "married_joint" as FilingStatus,
-    annualLimit: GATE_ANNUAL_LIMIT,
+    annualLimitByOwner: { client: GATE_ANNUAL_LIMIT, spouse: 0 },
     ...over,
   });
 
@@ -646,17 +652,26 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
     expect(res.aboveLine).toBe(6000);
   });
 
+  // ⚠️ The two "no phase-out applies" cases below contribute 6,000, BELOW the
+  // 7,000 limit, on purpose. They used to contribute 7,500 and assert 7,500,
+  // which stopped being the right answer once §219(b)(1)(A) started capping
+  // every path: 7,500 would now come back as 7,000, which is also what a
+  // wrongly-applied cap produces, so re-baselining the number to 7,000 would
+  // have made "the full contribution survives" indistinguishable from "the
+  // contribution was clamped to the limit". A contribution below the limit
+  // keeps the two apart.
   it("does not gate when neither spouse is a covered participant", () => {
-    const rules = [makeRule("acct-ira", 7500)];
+    const rules = [makeRule("acct-ira", 6000)];
     const res = deriveAboveLineFromSavings(
       2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
       gate({ magi: 5000000, coveredSelf: false, coveredSpouse: false }),
     );
-    expect(res.aboveLine).toBe(7500);
+    // IRC 219(g)(1) never triggers, so even a 5,000,000 MAGI deducts in full.
+    expect(res.aboveLine).toBe(6000);
   });
 
   it("applies the spousal range when only the spouse is covered", () => {
-    const rules = [makeRule("acct-ira", 7500)];
+    const rules = [makeRule("acct-ira", 6000)];
     const res = deriveAboveLineFromSavings(
       2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
       gate({ magi: 200000, coveredSelf: false, coveredSpouse: true }),
@@ -664,7 +679,51 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
     // 200,000 is below the spousal range's 242,000 start — full deduction.
     // Reading the flags in the wrong order would apply the covered range and
     // zero this out.
-    expect(res.aboveLine).toBe(7500);
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  const ACCT_IRA_SPOUSE: AccountForDeduction = {
+    id: "acct-ira-spouse", subType: "traditional_ira", category: "retirement",
+    ownerEntityId: null, iraOwner: "spouse",
+  };
+
+  it("measures each owner's contribution against their OWN limit, not a pooled one", () => {
+    // Client contributes 6,000, spouse 1, both with their own 7,000 limit, at
+    // a MAGI 80% through the covered range so 20% of each limit survives:
+    //   client  min(6,000, 1,400) = 1,400
+    //   spouse  min(    1, 1,400) =     1
+    // Pooling both sides — 6,001 against a 14,000 basis — yields 2,800, so a
+    // $1 spouse contribution would buy a full extra $7,000 of ceiling.
+    const rules = [makeRule("acct-ira", 6000), makeRule("acct-ira-spouse", 1)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA, ACCT_IRA_SPOUSE], isGrantorAlways, undefined, undefined,
+      gate({
+        magi: 145000, coveredSelf: true, coveredSpouse: true,
+        annualLimitByOwner: { client: 7000, spouse: 7000 },
+      }),
+    );
+    expect(res.aboveLine).toBe(1401);
+  });
+
+  it("reads coverage from the perspective of the owner being priced, not always the client", () => {
+    // ⚠️ The flag SWAP, which no both-spouses-covered fixture can discriminate.
+    // The ONLY contributor is the spouse, and the spouse is the one covered by
+    // a workplace plan — so their own bucket must take the COVERED range
+    // (129,000-149,000), which 200,000 is above: fully phased out.
+    //
+    // Passing the household's (coveredSelf, coveredSpouse) through unswapped
+    // would price the spouse as the NON-covered party with a covered partner,
+    // i.e. the SPOUSAL range (242,000-252,000), which 200,000 is below —
+    // deducting the whole 6,000 instead of nothing.
+    const rules = [makeRule("acct-ira-spouse", 6000)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_IRA_SPOUSE], isGrantorAlways, undefined, undefined,
+      gate({
+        magi: 200000, coveredSelf: false, coveredSpouse: true,
+        annualLimitByOwner: { client: 0, spouse: 7000 },
+      }),
+    );
+    expect(res.aboveLine).toBe(0);
   });
 
   it("uses the caller's filing status for the range", () => {

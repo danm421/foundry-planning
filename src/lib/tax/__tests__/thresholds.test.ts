@@ -4,7 +4,7 @@ import {
   rothIraAllowedContribution, traditionalIraDeductibleAmount, studentLoanInterestDeduction,
 } from "../thresholds";
 import type { ThresholdFacts, ThresholdHousehold } from "../thresholds";
-import type { TaxYearParameters } from "../types";
+import type { FilingStatus, TaxYearParameters } from "../types";
 
 const params = {
   rothPhaseout: { startMfj: 242000, endMfj: 252000, startSingle: 153000, endSingle: 168000 },
@@ -277,6 +277,48 @@ describe("traditionalIraDeductibleAmount", () => {
     // Every other case in this describe passes contribution === limit === 7000,
     // where the two formulations agree and nothing is pinned.
     expect(traditionalIraDeductibleAmount(145000, 6000, 7000, true, false, 2026, params, "married_joint")).toBe(1400);
+  });
+
+  it("caps at the §219(b)(1)(A) limit on EVERY path, so the range start is continuous", () => {
+    // §219(b)(1)(A) caps the deductible amount at the annual limit regardless
+    // of MAGI. Applying it only inside the phase-out band puts a cliff at the
+    // range start: one dollar of MAGI cost 13,000 of deduction.
+    //
+    // Every other case in this describe passes contribution <= limit, where
+    // the cap is invisible — which is why nothing pinned it.
+    //
+    // ONE `toEqual` rather than six `expect`s on purpose. Each of these is a
+    // separate early return out of `traditionalIraDeductibleAmount`, and
+    // separate assertions would stop at the first failure — crediting the
+    // remaining paths with coverage that never actually ran.
+    const over = 20_000;
+    const at = (
+      magi: number, coveredSelf: boolean, coveredSpouse: boolean,
+      p: TaxYearParameters = params, status: FilingStatus = "married_joint",
+    ) => traditionalIraDeductibleAmount(magi, over, 7000, coveredSelf, coveredSpouse, 2026, p, status);
+    // Unseeded phase-out columns. §219(b)(1)(A) is NOT a phase-out, so it
+    // still applies — and the limit basis comes from
+    // `contribLimits.iraTradLimit`, a NOT NULL column seeded independently of
+    // these nullable ones, so capping here is not capping by an unseeded
+    // number.
+    const bare = {
+      ...params,
+      iraDeduct: { ...params.iraDeduct, coveredStartMfj: null, coveredEndMfj: null },
+    } as TaxYearParameters;
+    expect({
+      belowRange: at(100_000, true, false),
+      atStart: at(129_000, true, false),
+      oneDollarIn: at(129_001, true, false),
+      // IRC 219(g)(1) never triggers: nobody is a covered participant.
+      nobodyCovered: at(50_000, false, false),
+      // Single filer — no spouse exists to trigger 219(g)(1), so the
+      // phase-out is skipped on filing status alone.
+      singleUncovered: at(50_000, false, true, params, "single"),
+      unseeded: at(9_000_000, true, false, bare),
+    }).toEqual({
+      belowRange: 7000, atStart: 7000, oneDollarIn: 7000,
+      nobodyCovered: 7000, singleUncovered: 7000, unseeded: 7000,
+    });
   });
 
   it("gives a not-covered contributor with a covered spouse the spousal range, not the covered range", () => {

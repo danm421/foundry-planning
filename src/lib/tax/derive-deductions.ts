@@ -82,6 +82,15 @@ export interface SavingsRuleForDeduction {
   endYear: number;
 }
 
+/**
+ * Which taxpayer a traditional-IRA contribution is attributed to for IRC
+ * 219(g), which is a PER-INDIVIDUAL phase-out. There is no "joint" — an IRA is
+ * individually owned by statute, and anything that does not resolve to the
+ * spouse folds into the client. `iraOwnerKey` (engine/contribution-limits.ts)
+ * is the single implementation of that mapping.
+ */
+export type IraOwnerKey = "client" | "spouse";
+
 export interface AccountForDeduction {
   id: string;
   subType: string;
@@ -90,6 +99,11 @@ export interface AccountForDeduction {
    *  of "other" counts. */
   category: string;
   ownerEntityId?: string | null;
+  /** Whose §219(g) phase-out and §219(b) limit this account's traditional-IRA
+   *  contributions run against. Defaults to the client when absent, matching
+   *  `iraOwnerKey`'s treatment of an account with no single family-member
+   *  owner. Only consulted for `traditional_ira`. */
+  iraOwner?: IraOwnerKey;
 }
 
 /**
@@ -111,10 +125,11 @@ export type SavingsDeductionContribution = DeductionContribution & {
   traditionalIraPreTax: number;
   /**
    * Account ids that actually contributed to `traditionalIraPreTax` this year,
-   * de-duplicated. Exposed for exactly one reason: IRC 219(g)(2)(A) reduces the
-   * §219(b) LIMIT, and that limit is PER PERSON — so the caller has to know
-   * WHICH accounts (and hence which owners, and hence which ages) are in play
-   * before it can build the limit basis to pass back in as `iraGate.annualLimit`.
+   * de-duplicated and split by owner. Exposed for exactly one reason: IRC
+   * 219(g)(2)(A) reduces the §219(b) LIMIT, and that limit is PER PERSON — so
+   * the caller has to know WHICH accounts (and hence which owners, and hence
+   * which ages) are in play before it can build the limit basis to pass back
+   * in as `iraGate.annualLimitByOwner`.
    *
    * It has to come from THIS loop rather than being re-derived by the caller:
    * inclusion here turns on six guards (retirement category,
@@ -123,8 +138,12 @@ export type SavingsDeductionContribution = DeductionContribution & {
    * NOT match the guard set `applyContributionLimits` uses. Deriving the basis
    * from that other guard set would bound these contributions with a limit
    * computed over a different set of people.
+   *
+   * The split matters for the same reason: the basis has to be priced over the
+   * SAME buckets the contributions are gated in, or one owner's ceiling ends
+   * up bounding the other's contribution.
    */
-  traditionalIraAccountIds: string[];
+  traditionalIraAccountIdsByOwner: Record<IraOwnerKey, string[]>;
 };
 
 export function deriveAboveLineFromSavings(
@@ -149,26 +168,37 @@ export function deriveAboveLineFromSavings(
     params: TaxYearParameters;
     filingStatus: FilingStatus;
     /**
-     * The §219(b) annual IRA limit basis this household's aggregated
-     * traditional-IRA contributions are measured against — the figure IRC
-     * 219(g)(2)(A) applies the phase-out fraction TO. One limit per PERSON, so
-     * the caller sums the distinct owners of `traditionalIraAccountIds` from a
-     * prior ungated call (see that field's note).
+     * The §219(b) annual IRA limit basis each taxpayer's traditional-IRA
+     * contributions are measured against — the figure IRC 219(g)(2)(A) applies
+     * that person's phase-out fraction TO. The caller prices the owners of
+     * `traditionalIraAccountIdsByOwner` from a prior ungated call (see that
+     * field's note).
      *
-     * ⚠️ It must be gated on who actually CONTRIBUTED. Handing in a whole
-     * couple's combined limit when only one spouse contributed inflates the
-     * ceiling and over-deducts — the mirror image of the contribution-basis
-     * bug this parameter exists to fix.
+     * ⚠️ Each entry must be gated on whether THAT owner actually CONTRIBUTED.
+     * Crediting a spouse who contributed nothing inflates their ceiling and
+     * over-deducts — the mirror image of the contribution-basis bug this
+     * parameter exists to fix.
      */
-    annualLimit: number;
+    annualLimitByOwner: Record<IraOwnerKey, number>;
   }
 ): SavingsDeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   let total = 0;
   // Traditional IRA contributions accumulate separately so the MAGI gate below
-  // can be applied ONCE to their sum. Everything else is never MAGI-limited.
+  // can be applied once per OWNER to their sum, rather than once per rule.
+  // Everything else is never MAGI-limited.
+  //
+  // The household total is still tracked alongside the per-owner buckets: the
+  // caller subtracts it to build `magiBase` (IRC 219(g)(3)(A) adds the IRA
+  // deduction back), which is a household figure and not a per-owner one.
   let traditionalIraPreTax = 0;
-  const traditionalIraAccountIds = new Set<string>();
+  // IRC 219(g) is per INDIVIDUAL, so the traditional-IRA slice is bucketed by
+  // owner rather than pooled: each spouse phases out their own §219(b) limit.
+  const traditionalIraPreTaxByOwner: Record<IraOwnerKey, number> = { client: 0, spouse: 0 };
+  const traditionalIraAccountIdsByOwner: Record<IraOwnerKey, Set<string>> = {
+    client: new Set(),
+    spouse: new Set(),
+  };
   for (const rule of savingsRules) {
     if (year < rule.startYear || year > rule.endYear) continue;
     const acct = accountById.get(rule.accountId);
@@ -195,45 +225,58 @@ export function deriveAboveLineFromSavings(
     // the Roth split still applies to it to isolate the pre-tax portion.
     const preTax = amount * (1 - (rule.rothPercent ?? 0));
     if (acct.subType === "traditional_ira") {
+      const owner = acct.iraOwner ?? "client";
       traditionalIraPreTax += preTax;
+      traditionalIraPreTaxByOwner[owner] += preTax;
       // Only a non-zero contribution puts its owner's §219(b) limit into the
       // basis. A rule resolving to $0 (or wholly Roth-split) must NOT enlarge
-      // the ceiling — see the warning on `iraGate.annualLimit`.
-      if (preTax > 0) traditionalIraAccountIds.add(acct.id);
+      // the ceiling — see the warning on `iraGate.annualLimitByOwner`.
+      if (preTax > 0) traditionalIraAccountIdsByOwner[owner].add(acct.id);
     } else total += preTax;
   }
 
   // ── IRC 219(g) traditional-IRA gate ──────────────────────────────────────
-  // Two limitations, both consequences of what this module can see:
+  // ONE call PER OWNER, because 219(g) is a per-individual phase-out:
   //
-  //  1. Owner identity is unavailable here. `AccountForDeduction` carries no
-  //     family member, and `iraGate` supplies a single household-level
-  //     coveredSelf/coveredSpouse pair. So a married couple where only one
-  //     spouse is an active workplace-plan participant gets ONE phase-out
-  //     range applied to their combined contributions, whereas IRC 219(g)
-  //     gives the covered and the non-covered spouse different ranges
-  //     (`iraDeductCovered` vs `iraDeductSpousal`). Resolving it needs either
-  //     owner information in this module or two separate calls — deferred.
+  //  - Each spouse's own contributions are measured against their own §219(b)
+  //    limit. Pooling them lets a $1 contribution from one spouse buy a full
+  //    extra $7,000 of ceiling for the other, since "did this owner
+  //    contribute" is a threshold at $0 and not anything proportional. The two
+  //    agree only when the contributions are homogeneous.
   //
-  //  2. Pub 590-A's $10 round-up / $200 floor is therefore applied once per
-  //     HOUSEHOLD, not once per taxpayer. Contributions are aggregated before
-  //     the single call on purpose: gating per rule would apply the $200 floor
-  //     once per RULE, so three small rules deep in the phase-out would deduct
-  //     3 x $200 instead of $200. The proportional reduction itself is linear,
-  //     so aggregating is otherwise arithmetically identical.
-  if (traditionalIraPreTax !== 0) {
-    total += iraGate
-      ? traditionalIraDeductibleAmount(
-          iraGate.magi,
-          traditionalIraPreTax,
-          iraGate.annualLimit,
-          iraGate.coveredSelf,
-          iraGate.coveredSpouse,
-          year,
-          iraGate.params,
-          iraGate.filingStatus
-        )
-      : traditionalIraPreTax;
+  //  - `coveredSelf`/`coveredSpouse` are SWAPPED for the spouse's bucket:
+  //    `traditionalIraDeductibleAmount` picks `iraDeductCovered` vs
+  //    `iraDeductSpousal` from (own coverage, other's coverage), so "self" has
+  //    to mean the owner being priced. A couple where only one spouse is an
+  //    active workplace-plan participant now gets the two different ranges IRC
+  //    219(g) gives them, instead of one range applied to both.
+  //
+  //  - Pub 590-A's $10 round-up / $200 floor therefore lands once per
+  //    TAXPAYER, which is what §219(g)(2)(B) says. Contributions are still
+  //    aggregated WITHIN an owner before their single call: gating per rule
+  //    would apply the $200 floor once per RULE, so three small rules deep in
+  //    the phase-out would deduct 3 x $200 instead of $200. The proportional
+  //    reduction itself is linear, so aggregating within an owner is otherwise
+  //    arithmetically identical.
+  for (const owner of ["client", "spouse"] as const) {
+    const contribution = traditionalIraPreTaxByOwner[owner];
+    if (contribution === 0) continue;
+    if (!iraGate) {
+      total += contribution;
+      continue;
+    }
+    const ownCovered = owner === "client" ? iraGate.coveredSelf : iraGate.coveredSpouse;
+    const otherCovered = owner === "client" ? iraGate.coveredSpouse : iraGate.coveredSelf;
+    total += traditionalIraDeductibleAmount(
+      iraGate.magi,
+      contribution,
+      iraGate.annualLimitByOwner[owner],
+      ownCovered,
+      otherCovered,
+      year,
+      iraGate.params,
+      iraGate.filingStatus
+    );
   }
 
   return {
@@ -241,7 +284,10 @@ export function deriveAboveLineFromSavings(
     itemized: 0,
     saltPool: 0,
     traditionalIraPreTax,
-    traditionalIraAccountIds: [...traditionalIraAccountIds],
+    traditionalIraAccountIdsByOwner: {
+      client: [...traditionalIraAccountIdsByOwner.client],
+      spouse: [...traditionalIraAccountIdsByOwner.spouse],
+    },
   };
 }
 

@@ -153,6 +153,16 @@ const ACCT_401K_SPOUSE = acct({
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
 });
 const ACCT_IRA = acct({ id: "acct-ira", category: "retirement", subType: "traditional_ira" });
+// Spouse-owned traditional IRA. Needed to exercise the PER-OWNER §219(g)
+// phase-out at all: every other account in this file is client-owned, so a
+// fixture built from them cannot distinguish a per-owner ceiling from a pooled
+// household one.
+const ACCT_IRA_SPOUSE = acct({
+  id: "acct-ira-spouse",
+  category: "retirement",
+  subType: "traditional_ira",
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+});
 const ACCT_ROTH = acct({ id: "acct-roth", category: "retirement", subType: "roth_ira" });
 
 function salary(annualAmount: number, owner: Income["owner"] = "client"): Income {
@@ -252,8 +262,14 @@ describe("gate: traditional-IRA deduction is phased out on the year's real MAGI"
     // the wrong formulation.
     //
     // 11,400 rather than 12,800 also confirms the limit basis is ONE person's
-    // 7,000: a basis that wrongly added the non-contributing spouse's limit
-    // would leave 20% of 14,000 = 2,800 and deduct min(6,000, 2,800).
+    // 7,000: inflating it to 14,000 leaves 20% = 2,800 and deducts
+    // min(6,000, 2,800), which reddens this test.
+    //
+    // ⚠️ What it does NOT pin is the OWNER ATTRIBUTION, and no fixture built
+    // from this file's accounts could — every account here is client-owned, so
+    // a mutation that mis-attributes the spouse's IRA has nothing to move.
+    // That is what ACCT_IRA_SPOUSE and the asymmetric-pair test below exist
+    // for.
     const years = runProjection(build({
       incomes: [salary(155_000)],
       savingsRules: [
@@ -264,6 +280,41 @@ describe("gate: traditional-IRA deduction is phased out on the year's real MAGI"
     expect(years[0].thresholdFacts!.magiForIraDeduction).toBe(145_000);
     expect(years[0].deductionBreakdown!.aboveLine.retirementContributions).toBe(11_400);
   });
+
+  it("phases each spouse's OWN limit — an asymmetric pair is not one household bucket", () => {
+    // ⚠️ IRC 219(g) is a PER-INDIVIDUAL phase-out. Pooling both spouses'
+    // contributions against a pooled ceiling over-deducts whenever the two
+    // contributions are asymmetric, and the pooling is a threshold at $0
+    // rather than anything proportional: a $1 spouse contribution used to buy
+    // a full extra $7,000 of ceiling.
+    //
+    // Salary 155,000 - 10,000 deferral -> magiBase 145,000, fraction 0.8, so
+    // each covered individual keeps 20% of their own 7,000 = 1,400.
+    //   client  contributes 6,000 -> min(6,000, 1,400) = 1,400
+    //   spouse  contributes     1 -> min(    1, 1,400) =     1
+    //   statute total = 1,401, plus the 10,000 deferral = 11,401.
+    // Pooled, the engine saw 6,001 against a 14,000 basis -> 20% = 2,800 ->
+    // min(6,001, 2,800) = 2,800, i.e. 12,800. It over-deducted by 1,399.
+    const years = runProjection(build({
+      incomes: [salary(155_000)],
+      client: { ...CLIENT, coveredByWorkplacePlan: "yes", spouseCoveredByWorkplacePlan: "yes" },
+      accounts: [CHECKING, ACCT_401K, ACCT_IRA, ACCT_IRA_SPOUSE],
+      savingsRules: [
+        rule({ id: "sav-401k", accountId: "acct-401k", annualAmount: 10_000 }),
+        rule({ id: "sav-ira", accountId: "acct-ira", annualAmount: 6_000 }),
+        rule({ id: "sav-ira-spouse", accountId: "acct-ira-spouse", annualAmount: 1 }),
+      ],
+    }));
+    expect(years[0].deductionBreakdown!.aboveLine.retirementContributions).toBe(11_401);
+  });
+
+  // NOTE: the §219(b)(1)(A) band-edge discontinuity is pinned at the UNIT
+  // level only — `thresholds.test.ts` > "caps at the §219(b)(1)(A) limit on
+  // EVERY path". An end-to-end version was written here and deleted: it is
+  // unreachable through the projection, because `applyContributionLimits`
+  // caps the contribution upstream, so a 20,000 IRA rule never arrives at
+  // `derive-deductions` as 20,000. Reverting the cap in `thresholds.ts` leaves
+  // such a test GREEN — it cannot fail for the reason it would claim to.
 
   it("does not gate at all when NOBODY is a covered participant", () => {
     // The same 190,000 MAGI, but the only savings rule is the IRA itself — no

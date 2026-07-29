@@ -71,6 +71,7 @@ import {
   applyContributionLimits,
   computeIraLimit,
   computeMaxContribution,
+  iraOwnerKey,
   resolveAgeInYear,
   traditionalIraAnnualLimitBasis,
   type CapAdjustment,
@@ -3633,11 +3634,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         startYear: r.startYear,
         endYear: r.endYear,
       }));
+      const spouseFamilyMemberId =
+        (data.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
       const accountsForDeduction = data.accounts.map((a) => ({
         id: a.id,
         subType: a.subType ?? "",
         category: a.category,
         ownerEntityId: controllingEntity(a) ?? undefined,
+        // IRC 219(g) phases each spouse out separately, so the deduction
+        // module needs to know whose contribution it is looking at. Resolved
+        // HERE, once, and priced by `traditionalIraAnnualLimitBasis` from the
+        // very same key.
+        iraOwner: iraOwnerKey(a, spouseFamilyMemberId),
       }));
       const expensesForDeduction = allExpenses.map((e) => ({
         deductionType: e.deductionType ?? null,
@@ -3715,12 +3723,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // limit as its basis. It is built from the accounts the UNGATED pass
       // reports as having actually contributed — pass 1 applies the same six
       // inclusion guards pass 2 does, and only a contributing owner's limit
-      // belongs in the ceiling.
-      const iraAnnualLimit = traditionalIraAnnualLimitBasis({
-        accountIds: savingsUngated.traditionalIraAccountIds,
-        accounts: data.accounts,
+      // belongs in the ceiling. PER OWNER, because 219(g) phases each spouse
+      // out against their own limit.
+      const iraAnnualLimitByOwner = traditionalIraAnnualLimitBasis({
+        accountIdsByOwner: savingsUngated.traditionalIraAccountIdsByOwner,
         client,
-        familyMembers: data.familyMembers ?? [],
         year,
         taxYearParams: resolved!.params,
       });
@@ -3738,7 +3745,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           coveredSpouse,
           params: resolved!.params,
           filingStatus,
-          annualLimit: iraAnnualLimit,
+          annualLimitByOwner: iraAnnualLimitByOwner,
         },
       );
       // The non-IRA component is identical across the two calls, so the

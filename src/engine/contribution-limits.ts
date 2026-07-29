@@ -1,6 +1,7 @@
 import type { Account, ClientInfo, FamilyMember, SavingsRule } from "./types";
-import { controllingFamilyMember } from "./ownership";
+import { controllingFamilyMember, type OwnedThing } from "./ownership";
 import { itemProrationGate } from "./retirement-proration";
+import type { IraOwnerKey } from "../lib/tax/derive-deductions";
 import type { FilingStatus, TaxYearParameters } from "../lib/tax/types";
 import { rothIraAllowedContribution } from "../lib/tax/thresholds";
 
@@ -76,52 +77,60 @@ export function computeIraLimit(params: TaxYearParameters, age: number): number 
 }
 
 /**
- * The IRC §219(b) annual-IRA-limit basis for a set of accounts that actually
- * received a traditional-IRA contribution this year — the figure IRC
- * 219(g)(2)(A) applies the deduction phase-out fraction TO.
- *
- * The limit is PER PERSON, so distinct owners are counted once each: two IRAs
- * owned by the same spouse share one $7,000 (or $8,000 catch-up) limit, while
- * one IRA each for two spouses gives $14,000.
- *
- * ⚠️ Pass ONLY accounts that contributed. An owner who contributed nothing must
- * not enlarge the ceiling — doing so would over-deduct, the mirror image of the
- * contribution-basis bug the annual-limit parameter exists to fix.
+ * Which taxpayer's §219(b) annual limit an IRA contribution counts against.
  *
  * An IRA is individually owned by statute (the "I" in IRA), so an account that
  * does not resolve to a single 100% family-member owner is attributed to the
  * CLIENT rather than given a bucket of its own the way `applyContributionLimits`
  * treats "joint". A separate joint bucket here would hand the household an
  * extra full ceiling no taxpayer is entitled to.
+ *
+ * ⚠️ This is the ONE definition of the rule. `deriveAboveLineFromSavings`
+ * buckets contributions by the key this returns and
+ * `traditionalIraAnnualLimitBasis` prices those same buckets, so a second
+ * copy of the mapping would let the ceiling be computed over a different set
+ * of people than the contributions it bounds.
+ */
+export function iraOwnerKey(
+  account: OwnedThing,
+  spouseFamilyMemberId: string | null
+): IraOwnerKey {
+  const fmId = controllingFamilyMember(account);
+  return fmId != null && fmId === spouseFamilyMemberId ? "spouse" : "client";
+}
+
+/**
+ * The IRC §219(b) annual-IRA-limit basis PER OWNER — the figure IRC
+ * 219(g)(2)(A) applies each individual's deduction phase-out fraction TO.
+ *
+ * §219(g) is a PER-INDIVIDUAL phase-out, so this returns one limit per
+ * taxpayer rather than a household sum: pooling them lets a $1 contribution
+ * from one spouse buy a full extra $7,000 of ceiling for the other, because
+ * the "did this owner contribute" gate is a threshold at $0 and not anything
+ * proportional.
+ *
+ * The limit is PER PERSON, so an owner's two IRAs share one $7,000 (or $8,000
+ * catch-up) limit — which falls out of the bucketing rather than needing a
+ * de-duplication pass here.
+ *
+ * ⚠️ Pass ONLY accounts that contributed. An owner who contributed nothing
+ * gets a basis of 0, not their statutory limit — crediting them would
+ * over-deduct, the mirror image of the contribution-basis bug the annual-limit
+ * parameter exists to fix.
  */
 export function traditionalIraAnnualLimitBasis(input: {
-  accountIds: string[];
-  accounts: Account[];
+  accountIdsByOwner: Record<IraOwnerKey, string[]>;
   client: ClientInfo;
-  familyMembers: FamilyMember[];
   year: number;
   taxYearParams: TaxYearParameters;
-}): number {
-  const { accountIds, accounts, client, familyMembers, year, taxYearParams } = input;
-  const spouseFmId = familyMembers.find((fm) => fm.role === "spouse")?.id ?? null;
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
-
-  // "client" covers both a client-owned IRA and any account that doesn't
-  // resolve to a single family member (see the note above).
-  const owners = new Set<"client" | "spouse">();
-  for (const id of accountIds) {
-    const acct = accountById.get(id);
-    if (!acct) continue;
-    const fmId = controllingFamilyMember(acct);
-    owners.add(fmId != null && fmId === spouseFmId ? "spouse" : "client");
-  }
-
-  let basis = 0;
-  for (const owner of owners) {
+}): Record<IraOwnerKey, number> {
+  const { accountIdsByOwner, client, year, taxYearParams } = input;
+  const basisFor = (owner: IraOwnerKey): number => {
+    if (accountIdsByOwner[owner].length === 0) return 0;
     const dob = owner === "spouse" ? client.spouseDob : client.dateOfBirth;
-    basis += computeIraLimit(taxYearParams, resolveAgeInYear(dob, year));
-  }
-  return basis;
+    return computeIraLimit(taxYearParams, resolveAgeInYear(dob, year));
+  };
+  return { client: basisFor("client"), spouse: basisFor("spouse") };
 }
 
 /** HSA contribution limit for a given age + coverage tier. Self vs family

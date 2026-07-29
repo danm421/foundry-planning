@@ -317,6 +317,30 @@ export function traditionalIraDeductibleAmount(
   coveredSelf: boolean, coveredSpouse: boolean,
   year: number, params: TaxYearParameters, filingStatus: FilingStatus,
 ): number {
+  // IRC 219(b)(1)(A) caps the deduction at the annual limit REGARDLESS of MAGI.
+  // It is applied once, here, over whatever the 219(g) phase-out leaves —
+  // rather than repeated on each early return below, where one missed path is
+  // invisible. Capping only INSIDE the phase-out band (the former shape) put a
+  // cliff at the range start: just below it the whole contribution came back,
+  // one dollar above it min(contribution, ~limit) did.
+  //
+  // This includes the unseeded-params path. `annualLimit` is built from
+  // `contribLimits.iraTradLimit`, a NOT NULL column seeded independently of
+  // the nullable `iraDeduct` columns whose absence produces the NA range, so
+  // capping there is not capping by an unseeded number — and §219(b)(1)(A) is
+  // not a phase-out, so "params unseeded, don't phase out" never reached it.
+  return Math.min(annualLimit, phasedOutIraDeduction(
+    magi, contribution, annualLimit, coveredSelf, coveredSpouse, year, params, filingStatus,
+  ));
+}
+
+/** IRC 219(g)'s phase-out alone — see the §219(b)(1)(A) cap applied by the
+ *  exported wrapper above, which every path here flows through. */
+function phasedOutIraDeduction(
+  magi: number, contribution: number, annualLimit: number,
+  coveredSelf: boolean, coveredSpouse: boolean,
+  year: number, params: TaxYearParameters, filingStatus: FilingStatus,
+): number {
   if (!coveredSelf && !coveredSpouse) return contribution;
 
   // No spouse exists to be a covered participant, so IRC 219(g)(1) is not

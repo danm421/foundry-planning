@@ -5,6 +5,7 @@ import {
   computeHsaLimit,
   computeIraLimit,
   computeMaxContribution,
+  iraOwnerKey,
   resolveAgeInYear,
   traditionalIraAnnualLimitBasis,
 } from "../contribution-limits";
@@ -1020,68 +1021,86 @@ describe("applyContributionLimits Roth MAGI gate", () => {
 
 // ── §219(b) annual-limit basis for the IRC 219(g) deduction phase-out ───────
 
-describe("traditionalIraAnnualLimitBasis", () => {
-  // PARAMS_2025: iraTradLimit 7,000, iraCatchup50 1,000.
-  const FMS = [
-    { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other" as const, firstName: "Client", lastName: null, dateOfBirth: "1985-01-01" },
-    { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other" as const, firstName: "Spouse", lastName: null, dateOfBirth: "1985-01-01" },
-  ];
-  const CLIENT_IRA = acct("ira-c", "traditional_ira", "client");
-  const CLIENT_IRA_2 = acct("ira-c2", "traditional_ira", "client");
-  const SPOUSE_IRA = acct("ira-s", "traditional_ira", "spouse");
-  const JOINT_IRA = acct("ira-j", "traditional_ira", "joint");
-
-  // Both spouses age 40 in 2025 -> no catch-up on either side.
-  const bothAge40: ClientInfo = { ...clientInfoAge40, spouseDob: "1985-01-01" };
-
-  const basis = (accountIds: string[], over: Partial<{ client: ClientInfo; accounts: Account[] }> = {}) =>
-    traditionalIraAnnualLimitBasis({
-      accountIds,
-      accounts: over.accounts ?? [CLIENT_IRA, CLIENT_IRA_2, SPOUSE_IRA, JOINT_IRA],
-      client: over.client ?? bothAge40,
-      familyMembers: FMS,
-      year: 2025,
-      taxYearParams: PARAMS_2025,
-    });
-
-  it("is one person's limit for a single contributing account", () => {
-    expect(basis(["ira-c"])).toBe(7_000);
-  });
-
-  it("counts an owner ONCE across two of their own IRAs — the limit is per person, not per account", () => {
-    // The whole reason the helper de-duplicates owners. Summing per account
-    // would hand one taxpayer a 14,000 ceiling they are not entitled to.
-    expect(basis(["ira-c", "ira-c2"])).toBe(7_000);
-  });
-
-  it("sums BOTH spouses when each has a contributing IRA", () => {
-    expect(basis(["ira-c", "ira-s"])).toBe(14_000);
-  });
-
-  it("EXCLUDES a spouse who did not contribute, even though they exist on the return", () => {
-    // The over-deduction guard: a 14,000 basis here would inflate the surviving
-    // deduction for a household where only one spouse actually contributed.
-    expect(basis(["ira-c"])).toBe(7_000);
-    expect(basis(["ira-s"])).toBe(7_000);
-  });
-
-  it("adds the age-50 catch-up per person, from that person's own date of birth", () => {
-    // Client 55 (catch-up), spouse 40 (none) -> 8,000 + 7,000, NOT 2 x 8,000.
-    const clientOlder: ClientInfo = { ...clientInfoAge55, spouseDob: "1985-01-01" };
-    expect(basis(["ira-c"], { client: clientOlder })).toBe(8_000);
-    expect(basis(["ira-c", "ira-s"], { client: clientOlder })).toBe(15_000);
+describe("iraOwnerKey", () => {
+  it("resolves each spouse's own 100%-owned IRA to their own bucket", () => {
+    expect({
+      client: iraOwnerKey(acct("ira-c", "traditional_ira", "client"), LEGACY_FM_SPOUSE),
+      spouse: iraOwnerKey(acct("ira-s", "traditional_ira", "spouse"), LEGACY_FM_SPOUSE),
+    }).toEqual({ client: "client", spouse: "spouse" });
   });
 
   it("attributes an account with no single 100% family-member owner to the CLIENT, not a third bucket", () => {
     // A 50/50 account resolves to no controlling family member. An IRA is
     // individually owned by statute, so it must fold into the client's single
-    // limit — a separate bucket would add a full extra ceiling.
-    expect(basis(["ira-j"])).toBe(7_000);
-    expect(basis(["ira-c", "ira-j"])).toBe(7_000);
+    // limit — a separate "joint" bucket, the way `applyContributionLimits`
+    // treats one, would add a full extra ceiling no taxpayer is entitled to.
+    expect(iraOwnerKey(acct("ira-j", "traditional_ira", "joint"), LEGACY_FM_SPOUSE)).toBe("client");
   });
 
-  it("is zero when nothing contributed, and skips ids with no matching account", () => {
-    expect(basis([])).toBe(0);
-    expect(basis(["nope"])).toBe(0);
+  it("attributes a spouse-owned IRA to the CLIENT when there is no spouse on the return", () => {
+    // A single filer has no spouse family member, so nothing can resolve to
+    // the spouse bucket — and a spouse bucket on a single return would be
+    // priced off `client.spouseDob`, which is not there.
+    expect(iraOwnerKey(acct("ira-s", "traditional_ira", "spouse"), null)).toBe("client");
+  });
+});
+
+describe("traditionalIraAnnualLimitBasis", () => {
+  // PARAMS_2025: iraTradLimit 7,000, iraCatchup50 1,000.
+
+  // Both spouses age 40 in 2025 -> no catch-up on either side.
+  const bothAge40: ClientInfo = { ...clientInfoAge40, spouseDob: "1985-01-01" };
+
+  const basis = (
+    accountIdsByOwner: Record<"client" | "spouse", string[]>,
+    over: Partial<{ client: ClientInfo }> = {},
+  ) =>
+    traditionalIraAnnualLimitBasis({
+      accountIdsByOwner,
+      client: over.client ?? bothAge40,
+      year: 2025,
+      taxYearParams: PARAMS_2025,
+    });
+
+  it("is one person's limit for a single contributing account", () => {
+    expect(basis({ client: ["ira-c"], spouse: [] })).toEqual({ client: 7_000, spouse: 0 });
+  });
+
+  it("counts an owner ONCE across two of their own IRAs — the limit is per person, not per account", () => {
+    // Summing per ACCOUNT would hand one taxpayer a 14,000 ceiling they are
+    // not entitled to.
+    expect(basis({ client: ["ira-c", "ira-c2"], spouse: [] })).toEqual({ client: 7_000, spouse: 0 });
+  });
+
+  it("gives each spouse their OWN limit rather than a pooled one when both contribute", () => {
+    // ⚠️ The whole point of returning a pair. A single 14,000 number here
+    // lets either spouse's contribution be measured against BOTH limits, so a
+    // $1 contribution from one buys a full extra $7,000 of ceiling for the
+    // other.
+    expect(basis({ client: ["ira-c"], spouse: ["ira-s"] })).toEqual({ client: 7_000, spouse: 7_000 });
+  });
+
+  it("EXCLUDES a spouse who did not contribute, even though they exist on the return", () => {
+    // The over-deduction guard: a non-zero spouse basis here would inflate the
+    // surviving deduction for a household where only one spouse contributed.
+    expect({
+      clientOnly: basis({ client: ["ira-c"], spouse: [] }),
+      spouseOnly: basis({ client: [], spouse: ["ira-s"] }),
+    }).toEqual({
+      clientOnly: { client: 7_000, spouse: 0 },
+      spouseOnly: { client: 0, spouse: 7_000 },
+    });
+  });
+
+  it("adds the age-50 catch-up per person, from that person's own date of birth", () => {
+    // Client 55 (catch-up), spouse 40 (none) -> 8,000 and 7,000, NOT 8,000
+    // twice: the two limits are priced from two different dates of birth.
+    const clientOlder: ClientInfo = { ...clientInfoAge55, spouseDob: "1985-01-01" };
+    expect(basis({ client: ["ira-c"], spouse: ["ira-s"] }, { client: clientOlder }))
+      .toEqual({ client: 8_000, spouse: 7_000 });
+  });
+
+  it("is zero for both when nothing contributed", () => {
+    expect(basis({ client: [], spouse: [] })).toEqual({ client: 0, spouse: 0 });
   });
 });
