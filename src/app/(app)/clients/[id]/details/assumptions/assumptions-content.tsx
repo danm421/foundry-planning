@@ -22,6 +22,8 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { getLatestTaxReturn } from "@/lib/tax-returns/store";
+import { parseRowFacts } from "@/lib/tax-returns/db";
 
 interface AssumptionsContentProps {
   clientId: string;
@@ -132,10 +134,46 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
     );
   }
 
-  const [firmInflationAc] = await db
-    .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
-    .from(assetClasses)
-    .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation")));
+  // Auto-fill the long-term capital loss carryforward from the client's most
+  // recently analyzed tax return when no value has been entered/saved yet.
+  // getLatestTaxReturn is NOT itself firm-scoped, so it may only be called
+  // after client access has already been authorized (the clientRow lookup
+  // above). Best-effort — a missing/unreadable return must never break this
+  // page; it just means no autofill hint is shown. Runs concurrently with the
+  // firmInflationAc lookup below (independent queries).
+  const needsCapitalLossAutofill = settings.capitalLossCarryforwardLt == null;
+
+  const [taxReturnAutofill, [firmInflationAc]] = await Promise.all([
+    needsCapitalLossAutofill
+      ? (async () => {
+          try {
+            const latestTaxReturn = await getLatestTaxReturn(id);
+            if (!latestTaxReturn) return null;
+            const { facts } = parseRowFacts(latestTaxReturn);
+            const carryover = facts?.carryovers.capitalLossCarryover;
+            if (carryover == null) return null;
+            return { default: String(carryover), sourceYear: latestTaxReturn.taxYear };
+          } catch (err) {
+            console.error(
+              "AssumptionsContent: tax return read failed (best-effort, no autofill):",
+              err,
+            );
+            return null;
+          }
+        })()
+      : Promise.resolve(null),
+    db
+      .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
+      .from(assetClasses)
+      .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation"))),
+  ]);
+
+  let capitalLossCarryforwardLtDefault = settings.capitalLossCarryforwardLt ?? "";
+  let capitalLossCarryforwardLtSourceYear: number | null = null;
+  if (taxReturnAutofill) {
+    capitalLossCarryforwardLtDefault = taxReturnAutofill.default;
+    capitalLossCarryforwardLtSourceYear = taxReturnAutofill.sourceYear;
+  }
 
   let clientInflationOverride: { geometricReturn: string } | null = null;
   if (settings.useCustomCma && firmInflationAc) {
@@ -285,6 +323,7 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
       <AssumptionsClient
         clientId={id}
         riskLevel={riskLevel}
+        filingStatus={clientRow.filingStatus}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),
@@ -322,6 +361,9 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
           priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
           priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
+          capitalLossCarryforwardSt: settings.capitalLossCarryforwardSt ?? "",
+          capitalLossCarryforwardLt: capitalLossCarryforwardLtDefault,
+          capitalLossCarryforwardLtSourceYear,
           surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
           surplusSaveAccountId: settings.surplusSaveAccountId,
         }}

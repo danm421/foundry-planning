@@ -1,6 +1,6 @@
 {
   "id": "039d18f2-3392-4a92-aac1-4a9f56719268",
-  "prevId": "75eb1f1f-9cca-4c84-87ab-d4c26a230792",
+  "prevId": "074754b0-7ec2-4513-b480-5f36542d718c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4498,6 +4498,14 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
+        "details_view_mode": {
+          "name": "details_view_mode",
+          "type": "details_view_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'detailed'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -8160,6 +8168,13 @@
         },
         "pay_shortfall_out_of_pocket": {
           "name": "pay_shortfall_out_of_pocket",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_goal": {
+          "name": "is_goal",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -13820,6 +13835,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "capital_loss_carryforward_lt": {
+          "name": "capital_loss_carryforward_lt",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capital_loss_carryforward_st": {
+          "name": "capital_loss_carryforward_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -20582,6 +20609,14 @@
         "above_line",
         "below_line",
         "property_tax"
+      ]
+    },
+    "public.details_view_mode": {
+      "name": "details_view_mode",
+      "schema": "public",
+      "values": [
+        "detailed",
+        "map"
       ]
     },
     "public.distribution_form": {

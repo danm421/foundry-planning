@@ -1,4 +1,5 @@
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
+import type { FilingStatus } from "@/lib/tax/types";
 
 export type { CellDrillRow, CellDrillGroup, CellDrillProps } from "@/lib/cell-drill/types";
 
@@ -36,6 +37,10 @@ export interface CellDrillContext {
   /** Optional equity-plan accountId → display-name map for `equity-vest:<id>`,
    *  `equity-ltcg:<id>`, and `equity-stcg:<id>` keys. */
   equityPlanNames?: Record<string, string>;
+  /** Optional filing status — used by the capital-loss drill-down rows to pick
+   *  the correct §1211(b) annual ordinary-income-offset limit ($3,000, or
+   *  $1,500 for married_separate). Not populated by every caller. */
+  filingStatus?: FilingStatus;
 }
 
 /** Argument tuple for the income-breakdown adapter — exported for use by

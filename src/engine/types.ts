@@ -988,6 +988,10 @@ export interface Expense {
   startYearRef?: string | null;
   endYearRef?: string | null;
   growthSource?: string | null;
+  /** Advisor-set flag surfacing this expense on the Household Map Goals board.
+   *  Presentation only — engine math ignores it. Education rows are treated as
+   *  goals regardless of this flag; see src/lib/household-map/goals.ts. */
+  isGoal?: boolean;
 }
 
 export interface ExtraPayment {
@@ -1260,6 +1264,11 @@ export interface PlanSettings {
    *  $15M grows toward it then freezes; a value below $15M freezes the
    *  exemption at that amount for the whole plan. Null/undefined = uncapped. */
   lifetimeExemptionCap?: number | null;
+  /** Plan-start capital-loss carryforward by character (§1212(b)), as a
+   *  non-negative LOSS magnitude. Null/absent = start at zero. Seeded from the
+   *  client's Schedule D carryover. */
+  capitalLossCarryforwardShortTerm?: number | null;
+  capitalLossCarryforwardLongTerm?: number | null;
   /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
   ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
@@ -1399,6 +1408,13 @@ export interface ProjectionYear {
      *  distributions, return-of-capital) — those land in `taxExempt` only. */
     taxExemptInterest: number;
     bySource: Record<string, { type: string; amount: number }>;
+    /** End-of-year §1212(b) carryforward, for the drill-down. Post-drawdown:
+     *  this year's §1211(b) offset has already been subtracted. */
+    capitalLossCarryforward?: { shortTerm: number; longTerm: number };
+    /** §1211(b) ordinary-income offset actually taken this year. */
+    capitalLossDeduction?: number;
+    /** §165(c) losses excluded from netting (personal-use property). Display only. */
+    disallowedCapitalLoss?: number;
   };
 
   /** Per-person Medicare + IRMAA detail. Populated only for years where at

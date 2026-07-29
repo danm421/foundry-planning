@@ -85,6 +85,8 @@ export async function PUT(
       outOfHouseholdDniRate,
       priorTaxableGiftsClient,
       priorTaxableGiftsSpouse,
+      capitalLossCarryforwardSt,
+      capitalLossCarryforwardLt,
       inflationRate,
       taxEngineMode,
       taxInflationRate,
@@ -210,6 +212,25 @@ export async function PUT(
       );
     }
 
+    if (capitalLossCarryforwardSt != null) {
+      const n = Number(capitalLossCarryforwardSt);
+      if (!Number.isFinite(n) || n < 0) {
+        return NextResponse.json(
+          { error: "capitalLossCarryforwardSt must be a non-negative number" },
+          { status: 400 },
+        );
+      }
+    }
+    if (capitalLossCarryforwardLt != null) {
+      const n = Number(capitalLossCarryforwardLt);
+      if (!Number.isFinite(n) || n < 0) {
+        return NextResponse.json(
+          { error: "capitalLossCarryforwardLt must be a non-negative number" },
+          { status: 400 },
+        );
+      }
+    }
+
     if (lifetimeExemptionCap != null) {
       const cap = Number(lifetimeExemptionCap);
       if (!Number.isFinite(cap) || cap < 0) {
@@ -252,6 +273,12 @@ export async function PUT(
         outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
         priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
         priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
+        capitalLossCarryforwardSt: "capitalLossCarryforwardSt" in body
+          ? (capitalLossCarryforwardSt === null ? null : String(capitalLossCarryforwardSt))
+          : undefined,
+        capitalLossCarryforwardLt: "capitalLossCarryforwardLt" in body
+          ? (capitalLossCarryforwardLt === null ? null : String(capitalLossCarryforwardLt))
+          : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body

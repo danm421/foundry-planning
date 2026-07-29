@@ -44,6 +44,19 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("sale:tx_9", ctx)).toBe("Asset sale (tx_9)");
   });
 
+  it("labels the three education-funding drill keys instead of leaking a goal UUID", () => {
+    const goalId = "3f1b0c2a-0000-4000-8000-000000000001";
+    expect(resolveSourceLabel(`education_tax_free:${goalId}`, ctx)).toBe(
+      "Education funding — non-taxable distribution",
+    );
+    expect(resolveSourceLabel(`education_capital:${goalId}`, ctx)).toBe(
+      "Education funding — capital gain",
+    );
+    expect(resolveSourceLabel(`education:${goalId}`, ctx)).toBe(
+      "Education funding — taxable distribution",
+    );
+  });
+
   it("resolves note:<noteId>:interest|ltcg to '<name> — interest|capital gain' when names are provided", () => {
     const noteCtx: CellDrillContext = {
       ...ctx,

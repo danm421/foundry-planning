@@ -96,6 +96,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
         },
         {},
       ),
+      filingStatus: clientData?.client.filingStatus,
     }),
     [accountNames, clientData],
   );

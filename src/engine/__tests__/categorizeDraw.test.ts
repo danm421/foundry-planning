@@ -161,15 +161,19 @@ describe("categorizeDraw taxable — fresh-basis-first (spec 2026-05-11)", () =>
     expect(draw.basisReturn).toBeCloseTo(150, 2);
   });
 
-  it("loss position: legacyBasis ≥ legacyValue clamps gain to 0", () => {
-    // basis 1200 > balance 1000 (loss). freshBasisRemaining 50.
-    // legacy: value 950, basis 1150 → gainRatio clamps to 0
+  it("loss position: legacyBasis > legacyValue realizes a proportional loss", () => {
+    // basis 1200 > balance 1000 → underwater by 200. freshBasisRemaining 50.
+    // legacy: value 950, basis 1150 → gainRatio = 1 − 1150/950 = −4/19
+    // amount 200: fresh 50 (0 LTCG), legacy 150 × (−4/19) = −600/19 = −31.5789
+    //             basisReturn = 50 + 150 × (23/19) = 50 + 3450/19 = 231.5789
+    // Conservation: −31.5789 + 231.5789 = 200 = amount.
     const draw = categorizeDraw({
       account: taxable, amount: 200, balance: 1000,
       basisMap: { tx: 1200 }, freshBasisRemaining: 50, ownerAge: 50,
     });
-    expect(draw.capitalGains).toBe(0);
-    expect(draw.basisReturn).toBe(200);
+    expect(draw.capitalGains).toBeCloseTo(-31.578947, 4);
+    expect(draw.basisReturn).toBeCloseTo(231.578947, 4);
+    expect(draw.capitalGains + draw.basisReturn).toBeCloseTo(200, 6);
   });
 
   it("degenerate balance ≤ 0 falls back to all-gain", () => {

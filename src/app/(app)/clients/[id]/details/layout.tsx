@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import DetailsSidebar from "@/components/details-sidebar";
+import DetailsShell from "@/components/details-shell";
+import DetailsViewModeToggle from "@/components/details-view-mode-toggle";
 import ResumeQuickStartBanner from "@/components/quick-start/resume-quick-start-banner";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
@@ -19,20 +20,21 @@ export default async function ClientDataLayout({
   const firmId = await requireOrgId();
 
   const [row] = await db
-    .select({ state: clients.quickStartState })
+    .select({ state: clients.quickStartState, viewMode: clients.detailsViewMode })
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   const resumeStep = quickStartResumeStep((row?.state as QuickStartState | null) ?? null);
+  const viewMode = row?.viewMode ?? "detailed";
 
   return (
     <div className="space-y-6">
       {resumeStep && <ResumeQuickStartBanner clientId={id} step={resumeStep} />}
-      <div className="grid grid-cols-[220px_1fr] items-start gap-6">
-        <aside className="sticky top-[100px] h-[calc(100vh-100px)] border-r border-hair pr-4">
-          <DetailsSidebar clientId={id} quickStartResumeStep={resumeStep} />
-        </aside>
-        <section className="min-w-0">{children}</section>
+      <div className="flex justify-end">
+        <DetailsViewModeToggle clientId={id} mode={viewMode} />
       </div>
+      <DetailsShell clientId={id} quickStartResumeStep={resumeStep}>
+        {children}
+      </DetailsShell>
     </div>
   );
 }
