@@ -30,13 +30,71 @@ describe("computeCapacityScore", () => {
     expect(s).toBeLessThan(5);
   });
 
-  it("weights sum to 1", () => {
+  it("weights sum to 1.2 — deliberate headroom over the 100 cap", () => {
     const total =
       CAPACITY_WEIGHTS.horizon +
       CAPACITY_WEIGHTS.buffer +
       CAPACITY_WEIGHTS.withdrawal +
       CAPACITY_WEIGHTS.incomeFloor;
-    expect(total).toBeCloseTo(1, 10);
+    expect(total).toBeCloseTo(1.2, 10);
+  });
+
+  it("caps at 100 rather than paying out the full 120", () => {
+    const s = computeCapacityScore({
+      horizonYears: 40,
+      fundingScore: 1.6,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 1.2,
+    });
+    expect(s).toBe(100);
+  });
+
+  it("lets strength in three factors offset a missing income floor", () => {
+    // The household this headroom exists for: very large portfolio, decades of
+    // horizon, spending a rounding error against assets, and no Social Security
+    // or pension worth counting. A zero income floor should not hold them at 80.
+    const s = computeCapacityScore({
+      horizonYears: 40,
+      fundingScore: 1.6,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 0,
+    });
+    expect(s).toBe(95);
+    // Under the old sum-to-1 weights this same household scored 80.
+    expect(s).toBeGreaterThan(80);
+  });
+
+  it("still needs a fourth factor to actually reach 100", () => {
+    // Three maxed factors reach 95, so the cap is not degenerate -- no single
+    // factor is fully decorative.
+    const threeMaxed = computeCapacityScore({
+      horizonYears: 40,
+      fundingScore: 1.6,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 0,
+    });
+    const withFloor = computeCapacityScore({
+      horizonYears: 40,
+      fundingScore: 1.6,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 0.2,
+    });
+    expect(threeMaxed).toBeLessThan(100);
+    expect(withFloor).toBe(100);
+  });
+
+  it("is monotonic across the cap, never decreasing as an input improves", () => {
+    const at = (coverage: number) =>
+      computeCapacityScore({
+        horizonYears: 40,
+        fundingScore: 1.6,
+        withdrawalRate: 0,
+        guaranteedIncomeCoverage: coverage,
+      });
+    const series = [0, 0.1, 0.2, 0.5, 1, 1.5].map(at);
+    for (let k = 1; k < series.length; k++) {
+      expect(series[k]).toBeGreaterThanOrEqual(series[k - 1]);
+    }
   });
 
   it("is monotonic in funding buffer", () => {

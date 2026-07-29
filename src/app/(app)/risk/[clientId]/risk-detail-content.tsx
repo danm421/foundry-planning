@@ -17,6 +17,7 @@ import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
 import { CHIP_NEUTRAL } from "@/components/risk/risk-status-chips";
 import { ComponentCard } from "@/components/risk/component-card";
 import { CapacityBreakdown } from "@/components/risk/capacity-breakdown";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { RiskHistoryTable } from "@/components/risk/risk-history-table";
 import { ManualToleranceDialog } from "@/components/risk/manual-tolerance-dialog";
 import { EnvironmentEditor } from "@/components/risk/environment-editor";
@@ -180,7 +181,10 @@ export async function RiskDetailContent({
         >
           {capacity ? (
             <>
-              <span className="tabular text-2xl font-semibold text-ink">{row.capacityScore}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="tabular text-2xl font-semibold text-ink">{row.capacityScore}</span>
+                <FieldTooltip text="The four factors below add up to 120 at most, and the total is capped at 100. That headroom lets real strength in one area cover a gap in another — a large portfolio with decades of horizon can reach 100 with no Social Security at all." />
+              </span>
               <CapacityBreakdown factors={capacity.factors} />
             </>
           ) : (

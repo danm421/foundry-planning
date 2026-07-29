@@ -107,8 +107,10 @@ export function hashLifeInsuranceInputs(input: {
  *
  * 2 — income floor measured across the retirement years the guaranteed income
  *     actually flows, instead of at the first retirement year only.
+ * 3 — factor weights raised to sum to 1.2 against a 100 cap, so strength in one
+ *     factor can offset weakness in another.
  */
-const CAPACITY_FORMULA_VERSION = 2;
+const CAPACITY_FORMULA_VERSION = 3;
 
 /**
  * Cache key for a household's risk capacity. Folds in the CMA return bounds

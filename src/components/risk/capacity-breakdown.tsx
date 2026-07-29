@@ -31,11 +31,16 @@ const FACTOR_ORDER: { key: keyof CapacityFactors; label: string; help: string }[
 
 /**
  * Four bars, one per `computeCapacityScore` contribution. Each factor is
- * already a WEIGHTED contribution (horizon tops out at 0.3, not 1), so a
+ * already a WEIGHTED contribution (horizon tops out at 0.35, not 1), so a
  * bar's fill is the contribution against its own weight ceiling from
  * `CAPACITY_WEIGHTS` -- a fully-maxed factor always reads as a full bar
- * regardless of which weight it carries. Read together, the four numbers
- * sum to `capacityScore / 100`.
+ * regardless of which weight it carries.
+ *
+ * The four ceilings sum to 120, NOT to the capacity score: the blend is capped
+ * at `CAPACITY_SCORE_MAX`. So these numbers sum to `capacityScore / 100` only
+ * below the cap, and a maxed-out household's bars will visibly total more than
+ * its score. That gap is the headroom, and it is explained on the score itself
+ * in `risk-detail-content` rather than repeated on every bar.
  */
 export function CapacityBreakdown({ factors }: { factors: CapacityFactors }) {
   return (
