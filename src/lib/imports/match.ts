@@ -35,7 +35,7 @@ import {
 } from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
 import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "./owner-match";
-import type { ImportPayload } from "./types";
+import type { ImportPayload, MatchAnnotation } from "./types";
 
 export interface MatchCandidates {
   accounts: AccountCandidate[];
@@ -99,63 +99,100 @@ function resolveOwnerIds(
 }
 
 /**
+ * Annotate `rows` such that no existing record is claimed twice.
+ *
+ * Each row is matched against only the candidates not yet claimed by an
+ * earlier row, so a second row that would have hit the same record naturally
+ * degrades to `fuzzy` (or `new`) against what is left. Without this the commit
+ * step issues two UPDATEs against one record — last-wins — and the other
+ * imported row disappears with no warning. Only `exact` claims: `fuzzy` is a
+ * ranked suggestion the advisor still has to confirm, so it reserves nothing.
+ *
+ * `claimed` is injectable because expenses draw on two candidate pools that
+ * share one id space (see `annotateExpenses`); every claim against either pool
+ * has to be visible to the other. Callers with a single pool omit it.
+ */
+function claimOnce<T, C extends { id: string }>(
+  rows: T[],
+  candidates: C[],
+  annotate: (row: T, available: C[]) => MatchAnnotation,
+  claimed: Set<string> = new Set(),
+): Array<T & { match: MatchAnnotation }> {
+  return rows.map((row) => {
+    const available =
+      claimed.size === 0 ? candidates : candidates.filter((c) => !claimed.has(c.id));
+    const match = annotate(row, available);
+    if (match.kind === "exact") claimed.add(match.existingId);
+    return { ...row, match };
+  });
+}
+
+/**
  * Pure annotation pass: walks each entity-array in the payload and
  * stamps `match` based on the supplied candidate set. The orchestrator
  * (`runMatchingPass`) builds the candidate set from the DB; tests can
  * pass any synthetic set.
+ *
+ * Every row type goes through `claimOnce`, so within one call no two rows of
+ * the same type return `exact` on the same `existingId`.
  */
 export function annotatePayload(
   payload: ImportPayload,
   candidates: MatchCandidates,
 ): ImportPayload {
-  // One row -> one slot: the first row that matches a given living-expense
-  // slot claims it. Any later row that would resolve to the same slot id
-  // falls through to matchExpense instead of re-claiming it (which would
-  // otherwise cause a last-wins UPDATE at commit and silently drop a row).
-  const claimedSlotIds = new Set<string>();
   return {
     ...payload,
-    accounts: payload.accounts.map((row) => ({
-      ...row,
-      match: matchAccount(row, candidates.accounts, resolveOwnerIds(row, candidates.family)),
-    })),
-    incomes: payload.incomes.map((row) => ({
-      ...row,
-      match: matchIncome(row, candidates.incomes),
-    })),
-    expenses: payload.expenses.map((row) => {
-      const slotMatch = matchLivingSlot(row, candidates.livingSlots);
-      if (
-        slotMatch &&
-        slotMatch.kind === "exact" &&
-        !claimedSlotIds.has(slotMatch.existingId)
-      ) {
-        claimedSlotIds.add(slotMatch.existingId);
-        return { ...row, match: slotMatch };
-      }
-      return { ...row, match: matchExpense(row, candidates.expenses) };
-    }),
-    liabilities: payload.liabilities.map((row) => ({
-      ...row,
-      match: matchLiability(row, candidates.liabilities),
-    })),
-    dependents: payload.dependents.map((row) => ({
-      ...row,
-      match: matchFamilyMember(row, candidates.familyMembers),
-    })),
-    lifePolicies: payload.lifePolicies.map((row) => ({
-      ...row,
-      match: matchLifePolicy(row, candidates.lifePolicies),
-    })),
-    wills: payload.wills.map((row) => ({
-      ...row,
-      match: matchWill(row, candidates.wills),
-    })),
-    entities: payload.entities.map((row) => ({
-      ...row,
-      match: matchEntity(row, candidates.entities),
-    })),
+    accounts: claimOnce(payload.accounts, candidates.accounts, (row, available) =>
+      matchAccount(row, available, resolveOwnerIds(row, candidates.family)),
+    ),
+    incomes: claimOnce(payload.incomes, candidates.incomes, matchIncome),
+    expenses: annotateExpenses(payload, candidates),
+    liabilities: claimOnce(payload.liabilities, candidates.liabilities, matchLiability),
+    dependents: claimOnce(payload.dependents, candidates.familyMembers, matchFamilyMember),
+    lifePolicies: claimOnce(payload.lifePolicies, candidates.lifePolicies, matchLifePolicy),
+    wills: claimOnce(payload.wills, candidates.wills, matchWill),
+    entities: claimOnce(payload.entities, candidates.entities, matchEntity),
   };
+}
+
+/**
+ * Expenses carry two candidate pools: the persistent Current/Retirement living
+ * slots and ordinary expense rows. A slot wins when it hits, but only once.
+ *
+ * Both pools name rows of the SAME table under the same ids — `loadLivingSlots`
+ * selects the `isDefault` living expenses, and `loadCandidates` selects every
+ * expense in the scenario with no such filter — so one slot is reachable
+ * through either matcher and a claim made through one has to be visible to the
+ * other. Hence a single `claimed` set threaded through `claimOnce` rather than
+ * a slot-local one: an advisor who renames a default slot past
+ * `matchLivingSlot`'s patterns ("Household Spending" fails CURRENT_RE) makes
+ * that row exact-matchable by name through `matchExpense`, and a later
+ * "Living Expenses" row would still claim the same slot by role.
+ *
+ * The slot branch only consults the set — `claimOnce` records the claim, since
+ * it records every `exact` it returns. And it must consult the SET, not the
+ * filtered `available` list: in onboarding mode `candidates.expenses` is empty
+ * while `livingSlots` is populated, so a slot is absent from `available` for
+ * reasons that have nothing to do with being claimed, and keying off it would
+ * disable slot matching entirely.
+ */
+function annotateExpenses(
+  payload: ImportPayload,
+  candidates: MatchCandidates,
+): ImportPayload["expenses"] {
+  const claimed = new Set<string>();
+  return claimOnce(
+    payload.expenses,
+    candidates.expenses,
+    (row, available) => {
+      const slotMatch = matchLivingSlot(row, candidates.livingSlots);
+      if (slotMatch?.kind === "exact" && !claimed.has(slotMatch.existingId)) {
+        return slotMatch;
+      }
+      return matchExpense(row, available);
+    },
+    claimed,
+  );
 }
 
 export interface RunMatchingPassArgs {

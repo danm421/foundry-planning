@@ -395,6 +395,80 @@ describe("annotatePayload", () => {
 
     expect(fuzzyScores(result.accounts[0].match).has("renamed")).toBe(true);
   });
+
+  it("lets only the first row claim an existing account", () => {
+    const candidate: MatchCandidates["accounts"][number] = {
+      id: "acct-1",
+      name: "Fidelity Rollover IRA",
+      category: "retirement",
+      accountNumberLast4: "1234",
+      custodian: "Fidelity",
+      value: 100_000,
+    };
+    const row = {
+      name: "Fidelity Rollover IRA",
+      category: "retirement" as const,
+      accountNumberLast4: "1234",
+      custodian: "Fidelity",
+      value: 100_000,
+    };
+
+    const result = annotatePayload(
+      payloadFixture({ accounts: [annotated(row), annotated(row)] }),
+      { ...emptyCandidates(), accounts: [candidate] },
+    );
+
+    expect(result.accounts[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+    expect(result.accounts[1].match?.kind).not.toBe("exact");
+  });
+
+  it("keeps the living-expense slot guard intact", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        expenses: [
+          annotated({ type: "living", name: "Living Expenses", annualAmount: 100_000 }),
+          annotated({ type: "living", name: "Living Expenses", annualAmount: 90_000 }),
+        ] as Annotated<ExtractedExpense>[],
+      }),
+      {
+        ...emptyCandidates(),
+        livingSlots: [{ id: "slot-current", name: "Current Living Expenses", role: "current" }],
+      },
+    );
+
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match?.kind).not.toBe("exact");
+  });
+
+  // Slots are expense rows, so a slot id reaches annotatePayload through BOTH
+  // candidate pools: loadLivingSlots selects from `expenses`, and loadCandidates
+  // selects every expense for the scenario with no isDefault filter. Tracking
+  // slot claims in a set separate from the generic pool's therefore lets one
+  // slot be claimed twice — reachable as soon as an advisor renames a default
+  // slot away from matchLivingSlot's patterns ("Household Spending" fails
+  // CURRENT_RE), because the renamed row then matches by exact name+type
+  // through matchExpense while a later "Living Expenses" row still matches the
+  // same slot by role. At commit that is two UPDATEs against one record —
+  // last-wins — which is exactly what claimOnce exists to prevent.
+  it("does not let one renamed slot be claimed by both the expense and slot matchers", () => {
+    const renamedSlot = { id: "slot-current", name: "Household Spending" };
+    const result = annotatePayload(
+      payloadFixture({
+        expenses: [
+          annotated({ type: "living", name: "Household Spending", annualAmount: 100_000 }),
+          annotated({ type: "living", name: "Living Expenses", annualAmount: 90_000 }),
+        ] as Annotated<ExtractedExpense>[],
+      }),
+      {
+        ...emptyCandidates(),
+        expenses: [{ ...renamedSlot, type: "living" }],
+        livingSlots: [{ ...renamedSlot, role: "current" }],
+      },
+    );
+
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match?.kind).not.toBe("exact");
+  });
 });
 
 describe("runMatchingPass — onboarding mode", () => {
