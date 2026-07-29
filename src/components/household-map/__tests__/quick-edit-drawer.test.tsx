@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import QuickEditDrawer from "../quick-edit-drawer";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { ExpenseView, IncomeView } from "@/lib/scenario/view-adapters";
@@ -87,11 +88,14 @@ function incomeRow(overrides: Partial<IncomeView> = {}): IncomeView {
   };
 }
 
-function renderExpense(row: ExpenseView) {
+/** Every case renders the drawer into the same household — only `target`
+ *  differs, and `target` is the thing under test. Keeping the surrounding props
+ *  in one place means each case reads as the target it opens on. */
+function renderDrawer(target: ComponentProps<typeof QuickEditDrawer>["target"]) {
   return render(
     <QuickEditDrawer
       clientId="client-1"
-      target={{ kind: "expense", id: row.id, row, presetColumn: "joint" }}
+      target={target}
       clientFirstName="Alex"
       spouseFirstName="Jordan"
       milestones={milestones}
@@ -100,6 +104,10 @@ function renderExpense(row: ExpenseView) {
       onClose={() => {}}
     />,
   );
+}
+
+function renderExpense(row: ExpenseView) {
+  return renderDrawer({ kind: "expense", id: row.id, row, presetColumn: "joint" });
 }
 
 /** Captures every `fetch` call so a test can pick the write it cares about by
@@ -158,18 +166,7 @@ describe("QuickEditDrawer — goal checkbox (Task 11 brief, Step 2)", () => {
 
   it("renders an Owner select (Client/Spouse/Joint) for an income and no goal checkbox", () => {
     const row = incomeRow({ owner: "spouse" });
-    render(
-      <QuickEditDrawer
-        clientId="client-1"
-        target={{ kind: "income", id: row.id, row, presetColumn: "joint" }}
-        clientFirstName="Alex"
-        spouseFirstName="Jordan"
-        milestones={milestones}
-        resolvedInflationRate={0.03}
-        familyMembers={FAMILY_MEMBERS}
-        onClose={() => {}}
-      />,
-    );
+    renderDrawer({ kind: "income", id: row.id, row, presetColumn: "joint" });
 
     const ownerSelect = screen.getByLabelText("Owner");
     expect((ownerSelect as HTMLSelectElement).value).toBe("spouse");
@@ -265,24 +262,13 @@ describe("QuickEditDrawer — delete confirmation", () => {
 
 describe("QuickEditDrawer — create mode seeded as a goal", () => {
   function renderNewGoal(presetIsGoal: boolean) {
-    return render(
-      <QuickEditDrawer
-        clientId="client-1"
-        target={{
-          kind: "expense",
-          id: null,
-          row: null,
-          presetColumn: "joint",
-          presetIsGoal,
-        }}
-        clientFirstName="Alex"
-        spouseFirstName="Jordan"
-        milestones={milestones}
-        resolvedInflationRate={0.03}
-        familyMembers={FAMILY_MEMBERS}
-        onClose={() => {}}
-      />,
-    );
+    return renderDrawer({
+      kind: "expense",
+      id: null,
+      row: null,
+      presetColumn: "joint",
+      presetIsGoal,
+    });
   }
 
   it("pre-ticks 'Show as a goal'", () => {
@@ -335,21 +321,10 @@ describe("QuickEditDrawer — create mode seeded as a goal", () => {
 // nothing to strand.
 describe("QuickEditDrawer — education goals", () => {
   function renderNewExpense() {
-    return render(
-      <QuickEditDrawer
-        clientId="client-1"
-        // No `presetIsGoal` — so "Show as a goal" opens UNTICKED, and the
-        // force-tick assertions below cannot be passing on the Goals board's
-        // preset instead of on the education type.
-        target={{ kind: "expense", id: null, row: null, presetColumn: "joint" }}
-        clientFirstName="Alex"
-        spouseFirstName="Jordan"
-        milestones={milestones}
-        resolvedInflationRate={0.03}
-        familyMembers={FAMILY_MEMBERS}
-        onClose={() => {}}
-      />,
-    );
+    // No `presetIsGoal` — so "Show as a goal" opens UNTICKED, and the
+    // force-tick assertions below cannot be passing on the Goals board's
+    // preset instead of on the education type.
+    return renderDrawer({ kind: "expense", id: null, row: null, presetColumn: "joint" });
   }
 
   /** Save is gated on a non-empty name (`disabled={saving || !name.trim()}`).
@@ -393,18 +368,7 @@ describe("QuickEditDrawer — education goals", () => {
 
     it("does not offer a type on an income (the picker is expenses-only)", () => {
       const row = incomeRow();
-      render(
-        <QuickEditDrawer
-          clientId="client-1"
-          target={{ kind: "income", id: null, row: null, presetColumn: "client" }}
-          clientFirstName="Alex"
-          spouseFirstName="Jordan"
-          milestones={milestones}
-          resolvedInflationRate={0.03}
-          familyMembers={FAMILY_MEMBERS}
-          onClose={() => {}}
-        />,
-      );
+      renderDrawer({ kind: "income", id: null, row: null, presetColumn: "client" });
       expect(row.type).toBe("salary"); // fixture sanity — the income shape exists
       expect(screen.queryByLabelText("Type")).not.toBeInTheDocument();
     });
