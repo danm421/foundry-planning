@@ -58,6 +58,9 @@ vi.mock("../solver-monte-carlo-panel", () => ({
 vi.mock("../solver-balance-sheet-panel", () => ({
   SolverBalanceSheetPanel: () => <div data-testid="solver-balance-sheet-panel" />,
 }));
+vi.mock("../solver-thresholds-panel", () => ({
+  SolverThresholdsPanel: () => <div data-testid="solver-thresholds-panel" />,
+}));
 
 import { SolverChartPanel, REPORT_TABS } from "../solver-chart-panel";
 
@@ -252,6 +255,26 @@ describe("SolverChartPanel", () => {
     render(<ControlledPanel initialReport="balanceSheet" />);
     expect(screen.getByRole("tab", { name: "Balance Sheet" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("solver-balance-sheet-panel")).toBeInTheDocument();
+  });
+
+  // The Thresholds tab shipped with NO test here, while every sibling tab has
+  // one. Deleting the whole `if (tab === "thresholds")` branch from
+  // solver-chart-panel.tsx left this entire file — and all 12 tests in
+  // solver-thresholds-panel.test.tsx, which render the panel DIRECTLY and so
+  // bypass the router — green, while an advisor clicking Thresholds silently
+  // got the Portfolio chart. This test is the only thing that reddens on that
+  // mutation.
+  it("renders the Thresholds panel when that tab is active", () => {
+    render(<ControlledPanel initialReport="thresholds" />);
+    // One `toEqual` so both facts share a SINGLE throw point. As two separate
+    // `expect`s the second never runs once the first fails, and a mutation
+    // table credits it with coverage it never executed.
+    expect({
+      selected: screen
+        .getByRole("tab", { name: "Thresholds" })
+        .getAttribute("aria-selected"),
+      panelRendered: screen.queryByTestId("solver-thresholds-panel") !== null,
+    }).toEqual({ selected: "true", panelRendered: true });
   });
 
   it("renders only visible tabs, in layout order", () => {

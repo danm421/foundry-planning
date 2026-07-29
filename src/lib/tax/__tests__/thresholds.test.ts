@@ -111,6 +111,14 @@ describe("rangeFor", () => {
     expect(isNaRange(rangeFor("aotc", 2026, params, "married_separate", household))).toBe(true);
     expect(isNaRange(rangeFor("aotc", 2026, params, "married_joint", household))).toBe(false);
   });
+
+  // The Saver's band was asserted NOWHERE. Swapping `start` and `end` — so the
+  // row renders "$80,500 - $48,500" — left every test on this branch green,
+  // because every status fixture sat entirely outside the band.
+  it("returns the seeded Saver's Credit band — first tier ceiling to last", () => {
+    expect(rangeFor("saversCredit", 2026, params, "married_joint", household))
+      .toEqual({ start: 48500, end: 80500 });
+  });
 });
 
 describe("statusFor", () => {
@@ -132,6 +140,47 @@ describe("statusFor", () => {
 
   it("is out above the range end", () => {
     expect(statusFor("rothIra", facts({ magiForRoth: 300000 }))).toBe("out");
+  });
+
+  // The `partial` band was never entered on this branch — every Saver's
+  // assertion sat below 48,500 or above 80,500 — so an inverted range could
+  // not be detected by any of them.
+  it("is partial inside the Saver's Credit band", () => {
+    expect(statusFor("saversCredit", facts({ agi: 60000 }))).toBe("partial");
+  });
+
+  // `incomeFor` for the two IRA-deduction rows was structurally unpinnable: in
+  // the only fixture that asserted them, EVERY income measure landed on the
+  // same side of the band, so pointing the row at `magiForStudentLoan` (or
+  // `agi`, or `taxableIncomeBeforeQbi`) changed nothing. Here every other
+  // measure sits far outside 242,000-252,000, so only the right one yields
+  // "partial".
+  it("uses the IRA-deduction MAGI for the spousal row, not any other measure", () => {
+    expect(statusFor("iraDeductSpousal", facts({
+      household: { ...household, coveredSelf: false, coveredSpouse: true },
+      magiForIraDeduction: 247000,
+      magiForStudentLoan: 100000, magiForRoth: 100000,
+      magiForCredits: 100000, agi: 100000, taxableIncomeBeforeQbi: 100000,
+    }))).toBe("partial");
+  });
+
+  // These two household gates are `true` in every other fixture on the branch,
+  // so dropping the flag from `applies()` left the whole suite green while a
+  // household with no such account read "Full" instead of "N/A". Each MAGI
+  // below is placed where the status would be "full" if the gate were gone —
+  // that is what makes these discriminate na-vs-full rather than na-vs-out.
+  it("is na when the household has no Roth contribution", () => {
+    expect(statusFor("rothIra", facts({
+      household: { ...household, hasRothContribution: false },
+      magiForRoth: 241999,
+    }))).toBe("na");
+  });
+
+  it("is na when the household has no student-loan interest", () => {
+    expect(statusFor("studentLoanInterest", facts({
+      household: { ...household, hasStudentLoanInterest: false },
+      magiForStudentLoan: 100000,
+    }))).toBe("na");
   });
 
   it("uses the student-loan MAGI, not the Roth MAGI", () => {
