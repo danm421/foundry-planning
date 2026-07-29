@@ -379,7 +379,22 @@ describe("the MAGI ladder across the crossing", () => {
     expect(per((y) => facts(y).magiForCredits)).toEqual([
       430_000, 430_000, 175_625, 175_625, 175_625, 175_625, 175_625,
     ]);
-    expect(per((y) => facts(y).agi)).toEqual(per((y) => facts(y).magiForCredits));
+  });
+
+  it("reports the same figure as the report's `agi`", () => {
+    // Pinned to LITERALS, and in its own `it`, for two separate reasons.
+    //
+    //  - `projection.ts` assigns `agi: thresholdInputs.magiForCredits`, so
+    //    `expect(agi).toEqual(magiForCredits)` would be true BY CONSTRUCTION:
+    //    an identity between two reads of one variable, which no change to the
+    //    MAGI derivation could ever falsify. The literals make this an
+    //    assertion about the VALUE instead.
+    //  - Separated from the `magiForCredits` test above so a failure there
+    //    cannot short-circuit this one. Two assertions in one `it` are not two
+    //    covered assertions: the second never executes once the first throws.
+    expect(per((y) => facts(y).agi)).toEqual([
+      430_000, 430_000, 175_625, 175_625, 175_625, 175_625, 175_625,
+    ]);
   });
 });
 
@@ -508,14 +523,24 @@ describe("crossing: the CTC is partially phased through 2027, whole from 2028, t
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// CROSSING 5 of 5 — the AOTC. Flip year: 2030, when the IRC 25A(b)(2)(C)
-// four-year counter exhausts. The MAGI band also flips at 2028 (430,000 is past
-// the 180,000 MFJ ceiling; 175,625 sits inside it), so this item crosses twice.
+// CROSSING 5 of 5 — the AOTC. Flip year: 2028, where the MAGI band is crossed
+// (430,000 is past the 180,000 MFJ ceiling; 175,625 sits inside it). THAT is
+// this item's statutory crossing and the one R4 is satisfied by.
+//
+// ⚠️ The credit ALSO goes to zero at 2030, but that second transition is NOT a
+// statutory one — it is the engine defect documented at the foot of this block.
+// Under a §25A-correct counter the credit would keep paying through 2031 and
+// there would be no 2030 flip at all. The assertions below pin CURRENT
+// behaviour, correctly and deliberately; they are not a statement about what
+// the statute requires. Read the divergence note before trusting the shape.
 // ════════════════════════════════════════════════════════════════════════════
 
-describe("crossing: the AOTC is phased out through 2027, PAID in 2028-2029, and gone from 2030", () => {
-  it("claims the student for four years and then stops", () => {
-    // Goal runs 2026-2031; IRC 25A(b)(2)(C) allows four.
+describe("crossing: the AOTC is phased out through 2027, PAID in 2028-2029, and zero from 2030", () => {
+  it("stops counting the student after four goal-years — the ENGINE's counter, not the statute's", () => {
+    // Goal runs 2026-2031. The engine burns a year per active goal-year
+    // regardless of whether a credit was allowed, so it stops after 2029.
+    // ⚠️ The two trailing zeros are the DEFECT documented below, not §25A:
+    // 2026-2027 paid nothing yet consumed half the allowance.
     expect(per((y) => facts(y).household.aotcStudents)).toEqual([1, 1, 1, 1, 0, 0, 0]);
   });
 
@@ -525,15 +550,23 @@ describe("crossing: the AOTC is phased out through 2027, PAID in 2028-2029, and 
     // expenses -> the 2,500 cap binds -> 2,500 x 0.21875 = 546.875, split 40/60
     // by IRC 25A(i)(5) into 218.75 refundable and 328.125 nonrefundable.
     // Every figure is a dyadic fraction, so these are exact, not approximate.
+    //
+    // ⚠️ The 2028 flip (0 -> 218.75) is the statutory MAGI crossing. The 2030
+    // flip (218.75 -> 0) is the ENGINE DEFECT documented below — §25A would
+    // keep paying 218.75 through 2031. Both values are pinned as current
+    // behaviour; only the first is a statement about the statute.
     expect(per((y) => y.taxResult!.flow.refundableCredits)).toEqual([
       0, 0, 218.75, 218.75, 0, 0, 0,
     ]);
   });
 
-  it("renders out → partial at 2028 and partial → na at 2030", () => {
+  it("renders out → partial at 2028, then na from 2030 once the counter is spent", () => {
     // "na" rather than "out" from 2030: the household still HAS a student in
-    // college, but §25A no longer applies to them at all, which is a different
-    // statement from "their income disqualified them".
+    // college, but the engine's counter no longer offers them the credit, which
+    // is a different statement from "their income disqualified them".
+    // ⚠️ Those three "na"s are the DEFECT documented below, not the statute —
+    // and they are the reason it is invisible on the report, which reads them
+    // as "no AOTC student here" rather than "allowance already spent".
     expect(statuses("aotc")).toEqual([
       "out", "out", "partial", "partial", "na", "na", "na",
     ]);
