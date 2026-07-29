@@ -603,7 +603,17 @@ describe("the non-crossing rows hold their steady state", () => {
     // Income` is false and NIIT is "na" rather than "full". Asserted so that a
     // fixture change which quietly introduces investment income (and with it a
     // 3.8% surtax on every figure above) cannot pass unnoticed.
-    expect(per((y) => facts(y).netInvestmentIncome)).toEqual(HORIZON.map(() => 0));
+    //
+    // Read off `taxResult.diag` — the figure `calcNiit` was actually handed,
+    // and the same one the row's applicability is derived from. That is the
+    // engine's own number rather than a report-side restatement of it.
+    //
+    // No `?? 0`: the field is optional (bracket mode only), so defaulting it
+    // would let an UNPOPULATED diag satisfy a guard whose whole job is to
+    // prove the figure is zero. Asserting the raw value makes "absent" fail
+    // exactly as loudly as "non-zero".
+    expect(per((y) => y.taxResult!.diag.netInvestmentIncome))
+      .toEqual(HORIZON.map(() => 0));
     expect(statuses("niit")).toEqual(HORIZON.map(() => "na"));
     expect(statuses("qbi")).toEqual(HORIZON.map(() => "na"));
   });

@@ -38,7 +38,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   year: 2026, household,
   agi: 300000, magiForIraDeduction: 300000, magiForStudentLoan: 300000,
   magiForRoth: 300000, magiForCredits: 300000,
-  taxableIncomeBeforeQbi: 300000, amti: 300000, netInvestmentIncome: 50000,
+  taxableIncomeBeforeQbi: 300000, amti: 300000,
   ...over,
 });
 

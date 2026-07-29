@@ -7332,7 +7332,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             magiForCredits: reportMagis.magiForCredits,
             taxableIncomeBeforeQbi: finalTaxResult.diag.taxableIncomeBeforeQbi ?? 0,
             amti: finalTaxResult.diag.amti ?? 0,
-            netInvestmentIncome: reportedNii,
           }
         : undefined;
 

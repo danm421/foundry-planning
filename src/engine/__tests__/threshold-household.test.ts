@@ -1055,7 +1055,7 @@ describe("thresholdFacts rides on the projection year", () => {
     expect(f.agi).toBe(f.magiForCredits);
   });
 
-  it("carries the three non-MAGI income measures off the year's tax result", () => {
+  it("carries the two non-MAGI income measures off the year's tax result", () => {
     const years = runProjection(build({
       savingsRules: [rule({ id: "sav-401k", accountId: "acct-401k", annualAmount: 10_000 })],
     }));
@@ -1065,7 +1065,6 @@ describe("thresholdFacts rides on the projection year", () => {
     // asserted against the tax result rather than restated as a literal.
     expect(f.taxableIncomeBeforeQbi).toBe(flow.taxableIncome);
     expect(f.amti).toBe(flow.taxableIncome + 30_000); // standard deduction added back
-    expect(f.netInvestmentIncome).toBe(0);
   });
 
   // ── B3: the reported MAGIs must see the WHOLE year ────────────────────────

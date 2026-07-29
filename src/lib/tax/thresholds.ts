@@ -63,7 +63,6 @@ export interface ThresholdFacts {
   magiForCredits: number;
   taxableIncomeBeforeQbi: number;
   amti: number;
-  netInvestmentIncome: number;
 }
 
 export interface ThresholdItem {
