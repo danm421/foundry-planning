@@ -71,6 +71,51 @@ describe("deriveInsightInputs", () => {
     expect(required.cashReturn).toBe(0.02);
   });
 
+  it("counts Social Security that starts AFTER the retirement year", () => {
+    // Retire at 65, claim SS at 67 -- the overwhelmingly common shape. The
+    // engine gates SS to the claiming age, so the first two retirement years
+    // carry none. Sampling only retYears[0] read 0 for these households even
+    // when the plan held a six-figure benefit.
+    const projection = [
+      yr({ age: 65, incomeTotal: 0, ss: 0, deferred: 0, expensesTotal: 90_000, liquidTotal: 1_100_000 }),
+      yr({ age: 66, incomeTotal: 0, ss: 0, deferred: 0, expensesTotal: 90_000, liquidTotal: 1_050_000 }),
+      yr({ age: 67, incomeTotal: 40_000, ss: 40_000, deferred: 0, expensesTotal: 90_000, liquidTotal: 1_000_000 }),
+      yr({ age: 68, incomeTotal: 40_000, ss: 40_000, deferred: 0, expensesTotal: 90_000, liquidTotal: 950_000 }),
+    ];
+    const { capacity } = deriveInsightInputs({
+      projection, currentAge: 65, retirementAge: 65, planEndAge: 90,
+      fundingScore: 1.0, cashReturn: 0.02, equityReturn: 0.07,
+    });
+    // Measured over the years the floor is actually flowing: 80k / 180k.
+    expect(capacity.guaranteedIncomeCoverage).toBeCloseTo(40_000 / 90_000, 3);
+  });
+
+  it("is not distorted by a single low-expense year", () => {
+    // Aggregate ratio, not a mean of per-year ratios -- one year with a
+    // collapsed expense base must not manufacture a full income floor.
+    const projection = [
+      yr({ age: 65, incomeTotal: 40_000, ss: 40_000, deferred: 0, expensesTotal: 1_000, liquidTotal: 1_000_000 }),
+      yr({ age: 66, incomeTotal: 40_000, ss: 40_000, deferred: 0, expensesTotal: 200_000, liquidTotal: 950_000 }),
+    ];
+    const { capacity } = deriveInsightInputs({
+      projection, currentAge: 65, retirementAge: 65, planEndAge: 90,
+      fundingScore: 1.0, cashReturn: 0.02, equityReturn: 0.07,
+    });
+    expect(capacity.guaranteedIncomeCoverage).toBeCloseTo(80_000 / 201_000, 3);
+  });
+
+  it("reports a zero floor when the plan holds no guaranteed income", () => {
+    const projection = [
+      yr({ age: 65, incomeTotal: 0, ss: 0, deferred: 0, expensesTotal: 90_000, liquidTotal: 1_000_000 }),
+      yr({ age: 66, incomeTotal: 0, ss: 0, deferred: 0, expensesTotal: 90_000, liquidTotal: 950_000 }),
+    ];
+    const { capacity } = deriveInsightInputs({
+      projection, currentAge: 65, retirementAge: 65, planEndAge: 90,
+      fundingScore: 1.0, cashReturn: 0.02, equityReturn: 0.07,
+    });
+    expect(capacity.guaranteedIncomeCoverage).toBe(0);
+  });
+
   it("degrades safely when there are no retirement years in the projection", () => {
     const projection = [
       yr({ age: 60, incomeTotal: 200_000, ss: 0, deferred: 0, expensesTotal: 150_000, liquidTotal: 1_000_000 }),

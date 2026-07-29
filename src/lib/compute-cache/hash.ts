@@ -99,6 +99,18 @@ export function hashLifeInsuranceInputs(input: {
 }
 
 /**
+ * Version of the capacity formulas themselves (deriveInsightInputs +
+ * capacityFactors). ENGINE_VERSION does not cover them -- they live in lib/,
+ * not the engine -- so without this a scoring change would keep serving
+ * pre-change results out of cache for every unedited plan. Bump on any change
+ * to how a capacity factor is derived.
+ *
+ * 2 — income floor measured across the retirement years the guaranteed income
+ *     actually flows, instead of at the first retirement year only.
+ */
+const CAPACITY_FORMULA_VERSION = 2;
+
+/**
  * Cache key for a household's risk capacity. Folds in the CMA return bounds
  * alongside the plan tree because computeRequiredGrowthPct interpolates against
  * them -- a tree-only hash would keep serving a stale required-growth figure
@@ -111,6 +123,7 @@ export function hashRiskCapacityInputs(input: {
 }): string {
   const material = stableStringify({
     engineVersion: ENGINE_VERSION,
+    formulaVersion: CAPACITY_FORMULA_VERSION,
     kind: "risk_capacity",
     tree: input.tree,
     bounds: { cash: input.cashReturn, equity: input.equityReturn },
