@@ -98,15 +98,37 @@ function resolveOwnerIds(
   return owners.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : []));
 }
 
+/** Passed to `annotate` for the unclaimed-world probe below; never mutated. */
+const NOTHING_CLAIMED: ReadonlySet<string> = new Set<string>();
+
 /**
  * Annotate `rows` such that no existing record is claimed twice.
  *
  * Each row is matched against only the candidates not yet claimed by an
- * earlier row, so a second row that would have hit the same record naturally
- * degrades to `fuzzy` (or `new`) against what is left. Without this the commit
- * step issues two UPDATEs against one record — last-wins — and the other
- * imported row disappears with no warning. Only `exact` claims: `fuzzy` is a
- * ranked suggestion the advisor still has to confirm, so it reserves nothing.
+ * earlier row, so a second row that would have hit the same record degrades
+ * rather than hitting it too. Without this the commit step issues two UPDATEs
+ * against one record — last-wins — and the other imported row disappears with
+ * no warning. Only `exact` claims: `fuzzy` is a ranked suggestion the advisor
+ * still has to confirm, so it reserves nothing.
+ *
+ * A blocked row must not degrade all the way to `new`. `new` is an INSERT at
+ * commit, and the merge step folds every uploaded file's rows into one payload
+ * with no cross-file dedupe (see `merge.ts`), so one account appearing in two
+ * overlapping statements would silently become two accounts — double-counting
+ * net worth and every projection downstream. Two extractions of the same
+ * living-expense total would likewise double-count cash flow. So when the
+ * normal pass yields `new`, we ask what the row would have matched in an
+ * unclaimed world; if that is an `exact` on an id someone else already took,
+ * the row is a duplicate, not a new record, and becomes `fuzzy`. Every commit
+ * module skips `fuzzy`, so the row writes nothing, renders as "Ambiguous" in
+ * the review step, and counts in `result.skipped` — the pre-branch outcome,
+ * surfaced instead of silent. A row that scores nothing against the FULL
+ * candidate set is genuinely new and stays `new`.
+ *
+ * The probe passes an empty `claimed` rather than only an unfiltered candidate
+ * list because `annotateExpenses` reads the set directly (its slot pool is not
+ * in `candidates` at all in onboarding mode) — filtering alone would return the
+ * post-claim answer and the expenses half would never degrade.
  *
  * `claimed` is injectable because expenses draw on two candidate pools that
  * share one id space (see `annotateExpenses`); every claim against either pool
@@ -115,14 +137,29 @@ function resolveOwnerIds(
 function claimOnce<T, C extends { id: string }>(
   rows: T[],
   candidates: C[],
-  annotate: (row: T, available: C[]) => MatchAnnotation,
+  annotate: (row: T, available: C[], claimed: ReadonlySet<string>) => MatchAnnotation,
   claimed: Set<string> = new Set(),
 ): Array<T & { match: MatchAnnotation }> {
   return rows.map((row) => {
     const available =
       claimed.size === 0 ? candidates : candidates.filter((c) => !claimed.has(c.id));
-    const match = annotate(row, available);
-    if (match.kind === "exact") claimed.add(match.existingId);
+    const match = annotate(row, available, claimed);
+    if (match.kind === "exact") {
+      claimed.add(match.existingId);
+      return { ...row, match };
+    }
+    if (match.kind === "new" && claimed.size > 0) {
+      const unclaimed = annotate(row, candidates, NOTHING_CLAIMED);
+      if (unclaimed.kind === "exact" && claimed.has(unclaimed.existingId)) {
+        // Empty `candidates` deliberately: the picker builds its option list
+        // from the component's own `candidates` prop via `candidatesForRow`,
+        // not from this annotation, so carrying the blocked id here would gain
+        // the advisor nothing and would only invite them to re-select the
+        // record another row already claimed — recreating the double-UPDATE
+        // claimOnce exists to prevent.
+        return { ...row, match: { kind: "fuzzy", candidates: [] } };
+      }
+    }
     return { ...row, match };
   });
 }
@@ -175,23 +212,28 @@ export function annotatePayload(
  * while `livingSlots` is populated, so a slot is absent from `available` for
  * reasons that have nothing to do with being claimed, and keying off it would
  * disable slot matching entirely.
+ *
+ * The set arrives as an ARGUMENT rather than being captured lexically, which
+ * makes this closure a pure function of its inputs. `claimOnce`'s duplicate
+ * probe depends on that: it re-asks the question with an empty `claimed`, and a
+ * captured set would ignore the substitution and hand back the same post-claim
+ * answer, leaving duplicate living-expense totals to insert as new rows.
  */
 function annotateExpenses(
   payload: ImportPayload,
   candidates: MatchCandidates,
 ): ImportPayload["expenses"] {
-  const claimed = new Set<string>();
   return claimOnce(
     payload.expenses,
     candidates.expenses,
-    (row, available) => {
+    (row, available, claimed) => {
       const slotMatch = matchLivingSlot(row, candidates.livingSlots);
       if (slotMatch?.kind === "exact" && !claimed.has(slotMatch.existingId)) {
         return slotMatch;
       }
       return matchExpense(row, available);
     },
-    claimed,
+    new Set<string>(),
   );
 }
 

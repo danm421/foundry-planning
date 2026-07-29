@@ -257,7 +257,14 @@ describe("annotatePayload", () => {
     expect(result.expenses[2].match).toEqual({ kind: "exact", existingId: "exp-housing" });
   });
 
-  it("claims a living slot for only the first matching row; later rows fall through to matchExpense", () => {
+  // Both rows read as the household's current-living total ("Total Monthly
+  // Expenses" clears CURRENT_RE), so they are two extractions of ONE figure —
+  // a $60k slot and a $61k re-read of the same household total, not a $60k
+  // expense plus a separate $61k one. Row 1 must not commit: `new` would INSERT
+  // a second living-expense row and double-count $61k/yr of spending forever.
+  // `fuzzy` writes nothing and puts the disagreement in front of the advisor,
+  // who is the only one who can say which figure is right.
+  it("degrades a second row claiming the same living slot to fuzzy rather than inserting it", () => {
     const candidates: MatchCandidates = {
       ...emptyCandidates(),
       expenses: [],
@@ -274,7 +281,7 @@ describe("annotatePayload", () => {
     });
     const result = annotatePayload(payload, candidates);
     expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
-    expect(result.expenses[1].match).toEqual({ kind: "new" });
+    expect(result.expenses[1].match).toEqual({ kind: "fuzzy", candidates: [] });
   });
 
   it("resolves incoming owners from the registration hint and ranks by owner", () => {
@@ -420,6 +427,103 @@ describe("annotatePayload", () => {
 
     expect(result.accounts[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
     expect(result.accounts[1].match?.kind).not.toBe("exact");
+  });
+
+  // What the blocked row degrades TO, asserted concretely rather than as
+  // `not.toBe("exact")` — which is what let the `new` fallthrough ship. The
+  // commit layer INSERTs on `new`, and the merge step pushes every uploaded
+  // file's rows into one payload with no cross-file dedupe, so the same account
+  // extracted from two overlapping statements would become two accounts and
+  // double-count net worth silently. Every commit module skips `fuzzy`, so the
+  // degraded row writes nothing, shows "Ambiguous" in the wizard, and lands in
+  // `result.skipped` where the advisor can see it.
+  it("degrades a row whose only exact match is already claimed to fuzzy, not new", () => {
+    const candidate: MatchCandidates["accounts"][number] = {
+      id: "acct-1",
+      name: "Fidelity Rollover IRA",
+      category: "retirement",
+      accountNumberLast4: "1234",
+      custodian: "Fidelity",
+      value: 100_000,
+    };
+    const row = {
+      name: "Fidelity Rollover IRA",
+      category: "retirement" as const,
+      accountNumberLast4: "1234",
+      custodian: "Fidelity",
+      value: 100_000,
+    };
+
+    const result = annotatePayload(
+      payloadFixture({ accounts: [annotated(row), annotated(row)] }),
+      { ...emptyCandidates(), accounts: [candidate] },
+    );
+
+    expect(result.accounts[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+    expect(result.accounts[1].match).toEqual({ kind: "fuzzy", candidates: [] });
+  });
+
+  // The other half of the degrade: it must fire only when the row's own exact
+  // match was taken, never merely because some earlier row claimed something.
+  // Without this a blanket "fuzzy whenever anything is claimed" passes the test
+  // above while burying every genuinely new account behind an ambiguity warning.
+  it("leaves a row that matches nothing in the full candidate set as new", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [
+          annotated({
+            name: "Fidelity Rollover IRA",
+            category: "retirement",
+            accountNumberLast4: "1234",
+            custodian: "Fidelity",
+            value: 100_000,
+          }),
+          annotated({ name: "Apex Capital", category: "taxable", value: 10_000 }),
+        ],
+      }),
+      {
+        ...emptyCandidates(),
+        accounts: [
+          {
+            id: "acct-1",
+            name: "Fidelity Rollover IRA",
+            category: "retirement",
+            accountNumberLast4: "1234",
+            custodian: "Fidelity",
+            value: 100_000,
+          },
+        ],
+      },
+    );
+
+    expect(result.accounts[0].match).toEqual({ kind: "exact", existingId: "acct-1" });
+    expect(result.accounts[1].match).toEqual({ kind: "new" });
+  });
+
+  // The expenses half of the same degrade, and the half a naive implementation
+  // misses: `annotateExpenses` consults the claimed SET directly in its slot
+  // branch rather than the filtered `available` list, so re-running it against
+  // the unfiltered candidate list alone still returns the post-claim answer.
+  // Note `candidates.expenses` is empty here — the onboarding shape, where the
+  // slot is reachable through no other pool.
+  it("degrades a second row that resolves to an already-claimed living slot to fuzzy", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        expenses: [
+          annotated({ type: "living", name: "Total Expenses", annualAmount: 72_000 }),
+          annotated({ type: "living", name: "Household Budget", annualAmount: 73_000 }),
+        ] as Annotated<ExtractedExpense>[],
+      }),
+      {
+        ...emptyCandidates(),
+        livingSlots: [
+          { id: "slot-current", name: "Current Living Expenses", role: "current" },
+        ],
+      },
+    );
+
+    expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
+    expect(result.expenses[1].match).toEqual({ kind: "fuzzy", candidates: [] });
   });
 
   it("keeps the living-expense slot guard intact", () => {
