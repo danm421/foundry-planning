@@ -145,7 +145,7 @@ describe("taxAdapter.components (COMPOSITION)", () => {
     const parts = taxAdapter.components(year, ctx);
     const taxLines = parts.filter((p) => p.type === "tax_line");
     // The residual line appears with the honest SECA-inclusive label…
-    const residual = taxLines.find((p) => p.label === "Self-employment tax and other federal adjustments");
+    const residual = taxLines.find((p) => p.label === "Other federal adjustments (incl. self-employment tax)");
     expect(residual).toBeDefined();
     expect(residual!.amount).toBe(18_360);
     // …and the tax_line parts (eight lines + residual) reconcile to totalTax.
@@ -162,9 +162,9 @@ describe("taxAdapter.components (COMPOSITION)", () => {
     // One assertion, not two: identity AND amount in a single toEqual, so the red
     // can only land here. The old one-sided `residual >= LINE_FLOOR` guard drops
     // this line entirely and the find() returns undefined.
-    expect(taxLines.find((p) => p.label === "Self-employment tax and other federal adjustments"))
+    expect(taxLines.find((p) => p.label === "Other federal adjustments (incl. self-employment tax)"))
       .toEqual({
-        label: "Self-employment tax and other federal adjustments",
+        label: "Other federal adjustments (incl. self-employment tax)",
         amount: -4_125,
         type: "tax_line",
       });

@@ -1,8 +1,14 @@
 // Other Taxes drill — the "Other ▸" group from the Federal tab: everything in
 // Total Tax beyond regular federal income tax. Mostly taxes, plus one NEGATIVE
 // component (federal credits, netted inside totalTax while regularFederalIncomeTax
-// stays pre-credit). The named columns SUM to the Total column, which equals the
-// Federal page's "Other" (= totalTax − regularFederalIncomeTax). Table-only.
+// stays pre-credit). The Total column equals the Federal page's "Other"
+// (= totalTax − regularFederalIncomeTax) by construction.
+//
+// The named columns sum to that Total for every household WITHOUT self-employment
+// income. They cannot for one WITH it: src/engine/year-tax.ts:233-236 folds SECA
+// into totalTax with no flow line field to column, so the columns fall short by
+// `seTax`. That is an engine gap (see creditsInOtherFromFlow in lib/tax/other-tax.ts),
+// not something this view-model can close. Table-only.
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type {

@@ -79,6 +79,15 @@ describe("tax-detail-flow-table — C3 Other = Total − Regular Fed", () => {
     expect(otherColumns([y]).find((c) => c.key === "credits")!.value(y)).toBe(-2_000);
   });
 
+  it("C3: the credits column sits to the LEFT of Other Total", () => {
+    // POSITION is load-bearing, not cosmetic: this file's invariants are written
+    // as "the components to its LEFT sum to it". Moving credits into the
+    // informational region right of Other Total leaves every value assertion
+    // green while the rendered table contradicts both written invariants.
+    const keys = otherColumns([y]).map((c) => c.key);
+    expect(keys.indexOf("credits")).toBeLessThan(keys.indexOf("other_total"));
+  });
+
   it("C3: the credits column is zero-suppressed when no year claims a credit", () => {
     // The column must vanish, like every other component column, via
     // otherColumns()'s own filter.

@@ -44,9 +44,10 @@ export const taxAdapter: SubjectAdapter = {
  *    RESIDUAL guard: the eight fields are not the whole bill. Two unlined terms
  *    move `flow.totalTax` in OPPOSITE directions:
  *      + SECA self-employment tax, a NINTH additive term the engine folds straight
- *        into `flow.totalTax`/`totalFederalTax` (year-tax.ts) with no flow line
- *        field — so for self-employed clients the eight fields sum to
- *        `totalTax − seTax` and the gap is POSITIVE.
+ *        into `flow.totalTax`/`totalFederalTax` (src/engine/year-tax.ts:233-236)
+ *        with no flow line field — `TaxResult["flow"]` has no `seTax` at all — so
+ *        for self-employed clients the eight fields sum to `totalTax − seTax` and
+ *        the gap is POSITIVE.
  *      − Federal credits. `flow.taxCredits` + `flow.refundableCredits` are netted
  *        out inside `totalFederalTax` (calculate.ts) while `regularFederalIncomeTax`
  *        stays PRE-credit by design, so for a household with credits the eight
@@ -55,9 +56,22 @@ export const taxAdapter: SubjectAdapter = {
  *    The guard is therefore on |gap|, not on gap: a one-sided `gap >= LINE_FLOOR`
  *    silently discards every credit-driven residual and breaks the sum invariant
  *    for exactly the households the credit layer was built for. The residual is
- *    computed from the engine's own `totalTax` — never recomputed — and its label
- *    stays truthful for either direction (both are federal adjustments).
+ *    computed from the engine's own `totalTax` — never recomputed.
  *    Sub-floor gaps (|gap| < LINE_FLOOR) are still dropped as noise.
+ *
+ *    ⚠️ WHY THIS SURFACE RECONCILES AND THE ITEMIZING TABLES DO NOT. The residual
+ *    is a SUBTRACTION from the engine's own total, so it absorbs any unlined term
+ *    automatically — including `seTax`, without ever naming it. The Other-Taxes
+ *    tables (lib/tax/other-tax.ts and its two consumers) instead ENUMERATE flow
+ *    fields, so they can only show what has a field: they carry the credits
+ *    component but structurally cannot carry SECA. The two documents are not in
+ *    conflict — this one holds unconditionally, that one holds for households
+ *    without self-employment income. Don't "reconcile" them by weakening this.
+ *
+ *    The residual's label leads with the GENERIC term for that reason — see
+ *    RESIDUAL_TAX_LINE_LABEL in ../types.ts, which is named for the set, not for
+ *    SECA: the first household to see this line is typically a credit-claiming
+ *    one with zero SE income.
  *  - `income_source` parts — the recognized income DRIVING the tax, source-keyed
  *    and labeled via `resolveSourceLabel`, largest-|amount| first, capped at
  *    SOURCE_CAP. Kept as a distinct type so a consumer never sums them into the

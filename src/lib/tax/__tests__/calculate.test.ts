@@ -735,12 +735,19 @@ describe("calculateTaxYear — credits: nonrefundable clamped at tax, refundable
     },
   }));
 
+  // Split from one three-assertion `it` (Task 14b review round 2). Stacked
+  // assertions are not independently covered — the first to throw hides the rest.
+  const taxBeforeCredits =
+    result.flow.regularFederalIncomeTax + result.flow.capitalGainsTax + result.flow.amtAdditional;
+
   it("caps the nonrefundable total at regular + cap-gains + AMT-additional", () => {
-    const taxBeforeCredits =
-      result.flow.regularFederalIncomeTax + result.flow.capitalGainsTax + result.flow.amtAdditional;
-    expect(taxBeforeCredits).toBe(2_840);
     expect(result.flow.taxCredits).toBeLessThanOrEqual(taxBeforeCredits);
-    expect(result.flow.taxCredits).toBe(2_840);
+  });
+
+  it("consumes that base exactly — the clamp binds at 2,840", () => {
+    // One assertion, both exact facts: the base is 2,840 AND credits consume it.
+    expect({ taxBeforeCredits, taxCredits: result.flow.taxCredits })
+      .toEqual({ taxBeforeCredits: 2_840, taxCredits: 2_840 });
   });
 
   it("keeps refundable dollars out of taxCredits", () => {
@@ -1140,5 +1147,50 @@ describe("calculateTaxYear — credits: earned income for the ACTC is wages PLUS
       household: { ...householdBase, selfEmploymentEarnings: -25_000 },
     }));
     expect(withLoss.flow.refundableCredits).toBe(3_400);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 14b review round 2, Minor 4. `creditsInOtherFromFlow` (lib/tax/other-tax.ts)
+// subtracts `taxCredits + refundableCredits` from the Other bucket WITHOUT
+// re-clamping, and both itemizing surfaces depend on that being safe. Its
+// justification is that `computeCredits` is handed `subpartATaxBeforeCredits` as
+// its clamp base, so `flow.taxCredits` can never exceed subpart A.
+//
+// Every other D2/C3 fixture is a hand-authored `flow` literal — none of them
+// execute this path. If a future change gave `computeCredits` a different clamp
+// base (say the grand total including NIIT), the helper would over-subtract on
+// BOTH surfaces with zero red anywhere. This runs the REAL calculation and pins
+// the coupling at its source.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("calculateTaxYear — the clamp base creditsInOtherFromFlow relies on", () => {
+  // MFJ, 3 children, $40k wages, seeded CTC. AGI 40,000 − std 32,200 = 7,800
+  // taxable, all in the 10% bracket → subpartA = 780 with capGains/AMT at 0.
+  // Gross CTC is 3 × 2,000 = 6,000, far above 780, so the clamp BINDS: the
+  // applied nonrefundable total is pinned to subpart A exactly.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 40_000,
+    flatStateRate: 0,
+    taxParams: params2026WithCredits(),
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+  const subpartA = result.flow.regularFederalIncomeTax
+    + result.flow.capitalGainsTax
+    + result.flow.amtAdditional;
+
+  it("never applies more nonrefundable credit than subpart A tax", () => {
+    expect(result.flow.taxCredits).toBeLessThanOrEqual(subpartA);
+  });
+
+  it("and the clamp BINDS here at a nonzero figure, so the check above is not vacuous", () => {
+    // One assertion, two facts: the applied total equals subpart A (clamp bit)
+    // and that shared value is > 0 (the fixture actually exercises credits).
+    expect({ taxCredits: result.flow.taxCredits, subpartA }).toEqual({ taxCredits: 780, subpartA: 780 });
   });
 });

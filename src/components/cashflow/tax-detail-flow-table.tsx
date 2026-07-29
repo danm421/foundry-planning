@@ -254,7 +254,7 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
       key: "other_total",
       label: "Other Total",
       tooltip:
-        "Sum of the federal tax components to the left, credits included as a negative (= Total Tax − Regular Federal). Excludes trust & beneficiary tax.",
+        "Total Tax − Regular Federal. The components to the left sum to it (credits included as a negative), except for self-employed households: SECA self-employment tax is inside this total but has no column of its own. Excludes trust & beneficiary tax.",
       value: (y) => computeOtherTaxes(y),
     },
     // Informational columns — NOT part of the household Total Tax. Placed after
