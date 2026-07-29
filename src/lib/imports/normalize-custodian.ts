@@ -1,9 +1,10 @@
 /**
- * Trailing-only legal/entity suffixes. Order matters: longer forms first so
- * "n a" is not stripped before "bank n a" has been considered as a whole.
- *
- * These are stripped ONLY from the end of the string. Removing them anywhere
- * would mangle real names — "Bank of America" would become "of america".
+ * Trailing-only legal/entity suffixes. Each is stripped only from the END of
+ * the string, and only as a whole trailing word (word-boundary anchored) —
+ * never from the middle. That's what keeps "Bank of America" intact instead
+ * of becoming "of america". List order is not load-bearing today; it would
+ * only matter as a tie-breaker if a future suffix were itself a trailing
+ * word-subset of one already here.
  */
 const TRAILING_SUFFIXES = [
   "incorporated",
