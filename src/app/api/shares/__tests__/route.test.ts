@@ -97,13 +97,22 @@ describe("POST /api/shares", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 409 when createShare returns 409 (same firm)", async () => {
-    mockCreateShare.mockResolvedValue({ ok: false, status: 409, error: "That user is already a member of this firm and has access." });
+  it("returns 409 when createShare returns 409 (duplicate active grant)", async () => {
+    mockCreateShare.mockResolvedValue({ ok: false, status: 409, error: "That recipient already has this share." });
 
     const { POST } = await import("../route");
     const req = makeRequest("POST", { email: "colleague@own.com", permission: "edit" });
     const res = await POST(req);
     expect(res.status).toBe(409);
+  });
+
+  it("returns 400 when createShare rejects a self-share", async () => {
+    mockCreateShare.mockResolvedValue({ ok: false, status: 400, error: "You can't share a client with yourself." });
+
+    const { POST } = await import("../route");
+    const req = makeRequest("POST", { email: "self@own.com", permission: "edit" });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 on invalid body (bad email)", async () => {

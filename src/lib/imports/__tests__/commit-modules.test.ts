@@ -823,6 +823,30 @@ describe("commitAccounts", () => {
     expect(callsForTable(calls, "account_holdings")).toHaveLength(0);
   });
 
+  it("never writes name when updating an exact-matched account", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      accounts: [
+        {
+          name: "JOHN SMITH ROLLOVER IRA XXXX-1234",
+          category: "retirement",
+          value: 250_000,
+          match: { kind: "exact", existingId: "acct-1" },
+        },
+      ],
+    };
+
+    await commitAccounts(tx, payload, { ...ctx, holdingsAccountIds: [] });
+
+    const updates = callsForTable(calls, "accounts").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    // The advisor may have renamed this account; the import must not clobber it.
+    expect(Object.keys(updates[0].values as Record<string, unknown>)).not.toContain("name");
+    // ...but it must still write the fields the field map marks as replace.
+    expect(updates[0].values).toMatchObject({ value: "250000" });
+  });
+
   it("persists statement marketValue for an untickered bond holding", async () => {
     const { tx, calls, setSelectResult, setInsertId } = makeFakeTx();
     setSelectResult("family_members", [{ id: "fm-client", role: "client" }]);

@@ -113,16 +113,40 @@ export async function requireActiveSubscription(): Promise<void> {
 export async function requireActiveSubscriptionForFirm(firmId: string): Promise<void> {
   const { userId, orgId, sessionClaims } = await auth();
   if (!userId) throw new UnauthorizedError();
-  let meta: Record<string, unknown>;
   if (orgId && firmId === orgId) {
-    meta =
+    const meta =
       (sessionClaims as { org_public_metadata?: Record<string, unknown> })
         ?.org_public_metadata ?? {};
-  } else {
-    const cc = await clerkClient();
-    const org = await cc.organizations.getOrganization({ organizationId: firmId });
-    meta = (org.publicMetadata as Record<string, unknown>) ?? {};
+    if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
+    return;
   }
+  await requireActiveSubscriptionForFirmNoSession(firmId);
+}
+
+/**
+ * Same firm-keyed subscription rule as `requireActiveSubscriptionForFirm`, but
+ * with NO session requirement — it never calls `auth()` and can therefore never
+ * throw `UnauthorizedError`. Reads the firm's publicMetadata straight from Clerk.
+ *
+ * For PUBLIC, token-authenticated routes only (the emailed risk questionnaire,
+ * and any future surface where the token — not a Clerk session — is the whole
+ * authority). Such a route has `userId === null` by design, so calling the
+ * session-bound variant there throws `UnauthorizedError` on EVERY request and
+ * 500s the route; that is not a hypothetical, it shipped once and is exactly
+ * what this helper exists to prevent.
+ *
+ * Costs one Clerk API call — there is no session fast path to take. The only
+ * error it raises is ForbiddenError, so a public caller's handler needs just the
+ * one catch.
+ *
+ * NB: the name deliberately contains the substring "requireActiveSubscription"
+ * so `active-subscription-lint.test.ts` counts a route using it as gated,
+ * without an allowlist entry.
+ */
+export async function requireActiveSubscriptionForFirmNoSession(firmId: string): Promise<void> {
+  const cc = await clerkClient();
+  const org = await cc.organizations.getOrganization({ organizationId: firmId });
+  const meta = (org.publicMetadata as Record<string, unknown>) ?? {};
   if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
 }
 

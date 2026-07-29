@@ -47,6 +47,7 @@ import {
 } from "./liability-schedules";
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
+import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
 import {
   buildAnnualExclusionMap,
   type AnnualExclusionRow,
@@ -78,7 +79,7 @@ import {
   applyBusinessSales,
   _resetSyntheticIdCounter,
 } from "./asset-transactions";
-import type { BusinessSalesResult } from "./asset-transactions";
+import type { AssetSalesResult, BusinessSalesResult } from "./asset-transactions";
 import { createEquityState, computeEquityYear } from "./equity/tax-events";
 import { applyEquityYear } from "./equity/apply";
 import { remainingGrantValue } from "./equity/valuation";
@@ -101,7 +102,7 @@ import {
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
-import { computePortfolioSnapshot } from "./portfolio-snapshot";
+import { computePortfolioSnapshot, LIQUID_PORTFOLIO_BUCKETS } from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
@@ -857,6 +858,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? [], planSettings);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
+  // §1212(b) capital-loss carryforward. Seeded from the client's Schedule D
+  // carryover, then advanced exactly ONCE per year at the single commit point
+  // below (beside `charityCarryforward`) — never inside the iterative
+  // supplemental-withdrawal solve, whose probes would compound it per iteration.
+  let capitalLossCarryforward: CapitalLossCarryforward = {
+    shortTerm: Math.max(0, planSettings.capitalLossCarryforwardShortTerm ?? 0),
+    longTerm: Math.max(0, planSettings.capitalLossCarryforwardLongTerm ?? 0),
+  };
 
   // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
   // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
@@ -1176,12 +1185,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Sales happen on the first day of the year: the sold asset doesn't earn
     // growth this year, and sale proceeds land in the cash account in time to
     // earn the year's cash growth.
-    let saleResult = {
+    // Annotated rather than inferred: the inline literal used to re-declare
+    // `breakdown`'s row shape by hand, and had already drifted (it was missing
+    // `disallowedLoss` and `fractionSold`). `AssetSalesResult` is the one
+    // source of truth.
+    let saleResult: AssetSalesResult = {
       capitalGains: 0,
       homeSaleExclusionTotal: 0,
-      removedAccountIds: [] as string[],
-      removedLiabilityIds: [] as string[],
-      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; homeSaleExclusionApplied: number; taxableCapitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
+      disallowedLosses: 0,
+      removedAccountIds: [],
+      removedLiabilityIds: [],
+      breakdown: [],
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const sales = allSales;
@@ -1953,6 +1967,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Declared `let` so the Phase 3 entity-passthrough block can add its
     // passthrough total for flat-mode compatibility (bracket mode reads
     // taxDetail directly; flat mode reads taxableIncome).
+    // SIGNED capital gains folded into the `taxableIncome` scalar directly
+    // below, split by character. Flat mode backs this exact pair out and
+    // re-adds the §1222-netted figures, so it MUST be built from the same terms
+    // the fold uses and computed at the same point — `taxDetail.capitalGains`
+    // is a different number (later passes move one and not the other). Keep in
+    // lockstep with the fold below and with every `capitalGainsInTaxableIncome`
+    // adjustment at the YearTaxInput rebuild sites.
+    const capGainsInTaxableIncome = {
+      longTerm:
+        income.capitalGains +
+        grantorIncome.capitalGains +
+        transferResult.capitalGains +
+        reinvestmentResult.capitalGains +
+        saleResult.capitalGains +
+        businessSaleResult.capitalGains +
+        equityCapitalGains,
+      shortTerm: realizationSTCG + equityStCapitalGains,
+    };
     let taxableIncome =
       income.salaries +
       income.business +
@@ -2366,9 +2398,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         crtShare += owner.percent;
       }
       if (crtShare > 0) {
+        // i5: net out the POST-§165(c) / post-§121 `taxableCapitalGain`, NOT the
+        // raw signed `capitalGain`. The household ADD below books
+        // `saleResult.capitalGains`, which is Σ taxableCapitalGain — so
+        // subtracting the raw figure takes back something that was never added.
+        // A CRT-owned residence sold $4M below basis has taxableCapitalGain 0
+        // (the loss is disallowed) but capitalGain −$4M, and the raw net-out
+        // turned that into a PHANTOM +$4,000,000 household gain. This map also
+        // feeds the `sale:` drill-down row below, so the raw figure itemized the
+        // same phantom gain and made the contradiction self-consistent.
         crtSaleGainByTxn.set(
           item.transactionId,
-          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.capitalGain * crtShare,
+          (crtSaleGainByTxn.get(item.transactionId) ?? 0) + item.taxableCapitalGain * crtShare,
         );
       }
     }
@@ -2383,9 +2424,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       saleResult.capitalGains +
       businessSaleResult.capitalGains +
       householdCarryInCapGains;
-    if (crtSaleGainTotal > 0) {
-      taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - crtSaleGainTotal);
+    // §664(c) is symmetric: the CRT's share of this year's sale results — gain OR
+    // loss — belongs to the tax-exempt trust, never the household 1040. Gating on
+    // `> 0` would leave the household holding the trust's loss. The result is NOT
+    // floored: a household net capital loss is now a legitimate value that §1222
+    // netting and the §1211(b) cap consume downstream.
+    //
+    // The amount netted is the CRT's share of the POST-§165(c) / post-§121
+    // `taxableCapitalGain` (i5), matching the ADD immediately above — a share
+    // whose loss the Code already disallowed is 0 on BOTH sides, not −$4M on one.
+    if (crtSaleGainTotal !== 0) {
+      taxDetail.capitalGains -= crtSaleGainTotal;
     }
+    // §165(c) losses disallowed on personal-use property. Display only — they
+    // never enter §1222 netting, so they are reported alongside the gains they
+    // were excluded from rather than silently dropped.
+    taxDetail.disallowedCapitalLoss =
+      (taxDetail.disallowedCapitalLoss ?? 0) + saleResult.disallowedLosses;
     if (householdCarryInCapGains > 0) {
       taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
         type: "capital_gains",
@@ -2408,16 +2463,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.taxable };
       }
     }
+    // The three capital-gain itemization loops below gate on `!== 0`, not `> 0`:
+    // a loss row omitted from the drill-down doesn't merely hide detail, it makes
+    // the itemization CONTRADICT the signed total it sits under. `!== 0` is also
+    // the -0 guard — `-0 !== 0` is false, so a negative zero is skipped.
     for (const item of saleResult.breakdown) {
       // §664(c): itemize only the non-CRT share — the drill-down must reconcile
       // to the capitalGains total netted above, not re-assert the exempt slice. (F1)
-      const householdGain = item.capitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
-      if (householdGain > 0) {
+      //
+      // i3: itemize `taxableCapitalGain`, NOT the raw `capitalGain`. The total
+      // this row sits under sums `saleResult.capitalGains`, which is
+      // Σ taxableCapitalGain (post-§121, post-§165(c)). Using the raw figure
+      // emitted a −$200,000 row under a $0 total for a residence sold below
+      // basis, and a +$200,000 row under a $0 total for a §121-excluded gain.
+      const householdGain =
+        item.taxableCapitalGain - (crtSaleGainByTxn.get(item.transactionId) ?? 0);
+      if (householdGain !== 0) {
         taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: householdGain };
       }
     }
     for (const item of businessSaleResult.breakdown) {
-      if (item.totalCapitalGain > 0) {
+      if (item.totalCapitalGain !== 0) {
         taxDetail.bySource[`business_sale:${item.transactionId}`] = {
           type: "capital_gains",
           amount: item.totalCapitalGain,
@@ -2425,7 +2491,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     for (const [rid, info] of Object.entries(reinvestmentResult.byReinvestment)) {
-      if (info.capitalGains > 0) {
+      if (info.capitalGains !== 0) {
         taxDetail.bySource[`reinvestment:${rid}`] = { type: "capital_gains", amount: info.capitalGains };
       }
     }
@@ -2434,10 +2500,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (eq.ordinaryIncome > 0) {
         taxDetail.bySource[`equity-vest:${planId}`] = { type: "earned_income", amount: eq.ordinaryIncome };
       }
-      if (eq.capitalGains > 0) {
+      // i4: `!== 0`, same reason as the three loops above — `:2001-2002` folds
+      // these into taxDetail.capitalGains / .stCapitalGains UNCONDITIONALLY, so
+      // a `> 0` gate drops the row while the total keeps the loss. Task 6 made
+      // the LT leg newly negative-reachable (equity/tax-events.ts, a qualifying
+      // ISO disposition below basis).
+      if (eq.capitalGains !== 0) {
         taxDetail.bySource[`equity-ltcg:${planId}`] = { type: "capital_gains", amount: eq.capitalGains };
       }
-      if (eq.stCapitalGains > 0) {
+      if (eq.stCapitalGains !== 0) {
         taxDetail.bySource[`equity-stcg:${planId}`] = { type: "stcg", amount: eq.stCapitalGains };
       }
     }
@@ -2511,9 +2582,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // subtracted via sameYearTrustGains and then dropped by
           // collectTrustIncome.
           if (!nonGrantorTrustIds.has(owner.entityId)) continue;
+          // i5: pro-rate the POST-§165(c) / post-§121 `taxableCapitalGain`, not
+          // the raw signed `capitalGain`. This figure is subtracted back off the
+          // household total via `sameYearTrustGains` below, and the household ADD
+          // booked Σ taxableCapitalGain — a raw figure here subtracts a loss the
+          // household was never charged for. See the note on that subtraction.
           assetTransactionGains.push({
             ownerEntityId: owner.entityId,
-            gain: item.capitalGain * owner.percent,
+            gain: item.taxableCapitalGain * owner.percent,
           });
         }
       }
@@ -2528,14 +2604,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Trust-owned gains from same-year sales were added to household taxDetail
-      // at line ~1124 (full saleResult.capitalGains) and need to be subtracted
-      // back out so the bracket engine doesn't tax them twice (trust pays its
-      // own 1041 cap-gains tax). Carry-in gains were never added to household
-      // taxDetail in the first place, so exclude them from the subtraction.
+      // via `saleResult.capitalGains` and need to be subtracted back out so the
+      // bracket engine doesn't tax them twice (trust pays its own 1041 cap-gains
+      // tax). Carry-in gains were never added to household taxDetail in the
+      // first place, so exclude them from the subtraction.
       const carryInTotal = nonGrantorCarryInGains.reduce((s, g) => s + g.gain, 0);
       const sameYearTrustGains = assetTransactionGains.reduce((s, g) => s + g.gain, 0) - carryInTotal;
-      if (sameYearTrustGains > 0) {
-        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - sameYearTrustGains);
+      // Symmetric with the household ADD, which booked `saleResult.capitalGains`
+      // — Σ taxableCapitalGain, i.e. POST-§121 and POST-§165(c) — including the
+      // trust's share. The take-back is built on the same post-§165(c) basis
+      // (i5); pro-rating the RAW `capitalGain` instead subtracted a disallowed
+      // trust loss that was never added, inventing household gain out of nothing.
+      // A `> 0` gate would take back only gains, leaving the household holding a
+      // loss that the 1041 pass is simultaneously being handed. Not floored —
+      // see the §664(c) note above.
+      if (sameYearTrustGains !== 0) {
+        taxDetail.capitalGains -= sameYearTrustGains;
       }
 
       // Build trustLiquidity from current accountBalances for each trust.
@@ -3758,6 +3842,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
+          // Unused on this path (the probe short-circuits above unless
+          // `useBracket`), but kept in lockstep with the `taxableIncome`
+          // expression above so it stays correct if the guard ever moves.
+          capitalGainsInTaxableIncome: {
+            longTerm: capGainsInTaxableIncome.longTerm + suppCapGains,
+            shortTerm: capGainsInTaxableIncome.shortTerm,
+          },
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: 0,
@@ -3928,6 +4020,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       aboveLineDeductions,
       itemizedDeductions,
       charityCarryforwardIn: charityCarryforward,
+      capitalLossCarryforwardIn: capitalLossCarryforward,
+      capitalGainsInTaxableIncome: capGainsInTaxableIncome,
       charityGiftsThisYear,
       secaResult,
       transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -4673,12 +4767,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Taxable components feed the year's tax (mostly zero — 529 is tax-free).
-      if (drawResult.ordinaryIncome > 0) taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
-      if (drawResult.capitalGains > 0) taxDetail.capitalGains += drawResult.capitalGains;
-      if (drawResult.ordinaryIncome > 0 || drawResult.capitalGains > 0) {
+      // capitalGains is SIGNED (categorizeDraw, withdrawal.ts:98): an underwater
+      // taxable dedicated account funds the goal at a LOSS, which must reach
+      // §1222 netting like any other realized loss. Ordinary income and capital
+      // gains are booked as SEPARATE bySource rows — a single keyed row could
+      // only carry one type, silently discarding the other.
+      taxDetail.ordinaryIncome += drawResult.ordinaryIncome;
+      taxDetail.capitalGains += drawResult.capitalGains;
+      if (drawResult.ordinaryIncome !== 0) {
         taxDetail.bySource[`education:${goal.id}`] = {
-          type: drawResult.capitalGains > 0 ? "capital_gains" : "ordinary_income",
-          amount: drawResult.capitalGains > 0 ? drawResult.capitalGains : drawResult.ordinaryIncome,
+          type: "ordinary_income",
+          amount: drawResult.ordinaryIncome,
+        };
+      }
+      if (drawResult.capitalGains !== 0) {
+        taxDetail.bySource[`education_capital:${goal.id}`] = {
+          type: "capital_gains",
+          amount: drawResult.capitalGains,
         };
       }
 
@@ -5154,6 +5259,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
+          // `seededTotal` is bracket-filler ORDINARY income — no capital-gain
+          // component, so the folded pair is unchanged.
+          capitalGainsInTaxableIncome: capGainsInTaxableIncome,
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5318,6 +5427,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           aboveLineDeductions,
           itemizedDeductions,
           charityCarryforwardIn: charityCarryforward,
+          capitalLossCarryforwardIn: capitalLossCarryforward,
+          // Supplemental draws recognize LONG-term gains (categorizeDraw books
+          // them into `taxDetail.capitalGains`), and the line above folds them
+          // into the scalar — so the folded pair must grow by the same amount.
+          capitalGainsInTaxableIncome: {
+            longTerm:
+              capGainsInTaxableIncome.longTerm
+              + supplementalPlan.recognizedIncome.capitalGains,
+            shortTerm: capGainsInTaxableIncome.shortTerm,
+          },
           charityGiftsThisYear,
           secaResult,
           transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5453,6 +5572,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             aboveLineDeductions,
             itemizedDeductions,
             charityCarryforwardIn: charityCarryforward,
+            capitalLossCarryforwardIn: capitalLossCarryforward,
+            // Mirrors the hasChecking-loop input above.
+            capitalGainsInTaxableIncome: {
+              longTerm:
+                capGainsInTaxableIncome.longTerm
+                + supplementalPlan.recognizedIncome.capitalGains,
+              shortTerm: capGainsInTaxableIncome.shortTerm,
+            },
             charityGiftsThisYear,
             secaResult,
             transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
@@ -5545,8 +5672,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const finalTaxResult = taxOutForIter.taxResult;
     const finalTaxes = taxOutForIter.taxes;
     charityCarryforward = taxOutForIter.charityCarryforwardOut;
+    // The ONLY write-back of the capital-loss carryforward. Must stay here,
+    // outside the iterative supplemental-withdrawal solve above.
+    capitalLossCarryforward = taxOutForIter.capitalLossCarryforwardOut;
     deductionBreakdownResult = taxOutForIter.deductionBreakdown ?? undefined;
     const supplementalEarlyPenalty = supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+
+    // Record the end-of-year state for the drill-down. Set on `taxDetail`
+    // BEFORE `finalTaxDetail` spreads it below, so the supplemental-draw copy
+    // carries it too.
+    taxDetail.capitalLossCarryforward = { ...capitalLossCarryforward };
+    taxDetail.capitalLossDeduction = finalTaxResult.capitalLoss.deduction;
 
     // Layer supplemental recognized income onto taxDetail for the year output.
     const finalTaxDetail =
@@ -5599,6 +5735,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           - equityOrdinaryIncome
           - equityCapitalGains
           - equityStCapitalGains,
+        // The counterfactual strips equity gains out of `taxableIncome`, so the
+        // declared folded pair has to shrink by the same amount or flat mode
+        // would back out gains that are no longer in the scalar.
+        capitalGainsInTaxableIncome: {
+          longTerm: finalTaxInput.capitalGainsInTaxableIncome.longTerm - equityCapitalGains,
+          shortTerm: finalTaxInput.capitalGainsInTaxableIncome.shortTerm - equityStCapitalGains,
+        },
         isoSpread: 0,
       };
       const counterfactual = computeTaxForYear(counterfactualInput);
@@ -6714,6 +6857,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           firstDeathSurvivor === "spouse" ? (client.spouseLifeExpectancy ?? 95) : (client.lifeExpectancy ?? 95),
       });
 
+      // Rev. Rul. 74-175: a capital-loss carryover dies with the taxpayer and
+      // cannot pass to the estate or the surviving spouse. The death year's
+      // return is still joint (this runs after `years.push()` above, so that
+      // year already took its full §1211(b) offset). The engine has no
+      // per-spouse loss pool, so halve it on a joint plan. Approximation —
+      // documented in the spec.
+      capitalLossCarryforward = {
+        shortTerm: capitalLossCarryforward.shortTerm / 2,
+        longTerm: capitalLossCarryforward.longTerm / 2,
+      };
+
       // Death-event creates synthetic accounts/liabilities mid-projection with
       // legacy ownership fields populated but `owners[]` empty. Normalize so
       // subsequent year iterations read fractional ownership consistently.
@@ -6826,6 +6980,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entityAccountSharesEoY: lockedEntityShareCarry,
         familyAccountSharesEoY: lockedFamilyShareCarry,
       });
+
+      // Rev. Rul. 74-175 with no survivor: the whole carryover expires. The
+      // loop breaks at the end of this block, so nothing reads it again today
+      // — kept for the same reason as the entity-map sync a few lines down:
+      // post-death state stays honest for any future post-loop read.
+      capitalLossCarryforward = { shortTerm: 0, longTerm: 0 };
 
       // Same normalization as first-death — keeps fractional reads consistent
       // for the truncated final-year processing below.
@@ -7084,13 +7244,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.stockOptionsTotal;
     // H1: keep the canonical liquid total in sync after the re-bucket — it feeds
     // the chart/cell/BoY and includes accessibleTrustAssetsTotal, which this pass
-    // can change. Mirrors computePortfolioSnapshot.
-    year.portfolioAssets.liquidTotal =
-      year.portfolioAssets.taxableTotal +
-      year.portfolioAssets.cashTotal +
-      year.portfolioAssets.retirementTotal +
-      year.portfolioAssets.lifeInsuranceTotal +
-      year.portfolioAssets.accessibleTrustAssetsTotal;
+    // can change. Shares LIQUID_PORTFOLIO_BUCKETS with computePortfolioSnapshot
+    // so the composition can't drift between the two.
+    year.portfolioAssets.liquidTotal = LIQUID_PORTFOLIO_BUCKETS.reduce(
+      (sum, b) => sum + year.portfolioAssets[`${b}Total`],
+      0,
+    );
   }
 
   return years;

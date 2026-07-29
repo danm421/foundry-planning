@@ -4,7 +4,7 @@ import { clients, clientShares } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
-import { resolveRecipientByEmail, isMemberOfFirm } from "./share-recipients";
+import { resolveRecipientByEmail } from "./share-recipients";
 import { recordAudit } from "@/lib/audit";
 
 /**
@@ -50,8 +50,9 @@ type CreateResult =
   | { ok: false; status: number; error: string };
 
 /**
- * Resolve an email to a Foundry user, check they're not already in the firm,
- * insert a client_share row, and emit an audit event.
+ * Resolve an email to a Foundry user, insert a client_share row, and emit an
+ * audit event. Same-firm recipients are allowed (intra-firm sharing) — the
+ * only identity guard is against sharing to yourself.
  *
  * Returns a typed result object — callers map status codes to HTTP responses.
  * Only a Postgres unique-violation (23505) is caught and mapped to 409; all
@@ -63,12 +64,8 @@ export async function createShare(args: CreateArgs): Promise<CreateResult> {
     return { ok: false, status: 404, error: "No Foundry user found with that email." };
   }
 
-  if (await isMemberOfFirm(recipient.userId, args.firmId)) {
-    return {
-      ok: false,
-      status: 409,
-      error: "That user is already a member of this firm and has access.",
-    };
+  if (recipient.userId === args.ownerUserId) {
+    return { ok: false, status: 400, error: "You can't share a client with yourself." };
   }
 
   try {

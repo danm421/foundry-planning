@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { db } from "@/db";
-import { clients, clientShares, crmHouseholds, staffAdvisorVisibility } from "@/db/schema";
+import { clients, clientShares, crmHouseholds, firms, staffAdvisorVisibility } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", async () => {
@@ -154,5 +154,67 @@ describe("requireClientEditAccess", () => {
     vi.mocked(auth).mockResolvedValue({ userId: "user_rcpt", orgId: "org_other", orgRole: "org:admin" } as never);
     const acc = await requireClientEditAccess(clientId);
     expect(acc).toMatchObject({ firmId: ORG, access: "shared" });
+  });
+});
+
+// Appended at the end of the file (not interleaved with the describes above)
+// so the siloed `firms` row this block inserts for ORG cannot leak into the
+// earlier non-siloed (legacy) test expectations, which all run first.
+describe("verifyClientAccess — siloing", () => {
+  beforeEach(async () => {
+    await db.delete(firms).where(eq(firms.firmId, ORG));
+    await db.insert(firms).values({ firmId: ORG, bookSiloEnabled: true });
+  });
+
+  afterAll(async () => {
+    // Don't let the siloed row (or a stray intra-firm share) for ORG survive
+    // this block — later files/reruns sharing the same ORG fixture must see
+    // the legacy (non-siloed, unshared) default.
+    await db.delete(firms).where(eq(firms.firmId, ORG));
+    await db.delete(clientShares).where(eq(clientShares.firmId, ORG));
+  });
+
+  it("owning advisor gets edit", async () => {
+    setAuth(ADV_A, "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  it("non-owning advisor in the same firm is denied when siloed", async () => {
+    setAuth("adv_b", "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toEqual({ ok: false });
+  });
+
+  it("admin sees any client in the firm", async () => {
+    setAuth("u_admin", "org:admin");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, permission: "edit", access: "own" });
+  });
+
+  // Regression test for the fall-through itself: a caller denied by the
+  // own-firm ownership check (siloed, not the owning advisor) must still gain
+  // access when an active intra-firm per-client share exists. Inserted
+  // directly via `db.insert(clientShares)` — NOT `createShare` — because the
+  // firm-member guard on `createShare` still rejects intra-firm shares until
+  // Task 6; this test only exercises the authz *read* path's fall-through.
+  // If the own-firm branch ever regresses to an early `return { ok: false }`
+  // before the share block, this test fails (asserts access:"shared", not
+  // ok:false) even though the two tests above would still pass.
+  it("non-owning advisor gains access via an active intra-firm share (fall-through)", async () => {
+    const sharePermission = "edit" as const;
+    await db.insert(clientShares).values({
+      firmId: ORG,
+      ownerUserId: ADV_A,
+      recipientUserId: "adv_b",
+      recipientEmail: "advb@example.com",
+      scope: "client",
+      clientId,
+      permission: sharePermission,
+      createdBy: ADV_A,
+    });
+    setAuth("adv_b", "org:member");
+    const acc = await verifyClientAccess(clientId);
+    expect(acc).toMatchObject({ ok: true, access: "shared", permission: sharePermission });
   });
 });

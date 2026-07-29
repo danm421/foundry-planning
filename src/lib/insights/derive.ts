@@ -42,12 +42,30 @@ export function deriveInsightInputs(args: DeriveArgs): {
       ? netOutflows.reduce((s, x) => s + x, 0) / netOutflows.length
       : 0;
 
-  const first = retYears[0];
+  // Share of retirement spending met by non-portfolio income.
+  //
+  // Measured over the retirement years in which that income is actually
+  // flowing, NOT at retYears[0]. The engine gates Social Security to the
+  // claiming age (see computeIncome in engine/income.ts), which for most
+  // households is later than retirementAge -- retire at 65, claim at 67 is the
+  // common shape. Sampling only the first retirement year therefore read a
+  // zero floor for every one of them, however large the benefit.
+  //
+  // Aggregate ratio (sum / sum) rather than a mean of per-year ratios, so a
+  // single year with a collapsed expense base can't manufacture a full floor.
+  //
+  // Only `socialSecurity` and `deferred` (pension / deferred comp) count as
+  // guaranteed. `other` deliberately does not -- it carries bonuses and
+  // overtime, which are not a floor.
+  const guaranteed = (y: ProjectionYear) =>
+    y.income.socialSecurity + y.income.deferred;
+  const floorYears = retYears.filter(
+    (y) => guaranteed(y) > 0 && y.expenses.total > 0,
+  );
+  const floorIncome = floorYears.reduce((s, y) => s + guaranteed(y), 0);
+  const floorExpenses = floorYears.reduce((s, y) => s + y.expenses.total, 0);
   const guaranteedIncomeCoverage =
-    first && first.expenses.total > 0
-      ? (first.income.socialSecurity + first.income.deferred) /
-        first.expenses.total
-      : 0;
+    floorExpenses > 0 ? floorIncome / floorExpenses : 0;
 
   const horizonYears = Math.max(planEndAge - currentAge, 0);
   const withdrawalRate =

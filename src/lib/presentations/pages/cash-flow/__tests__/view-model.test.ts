@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { buildCashFlowPageData } from "../view-model";
 import { makeProjectionYears, makeClientData } from "./fixtures";
+import { runProjection } from "@/engine/projection";
+import { buildClientData } from "@/engine/__tests__/fixtures";
+import { LEGACY_FM_CLIENT } from "@/engine/ownership";
+import type { ClientData } from "@/engine/types";
 
 describe("buildCashFlowPageData — retirement-onward range (custom span)", () => {
   const years = makeProjectionYears();
@@ -212,5 +216,56 @@ describe("buildCashFlowPageData — explicit callout text", () => {
       spouseName: "Susan",
     });
     expect(data.callout).toBe("Custom note.");
+  });
+});
+
+// End-to-end guard on the identity the printed table asserts, run against real
+// engine output rather than hand-built fixtures. A household that owns a home
+// used to show the home's appreciation in Portfolio Growth while Portfolio
+// Assets (liquid only) never received it, so every row after the first was off
+// by that year's appreciation — compounding down the page.
+describe("buildCashFlowPageData — Portfolio Assets row identity", () => {
+  const clientData = buildClientData({
+    accounts: [
+      {
+        id: "brokerage", name: "Brokerage", category: "taxable", titlingType: "jtwros",
+        value: 500_000, basis: 400_000, growthRate: 0.06, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "home", name: "Primary Home", category: "real_estate", subType: "primary_residence",
+        titlingType: "jtwros", value: 800_000, basis: 800_000, growthRate: 0.025, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ] as ClientData["accounts"],
+  });
+
+  const rows = buildCashFlowPageData({
+    years: runProjection(clientData),
+    clientData,
+    options: { range: "full", showCallout: false },
+    scenarioLabel: "Base Case",
+    clientName: "Cooper",
+    spouseName: "Susan",
+  }).table.rows;
+
+  it("has every year's Portfolio Assets equal prior assets + growth + activity", () => {
+    expect(rows.length).toBeGreaterThan(5);
+    for (let i = 1; i < rows.length; i++) {
+      const { portfolioAssets, portfolioGrowth, portfolioActivity } = rows[i].cells;
+      const expected =
+        rows[i - 1].cells.portfolioAssets + portfolioGrowth + portfolioActivity;
+      expect(
+        Math.abs(portfolioAssets - expected),
+        `row ${rows[i].year} does not reconcile`,
+      ).toBeLessThan(0.01);
+    }
+  });
+
+  it("keeps home appreciation out of Portfolio Growth", () => {
+    // The home grows every year, so a nonzero growth cell here would mean the
+    // illiquid bucket leaked back in.
+    expect(rows.every((r) => r.cells.portfolioGrowth >= 0)).toBe(true);
+    expect(rows[1].cells.portfolioGrowth).toBeCloseTo(500_000 * 1.06 * 0.06, 6);
   });
 });

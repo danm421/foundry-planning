@@ -6,6 +6,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { getBranding } from "@/lib/branding/db";
 import { resolveFirmName } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
 import type { PortalMeDTO } from "@/lib/portal/contracts";
 
@@ -18,6 +19,7 @@ export async function GET(): Promise<Response> {
     const [row] = await db
       .select({
         firmId: clients.firmId,
+        advisorId: clients.advisorId,
         crmHouseholdId: clients.crmHouseholdId,
         portalEditEnabled: clients.portalEditEnabled,
       })
@@ -52,14 +54,28 @@ export async function GET(): Promise<Response> {
     }
 
     const [branding, intakePending] = await Promise.all([
-      getBranding(row.firmId),
+      resolveIntakeBrandingForClient(row.firmId, row.advisorId),
       hasUnsubmittedPrefilledForm(clientId),
     ]);
-    const firmName = await resolveFirmName(row.firmId, branding?.displayName ?? null);
+
+    // resolveIntakeBrandingForClient returns null whenever there is no usable
+    // logo ANYWHERE (advisor override or firm) — the right signal for chrome
+    // to fall back to the Foundry lockup. But a firm's real name doesn't
+    // depend on having a logo: a firm that has simply never uploaded one
+    // still has a real name, so resolve it independently here rather than
+    // showing the generic default for every logo-less firm. Kept lazy so the
+    // branded path never pays for a getBranding round-trip it won't read.
+    let name: string;
+    if (branding) {
+      name = branding.firmName;
+    } else {
+      const legacyBranding = await getBranding(row.firmId);
+      name = await resolveFirmName(row.firmId, legacyBranding?.displayName ?? null);
+    }
 
     const dto: PortalMeDTO = {
       client: { id: clientId, displayName, email },
-      firm: { name: firmName, logoUrl: branding?.logoUrl ?? null },
+      firm: { name, logoUrl: branding?.logoUrl ?? null },
       mode,
       editEnabled: row.portalEditEnabled ?? false,
       intakePending,

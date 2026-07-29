@@ -34,30 +34,75 @@ export interface RiskAlignment {
   verdict: Verdict;
 }
 
-/** Capacity factor weights — tunable. Must sum to 1. */
+/**
+ * Capacity factor weights — tunable. These sum to 1.2, NOT 1, and that is
+ * deliberate: `computeCapacityScore` caps the total at 100, so the plan has 20
+ * points of headroom in which strength in one area can offset weakness in
+ * another.
+ *
+ * The household this exists for: a very large portfolio with decades of
+ * horizon, spending that is a rounding error against assets, and no Social
+ * Security or pension worth counting. Under sum-to-1 weights a zero income
+ * floor held them at 80 — and because `computeProfile` takes
+ * `min(tolerance, capacity)`, that 80 capped their entire composite risk
+ * profile. Capacity is an *ability to bear risk*; that household plainly has
+ * it, so the score should say so.
+ *
+ * The cap is not degenerate: three maxed factors reach 95, so a fourth factor
+ * always has to contribute something to reach 100. No factor is decorative.
+ */
 export const CAPACITY_WEIGHTS = {
-  horizon: 0.3,
-  buffer: 0.3,
-  withdrawal: 0.2,
-  incomeFloor: 0.2,
+  horizon: 0.35,
+  buffer: 0.35,
+  withdrawal: 0.25,
+  incomeFloor: 0.25,
 } as const;
+
+/** Ceiling on the blended score. Weights deliberately overfund it — see above. */
+export const CAPACITY_SCORE_MAX = 100;
 
 /** ± band (in growth-exposure points) inside which markers count as aligned. */
 export const VERDICT_TOLERANCE_PCT = 5;
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
+/**
+ * The four weighted contributions computeCapacityScore blends, exposed
+ * separately so the risk-profile detail page can show the breakdown of WHY
+ * capacity is what it is -- without a second, drift-prone copy of these
+ * curves living in `src/lib/risk/capacity.ts`. computeCapacityScore is
+ * defined in terms of this function.
+ */
+export interface CapacityFactors {
+  horizon: number;
+  buffer: number;
+  withdrawal: number;
+  incomeFloor: number;
+}
+
+export function capacityFactors(i: CapacityInputs): CapacityFactors {
+  return {
+    horizon: CAPACITY_WEIGHTS.horizon * clamp01(i.horizonYears / 30), // 30+ yrs → full
+    buffer: CAPACITY_WEIGHTS.buffer * clamp01((i.fundingScore - 0.8) / 0.7), // 0.8→0, 1.5→1
+    withdrawal:
+      CAPACITY_WEIGHTS.withdrawal * clamp01(1 - i.withdrawalRate / 0.06), // 0%→1, 6%→0
+    incomeFloor:
+      CAPACITY_WEIGHTS.incomeFloor * clamp01(i.guaranteedIncomeCoverage), // 100%+→1
+  };
+}
+
 export function computeCapacityScore(i: CapacityInputs): number {
-  const horizonFactor = clamp01(i.horizonYears / 30); // 30+ yrs → full
-  const bufferFactor = clamp01((i.fundingScore - 0.8) / 0.7); // 0.8→0, 1.5→1
-  const withdrawalFactor = clamp01(1 - i.withdrawalRate / 0.06); // 0%→1, 6%→0
-  const incomeFloorFactor = clamp01(i.guaranteedIncomeCoverage); // 100%+→1
-  const score =
-    CAPACITY_WEIGHTS.horizon * horizonFactor +
-    CAPACITY_WEIGHTS.buffer * bufferFactor +
-    CAPACITY_WEIGHTS.withdrawal * withdrawalFactor +
-    CAPACITY_WEIGHTS.incomeFloor * incomeFloorFactor;
-  return Math.round(score * 100);
+  // Same summation order as the pre-refactor inline version (horizon, buffer,
+  // withdrawal, incomeFloor) so floating-point association -- and therefore
+  // the result -- is unchanged.
+  //
+  // The weights sum to 1.2, so the raw blend runs to 120. Capping here (rather
+  // than normalising the weights back to 1) is what buys the offsetting
+  // behaviour: below the cap every factor still moves the score one-for-one,
+  // and only a household already at 100 stops feeling further gains.
+  const f = capacityFactors(i);
+  const score = f.horizon + f.buffer + f.withdrawal + f.incomeFloor;
+  return Math.min(CAPACITY_SCORE_MAX, Math.round(score * 100));
 }
 
 /** Present value of a level real withdrawal W over N years at rate r. */

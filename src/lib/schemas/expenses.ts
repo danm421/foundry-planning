@@ -63,6 +63,7 @@ const shared = {
   deductionType: z.string().nullable().optional(),
   endsAtMedicareEligibilityOwner: z.enum(["client", "spouse"]).nullable().optional(),
   payShortfallOutOfPocket: z.boolean().optional(),
+  isGoal: z.boolean().optional(),
   institutionState: z.string().nullable().optional(),
   institutionName: z.string().nullable().optional(),
   forFamilyMemberId: uuidSchema.nullable().optional(),
@@ -97,6 +98,7 @@ export const expenseCreateSchema = z
     growthSource: growthSourceOptional.default("custom"),
     ...shared,
     payShortfallOutOfPocket: z.boolean().default(false),
+    isGoal: z.boolean().default(false),
     dedicatedAccountIds: z.array(uuidSchema).default([]),
   })
   .superRefine(refineBothOwner);

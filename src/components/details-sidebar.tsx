@@ -11,6 +11,7 @@ import { useClientAccess } from "./client-access-provider";
 interface DetailsSidebarProps {
   clientId: string;
   quickStartResumeStep?: QsStepSlug | null;
+  variant?: "full" | "rail";
 }
 
 interface SidebarTab {
@@ -217,7 +218,11 @@ function GuidedWalkthroughMenu({
   );
 }
 
-export default function DetailsSidebar({ clientId, quickStartResumeStep = null }: DetailsSidebarProps) {
+export default function DetailsSidebar({
+  clientId,
+  quickStartResumeStep = null,
+  variant = "full",
+}: DetailsSidebarProps) {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
   const { access } = useClientAccess();
@@ -225,6 +230,25 @@ export default function DetailsSidebar({ clientId, quickStartResumeStep = null }
   function renderLink(tab: SidebarTab) {
     const href = `/clients/${clientId}/details/${tab.href}`;
     const isActive = pathname === href || pathname.startsWith(href + "/");
+
+    if (variant === "rail") {
+      return (
+        <Link
+          key={tab.href}
+          href={withScenario(href)}
+          title={tab.label}
+          aria-label={tab.label}
+          className={`flex items-center justify-center rounded-md border p-2 transition-colors ${
+            isActive
+              ? "border-accent bg-card-2 text-accent"
+              : "border-transparent text-gray-400 hover:bg-card-2 hover:text-gray-200"
+          }`}
+        >
+          {tab.icon}
+        </Link>
+      );
+    }
+
     return (
       <Link
         key={tab.href}
@@ -250,11 +274,13 @@ export default function DetailsSidebar({ clientId, quickStartResumeStep = null }
           {renderLink(TAX_ANALYSIS_TAB)}
         </div>
       )}
-      <GuidedWalkthroughMenu
-        clientId={clientId}
-        resumeStep={quickStartResumeStep}
-        withScenario={withScenario}
-      />
+      {variant !== "rail" && (
+        <GuidedWalkthroughMenu
+          clientId={clientId}
+          resumeStep={quickStartResumeStep}
+          withScenario={withScenario}
+        />
+      )}
     </nav>
   );
 }

@@ -5,21 +5,21 @@ import { eq } from "drizzle-orm";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { ForbiddenError } from "@/lib/authz";
 import { resolveVisibleAdvisorIds, VISIBLE_ALL } from "@/lib/visibility";
-import { STAFF_ROLES } from "@/lib/capabilities";
 import { resolveSharedClientAccess, type SharePermission } from "./shared-access";
 
-// Shared staff-scope check: firm-wide roles always pass; staff roles pass only
-// when the advisor is in their mapped set. The single home for "can this caller
-// see this advisor's client".
-async function staffMaySeeAdvisor(
+// Can the current caller see this advisor's client? Admin/owner → always.
+// Staff → their mapped set. Advisor (org:member) in a siloed firm → only their
+// own advisorId (share-based access is resolved separately by the caller).
+// The single home for "can this caller see this advisor's client".
+async function callerMaySeeAdvisor(
   advisorId: string,
   firmId: string,
 ): Promise<boolean> {
   const { userId, orgRole } = await auth();
-  if (!orgRole || !STAFF_ROLES.has(orgRole)) return true;
   if (!userId) return false;
   const visible = await resolveVisibleAdvisorIds(userId, orgRole, firmId);
-  return visible !== VISIBLE_ALL && visible.has(advisorId);
+  if (visible === VISIBLE_ALL) return true;
+  return visible.has(advisorId);
 }
 
 export type ClientAccessCheck =
@@ -27,9 +27,12 @@ export type ClientAccessCheck =
   | { ok: true; permission: SharePermission; firmId: string; access: "own" | "shared" };
 
 /**
- * Non-throwing client access check. Own-firm (staff-scoped) -> edit; otherwise
- * consult the cross-org share resolver. Read handlers gate on `ok`; mutation
- * handlers additionally require `permission === "edit"`.
+ * Non-throwing client access check. Own-firm access depends on ownership,
+ * admin/owner role, or (siloed firms) mapped staff visibility; a denied
+ * own-firm caller still falls through to the cross-org share resolver, since
+ * an intra-firm per-client share can grant access a siloed book would
+ * otherwise deny. Read handlers gate on `ok`; mutation handlers additionally
+ * require `permission === "edit"`.
  */
 export async function verifyClientAccess(clientId: string): Promise<ClientAccessCheck> {
   const { userId, orgId } = await auth();
@@ -42,8 +45,10 @@ export async function verifyClientAccess(clientId: string): Promise<ClientAccess
   if (!client) return { ok: false };
 
   if (orgId && client.firmId === orgId) {
-    if (!(await staffMaySeeAdvisor(client.advisorId, client.firmId))) return { ok: false };
-    return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
+    if (await callerMaySeeAdvisor(client.advisorId, client.firmId)) {
+      return { ok: true, permission: "edit", firmId: client.firmId, access: "own" };
+    }
+    // fall through to share resolution (an intra-firm per-client share may grant access)
   }
 
   const { sharedClientIds, permissionByClientId } = await resolveSharedClientAccess(userId);
@@ -66,8 +71,11 @@ export type ClientAccess = {
  * client object. Throws a single ForbiddenError for both not-found and
  * access-denied so existence never leaks across firms / advisor books.
  *
- * Cross-org callers get access via `clientShares`; own-firm callers go through
- * the existing staff-scope rules and always receive `permission: "edit"`.
+ * Cross-org callers get access via `clientShares`; own-firm callers pass when
+ * they own the client, hold an admin/owner role, or (siloed firms) are mapped
+ * staff, and always receive `permission: "edit"`. A denied own-firm caller
+ * falls through to the share resolver below rather than throwing immediately,
+ * since an intra-firm per-client share can still grant access.
  */
 export async function requireClientAccess(clientId: string): Promise<ClientAccess> {
   const { userId, orgId } = await auth();
@@ -77,12 +85,12 @@ export async function requireClientAccess(clientId: string): Promise<ClientAcces
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
   if (!client) throw new ForbiddenError("Client not found or access denied");
 
-  // Own-firm path: existing staff-scope rules, full edit.
+  // Own-firm path: ownership/admin/silo rules, full edit.
   if (orgId && client.firmId === orgId) {
-    if (!(await staffMaySeeAdvisor(client.advisorId, client.firmId))) {
-      throw new ForbiddenError("Client not found or access denied");
+    if (await callerMaySeeAdvisor(client.advisorId, client.firmId)) {
+      return { client, firmId: client.firmId, permission: "edit", access: "own" };
     }
-    return { client, firmId: client.firmId, permission: "edit", access: "own" };
+    // fall through to share resolution (an intra-firm per-client share may grant access)
   }
 
   // Cross-firm path: consult the share resolver.

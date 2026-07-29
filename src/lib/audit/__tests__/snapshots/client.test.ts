@@ -20,6 +20,7 @@ const row: typeof clients.$inferSelect = {
   onboardingState: {},
   onboardingCompletedAt: null,
   quickStartState: {},
+  detailsViewMode: "detailed",
   createdAt: new Date(),
   updatedAt: new Date(),
   crmHouseholdId: "00000000-0000-0000-0000-000000000000",

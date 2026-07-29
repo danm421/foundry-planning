@@ -14,6 +14,16 @@
 //      shaped to match its zod discriminated union (`op` + `targetKind` +
 //      `targetId|entity|desiredFields`). The route's writers store a
 //      scenario_change row instead of mutating base data.
+//
+// `submit` takes ONE edit or an ORDERED BATCH. A batch exists because a
+// scenario_change row targets exactly one `targetKind`, so a single logical
+// change that spans two kinds — the Goals board's life expectancy, which moves
+// `client.planEndAge` and `planSettings.planEndYear` together — is two rows. The
+// route has no multi-kind request, so a batch is sequential-and-stop-at-first-
+// failure rather than atomic; see `handleSaveLifeExpectancy` for what a partial
+// batch means for the caller. `baseFallback` stays singular either way: it is
+// the base-mode equivalent of the WHOLE batch, not of one edit (for life
+// expectancy the PUT route does the same fan-out server-side).
 
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -42,7 +52,15 @@ export interface BaseFallback {
 }
 
 export interface UseScenarioWriter {
-  submit: (edit: ScenarioEdit, baseFallback: BaseFallback) => Promise<Response>;
+  /**
+   * Resolves to the base-mode response, or — in scenario mode — to the FIRST
+   * failing edit's response, or the last one when every edit succeeded. So
+   * `res.ok` means "the whole batch landed" at every call site.
+   */
+  submit: (
+    edit: ScenarioEdit | ScenarioEdit[],
+    baseFallback: BaseFallback,
+  ) => Promise<Response>;
   /** True when `?scenario=<sid>` is set, i.e. submits go through the unified route. */
   scenarioActive: boolean;
 }
@@ -52,8 +70,12 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
   const router = useRouter();
 
   const submit = useCallback(
-    async (edit: ScenarioEdit, baseFallback: BaseFallback): Promise<Response> => {
-      // Base mode: pass through to the per-entity legacy route.
+    async (
+      edit: ScenarioEdit | ScenarioEdit[],
+      baseFallback: BaseFallback,
+    ): Promise<Response> => {
+      // Base mode: pass through to the per-entity legacy route. ONE call even
+      // for a batch — see the header note on `baseFallback`.
       if (!scenarioId) {
         const init: RequestInit = { method: baseFallback.method };
         if (baseFallback.body !== undefined) {
@@ -65,25 +87,35 @@ export function useScenarioWriter(clientId: string): UseScenarioWriter {
         return res;
       }
 
-      // Scenario mode: build the unified-route payload.
-      const body: Record<string, unknown> = {
-        op: edit.op,
-        targetKind: edit.targetKind,
-      };
-      if (edit.targetId) body.targetId = edit.targetId;
-      if (edit.desiredFields) body.desiredFields = edit.desiredFields;
-      if (edit.entity) body.entity = edit.entity;
+      // Scenario mode: one POST per edit, in order, stopping at the first
+      // failure. Refreshing per-edit instead would re-render the page against a
+      // HALF-written batch — for life expectancy that is the new age beside the
+      // old horizon, the exact disagreement the batch exists to avoid — so the
+      // refresh waits until every edit has landed.
+      const edits = Array.isArray(edit) ? edit : [edit];
+      let last: Response | null = null;
+      for (const e of edits) {
+        const body: Record<string, unknown> = { op: e.op, targetKind: e.targetKind };
+        if (e.targetId) body.targetId = e.targetId;
+        if (e.desiredFields) body.desiredFields = e.desiredFields;
+        if (e.entity) body.entity = e.entity;
 
-      const res = await fetch(
-        `/api/clients/${clientId}/scenarios/${scenarioId}/changes`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
-      if (res.ok) router.refresh();
-      return res;
+        const res = await fetch(
+          `/api/clients/${clientId}/scenarios/${scenarioId}/changes`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) return res;
+        last = res;
+      }
+      if (last) router.refresh();
+      // Only reachable for an empty batch, which no caller passes. "Nothing to
+      // write" is a success, and answering with an ok Response keeps every
+      // caller's `res.ok` read honest without widening the return to nullable.
+      return last ?? new Response(null, { status: 204 });
     },
     [scenarioId, clientId, router],
   );

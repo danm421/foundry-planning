@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { PercentInput } from "@/components/percent-input";
 import { HelpTip } from "@/components/help-tip";
 import { useClientAccess } from "@/components/client-access-provider";
-import { RISK_LEVELS, RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
+import { RISK_LEVEL_LABELS, type RiskLevel } from "@/lib/risk-levels";
 
 interface ModelPortfolioOption {
   id: string;
@@ -16,7 +17,9 @@ interface ModelPortfolioOption {
 
 interface GrowthInflationFormProps {
   clientId: string;
-  riskTolerance?: string | null;
+  /** The household's composite risk level -- read-only here. Mutating it now
+   *  happens on `/risk/[clientId]` (Tasks 10-13), not on this tab. */
+  riskLevel?: RiskLevel | null;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   resolvedInflationRate: number;
@@ -79,7 +82,7 @@ function SectionTitle({ title, help }: { title: string; help?: string }) {
   );
 }
 
-export default function GrowthInflationForm({ clientId, riskTolerance, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, riskLevel, modelPortfolios, taxInflationRate, ssWageGrowthRate, medicarePremiumInflationRate, medicarePremiumInflationEnabled, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const router = useRouter();
@@ -95,7 +98,6 @@ export default function GrowthInflationForm({ clientId, riskTolerance, modelPort
   const [inflationRateSource, setInflationRateSource] = useState<"asset_class" | "custom">(
     initialInflationRateSource
   );
-  const [riskTol, setRiskTol] = useState<string>(riskTolerance ?? "");
 
   async function handleResetAccounts() {
     if (!confirm("Reset all taxable, cash, and retirement accounts to use the category defaults above? Any account-level custom rates, portfolios, turnover, and realization overrides will be cleared.")) {
@@ -155,15 +157,6 @@ export default function GrowthInflationForm({ clientId, riskTolerance, modelPort
     }
   }
 
-  const taggedForTol = (lvl: string) => modelPortfolios?.find((p) => p.riskLevel === lvl) ?? null;
-
-  function applyRiskPortfolio() {
-    const pf = taggedForTol(riskTol);
-    if (!pf) return; // untagged rung: the inline note explains why nothing changed
-    setSource("taxable", `mp:${pf.id}`);
-    setSource("retirement", `mp:${pf.id}`);
-  }
-
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -210,17 +203,6 @@ export default function GrowthInflationForm({ clientId, riskTolerance, modelPort
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save");
-      }
-      if ((riskTolerance ?? "") !== riskTol) {
-        const riskRes = await fetch(`/api/clients/${clientId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ riskTolerance: riskTol || null }),
-        });
-        if (!riskRes.ok) {
-          const data = await riskRes.json().catch(() => ({}));
-          throw new Error(data.error ?? "Failed to save risk tolerance");
-        }
       }
       setSuccess(true);
       router.refresh();
@@ -294,31 +276,13 @@ export default function GrowthInflationForm({ clientId, riskTolerance, modelPort
         />
 
         <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-hair pb-3">
-          <label htmlFor="risk-tol" className="text-sm font-medium text-gray-100">Risk tolerance</label>
-          <select
-            id="risk-tol"
-            value={riskTol}
-            onChange={(e) => setRiskTol(e.target.value)}
-            className={INPUT_CLS}
-          >
-            <option value="">Not specified</option>
-            {RISK_LEVELS.map((lvl) => (
-              <option key={lvl} value={lvl}>{RISK_LEVEL_LABELS[lvl]}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={applyRiskPortfolio}
-            disabled={!riskTol}
-            className="rounded-md border border-hair px-2 py-1 text-sm text-ink-2 disabled:opacity-40"
-          >
-            Apply to portfolios
-          </button>
-          {riskTol && !taggedForTol(riskTol) && (
-            <span className="text-xs text-warn">
-              No {RISK_LEVEL_LABELS[riskTol as RiskLevel]} model tagged — <a href="/cma" className="underline">tag one</a>.
-            </span>
-          )}
+          <span className="text-sm font-medium text-gray-100">Risk tolerance</span>
+          <span className="text-sm text-ink-2">
+            {riskLevel ? RISK_LEVEL_LABELS[riskLevel] : "Not established"}
+          </span>
+          <Link href={`/risk/${clientId}`} className="text-sm text-accent hover:underline">
+            Manage risk profile
+          </Link>
         </div>
 
         <div className="overflow-hidden rounded-md border border-gray-800 bg-gray-900/40">

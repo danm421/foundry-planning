@@ -5,6 +5,7 @@ import type { ExtractedAccount, AccountCategory, AccountSubType, ExtractedHoldin
 import { holdingsReconciliation, holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
@@ -241,7 +242,7 @@ export default function ReviewStepAccounts({
                     <MatchColumn
                       match={match}
                       existingName={existingRow?.name}
-                      candidates={candidates}
+                      candidates={candidatesForRow(i, matches ?? [], candidates)}
                       entityKind="account"
                       onChange={(next) => onMatchChange?.(i, next)}
                     />
@@ -283,12 +284,30 @@ export default function ReviewStepAccounts({
               <div className="grid grid-cols-6 gap-2">
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs text-gray-300">Name</label>
-                  <input
-                    value={account.name}
-                    onChange={(e) => updateField(i, "name", e.target.value)}
-                    className={account.name ? INPUT_CLASS : EMPTY_CLASS}
-                    placeholder="Account name"
-                  />
+                  {existingRow?.name ? (
+                    // Matched rows keep the existing account's name — commitAccounts
+                    // maps `name` as keep-existing, so an editable input here would
+                    // be a false affordance. Rename on the account page instead.
+                    <div className="px-2 py-1.5">
+                      <div className="text-sm text-gray-100">{existingRow.name}</div>
+                      {/* NOT the document's own header text: extract.ts runs
+                          every extracted account name through
+                          condenseAccountName before the payload is persisted,
+                          and the prompt asks the model to synthesize a
+                          "custodian + account type" name rather than transcribe
+                          the statement. "extracted" is what this actually is. */}
+                      <div className="mt-0.5 text-xs text-ink-4">
+                        extracted: {account.name}
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      value={account.name}
+                      onChange={(e) => updateField(i, "name", e.target.value)}
+                      className={account.name ? INPUT_CLASS : EMPTY_CLASS}
+                      placeholder="Account name"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Category</label>

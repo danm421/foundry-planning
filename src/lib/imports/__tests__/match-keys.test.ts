@@ -69,22 +69,6 @@ describe("matchAccount", () => {
     }
   });
 
-  it("rejects fuzzy when category differs", () => {
-    const result = matchAccount(
-      { name: "Schwab Brokerage", category: "retirement", value: 100_000 },
-      [baseExisting],
-    );
-    expect(result).toEqual({ kind: "new" });
-  });
-
-  it("rejects fuzzy when value delta exceeds 30%", () => {
-    const result = matchAccount(
-      { name: "Schwab Brokerage", category: "taxable", value: 200_000 },
-      [baseExisting],
-    );
-    expect(result).toEqual({ kind: "new" });
-  });
-
   it("rejects fuzzy when name distance exceeds 3 edits", () => {
     const result = matchAccount(
       { name: "Vanguard Fund", category: "taxable", value: 100_000 },
@@ -107,6 +91,21 @@ describe("matchAccount", () => {
     }
   });
 
+  it("ranks an exact-name candidate above a one-typo candidate", () => {
+    const result = matchAccount(
+      { name: "Schwab Brokerage", category: "taxable", value: 100_000 },
+      [
+        { ...baseExisting, id: "typo", name: "Schwab Brokrage" },
+        { ...baseExisting, id: "exact-name", name: "Schwab Brokerage" },
+      ],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates[0].id).toBe("exact-name");
+      expect(result.candidates[0].score).toBeGreaterThan(result.candidates[1].score);
+    }
+  });
+
   it("caps fuzzy candidates at 5 and returns new when no fuzzy hits", () => {
     const result = matchAccount(
       { name: "Apex Capital", category: "taxable", value: 50_000 },
@@ -115,12 +114,285 @@ describe("matchAccount", () => {
     expect(result).toEqual({ kind: "new" });
   });
 
-  it("treats missing value on incoming as a no-fuzzy signal", () => {
+  it("returns exact when custodian differs only by a legal suffix", () => {
+    const result = matchAccount(
+      {
+        name: "Fidelity Rollover IRA",
+        category: "retirement",
+        accountNumberLast4: "9999",
+        custodian: "Fidelity",
+        value: 250_000,
+      },
+      [
+        {
+          id: "acct-fid",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: "9999",
+          custodian: "Fidelity Brokerage Services LLC",
+          value: 250_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "acct-fid" });
+  });
+
+  it("returns exact when last4 is unique and neither side names a custodian", () => {
+    // Both sides are `retirement`, which is what corroborates the bare last4
+    // here — see the two tests below. A unique last4 on its own does not.
+    const result = matchAccount(
+      { name: "Rollover IRA", category: "retirement", accountNumberLast4: "4321" },
+      [
+        {
+          id: "acct-solo",
+          name: "Old IRA",
+          category: "retirement",
+          accountNumberLast4: "4321",
+          custodian: null,
+          value: 10_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "acct-solo" });
+  });
+
+  it("does NOT return exact on a bare last4 when neither category nor name corroborates", () => {
+    // Rung 2 asks only that no KNOWN custodian contradicts, so an existing row
+    // with a NULL custodian contradicts nothing and four digits decide alone.
+    // Four digits collide often, and an `exact` here does not merely mis-link:
+    // commit rewrites category, flipping a taxable checking account into a
+    // pre-tax retirement account and with it the withdrawal waterfall, RMD
+    // eligibility and every tax year of the projection.
+    const result = matchAccount(
+      {
+        name: "Fidelity Rollover IRA",
+        category: "retirement",
+        accountNumberLast4: "4821",
+        custodian: "Fidelity",
+        value: 450_000,
+      },
+      [
+        {
+          id: "chase",
+          name: "Chase Checking",
+          category: "cash",
+          accountNumberLast4: "4821",
+          custodian: null,
+          value: 20_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "new" });
+  });
+
+  it("still returns exact on a bare last4 when the name corroborates across a category mismatch", () => {
+    // The other half of the guard's `||`. Category is a scoring input rather
+    // than an exclusion precisely because the extractor misclassifies it, so
+    // name agreement has to be able to carry the corroboration by itself.
+    const result = matchAccount(
+      {
+        name: "Fidelity Rollover IRA",
+        category: "retirement",
+        accountNumberLast4: "4821",
+      },
+      [
+        {
+          id: "misfiled",
+          name: "Fidelity Rollover IRA",
+          category: "taxable",
+          accountNumberLast4: "4821",
+          custodian: null,
+          value: 450_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "misfiled" });
+  });
+
+  it("does NOT return exact when last4 is shared by two candidates and custodian cannot disambiguate", () => {
+    const result = matchAccount(
+      { name: "Brokerage", category: "taxable", accountNumberLast4: "1111", value: 50_000 },
+      [
+        {
+          id: "a",
+          name: "Schwab Brokerage",
+          category: "taxable",
+          accountNumberLast4: "1111",
+          custodian: "Schwab",
+          value: 50_000,
+        },
+        {
+          id: "b",
+          name: "Fidelity Brokerage",
+          category: "taxable",
+          accountNumberLast4: "1111",
+          custodian: "Fidelity",
+          value: 50_000,
+        },
+      ],
+    );
+    expect(result.kind).toBe("fuzzy");
+  });
+
+  it("still fuzzies when a unique last4 is contradicted by a known custodian", () => {
+    const result = matchAccount(
+      {
+        name: "Fidelity Brokerage",
+        category: "taxable",
+        accountNumberLast4: "1234",
+        custodian: "Fidelity",
+        value: 100_000,
+      },
+      [baseExisting], // Charles Schwab, last4 1234
+    );
+    expect(result.kind).toBe("fuzzy");
+  });
+
+  it("surfaces a candidate whose value moved more than the old 30% window", () => {
+    const result = matchAccount(
+      {
+        name: "Schwab Brokerage",
+        category: "taxable",
+        value: 200_000, // +100% vs baseExisting
+      },
+      [baseExisting],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates.map((c) => c.id)).toContain("acct-1");
+    }
+  });
+
+  it("surfaces a candidate whose category was misclassified by the extractor", () => {
+    const result = matchAccount(
+      { name: "Schwab Brokerage", category: "cash", value: 100_000 },
+      [baseExisting], // taxable
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates.map((c) => c.id)).toContain("acct-1");
+    }
+  });
+
+  it("still surfaces a candidate when the incoming row has no value", () => {
+    // An unknown value scores neutrally rather than excluding the candidate:
+    // a statement page that omits the balance is not evidence of a new account.
     const result = matchAccount(
       { name: "Schwab Brokerage", category: "taxable" },
       [baseExisting],
     );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates.map((c) => c.id)).toContain("acct-1");
+    }
+  });
+
+  it("ranks an owner-agreeing candidate above an owner-disagreeing one", () => {
+    const result = matchAccount(
+      { name: "Fidelity IRA", category: "retirement", value: 100_000 },
+      [
+        {
+          id: "his",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: 100_000,
+          ownerIds: ["fm-john"],
+        },
+        {
+          id: "hers",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: 100_000,
+          ownerIds: ["fm-jane"],
+        },
+      ],
+      ["fm-jane"],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates[0].id).toBe("hers");
+    }
+  });
+
+  it("matches condensed names against longer existing names by token overlap", () => {
+    const result = matchAccount(
+      { name: "Fidelity IRA", category: "retirement", value: 100_000 },
+      [
+        {
+          id: "long",
+          name: "Fidelity Rollover IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: 100_000,
+        },
+      ],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates[0].id).toBe("long");
+    }
+  });
+
+  it("returns new when nothing clears the score floor", () => {
+    const result = matchAccount(
+      { name: "Zzz Unrelated Holding", category: "real_estate", value: 5 },
+      [baseExisting],
+    );
     expect(result).toEqual({ kind: "new" });
+  });
+
+  it("PINS CURRENT CALIBRATION: category + agreeing owner alone admits a zero-name-similarity candidate", () => {
+    // Every other "stays new" case above uses neutral ownership or a category
+    // mismatch, so this regime was uncovered. It is pinned, NOT endorsed:
+    // W_OWNER (0.25) + W_CATEGORY (0.20) is exactly SCORE_FLOOR (0.45) and the
+    // admission test is `>=`, so agreement on category and owner alone clears
+    // the floor even with zero name overlap and a maximally wrong value. Any
+    // future re-weighting will flip this test, which is the point — a
+    // recalibration should be a deliberate decision, not a silent drift.
+    //
+    // Reachability, since the arithmetic alone reads alarming: this calls
+    // `matchAccount` directly, so it can hand over owner ids the production
+    // caller would withhold. `resolveOwnerIds` forwards ids only for a `"hint"`
+    // resolution, so reaching this regime for real takes a registration line
+    // that names the candidate's actual owner — evidence, not the model's
+    // inferred `owner` enum. That is the trade: 0.45-on-owner-and-category-alone
+    // is defensible on evidence and was not on a guess.
+    const result = matchAccount(
+      // No shared token with "Schwab Brokerage", so nameSimilarity === 0.
+      // value 0 against a 100k candidate makes valueProximity === 0.
+      { name: "Zzz Unrelated Holding", category: "taxable", value: 0 },
+      [{ ...baseExisting, accountNumberLast4: null, ownerIds: ["fm-jane"] }],
+      ["fm-jane"],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0].id).toBe("acct-1");
+      expect(result.candidates[0].score).toBeCloseTo(0.45, 12);
+    }
+  });
+
+  it("returns exact when the stored last4 carries stray whitespace", () => {
+    // commitAccounts persists `row.accountNumberLast4` untrimmed, so an
+    // extraction that emitted " 1234" is stored with the space. Comparing the
+    // candidate side raw failed both exact rungs and duplicated the account on
+    // every subsequent import.
+    const result = matchAccount(
+      {
+        name: "Schwab Brokerage",
+        category: "taxable",
+        accountNumberLast4: "1234",
+        custodian: "Charles Schwab",
+        value: 100_000,
+      },
+      [{ ...baseExisting, accountNumberLast4: " 1234" }],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "acct-1" });
   });
 });
 

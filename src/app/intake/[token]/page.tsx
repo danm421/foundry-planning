@@ -15,6 +15,11 @@ import { IntakeClient } from "./intake-client";
 // client wrapper (blank mode only passes the client's own saved draft).
 // Every state carries the firm's letterhead (or the Foundry lockup when the
 // firm hasn't uploaded a logo, or the token is unknown).
+//
+// Intentionally stays on firm-level branding (resolveIntakeBranding), not the
+// advisor-aware resolver: this route keys on form.firmId and has no reliable
+// client/advisor identity at this stage (the form may not yet be tied to a
+// client, and there's no authenticated session to read an advisorId from).
 
 // ─── Tab chrome ───────────────────────────────────────────────────────────────
 // loadFormByToken and resolveIntakeBranding are both React.cache'd, so metadata

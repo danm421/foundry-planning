@@ -85,13 +85,17 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     const legacyValue = balance - fresh;
     const legacyBasis = basis - fresh;
 
+    // Signed: a ratio below 0 means the lot is underwater and the draw
+    // realizes a proportional LOSS. Capped above at 1 (basis cannot go
+    // negative), uncapped below — a 2x-basis account yields a ratio of -1.
     let legacyGainRatio = 0;
     if (legacyValue > 0) {
-      const raw = 1 - legacyBasis / legacyValue;
-      legacyGainRatio = Math.max(0, Math.min(1, raw));
+      legacyGainRatio = Math.min(1, 1 - legacyBasis / legacyValue);
     }
 
-    const capitalGains = legacyDraw * legacyGainRatio;
+    // Guard the multiply: with a signed (possibly negative) ratio, a zero
+    // legacy draw would otherwise hand back -0, which formats as "-$0.00".
+    const capitalGains = legacyDraw === 0 ? 0 : legacyDraw * legacyGainRatio;
     const basisReturn = freshDraw + legacyDraw * (1 - legacyGainRatio);
     return { ...empty, capitalGains, basisReturn };
   }
@@ -159,8 +163,21 @@ export function supplementalDrawSources(
     (out[key] ??= { type, amount: 0 }).amount += amount;
   };
   for (const draw of draws) {
+    // Signed: an underwater taxable draw recognizes a LOSS, and
+    // planSupplementalWithdrawal folds it into the recognized-income TOTAL
+    // unconditionally (`totalCapGains += draw.capitalGains`, in the draw loop
+    // below). Gating on `> 0` here dropped the row while the total kept the
+    // loss, so the drill-down contradicted its own total.
+    // `!== 0` is also the -0 guard — `-0 !== 0` is false.
+    //
+    // ONE key still suffices: categorizeDraw sets at most one of
+    // ordinaryIncome / capitalGains per draw (its branches are per-account-
+    // category and mutually exclusive), and `add` only ever merges draws on the
+    // same account, which share that category. So the ternary picks between
+    // alternatives that cannot co-occur — unlike the education draw, which
+    // aggregates across accounts and genuinely needed splitting.
     const recognized = draw.ordinaryIncome + draw.capitalGains;
-    if (recognized > 0) {
+    if (recognized !== 0) {
       add(`withdrawal:${draw.accountId}`, draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains", recognized);
     }
     // Separate key so a mixed draw can carry both a taxable and a tax-free row.

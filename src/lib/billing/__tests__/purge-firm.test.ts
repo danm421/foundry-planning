@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   selectHouseholdDocs: vi.fn(),
   selectImportFiles: vi.fn(),
   selectTaskFiles: vi.fn(),
+  selectAdvisorProfiles: vi.fn(),
   purgeHousehold: vi.fn(),
   deleteSubs: vi.fn(),
   deleteInvoices: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   deleteClientShares: vi.fn(),
   deletePlanningKbChunks: vi.fn(),
   deleteForgeConversations: vi.fn(),
+  deleteAdvisorProfiles: vi.fn(),
   updateIntegrationConnection: vi.fn(),
   deleteIntegrationConnection: vi.fn(),
   updateFirm: vi.fn(),
@@ -59,6 +61,7 @@ vi.mock("@/db", async () => {
             if (tbl === s.crmHouseholdDocuments) return mocks.selectHouseholdDocs();
             if (tbl === s.clientImportFiles) return mocks.selectImportFiles();
             if (tbl === s.crmTaskFiles) return mocks.selectTaskFiles();
+            if (tbl === s.advisorProfiles) return mocks.selectAdvisorProfiles();
             if (tbl === s.subscriptions) return mocks.selectCustomer();
             return [];
           },
@@ -86,6 +89,7 @@ vi.mock("@/db", async () => {
           if (tbl === s.clientShares) return mocks.deleteClientShares();
           if (tbl === s.planningKbChunks) return mocks.deletePlanningKbChunks();
           if (tbl === s.forgeConversations) return mocks.deleteForgeConversations();
+          if (tbl === s.advisorProfiles) return mocks.deleteAdvisorProfiles();
           if (tbl === s.integrationConnections) return mocks.deleteIntegrationConnection();
           return undefined;
         },
@@ -113,6 +117,10 @@ vi.mock("@/lib/branding/blob", () => ({ deleteBrandingAsset: mocks.deleteBrandin
 
 import { purgeFirmById, FirmNotPurgeableError } from "../purge-firm";
 import { PURGED_FIRM_TABLES } from "../purge-coverage";
+
+// Backing state for the advisor_profiles ordering model (see beforeEach).
+let advisorRows: Array<{ logoUrl: string | null; faviconUrl: string | null }> = [];
+let advisorRowsDeleted = false;
 
 beforeEach(() => {
   Object.values(mocks).forEach((m) => m.mockReset());
@@ -142,6 +150,29 @@ beforeEach(() => {
   mocks.selectCustomer.mockResolvedValue([{ stripeCustomerId: "cus_1" }]);
   mocks.stripeCustomersDel.mockResolvedValue({ id: "cus_1", deleted: true });
   mocks.clerkDeleteOrg.mockResolvedValue(undefined);
+
+  // ORDERING HAZARD MODEL (Task 15a Step 4). advisor_profiles is deleted
+  // partway through the purge, but the blob-delete loop runs at the very end.
+  // So the mock SELECT reflects reality: once the DELETE has fired, the rows
+  // are gone and the select yields nothing. A purge that reads advisor asset
+  // URLs after deleting the rows therefore collects an EMPTY list — exactly
+  // what would happen in production, where the orphaned blobs would then
+  // survive forever and silently (the loop is best-effort).
+  advisorRows = [
+    {
+      logoUrl: "https://pub.blob/advisor-a-logo.png",
+      faviconUrl: "https://pub.blob/advisor-a-fav.png",
+    },
+    { logoUrl: "https://pub.blob/advisor-b-logo.png", faviconUrl: null },
+  ];
+  mocks.selectAdvisorProfiles.mockImplementation(() =>
+    Promise.resolve(advisorRowsDeleted ? [] : advisorRows),
+  );
+  advisorRowsDeleted = false;
+  mocks.deleteAdvisorProfiles.mockImplementation(() => {
+    advisorRowsDeleted = true;
+    return Promise.resolve(undefined);
+  });
 });
 
 describe("purgeFirmById", () => {
@@ -215,8 +246,63 @@ describe("purgeFirmById", () => {
     expect(mocks.deleteBrandingAsset).toHaveBeenCalledWith("https://pub.blob/fav.png");
   });
 
+  // ── Per-advisor branding blobs (Task 15a Step 4) ─────────────────────────
+  //
+  // ⚠️ HARNESS LIMIT (pre-existing, shared by all 20+ purged tables): this
+  // file's db mock DISCARDS the `where` predicate, so these cases prove the
+  // SELECT and the blob deletes fired — they do NOT prove the select was
+  // scoped to `firmId`. Firm scoping is unverified here.
+  it("deletes every advisor's logo and favicon blob", async () => {
+    await purgeFirmById("org_1");
+    expect(mocks.deleteBrandingAsset).toHaveBeenCalledWith("https://pub.blob/advisor-a-logo.png");
+    expect(mocks.deleteBrandingAsset).toHaveBeenCalledWith("https://pub.blob/advisor-a-fav.png");
+    // A second advisor proves the purge iterates rows rather than reading
+    // one row's columns.
+    expect(mocks.deleteBrandingAsset).toHaveBeenCalledWith("https://pub.blob/advisor-b-logo.png");
+  });
+
+  it("reads advisor asset URLs BEFORE the advisor_profiles rows are deleted", async () => {
+    // Direct ordering proof, independent of the destruction model above.
+    // purge-firm.ts deletes advisor_profiles at step 3b but runs the blob
+    // loop at step 5; selecting between the two collects nothing.
+    await purgeFirmById("org_1");
+    expect(mocks.selectAdvisorProfiles).toHaveBeenCalled();
+    expect(mocks.deleteAdvisorProfiles).toHaveBeenCalled();
+    expect(mocks.selectAdvisorProfiles.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.deleteAdvisorProfiles.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("skips null advisor asset columns instead of calling del(undefined)", async () => {
+    advisorRows = [{ logoUrl: null, faviconUrl: null }];
+    await purgeFirmById("org_1");
+    // Only the two FIRM-level branding URLs remain.
+    expect(mocks.deleteBrandingAsset).toHaveBeenCalledTimes(2);
+    for (const [url] of mocks.deleteBrandingAsset.mock.calls) {
+      expect(url).toBeTruthy();
+    }
+  });
+
+  it("still purges when the firm has no advisor profiles at all", async () => {
+    advisorRows = [];
+    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
+    expect(mocks.deleteBrandingAsset).toHaveBeenCalledTimes(2); // firm logo + favicon
+  });
+
+  it("swallows an advisor-blob delete failure and still stamps purgedAt", async () => {
+    mocks.deleteBrandingAsset.mockRejectedValue(new Error("blob gone"));
+    await expect(purgeFirmById("org_1")).resolves.toBeUndefined();
+    expect(mocks.updateFirm).toHaveBeenCalledWith(
+      expect.objectContaining({ purgedAt: expect.any(Date) }),
+    );
+  });
+
   it("skips branding deletes when logo/favicon are null", async () => {
     mocks.selectFirm.mockResolvedValue([{ logoUrl: null, faviconUrl: null, archivedAt: new Date("2026-03-01T00:00:00Z"), purgedAt: null, dataRetentionUntil: new Date("2026-03-15T00:00:00Z"), liveSubCount: 0 }]);
+    // Advisor assets now share this same delete loop; empty them so the
+    // assertion keeps meaning exactly what it meant before (no FIRM-level
+    // branding blob is deleted when the firm has none).
+    advisorRows = [];
     await purgeFirmById("org_1");
     expect(mocks.deleteBrandingAsset).not.toHaveBeenCalled();
   });
@@ -303,6 +389,7 @@ describe("purgeFirmById", () => {
       client_shares: mocks.deleteClientShares,
       planning_kb_chunks: mocks.deletePlanningKbChunks,
       forge_conversations: mocks.deleteForgeConversations,
+      advisor_profiles: mocks.deleteAdvisorProfiles,
     };
     // Both directions: the coverage list and the wiring map must be identical.
     expect(new Set(Object.keys(wiring))).toEqual(new Set(PURGED_FIRM_TABLES));

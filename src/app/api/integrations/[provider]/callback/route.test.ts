@@ -33,14 +33,19 @@ const mockConsume = consumeOauthState as any;
 const mockExchange = orionOAuth.exchangeCodeForTokens as any;
 
 let savedSchwabEnabled: string | undefined;
+let savedOrionEnabled: string | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   savedSchwabEnabled = process.env.SCHWAB_ENABLED;
+  savedOrionEnabled = process.env.ORION_ENABLED;
   process.env.SCHWAB_ENABLED = "true";
+  process.env.ORION_ENABLED = "true";
 });
 afterEach(() => {
   if (savedSchwabEnabled === undefined) delete process.env.SCHWAB_ENABLED;
   else process.env.SCHWAB_ENABLED = savedSchwabEnabled;
+  if (savedOrionEnabled === undefined) delete process.env.ORION_ENABLED;
+  else process.env.ORION_ENABLED = savedOrionEnabled;
 });
 
 function req(qs: string, provider = "orion") {

@@ -123,17 +123,21 @@ export function makeProjectionYears(): ProjectionYear[] {
       totalIncome: 200_000,
       totalExpenses: 120_000,
       netCashFlow: 80_000,
+      // Bucket values equal the ledgers' ending values, as the engine guarantees:
+      // a bucket holds the owned share of an account, so growth and activity can
+      // be weighted back to that share. A fixture where the two disagree implies
+      // fractional ownership that the ledgers don't reflect.
       portfolioAssets: {
-        taxable: { brokerage: 500_000 },
+        taxable: { brokerage: 512_000 },
         cash: { checking: 100_000 },
-        retirement: { ira: 750_000 },
+        retirement: { ira: 758_000 },
         realEstate: {},
         business: {},
         lifeInsurance: {},
         stockOptions: {},
-        taxableTotal: 500_000,
+        taxableTotal: 512_000,
         cashTotal: 100_000,
-        retirementTotal: 750_000,
+        retirementTotal: 758_000,
         realEstateTotal: 0,
         businessTotal: 0,
         lifeInsuranceTotal: 0,
@@ -142,8 +146,8 @@ export function makeProjectionYears(): ProjectionYear[] {
         trustsAndBusinessesTotal: 0,
         accessibleTrustAssets: {},
         accessibleTrustAssetsTotal: 0,
-        total: 1_350_000,
-        liquidTotal: 1_350_000,
+        total: 1_370_000,
+        liquidTotal: 1_370_000,
       },
       accountLedgers: {
         // Growth = 20k, contributions 50k (savings), no distributions
@@ -156,6 +160,11 @@ export function makeProjectionYears(): ProjectionYear[] {
           beginningValue: 720_000, growth: 8_000, contributions: 30_000,
           distributions: 0, internalContributions: 0, internalDistributions: 0,
           rmdAmount: 0, fees: 0, endingValue: 758_000, entries: [],
+        },
+        checking: {
+          beginningValue: 100_000, growth: 0, contributions: 0,
+          distributions: 0, internalContributions: 0, internalDistributions: 0,
+          rmdAmount: 0, fees: 0, endingValue: 100_000, entries: [],
         },
       },
     }),

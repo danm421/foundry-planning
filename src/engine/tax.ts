@@ -10,6 +10,11 @@
 import type { PlanSettings } from "./types";
 import type { TaxResult, TaxYearParameters, BracketTier, FilingStatus } from "../lib/tax/types";
 import { calculateTaxYear as calculateTaxYearBracket } from "../lib/tax/calculate";
+import {
+  netCapitalGainsAndLosses,
+  computeCarryforwardOut,
+  emptyCapitalLossCarryforward,
+} from "../lib/tax/capital-loss";
 
 export { calculateTaxYearBracket };
 
@@ -23,14 +28,74 @@ export interface FlatCalcInput {
    *  the tax-detail UI columns reflect the client's actual non-taxable flows
    *  rather than reading as stub zeros. */
   nonTaxableIncome?: number;
+  /** Prior-year carryforward. Consumed by the §1222/§1211(b)/§1212(b) netting
+   *  below exactly as in bracket mode. */
+  capitalLossCarryforwardIn?: import("../lib/tax/capital-loss").CapitalLossCarryforward;
+  /** SIGNED gross LONG-term capital gain **already folded into
+   *  `taxableIncome`** by the caller. Not the year's "true" LT gain — the two
+   *  differ (a non-grantor trust's share, a CRT's share, note-receivable
+   *  principal and education-draw gains all move `taxDetail.capitalGains`
+   *  without moving the flat scalar). It is the folded figure that must be
+   *  backed out here, or the adjustment corrupts the base it is applied to. */
+  longTermCapitalGains: number;
+  /** SIGNED gross SHORT-term capital gain already folded into `taxableIncome`.
+   *  Same contract as `longTermCapitalGains`. */
+  shortTermCapitalGains: number;
+  filingStatus: FilingStatus;
 }
 
 /**
  * Flat-mode tax calculator. Returns same TaxResult shape as the bracket engine
  * but populates only the high-level totals.
+ *
+ * §1222 netting → §1211(b) cap → §1212(b) carryforward run here too. Flat is
+ * the DEFAULT tax mode, and without this a realized capital loss offset
+ * ordinary income dollar-for-dollar through `Math.max(0, taxableIncome)`:
+ * $400k of salary plus a $500k below-basis sale produced $0 of tax instead of
+ * ~$115,130.
  */
 export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
-  const safeTaxable = Math.max(0, input.taxableIncome);
+  const netting = netCapitalGainsAndLosses({
+    longTermGain: input.longTermCapitalGains,
+    shortTermGain: input.shortTermCapitalGains,
+    carryforwardIn: input.capitalLossCarryforwardIn ?? emptyCapitalLossCarryforward(),
+    filingStatus: input.filingStatus,
+  });
+
+  // Swap the raw signed pair the caller folded in for the netted pair, then
+  // take the capped §1211(b) offset. Arithmetically a no-op whenever the year
+  // has no loss and no incoming carryforward (netting returns the inputs
+  // unchanged and a zero deduction), which is what keeps gain-only and
+  // no-capital-activity years byte-identical to the pre-netting behaviour.
+  const adjustedTaxable =
+    input.taxableIncome
+    - input.longTermCapitalGains
+    - input.shortTermCapitalGains
+    + netting.netLongTermGain
+    + netting.netShortTermGain
+    - netting.capitalLossDeduction;
+
+  // §1212(b)(2) consumption test wants taxable income computed as if the
+  // deduction had NOT been taken, and UNFLOORED — see the contract on
+  // `computeCarryforwardOut`. Pass the pre-floor figure, not `safeTaxable`.
+  const { carryforwardOut, carryforwardConsumed } = computeCarryforwardOut(
+    netting,
+    adjustedTaxable + netting.capitalLossDeduction,
+  );
+
+  const safeTaxable = Math.max(0, adjustedTaxable);
+  // Report the netted gains rather than stub zeros. `ordinaryIncome` carries
+  // the non-LT residual (mirroring bracket mode, where net STCG lives inside
+  // ordinaryIncome) so the two consumers that render
+  // `ordinaryIncome − shortCapitalGains` — tax-detail-income-table.tsx and the
+  // income-tax presentation view-model — stay non-negative and the row still
+  // sums to `totalIncome`. Both are clamped to `safeTaxable` for the
+  // degenerate case where the floor bites.
+  const reportedLongTerm = Math.min(netting.netLongTermGain, safeTaxable);
+  const reportedShortTerm = Math.min(
+    netting.netShortTermGain,
+    safeTaxable - reportedLongTerm,
+  );
   const federal = safeTaxable * input.flatFederalRate;
   const state = safeTaxable * input.flatStateRate;
   const total = federal + state;
@@ -39,10 +104,10 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
     income: {
       earnedIncome: 0,
       taxableSocialSecurity: 0,
-      ordinaryIncome: 0,
+      ordinaryIncome: safeTaxable - reportedLongTerm,
       dividends: 0,
-      capitalGains: 0,
-      shortCapitalGains: 0,
+      capitalGains: reportedLongTerm,
+      shortCapitalGains: reportedShortTerm,
       qbi: 0,
       totalIncome: safeTaxable,
       nonTaxableIncome,
@@ -78,6 +143,16 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       effectiveFederalRate: input.flatFederalRate,
       bracketsUsed: input.taxParams,
       inflationFactor: 1.0,
+    },
+    capitalLoss: {
+      deduction: netting.capitalLossDeduction,
+      carryforwardConsumed,
+      // Always a fresh object (computeCarryforwardOut builds one) — a year-loop
+      // that mutates carryforwardOut must never corrupt the caller's
+      // input.capitalLossCarryforwardIn.
+      carryforwardOut,
+      shortTermLoss: netting.shortTermLoss,
+      longTermLoss: netting.longTermLoss,
     },
   };
 }

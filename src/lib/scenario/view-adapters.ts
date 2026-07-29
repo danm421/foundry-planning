@@ -112,6 +112,10 @@ export interface ExpenseView {
   institutionName?: string | null;
   forFamilyMemberId?: string | null;
   dedicatedAccountIds?: string[];
+  /** Advisor-set "show this on the Household Map Goals board" flag. Presentation
+   *  only — but it is a real persisted column, so the adapter must carry it or a
+   *  form hydrated from the effective tree silently clears it on save. */
+  isGoal?: boolean;
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -137,6 +141,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     institutionName: expense.institutionName ?? null,
     forFamilyMemberId: expense.forFamilyMemberId ?? null,
     dedicatedAccountIds: expense.dedicatedAccountIds ?? [],
+    isGoal: expense.isGoal ?? false,
   };
 }
 

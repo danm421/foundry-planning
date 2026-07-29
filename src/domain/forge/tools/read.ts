@@ -148,7 +148,11 @@ export function buildReadTools(
   const findClient = tool(
     async ({ query }: { query: string }) => {
       const firmId = await requireOrgId();
-      const rows = await searchClients(query, firmId);
+      // ForgeAuthContext carries no orgRole (Clerk org role isn't part of the
+      // graph's auth context) — pass undefined, which resolveVisibleAdvisorIds
+      // treats as a non-privileged caller (safe default: never widens scope,
+      // may under-scope a firm-admin's Forge search in a siloed firm).
+      const rows = await searchClients(query, firmId, { userId: ctx.userId, orgRole: undefined });
       return JSON.stringify(rows);
     },
     {

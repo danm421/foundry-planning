@@ -12,6 +12,7 @@ import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
 import { sendIntakeFormEmail } from "@/lib/intake/email";
+import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import { EMAIL_RE } from "@/lib/intake/schema";
@@ -69,11 +70,15 @@ export async function POST(req: Request): Promise<Response> {
     let firmId: string;
     const callerOrg: string = orgId;
     let access: "own" | "shared" = "own";
+    // Captured for the blank branch's advisor-brand resolution below — the
+    // client's advisor, not the sender, is who a brand resolves by.
+    let accessedClient: typeof clients.$inferSelect | undefined;
 
     if (clientIdStr) {
       const acc = await requireClientEditAccess(clientIdStr);
       firmId = acc.firmId;
       access = acc.access;
+      accessedClient = acc.client;
     } else {
       firmId = orgId;
     }
@@ -130,10 +135,26 @@ export async function POST(req: Request): Promise<Response> {
         .from(intakeEmailSettings)
         .where(and(eq(intakeEmailSettings.firmId, firmId), eq(intakeEmailSettings.userId, userId)));
 
+      // Brand resolves by the CLIENT's advisor, not the sender (matches Tasks
+      // 11/12). A blank invite carrying no clientId falls back to the sender.
+      const advisorUserId = accessedClient?.advisorId ?? userId;
+      const advisorProfile = await getAdvisorProfile(firmId, advisorUserId);
+
+      // Per-field fall-through, brand wins: a blank/unset brand field must
+      // never clobber a working intake_email_settings value, so trim-then-
+      // truthy rather than `??` (a stored "" would otherwise win — see Task 10).
+      const brandFromName = advisorProfile?.brandingEnabled
+        ? advisorProfile.emailFromName?.trim() || undefined
+        : undefined;
+      const brandReplyTo = advisorProfile?.brandingEnabled
+        ? advisorProfile.emailReplyTo?.trim() || undefined
+        : undefined;
+
       await sendIntakeFormEmail({
         to: recipientEmail,
         link,
-        fromName: settings?.fromName ?? undefined,
+        fromName: brandFromName ?? settings?.fromName ?? undefined,
+        replyTo: brandReplyTo,
         subject: settings?.subject ?? undefined,
         introBody: settings?.introBody ?? undefined,
         advisorName,

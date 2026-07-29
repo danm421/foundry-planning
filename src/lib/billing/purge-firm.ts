@@ -33,6 +33,7 @@ import {
   planningKbChunks,
   forgeConversations,
   integrationConnections,
+  advisorProfiles,
 } from "@/db/schema";
 import { purgeCrmHouseholdById } from "@/lib/crm/households";
 import { deleteImportFile } from "@/lib/imports/blob";
@@ -57,9 +58,9 @@ export class FirmNotPurgeableError extends Error {
  *
  *   0. Collect every Blob reference the purge touches BEFORE any DB delete —
  *      household-document keys (private), import-file pathnames (private),
- *      task-file keys (private), and the firm's branding URLs (public). The
- *      rows that hold these vanish during the cascades below, so we read
- *      them up front.
+ *      task-file keys (private), and both the firm's and every advisor's
+ *      branding URLs (public). The rows that hold these vanish during the
+ *      cascades below, so we read them up front.
  *   1. Cascade-delete every household for the firm (drives planning clients +
  *      all CRM children, incl. crm_household_documents ROWS, via
  *      purgeCrmHouseholdById).
@@ -186,9 +187,27 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   const taskFileKeys = taskFileRows.map((r) => r.storageKey).filter((k): k is string => !!k);
 
   // Branding blobs (PUBLIC store) live on the firms row itself.
-  const brandingUrls = [firmRows[0]?.logoUrl, firmRows[0]?.faviconUrl].filter(
+  const firmBrandingUrls = [firmRows[0]?.logoUrl, firmRows[0]?.faviconUrl].filter(
     (u): u is string => !!u,
   );
+
+  // Per-advisor branding blobs (PUBLIC store), on advisor_profiles.
+  // ⚠️ ORDERING: this SELECT must stay ABOVE the `delete(advisorProfiles)`
+  // in step 3b. The blob-delete loop runs at step 5, long after those rows
+  // are gone — read them after the delete and you collect nothing, orphaning
+  // every advisor logo/favicon forever and silently (the loop is
+  // best-effort, so nothing ever surfaces the miss).
+  const advisorAssetRows = await db
+    .select({
+      logoUrl: advisorProfiles.logoUrl,
+      faviconUrl: advisorProfiles.faviconUrl,
+    })
+    .from(advisorProfiles)
+    .where(eq(advisorProfiles.firmId, firmId));
+  const brandingUrls = [
+    ...firmBrandingUrls,
+    ...advisorAssetRows.flatMap((r) => [r.logoUrl, r.faviconUrl]),
+  ].filter((u): u is string => !!u);
 
   // 1. Households → planning clients → CRM children (incl. document rows).
   //    purgeCrmHouseholdById also revokes each client's Plaid items at the
@@ -245,6 +264,11 @@ export async function purgeFirmById(firmId: string): Promise<void> {
   await db.delete(clientShares).where(eq(clientShares.firmId, firmId));
   await db.delete(planningKbChunks).where(eq(planningKbChunks.firmId, firmId));
   await db.delete(forgeConversations).where(eq(forgeConversations.firmId, firmId));
+  // Per-advisor branding (Task 14): leaf firm-scoped table, no FK to clients/
+  // crm_households, so nothing cascades it — must be deleted explicitly.
+  // Its logo/favicon URLs were collected in step 0, ABOVE — see the ordering
+  // warning there before moving either statement.
+  await db.delete(advisorProfiles).where(eq(advisorProfiles.firmId, firmId));
 
   // 4. Stripe customer (best-effort).
   if (stripeCustomerId) {

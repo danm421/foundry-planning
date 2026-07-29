@@ -17,6 +17,7 @@ import {
   requireOrgAdminOrOwner,
   requireActiveSubscription,
   requireActiveSubscriptionForFirm,
+  requireActiveSubscriptionForFirmNoSession,
   ForbiddenError,
 } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
@@ -225,5 +226,54 @@ describe("requireActiveSubscriptionForFirm", () => {
   it("no userId throws UnauthorizedError", async () => {
     mockAuth.mockResolvedValue({ userId: null });
     await expect(requireActiveSubscriptionForFirm("org_a")).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+});
+
+describe("requireActiveSubscriptionForFirmNoSession", () => {
+  // The whole point of this variant: public token-authenticated routes have no
+  // Clerk session, so it must never consult auth() and must never be able to
+  // throw UnauthorizedError. Every case below leaves mockAuth unconfigured
+  // (it would resolve `undefined` and destructuring it would TypeError), which
+  // is what makes "auth() is not called" falsifiable rather than incidental.
+  it("passes with NO session at all, and never calls auth()", async () => {
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { subscription_status: "active" },
+    });
+    await expect(
+      requireActiveSubscriptionForFirmNoSession("org_a"),
+    ).resolves.toBeUndefined();
+    expect(mockAuth).not.toHaveBeenCalled();
+  });
+
+  it("throws ForbiddenError for a lapsed firm — not UnauthorizedError", async () => {
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { subscription_status: "canceled" },
+    });
+    await expect(
+      requireActiveSubscriptionForFirmNoSession("org_a"),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockAuth).not.toHaveBeenCalled();
+  });
+
+  it("founder bypass — is_founder=true in the firm's Clerk org metadata", async () => {
+    mockGetOrganization.mockResolvedValue({ publicMetadata: { is_founder: true } });
+    await expect(
+      requireActiveSubscriptionForFirmNoSession("org_a"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads the metadata of the firmId passed in, not of any caller org", async () => {
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { subscription_status: "active" },
+    });
+    await requireActiveSubscriptionForFirmNoSession("org_a");
+    expect(mockGetOrganization).toHaveBeenCalledWith({ organizationId: "org_a" });
+  });
+
+  it("fails closed when the firm has no publicMetadata", async () => {
+    mockGetOrganization.mockResolvedValue({ publicMetadata: null });
+    await expect(
+      requireActiveSubscriptionForFirmNoSession("org_a"),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

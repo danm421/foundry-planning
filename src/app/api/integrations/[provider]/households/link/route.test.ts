@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/db-scoping", () => ({ findClientInFirm: vi.fn() }));
@@ -9,7 +9,15 @@ import { auth } from "@clerk/nextjs/server";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { linkHousehold, unlinkHousehold } from "@/lib/integrations/households";
 
-beforeEach(() => vi.clearAllMocks());
+const ORIGINAL_ORION_ENABLED = process.env.ORION_ENABLED;
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.ORION_ENABLED = "true";
+});
+afterEach(() => {
+  if (ORIGINAL_ORION_ENABLED === undefined) delete process.env.ORION_ENABLED;
+  else process.env.ORION_ENABLED = ORIGINAL_ORION_ENABLED;
+});
 
 function ctx(provider = "orion") {
   return { params: Promise.resolve({ provider }) };

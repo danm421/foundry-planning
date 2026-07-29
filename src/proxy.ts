@@ -34,6 +34,10 @@ const isPublicRoute = createRouteMatcher([
   // Public intake forms — reachable without a Clerk session.
   "/intake/(.*)",
   "/api/intake/(.*)",
+  // Public risk-tolerance questionnaire — emailed link, token-authenticated,
+  // reachable without a Clerk session.
+  "/risk-questionnaire/(.*)",
+  "/api/risk-questionnaire/(.*)",
   // AASA / assetlinks — Apple's universal-links crawler and Google's Digital
   // Asset Links fetcher hit these paths with no session cookie. The AASA file
   // has no extension (Apple requires that), so clerkMiddleware's

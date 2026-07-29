@@ -29,6 +29,7 @@ import {
 import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
 import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
+import { condenseAccountName } from "./condense-account-name";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
@@ -144,6 +145,24 @@ function flattenMultiPass(
         }
     }
     return out;
+}
+
+/**
+ * Backstop for the account-statement prompt's short-name rule. Prompt
+ * compliance is probabilistic, so every payload-assembly site runs this before
+ * returning — that way the condensed name is what reaches the review wizard,
+ * both merge paths, and the account-matching pass.
+ *
+ * `extracted.accounts` is cast off a loose zod schema that does not check
+ * per-field types, so a non-string `name` is reachable at runtime and is left
+ * untouched rather than coerced.
+ */
+function condenseAccountNames(
+    accounts: ExtractionResult["extracted"]["accounts"],
+): ExtractionResult["extracted"]["accounts"] {
+    return accounts.map((a) =>
+        typeof a.name === "string" ? { ...a, name: condenseAccountName(a.name) } : a,
+    );
 }
 
 function getFileExtension(fileName: string): string {
@@ -355,6 +374,7 @@ export async function extractDocument(
         });
         if (multi) {
             const extracted = flattenMultiPass(multi);
+            extracted.accounts = condenseAccountNames(extracted.accounts);
             warnings.push(...multi.warnings);
             return {
                 documentType,
@@ -437,6 +457,8 @@ export async function extractDocument(
         goals: (Array.isArray(safe.goals) ? safe.goals : []) as unknown as ExtractionResult["extracted"]["goals"],
         assumptions: (safe.assumptions ?? undefined) as ExtractionResult["extracted"]["assumptions"],
     };
+
+    extracted.accounts = condenseAccountNames(extracted.accounts);
 
     // Complete any holdings table the model truncated. Only fires per-account
     // when holdings materially undershoot the stated value (continuation passes).

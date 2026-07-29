@@ -442,6 +442,15 @@ export function MinusIcon(props: IconProps) {
   );
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
 export function CircleIcon(props: IconProps) {
   return (
     <svg {...baseSvgProps} {...props}>
@@ -457,6 +466,16 @@ export function DataCollectionIcon(props: IconProps) {
       <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
       <path d="M9 12h6" />
       <path d="M9 16h4" />
+    </svg>
+  );
+}
+
+export function RiskIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <path d="M3 15a9 9 0 0 1 18 0" />
+      <path d="M12 15l4-4" />
+      <circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }

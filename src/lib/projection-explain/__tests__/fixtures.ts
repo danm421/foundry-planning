@@ -8,6 +8,7 @@ export function makeTaxResult(over?: {
   flow?: Partial<TaxResult["flow"]>;
   marginalFederalRate?: number;
   state?: TaxResult["state"];
+  capitalLoss?: Partial<TaxResult["capitalLoss"]>;
 }): TaxResult {
   return {
     income: {
@@ -31,6 +32,12 @@ export function makeTaxResult(over?: {
       inflationFactor: 1,
     },
     state: over?.state,
+    capitalLoss: {
+      deduction: 0, carryforwardConsumed: 0,
+      carryforwardOut: { shortTerm: 0, longTerm: 0 },
+      shortTermLoss: 0, longTermLoss: 0,
+      ...over?.capitalLoss,
+    },
   };
 }
 

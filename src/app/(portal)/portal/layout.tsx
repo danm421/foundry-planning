@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
-import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
@@ -20,6 +20,7 @@ export default async function PortalLayout({
   const [row] = await db
     .select({
       firmId: clients.firmId,
+      advisorId: clients.advisorId,
       crmHouseholdId: clients.crmHouseholdId,
       portalEditEnabled: clients.portalEditEnabled,
     })
@@ -55,9 +56,13 @@ export default async function PortalLayout({
     }
   }
 
-  // Firm letterhead for the portal chrome; null → Foundry lockup (same
-  // fallback semantics as the intake pages).
-  const branding = row ? await resolveIntakeBranding(row.firmId) : null;
+  // Letterhead for the portal chrome, keyed by the client's advisor — an
+  // advisor with branding enabled overlays their own logo/name/favicon over
+  // the firm's; null → Foundry lockup (same fallback semantics as the intake
+  // pages).
+  const branding = row
+    ? await resolveIntakeBrandingForClient(row.firmId, row.advisorId)
+    : null;
 
   return (
     <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">

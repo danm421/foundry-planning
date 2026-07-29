@@ -31,6 +31,24 @@ function visibleRows(block: AssetAccountBlock, f: AssetFilterState): AssetRow[] 
   });
 }
 
+/**
+ * `reconciles` is false when EITHER the value residual or the BASIS residual
+ * breaks its $1 tolerance, but this badge only ever rendered `block.residual`.
+ * A basis-only break therefore showed "⚠ off by $0.00" — a warning with a zero
+ * delta, which reads as a rendering bug rather than a real failure. Show
+ * whichever residual actually broke (the larger magnitude), and say so when it
+ * is the basis.
+ */
+function ReconcileWarning({ block }: { block: AssetAccountBlock }) {
+  const basisIsTheBreak = Math.abs(block.basisResidual) > Math.abs(block.residual);
+  return (
+    <span className="ml-2 text-[11px] font-normal text-crit">
+      ⚠ off by <MoneyText value={basisIsTheBreak ? block.basisResidual : block.residual} />
+      {basisIsTheBreak && " (basis)"}
+    </span>
+  );
+}
+
 function AccountBlock({
   block,
   f,
@@ -53,11 +71,7 @@ function AccountBlock({
             <span className="text-[13px] font-semibold text-ink">
               {block.name}
               <span className="ml-2 rounded bg-card px-1.5 py-0.5 text-[11px] font-normal text-ink-3">{block.category}</span>
-              {!block.reconciles && (
-                <span className="ml-2 text-[11px] font-normal text-crit">
-                  ⚠ off by <MoneyText value={block.residual} />
-                </span>
-              )}
+              {!block.reconciles && <ReconcileWarning block={block} />}
             </span>
             <span className="text-xs tabular-nums text-ink-2">
               <MoneyText value={block.beginningValue} /> → <MoneyText value={block.endingValue} />

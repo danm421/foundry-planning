@@ -32,7 +32,21 @@ export interface ComputeTrustTaxInputs {
  * Tax-exempt interest (even when retained) is NOT taxed — not in base here.
  */
 export function computeTrustTax(inp: ComputeTrustTaxInputs): TrustTaxBreakdown {
-  let { retainedOrdinary, retainedDividends, recognizedCapGains } = inp;
+  let { retainedOrdinary, retainedDividends } = inp;
+  // Clamped at entry. `assetTransactionGains` can now carry a NEGATIVE gain
+  // (Task 6 un-floored `asset-transactions.ts` `capitalGain`; Task 9 made the
+  // household take-back symmetric), and nothing downstream guards it:
+  // `federalCapGainsTax` would refund the trust's ORDINARY bracket usage at
+  // cap-gains rates with no cap, `stateTax` has no floor, `total` could go
+  // negative, and the §642(c) `cgOff` below would GROW `remainingDeduction`
+  // by subtracting a negative. §1211(b) applies to trusts and allows at most
+  // $3,000, so an uncapped refund is wrong in every direction.
+  //
+  // Clamping at zero is exactly the pre-branch behaviour (the feeder
+  // `item.capitalGain` was floored at source). Real statutory handling at the
+  // 1041 level — §1222 netting, the $3,000 cap, §1212(b) carryforward — is
+  // DEFERRED; see future-work/engine.md.
+  let recognizedCapGains = Math.max(0, inp.recognizedCapGains);
   let remainingDeduction = Math.max(0, inp.charitableDeduction ?? 0);
   if (remainingDeduction > 0) {
     const ordOff = Math.min(retainedOrdinary, remainingDeduction);
