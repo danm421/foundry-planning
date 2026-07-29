@@ -173,6 +173,20 @@ describe("SolverThresholdsPanel", () => {
       .toEqual(["Threshold", "Range", "Alternative", "Original"]);
   });
 
+  it("[C3] gives the charitable row a DIFFERENT dollar ceiling per side, with the rule in the Range cell", () => {
+    renderPanel();
+    // The two sides' AGIs differ (300,000 vs 200,000), so the two ceilings
+    // differ too — which is what makes swapping the Alternative/Original <td>
+    // bodies visible here. Hand-computed: 0.6 * 300,000 and 0.6 * 200,000.
+    //
+    // These two cells hold FIGURES, not a StatusCell: statusFor() returns
+    // "full" unconditionally for this row, so "Full"/"Full" carried no signal
+    // and the per-side ceilings are the only useful thing to put there.
+    expect(rowCells("Qualified Charitable Contribution Limit")).toEqual([
+      "Qualified Charitable Contribution Limit", "60% of AGI", "$180,000", "$120,000",
+    ]);
+  });
+
   it("renders all 11 items, in THRESHOLD_ITEMS order", () => {
     renderPanel();
     const labels = screen.getAllByRole("row").slice(1)  // drop the header row
@@ -226,6 +240,17 @@ describe("SolverThresholdsPanel", () => {
     // The Alternative column must NOT be blanked along with the Original.
     expect(rowCells("Roth IRA Contribution")).toEqual([
       "Roth IRA Contribution", "$242,000 - $252,000", "Phased Out", "N/A",
+    ]);
+  });
+
+  it("[C3] em-dashes the charitable row's Original ceiling with no base plan, keeping the Alternative's", () => {
+    renderPanel([py(2026, OVER)], []);
+    // "—", not "N/A": this cell holds a ceiling, and the reason there isn't
+    // one is that there is no Original AGI to take 60% of. It must also not
+    // fall back to the StatusCell, which would print an unconditional "Full"
+    // beside a real dollar figure on the other side.
+    expect(rowCells("Qualified Charitable Contribution Limit")).toEqual([
+      "Qualified Charitable Contribution Limit", "60% of AGI", "$180,000", "—",
     ]);
   });
 });

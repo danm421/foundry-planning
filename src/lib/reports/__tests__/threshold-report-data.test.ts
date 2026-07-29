@@ -76,14 +76,16 @@ describe("buildThresholdReport", () => {
     expect(rows.some((r) => r.alternativeStatus !== "na")).toBe(true);
   });
 
-  it("[R10.4] marks every alternativeStatus na in flat mode, but still renders real ranges except charitableLimit", () => {
+  it("[R10.4] marks every alternativeStatus na in flat mode, but still renders real ranges", () => {
     const scenario = { year: 2026 } as ProjectionYear; // no thresholdFacts: flat mode
     const rows = buildThresholdReport({ year: 2026, scenario, base: undefined, params, household });
 
     expect(rows.every((r) => r.alternativeStatus === "na")).toBe(true);
 
+    // charitableLimit's SHARED cell is the rule, which holds with or without
+    // facts; it is the PER-SIDE ceiling that has no AGI to compute from here.
     const charitable = rows.find((r) => r.id === "charitableLimit")!;
-    expect(charitable.thresholdDisplay).toBe("—");
+    expect(charitable.alternativeThresholdDisplay).toBe("—");
     // Every OTHER row still renders a real range off the household argument —
     // it does not need thresholdFacts to know the household's filing status.
     expect(rows.filter((r) => r.id !== "charitableLimit").every((r) => r.thresholdDisplay !== "—")).toBe(true);
@@ -110,9 +112,11 @@ describe("buildThresholdReport", () => {
     // assertion is what turns red under that mutation (R8).
     expect(rows.find((r) => r.id === "amtExemption")!.thresholdDisplay).toBe("$1,000,000 - $1,280,400");
 
-    // Charitable limit: 60% of the scenario's AGI, computed by hand here
-    // (not by calling rangeFor/the code under test) — 0.6 * 300,000 = 180,000.
-    expect(rows.find((r) => r.id === "charitableLimit")!.thresholdDisplay).toBe("$180,000");
+    // Charitable limit: 60% of the scenario's AGI, computed by hand here (not
+    // by calling rangeFor/the code under test) — 0.6 * 300,000 = 180,000. It
+    // lives on the PER-SIDE field, not in the shared column, because the two
+    // sides have their own AGI (see the [C3] tests below).
+    expect(rows.find((r) => r.id === "charitableLimit")!.alternativeThresholdDisplay).toBe("$180,000");
 
     // NA range (AOTC is statutorily denied to MFS filers — IRC 25A(g)(6)).
     const mfsRows = buildThresholdReport({
@@ -143,5 +147,100 @@ describe("buildThresholdReport", () => {
     expect(ctc.alternativeStatus).toBe("out");
     expect(ctc.originalStatus).toBe("partial");
     expect(ctc.alternativeStatus).not.toBe(ctc.originalStatus);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // [C3] charitableLimit's 60%-of-AGI ceiling is a PER-SIDE figure. Both sides
+  // share one Threshold column but have their OWN AGI, so a single cell there
+  // could only ever describe one of them — it silently reported the
+  // Alternative's ceiling under a header that reads as shared. The rule ("60%
+  // of AGI") is what is genuinely shared; the two dollar ceilings move into
+  // the two per-side columns, whose status cells carry no signal for this row
+  // (statusFor("charitableLimit") returns "full" unconditionally,
+  // thresholds.ts:260).
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it("[C3] gives charitableLimit a per-side dollar ceiling and puts the RULE in the shared column", () => {
+    // Two DIFFERENT AGIs, so swapping the two per-side fields reddens this —
+    // a fixture where both sides earned the same would be blind to the swap.
+    const rows = buildThresholdReport({
+      year: 2026,
+      scenario: py(facts({ agi: 800000 })),
+      base: py(facts({ agi: 300000 })),
+      params, household,
+    });
+    const charitable = rows.find((r) => r.id === "charitableLimit")!;
+
+    // Hand-computed, NOT via rangeFor/the code under test: 0.6 * 800,000 =
+    // 480,000 and 0.6 * 300,000 = 180,000. One toEqual = one throw point, so
+    // no assertion here can be masked by an earlier one failing first.
+    expect({
+      alternative: charitable.alternativeThresholdDisplay,
+      original: charitable.originalThresholdDisplay,
+      shared: charitable.thresholdDisplay,
+    }).toEqual({
+      alternative: "$480,000",
+      original: "$180,000",
+      shared: "60% of AGI",
+    });
+  });
+
+  it("[Ruling 4] shows the em-dash rather than a negative ceiling when a side's AGI is <= 0", () => {
+    // A negative AGI is CORRECT and load-bearing in the engine (a big loss
+    // year) — this is a DISPLAY decision only, and nothing here clamps the
+    // engine. "60% of negative" is not a charitable ceiling an advisor can
+    // act on, so neither side may print "$-180,000".
+    //
+    // -300,000 pins the strictly-negative case and 0 pins the BOUNDARY: a
+    // `< 0` guard would leave the base side rendering "$0", which reads as a
+    // real (and wrong) ceiling of zero.
+    const rows = buildThresholdReport({
+      year: 2026,
+      scenario: py(facts({ agi: -300000 })),
+      base: py(facts({ agi: 0 })),
+      params, household,
+    });
+    const charitable = rows.find((r) => r.id === "charitableLimit")!;
+
+    expect({
+      alternative: charitable.alternativeThresholdDisplay,
+      original: charitable.originalThresholdDisplay,
+      shared: charitable.thresholdDisplay,
+    }).toEqual({
+      alternative: "—",
+      original: "—",
+      // The rule still applies — only the arithmetic is unshowable.
+      shared: "60% of AGI",
+    });
+  });
+
+  it("[C3] em-dashes only the side whose facts are absent, leaving the other side's ceiling", () => {
+    // Both directions in ONE toEqual: two throw-point-sharing halves that are
+    // mirror images, so a fix that em-dashes BOTH sides whenever EITHER side
+    // is missing — or that reads the wrong side's facts — reddens.
+    const withFacts = py(facts({ agi: 300000 }));
+    const flat = { year: 2026 } as ProjectionYear; // no thresholdFacts
+
+    const noBase = buildThresholdReport({
+      year: 2026, scenario: withFacts, base: undefined, params, household,
+    }).find((r) => r.id === "charitableLimit")!;
+
+    const flatScenario = buildThresholdReport({
+      year: 2026, scenario: flat, base: withFacts, params, household,
+    }).find((r) => r.id === "charitableLimit")!;
+
+    expect({
+      noBase: {
+        alternative: noBase.alternativeThresholdDisplay,
+        original: noBase.originalThresholdDisplay,
+      },
+      flatScenario: {
+        alternative: flatScenario.alternativeThresholdDisplay,
+        original: flatScenario.originalThresholdDisplay,
+      },
+    }).toEqual({
+      noBase: { alternative: "$180,000", original: "—" },
+      flatScenario: { alternative: "—", original: "$180,000" },
+    });
   });
 });

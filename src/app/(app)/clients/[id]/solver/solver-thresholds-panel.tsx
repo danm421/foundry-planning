@@ -66,6 +66,14 @@ function StatusCell({ id, status }: { id: ThresholdItemId; status: ThresholdStat
   );
 }
 
+/** A per-side dollar ceiling standing in for a status cell — `charitableLimit`
+ *  only (see `ThresholdReportRow.alternativeThresholdDisplay`). It sits in a
+ *  status column, so it keeps those cells' 12px rhythm rather than the Range
+ *  cell's, and is `tabular` so the two sides' figures align digit-for-digit. */
+function CeilingCell({ display }: { display: string }) {
+  return <span className="tabular text-[12px] text-ink-2">{display}</span>;
+}
+
 export function SolverThresholdsPanel({ years, baseProjection, workingTree }: Props) {
   // Defaults to the first projection year; falls back to it again if the
   // previously-selected year drops out of a shrunk `years` array.
@@ -159,10 +167,14 @@ export function SolverThresholdsPanel({ years, baseProjection, workingTree }: Pr
                   <td className="px-3 py-2 text-ink">{r.label}</td>
                   <td className="tabular px-3 py-2 text-right text-ink-2">{r.thresholdDisplay}</td>
                   <td className="border-l border-hair px-3 py-2 text-right">
-                    <StatusCell id={r.id} status={r.alternativeStatus} />
+                    {r.alternativeThresholdDisplay != null
+                      ? <CeilingCell display={r.alternativeThresholdDisplay} />
+                      : <StatusCell id={r.id} status={r.alternativeStatus} />}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <StatusCell id={r.id} status={r.originalStatus} />
+                    {r.originalThresholdDisplay != null
+                      ? <CeilingCell display={r.originalThresholdDisplay} />
+                      : <StatusCell id={r.id} status={r.originalStatus} />}
                   </td>
                 </tr>
               ))}
