@@ -71,18 +71,28 @@ function promptVersionFor(documentType: DocumentType): string {
 const MAX_DOCUMENT_TEXT_CHARS = 100000;
 
 /**
- * R5: bound what the multi-pass path PERSISTS to `MAX_DOCUMENT_TEXT_CHARS`,
- * dropping whole pages from the end once the budget is exhausted. This only
- * caps the return value written to `payloadJson.fileResults` at rest - the
- * extraction pass itself (anchors/outline/classifyFactFinder/section
- * prompts) already ran against the full, uncapped page array before this is
- * called. Never silently normalizes: the caller pushes a warning naming how
- * many pages were dropped.
+ * R5: bound what the multi-pass path PERSISTS to `MAX_DOCUMENT_TEXT_CHARS`.
+ * The rule is "whole pages while they fit, else a truncated first page" -
+ * NOT simply "drop from the end": keep whole pages from the start until the
+ * budget would be exceeded, dropping the (whole) remainder. But if the
+ * FIRST page alone already exceeds the budget, whole-page dropping would
+ * keep zero pages and persist nothing for that document - the exact
+ * opposite of what this cap exists to protect (a long fact finder still
+ * reaching the planner). So in that one case, truncate the first page to
+ * the budget instead of dropping it, mirroring the single-pass path's own
+ * truncation marker (`"\n... [truncated]"`, see step 5 below) rather than
+ * inventing a new one. This only caps the return value written to
+ * `payloadJson.fileResults` at rest - the extraction pass itself
+ * (anchors/outline/classifyFactFinder/section prompts) already ran against
+ * the full, uncapped page array before this is called. Never silently
+ * normalizes: the caller pushes a warning that distinguishes "pages were
+ * dropped whole" from "the first page itself was too long and got cut
+ * mid-page" - an advisor needs to be able to tell those apart.
  */
 function capPersistedPages(
     pages: string[],
     maxChars: number,
-): { pages: string[]; droppedCount: number } {
+): { pages: string[]; droppedCount: number; truncatedFirstPage: boolean } {
     let total = 0;
     let keep = pages.length;
     for (let i = 0; i < pages.length; i++) {
@@ -92,7 +102,23 @@ function capPersistedPages(
             break;
         }
     }
-    return { pages: pages.slice(0, keep), droppedCount: pages.length - keep };
+    if (keep === 0 && pages.length > 0) {
+        // Zero whole pages fit under the budget - even page 1 alone is too
+        // long. Keep something rather than persisting `pages: []`: truncate
+        // page 1 to the budget. Any other pages are still whole-page
+        // dropped (they never had a chance to fit once page 1 alone
+        // exhausted the budget).
+        return {
+            pages: [pages[0].slice(0, maxChars) + "\n... [truncated]"],
+            droppedCount: pages.length - 1,
+            truncatedFirstPage: true,
+        };
+    }
+    return {
+        pages: pages.slice(0, keep),
+        droppedCount: pages.length - keep,
+        truncatedFirstPage: false,
+    };
 }
 
 function emptyExtracted(): ExtractionResult["extracted"] {
@@ -418,7 +444,20 @@ export async function extractDocument(
             // PERSISTED here; the extraction above already ran against the
             // full page array.
             const capped = capPersistedPages(redactedPages, MAX_DOCUMENT_TEXT_CHARS);
-            if (capped.droppedCount > 0) {
+            // Two distinct warnings, never collapsed into one sentence: an
+            // advisor needs to be able to tell "trailing pages were dropped
+            // whole" from "your first page was itself too long and got cut
+            // mid-page" (R5, fix round 2).
+            if (capped.truncatedFirstPage) {
+                warnings.push(
+                    "The first page of this document was itself longer than the size limit for AI review and was truncated mid-page."
+                );
+                if (capped.droppedCount > 0) {
+                    warnings.push(
+                        `Document text was very long; ${capped.droppedCount} additional page(s) were also dropped from the copy saved for AI review.`
+                    );
+                }
+            } else if (capped.droppedCount > 0) {
                 warnings.push(
                     `Document text was very long; ${capped.droppedCount} page(s) at the end were dropped from the copy saved for AI review.`
                 );

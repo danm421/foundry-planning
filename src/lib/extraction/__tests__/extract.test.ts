@@ -776,4 +776,36 @@ describe("extractDocument — persisted text/pages (Task 15 Step 5, R1/R2/R5)", 
         expect(persistedPages).toEqual([page1]);
         expect(result.warnings.some((w) => /2 page\(s\)/i.test(w))).toBe(true);
     });
+
+    it("truncates (not drops) a SINGLE page that alone exceeds the 100000-char ceiling, and warns distinctly (R5, fix round 2)", async () => {
+        // Regression test for the "keep === 0" edge capPersistedPages didn't
+        // originally handle: a first page bigger than the whole budget used
+        // to make EVERY page drop, persisting `pages: []` — the opposite of
+        // what R5 exists to protect (a long fact finder still reaching the
+        // planner).
+        const hugePage = "Z".repeat(150000);
+        mockedPages.mockResolvedValueOnce([hugePage]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [] })); // incomes section
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "huge-first-page.pdf", "fact_finder", "mini", "pdf",
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        const persistedPages = result.pages ?? [];
+        // Not empty — something always survives.
+        expect(persistedPages.length).toBeGreaterThan(0);
+        const totalChars = persistedPages.reduce((sum, p) => sum + p.length, 0);
+        expect(totalChars).toBeGreaterThan(0);
+        // Within the ceiling plus the truncation marker's own length.
+        expect(totalChars).toBeLessThanOrEqual(100000 + "\n... [truncated]".length);
+        expect(persistedPages[0]).toContain("[truncated]");
+        // Distinct warning from the "trailing pages dropped" sentence above —
+        // must name the mid-page truncation, not a page-count drop.
+        expect(
+            result.warnings.some((w) => /first page.*truncated mid-page/i.test(w))
+        ).toBe(true);
+    });
 });
