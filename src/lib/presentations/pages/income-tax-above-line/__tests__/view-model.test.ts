@@ -56,4 +56,23 @@ describe("buildTaxAboveLineDrillData", () => {
     const sum = d.chartSpec!.stacks.reduce((a, s) => a + s.values[i], 0);
     expect(sum).toBeCloseTo(26_500);
   });
+
+  it("declares a COLUMN for every cell key it emits, in render order", () => {
+    // ⚠️ The cells, the chart series and the columns are three INDEPENDENT
+    // lists in this module. The tests above assert the first two, so deleting
+    // the `studentLoanInterest` entry from the `columns` array alone left the
+    // row data and the chart intact and every test green — while the column
+    // disappeared from the rendered table. Verified by mutation: removing that
+    // one line reddened nothing before this test existed.
+    const d = buildTaxAboveLineDrillData(base);
+    expect(d.table.columns.map((c) => c.key)).toEqual([
+      "retirementContributions", "taggedExpenses", "manualEntries",
+      "studentLoanInterest", "total",
+    ]);
+    // Every declared column must be populated by every row, and every cell key
+    // must have a column — the two lists agreeing is the actual invariant.
+    for (const row of d.table.rows) {
+      expect(Object.keys(row.cells).sort()).toEqual(d.table.columns.map((c) => c.key).sort());
+    }
+  });
 });

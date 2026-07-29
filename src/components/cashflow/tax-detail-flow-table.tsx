@@ -150,7 +150,10 @@ export const FLOW_COLUMNS: Column[] = [
   },
 ];
 
-function aboveLineColumns(years: ProjectionYear[]): Column[] {
+/** Exported for the same reason `otherColumns` is: the zero-suppression filter
+ *  below decides which columns an advisor sees, and it is not reachable through
+ *  the rendered component without a full ProjectionYear fixture. */
+export function aboveLineColumns(years: ProjectionYear[]): Column[] {
   const cols: Column[] = [
     {
       key: "al_retirement",

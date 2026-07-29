@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  aboveLineColumns,
   computeOtherTaxes,
   FLOW_COLUMNS,
   getSourcesForColumn,
@@ -126,5 +127,65 @@ describe("tax-detail-flow-table — H3 below-line drill popovers filter by categ
     const rows = getSourcesForColumn(dy, "bl_interest_paid")!;
     const sum = rows.reduce((s, r) => s + r.amount, 0);
     expect(sum).toBe(8_000);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Above-line columns. `aboveLineColumns` was private until now, so NOTHING in
+// the suite could reach it: deleting the Student Loan Interest column outright
+// left all 121 tests in this directory green while the column vanished from
+// every advisor's screen. Exported (like `otherColumns` already was) and pinned
+// here.
+// ════════════════════════════════════════════════════════════════════════════
+
+function aboveLineYear(over: Partial<Record<string, number>> = {}) {
+  return {
+    deductionBreakdown: {
+      aboveLine: {
+        retirementContributions: 20_000, taggedExpenses: 3_000,
+        manualEntries: 1_000, studentLoanInterest: 2_500, total: 26_500,
+        ...over,
+      },
+    },
+  } as never;
+}
+
+describe("tax-detail-flow-table — above-line columns", () => {
+  it("emits every above-line component column, in order, with the total last", () => {
+    expect(aboveLineColumns([aboveLineYear()]).map((c) => c.key)).toEqual([
+      "al_retirement", "al_expenses", "al_manual", "al_student_loan", "al_total",
+    ]);
+  });
+
+  it("maps the Student Loan Interest column to the engine's own figure", () => {
+    const y = aboveLineYear();
+    const col = aboveLineColumns([y]).find((c) => c.key === "al_student_loan")!;
+    expect(col.value(y)).toBe(2_500);
+    // The label is what an advisor actually reads; a column present under the
+    // wrong heading is the same defect as a missing one.
+    expect(col.label).toBe("Student Loan Interest");
+  });
+
+  it("zero-suppresses Student Loan Interest when no year deducted any", () => {
+    // The MAGI phase-out zeroes this for most households, so the suppressed
+    // case is the COMMON one, not an edge case.
+    const y = aboveLineYear({ studentLoanInterest: 0, total: 24_000 });
+    expect(aboveLineColumns([y]).map((c) => c.key)).not.toContain("al_student_loan");
+  });
+
+  it("keeps the column when ANY visible year deducted student-loan interest", () => {
+    // Suppression is a whole-table decision: one qualifying year must hold the
+    // column open for every other row, or the table loses a year's data.
+    const paid = aboveLineYear();
+    const none = aboveLineYear({ studentLoanInterest: 0, total: 24_000 });
+    expect(aboveLineColumns([none, paid]).map((c) => c.key)).toContain("al_student_loan");
+  });
+
+  it("keeps the total column even when every component is zero", () => {
+    const zero = aboveLineYear({
+      retirementContributions: 0, taggedExpenses: 0,
+      manualEntries: 0, studentLoanInterest: 0, total: 0,
+    });
+    expect(aboveLineColumns([zero]).map((c) => c.key)).toEqual(["al_total"]);
   });
 });
