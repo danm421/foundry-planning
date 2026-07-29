@@ -4,6 +4,8 @@ import { clientImports } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { runMatchingPass } from "@/lib/imports/match";
+import { applyDecisions } from "@/lib/imports/planner/apply-decisions";
+import { runPlanner } from "@/lib/imports/planner/run-planner";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
 import { deriveGoals } from "./goals";
@@ -11,7 +13,17 @@ import { applyIncomeTimingDefaults } from "./income-timing";
 import { mergeAcrossFiles } from "./merge-across-files";
 import { derivePlanBasics } from "./plan-basics";
 import { generateQuestions } from "./questions";
-import type { AssemblePlanBasics, AssembleState } from "./types";
+import type { AssemblePlanBasics, AssembleQuestion, AssembleState } from "./types";
+
+/**
+ * Task 17's real export — until then, a stub. `estimate_ss_pia` (the
+ * planner's tool, see `planner/tools.ts`) always returns 0. Task 16 builds
+ * the underlying Social Security PIA estimator and Task 17 wires it in
+ * here. A zero-argument function is assignable to
+ * `(input: EstimatePiaToolInput) => number` (TS allows fewer params on the
+ * source side), so this typechecks as-is.
+ */
+const makePiaEstimator = () => () => 0;
 
 export interface RunAssembleArgs {
   importId: string;
@@ -37,6 +49,17 @@ export interface RunAssembleArgs {
    * Best-effort: a failed read degrades to `null`, never fails assemble.
    */
   taxReturn?: { taxYear: number; agi: number | null; totalTax: number | null } | null;
+  /**
+   * The source document's full text and per-page text, used to run the
+   * planning reasoner (Task 13/14) opportunistically. Optional: no caller
+   * supplies this today (see the comment at its use below), so the planner
+   * never actually runs in production yet. When absent, assemble is exactly
+   * the deterministic path this file always ran.
+   */
+  documentText?: string;
+  pages?: string[];
+  /** Injected in tests. Defaults to the real `runPlanner`. */
+  runPlannerFn?: typeof runPlanner;
 }
 
 export interface RunAssembleResult {
@@ -121,18 +144,72 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   // roster — so unlike planBasics they need no `known` anchors and always run.
   const goals = deriveGoals({ payload: annotated });
 
-  const assemble: AssembleState = { version: 1, mergedFileCount, assumptions, questions };
+  // The planner refines what the deterministic steps derived. It is
+  // opportunistic: no document text, a timeout, or an outage all leave the
+  // assembled payload exactly as the deterministic path built it.
+  //
+  // No caller supplies `documentText` yet — `ExtractionResult` (the shape
+  // every caller actually has, via `fileResults`) carries no source text or
+  // page breakdown to forward here; getting the raw text to this layer is a
+  // separate decision the owner is deciding. So in production this branch
+  // never runs today. The seam exists so wiring a real source is a small
+  // change later; Task 19's fixture harness exercises it directly. Do not
+  // read this as "the planner is live."
+  let plannerQuestions: AssembleQuestion[] = [];
+  let plannerNotes: string[] = [];
+  let plannerPayload: ImportPayload = { ...annotated, ...(planBasics ? { planBasics } : {}), goals };
+
+  if (args.documentText) {
+    const plan = args.runPlannerFn ?? runPlanner;
+    const decisions = await plan({
+      documentText: args.documentText,
+      pages: args.pages ?? [args.documentText],
+      payload: plannerPayload,
+      estimatePia: makePiaEstimator(),
+    }).catch(() => null);
+
+    if (decisions) {
+      const applied = applyDecisions({
+        payload: plannerPayload,
+        decisions,
+        known: {
+          primaryDob: known?.primaryDob,
+          spouseDob: known?.spouseDob,
+          hasSpouse,
+        },
+      });
+      plannerPayload = applied.payload;
+      plannerQuestions = applied.questions;
+      plannerNotes = applied.notes;
+    }
+  }
+
+  // Merge the planner's proposed questions into the deterministic list,
+  // de-duplicating by id — the deterministic question wins any collision,
+  // since it already reflects real evidence (a merge conflict, a known
+  // gap) rather than the planner's read of the same field.
+  const deterministicIds = new Set(questions.map((q) => q.id));
+  const allQuestions: AssembleQuestion[] = [
+    ...questions,
+    ...plannerQuestions.filter((q) => !deterministicIds.has(q.id)),
+  ];
+
+  const assemble: AssembleState = {
+    version: 1,
+    mergedFileCount,
+    assumptions,
+    questions: allQuestions,
+    notes: plannerNotes,
+  };
 
   // planBasics is seeded onto the payload only, not onto `assemble` — the
   // review wizard reads `payload`, not `assemble` (and so does
   // commitPlanBasics, via buildLatestPayload's round-trip back through the
   // PATCH route). `assemble` has no reader for this field, so it isn't
-  // duplicated there. `goals` follows the identical path.
-  const assembledPayload: ImportPayload = {
-    ...annotated,
-    ...(planBasics ? { planBasics } : {}),
-    goals,
-  };
+  // duplicated there. `goals` follows the identical path. `plannerPayload`
+  // already carries both (seeded above, and refined by `applyDecisions`
+  // when the planner ran), so it stands in for the old inline object here.
+  const assembledPayload: ImportPayload = plannerPayload;
 
   await db
     .update(clientImports)
@@ -148,8 +225,8 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     resourceId: importId,
     clientId,
     firmId,
-    metadata: { mode, questionCount: questions.length },
+    metadata: { mode, questionCount: allQuestions.length },
   });
 
-  return { assemble, questionCount: questions.length, rowCount: countRows(annotated) };
+  return { assemble, questionCount: allQuestions.length, rowCount: countRows(annotated) };
 }

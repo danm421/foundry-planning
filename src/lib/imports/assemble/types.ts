@@ -54,6 +54,13 @@ export interface AssembleState {
   mergedFileCount: number; // how many source files were merged
   assumptions: AssembleAssumption[];
   questions: AssembleQuestion[];
+  /**
+   * Free-text notes surfaced by the planner (Task 13/15) — advisor-facing
+   * context that isn't a question or an assumption. Optional and additive:
+   * a payload persisted before this field existed has no `notes`, and every
+   * reader tolerates that absence, so `version` stays `1`.
+   */
+  notes?: string[];
 }
 
 /**
