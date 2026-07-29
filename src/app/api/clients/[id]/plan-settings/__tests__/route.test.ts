@@ -31,28 +31,41 @@ const { updateCalls, CLIENT_ID, FIRM_ID, SCENARIO_ID } = vi.hoisted(() => ({
 // Minimal DB mock — the only db.select() call exercised by these tests is
 // getBaseCaseScenarioId's scenario lookup (no selectedBenchmarkPortfolioId is
 // passed in any test body, so the modelPortfolios select branch never runs).
-// db.update(...).set(values) is captured so tests can assert on the exact
+// update(...).set(values) is captured so tests can assert on the exact
 // payload the route builds.
+//
+// The route wraps its writes in db.transaction() — the planSettings update and
+// the clients workplace-coverage update must commit together. The mock's tx
+// therefore exposes the SAME update builder, so the captured payload is
+// identical whether the route writes directly or inside the transaction.
+// Without a transaction() the route throws TypeError and every write test
+// fails 500 rather than asserting anything.
 // ---------------------------------------------------------------------------
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => Promise.resolve([{ id: SCENARIO_ID }]),
+vi.mock("@/db", () => {
+  const update = () => ({
+    set: (values: Record<string, unknown>) => ({
+      where: () => ({
+        returning: () => {
+          updateCalls.push(values);
+          return Promise.resolve([{ id: "settings-1", ...values }]);
+        },
       }),
     }),
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: () => ({
-          returning: () => {
-            updateCalls.push(values);
-            return Promise.resolve([{ id: "settings-1", ...values }]);
-          },
-        }),
-      }),
+  });
+  const select = () => ({
+    from: () => ({
+      where: () => Promise.resolve([{ id: SCENARIO_ID }]),
     }),
-  },
-}));
+  });
+  return {
+    db: {
+      select,
+      update,
+      transaction: (fn: (tx: { select: typeof select; update: typeof update }) => unknown) =>
+        Promise.resolve(fn({ select, update })),
+    },
+  };
+});
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
