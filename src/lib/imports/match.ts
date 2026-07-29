@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  accountOwners,
   accounts,
   entities,
   expenses,
@@ -33,6 +34,7 @@ import {
   type LivingSlot,
 } from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
+import { matchOwnersFromHint, type OwnerMatchFamilyMember } from "./owner-match";
 import type { ImportPayload } from "./types";
 
 export interface MatchCandidates {
@@ -45,6 +47,12 @@ export interface MatchCandidates {
   wills: WillCandidate[];
   entities: EntityCandidate[];
   livingSlots: LivingSlot[];
+  /**
+   * Household roster, used to resolve an extracted account's registration
+   * hint into family_member ids so ownership can be compared against
+   * `AccountCandidate.ownerIds`. Empty in onboarding mode.
+   */
+  family: OwnerMatchFamilyMember[];
 }
 
 export function emptyCandidates(): MatchCandidates {
@@ -58,7 +66,24 @@ export function emptyCandidates(): MatchCandidates {
     wills: [],
     entities: [],
     livingSlots: [],
+    family: [],
   };
+}
+
+/**
+ * Resolve an extracted account's owners to family_member ids, reusing the
+ * same registration-hint parser the commit step uses so the matching pass and
+ * the commit agree on who owns what. Entity-owned accounts contribute no ids
+ * and therefore score neutrally.
+ */
+function resolveOwnerIds(
+  row: { ownerNameHint?: string; owner?: "client" | "spouse" | "joint" },
+  family: OwnerMatchFamilyMember[],
+): string[] {
+  if (family.length === 0) return [];
+  return matchOwnersFromHint(row.ownerNameHint, row.owner, family).flatMap((o) =>
+    o.kind === "family_member" ? [o.familyMemberId] : [],
+  );
 }
 
 /**
@@ -80,7 +105,7 @@ export function annotatePayload(
     ...payload,
     accounts: payload.accounts.map((row) => ({
       ...row,
-      match: matchAccount(row, candidates.accounts),
+      match: matchAccount(row, candidates.accounts, resolveOwnerIds(row, candidates.family)),
     })),
     incomes: payload.incomes.map((row) => ({
       ...row,
@@ -208,6 +233,7 @@ async function loadCandidates(
     policyRows,
     willRows,
     entityRows,
+    ownerRows,
   ] = await Promise.all([
     db
       .select({
@@ -245,6 +271,7 @@ async function loadCandidates(
         firstName: familyMembers.firstName,
         lastName: familyMembers.lastName,
         dateOfBirth: familyMembers.dateOfBirth,
+        role: familyMembers.role,
       })
       .from(familyMembers)
       .where(eq(familyMembers.clientId, clientId)),
@@ -272,7 +299,25 @@ async function loadCandidates(
       })
       .from(entities)
       .where(eq(entities.clientId, clientId)),
+    db
+      .select({
+        accountId: accountOwners.accountId,
+        familyMemberId: accountOwners.familyMemberId,
+      })
+      .from(accountOwners)
+      .innerJoin(accounts, eq(accounts.id, accountOwners.accountId))
+      .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId))),
   ]);
+
+  const ownerIdsByAccount = new Map<string, string[]>();
+  for (const r of ownerRows) {
+    // Entity- and external-beneficiary-owned rows have a null familyMemberId
+    // and contribute nothing to family-based owner comparison.
+    if (!r.familyMemberId) continue;
+    const list = ownerIdsByAccount.get(r.accountId);
+    if (list) list.push(r.familyMemberId);
+    else ownerIdsByAccount.set(r.accountId, [r.familyMemberId]);
+  }
 
   return {
     accounts: accountsRows.map((r) => ({
@@ -282,6 +327,7 @@ async function loadCandidates(
       accountNumberLast4: r.accountNumberLast4,
       custodian: r.custodian,
       value: Number(r.value),
+      ownerIds: ownerIdsByAccount.get(r.id) ?? [],
     })),
     incomes: incomesRows.map((r) => ({
       id: r.id,
@@ -324,6 +370,12 @@ async function loadCandidates(
       id: r.id,
       name: r.name,
       entityType: r.entityType,
+    })),
+    family: familyRows.map((r) => ({
+      id: r.id,
+      role: r.role,
+      firstName: r.firstName,
+      lastName: r.lastName,
     })),
     // overridden by runMatchingPass; empty stub keeps the type total
     livingSlots: [],

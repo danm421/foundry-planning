@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import type { Table } from "drizzle-orm";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   annotatePayload,
@@ -6,7 +7,7 @@ import {
   runMatchingPass,
   type MatchCandidates,
 } from "../match";
-import type { Annotated, ImportPayload } from "../types";
+import { emptyImportPayload, type Annotated, type ImportPayload } from "../types";
 import type {
   ExtractedAccount,
   ExtractedDependent,
@@ -18,29 +19,38 @@ import type {
   ExtractedWill,
 } from "@/lib/extraction/types";
 
-// runMatchingPass now loads living slots from the DB in both modes. Stub the
-// select chain to return no rows so the pure annotation path is exercised
-// without a database. (Positive slot-fill is covered by the annotatePayload
-// precedence test above and the matchLivingSlot unit tests.)
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
-  },
-}));
+// runMatchingPass loads living slots (both modes) and the full candidate set
+// (updating mode) from the DB. Stub the select chain and dispatch on the table
+// being queried so a test can seed real-shaped rows for the tables it cares
+// about; every other table yields no rows, which is what the pure-annotation
+// and onboarding tests want. `.innerJoin` is a no-op link in the chain because
+// loadCandidates joins accounts for the life-policy and account-owner queries.
+const dbRows = vi.hoisted(() => ({ byTable: {} as Record<string, unknown[]> }));
+
+vi.mock("@/db", async () => {
+  const { getTableName } = await import("drizzle-orm");
+  return {
+    db: {
+      select: () => ({
+        from: (table: Table) => {
+          const rows = dbRows.byTable[getTableName(table)] ?? [];
+          const chain = {
+            innerJoin: () => chain,
+            where: () => Promise.resolve(rows),
+          };
+          return chain;
+        },
+      }),
+    },
+  };
+});
+
+beforeEach(() => {
+  dbRows.byTable = {};
+});
 
 function payloadFixture(overrides: Partial<ImportPayload> = {}): ImportPayload {
-  return {
-    dependents: [],
-    accounts: [],
-    incomes: [],
-    expenses: [],
-    liabilities: [],
-    lifePolicies: [],
-    wills: [],
-    entities: [],
-    warnings: [],
-    ...overrides,
-  };
+  return { ...emptyImportPayload(), ...overrides };
 }
 
 function annotated<T extends object>(row: T): Annotated<T> {
@@ -129,6 +139,7 @@ describe("annotatePayload", () => {
       wills: [{ id: "w-1", grantor: "client" }],
       entities: [{ id: "ent-1", name: "Smith Family Trust", entityType: "trust" }],
       livingSlots: [],
+      family: [],
     };
 
     const result = annotatePayload(payload, candidates);
@@ -221,6 +232,54 @@ describe("annotatePayload", () => {
     expect(result.expenses[0].match).toEqual({ kind: "exact", existingId: "slot-current" });
     expect(result.expenses[1].match).toEqual({ kind: "new" });
   });
+
+  it("resolves incoming owners from the registration hint and ranks by owner", () => {
+    const payload = {
+      ...emptyImportPayload(),
+      accounts: [
+        {
+          name: "Fidelity IRA",
+          category: "retirement" as const,
+          value: 100_000,
+          ownerNameHint: "Jane B Smith IRA",
+        },
+      ],
+    };
+
+    const result = annotatePayload(payload, {
+      ...emptyCandidates(),
+      family: [
+        { id: "fm-john", role: "client", firstName: "John", lastName: "Smith" },
+        { id: "fm-jane", role: "spouse", firstName: "Jane", lastName: "Smith" },
+      ],
+      accounts: [
+        {
+          id: "his",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: 100_000,
+          ownerIds: ["fm-john"],
+        },
+        {
+          id: "hers",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: 100_000,
+          ownerIds: ["fm-jane"],
+        },
+      ],
+    });
+
+    const match = result.accounts[0].match;
+    expect(match?.kind).toBe("fuzzy");
+    if (match?.kind === "fuzzy") {
+      expect(match.candidates[0].id).toBe("hers");
+    }
+  });
 });
 
 describe("runMatchingPass — onboarding mode", () => {
@@ -246,5 +305,82 @@ describe("runMatchingPass — onboarding mode", () => {
     expect(result.accounts[0].match).toEqual({ kind: "new" });
     expect(result.expenses[0].match).toEqual({ kind: "new" });
     expect(result.expenseSlots).toEqual([]);
+  });
+});
+
+describe("runMatchingPass — updating mode", () => {
+  // Pins the *projection* loadCandidates builds, not just annotatePayload's use
+  // of it: if the `ownerIds` line is dropped from the accounts mapping, every
+  // candidate scores a neutral 0.5 on ownership, the two same-named IRAs tie,
+  // and both assertions below go red. Without this the owner ladder can be
+  // wired at the call site alone and be inert in production with tests green.
+  it("loads account owners into the candidate set so ownership breaks a name tie", async () => {
+    dbRows.byTable = {
+      accounts: [
+        {
+          id: "his",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: "100000",
+        },
+        {
+          id: "hers",
+          name: "Fidelity IRA",
+          category: "retirement",
+          accountNumberLast4: null,
+          custodian: "Fidelity",
+          value: "100000",
+        },
+      ],
+      family_members: [
+        {
+          id: "fm-john",
+          role: "client",
+          firstName: "John",
+          lastName: "Smith",
+          dateOfBirth: null,
+        },
+        {
+          id: "fm-jane",
+          role: "spouse",
+          firstName: "Jane",
+          lastName: "Smith",
+          dateOfBirth: null,
+        },
+      ],
+      account_owners: [
+        { accountId: "his", familyMemberId: "fm-john" },
+        { accountId: "hers", familyMemberId: "fm-jane" },
+        // Entity-owned row: no family member, contributes nothing.
+        { accountId: "hers", familyMemberId: null },
+      ],
+    };
+
+    const result = await runMatchingPass({
+      payload: payloadFixture({
+        accounts: [
+          annotated({
+            name: "Fidelity IRA",
+            category: "retirement",
+            value: 100_000,
+            ownerNameHint: "Jane B Smith IRA",
+          }),
+        ],
+      }),
+      clientId: "client-1",
+      scenarioId: "scenario-1",
+      mode: "updating",
+    });
+
+    const match = result.accounts[0].match;
+    expect(match?.kind).toBe("fuzzy");
+    if (match?.kind === "fuzzy") {
+      expect(match.candidates.map((c) => c.id)).toEqual(["hers", "his"]);
+      // Strictly greater, not merely first: a tie would leave the order to
+      // sort stability rather than to ownership.
+      expect(match.candidates[0].score).toBeGreaterThan(match.candidates[1].score);
+    }
   });
 });
