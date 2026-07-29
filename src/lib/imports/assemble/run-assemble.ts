@@ -295,9 +295,13 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   // R4: count rows on `assembledPayload` (== `plannerPayload`), not
   // `annotated` — `applyDecisions` can add rows (Rule 2 savings, Rule 4
   // "other" expenses from non-education goals) that `annotated` never sees.
-  // Deferred from Task 15 only because the planner was dormant there; once
-  // Step 5 makes it actually run, an undercount here would be a real user-
-  // facing bug (the wizard's row-count summary silently dropping planner
-  // rows).
+  // Deferred from Task 15 only because the planner was dormant there.
+  //
+  // ⚠️ Do NOT justify this by a user-facing row-count summary: there isn't
+  // one. `rowCount` is returned by the assemble route and read by NOTHING,
+  // and it is not persisted (no column — the DB write above stores only
+  // `payloadJson`). An earlier revision of this comment claimed a wizard
+  // summary that does not exist. This is kept correct so the field is honest
+  // whenever a consumer does appear, not because anything renders it today.
   return { assemble, questionCount: allQuestions.length, rowCount: countRows(assembledPayload) };
 }
