@@ -62,6 +62,12 @@ describe("requiredCommitTabs", () => {
     ]);
   });
 
+  it("maps savings to the savings commit tab, ordered between entities and goals", () => {
+    expect(
+      requiredCommitTabs({ ...NOTHING, entities: true, savings: true, goals: true }),
+    ).toEqual(["plan-basics", "entities", "savings", "goals"]);
+  });
+
   it("returns tabs in COMMIT_TABS order regardless of presence order", () => {
     const all = requiredCommitTabs({
       family: true,

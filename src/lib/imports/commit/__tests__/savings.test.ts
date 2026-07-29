@@ -110,6 +110,19 @@ describe("commitSavings", () => {
     expect(result.warnings[0]).toContain("Nowhere");
   });
 
+  it("resolves the destination via the normalized-name fallback when it differs by case/punctuation/spacing", async () => {
+    const { tx, inserted } = fakeTx([{ id: "acct-4", name: "401(k) - Fidelity" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Pre-Tax", destinationAccountName: "401k fidelity", owner: "client", annualPercent: 0.06, contributionRole: "employee", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.created).toBe(1);
+    expect(inserted[0]).toMatchObject({ accountId: "acct-4" });
+  });
+
   it("writes a flat annual amount", async () => {
     const { tx, inserted } = fakeTx([{ id: "acct-3", name: "Taxable Investment 1" }]);
     await commitSavings(
