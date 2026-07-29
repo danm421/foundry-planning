@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { describeMismatch, effectiveScenarioPortfolioId } from "../portfolio-mismatch";
+import { describeMismatch, effectiveScenarioPortfolioId, describeBucketSource } from "../portfolio-mismatch";
 
 describe("describeMismatch", () => {
   it("reports aligned when the scenario already uses the profile's portfolio", () => {
@@ -89,5 +89,88 @@ describe("effectiveScenarioPortfolioId", () => {
       modelPortfolioIdRetirement: "pf-aggr",
     });
     expect(id).toBeNull();
+  });
+});
+
+describe("describeBucketSource", () => {
+  const names = new Map([["pf-mod", "Balanced Growth"]]);
+
+  it("names the portfolio when the bucket is driven by one", () => {
+    expect(
+      describeBucketSource({
+        source: "model_portfolio",
+        portfolioId: "pf-mod",
+        customRate: null,
+        portfolioNames: names,
+      }),
+    ).toBe("Balanced Growth");
+  });
+
+  it("renders a custom rate as a percentage to two places", () => {
+    // decimal(5,4) comes back from Drizzle as a string, not a number.
+    expect(
+      describeBucketSource({
+        source: "custom",
+        portfolioId: null,
+        customRate: "0.0600",
+        portfolioNames: names,
+      }),
+    ).toBe("Custom 6.00%");
+  });
+
+  it("renders each non-portfolio source with its own word", () => {
+    const at = (source: string) =>
+      describeBucketSource({ source, portfolioId: null, customRate: null, portfolioNames: names });
+    expect(at("inflation")).toBe("Inflation");
+    expect(at("asset_mix")).toBe("Account asset mix");
+    expect(at("holdings")).toBe("Holdings");
+    expect(at("ticker_portfolio")).toBe("Ticker portfolio");
+    expect(at("default")).toBe("Firm default");
+  });
+
+  it("says Unknown portfolio when a model_portfolio bucket has a null id", () => {
+    // Reachable: model_portfolio_id_taxable is `on delete set null`, so
+    // deleting the portfolio in CMA strands the enum over a null id.
+    expect(
+      describeBucketSource({
+        source: "model_portfolio",
+        portfolioId: null,
+        customRate: null,
+        portfolioNames: names,
+      }),
+    ).toBe("Unknown portfolio");
+  });
+
+  it("says Unknown portfolio when the id misses the name map", () => {
+    expect(
+      describeBucketSource({
+        source: "model_portfolio",
+        portfolioId: "pf-deleted",
+        customRate: null,
+        portfolioNames: names,
+      }),
+    ).toBe("Unknown portfolio");
+  });
+
+  it("falls back to Not set on an unrecognised source", () => {
+    expect(
+      describeBucketSource({
+        source: "something_new",
+        portfolioId: null,
+        customRate: null,
+        portfolioNames: names,
+      }),
+    ).toBe("Not set");
+  });
+
+  it("renders Custom with no figure when the rate is missing", () => {
+    expect(
+      describeBucketSource({
+        source: "custom",
+        portfolioId: null,
+        customRate: null,
+        portfolioNames: names,
+      }),
+    ).toBe("Custom");
   });
 });

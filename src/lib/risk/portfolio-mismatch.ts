@@ -52,3 +52,41 @@ export function effectiveScenarioPortfolioId(
   if (settings.modelPortfolioIdTaxable !== settings.modelPortfolioIdRetirement) return null;
   return settings.modelPortfolioIdTaxable;
 }
+
+/** One row of the card's "what is this bucket actually using" readout. */
+export type BucketReadout = { label: string; value: string };
+
+const SOURCE_WORDS: Record<string, string> = {
+  inflation: "Inflation",
+  asset_mix: "Account asset mix",
+  holdings: "Holdings",
+  ticker_portfolio: "Ticker portfolio",
+  default: "Firm default",
+};
+
+/**
+ * The human label for one bucket's growth configuration. Covers all seven
+ * `growth_source` enum values -- the Growth & Inflation dropdown only offers
+ * four of them, but the other three are reachable in data and must render a
+ * word rather than a blank cell.
+ */
+export function describeBucketSource(args: {
+  source: string;
+  portfolioId: string | null;
+  /** The bucket's flat rate as a decimal string, e.g. "0.0600". */
+  customRate: string | null;
+  portfolioNames: Map<string, string>;
+}): string {
+  if (args.source === "model_portfolio") {
+    // A null id here is not a bug in this function: the FK is `on delete set
+    // null`, so deleting a portfolio in CMA strands the enum over a null id.
+    const name = args.portfolioId ? args.portfolioNames.get(args.portfolioId) : undefined;
+    return name ?? "Unknown portfolio";
+  }
+  if (args.source === "custom") {
+    if (args.customRate === null) return "Custom";
+    // decimal(5,4) arrives as a string; same formatter the editor uses.
+    return `Custom ${(Number(args.customRate) * 100).toFixed(2)}%`;
+  }
+  return SOURCE_WORDS[args.source] ?? "Not set";
+}
