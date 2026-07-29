@@ -72,6 +72,7 @@ vi.mock("../quick-edit-drawer", () => ({
       kind: string;
       id: string | null;
       presetColumn: string;
+      presetIsGoal?: boolean;
       row: { annualAmount: string } | null;
     };
   }) => (
@@ -80,6 +81,7 @@ vi.mock("../quick-edit-drawer", () => ({
       data-kind={props.target.kind}
       data-id={props.target.id ?? ""}
       data-preset-column={props.target.presetColumn}
+      data-preset-is-goal={String(props.target.presetIsGoal ?? false)}
       data-row-amount={props.target.row?.annualAmount ?? ""}
     />
   ),
@@ -449,10 +451,10 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
   });
 
-  it("Net Worth board's '+ Add' opens AddAccountDialog WITH the ownership context its save needs (no column/category preset — AddAccountDialog has no prop for one)", () => {
+  it("Net Worth board's 'Add account' opens AddAccountDialog WITH the ownership context its save needs (no column/category preset — AddAccountDialog has no prop for one)", () => {
     render(<HouseholdMapView {...baseProps()} />);
     // Default board is Net Worth.
-    const addButtons = screen.getAllByRole("button", { name: "+ Add" });
+    const addButtons = screen.getAllByRole("button", { name: "Add account" });
     fireEvent.click(addButtons[0]);
 
     const dialog = screen.getByTestId("mock-add-account-dialog");
@@ -462,6 +464,53 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     // owners[] is a hard 400 from `ownership.ts`.
     expect(dialog.dataset.familyMemberRoles).toContain("client");
     expect(dialog.dataset.entityCount).toBe("1");
+  });
+
+  // A goal is not its own entity — it is an expense carrying `isGoal`. So the
+  // ONE thing that makes "Add goal" different from "add an expense" is the
+  // preset flag: without it the saved row is an ordinary expense and never
+  // appears on the board it was added from.
+  it("Goals board's 'Add goal' opens the drawer on a NEW expense with the goal flag preset", () => {
+    render(<HouseholdMapView {...baseProps()} />);
+    fireEvent.click(screen.getByText("Goals"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+
+    const drawer = screen.getByTestId("mock-quick-edit-drawer");
+    expect(drawer.dataset.presetIsGoal).toBe("true");
+  });
+
+  it("Goals board's 'Add goal' opens in CREATE mode on the expense collection", () => {
+    render(<HouseholdMapView {...baseProps()} />);
+    fireEvent.click(screen.getByText("Goals"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+
+    const drawer = screen.getByTestId("mock-quick-edit-drawer");
+    expect(drawer.dataset.kind).toBe("expense");
+  });
+
+  it("Goals board's 'Add goal' carries no row id — it is a create, not an edit", () => {
+    render(<HouseholdMapView {...baseProps()} />);
+    fireEvent.click(screen.getByText("Goals"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+
+    expect(screen.getByTestId("mock-quick-edit-drawer").dataset.id).toBe("");
+  });
+
+  // The band buttons are the Cash Flow board's always-present add path. This
+  // pins that they route to the same create-mode drawer as the per-column
+  // placeholders, and that they do NOT carry the goal flag — an expense added
+  // from the Expenses band is not a goal.
+  it("a Cash Flow band's add button opens the drawer WITHOUT the goal flag", () => {
+    render(<HouseholdMapView {...baseProps()} />);
+    fireEvent.click(screen.getByText("Cash Flow"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+
+    const drawer = screen.getByTestId("mock-quick-edit-drawer");
+    expect(drawer.dataset.presetIsGoal).toBe("false");
   });
 
   it("account and liability cards navigate to the Net Worth detail page instead of opening an in-place dialog", () => {

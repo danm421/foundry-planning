@@ -1,6 +1,7 @@
 "use client";
 
 import { InlineAmount } from "@/components/forms/inline-amount";
+import { PlusIcon } from "@/components/icons";
 import { ageForYear } from "@/lib/age-year";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import type { BoardCallbacks, HouseholdMapProps } from "@/lib/household-map/types";
@@ -121,6 +122,7 @@ export default function GoalsBoard({
   expenseRows,
   onEditGoalExpense,
   onSaveLifeExpectancy,
+  onAddGoal,
 }: HouseholdMapProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
    *  from `new Date()` inside this component, which would drift a Jan-1 DOB
@@ -192,61 +194,80 @@ export default function GoalsBoard({
   }
 
   return (
-    <div className="relative py-1">
-      <div className="absolute inset-y-0 left-1/2 border-l border-dashed border-hair" />
-      {goals.map((g) => {
-        if (g.side === "joint") {
+    <div className="flex flex-col gap-2">
+      {/* Outside the timeline wrapper below, not inside it: the spine is an
+          `inset-y-0` absolute rule, so anything sharing that container gets a
+          dashed line drawn straight through it. */}
+      {canEdit && onAddGoal && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={onAddGoal}
+            className="flex items-center gap-1.5 rounded-md border border-hair-2 bg-card-2 px-3 py-1.5 text-[11px] font-medium text-accent transition-colors hover:border-accent hover:bg-accent-wash"
+          >
+            <PlusIcon width={12} height={12} strokeWidth={2} />
+            Add goal
+          </button>
+        </div>
+      )}
+      <div className="relative py-1">
+        <div className="absolute inset-y-0 left-1/2 border-l border-dashed border-hair" />
+        {goals.map((g) => {
+          if (g.side === "joint") {
+            return (
+              <div
+                key={g.id}
+                data-testid={`goal-row-${g.id}`}
+                className="mb-1.5 flex flex-col items-center gap-0.5"
+              >
+                <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
+                <div className="w-full max-w-[60%]">
+                  <GoalCard
+                    goal={g}
+                    side="joint"
+                    onClick={clickHandlerFor(g)}
+                    detailSlot={detailSlotFor(g)}
+                  />
+                </div>
+              </div>
+            );
+          }
+          // Exactly one side renders the card — `joint` returned above, so `g.side`
+          // is client-or-spouse here. Built once rather than twice so the two
+          // branches cannot drift, and so `clickHandlerFor`/`detailSlotFor` run
+          // once per row instead of once per grid cell.
+          const card = (
+            <GoalCard
+              goal={g}
+              side={g.side === "client" ? "left" : "right"}
+              onClick={clickHandlerFor(g)}
+              detailSlot={detailSlotFor(g)}
+            />
+          );
           return (
             <div
               key={g.id}
               data-testid={`goal-row-${g.id}`}
-              className="mb-1.5 flex flex-col items-center gap-0.5"
+              className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
             >
+              {g.side === "client" ? card : <div />}
               <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-              <div className="w-full max-w-[60%]">
-                <GoalCard
-                  goal={g}
-                  side="joint"
-                  onClick={clickHandlerFor(g)}
-                  detailSlot={detailSlotFor(g)}
-                />
-              </div>
+              {g.side === "spouse" ? card : <div />}
             </div>
           );
-        }
-        // Exactly one side renders the card — `joint` returned above, so `g.side`
-        // is client-or-spouse here. Built once rather than twice so the two
-        // branches cannot drift, and so `clickHandlerFor`/`detailSlotFor` run
-        // once per row instead of once per grid cell.
-        const card = (
-          <GoalCard
-            goal={g}
-            side={g.side === "client" ? "left" : "right"}
-            onClick={clickHandlerFor(g)}
-            detailSlot={detailSlotFor(g)}
-          />
-        );
-        return (
-          <div
-            key={g.id}
-            data-testid={`goal-row-${g.id}`}
-            className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
-          >
-            {g.side === "client" ? card : <div />}
-            <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-            {g.side === "spouse" ? card : <div />}
-          </div>
-        );
-      })}
-      {/* Gated on real, expense-backed goals — not on a card count. The three
-          life milestones are always present (two for an unmarried household),
-          so a count threshold kept telling a household that already has a goal
-          how to add one. */}
-      {!goals.some((g) => g.expenseId !== null) && (
-        <p className="mt-4 text-center text-xs text-ink-4">
-          Tick “Show as a goal” on any expense to add it here.
-        </p>
-      )}
+        })}
+        {/* Gated on real, expense-backed goals — not on a card count. The three
+            life milestones are always present (two for an unmarried household),
+            so a count threshold kept telling a household that already has a goal
+            how to add one. */}
+        {!goals.some((g) => g.expenseId !== null) && (
+          <p className="mt-4 text-center text-xs text-ink-4">
+            {canEdit && onAddGoal
+              ? "No goals yet — add one above, or tick “Show as a goal” on an existing expense."
+              : "Tick “Show as a goal” on any expense to add it here."}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

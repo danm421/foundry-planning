@@ -43,6 +43,16 @@ export type QuickEditTarget = {
   /** Column the "+ add" placeholder was clicked in. Only meaningful in create
    *  mode — edit mode takes the owner from `row`. */
   presetColumn: MapColumn;
+  /**
+   * Seeds "Show as a goal" on a NEW expense. Set by the Goals board's "Add
+   * goal", which has no other way to make the row it creates land on the board
+   * it was created from — a goal IS an expense carrying `isGoal`.
+   *
+   * Create mode only. In edit mode the flag comes off `row.isGoal`, and letting
+   * a caller override that would silently re-flag an expense the advisor had
+   * deliberately un-flagged.
+   */
+  presetIsGoal?: boolean;
 } & (
   | { kind: "income"; id: string; row: IncomeView }
   | { kind: "expense"; id: string; row: ExpenseView }
@@ -101,7 +111,9 @@ function seedValues(target: QuickEditTarget, milestones: ClientMilestones): Seed
         : milestones.planEnd,
       growthSource: target.kind === "income" ? "inflation" : "custom",
       growthRateDisplay: "3",
-      isGoal: false,
+      // Only an expense can be a goal; an income carrying the flag would be
+      // dropped by `buildMapGoals` anyway and `handleSave` never sends it.
+      isGoal: target.kind === "expense" && target.presetIsGoal === true,
       type: target.kind === "income" ? "salary" : "other",
       isDefault: false,
     };
@@ -271,7 +283,15 @@ export default function QuickEditDrawer({
     }
   }
 
-  const title = `${isEdit ? "Edit" : "Add"} ${target.kind === "income" ? "Income" : "Expense"}`;
+  // "Add Goal", not "Add Expense", when the Goals board opened this. The form is
+  // the same one either way — but an advisor who clicked "Add goal" and landed
+  // on a drawer titled "Add Expense" has no way to tell whether the click did
+  // what they asked. The "Show as a goal" checkbox below is still theirs to
+  // untick; the title follows the intent they arrived with, not the row's type.
+  const isNewGoal = !isEdit && target.kind === "expense" && target.presetIsGoal === true;
+  const title = isNewGoal
+    ? "Add Goal"
+    : `${isEdit ? "Edit" : "Add"} ${target.kind === "income" ? "Income" : "Expense"}`;
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">

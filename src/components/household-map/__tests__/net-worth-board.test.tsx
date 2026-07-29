@@ -286,8 +286,31 @@ describe("NetWorthBoard", () => {
 
     const spouseColumn = screen.getByTestId("column-spouse");
     expect(within(spouseColumn).getByText("Jordan")).toBeInTheDocument();
-    expect(within(spouseColumn).getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+    expect(within(spouseColumn).getByRole("button", { name: "Add account" })).toBeInTheDocument();
     expect(subtotalTextFor(container, "spouse")).toBe("Jordan · $0");
+  });
+
+  // POSITION, asserted on its own. The whole point of this change is WHERE the
+  // add control sits — at the bottom of a long column it scrolled out of sight —
+  // and an "it renders" assertion passes just as happily with the button back
+  // under the last card. `compareDocumentPosition` is the only thing here that
+  // can tell the two apart.
+  it("the add control precedes the column's cards in DOM order, not follows them", () => {
+    const items: MapItem[] = [
+      item({ id: "a1", column: "client", kind: "account", name: "Brokerage account" }),
+      item({ id: "a2", column: "client", kind: "account", name: "Roth IRA" }),
+    ];
+
+    render(<NetWorthBoard {...baseProps({ items, canEdit: true })} />);
+
+    const clientColumn = screen.getByTestId("column-client");
+    const addButton = within(clientColumn).getByRole("button", { name: "Add account" });
+    const firstCard = within(clientColumn).getByText("Brokerage account");
+
+    // Node.DOCUMENT_POSITION_FOLLOWING (4) — `firstCard` comes after `addButton`.
+    expect(addButton.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("column account and liability cards are links to the Net Worth detail page", () => {
