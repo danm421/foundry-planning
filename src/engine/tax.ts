@@ -124,6 +124,9 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       amtCredit: 0,
       taxCredits: 0,
       refundableCredits: 0,
+      // Flat mode runs no credit layer at all, so no year is ever an IRC
+      // 25A(b)(2)(C) election and the four-year allowance is never spent.
+      aotcAllowed: 0,
       regularFederalIncomeTax: federal,
       capitalGainsTax: 0,
       amtAdditional: 0,

@@ -297,6 +297,16 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     : null;
   const nonrefundableCredits = credits?.nonrefundable ?? 0;
   const refundableCredits = credits?.refundable ?? 0;
+  // The AOTC actually allowed this year, both halves. Surfaced because
+  // projection.ts's IRC 25A(b)(2)(C) four-year counter has to know whether the
+  // taxpayer ELECTED the credit, and the only figure that can answer that is
+  // the one the credit engine itself produced from its OWN AGI. The report's
+  // `magiForCredits` is a different number (it cannot see taxable Social
+  // Security or the §164(f) deductible half of SE tax), so a counter driven
+  // off it disagrees with what was actually paid — and for a self-employed
+  // household it disagrees in the direction that never advances, making the
+  // four-year allowance unbounded.
+  const aotcAllowed = credits ? credits.byCredit.aotcNonrefundable + credits.byCredit.aotcRefundable : 0;
 
   // 15. Roll-ups
   // Stays the PRE-credit bracket tax: it is a reported line item meaning
@@ -340,6 +350,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       amtCredit: 0,
       taxCredits: nonrefundableCredits,
       refundableCredits,
+      aotcAllowed,
       regularFederalIncomeTax,
       capitalGainsTax,
       amtAdditional,

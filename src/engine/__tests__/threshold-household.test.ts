@@ -744,6 +744,108 @@ describe("AOTC students: named by an education goal, capped at four claimed year
     expect(years.every((y) => y.taxResult!.flow.refundableCredits === 0)).toBe(true);
   });
 
+  it("stops at four years even when the REPORT's MAGI and the CREDIT's AGI disagree", () => {
+    // ⚠️ THE REGRESSION GUARD FOR B2. Self-employment is the wedge: the
+    // report's `magiForCredits` never sees the §164(f) deductible half of SE
+    // tax (year-tax.ts adds it inside the tax pass), so at 185,000 of SE
+    // earnings the two figures land on OPPOSITE sides of the 180,000 MFJ
+    // ceiling —
+    //   report  MAGI ~= 185,000  -> surviving fraction 0 -> "never elected"
+    //   credit  AGI  ~= 171,900  -> surviving fraction ~0.4 -> credit PAID
+    // A counter driven off the report figure therefore never advances while
+    // the credit keeps paying, and the four-year allowance becomes UNBOUNDED.
+    // That is strictly worse than the defect it replaced, which at least
+    // burned out after four years.
+    //
+    // Salary would NOT reproduce this: with wages the two AGIs agree, both
+    // land above the ceiling, and nothing is ever paid. The divergence is the
+    // whole point of the fixture.
+    const years = runProjection(build({
+      incomes: [{
+        id: "inc-consulting",
+        type: "business",
+        name: "Consulting",
+        annualAmount: 185_000,
+        startYear: 2026,
+        endYear: 2040,
+        growthRate: 0,
+        owner: "client",
+        isSelfEmployment: true,
+      }],
+      planSettings: sixYearSettings,
+      familyMembers: [...FMS, student],
+      expenses: [goal()],
+    }));
+
+    const paidYears = years.filter((y) => y.taxResult!.flow.refundableCredits > 0).length;
+    // Non-vacuous in both directions: the credit must actually be reachable on
+    // this fixture (else "at most four" passes for the wrong reason), AND it
+    // must stop. Asserted as ONE toEqual so there is exactly one throw point.
+    expect({
+      paid: paidYears,
+      reported: years.map((y) => y.thresholdFacts!.household.aotcStudents),
+    }).toEqual({
+      paid: 4,
+      reported: [1, 1, 1, 1, 0, 0],
+    });
+  });
+
+  it("still spends exactly one year when the convergence loop re-runs the tax pass", () => {
+    // ⚠️ PINS THE CARDINALITY AT ITS ACTUAL THREAT SITE. `computeTaxForYear`
+    // is re-run up to five times per year (Roth fill, bracket filler,
+    // SUPPLEMENTAL WITHDRAWALS, legacy pass). The counter must advance once
+    // per YEAR, not once per tax pass — otherwise a household that funds its
+    // spending by drawing on an IRA burns the four-year allowance in two.
+    //
+    // The other four-year tests in this describe cannot catch that: their
+    // checking account holds 3,000,000, so no supplemental draw is ever
+    // planned and the re-run branch is never entered. This fixture starves
+    // checking (5,000) and adds an 80,000 living expense against a 100,000
+    // salary, which forces the draw. Verified by mutation: injecting a second
+    // increment inside the supplemental branch leaves every other test in this
+    // file green and reddens only this one.
+    //
+    // The IRA draw lands AGI near 140,000 — deliberately still under the
+    // 160,000 MFJ AOTC phase-out start, so the credit stays fully allowed and
+    // this test measures counting, not phase-out.
+    const years = runProjection(build({
+      accounts: [
+        { ...CHECKING, value: 5_000, basis: 5_000 },
+        { ...ACCT_IRA, value: 500_000, basis: 0 },
+      ],
+      incomes: [salary(60_000)],
+      planSettings: sixYearSettings,
+      familyMembers: [...FMS, student],
+      expenses: [goal(), {
+        id: "exp-living",
+        type: "living",
+        name: "Living",
+        annualAmount: 100_000,
+        startYear: 2026,
+        endYear: 2040,
+        growthRate: 0,
+      }],
+      withdrawalStrategy: [
+        { accountId: "acct-ira", priorityOrder: 1, startYear: 2026, endYear: 2040 },
+      ],
+    }));
+
+    expect({
+      reported: years.map((y) => y.thresholdFacts!.household.aotcStudents),
+      // Non-vacuous guard: without a real supplemental draw this fixture would
+      // silently exercise the same single-pass path as every other test here
+      // and the mutation below would not be caught. Draws run ~56k-61k/yr.
+      everyYearDrew: years.every((y) => y.withdrawals.total > 0),
+      // And the draw must not itself phase the credit out, or "stops at four"
+      // would pass for the wrong reason. 160,000 is the MFJ AOTC start.
+      stayedUnderPhaseout: years.every((y) => y.taxResult!.flow.adjustedGrossIncome < 160_000),
+    }).toEqual({
+      reported: [1, 1, 1, 1, 0, 0],
+      everyYearDrew: true,
+      stayedUnderPhaseout: true,
+    });
+  });
+
   it("would be wrong in every year after the first if the counter were per-year", () => {
     // The counter is per-projection-CALL state declared outside the year loop.
     // A fresh call must start from zero again — otherwise Monte Carlo's second

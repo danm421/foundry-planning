@@ -50,7 +50,6 @@ import type { TaxHouseholdInput, TaxYearParameters, FilingStatus } from "../lib/
 import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
 import type { ThresholdFacts, ThresholdHousehold } from "../lib/tax/thresholds";
 import { STATUTORY_FIXED } from "../lib/tax/constants";
-import { aotcSurvivingFraction } from "../lib/tax/credits";
 import {
   buildAnnualExclusionMap,
   type AnnualExclusionRow,
@@ -4098,6 +4097,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // assigned inside the bracket block, and flat mode models no credits.
     let taxHousehold: TaxHouseholdInput | undefined;
     let thresholdHousehold: ThresholdHousehold | undefined;
+    // Students offered to the credit layer this year, in the same order as
+    // `taxHousehold.aotcStudents`. Held so the four-year counter can be
+    // advanced AFTER the tax pass, against the credit that was actually
+    // allowed rather than against a MAGI computed before the year's income
+    // was complete. Re-set every year; never read across years.
+    let aotcStudentIdsThisYear: string[] = [];
     if (thresholdInputs) {
       // ── Dependents (IRC 24) ──────────────────────────────────────────────
       // The plan's qualifying-child predicate verbatim: a child/stepchild, under
@@ -4166,24 +4171,33 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // PRIOR taxable years". A year the phase-out reduced to zero is not an
       // election (no Form 8863 is filed for it), so it must NOT burn one.
       //
-      // Read from the same function that computes the credit itself, so the
-      // counter can never disagree with what was actually paid.
-      const aotcElected = aotcSurvivingFraction(
-        year, resolved!.params, filingStatus, thresholdInputs.magiForCredits,
-      ) > 0;
+      // ⚠️ The ELIGIBILITY gate below reads PRIOR years only, which is what
+      // keeps this acyclic: gate on the counter -> run the tax pass -> advance
+      // the counter from the credit the tax pass actually allowed. The
+      // increment itself deliberately does NOT live here, because at this
+      // point in the year the only AGI available is the REPORT's
+      // `magiForCredits`, and that is a different number from the one
+      // `calculate.ts` hands `computeAotc` (it cannot see taxable Social
+      // Security or the §164(f) deductible half of SE tax). Driving the
+      // counter off it lets a self-employed household sit above the ceiling
+      // for counting purposes while the credit engine sits below it and keeps
+      // paying — an UNBOUNDED AOTC. See `aotcAllowed` on TaxResult and the
+      // increment after the tax pass below.
+      const aotcStudentIds: string[] = [];
       const aotcStudents: { qualifiedExpenses: number }[] = [];
       for (const [studentId, qualifiedExpenses] of expensesByStudent) {
         const alreadyClaimed = aotcClaimedYearsByStudent.get(studentId) ?? 0;
         // IRC 25A(b)(2)(C): a fifth claimed year contributes no entry at all.
         if (alreadyClaimed >= STATUTORY_FIXED.aotcMaxYearsPerStudent) continue;
-        if (aotcElected) aotcClaimedYearsByStudent.set(studentId, alreadyClaimed + 1);
         // The student is still reported in a phased-out year. That is what
         // makes the Thresholds report say "out" (income disqualified them)
         // rather than "na" (no student here) — a materially different
         // statement to an advisor, and the one the old counter destroyed by
         // spending the allowance on zero-credit years.
         aotcStudents.push({ qualifiedExpenses });
+        aotcStudentIds.push(studentId);
       }
+      aotcStudentIdsThisYear = aotcStudentIds;
 
       // ── Saver's Credit contributions (IRC 25B), per person ───────────────
       // Elective deferrals + IRA contributions only; the employer match is not
@@ -6160,6 +6174,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     const finalTaxResult = taxOutForIter.taxResult;
     const finalTaxes = taxOutForIter.taxes;
+
+    // ── IRC 25A(b)(2)(C): advance the four-year AOTC counter ────────────────
+    // Deliberately HERE and nowhere else. Three properties this placement buys
+    // that the pre-tax version could not:
+    //
+    //  1. It reads `aotcAllowed`, the credit the tax engine actually granted
+    //     from its OWN AGI. The eligibility gate up in the household assembly
+    //     consults only PRIOR years, so gate -> tax -> increment is acyclic
+    //     even though the credit depends on this year's income.
+    //  2. It runs exactly ONCE per year. The convergence loop above re-runs
+    //     `computeTaxForYear` up to five times (Roth fill, bracket filler,
+    //     supplemental withdrawals, legacy pass), and incrementing inside any
+    //     of those would spend the whole allowance in a single year.
+    //  3. `taxOutForIter` is the FINAL result, so a year whose credit only
+    //     survives (or only vanishes) after the supplemental draw is counted
+    //     the way it is actually reported.
+    //
+    // A zero-credit year is not an election and burns nothing — that is the
+    // rule this whole mechanism exists to enforce.
+    if (finalTaxResult.flow.aotcAllowed > 0) {
+      for (const studentId of aotcStudentIdsThisYear) {
+        aotcClaimedYearsByStudent.set(studentId, (aotcClaimedYearsByStudent.get(studentId) ?? 0) + 1);
+      }
+    }
+
     charityCarryforward = taxOutForIter.charityCarryforwardOut;
     // The ONLY write-back of the capital-loss carryforward. Must stay here,
     // outside the iterative supplemental-withdrawal solve above.

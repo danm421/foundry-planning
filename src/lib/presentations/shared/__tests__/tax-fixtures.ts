@@ -25,7 +25,7 @@ export function makeTaxResult(over: {
     flow: {
       aboveLineDeductions: 0, adjustedGrossIncome: 0, qbiDeduction: 0,
       belowLineDeductions: 0, taxableIncome: 0, incomeTaxBase: 0, regularTaxCalc: 0,
-      amtCredit: 0, taxCredits: 0, refundableCredits: 0, regularFederalIncomeTax: 0, capitalGainsTax: 0,
+      amtCredit: 0, taxCredits: 0, refundableCredits: 0, aotcAllowed: 0, regularFederalIncomeTax: 0, capitalGainsTax: 0,
       amtAdditional: 0, niit: 0, additionalMedicare: 0, fica: 0, stateTax: 0,
       totalFederalTax: 0, totalTax: 0, earlyWithdrawalPenalty: 0, ...over.flow,
     },

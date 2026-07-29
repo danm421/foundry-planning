@@ -289,6 +289,17 @@ export interface TaxResult {
      *  legitimately ends with a NEGATIVE `totalFederalTax` (i.e. a refund),
      *  and folding these dollars into `taxCredits` would floor them away. */
     refundableCredits: number;
+    /** The AOTC actually allowed this year — nonrefundable part (after the
+     *  subpart A limitation) plus the refundable 40%. Already counted inside
+     *  `taxCredits` and `refundableCredits`; reported separately ONLY so the
+     *  projection's IRC 25A(b)(2)(C) four-year counter can ask "did the
+     *  taxpayer elect the credit?" against the figure the credit engine
+     *  actually produced. Do NOT re-derive that answer from a MAGI computed
+     *  outside `calculate.ts` — the report's `magiForCredits` omits taxable
+     *  Social Security and the §164(f) half of SE tax, so the two can and do
+     *  land on opposite sides of the phase-out ceiling. 0 when no household
+     *  was supplied, and 0 in every year the phase-out zeroed the credit. */
+    aotcAllowed: number;
     regularFederalIncomeTax: number;
     capitalGainsTax: number;
     amtAdditional: number;
