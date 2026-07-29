@@ -5,7 +5,14 @@ import ClientsSkeleton from "./loading-skeleton";
 export default function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; status?: string; view?: string }>;
+  searchParams: Promise<{
+    search?: string;
+    status?: string;
+    view?: string;
+    sort?: string;
+    dir?: string;
+    take?: string;
+  }>;
 }) {
   return (
     <Suspense fallback={<ClientsSkeleton />}>
