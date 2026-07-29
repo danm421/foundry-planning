@@ -70,6 +70,10 @@ describe("PortfolioMismatch", () => {
     );
     expect(screen.getByText("Portfolio matches this profile.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Apply/ })).toBeNull();
+    expect(screen.getByText("Taxable")).toBeTruthy();
+    expect(screen.getByText("Balanced Growth")).toBeTruthy();
+    expect(screen.getByText("Retirement")).toBeTruthy();
+    expect(screen.getByText("Custom 6.00%")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Edit in Assumptions" }).getAttribute("href")).toBe(
       EDIT_HREF,
     );
@@ -85,6 +89,7 @@ describe("PortfolioMismatch", () => {
     expect(screen.getByText(/No model portfolio is tagged Moderate/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Tag one in CMA" })).toBeTruthy();
     expect(screen.getByText("Balanced Growth")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Apply/ })).toBeNull();
     expect(screen.getByRole("link", { name: "Edit in Assumptions" }).getAttribute("href")).toBe(
       EDIT_HREF,
     );
