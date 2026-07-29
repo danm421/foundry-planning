@@ -123,6 +123,59 @@ describe("commitSavings", () => {
     expect(inserted[0]).toMatchObject({ accountId: "acct-4" });
   });
 
+  it("warns when a row has a blank destination account", async () => {
+    const { tx, inserted } = fakeTx([]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Mystery Contribution", destinationAccountName: "", annualPercent: 0.05, match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.skipped).toBe(1);
+    expect(inserted).toHaveLength(0);
+    expect(result.warnings[0]).toContain("Mystery Contribution");
+  });
+
+  it("warns when two files report a different value for the same destination, and keeps the first", async () => {
+    const { tx } = fakeTx([{ id: "acct-1", name: "Zach 401(k)" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Pre-Tax (File A)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 5000, contributionRole: "employee", match: { kind: "new" } },
+        { name: "Pre-Tax (File B)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 8000, contributionRole: "employee", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.warnings.some((w) => w.includes("annualAmount"))).toBe(true);
+  });
+
+  it("keeps the first file's value when a second file differs, regardless of warning content", async () => {
+    const { tx, inserted } = fakeTx([{ id: "acct-1", name: "Zach 401(k)" }]);
+    await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Pre-Tax (File A)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 5000, contributionRole: "employee", match: { kind: "new" } },
+        { name: "Pre-Tax (File B)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 8000, contributionRole: "employee", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(inserted[0]).toMatchObject({ annualAmount: "5000" });
+  });
+
+  it("does not warn when two files report the identical value for the same destination", async () => {
+    const { tx } = fakeTx([{ id: "acct-1", name: "Zach 401(k)" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Pre-Tax (File A)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 5000, contributionRole: "employee", match: { kind: "new" } },
+        { name: "Pre-Tax (File B)", destinationAccountName: "Zach 401(k)", owner: "client", annualAmount: 5000, contributionRole: "employee", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.warnings).toHaveLength(0);
+  });
+
   it("writes a flat annual amount", async () => {
     const { tx, inserted } = fakeTx([{ id: "acct-3", name: "Taxable Investment 1" }]);
     await commitSavings(

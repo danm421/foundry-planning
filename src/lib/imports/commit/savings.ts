@@ -48,6 +48,9 @@ export async function commitSavings(
     const key = row.destinationAccountName;
     if (!key) {
       result.skipped += 1;
+      result.warnings.push(
+        `The contribution "${row.name}" has no destination account, so it was not imported.`,
+      );
       continue;
     }
     const existing = merged.get(key) ?? {
@@ -56,12 +59,29 @@ export async function commitSavings(
     };
     // First non-null wins per field; the employer leg only carries match fields
     // and the employee leg only carries amount/percent, so they do not collide.
-    if (existing.annualAmount == null && row.annualAmount != null) existing.annualAmount = row.annualAmount;
-    if (existing.annualPercent == null && row.annualPercent != null) existing.annualPercent = row.annualPercent;
-    if (existing.employerMatchPct == null && row.employerMatchPct != null) existing.employerMatchPct = row.employerMatchPct;
-    if (existing.employerMatchCap == null && row.employerMatchCap != null) existing.employerMatchCap = row.employerMatchCap;
-    if (existing.rothPercent == null && row.rothPercent != null) existing.rothPercent = row.rothPercent;
-    if (existing.growthRate == null && row.growthRate != null) existing.growthRate = row.growthRate;
+    // If two files describe the same destination with a DIFFERING non-null
+    // value, the first is still kept but the advisor is warned - a second file
+    // silently overriding (or being silently discarded by) the first is exactly
+    // the kind of confidently-wrong number that should not reach a projection.
+    const keep = <K extends keyof MergedRule>(field: K, incoming: MergedRule[K]) => {
+      if (incoming == null) return;
+      const current = existing[field];
+      if (current == null) {
+        existing[field] = incoming;
+        return;
+      }
+      if (current !== incoming) {
+        result.warnings.push(
+          `"${key}" received two different values for ${field} (${String(current)} and ${String(incoming)}); the first was kept.`,
+        );
+      }
+    };
+    keep("annualAmount", row.annualAmount);
+    keep("annualPercent", row.annualPercent);
+    keep("employerMatchPct", row.employerMatchPct);
+    keep("employerMatchCap", row.employerMatchCap);
+    keep("rothPercent", row.rothPercent);
+    keep("growthRate", row.growthRate);
     // A non-client owner on any leg wins: the employee leg carries the real owner.
     if (row.owner && row.owner !== "client") existing.owner = row.owner;
     merged.set(key, existing);
