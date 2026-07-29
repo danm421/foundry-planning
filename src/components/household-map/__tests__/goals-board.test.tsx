@@ -26,6 +26,7 @@ function goal(overrides: Partial<MapGoal> & Pick<MapGoal, "id">): MapGoal {
     detail: null,
     expenseId: null,
     forFamilyMemberName: null,
+    lifeExpectancy: null,
     ...overrides,
   };
 }
@@ -49,6 +50,8 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
+    clientScenarioFields: {},
+    planSettingsScenarioFields: {},
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared
@@ -239,7 +242,7 @@ describe("GoalsBoard", () => {
     { kind: "purchase", label: "Purchase", border: "var(--color-crit)" },
     { kind: "household", label: "Household", border: "var(--color-cat-transactions)" },
     { kind: "retirement", label: "Retirement", border: "var(--color-cat-income)" },
-    { kind: "plan_end", label: "Plan end", border: "var(--color-cat-life)" },
+    { kind: "life_expectancy", label: "Life expectancy", border: "var(--color-cat-life)" },
   ];
 
   it.each(KIND_CASES)(

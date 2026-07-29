@@ -1,5 +1,5 @@
 // src/lib/household-map/types.ts
-import type { MapGoal } from "./goals";
+import type { LifeExpectancyOwner, MapGoal } from "./goals";
 import type {
   AccountViewEngineFields,
   ExpenseView,
@@ -181,6 +181,27 @@ export interface HouseholdMapProps {
   accountOptions: AccountViewEngineFields[];
 
   /**
+   * The scenario-effective `client` singleton, pruned by
+   * `buildSingletonScenarioFields`, for the Goals board's life-expectancy editor.
+   *
+   * Same rule as `flowScenarioFields` and for the same reason: a scenario edit's
+   * payload is a wholesale replace, so it must carry every field this scenario
+   * already overrides. A narrow `{ lifeExpectancy }` write against a scenario the
+   * Solver built ("retire at 62") would delete the `retirementAge` override.
+   */
+  clientScenarioFields: Record<string, unknown>;
+  /**
+   * The scenario-effective `planSettings` singleton, pruned the same way.
+   *
+   * Needed because life expectancy is the one field on this page that moves the
+   * PLAN HORIZON, and the horizon lives on two different singletons: `planEndAge`
+   * on `client`, `planEndYear` on `plan_settings`. A `scenario_change` row targets
+   * one kind, so a scenario-mode life-expectancy edit is two rows — see
+   * `lib/household-map/life-expectancy-write.ts`.
+   */
+  planSettingsScenarioFields: Record<string, unknown>;
+
+  /**
    * The COMPLETE per-account row, keyed by id — engine fields merged with
    * scenario-overlaid view-only metadata (`lib/accounts/load-account-rows.ts`).
    *
@@ -312,4 +333,12 @@ export interface BoardCallbacks {
    * accounting parens. Resolves false on failure so the editor can revert.
    */
   onSaveFlowAmount?: (item: MapItem, next: number) => Promise<boolean>;
+  /**
+   * Persist an inline life-expectancy edit from a Goals board milestone card.
+   * `age` is the person's age at death, the same units the `clients` columns and
+   * the Solver's sliders use — never a calendar year. Resolves false when the
+   * write fails OR when the age is out of range, so the editor reverts either
+   * way. Absent = the board renders the age as plain text.
+   */
+  onSaveLifeExpectancy?: (owner: LifeExpectancyOwner, age: number) => Promise<boolean>;
 }

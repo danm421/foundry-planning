@@ -1,8 +1,34 @@
 // src/lib/household-map/goals.ts
 import { coerceYearRef, resolveMilestone, type ClientMilestones } from "@/lib/milestones";
 
-export type GoalKind = "education" | "purchase" | "household" | "retirement" | "plan_end";
+export type GoalKind =
+  | "education"
+  | "purchase"
+  | "household"
+  | "retirement"
+  | "life_expectancy";
 export type GoalSide = "client" | "spouse" | "joint";
+
+/** Whose life expectancy a card edits. Mirrors the two `clients` columns —
+ *  `lifeExpectancy` and `spouseLifeExpectancy`. */
+export type LifeExpectancyOwner = "client" | "spouse";
+
+/** The editable payload of a life-expectancy milestone card. */
+export interface GoalLifeExpectancy {
+  owner: LifeExpectancyOwner;
+  /** The age the projection actually uses — the stored column, or the engine's
+   *  fallback when `assumed`. */
+  age: number;
+  /** Calendar year this person reaches `age`; the card's spine year. */
+  year: number;
+  /**
+   * True when nothing is stored and `age` is the engine's own `?? 95` fallback
+   * (`isSpouseLifeExpectancyDefaulted` in `engine/death-event/shared.ts`). The
+   * projection really does run to that year, but no one chose it — so the card
+   * says "assumed" rather than presenting it as a decision the advisor made.
+   */
+  assumed: boolean;
+}
 
 export interface MapGoal {
   /** Stable id: `expense:<uuid>` or `milestone:<slug>`. */
@@ -16,7 +42,21 @@ export interface MapGoal {
   /** The expense this card edits. Null for life milestones. */
   expenseId: string | null;
   forFamilyMemberName: string | null;
+  /**
+   * Set on the two life-expectancy milestones and null on every other card
+   * (including the retirement milestones, which are not editable from this
+   * board). Its presence is what makes the card's age click-to-edit.
+   */
+  lifeExpectancy: GoalLifeExpectancy | null;
 }
+
+/**
+ * The age the engine assumes for a spouse with a DOB but no stored life
+ * expectancy — `spouseLifeExpectancy ?? 95` in `computeFinalDeathYear` and
+ * `planHorizonFromLifeExpectancy`. Duplicated here rather than imported so this
+ * module stays free of engine imports; the three must not drift.
+ */
+export const ASSUMED_LIFE_EXPECTANCY = 95;
 
 /** The subset of an engine Expense the Goals board needs. */
 export interface GoalExpense {
@@ -40,9 +80,17 @@ export interface BuildMapGoalsInput {
     firstName: string;
     retirementAge: number;
     lifeExpectancy: number;
+    /**
+     * Calendar year of birth, sliced from the DOB (`birthYearFromDob`). Required
+     * for the life-expectancy milestone, whose year is `birthYear + lifeExpectancy`
+     * — the engine's own per-person death-year rule. Null (an unparseable DOB)
+     * drops that card rather than guessing a year.
+     */
+    birthYear: number | null;
     spouseFirstName: string | null;
     spouseRetirementAge: number | null;
     spouseLifeExpectancy: number | null;
+    spouseBirthYear: number | null;
   };
   familyMemberNamesById: ReadonlyMap<string, string>;
 }
@@ -120,6 +168,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
       forFamilyMemberName: e.forFamilyMemberId
         ? (input.familyMemberNamesById.get(e.forFamilyMemberId) ?? null)
         : null,
+      lifeExpectancy: null,
     });
   }
 
@@ -133,6 +182,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
     detail: `age ${client.retirementAge}`,
     expenseId: null,
     forFamilyMemberName: null,
+    lifeExpectancy: null,
   });
 
   if (m.spouseRetirement != null && client.spouseFirstName && client.spouseRetirementAge != null) {
@@ -145,26 +195,88 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
       detail: `age ${client.spouseRetirementAge}`,
       expenseId: null,
       forFamilyMemberName: null,
+      lifeExpectancy: null,
     });
   }
 
-  // Plan end is the later of the two projected deaths, attributed to whoever
-  // set it. `spouseEnd` is undefined for a single client.
-  const spouseEnd = m.spouseEnd ?? -Infinity;
-  const spouseOutlives = spouseEnd > m.clientEnd;
-  const planEndAge = spouseOutlives ? client.spouseLifeExpectancy : client.lifeExpectancy;
-  goals.push({
-    id: "milestone:plan_end",
-    year: spouseOutlives ? spouseEnd : m.clientEnd,
-    kind: "plan_end",
-    side: spouseOutlives ? "spouse" : "client",
-    title: spouseOutlives
-      ? `${client.spouseFirstName}'s life expectancy`
-      : `${client.firstName}'s life expectancy`,
-    detail: planEndAge != null ? `age ${planEndAge}` : null,
-    expenseId: null,
-    forFamilyMemberName: null,
-  });
+  // ONE CARD PER PERSON. The board previously emitted a single "plan end" card
+  // for the LATER of the two deaths, so the first-to-die spouse never appeared
+  // on the timeline at all — which is the whole point of a two-sided spine.
+  //
+  // Its years were wrong too, and worth spelling out so nobody reinstates them:
+  // both came from `milestones`, which derives BOTH ends from the household-wide
+  // `planEndAge` (`clients.plan_end_age` = "the last death, in the primary's
+  // years"). So `m.clientEnd` is the year the last spouse dies — the client's own
+  // death year only when the client outlives — and `m.spouseEnd` is
+  // `spouseBirthYear + planEndAge`, a number with no meaning whatsoever. The
+  // card's AGE detail meanwhile came from that person's real `lifeExpectancy`, so
+  // year and age disagreed for every household where the client is not the last
+  // to die.
+  //
+  // Both cards now use the engine's own per-person rule, `birthYear +
+  // lifeExpectancy` (`computeFinalDeathYear`, `engine/death-event/shared.ts`),
+  // which is what the projection actually keys death events off. Do not route
+  // these back through `milestones`.
+  for (const le of lifeExpectancyMilestones(input)) {
+    goals.push(le);
+  }
 
   return goals.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
+}
+
+/**
+ * One life-expectancy card per living principal. A person is skipped only when
+ * their birth year is unknown — there is then no year to place the card at, and
+ * inventing one would put a death event on the spine that the engine does not
+ * project.
+ *
+ * The spouse's card uses the engine's `?? 95` fallback when no spouse life
+ * expectancy is stored, flagged `assumed`. That is not a default we are choosing
+ * here: the projection is ALREADY running to that year (see
+ * `isSpouseLifeExpectancyDefaulted`), and showing it is how an advisor discovers
+ * they never set one.
+ */
+function lifeExpectancyMilestones(input: BuildMapGoalsInput): MapGoal[] {
+  const { client } = input;
+  const out: MapGoal[] = [];
+
+  const card = (
+    owner: LifeExpectancyOwner,
+    firstName: string,
+    birthYear: number,
+    age: number,
+    assumed: boolean,
+  ): MapGoal => ({
+    id: `milestone:${owner}_life_expectancy`,
+    year: birthYear + age,
+    kind: "life_expectancy",
+    side: owner,
+    title: `${firstName}'s life expectancy`,
+    detail: assumed ? `age ${age} · assumed` : `age ${age}`,
+    expenseId: null,
+    forFamilyMemberName: null,
+    lifeExpectancy: { owner, age, year: birthYear + age, assumed },
+  });
+
+  if (client.birthYear != null) {
+    out.push(card("client", client.firstName, client.birthYear, client.lifeExpectancy, false));
+  }
+
+  // Gated on the spouse's NAME + BIRTH YEAR, not on `milestones.spouseEnd`.
+  // `buildClientMilestones` only populates the spouse milestones when a spouse
+  // retirement age is also set, so keying off them hid the life-expectancy card
+  // for a spouse who has a DOB but no retirement age — two unrelated facts.
+  if (client.spouseFirstName && client.spouseBirthYear != null) {
+    out.push(
+      card(
+        "spouse",
+        client.spouseFirstName,
+        client.spouseBirthYear,
+        client.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY,
+        client.spouseLifeExpectancy == null,
+      ),
+    );
+  }
+
+  return out;
 }

@@ -71,6 +71,8 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
+    clientScenarioFields: {},
+    planSettingsScenarioFields: {},
     accountOptions: [],
     accountRows: {},
     // Controller resolution R3: Task 5 adds ONLY `accountRows` and
