@@ -3596,13 +3596,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
     /** The year's MAGIs + IRC 219(g) coverage flags, resolved in the bracket
-     *  block below and consumed by the household assembly after it. */
+     *  block below and consumed by the household assembly after it.
+     *
+     *  ⚠️ These four MAGIs are the GATING figures. They are necessarily
+     *  provisional: contributions have to be sized before the year's income is
+     *  final, so they cannot see Roth conversions, bracket fillers,
+     *  supplemental withdrawals, taxable Social Security, or the §164(f) half
+     *  of SE tax. The REPORT's four MAGIs are rebuilt from the settled AGI
+     *  after the tax pass — see the `thresholdFacts` assembly. Do not report
+     *  these directly. */
     let thresholdInputs:
       | {
           magiForIraDeduction: number;
           magiForStudentLoan: number;
           magiForRoth: number;
           magiForCredits: number;
+          iraDeduction: number;
+          studentLoanDeduction: number;
           coveredSelf: boolean;
           coveredSpouse: boolean;
           hasTraditionalIraContribution: boolean;
@@ -3819,6 +3829,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         magiForStudentLoan,
         magiForRoth,
         magiForCredits,
+        // The two gated above-line deductions, carried out of this block so the
+        // REPORT's MAGIs can be rebuilt from the final AGI after the tax pass
+        // (see the `thresholdFacts` assembly). Each statute adds back a
+        // different subset of them, so both are needed separately.
+        iraDeduction,
+        studentLoanDeduction: studentLoanInterestContribution.aboveLine,
         coveredSelf,
         coveredSpouse,
         hasTraditionalIraContribution: savingsUngated.traditionalIraPreTax > 0,
@@ -7224,19 +7240,57 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // than being re-derived: taxable-income-before-QBI is not recoverable from
     // `flow` (which is post-QBI and floored), AMTI's add-back depends on which
     // below-line deduction actually won, and NII is a third subset again.
+    // ── The REPORT's four MAGIs (B3) ────────────────────────────────────────
+    // Rebuilt HERE, from the settled AGI, rather than reported from the gating
+    // figures resolved before the year's income existed. `magiBase` is fixed
+    // before Roth conversions, the bracket filler and supplemental withdrawals
+    // are added to `taxableIncome`, and taxable Social Security never enters it
+    // at all — so the gating figures understate a conversion strategy by the
+    // whole conversion, and a retiree living off an IRA by the whole draw.
+    //
+    // ⚠️ NOT a single shared base. Each statute adds back a different set:
+    //   §221(b)(2)(C)(ii)  — AGI without regard to §221 ITSELF. The §219
+    //                        deduction DOES reduce it.
+    //   §219(g)(3)(A)(ii)  — AGI without regard to §221 AND §219.
+    //   §408A(c)(3)(B)(i)  — borrows 219(g)(3) wholesale.
+    //   credits / agi      — plain AGI, no add-backs.
+    // and Roth conversion income is BACKED OUT of the two §219(g)-derived
+    // figures only (Pub 590-A Wksht 1-1 and 2-1). Converting must not
+    // disqualify the household from contributing — that is not the law, and
+    // giving all four one base would silently impose it.
+    //
+    // Social Security and the §164(f) SE-tax half belong in ALL FOUR, and now
+    // reach all four for free: they are already inside `adjustedGrossIncome`.
+    const reportMagis = thresholdInputs
+      ? (() => {
+          const agi = finalTaxResult.flow.adjustedGrossIncome;
+          const conversionIncome = rothConversionResult.taxableOrdinaryIncome;
+          const forStudentLoan = agi + thresholdInputs.studentLoanDeduction;
+          const for219g = forStudentLoan + thresholdInputs.iraDeduction - conversionIncome;
+          return {
+            agi,
+            magiForCredits: agi,
+            magiForStudentLoan: forStudentLoan,
+            magiForIraDeduction: for219g,
+            // Kept as its own binding rather than aliased: 219(g)(3) and
+            // 408A(c)(3)(B)(i) are distinct statutory concepts that happen to
+            // coincide, they are reported separately, and only one of them
+            // would move if either statute did.
+            magiForRoth: for219g,
+          };
+        })()
+      : undefined;
+
     const thresholdFacts: Omit<ThresholdFacts, "params"> | undefined =
-      thresholdInputs && thresholdHousehold
+      thresholdInputs && thresholdHousehold && reportMagis
         ? {
             year,
             household: thresholdHousehold,
-            // R13: the report's AGI, NOT a second AGI path into the credit
-            // engine — `calculate.ts` computes its own and hands that to
-            // `computeCredits`.
-            agi: thresholdInputs.magiForCredits,
-            magiForIraDeduction: thresholdInputs.magiForIraDeduction,
-            magiForStudentLoan: thresholdInputs.magiForStudentLoan,
-            magiForRoth: thresholdInputs.magiForRoth,
-            magiForCredits: thresholdInputs.magiForCredits,
+            agi: reportMagis.agi,
+            magiForIraDeduction: reportMagis.magiForIraDeduction,
+            magiForStudentLoan: reportMagis.magiForStudentLoan,
+            magiForRoth: reportMagis.magiForRoth,
+            magiForCredits: reportMagis.magiForCredits,
             taxableIncomeBeforeQbi: finalTaxResult.diag.taxableIncomeBeforeQbi ?? 0,
             amti: finalTaxResult.diag.amti ?? 0,
             netInvestmentIncome: finalTaxResult.diag.netInvestmentIncome ?? 0,

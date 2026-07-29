@@ -1016,19 +1016,144 @@ describe("thresholdFacts rides on the projection year", () => {
     expect(f.netInvestmentIncome).toBe(0);
   });
 
-  it("documents the ONE place magiForCredits diverges from calculate.ts's AGI", () => {
-    // R13 asks for this divergence to be reported, not reconciled by overriding.
-    // magiBase is built from the projection's `taxableIncome`, which excludes
-    // taxable Social Security and does not carry the §164(f) deductible half of
-    // SE tax that year-tax.ts adds above the line. With neither present the two
-    // agree exactly:
+  // ── B3: the reported MAGIs must see the WHOLE year ────────────────────────
+  // `magiBase` is fixed early, before Roth conversions, bracket fillers and
+  // supplemental withdrawals are added to `taxableIncome`, and taxable Social
+  // Security never enters it at all. Every assertion below therefore compares
+  // the REPORTED figure against the engine's own AGI on a household whose
+  // income arrives after that point.
+
+  it("reports an AGI that includes Roth conversion income", () => {
+    // The solver's PRIMARY use case. Before the fix the Alternative and
+    // Original columns of the Thresholds report rendered IDENTICALLY for a
+    // conversion strategy — the report moved not one cell while the engine
+    // taxed the conversion in full.
+    const years = runProjection(build({
+      incomes: [salary(73_000)],
+      accounts: [CHECKING, { ...ACCT_IRA, value: 500_000, basis: 0 }, ACCT_ROTH],
+      rothConversions: [{
+        id: "rc-1",
+        name: "Fill to 22%",
+        destinationAccountId: "acct-roth",
+        sourceAccountIds: ["acct-ira"],
+        conversionType: "fixed_amount",
+        fixedAmount: 60_000,
+        startYear: 2026,
+        indexingRate: 0,
+      }],
+    }));
+    const f = years[0];
+    expect({
+      converted: Math.round(f.taxResult!.flow.adjustedGrossIncome),
+      reportedAgi: Math.round(f.thresholdFacts!.agi),
+      reportedCreditsMagi: Math.round(f.thresholdFacts!.magiForCredits),
+    }).toEqual({
+      converted: 133_000,
+      reportedAgi: 133_000,
+      reportedCreditsMagi: 133_000,
+    });
+  });
+
+  it("EXCLUDES that same conversion income from the Roth and IRA-deduction MAGIs", () => {
+    // The asymmetry is the statute, and it is why B3 must NOT be fixed by
+    // giving all four MAGIs one shared base:
+    //   §408A(c)(3)(B)(i) / Pub 590-A Wksht 2-1 — conversion income is BACKED
+    //     OUT of the Roth-contribution MAGI (otherwise converting would
+    //     disqualify you from contributing, which is not the law).
+    //   Pub 590-A Wksht 1-1 — same exclusion for the §219(g) deduction MAGI.
+    //   §221 and the credit layer have NO such exclusion.
+    const years = runProjection(build({
+      incomes: [salary(73_000)],
+      accounts: [CHECKING, { ...ACCT_IRA, value: 500_000, basis: 0 }, ACCT_ROTH],
+      rothConversions: [{
+        id: "rc-1",
+        name: "Fill to 22%",
+        destinationAccountId: "acct-roth",
+        sourceAccountIds: ["acct-ira"],
+        conversionType: "fixed_amount",
+        fixedAmount: 60_000,
+        startYear: 2026,
+        indexingRate: 0,
+      }],
+    }));
+    const f = years[0].thresholdFacts!;
+    expect({
+      roth: Math.round(f.magiForRoth),
+      iraDeduction: Math.round(f.magiForIraDeduction),
+      // Contrast — these two DO carry it.
+      studentLoan: Math.round(f.magiForStudentLoan),
+      credits: Math.round(f.magiForCredits),
+    }).toEqual({
+      roth: 73_000,
+      iraDeduction: 73_000,
+      studentLoan: 133_000,
+      credits: 133_000,
+    });
+  });
+
+  it("reports an AGI that includes taxable Social Security", () => {
+    const years = runProjection(build({
+      incomes: [
+        salary(73_000),
+        {
+          id: "inc-ss", type: "social_security", name: "SS",
+          annualAmount: 40_000, startYear: 2026, endYear: 2040,
+          growthRate: 0, owner: "client",
+        },
+      ],
+    }));
+    const f = years[0];
+    // Taxable SS is derived inside calculate.ts and was never in `magiBase`,
+    // so the report used to print 73,000 flat against a real AGI of 107,000.
+    expect(Math.round(f.thresholdFacts!.agi))
+      .toBe(Math.round(f.taxResult!.flow.adjustedGrossIncome));
+    // Non-vacuous: the SS really is taxable on this fixture.
+    expect(f.taxResult!.flow.adjustedGrossIncome).toBeGreaterThan(73_000);
+  });
+
+  it("reports an AGI that includes supplemental withdrawals", () => {
+    // A retiree funding spending by drawing on an IRA. The draw is planned
+    // AFTER magiBase is fixed, so the report used to print an AGI of 0 while
+    // the engine taxed hundreds of thousands — which is what made the NIIT row
+    // read "Does Not Apply" while `calcNiit` charged the surtax.
+    const years = runProjection(build({
+      incomes: [],
+      accounts: [
+        { ...CHECKING, value: 5_000, basis: 5_000 },
+        { ...ACCT_IRA, value: 3_000_000, basis: 0 },
+      ],
+      expenses: [{
+        id: "exp-living", type: "living", name: "Living",
+        annualAmount: 300_000, startYear: 2026, endYear: 2040, growthRate: 0,
+      }],
+      withdrawalStrategy: [
+        { accountId: "acct-ira", priorityOrder: 1, startYear: 2026, endYear: 2040 },
+      ],
+    }));
+    const f = years[0];
+    expect(Math.round(f.thresholdFacts!.agi))
+      .toBe(Math.round(f.taxResult!.flow.adjustedGrossIncome));
+    expect(f.taxResult!.flow.adjustedGrossIncome).toBeGreaterThan(300_000);
+  });
+
+  it("no longer diverges from calculate.ts's AGI on self-employment income", () => {
+    // ⚠️ HISTORY — this test previously asserted the OPPOSITE, and was right to
+    // at the time: R13 chose to REPORT the divergence rather than reconcile it,
+    // because `magiBase` is built from the projection's `taxableIncome`, which
+    // carries neither taxable Social Security nor the §164(f) deductible half
+    // of SE tax that year-tax.ts adds above the line.
+    //
+    // B3 closed it. The reported MAGIs are now rebuilt from the settled AGI
+    // after the tax pass, so both terms are inside them by construction and
+    // there is nothing left to reconcile. The assertion is INVERTED rather
+    // than deleted: "the two agree even on SE income" is the regression guard
+    // for the fix, and dropping the case would leave the §164(f) leg
+    // uncovered entirely.
     const clean = runProjection(build({
       savingsRules: [rule({ id: "sav-401k", accountId: "acct-401k", annualAmount: 10_000 })],
     }))[0];
     expect(clean.thresholdFacts!.magiForCredits).toBe(clean.taxResult!.flow.adjustedGrossIncome);
 
-    // With self-employment income they do NOT: calculate.ts's AGI is lower by
-    // the deductible half of the SE tax.
     const se = runProjection(build({
       incomes: [{
         id: "inc-consulting", type: "business", name: "Consulting",
@@ -1036,9 +1161,15 @@ describe("thresholdFacts rides on the projection year", () => {
         owner: "client", isSelfEmployment: true,
       }],
     }))[0];
-    expect(se.thresholdFacts!.magiForCredits).toBeGreaterThan(
-      se.taxResult!.flow.adjustedGrossIncome,
-    );
+    expect({
+      magi: se.thresholdFacts!.magiForCredits,
+      // Non-vacuous: the §164(f) half really is in play here, so the two
+      // figures genuinely COULD disagree — they used to, by this amount.
+      secaHalfIsReal: se.taxResult!.flow.adjustedGrossIncome < 40_000,
+    }).toEqual({
+      magi: se.taxResult!.flow.adjustedGrossIncome,
+      secaHalfIsReal: true,
+    });
   });
 });
 
