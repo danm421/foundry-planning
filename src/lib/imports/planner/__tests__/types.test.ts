@@ -59,4 +59,12 @@ describe("planningDecisionsSchema", () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it("rejects an advisor/system provenance the planner may not claim", () => {
+    const parsed = planningDecisionsSchema.safeParse({
+      ...MINIMAL,
+      assumptions: { retirementAge: { value: 64, provenance: "stated", reason: "x" } },
+    });
+    expect(parsed.success).toBe(false);
+  });
 });
