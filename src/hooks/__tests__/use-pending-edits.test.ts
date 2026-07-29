@@ -177,3 +177,56 @@ describe("usePendingEdits", () => {
     await waitFor(() => expect(result.current.rows).toEqual([ROWS[1]]));
   });
 });
+
+// T-A: `sameFieldValue` fails silently on NaN and on non-plain objects.
+// Separate local fixture types rather than widening the shared `Row` above —
+// the 11 tests in the `describe("usePendingEdits")` block above stay
+// textually unchanged.
+interface NumericRow { id: string; rate: number }
+interface DateRow { id: string; ts: Date }
+
+describe("sameFieldValue silent-compare gaps (T-A)", () => {
+  it("reconciles a NaN-valued field once the server agrees (Object.is, not ===)", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    const rows: NumericRow[] = [{ id: "a", rate: 1 }, { id: "b", rate: 2 }];
+    const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {
+      initialProps: { rows },
+    });
+    await act(async () => { await result.current.apply("a", { rate: NaN }, save); });
+    expect(result.current.rows[0].rate).toBe(NaN);
+
+    // Server agrees (also NaN) — the point at which the pending key should be
+    // dropped. `a === b` is false for NaN/NaN, so a naive compare would never
+    // see this as agreement and would strand the field forever.
+    rerender({ rows: [{ id: "a", rate: NaN }, rows[1]] });
+    await waitFor(() => expect(result.current.rows[0].rate).toBe(NaN));
+
+    // A LATER, genuinely different server value must show through — proving
+    // the pending key was actually dropped on agreement, not merely retained
+    // and coincidentally equal (same trap the owners discriminator test above
+    // guards against).
+    rerender({ rows: [{ id: "a", rate: 42 }, rows[1]] });
+    await waitFor(() => expect(result.current.rows[0].rate).toBe(42));
+  });
+
+  it("keeps a Date-valued field pending when the server sends a DIFFERENT Date", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    const original = new Date("2020-01-01T00:00:00Z");
+    const optimistic = new Date("2024-06-15T00:00:00Z");
+    const rows: DateRow[] = [{ id: "a", ts: original }, { id: "b", ts: original }];
+    const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {
+      initialProps: { rows },
+    });
+    await act(async () => { await result.current.apply("a", { ts: optimistic }, save); });
+    expect(result.current.rows[0].ts).toBe(optimistic);
+
+    // Server sends a DIFFERENT Date. `Object.keys(new Date())` is `[]` for
+    // both, so a naive key-wise compare would call them equal, drop the
+    // pending key, and silently revert to the stale server value — the
+    // mirror-image bug this task also closes. The safe answer is "not equal":
+    // keep showing the optimistic value.
+    const serverDifferent = new Date("2021-05-05T00:00:00Z");
+    rerender({ rows: [{ id: "a", ts: serverDifferent }, rows[1]] });
+    expect(result.current.rows[0].ts).toBe(optimistic);
+  });
+});

@@ -92,8 +92,7 @@ export default function InlineYearCell({
       canEdit
       className="rounded-sm px-1 py-0.5 tabular text-[11px] text-ink-3 hover:bg-card-hover hover:text-ink-2"
       options={[
-        ...refs.map((r) => ({ ref: r.ref, label: `${r.label} (${r.year})` }))
-          .map((r) => ({ value: r.ref, label: r.label })),
+        ...refs.map((r) => ({ value: r.ref, label: `${r.label} (${r.year})` })),
         { value: CUSTOM_YEAR_VALUE, label: "Custom year…" },
       ]}
       onSelect={(raw) => {

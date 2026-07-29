@@ -206,6 +206,7 @@ describe("the null rule is per field, not global", () => {
     const fields = buildFlowScenarioFields(effective);
     const out = buildFlowScenarioDesiredFields(fields, flowYearPatch("end", 2050, null));
     expect(out).toHaveProperty("endYearRef", null);
+    expect(out.endYear).toBe(2050);
   });
 
   it("retains unrelated fields when only the owner changes", () => {

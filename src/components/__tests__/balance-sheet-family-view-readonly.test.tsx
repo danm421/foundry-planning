@@ -233,9 +233,9 @@ describe("BalanceSheetView read-only gating", () => {
     expect(screen.getAllByText("Liabilities").length).toBeGreaterThan(0);
 
     // Account row "Brokerage Account" must NOT be cursor-pointer (not clickable) under view.
-    // The Row component (balance-sheet-view.tsx ~1391) adds cursor-pointer only when onClick
-    // is defined, which is canEdit-gated. The accounts are in a collapsed CategoryGroup by
-    // default — expand "Taxable" first, then check.
+    // The Row component (src/components/balance-sheet/row.tsx) adds cursor-pointer only when
+    // onClick is defined, which is canEdit-gated. The accounts are in a collapsed CategoryGroup
+    // by default — expand "Taxable" first, then check.
     const taxableToggles = screen.queryAllByRole("button", { name: /taxable/i });
     expect(taxableToggles.length).toBeGreaterThan(0);
     fireEvent.click(taxableToggles[0]);

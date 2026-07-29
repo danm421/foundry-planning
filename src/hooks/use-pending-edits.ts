@@ -34,13 +34,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
  * variant nests `recipient: { kind, id }` a further level down — a one- or
  * two-level compare would silently strand exactly that case.
  */
+function isPlainObject(v: object): boolean {
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
+
 function sameFieldValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
+  // Object.is, not === : NaN/NaN must compare equal here, or a NaN-valued
+  // field can never be seen as reconciled (a === b is false for NaN/NaN) and
+  // strands the optimistic value forever — the original bug this function
+  // exists to fix.
+  if (Object.is(a, b)) return true;
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((v, i) => sameFieldValue(v, b[i]));
   }
+  /** `Object.keys()` is empty for Date/Map/Set, so a key-wise compare would call
+   *  two DIFFERENT Dates equal and drop the pending key prematurely — a silent
+   *  revert to stale data, the mirror image of the stranding this function
+   *  exists to prevent. Reporting "not equal" instead keeps the optimistic value
+   *  visible, which is the safe direction to be wrong in. */
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
   const ka = Object.keys(a as Record<string, unknown>);
   const kb = Object.keys(b as Record<string, unknown>);
   return (
