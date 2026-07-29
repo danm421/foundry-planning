@@ -9,10 +9,23 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  * 8: F3 locked-share clamp/cap + F4 orphaned-gain backstop (2026-07-18)
  * 9: F12 entity policy-row schedule + F10 termination effective balance + F13
  *    entity checking synthesis on the solver and scenario-load paths (2026-07-18)
- * 10: federal credit layer (CTC/ACTC, ODC, AOTC, Saver's) wired into the
+ * 10: CLAIMED ON main BY capital-loss-support — §1222 netting, the §1211(b)
+ *    $3,000 cap and §1212(b) carryforward, in BOTH tax-engine modes. Do NOT
+ *    reuse. main's full note arrives on this file at merge; keep it and keep 11
+ *    below it.
+ * 11: federal credit layer (CTC/ACTC, ODC, AOTC, Saver's) wired into the
  *    federal roll-up in calculate.ts (2026-07-28)
+ *
+ *    ⚠️ Why this branch skipped 10: it originally took 10, but so did
+ *    capital-loss-support, which merged to main first. Both sides bumping 9->10
+ *    is a change git merges CLEANLY AND SILENTLY (identical text on both sides),
+ *    which would have collapsed two distinct cache-invalidation intents into one
+ *    bump — every MC/LI cache row written under capital-loss's 10 would have been
+ *    treated as valid for the credit layer too, serving stale projections with no
+ *    error. Nothing in the toolchain flags this; it has to be checked by hand
+ *    against main before every merge.
  */
-export const ENGINE_VERSION = 10;
+export const ENGINE_VERSION = 11;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {
