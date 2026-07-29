@@ -1,4 +1,4 @@
-// src/lib/household-map/flow-write.ts
+// src/lib/inline-edit/flow-write.ts
 //
 // Write payloads for the Cash Flow board's inline amount editor. Same
 // deliberate asymmetry as `account-write.ts` — do NOT "simplify" the scenario

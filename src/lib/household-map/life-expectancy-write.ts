@@ -25,7 +25,7 @@
 // Both scenario payloads carry the WHOLE effective singleton, not just the
 // changed keys — the same rule (and the same reason) as `flow-write.ts` and
 // `account-write.ts`. The singletons themselves are pruned by the shared
-// `pruneScenarioFields` (`./scenario-fields`) with NO strip set: unlike a flow
+// `pruneScenarioFields` (`@/lib/inline-edit/scenario-fields`) with NO strip set: unlike a flow
 // row, a `client` / `planSettings` singleton has no key that must be withheld.
 // `applyEntityEdit` upserts with `set: { payload: diff }`, a
 // wholesale replace, and `buildFieldDiff` only emits keys the caller sent. A

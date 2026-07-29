@@ -25,11 +25,11 @@ import {
   buildBasePayload,
   buildScenarioDesiredFields,
   type AccountPatch,
-} from "@/lib/household-map/account-write";
+} from "@/lib/inline-edit/account-write";
 import {
   buildFlowScenarioDesiredFields,
   flowAmountPatch,
-} from "@/lib/household-map/flow-write";
+} from "@/lib/inline-edit/flow-write";
 
 const BOARDS = [
   { key: "net-worth", label: "Net Worth" },
@@ -146,7 +146,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
    * scenario mode sends the WHOLE row. That asymmetry is deliberate and
    * load-bearing — `applyEntityEdit` replaces the change payload wholesale, so
    * a narrow scenario write would delete every sibling override on the account.
-   * See `lib/household-map/account-write.ts`, which owns both payloads and the
+   * See `lib/inline-edit/account-write.ts`, which owns both payloads and the
    * `growthRate: null` rule (R9) that keeps a value edit from zeroing the
    * account's growth for the whole projection.
    *
@@ -181,7 +181,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   /**
    * Persist one inline Cash Flow amount edit. Same base/scenario asymmetry as
    * `handleSaveAccountField` and for the same reason — see
-   * `lib/household-map/flow-write.ts`, which owns both payloads.
+   * `lib/inline-edit/flow-write.ts`, which owns both payloads.
    *
    * Refuses when `flowScenarioFields` has no entry for the row. `map-content.tsx`
    * builds that map from the same effective tree and filters it with the same

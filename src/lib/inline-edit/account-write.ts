@@ -1,4 +1,4 @@
-// src/lib/household-map/account-write.ts
+// src/lib/inline-edit/account-write.ts
 //
 // The Map's two write payloads are DELIBERATELY asymmetric. Do not "simplify"
 // the scenario one to match the base one.

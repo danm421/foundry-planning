@@ -15,8 +15,8 @@ import {
   growthEditModeFor,
   growthOptionsFor,
   growthSelectValue,
-} from "@/lib/household-map/growth-options";
-import { patchFromGrowthSelection, type AccountPatch } from "@/lib/household-map/account-write";
+} from "@/lib/inline-edit/growth-options";
+import { patchFromGrowthSelection, type AccountPatch } from "@/lib/inline-edit/account-write";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { AccountRow } from "@/components/balance-sheet-view";
 

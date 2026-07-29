@@ -44,8 +44,8 @@ import {
   savingsToMapItem,
   toMapItem,
 } from "@/lib/household-map/map-items";
-import { buildFlowScenarioFields } from "@/lib/household-map/flow-write";
-import { pruneScenarioFields } from "@/lib/household-map/scenario-fields";
+import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
+import { pruneScenarioFields } from "@/lib/inline-edit/scenario-fields";
 import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { Account, Expense, Income, Liability, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
@@ -263,7 +263,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // scenario already overrides; the three view types are strict subsets of the
   // engine types and the fields they drop (`endsAtMedicareEligibilityOwner`,
   // `fundFromExpenseReduction`, `isSelfEmployment`) are ones real producers
-  // override. `lib/household-map/flow-write.ts` documents the whole rule.
+  // override. `lib/inline-edit/flow-write.ts` documents the whole rule.
   //
   // Filtered by the SAME hydratability predicates as the rows above so the two
   // maps agree on which flows the Map may write — a row with a card but no

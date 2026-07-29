@@ -22,7 +22,7 @@ import {
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
 } from "../life-expectancy-write";
-import { pruneScenarioFields } from "../scenario-fields";
+import { pruneScenarioFields } from "@/lib/inline-edit/scenario-fields";
 
 const CLIENT_ID = "3f1c2b7e-0000-4000-8000-000000000000";
 

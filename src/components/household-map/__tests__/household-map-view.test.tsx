@@ -8,7 +8,7 @@ import type { MapGoal } from "@/lib/household-map/goals";
 import type { ExpenseView, IncomeView, SavingsRuleView } from "@/lib/scenario/view-adapters";
 
 // `useScenarioWriter` branches on the URL's `?scenario=`, and the two branches
-// send DIFFERENT payloads on purpose (see lib/household-map/flow-write.ts), so
+// send DIFFERENT payloads on purpose (see lib/inline-edit/flow-write.ts), so
 // the write-path tests below have to be able to turn it on. `vi.hoisted` so the
 // hoisted `vi.mock` factory can close over a value the tests mutate per case —
 // a bare `let` would be in its TDZ when the factory first runs. Mirrors
@@ -543,7 +543,7 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
 // The seam where a clobbering payload would live. `applyEntityEdit` stores the
 // scenario diff as a WHOLESALE replace, so what these tests really assert is
 // that a one-field inline edit still carries every other override the scenario
-// had — see `lib/household-map/flow-write.ts`.
+// had — see `lib/inline-edit/flow-write.ts`.
 describe("HouseholdMapView — inline Cash Flow amount writes", () => {
   /** An income card that is inline-editable end to end: a hydration row (which
    *  is what makes it writable), a `editableAmount`, and a scenario field set. */

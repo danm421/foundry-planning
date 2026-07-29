@@ -1,4 +1,4 @@
-// src/lib/household-map/growth-options.ts
+// src/lib/inline-edit/growth-options.ts
 //
 // The Household Map's growth-rate dropdown offers exactly what the full account
 // editor offers for that category — no more. Two editors of one field that
