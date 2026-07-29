@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
-import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
+import { crmHouseholds, crmHouseholdContacts, crmHouseholdViews } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -16,7 +16,7 @@ vi.mock("@clerk/nextjs/server", async () => {
 });
 
 import { auth } from "@clerk/nextjs/server";
-import { listCrmHouseholds } from "../households";
+import { listCrmHouseholds, listRecentlyOpenedHouseholds } from "../households";
 
 const ORG = "org_hhsort";
 const ADV = "adv_sort";
@@ -162,5 +162,71 @@ describe("listCrmHouseholds sorting", () => {
     const ids = [...page1.map((r) => r.id), ...page2.map((r) => r.id)];
     expect(ids).toHaveLength(4);
     expect(new Set(ids).size).toBe(4); // no duplicates, nothing skipped
+  });
+});
+
+describe("listRecentlyOpenedHouseholds sorting", () => {
+  beforeEach(async () => {
+    await db.delete(crmHouseholds).where(eq(crmHouseholds.firmId, ORG));
+    await db.delete(crmHouseholdViews).where(eq(crmHouseholdViews.firmId, ORG));
+    vi.mocked(auth).mockResolvedValue({
+      userId: "user_sort",
+      orgId: ORG,
+      orgRole: "org:member",
+    } as never);
+  });
+
+  /** Seeds three households and opens them in a deliberately non-alphabetical order. */
+  async function seedOpened() {
+    const made: Record<string, string> = {};
+    for (const [first, last] of [["Zoe", "Adams"], ["Amy", "Baker"], ["Bob", "Adams"]] as const) {
+      const [hh] = await db
+        .insert(crmHouseholds)
+        .values({ firmId: ORG, advisorId: ADV, name: `${first} ${last}` })
+        .returning();
+      await db.insert(crmHouseholdContacts).values({
+        householdId: hh.id,
+        role: "primary",
+        firstName: first,
+        lastName: last,
+      });
+      made[`${first} ${last}`] = hh.id;
+    }
+    // Opened newest-last: Amy Baker is the most recently opened.
+    const order = ["Bob Adams", "Zoe Adams", "Amy Baker"];
+    for (let i = 0; i < order.length; i++) {
+      await db.insert(crmHouseholdViews).values({
+        householdId: made[order[i]],
+        firmId: ORG,
+        userId: "user_sort",
+        openedAt: new Date(Date.UTC(2026, 0, 1 + i)),
+      });
+    }
+  }
+
+  it("keeps opened-at order when no sort is requested", async () => {
+    await seedOpened();
+    const rows = await listRecentlyOpenedHouseholds({ userId: "user_sort" });
+    expect(rows.map((r) => r.name)).toEqual(["Amy Baker", "Zoe Adams", "Bob Adams"]);
+  });
+
+  it("overrides opened-at order with last-name order when sorted", async () => {
+    await seedOpened();
+    const rows = await listRecentlyOpenedHouseholds({
+      userId: "user_sort",
+      sort: "name",
+      dir: "asc",
+    });
+    expect(rows.map((r) => r.name)).toEqual(["Bob Adams", "Zoe Adams", "Amy Baker"]);
+  });
+
+  it("still attaches lastOpenedAt when sorted", async () => {
+    await seedOpened();
+    const rows = await listRecentlyOpenedHouseholds({
+      userId: "user_sort",
+      sort: "name",
+      dir: "asc",
+    });
+    expect(rows.every((r) => r.lastOpenedAt instanceof Date)).toBe(true);
   });
 });

@@ -95,6 +95,9 @@ export async function listRecentlyOpenedHouseholds(opts: {
   limit?: number;
   /** Admin book-switcher narrowing — see listCrmHouseholds for the gate. */
   viewAsAdvisorId?: string;
+  /** When set, replaces opened-at ordering with an explicit column sort. */
+  sort?: ClientSortKey | null;
+  dir?: SortDir;
 }) {
   const firmId = await requireOrgId();
   const limit = opts.limit ?? 50;
@@ -140,14 +143,17 @@ export async function listRecentlyOpenedHouseholds(opts: {
       contacts: true,
       planningClient: { columns: { id: true } },
     },
+    ...(opts.sort ? { orderBy: buildOrderBy(opts.sort, opts.dir ?? "asc") } : {}),
   });
 
-  // Preserve the opened-at ordering and attach the timestamp.
-  const rank = new Map(ids.map((id, i) => [id, i]));
   const openedAt = new Map(views.map((v) => [v.householdId, v.openedAt]));
-  return rows
-    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
-    .map((h) => ({ ...h, lastOpenedAt: openedAt.get(h.id) ?? null }));
+  // With an explicit sort the database has already ordered the rows; the
+  // rank map only exists to restore opened-at order, which that sort replaces.
+  if (!opts.sort) {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  }
+  return rows.map((h) => ({ ...h, lastOpenedAt: openedAt.get(h.id) ?? null }));
 }
 
 /**
