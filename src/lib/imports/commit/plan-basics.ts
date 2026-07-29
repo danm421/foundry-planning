@@ -133,12 +133,15 @@ export async function commitPlanBasics(
   //
   //  WHY THIS DOESN'T DOUBLE-ADJUST THE DOCUMENT PATH. `assemble/plan-basics.ts`
   //  divides the extracted ANNUAL benefit by 12, and its `claimingAgeField`
-  //  always defaults the claiming age to FRA. In `pia_at_fra` mode with the
-  //  claim age AT FRA the engine applies neither a reduction nor a credit, so
-  //  annual/12 as the PIA reproduces the same yearly benefit the old literal
-  //  path produced. The actuarial adjustment only bites when the claim age
-  //  differs from FRA — and in that case the value came from the planner,
-  //  whose `piaMonthly` is already a true monthly PIA at FRA.
+  //  defaults the claiming age to FRA. In `pia_at_fra` mode with the claim age
+  //  AT FRA the engine applies neither a reduction nor a credit, so annual/12 as
+  //  the PIA reproduces the same yearly benefit the old literal path produced.
+  //  That is EXACT for birth years from 1960 on (FRA 67y0m) and slightly
+  //  CONSERVATIVE for 1955-1959 births, whose dropped FRA months leave the claim
+  //  age just below true FRA — full analysis on `monthlyPiaFromAnnual` in
+  //  `assemble/plan-basics.ts`. A value that came from the planner instead is
+  //  already a true monthly PIA at FRA, so the actuarial adjustment is correct
+  //  there by construction.
   //
   //  EVERY FIELD STAYS INDIVIDUALLY CONDITIONAL, and `claimingAge` especially.
   //  `commit/incomes.ts` seeds these rows with `claimingAge: … ?? 67` and

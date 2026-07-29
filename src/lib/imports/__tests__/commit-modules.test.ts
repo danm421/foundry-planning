@@ -1121,6 +1121,140 @@ describe("commitIncomes — Social Security reconciliation", () => {
     expect(values(inserts[0]).type).toBe("salary");
     expect(updates).toHaveLength(2); // SS split into both seeded slots
   });
+
+  /**
+   * REGRESSION: this pass must not revert a row `commitPlanBasics` already put
+   * on the PIA path. `COMMIT_TABS` dispatches "plan-basics" (index 0) before
+   * "incomes" (index 4), and the Forge fact-finder import commits EVERY tab in
+   * one request (`use-forge-import.ts:317`, `ALL_COMMIT_TABS` at :51-54). So on
+   * that path both run back to back against the same rows, and without the
+   * guard the imported literal annual amount would silently undo the actuarial
+   * path and strand `piaMonthly` as dead data.
+   */
+  it("does NOT overwrite ssBenefitMode/annualAmount on a slot already on the PIA path", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [
+      ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: "3333.33" }),
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(1);
+    const v = values(updates[0]);
+    expect(v).not.toHaveProperty("ssBenefitMode");
+    expect(v).not.toHaveProperty("annualAmount");
+  });
+
+  it("still writes the claim age onto a preserved PIA row (a null claim age zeroes the benefit)", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [
+      ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: "3333.33" }),
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, claimingAge: 70, growthRate: 0.025, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    // The fields shared by both modes stay additive — only the two mode-defining
+    // ones are withheld.
+    const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+    expect(v).toMatchObject({ claimingAge: 70, claimingAgeMode: "years", growthRate: "0.025" });
+    expect(v.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("warns, naming the preserved PIA and the skipped imported amount", async () => {
+    const { tx, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [
+      ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: "3333.33" }),
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    expect(result.warnings).toHaveLength(1);
+    // Both figures are named, so the advisor can see WHICH value was kept and
+    // which was dropped rather than just that "something" was skipped.
+    expect(result.warnings[0]).toContain("3333.33");
+    expect(result.warnings[0]).toContain("40000");
+    expect(result.warnings[0]).toContain("client");
+  });
+
+  it("leaves the manual_amount path completely unchanged (the guard must not defang it)", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    // Explicit manual_amount with a stale piaMonthly still on the row: the mode
+    // is what decides, so this must NOT be treated as a PIA row.
+    setSelectResult("incomes", [
+      ssSlot("client", { ssBenefitMode: "manual_amount", piaMonthly: "3333.33" }),
+      ssSlot("spouse", { ssBenefitMode: null, piaMonthly: null }),
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "joint", annualAmount: 50000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    const updates = callsForTable(calls, "incomes").filter((c) => c.op === "update");
+    expect(updates).toHaveLength(2);
+    const vs = updates.map(values);
+    expect(vs.every((v) => v.ssBenefitMode === "manual_amount")).toBe(true);
+    expect(vs.every((v) => v.annualAmount === "25000")).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it("treats a pia_at_fra slot with a NULL piaMonthly as manual — there is no PIA to protect", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [
+      ssSlot("client", { ssBenefitMode: "pia_at_fra", piaMonthly: null }),
+    ]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    // Withholding annualAmount here would leave the row claiming pia_at_fra
+    // with nothing to compute from — which the engine reads as zero income.
+    const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+    expect(v).toMatchObject({ ssBenefitMode: "manual_amount", annualAmount: "40000" });
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it("still inserts a manual_amount row when no slot exists — a new row has no PIA to preserve", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", []); // legacy data missing the seeded slots
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    const result = await commitIncomes(tx, payload, ctx);
+
+    const inserts = callsForTable(calls, "incomes").filter((c) => c.op === "insert");
+    expect(inserts).toHaveLength(1);
+    expect(values(inserts[0])).toMatchObject({
+      ssBenefitMode: "manual_amount",
+      annualAmount: "40000",
+    });
+    expect(result.warnings).toHaveLength(0);
+  });
 });
 
 describe("commitExpenses", () => {

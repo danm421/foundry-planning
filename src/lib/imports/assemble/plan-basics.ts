@@ -59,10 +59,23 @@ function extractedAnnualSocialSecurity(
  * figure in a field that commits to the `pia_monthly` column would overstate
  * Social Security 12x on the document path.
  *
- * NOT a double adjustment: `claimingAgeField` below always defaults the claim
- * age to FRA, and in `pia_at_fra` mode at FRA the engine applies neither an
- * early reduction nor a delayed credit — so annual/12 reproduces exactly the
- * yearly benefit the old literal-annual path produced.
+ * NOT a double adjustment — but the strength of that claim depends on the birth
+ * year, so read the two cases separately.
+ *
+ * EXACT for FRA 67y0m, i.e. birth years from 1960 on. `claimingAgeField` below
+ * defaults the claim age to FRA, and in `pia_at_fra` mode AT FRA the engine
+ * applies neither an early reduction nor a delayed credit, so annual/12
+ * reproduces exactly the yearly benefit the old literal-annual path produced.
+ *
+ * SLIGHTLY CONSERVATIVE for 1955-1959 birth years, whose FRA carries months
+ * (66y2m-66y10m). `claimingAgeField` stores `fra.years` and DROPS `fra.months`,
+ * so a 1957 birth year (FRA 66y6m) commits a claim age of 66y0m — six months
+ * early. The engine then applies a real early reduction the old literal path
+ * never applied, at 5/9% per month for the first 36 months
+ * (engine/socialSecurity/ownRetirement.ts:45), so the understatement runs up to
+ * 10 months x 5/9% = 5.56% at the 1955 end of the range. Deferred as future
+ * work: carrying the months needs either a widened `PlanBasicsField<number>` or
+ * `claimingAgeMode: "fra"`, and both ripple into the wizard.
  *
  * Rounded to 2 decimals because `incomes.pia_monthly` is `decimal(15,2)`;
  * rounding here keeps what the advisor reviews identical to what is stored.

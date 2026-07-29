@@ -48,8 +48,10 @@ export interface AssemblePlanBasics {
      * (`apply-decisions.ts`). The document path extracts an ANNUAL benefit and
      * DIVIDES IT BY 12 (`assemble/plan-basics.ts`), keeping
      * `provenance: "document"` — same fact, different units. That conversion is
-     * not a double adjustment: the document path also defaults the claiming age
-     * to FRA, and at FRA the engine applies neither a reduction nor a credit.
+     * not a double adjustment, because the document path also defaults the
+     * claiming age to FRA and at FRA the engine applies neither a reduction nor a
+     * credit — exactly so for FRA 67y0m (births from 1960 on), and slightly
+     * conservative for 1955-1959 births. See `monthlyPiaFromAnnual` for why.
      */
     pia: PlanBasicsField<number>;
     claimingAge: PlanBasicsField<number>;
