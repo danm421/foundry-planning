@@ -498,6 +498,87 @@ describe("CashFlowBoard", () => {
 
       expect(container.querySelector("[title^='Starts']")).toBeNull();
     });
+
+    // ── startsAt: a row whose year range would misdescribe it ────────────────
+    //
+    // A Social Security row's persisted window is inert — the engine pays from
+    // the CLAIM AGE — so "2024-2099" named neither the year the money starts nor
+    // anything an advisor chose. `startsAt` replaces it. The label and the title
+    // are asserted in SEPARATE cases on purpose: two expects in one `it` stop at
+    // the first failure, so a title left showing the inert years would hide
+    // behind a passing label assertion and never be exercised at all.
+    const SS_TIMING = timing({
+      startYear: 2024,
+      endYear: 2099,
+      startsAt: { label: "at 70", title: "Benefit starts at age 70 (2040)" },
+    });
+
+    function ssItem(): MapItem {
+      return item({
+        id: "inc-ss",
+        kind: "income",
+        column: "client",
+        name: "Alex Social Security",
+        value: 0,
+        timing: SS_TIMING,
+      });
+    }
+
+    it("renders the note's label in the cell", () => {
+      render(<CashFlowBoard {...baseProps({ items: [ssItem()] })} />);
+
+      expect(screen.getByText("at 70")).toBeInTheDocument();
+    });
+
+    // Its own case, not a second line under the one above: a cell that rendered
+    // the note ALONGSIDE the range would satisfy that assertion and this is the
+    // only thing that would catch it — and once the first assertion throws, a
+    // second one in the same `it` never runs at all.
+    it("leaves the inert year range nowhere in the cell", () => {
+      render(<CashFlowBoard {...baseProps({ items: [ssItem()] })} />);
+
+      expect(screen.queryByText("2024-2099")).not.toBeInTheDocument();
+    });
+
+    it("puts the note's sentence in the cell's tooltip", () => {
+      render(<CashFlowBoard {...baseProps({ items: [ssItem()] })} />);
+
+      expect(screen.getByText("at 70")).toHaveAttribute(
+        "title",
+        "Benefit starts at age 70 (2040)",
+      );
+    });
+
+    // The failure mode the note exists to prevent, stated on its own: a fix that
+    // changed only `timingLabel` would put "at 70" in the cell and leave
+    // "Starts 2024 · Ends 2099" on its tooltip, handing the advisor back the
+    // exact years the note replaced, one hover later.
+    it("leaves no 'Starts … Ends …' tooltip anywhere on the card", () => {
+      const { container } = render(<CashFlowBoard {...baseProps({ items: [ssItem()] })} />);
+
+      expect(container.querySelector("[title^='Starts']")).toBeNull();
+    });
+
+    // The control for the two above. Same board, same cell, `startsAt: null` —
+    // so neither case can be passing on a cell that ignores the year range
+    // outright.
+    it("still renders the year range when the row carries no note", () => {
+      const items: MapItem[] = [
+        item({
+          id: "inc-ss",
+          kind: "income",
+          column: "client",
+          name: "Alex Social Security",
+          value: 0,
+          timing: timing({ startYear: 2024, endYear: 2099, startsAt: null }),
+        }),
+      ];
+
+      render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(screen.getByText("2024-2099")).toHaveAttribute("title", "Starts 2024 · Ends 2099");
+      expect(screen.queryByText("at 70")).not.toBeInTheDocument();
+    });
   });
 
   // ── Inline amount editing ──────────────────────────────────────────────────
