@@ -11,6 +11,7 @@ import type {
   ExtractedLiability,
   ExtractedLifePolicy,
   ExtractedPrimaryFamilyMember,
+  ExtractedSavings,
   ExtractedSpouseFamilyMember,
   ExtractedWill,
 } from "@/lib/extraction/types";
@@ -30,6 +31,7 @@ import ReviewStepIncomes from "./review-step-incomes";
 import ReviewStepExpenses from "./review-step-expenses";
 import ReviewStepLiabilities from "./review-step-liabilities";
 import ReviewStepEntities from "./review-step-entities";
+import ReviewStepSavings from "./review-step-savings";
 import PlanBasicsStep from "./plan-basics-step";
 import GoalsStep from "./goals-step";
 import ReviewStepFamily from "./review-step-family";
@@ -53,6 +55,7 @@ type WizardTabId =
   | "insurance"
   | "wills"
   | "entities"
+  | "savings"
   | "goals"
   | "summary";
 
@@ -105,6 +108,7 @@ const TAB_TO_COMMIT: Record<Exclude<WizardTabId, "summary">, CommitTab[]> = {
   insurance: ["life-insurance"],
   wills: ["wills"],
   entities: ["entities"],
+  savings: ["savings"],
   goals: ["goals"],
 };
 
@@ -118,6 +122,7 @@ const TAB_LABEL: Record<WizardTabId, string> = {
   insurance: "Insurance",
   wills: "Wills",
   entities: "Trusts",
+  savings: "Savings",
   goals: "Goals",
   summary: "Summary",
 };
@@ -162,6 +167,7 @@ export default function ReviewWizard({
     payload.lifePolicies,
   );
   const [entities, setEntities] = useState<Annotated<ExtractedEntity>[]>(payload.entities);
+  const [savings, setSavings] = useState<Annotated<ExtractedSavings>[]>(payload.savings);
 
   // planBasics is absent on an import assembled before this feature existed,
   // or when derivePlanBasics had too little evidence to run at all. The Plan
@@ -308,13 +314,14 @@ export default function ReviewWizard({
     if (lifePolicies.length > 0) t.push("insurance");
     if (wills.length > 0) t.push("wills");
     if (entities.length > 0) t.push("entities");
+    if (savings.length > 0) t.push("savings");
     // Unconditional, like plan-basics: the advisor must be able to add a goal
     // for a household whose documents contained none. Placed last so the
     // strip order matches the commit order it depends on.
     t.push("goals");
     t.push("summary");
     return t;
-  }, [primary, spouse, dependents.length, accounts.length, incomes.length, expenses.length, liabilities.length, lifePolicies.length, wills.length, entities.length]);
+  }, [primary, spouse, dependents.length, accounts.length, incomes.length, expenses.length, liabilities.length, lifePolicies.length, wills.length, entities.length, savings.length]);
 
   const [currentTab, setCurrentTab] = useState<WizardTabId>(tabs[0] ?? "summary");
   const [committingTab, setCommittingTab] = useState<WizardTabId | null>(null);
@@ -344,12 +351,13 @@ export default function ReviewWizard({
         match: willMatches[i],
       })) as ImportPayload["wills"],
       entities,
+      savings,
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
       planBasics,
       goals,
     };
-  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, payload.warnings, payload.expenseSlots, planBasics, goals]);
+  }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, savings, payload.warnings, payload.expenseSlots, planBasics, goals]);
 
   const handleCommit = useCallback(
     async (tab: WizardTabId) => {
@@ -439,13 +447,14 @@ export default function ReviewWizard({
       lifePolicies: lifePolicies.length > 0,
       wills: wills.length > 0,
       entities: entities.length > 0,
+      savings: savings.length > 0,
       goals:
         goals.education.length + goals.homePurchases.length > 0 ||
         goals.riskTolerance.value != null,
     }),
     [primary, spouse, dependents.length, accounts.length, incomes.length,
      expenses.length, liabilities.length, lifePolicies.length, wills.length,
-     entities.length, goals],
+     entities.length, savings.length, goals],
   );
 
   // Completion is judged against the SAME required set the server uses, so the
@@ -470,6 +479,7 @@ export default function ReviewWizard({
       case "insurance": return lifePolicies.length;
       case "wills": return wills.length;
       case "entities": return entities.length;
+      case "savings": return savings.length;
       case "goals": return goals.education.length + goals.homePurchases.length;
       case "summary": return 0;
     }
@@ -661,6 +671,12 @@ export default function ReviewWizard({
           <ReviewStepEntities
             entities={entities}
             onChange={(e) => setEntities(e as Annotated<ExtractedEntity>[])}
+          />
+        )}
+        {currentTab === "savings" && (
+          <ReviewStepSavings
+            rows={savings}
+            onChange={(s) => setSavings(s as Annotated<ExtractedSavings>[])}
           />
         )}
         {currentTab === "goals" && (
