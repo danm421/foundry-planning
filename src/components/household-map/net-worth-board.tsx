@@ -184,7 +184,7 @@ export default function NetWorthBoard({
       {hasSpouse && (
         <>
           <div className="mx-auto h-3 w-[170px] rounded-b-lg border border-t-0 border-hair" />
-          <div className="mt-1 text-center text-[9px] tracking-wide text-ink-4">Jointly Held</div>
+          <div className="mt-1 text-center text-[10px] tracking-wide text-ink-3">Jointly Held</div>
         </>
       )}
       <div className="mx-auto h-3 w-0 border-l border-hair" />
@@ -205,7 +205,7 @@ export default function NetWorthBoard({
           const subtotal = cards.reduce((s, c) => s + c.value, 0);
           return (
             <div key={col} data-testid={`column-${col}`} className="flex flex-col gap-1.5">
-              <div className="mb-0.5 text-center text-[9px] font-bold uppercase tracking-wider text-ink-4">
+              <div className="mb-0.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                 {labelFor(col)}
               </div>
               {cards.map(renderCard)}
@@ -229,7 +229,7 @@ export default function NetWorthBoard({
       {/* Step 3 — tray: entity/business/other-family-member-owned items */}
       {trayItems.length > 0 && (
         <div data-testid="tray" className="mt-3 border-t border-dashed border-hair pt-2.5">
-          <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-ink-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
             Held by trusts, businesses &amp; other family members
           </div>
           <div className="grid grid-cols-3 gap-1.5">

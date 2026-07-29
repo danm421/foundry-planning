@@ -79,7 +79,7 @@ export default function CashFlowBoard({
         return (
           <div key={band.key} data-testid={`band-${band.key}`} className="flex flex-col gap-1.5">
             <div className={`grid ${gridCols} gap-2`}>
-              <div className="flex items-center text-[9px] font-bold uppercase tracking-wider text-ink-4">
+              <div className="flex items-center text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                 {band.label}
               </div>
               {COLUMNS.map((col) => {
@@ -114,7 +114,7 @@ export default function CashFlowBoard({
                 data-testid={`band-${band.key}-tray`}
                 className="flex flex-col gap-1.5 border-t border-dashed border-hair pt-1.5"
               >
-                <div className="text-[9px] font-bold uppercase tracking-wider text-ink-4">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                   Held by trusts, businesses &amp; other family members
                 </div>
                 {trayItems.map((c) => (
