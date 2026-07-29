@@ -26,8 +26,28 @@ export interface InlineAmountProps {
   amount: number;
   onSave: (next: number) => Promise<boolean>;
   label: string;
-  mode?: "currency" | "percent";
+  /**
+   * `"plain"` renders a bare number with no affix and no thousands grouping —
+   * added for the Goals board's life-expectancy age, where a "$" or "%" would be
+   * actively wrong and `formatDisplay`'s grouping would turn 110 into "110" only
+   * by luck. Read-mode text still comes from `format` when one is passed.
+   */
+  mode?: "currency" | "percent" | "plain";
   className?: string;
+  /**
+   * Overrides the OPEN input's wrapper width. The 104px default is sized for a
+   * currency amount; an age needs a third of that, and on the Goals board a
+   * 104px field is wider than the card's whole detail line.
+   */
+  wrapperClassName?: string;
+  /**
+   * What the field holds, for the accessible names ("Edit {noun} for {label}" on
+   * the trigger, "{Noun} for {label}" on the input). Defaults to `"amount"`,
+   * which reproduces the original strings exactly — the Goals board's
+   * life-expectancy editor holds an age, and calling that an "amount" to a screen
+   * reader is simply wrong.
+   */
+  noun?: string;
   /**
    * Overrides the READ-mode display string only; the open input always shows the
    * raw number. Exists because the Household Map's Cash Flow board edits the
@@ -52,14 +72,33 @@ const currencyFmt = (n: number) =>
   }).format(n);
 const percentFmt = (n: number) => `${n.toFixed(2)}%`;
 
+/**
+ * Everything that varies by mode, in one table, so a fourth mode is a data row
+ * rather than another level of nesting in two unrelated expressions.
+ *
+ * `inputPad` is asymmetric on purpose: it has to clear whichever affix is
+ * rendered, so percent mirrors currency rather than reusing `px-1.5`, which
+ * would let a 4-character rate run under the `%`.
+ */
+const MODES = {
+  currency: { read: currencyFmt, inputPad: "pl-4 pr-1.5" },
+  percent: { read: percentFmt, inputPad: "pl-1.5 pr-5" },
+  plain: { read: String, inputPad: "px-1.5" },
+} as const;
+
 export function InlineAmount({
   amount,
   onSave,
   label,
   mode = "currency",
   className,
+  wrapperClassName,
+  noun = "amount",
   format,
 }: InlineAmountProps) {
+  // Capitalised for the input, bare for the trigger — so the default `"amount"`
+  // still yields the original "Edit amount for X" / "Amount for X" pair.
+  const nounCap = noun.charAt(0).toUpperCase() + noun.slice(1);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -111,16 +150,16 @@ export function InlineAmount({
           className ??
           "min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-ink hover:bg-card-hover hover:ring-1 hover:ring-inset hover:ring-hair-2"
         }
-        aria-label={`Edit amount for ${label}`}
+        aria-label={`Edit ${noun} for ${label}`}
       >
-        {format ? format(amount) : mode === "percent" ? percentFmt(amount) : currencyFmt(amount)}
+        {(format ?? MODES[mode].read)(amount)}
       </button>
     );
   }
 
   return (
     <div
-      className="relative w-[104px]"
+      className={wrapperClassName ?? "relative w-[104px]"}
       // Same pairing as the trigger above: clicking into the open input must
       // not navigate the enclosing `<Link>`. `preventDefault` on a CLICK does
       // not block focus (focus is decided on mousedown), so the field still
@@ -151,13 +190,8 @@ export function InlineAmount({
             setEditing(false);
           }
         }}
-        // Padding is asymmetric on purpose: it has to clear whichever affix is
-        // rendered, so percent mirrors currency rather than reusing `px-1.5`,
-        // which would let a 4-character rate run under the `%`.
-        className={`w-full rounded-sm border border-hair-2 bg-card-2 py-0.5 text-right text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60 ${
-          mode === "currency" ? "pl-4 pr-1.5" : "pl-1.5 pr-5"
-        }`}
-        aria-label={`Amount for ${label}`}
+        className={`w-full rounded-sm border border-hair-2 bg-card-2 py-0.5 text-right text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60 ${MODES[mode].inputPad}`}
+        aria-label={`${nounCap} for ${label}`}
       />
       {mode === "percent" && (
         <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-ink-3">

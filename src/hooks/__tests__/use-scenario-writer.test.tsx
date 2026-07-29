@@ -206,6 +206,95 @@ describe("useScenarioWriter — scenario mode", () => {
   });
 });
 
+// A batch exists because a scenario_change row targets exactly ONE targetKind,
+// so a single logical change spanning two kinds (the Goals board's life
+// expectancy: `client.planEndAge` + `planSettings.planEndYear`) is two rows.
+describe("useScenarioWriter — batched edits", () => {
+  const CLIENT_EDIT = {
+    op: "edit",
+    targetKind: "client",
+    targetId: CLIENT_ID,
+    desiredFields: { lifeExpectancy: 96 },
+  } as const;
+  const PLAN_SETTINGS_EDIT = {
+    op: "edit",
+    targetKind: "plan_settings",
+    targetId: CLIENT_ID,
+    desiredFields: { planEndYear: 2068 },
+  } as const;
+
+  it("scenario mode POSTs one row per edit, IN ORDER", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit([CLIENT_EDIT, PLAN_SETTINGS_EDIT], {
+      url: `/api/clients/${CLIENT_ID}`,
+      method: "PUT",
+      body: { lifeExpectancy: 96 },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).targetKind).toBe("client");
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).targetKind).toBe("plan_settings");
+  });
+
+  // DISCRIMINATING. Refreshing per-edit would re-render the page against a
+  // HALF-written batch — the new life expectancy beside the old horizon, which
+  // is the exact disagreement the batch exists to avoid.
+  it("scenario mode refreshes ONCE for the whole batch, not once per edit", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    await result.current.submit([CLIENT_EDIT, PLAN_SETTINGS_EDIT], {
+      url: `/api/clients/${CLIENT_ID}`,
+      method: "PUT",
+      body: { lifeExpectancy: 96 },
+    });
+
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // Not atomic — the route has no multi-kind request. If the first row fails
+  // there is nothing to keep consistent, so the second must not be sent:
+  // storing a horizon for a life expectancy that was never written is strictly
+  // worse than storing neither.
+  it("scenario mode stops at the first failure and reports it", async () => {
+    setUrl(`scenario=${SCENARIO_ID}`);
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit([CLIENT_EDIT, PLAN_SETTINGS_EDIT], {
+      url: `/api/clients/${CLIENT_ID}`,
+      method: "PUT",
+      body: { lifeExpectancy: 96 },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  // `baseFallback` is the base-mode equivalent of the WHOLE batch, not of one
+  // edit — for life expectancy the PUT route does the same fan-out server-side.
+  // One PUT per edit would re-assert the horizon the route already owns.
+  it("base mode fires the single fallback ONCE regardless of batch size", async () => {
+    setUrl("");
+    const { result } = renderHook(() => useScenarioWriter(CLIENT_ID));
+
+    const res = await result.current.submit([CLIENT_EDIT, PLAN_SETTINGS_EDIT], {
+      url: `/api/clients/${CLIENT_ID}`,
+      method: "PUT",
+      body: { lifeExpectancy: 96 },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`/api/clients/${CLIENT_ID}`);
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("useScenarioWriter — scenarioActive flag", () => {
   it("is false when no scenario param set", () => {
     setUrl("");

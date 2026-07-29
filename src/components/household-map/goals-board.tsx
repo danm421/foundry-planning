@@ -1,3 +1,6 @@
+"use client";
+
+import { InlineAmount } from "@/components/forms/inline-amount";
 import { ageForYear } from "@/lib/age-year";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import type { BoardCallbacks, HouseholdMapProps } from "@/lib/household-map/types";
@@ -14,7 +17,10 @@ const KIND_STYLE: Record<GoalKind, { border: string; label: string }> = {
   purchase: { border: "var(--color-crit)", label: "Purchase" },
   household: { border: "var(--color-cat-transactions)", label: "Household" },
   retirement: { border: "var(--color-cat-income)", label: "Retirement" },
-  plan_end: { border: "var(--color-cat-life)", label: "Plan end" },
+  // NOT "Plan end". There are now two of these cards — one per person — and only
+  // the later of the two is the plan's end. Labelling both "Plan end" is what
+  // made the single-card version read as correct for so long.
+  life_expectancy: { border: "var(--color-cat-life)", label: "Life expectancy" },
 };
 
 /** Accent-border side + text alignment per card side. Each value is a
@@ -32,15 +38,26 @@ interface GoalCardProps {
   /** Set only when the card is editable — a life milestone (expenseId null)
    *  or a read-only viewer never gets one. */
   onClick?: () => void;
+  /**
+   * Replaces the static `detail` line with interactive content (the
+   * life-expectancy age editor).
+   *
+   * Only ever set on a card that has NO `onClick`, and that is a hard constraint
+   * rather than a convention: a card-level `<button>` may not contain the
+   * editor's own `<button>`. Life-expectancy milestones carry `expenseId: null`,
+   * so `clickHandlerFor` returns undefined for them and the two can never both
+   * be set.
+   */
+  detailSlot?: React.ReactNode;
 }
 
 /**
  * One goal card. Editable goals (expenseId set) render as a button that opens
  * the quick-edit drawer for the underlying expense; life milestones
- * (expenseId null) render as a plain, non-interactive div — there is nothing
- * to edit.
+ * (expenseId null) render as a plain div — with, for the two life-expectancy
+ * cards, an inline age editor inside it.
  */
-function GoalCard({ goal, side, onClick }: GoalCardProps) {
+function GoalCard({ goal, side, onClick, detailSlot }: GoalCardProps) {
   const style = KIND_STYLE[goal.kind];
   const className = `rounded-lg bg-card-2 py-2 ${SIDE_LAYOUT[side]}`;
   const body = (
@@ -53,7 +70,8 @@ function GoalCard({ goal, side, onClick }: GoalCardProps) {
       {goal.forFamilyMemberName ? (
         <div className="mt-0.5 text-[10px] text-ink-3">for {goal.forFamilyMemberName}</div>
       ) : null}
-      {goal.detail ? <div className="mt-0.5 text-[10px] text-ink-3">{goal.detail}</div> : null}
+      {detailSlot ??
+        (goal.detail ? <div className="mt-0.5 text-[10px] text-ink-3">{goal.detail}</div> : null)}
     </>
   );
 
@@ -102,6 +120,7 @@ export default function GoalsBoard({
   canEdit,
   expenseRows,
   onEditGoalExpense,
+  onSaveLifeExpectancy,
 }: HouseholdMapProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
    *  from `new Date()` inside this component, which would drift a Jan-1 DOB
@@ -132,6 +151,46 @@ export default function GoalsBoard({
     return () => onEditGoalExpense?.(g.expenseId!, g.side);
   }
 
+  /**
+   * The life-expectancy card's detail line, with the age as a click-to-edit
+   * field. Returns undefined for every other card, and for a life-expectancy
+   * card the viewer may not write — `GoalCard` then falls back to the static
+   * `detail` string, so the age is still READ everywhere it used to be.
+   *
+   * Gated on the writer being present as well as on `canEdit`, matching the Cash
+   * Flow board: a board rendered without `onSaveLifeExpectancy` must not show a
+   * field that silently discards the edit.
+   *
+   * `inline-flex` rather than `flex` so the line inherits the card's own text
+   * alignment (right of the spine for the client, left for the spouse) instead of
+   * needing a per-side justify class.
+   */
+  function detailSlotFor(g: MapGoal): React.ReactNode | undefined {
+    const le = g.lifeExpectancy;
+    if (!le || !canEdit || !onSaveLifeExpectancy) return undefined;
+    const firstName = le.owner === "client" ? people.client.firstName : people.spouse?.firstName;
+    return (
+      <div className="mt-0.5 text-[10px] text-ink-3">
+        <span className="inline-flex items-center gap-1 align-middle">
+          age
+          <InlineAmount
+            mode="plain"
+            amount={le.age}
+            noun="life expectancy"
+            label={firstName ?? g.title}
+            onSave={(next) => onSaveLifeExpectancy(le.owner, next)}
+            wrapperClassName="relative w-[46px]"
+            className="rounded-sm px-1 tabular text-[10px] text-ink-2 underline decoration-dotted underline-offset-2 hover:bg-card-hover hover:text-ink"
+          />
+          {/* Says out loud that nobody chose this number — the projection is
+              already running to it (the engine's `spouseLifeExpectancy ?? 95`),
+              which is precisely why it should not look like a decision. */}
+          {le.assumed ? <span className="text-ink-4">· assumed</span> : null}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="relative py-1">
       <div className="absolute inset-y-0 left-1/2 border-l border-dashed border-hair" />
@@ -145,28 +204,37 @@ export default function GoalsBoard({
             >
               <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
               <div className="w-full max-w-[60%]">
-                <GoalCard goal={g} side="joint" onClick={clickHandlerFor(g)} />
+                <GoalCard
+                  goal={g}
+                  side="joint"
+                  onClick={clickHandlerFor(g)}
+                  detailSlot={detailSlotFor(g)}
+                />
               </div>
             </div>
           );
         }
+        // Exactly one side renders the card — `joint` returned above, so `g.side`
+        // is client-or-spouse here. Built once rather than twice so the two
+        // branches cannot drift, and so `clickHandlerFor`/`detailSlotFor` run
+        // once per row instead of once per grid cell.
+        const card = (
+          <GoalCard
+            goal={g}
+            side={g.side === "client" ? "left" : "right"}
+            onClick={clickHandlerFor(g)}
+            detailSlot={detailSlotFor(g)}
+          />
+        );
         return (
           <div
             key={g.id}
             data-testid={`goal-row-${g.id}`}
             className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
           >
-            {g.side === "client" ? (
-              <GoalCard goal={g} side="left" onClick={clickHandlerFor(g)} />
-            ) : (
-              <div />
-            )}
+            {g.side === "client" ? card : <div />}
             <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-            {g.side === "spouse" ? (
-              <GoalCard goal={g} side="right" onClick={clickHandlerFor(g)} />
-            ) : (
-              <div />
-            )}
+            {g.side === "spouse" ? card : <div />}
           </div>
         );
       })}
