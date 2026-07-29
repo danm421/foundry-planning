@@ -249,6 +249,76 @@
       "phaseInRangeMfj": 100000,
       "phaseInRangeOther": 50000
     },
+    "rothPhaseout": {
+      "startMfj": 204000,
+      "endMfj": 214000,
+      "startSingle": 129000,
+      "endSingle": 144000
+    },
+    "iraDeduct": {
+      "coveredStartMfj": 109000,
+      "coveredEndMfj": 129000,
+      "coveredStartSingle": 68000,
+      "coveredEndSingle": 78000,
+      "spousalStartMfj": 204000,
+      "spousalEndMfj": 214000
+    },
+    "studentLoan": {
+      "maxDeduction": 2500,
+      "startMfj": 145000,
+      "endMfj": 175000,
+      "startSingle": 70000,
+      "endSingle": 85000
+    },
+    "ctc": {
+      "perChild": 2000,
+      "refundableMax": 1500,
+      "odcPerDependent": 500
+    },
+    "saversCredit": {
+      "mfj": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 41000
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 44000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 68000
+        }
+      ],
+      "single": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 20500
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 22000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 34000
+        }
+      ],
+      "hoh": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 30750
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 33000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 51000
+        }
+      ]
+    },
     "contribLimits": {
       "ira401kElective": 20500,
       "ira401kCatchup50": 6500,
@@ -511,6 +581,76 @@
       "thresholdSingleHohMfs": 182100,
       "phaseInRangeMfj": 100000,
       "phaseInRangeOther": 50000
+    },
+    "rothPhaseout": {
+      "startMfj": 218000,
+      "endMfj": 228000,
+      "startSingle": 138000,
+      "endSingle": 153000
+    },
+    "iraDeduct": {
+      "coveredStartMfj": 116000,
+      "coveredEndMfj": 136000,
+      "coveredStartSingle": 73000,
+      "coveredEndSingle": 83000,
+      "spousalStartMfj": 218000,
+      "spousalEndMfj": 228000
+    },
+    "studentLoan": {
+      "maxDeduction": 2500,
+      "startMfj": 155000,
+      "endMfj": 185000,
+      "startSingle": 75000,
+      "endSingle": 90000
+    },
+    "ctc": {
+      "perChild": 2000,
+      "refundableMax": 1600,
+      "odcPerDependent": 500
+    },
+    "saversCredit": {
+      "mfj": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 43500
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 47500
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 73000
+        }
+      ],
+      "single": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 21750
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 23750
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 36500
+        }
+      ],
+      "hoh": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 32625
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 35625
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 54750
+        }
+      ]
     },
     "contribLimits": {
       "ira401kElective": 22500,
@@ -775,6 +915,76 @@
       "phaseInRangeMfj": 100000,
       "phaseInRangeOther": 50000
     },
+    "rothPhaseout": {
+      "startMfj": 230000,
+      "endMfj": 240000,
+      "startSingle": 146000,
+      "endSingle": 161000
+    },
+    "iraDeduct": {
+      "coveredStartMfj": 123000,
+      "coveredEndMfj": 143000,
+      "coveredStartSingle": 77000,
+      "coveredEndSingle": 87000,
+      "spousalStartMfj": 230000,
+      "spousalEndMfj": 240000
+    },
+    "studentLoan": {
+      "maxDeduction": 2500,
+      "startMfj": 165000,
+      "endMfj": 195000,
+      "startSingle": 80000,
+      "endSingle": 95000
+    },
+    "ctc": {
+      "perChild": 2000,
+      "refundableMax": 1700,
+      "odcPerDependent": 500
+    },
+    "saversCredit": {
+      "mfj": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 46000
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 50000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 76500
+        }
+      ],
+      "single": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 23000
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 25000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 38250
+        }
+      ],
+      "hoh": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 34500
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 37500
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 57375
+        }
+      ]
+    },
     "contribLimits": {
       "ira401kElective": 23000,
       "ira401kCatchup50": 7500,
@@ -1038,6 +1248,76 @@
       "phaseInRangeMfj": 100000,
       "phaseInRangeOther": 50000
     },
+    "rothPhaseout": {
+      "startMfj": 236000,
+      "endMfj": 246000,
+      "startSingle": 150000,
+      "endSingle": 165000
+    },
+    "iraDeduct": {
+      "coveredStartMfj": 126000,
+      "coveredEndMfj": 146000,
+      "coveredStartSingle": 79000,
+      "coveredEndSingle": 89000,
+      "spousalStartMfj": 236000,
+      "spousalEndMfj": 246000
+    },
+    "studentLoan": {
+      "maxDeduction": 2500,
+      "startMfj": 170000,
+      "endMfj": 200000,
+      "startSingle": 85000,
+      "endSingle": 100000
+    },
+    "ctc": {
+      "perChild": 2200,
+      "refundableMax": 1700,
+      "odcPerDependent": 500
+    },
+    "saversCredit": {
+      "mfj": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 47500
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 51000
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 79000
+        }
+      ],
+      "single": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 23750
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 25500
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 39500
+        }
+      ],
+      "hoh": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 35625
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 38250
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 59250
+        }
+      ]
+    },
     "contribLimits": {
       "ira401kElective": 23500,
       "ira401kCatchup50": 7500,
@@ -1296,10 +1576,80 @@
       "mfs": 125000
     },
     "qbi": {
-      "thresholdMfj": 405000,
+      "thresholdMfj": 403550,
       "thresholdSingleHohMfs": 201775,
       "phaseInRangeMfj": 150000,
       "phaseInRangeOther": 75000
+    },
+    "rothPhaseout": {
+      "startMfj": 242000,
+      "endMfj": 252000,
+      "startSingle": 153000,
+      "endSingle": 168000
+    },
+    "iraDeduct": {
+      "coveredStartMfj": 129000,
+      "coveredEndMfj": 149000,
+      "coveredStartSingle": 81000,
+      "coveredEndSingle": 91000,
+      "spousalStartMfj": 242000,
+      "spousalEndMfj": 252000
+    },
+    "studentLoan": {
+      "maxDeduction": 2500,
+      "startMfj": 175000,
+      "endMfj": 205000,
+      "startSingle": 85000,
+      "endSingle": 100000
+    },
+    "ctc": {
+      "perChild": 2200,
+      "refundableMax": 1700,
+      "odcPerDependent": 500
+    },
+    "saversCredit": {
+      "mfj": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 48500
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 52500
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 80500
+        }
+      ],
+      "single": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 24250
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 26250
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 40250
+        }
+      ],
+      "hoh": [
+        {
+          "rate": 0.5,
+          "agiCeiling": 36375
+        },
+        {
+          "rate": 0.2,
+          "agiCeiling": 39375
+        },
+        {
+          "rate": 0.1,
+          "agiCeiling": 60375
+        }
+      ]
     },
     "contribLimits": {
       "ira401kElective": 24500,

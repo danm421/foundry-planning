@@ -63,6 +63,45 @@ describe("resolveReportLayout", () => {
     expect(out[0].visible).toBe(true);
   });
 
+  it("[Task 13] appends thresholds as visible to a layout stored before this release", () => {
+    // The pre-release canonical id list, spelled out literally (NOT derived
+    // from REPORT_KEYS minus "thresholds") so this test doesn't silently
+    // follow any future change to the canonical list — it pins the actual
+    // shape an existing advisor's stored jsonb layout has today.
+    const preReleaseIds = [
+      "portfolio", "cashflow", "taxBracket", "lifeInsurance", "estate",
+      "monteCarlo", "education", "balanceSheet", "summaries",
+    ];
+    const stored = preReleaseIds.map((id) => ({ id, visible: true }));
+    const out = resolveReportLayout(stored);
+    expect(out.map((e) => e.id)).toEqual([...preReleaseIds, "thresholds"]);
+    expect(out.find((e) => e.id === "thresholds")!.visible).toBe(true);
+  });
+
+  it("[Task 13 / F2] a fresh advisor's canonical order matches an existing advisor's reconciled order — the actual R3 invariant", () => {
+    // rule 3 (`for (const k of canonical) if (!seen.has(k)) out.push(...)`)
+    // appends EVERY missing canonical id at the end of the STORED array,
+    // regardless of that id's index in `REPORT_KEYS` — so a literal
+    // `toEqual([...preReleaseIds, "thresholds"])` assertion stays green even
+    // if "thresholds" were moved to sit next to "taxBracket" in REPORT_KEYS
+    // (and REPORT_TABS along with it, keeping the drift guard green too).
+    // R3's actual requirement is that a brand-new advisor (canonical order,
+    // from a null/empty stored layout) and an existing advisor (reconciled
+    // order, from a pre-release stored layout) see the identical strip. This
+    // assertion states that requirement directly, so it goes red the moment
+    // "thresholds" — or any canonical id — sits somewhere in REPORT_KEYS
+    // other than where rule 3 would place it for every pre-release advisor:
+    // the end.
+    const preReleaseIds = [
+      "portfolio", "cashflow", "taxBracket", "lifeInsurance", "estate",
+      "monteCarlo", "education", "balanceSheet", "summaries",
+    ];
+    const preReleaseStored = preReleaseIds.map((id) => ({ id, visible: true }));
+    const freshAdvisorOrder = resolveReportLayout(null).map((e) => e.id);
+    const existingAdvisorOrder = resolveReportLayout(preReleaseStored).map((e) => e.id);
+    expect(existingAdvisorOrder).toEqual(freshAdvisorOrder);
+  });
+
   it("treats a corrupted non-array stored value as empty → canonical defaults", () => {
     // A jsonb row that somehow isn't an array must not throw the for…of.
     const out = resolveReportLayout({ nope: true } as never);

@@ -21,11 +21,17 @@ export const RATIO_SHIFT_POINTS = 0.1;
 /** A 401k/403b counts as Roth-designated when its BoY Roth slice exceeds this
  *  fraction of beginning value. */
 export const ROTH_SLICE_MIN = 0.05;
-/** Label for the residual tax line — additive terms the engine folds into
- *  flow.totalTax with no dedicated field (today: SECA self-employment tax). Shared
- *  by the COMPOSITION (subjects/tax.ts) and DELTA (subjects/tax-diff.ts) layers so
- *  the two never drift. */
-export const RESIDUAL_TAX_LINE_LABEL = "Self-employment tax and other federal adjustments";
+/** Label for the residual tax line — every term folded into flow.totalTax with no
+ *  dedicated flow field, in EITHER direction: SECA self-employment tax (positive)
+ *  and netted federal credits (negative). Shared by the COMPOSITION
+ *  (subjects/tax.ts) and DELTA (subjects/tax-diff.ts) layers so the two never drift.
+ *
+ *  Leads with the GENERIC term deliberately. The old wording put self-employment
+ *  tax first, which misread badly for the population that actually sees this line
+ *  most often: a credit-claiming household with ZERO self-employment income, shown
+ *  a negative line named for a tax it does not pay. SECA stays in the name — it is
+ *  still the positive-direction cause — but as the parenthetical, not the headline. */
+export const RESIDUAL_TAX_LINE_LABEL = "Other federal adjustments (incl. self-employment tax)";
 
 export const money = (n: number) =>
   `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;

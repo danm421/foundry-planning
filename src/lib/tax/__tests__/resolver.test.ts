@@ -35,6 +35,12 @@ function makeRow(year: number): TaxYearParameters {
     niitRate: 0.038,
     niitThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
     qbi: { thresholdMfj: 405000, thresholdSingleHohMfs: 201775, phaseInRangeMfj: 150000, phaseInRangeOther: 75000 },
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: 24500,
       ira401kCatchup50: 8000,
@@ -112,5 +118,104 @@ describe("createTaxResolver", () => {
     const a = r.getYear(2030);
     const b = r.getYear(2030);
     expect(a).toBe(b); // same reference
+  });
+});
+
+// tax-thresholds-credits Task 3: the five new threshold/credit parameter
+// blocks must inflate forward for out-of-table years, same as every other
+// indexed field. See resolver.ts inflateParams — these were previously a
+// straight pass-through (TODO now closed for these five; Medicare premiums
+// remain the one genuinely open gap).
+describe("createTaxResolver — threshold/credit inflation", () => {
+  function makeRowWithThresholds(year: number): TaxYearParameters {
+    return {
+      ...makeRow(year),
+      rothPhaseout: { startMfj: 230000, endMfj: 240000, startSingle: 145000, endSingle: 160000 },
+      iraDeduct: {
+        coveredStartMfj: 125000, coveredEndMfj: 145000,
+        coveredStartSingle: 78000, coveredEndSingle: 88000,
+        spousalStartMfj: 230000, spousalEndMfj: 240000,
+      },
+      studentLoan: { maxDeduction: 2500, startMfj: 170000, endMfj: 200000, startSingle: 80000, endSingle: 95000 },
+      ctc: { perChild: 2000, refundableMax: 1700, odcPerDependent: 500 },
+      saversCredit: { mfj: [{ rate: 0.5, agiCeiling: 40000 }], single: [], hoh: [] },
+    };
+  }
+
+  const seededRows = [makeRowWithThresholds(2026)];
+  // 2030 = 4 years forward @ 2.5% → generalFactor ≈ 1.1038128906249995
+  const rates = { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 };
+
+  it("inflates the Roth phase-out range and floors to $1,000", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2030);
+    expect(out.params.rothPhaseout).toEqual({
+      startMfj: 253000, endMfj: 264000, startSingle: 160000, endSingle: 176000,
+    });
+  });
+
+  it("inflates the IRA-deduction covered/spousal ranges and floors to $1,000", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2030);
+    expect(out.params.iraDeduct).toEqual({
+      coveredStartMfj: 137000, coveredEndMfj: 160000,
+      coveredStartSingle: 86000, coveredEndSingle: 97000,
+      spousalStartMfj: 253000, spousalEndMfj: 264000,
+    });
+  });
+
+  it("inflates the student-loan range bounds but not maxDeduction", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2030);
+    expect(out.params.studentLoan).toEqual({
+      maxDeduction: 2500, // IRC 221(b)(1) — fixed since inception, never indexed
+      startMfj: 187000, endMfj: 220000, startSingle: 88000, endSingle: 104000,
+    });
+  });
+
+  it("inflates CTC perChild/refundableMax but not odcPerDependent", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2030);
+    expect(out.params.ctc).toEqual({
+      perChild: 2200, refundableMax: 1800,
+      odcPerDependent: 500, // IRC 24(h)(4) — fixed, never indexed
+    });
+  });
+
+  it("passes the Saver's Credit tiers through unchanged", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2030);
+    expect(out.params.saversCredit).toEqual({
+      mfj: [{ rate: 0.5, agiCeiling: 40000 }], single: [], hoh: [],
+    });
+  });
+
+  it("keeps null threshold/credit fields null, not NaN, for an out-of-table year", () => {
+    // makeRow() seeds all 21 new columns as null — the live state of the dev
+    // DB today. An unguarded floorToStep(null * f, step) would produce NaN;
+    // infN() must short-circuit instead.
+    const r = createTaxResolver([makeRow(2026)], rates);
+    const out = r.getYear(2030);
+    expect(out.params.rothPhaseout).toEqual({
+      startMfj: null, endMfj: null, startSingle: null, endSingle: null,
+    });
+    expect(out.params.iraDeduct).toEqual({
+      coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+      coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null,
+    });
+    expect(out.params.studentLoan).toEqual({
+      maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null,
+    });
+    expect(out.params.ctc).toEqual({ perChild: null, refundableMax: null, odcPerDependent: null });
+  });
+
+  it("returns an exact-match seeded year's threshold/credit fields untouched", () => {
+    const r = createTaxResolver(seededRows, rates);
+    const out = r.getYear(2026);
+    expect(out.params.rothPhaseout).toEqual(seededRows[0].rothPhaseout);
+    expect(out.params.iraDeduct).toEqual(seededRows[0].iraDeduct);
+    expect(out.params.studentLoan).toEqual(seededRows[0].studentLoan);
+    expect(out.params.ctc).toEqual(seededRows[0].ctc);
+    expect(out.params.saversCredit).toEqual(seededRows[0].saversCredit);
   });
 });

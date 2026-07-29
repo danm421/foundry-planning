@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { familyMembers } from "@/db/schema";
+import { familyMembers, dependentOverrideEnum } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -25,8 +25,15 @@ export async function PUT(
     const body = await request.json();
     const {
       firstName, lastName, relationship, dateOfBirth, notes,
-      domesticPartner, inheritanceClassOverride,
+      domesticPartner, inheritanceClassOverride, claimedAsDependent,
     } = body;
+
+    if (claimedAsDependent !== undefined && !dependentOverrideEnum.enumValues.includes(claimedAsDependent)) {
+      return NextResponse.json(
+        { error: "claimedAsDependent must be 'auto', 'yes', or 'no'" },
+        { status: 400 },
+      );
+    }
 
     const [updated] = await db
       .update(familyMembers)
@@ -38,6 +45,7 @@ export async function PUT(
         ...(notes !== undefined && { notes: notes ?? null }),
         ...(domesticPartner !== undefined && { domesticPartner: !!domesticPartner }),
         ...(inheritanceClassOverride !== undefined && { inheritanceClassOverride }),
+        ...(claimedAsDependent !== undefined && { claimedAsDependent }),
         updatedAt: new Date(),
       })
       .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)))

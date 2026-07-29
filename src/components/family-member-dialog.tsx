@@ -125,6 +125,10 @@ export default function FamilyMemberDialog({
             notes: body.notes,
             domesticPartner: body.domesticPartner,
             inheritanceClassOverride: body.inheritanceClassOverride,
+            // This dialog doesn't carry the field (see family-view.tsx's row
+            // select) — preserve the existing override on edit; default to
+            // the schema's "auto" on create, matching the DB column default.
+            claimedAsDependent: isEdit ? (editing!.claimedAsDependent ?? "auto") : "auto",
           }
         : ((await res.json()) as FamilyMember);
       onSaved(saved, isEdit ? "edit" : "create");

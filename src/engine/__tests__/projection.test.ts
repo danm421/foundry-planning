@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities } from "./fixtures";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
@@ -552,6 +552,12 @@ const FIXTURE_TAX_PARAMS: TaxYearParameters[] = [{
     phaseInRangeMfj: 100000,
     phaseInRangeOther: 50000,
   },
+  rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+  iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+               coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+  studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+  ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+  saversCredit: { mfj: [], single: [], hoh: [] },
   contribLimits: {
     ira401kElective: 23500,
     ira401kCatchup50: 7500,
@@ -657,6 +663,99 @@ describe("projection — bracket/flat tax routing", () => {
     expect(bd).toBeDefined();
     expect(bd!.aboveLine.retirementContributions).toBe(23500);
     expect(bd!.aboveLine.total).toBe(bd!.aboveLine.retirementContributions + bd!.aboveLine.taggedExpenses + bd!.aboveLine.manualEntries);
+  });
+
+  it("routes student-loan interest into above-line deductions", () => {
+    // The student loan mirrors the fixture mortgage's balance/rate/term/start,
+    // so it accrues EXACTLY the interest the mortgage does. The mortgage's
+    // interest is what surfaces as belowLine.interestPaid (the student loan is
+    // excluded from that itemized figure by isInterestDeductible: false), which
+    // gives us the loan's gross accrual without hand-amortizing.
+    //
+    // FIXTURE_TAX_PARAMS leaves every `studentLoan` column null — the state of
+    // the DB today. Unseeded is NOT benign here: the two halves resolve
+    // DIFFERENTLY on purpose. The cap falls back to IRC 221(b)(1)'s statutory
+    // $2,500 (fixed, never indexed, so a null can only mean "not seeded"),
+    // while the inflation-indexed phase-out range has no constant to fall back
+    // to and so still does not gate. Net unseeded behaviour, asserted below:
+    // CAPPED at $2,500, NOT phased out.
+    const studentLoan = {
+      ...sampleLiabilities[0],
+      id: "liab-student",
+      name: "Student Loan",
+      liabilityType: "student" as const,
+      isInterestDeductible: false,
+    };
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+      liabilities: [...sampleLiabilities, studentLoan],
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const bd = years[0].deductionBreakdown;
+    expect(bd).toBeDefined();
+    const accruedInterest = bd!.belowLine.interestPaid;
+    // ~19,181 of accrual — comfortably over the ceiling, so the cap binds and
+    // the assertion below would catch a regression back to "unseeded = uncapped".
+    expect(accruedInterest).toBeGreaterThan(2500);
+    expect(bd!.aboveLine.studentLoanInterest).toBe(2500);
+    // The named components still sum to the total — `studentLoanInterest` is
+    // the fourth of them. The preceding test pins the same invariant for a
+    // household with no student loan.
+    expect(bd!.aboveLine.total).toBe(
+      bd!.aboveLine.retirementContributions
+        + bd!.aboveLine.taggedExpenses
+        + bd!.aboveLine.manualEntries
+        + bd!.aboveLine.studentLoanInterest
+    );
+  });
+
+  it("never deducts the same student-loan interest twice", () => {
+    // A liability flagged BOTH liabilityType: "student" AND isInterestDeductible
+    // must be deducted once — above the line — and never also as Schedule A
+    // interest. Above-line and itemized are mutually exclusive for the same
+    // interest dollars (IRC 221 vs the Schedule A mortgage-interest deduction).
+    //
+    // Control run: the same fixture with the mortgage ALONE, giving one loan's
+    // year-1 interest without hand-amortizing (and robust to the engine's
+    // accrual convention). The student loan is a clone of that mortgage, so it
+    // accrues exactly the same interest — which makes the arithmetic explicit:
+    // itemized must be 1x the control, not 2x.
+    const bracketSettings = {
+      ...basePlanSettings,
+      taxEngineMode: "bracket" as const,
+      planStartYear: 2026,
+      planEndYear: 2026,
+    };
+    const controlYears = runProjection({
+      ...buildClientData({ planSettings: bracketSettings }),
+      taxYearRows: FIXTURE_TAX_PARAMS,
+    });
+    const mortgageInterest = controlYears[0].deductionBreakdown!.belowLine.interestPaid;
+    expect(mortgageInterest).toBeGreaterThan(0);
+
+    const deductibleStudentLoan = {
+      ...sampleLiabilities[0],
+      id: "liab-student-deductible",
+      name: "Student Loan",
+      liabilityType: "student" as const,
+      isInterestDeductible: true,
+    };
+    const years = runProjection({
+      ...buildClientData({
+        planSettings: bracketSettings,
+        liabilities: [...sampleLiabilities, deductibleStudentLoan],
+      }),
+      taxYearRows: FIXTURE_TAX_PARAMS,
+    });
+    const bd = years[0].deductionBreakdown!;
+    // Above the line: the student loan's interest, at the statutory ceiling
+    // (FIXTURE_TAX_PARAMS leaves maxDeduction null, which falls back to $2,500).
+    expect(mortgageInterest).toBeGreaterThan(2500);
+    expect(bd.aboveLine.studentLoanInterest).toBe(2500);
+    // Itemized: the MORTGAGE's interest only. Without the student-type
+    // exclusion at the call site this would be 2x `mortgageInterest`. Note the
+    // cap does NOT hide the double-count — this figure is uncapped either way.
+    expect(bd.belowLine.interestPaid).toBe(mortgageInterest);
   });
 
   it("populates deductionBreakdown.belowLine with taxesPaid and interestPaid", () => {

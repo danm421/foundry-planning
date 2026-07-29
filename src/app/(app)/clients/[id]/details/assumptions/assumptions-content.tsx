@@ -366,6 +366,8 @@ export async function AssumptionsContent({ clientId: id, scenarioParam }: Assump
           capitalLossCarryforwardLtSourceYear,
           surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
           surplusSaveAccountId: settings.surplusSaveAccountId,
+          coveredByWorkplacePlan: clientRow.coveredByWorkplacePlan,
+          spouseCoveredByWorkplacePlan: clientRow.spouseCoveredByWorkplacePlan,
         }}
         resolvedInflationRate={resolvedInflationRate}
         hasInflationAssetClass={firmInflationAc != null}

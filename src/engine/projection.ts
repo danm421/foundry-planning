@@ -46,8 +46,10 @@ import {
   type LiabilityScheduleMap,
 } from "./liability-schedules";
 import { createTaxResolver } from "../lib/tax/resolver";
-import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
+import type { TaxHouseholdInput, TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
+import type { ThresholdFacts, ThresholdHousehold } from "../lib/tax/thresholds";
+import { STATUTORY_FIXED } from "../lib/tax/constants";
 import {
   buildAnnualExclusionMap,
   type AnnualExclusionRow,
@@ -57,6 +59,7 @@ import {
   deriveAboveLineFromExpenses,
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
+  deriveStudentLoanInterest,
   derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
@@ -64,7 +67,15 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
-import { applyContributionLimits, computeIraLimit, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
+import {
+  applyContributionLimits,
+  computeIraLimit,
+  computeMaxContribution,
+  iraOwnerKey,
+  resolveAgeInYear,
+  traditionalIraAnnualLimitBasis,
+  type CapAdjustment,
+} from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
@@ -147,6 +158,36 @@ import {
   type NoteScheduleMap,
   type NoteScheduleRow,
 } from "./notes-receivable";
+
+/**
+ * Account subtypes that make their owner an "active participant" in an
+ * employer-sponsored retirement plan for IRC 219(g)(5)(A):
+ *   (i)  a §401(a) qualified plan — `401k`, `401a`
+ *   (ii) a §403(b) annuity        — `403b`
+ *   (v)  a SIMPLE or a SEP        — `simple_ira`, `sep_ira`
+ * Personal IRAs are NOT workplace plans and never trigger the phase-out on
+ * their own — the whole point of §219(g) is that an uncovered taxpayer deducts
+ * their IRA contribution in full at any income.
+ */
+const WORKPLACE_PLAN_SUBTYPES = new Set(["401k", "403b", "simple_ira", "sep_ira", "401a"]);
+
+/**
+ * Account subtypes whose contributions are "qualified retirement savings
+ * contributions" for the IRC 25B Saver's Credit: §402(g)(3) elective deferrals
+ * (401(k), 403(b), SIMPLE) plus IRA contributions, traditional AND Roth
+ * (§25B(d)(1)(A)). Deliberately EXCLUDES `sep_ira` / `401a`, which are employer
+ * contributions rather than the individual's own, and excludes the employer
+ * match on every subtype for the same reason.
+ */
+const SAVERS_CREDIT_SUBTYPES = new Set([
+  "401k", "403b", "simple_ira", "traditional_ira", "roth_ira",
+]);
+
+/** IRC 24(c)(1): a qualifying child must not have attained age 17 in the year. */
+const QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE = 17;
+
+/** IRC 152(c)(2): the qualifying-child relationships this engine can represent. */
+const QUALIFYING_CHILD_RELATIONSHIPS = new Set(["child", "stepchild"]);
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -941,6 +982,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // Destination taxable-account id per plan, created lazily on first acquisition.
   const equityDestByPlan = new Map<string, string>();
 
+  // IRC 25A(b)(2)(C): the AOTC is allowed for at most FOUR tax years per
+  // student, counted across the whole projection horizon rather than reset each
+  // year. So this counter is per-projection-CALL state, declared here — outside
+  // the year loop but inside `runProjection` — and the year loop below runs
+  // strictly ascending, exactly once per call, so year N always sees the true
+  // number of years already claimed in years < N. A module-level map would let
+  // a second `runProjection` (Monte Carlo runs thousands) inherit a warm
+  // counter and silently deny the credit from trial 2 onward.
+  const aotcClaimedYearsByStudent = new Map<string, number>();
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -1605,6 +1656,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       return [{ goal: e, gate: itemProrationGate(e, year, data.client) }];
     });
     const educationGoalsThisYear = allEducationGoals.filter(({ gate }) => gate.include);
+    /** This year's cost of an education goal — schedule override if present,
+     *  else the inflated annual amount, prorated by the goal's own gate. Shared
+     *  by the AOTC qualified-expense assembly (which runs before the tax pass)
+     *  and the funding pass (which runs after it) so the two cannot drift. */
+    const educationGoalCost = (
+      goal: Expense,
+      gate: { factor: number },
+    ): number => {
+      const inflateFrom = goal.inflationStartYear ?? goal.startYear;
+      const rawCost = goal.scheduleOverrides
+        ? (goal.scheduleOverrides[year] ?? 0)
+        : goal.annualAmount * Math.pow(1 + goal.growthRate, year - inflateFrom);
+      return rawCost * gate.factor;
+    };
     // BOY captured across ALL education goals (not just active ones) so the
     // pre-expense accumulation pass below can report a true beginning-of-year
     // balance for the funding-runway years too.
@@ -3430,6 +3495,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Apply IRS 401k/403b and IRA contribution limits (aggregated per owner).
     // Rules with applyContributionLimit === false bypass the cap.
+    //
+    // PASS 1 of 2, and the ONLY field taken from it is `cappedByRuleId`. It has
+    // to run here, before the year's MAGI exists, because `cappedByRuleId` is
+    // an INPUT to the deduction assembly that produces that MAGI. That is sound
+    // only because the Roth pass inside `applyContributionLimits` never WRITES
+    // `cappedByRuleId` — it reads it and writes `backdoorByRuleId` /
+    // `adjustments` — so the age-cap output is provably invariant to
+    // `magiForRoth` and there is no circularity. Pinned by
+    // "leaves cappedByRuleId invariant to magiForRoth while backdoorByRuleId
+    // moves" in contribution-limits.test.ts, not left as a comment.
+    //
+    // Pass 2 runs inside the bracket block below, once the real `magiForRoth`
+    // is known, and supplies the Roth gate's actual output.
     const capResult = resolved
       ? applyContributionLimits({
           year,
@@ -3439,9 +3517,49 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           taxYearParams: resolved.params,
           resolvedByRuleId,
           familyMembers: data.familyMembers ?? [],
+          // Placeholder for pass 1 only — never the figure the gate is resolved
+          // against. See pass 2.
+          magiForRoth: 0,
+          filingStatus,
         })
       : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
     const cappedByRuleId = capResult.cappedByRuleId;
+
+    /**
+     * IRC 219(g)(5)(A) "active participant" status for one household principal
+     * in THIS year — the trigger for the traditional-IRA deduction phase-out.
+     *
+     * The advisor override wins outright; `"auto"` (also the meaning of an
+     * absent value) infers coverage from the year's savings rules: the person
+     * either defers into a workplace plan or receives an employer match into
+     * one. `resolvedByRuleId` is the fallback for rules the cap pass skipped
+     * (`applyContributionLimit === false` keeps a rule out of `cappedByRuleId`
+     * only when it was never capped, so the `??` chain mirrors the 529 pass).
+     */
+    const resolveWorkplaceCoverage = (owner: "client" | "spouse"): boolean => {
+      const override =
+        owner === "spouse"
+          ? (client.spouseCoveredByWorkplacePlan ?? "auto")
+          : (client.coveredByWorkplacePlan ?? "auto");
+      if (override === "yes") return true;
+      if (override === "no") return false;
+      for (const rule of data.savingsRules) {
+        const acct = accountById.get(rule.accountId);
+        if (!acct || !WORKPLACE_PLAN_SUBTYPES.has(acct.subType ?? "")) continue;
+        // Owner attribution mirrors `isSpouseAccount`: an account is the
+        // spouse's only when the spouse is its controlling family member;
+        // everything else (client-owned, joint, unclassifiable) counts toward
+        // the client. Workplace plans are individual accounts by statute, so
+        // the "joint" case this collapses is not a real one.
+        const isSpouseOwned = spouseFmId != null && controllingFamilyMember(acct) === spouseFmId;
+        if (isSpouseOwned !== (owner === "spouse")) continue;
+        if (!itemProrationGate(rule, year, data.client).include) continue;
+        const contribution = cappedByRuleId[rule.id] ?? resolvedByRuleId[rule.id] ?? 0;
+        if (contribution > 0) return true;
+        if (computeEmployerMatch(rule, salaryByRuleId[rule.id] ?? 0) > 0) return true;
+      }
+      return false;
+    };
 
     // Household-grantor 529 contributions → state 529 deduction/credit input.
     // Derived from post-cap rule amounts (cappedByRuleId) prorated by the
@@ -3478,49 +3596,274 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
+    /** The year's MAGIs + IRC 219(g) coverage flags, resolved in the bracket
+     *  block below and consumed by the household assembly after it.
+     *
+     *  ⚠️ These four MAGIs are the GATING figures. They are necessarily
+     *  provisional: contributions have to be sized before the year's income is
+     *  final, so they cannot see Roth conversions, bracket fillers,
+     *  supplemental withdrawals, taxable Social Security, or the §164(f) half
+     *  of SE tax. The REPORT's four MAGIs are rebuilt from the settled AGI
+     *  after the tax pass — see the `thresholdFacts` assembly. Do not report
+     *  these directly. */
+    let thresholdInputs:
+      | {
+          magiForIraDeduction: number;
+          magiForStudentLoan: number;
+          magiForRoth: number;
+          magiForCredits: number;
+          iraDeduction: number;
+          studentLoanDeduction: number;
+          coveredSelf: boolean;
+          coveredSpouse: boolean;
+          hasTraditionalIraContribution: boolean;
+          hasStudentLoanInterest: boolean;
+        }
+      | undefined;
+    let contributionAdjustments:
+      | { adjustments: CapAdjustment[]; backdoorByRuleId: Record<string, number> }
+      | undefined;
     if (useBracket) {
-      const contributions = [
-        deriveAboveLineFromSavings(
-          year,
-          data.savingsRules.map((r) => ({
-            id: r.id,
-            accountId: r.accountId,
-            annualAmount: r.annualAmount,
-            annualPercent: r.annualPercent ?? null,
-            isDeductible: r.isDeductible,
-            rothPercent: r.rothPercent ?? null,
-            startYear: r.startYear,
-            endYear: r.endYear,
-          })),
-          data.accounts.map((a) => ({
-            id: a.id,
-            subType: a.subType ?? "",
-            category: a.category,
-            ownerEntityId: controllingEntity(a) ?? undefined,
-          })),
-          (entityId) => effectiveIsGrantor(entityId, year),
-          salaryByRuleId,
-          cappedByRuleId
+      const savingsRulesForDeduction = data.savingsRules.map((r) => ({
+        id: r.id,
+        accountId: r.accountId,
+        annualAmount: r.annualAmount,
+        annualPercent: r.annualPercent ?? null,
+        isDeductible: r.isDeductible,
+        rothPercent: r.rothPercent ?? null,
+        startYear: r.startYear,
+        endYear: r.endYear,
+      }));
+      const spouseFamilyMemberId =
+        (data.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+      const accountsForDeduction = data.accounts.map((a) => ({
+        id: a.id,
+        subType: a.subType ?? "",
+        category: a.category,
+        ownerEntityId: controllingEntity(a) ?? undefined,
+        // IRC 219(g) phases each spouse out separately, so the deduction
+        // module needs to know whose contribution it is looking at. Resolved
+        // HERE, once, and priced by `traditionalIraAnnualLimitBasis` from the
+        // very same key.
+        iraOwner: iraOwnerKey(a, spouseFamilyMemberId),
+      }));
+      const expensesForDeduction = allExpenses.map((e) => ({
+        deductionType: e.deductionType ?? null,
+        annualAmount: e.annualAmount,
+        startYear: e.startYear,
+        endYear: e.endYear,
+        growthRate: e.growthRate,
+        inflationStartYear: e.inflationStartYear,
+      }));
+      const isGrantorThisYear = (entityId: string) => effectiveIsGrantor(entityId, year);
+
+      // ── MAGI ordering ────────────────────────────────────────────────────
+      // Three of the four MAGIs below gate a deduction that is itself part of
+      // AGI, which looks circular. It is not, because each statute excludes a
+      // DIFFERENT set of deductions and they can be resolved in one fixed
+      // order:
+      //
+      //   1. magiBase        — total income minus every above-line deduction
+      //                        EXCEPT the traditional-IRA one and the
+      //                        student-loan one.
+      //   2. magiForIraDeduction = magiBase. IRC 219(g)(3)(A) excludes both
+      //      §221 and the IRA deduction itself, so nothing further is needed.
+      //   3. gate the IRA deduction.
+      //   4. magiForStudentLoan = magiBase − iraDeduction. IRC 221(b)(2)(C)
+      //      excludes only §221 itself, so the IRA deduction DOES reduce it.
+      //   5. gate the student-loan deduction.
+      //   6. magiForRoth = magiBase. IRC 408A(c)(3)(B)(i) borrows 219(g)(3)'s
+      //      definition wholesale, so the IRA deduction is added back here just
+      //      as it is in step 2 — this is NOT step 4's figure. See the block at
+      //      that line for the citation and for why the two genuinely differ.
+      //   7. magiForCredits = the resulting AGI.
+      //
+      // Pass 1 over the savings rules is UNGATED, purely to ground magiBase: it
+      // reports `traditionalIraPreTax` separately so the IRA slice can be added
+      // back without re-deriving it (six inclusion guards live in that module,
+      // and a second copy would drift).
+      const savingsUngated = deriveAboveLineFromSavings(
+        year, savingsRulesForDeduction, accountsForDeduction, isGrantorThisYear,
+        salaryByRuleId, cappedByRuleId,
+      );
+      const taggedExpenseContribution = deriveAboveLineFromExpenses(year, expensesForDeduction);
+      const manualEntryContribution = sumItemizedFromEntries(year, data.deductions ?? []);
+      /** Every above-line deduction EXCEPT the IRA and student-loan ones. */
+      const nonGatedAboveLine =
+        (savingsUngated.aboveLine - savingsUngated.traditionalIraPreTax)
+        + taggedExpenseContribution.aboveLine
+        + manualEntryContribution.aboveLine;
+      // NOT floored at 0, unlike `preAGI` below: a genuinely negative MAGI must
+      // gate nothing, and `rangeFor`/`statusFor` already handle that by
+      // comparison. Flooring would be indistinguishable from a $0 MAGI, which
+      // is fine here but would stop being fine the moment a phase-IN is added.
+      const magiBase = taxableIncome - nonGatedAboveLine;
+
+      // IRC 219(g)(5)(A): "active participant" in an employer plan — what
+      // triggers the traditional-IRA deduction phase-out at all.
+      const magiForIraDeduction = magiBase;
+      const coveredSelf = resolveWorkplaceCoverage("client");
+      // HARD CONSTRAINT: a spouse can only be a covered participant on a return
+      // that HAS a spouse on it. `traditionalIraDeductibleAmount` documents
+      // (thresholds.ts) that a non-MFJ/non-MFS status returns the full
+      // contribution regardless, so a true here on single/HOH is a data bug,
+      // not an edge case — it is forced false rather than passed through.
+      //
+      // NOT MODELED, deliberately: a MARRIED taxpayer filing HOH under the
+      // "considered unmarried" six-month-apart test whose spouse IS covered.
+      // IRC 219(g)(4)'s living-apart relief requires the ENTIRE year, which the
+      // six-month HOH test does not guarantee, so such a filer arguably should
+      // still phase out. Recognising that from the data available here is not
+      // possible; documented rather than guessed at.
+      const spouseOnReturn =
+        filingStatus === "married_joint" || filingStatus === "married_separate";
+      const coveredSpouse = spouseOnReturn && resolveWorkplaceCoverage("spouse");
+
+      // IRC 219(g)(2)(A) reduces the §219(b) LIMIT, so the gate needs that
+      // limit as its basis. It is built from the accounts the UNGATED pass
+      // reports as having actually contributed — pass 1 applies the same six
+      // inclusion guards pass 2 does, and only a contributing owner's limit
+      // belongs in the ceiling. PER OWNER, because 219(g) phases each spouse
+      // out against their own limit.
+      const iraAnnualLimitByOwner = traditionalIraAnnualLimitBasis({
+        accountIdsByOwner: savingsUngated.traditionalIraAccountIdsByOwner,
+        client,
+        year,
+        taxYearParams: resolved!.params,
+      });
+
+      // Pass 2 over the savings rules — THIS is the contribution that feeds
+      // `aggregateDeductions`. Routing the gate through `iraGate` rather than
+      // calling `traditionalIraDeductibleAmount` here keeps one implementation
+      // of the inclusion guards and the household-level aggregation.
+      const savingsContribution = deriveAboveLineFromSavings(
+        year, savingsRulesForDeduction, accountsForDeduction, isGrantorThisYear,
+        salaryByRuleId, cappedByRuleId,
+        {
+          magi: magiForIraDeduction,
+          coveredSelf,
+          coveredSpouse,
+          params: resolved!.params,
+          filingStatus,
+          annualLimitByOwner: iraAnnualLimitByOwner,
+        },
+      );
+      // The non-IRA component is identical across the two calls, so the
+      // difference is exactly the surviving traditional-IRA deduction.
+      const iraDeduction =
+        savingsContribution.aboveLine
+        - (savingsUngated.aboveLine - savingsUngated.traditionalIraPreTax);
+
+      // Student-loan MAGI (IRC 221(b)(2)(C)). The traditional-IRA deduction IS
+      // subtracted here, because 221(b)(2)(C)(ii) computes AGI "after
+      // application of ... 219" — §221 has NO add-back for §219.
+      //
+      // ⚠️ DO NOT "make this consistent" with `magiForRoth` below, which does
+      // NOT subtract it. The asymmetry is the statute, not an oversight: §408A
+      // borrows §219(g)(3)'s definition (which excludes the IRA deduction),
+      // §221 does not. Collapsing the two reintroduces a defect that was found,
+      // ruled on and fixed on 2026-07-28. Each line carries its own citation.
+      const magiForStudentLoan = magiBase - iraDeduction;
+      const studentLoanInterestContribution = deriveStudentLoanInterest(
+        year,
+        currentLiabilities.map((l) => ({ id: l.id, liabilityType: l.liabilityType ?? null })),
+        // RAW accrued interest, deliberately NOT scaled by
+        // `liabilityOwnedByHouseholdAtYear` the way the mortgage source below
+        // is. A student loan is a personal obligation that a gift event cannot
+        // hand to an entity, so there is no entity share to strip. The
+        // asymmetry with the mortgage call is a decision, not an oversight.
+        liabResult.interestByLiability,
+        magiForStudentLoan,
+        resolved!.params,
+        filingStatus
+      );
+
+      // Roth MAGI (IRC 408A(c)(3)(B)(i)) — the traditional-IRA deduction is
+      // ADDED BACK, so this is `magiBase`, identical to `magiForIraDeduction`.
+      //
+      // 408A(c)(3)(B)(i) defines this MAGI "in the same manner as under section
+      // 219(g)(3)", and 219(g)(3)(A)(ii) computes AGI "without regard to ... the
+      // deduction allowable under this section" — the §219 deduction never
+      // reduces it. Pub 590-A Worksheet 2-1 line 2 reads the same way.
+      //
+      // HISTORY, so this is not "corrected" back: the task brief and resolution
+      // R13 both specified `magiBase - iraDeduction`, applying §221's rule to
+      // §408A. That was statutorily wrong; it shipped as specified, was flagged,
+      // and was AMENDED BY HUMAN RULING on 2026-07-28.
+      //
+      // Kept as its own binding rather than aliased to `magiForIraDeduction`:
+      // they are distinct statutory concepts (219(g)(3) vs 408A(c)(3)(B)(i))
+      // that happen to coincide, they are reported separately on
+      // `ThresholdFacts`, and only one of them would move if either statute did.
+      // Contrast `magiForStudentLoan` above, which DOES subtract the IRA
+      // deduction — see the comment there.
+      //
+      // PASS 2 of `applyContributionLimits`: only `backdoorByRuleId` and
+      // `adjustments` are taken from it. `cappedByRuleId` deliberately stays
+      // the pass-1 value — it is provably invariant to `magiForRoth` (see the
+      // pass-1 comment), and taking it from here would make the deduction
+      // assembly above depend on its own output.
+      const magiForRoth = magiBase;
+      const rothGated = applyContributionLimits({
+        year,
+        rules: data.savingsRules,
+        accounts: data.accounts,
+        client,
+        taxYearParams: resolved!.params,
+        resolvedByRuleId,
+        familyMembers: data.familyMembers ?? [],
+        magiForRoth,
+        filingStatus,
+      });
+      if (rothGated.adjustments.length > 0 || Object.keys(rothGated.backdoorByRuleId).length > 0) {
+        contributionAdjustments = {
+          adjustments: rothGated.adjustments,
+          backdoorByRuleId: rothGated.backdoorByRuleId,
+        };
+      }
+
+      // AGI. R13: this is the REPORT's figure, not a second AGI path into the
+      // credit engine — `calculate.ts` computes its own and passes that to
+      // `computeCredits`. It differs from calculate.ts's AGI by the terms that
+      // are not visible here: taxable Social Security (which calculate.ts
+      // derives) and the §164(f) deductible half of SE tax (which year-tax.ts
+      // adds). Reported as a known divergence rather than reconciled by
+      // overriding one with the other.
+      const magiForCredits = magiForStudentLoan - studentLoanInterestContribution.aboveLine;
+
+      thresholdInputs = {
+        magiForIraDeduction,
+        magiForStudentLoan,
+        magiForRoth,
+        magiForCredits,
+        // The two gated above-line deductions, carried out of this block so the
+        // REPORT's MAGIs can be rebuilt from the final AGI after the tax pass
+        // (see the `thresholdFacts` assembly). Each statute adds back a
+        // different subset of them, so both are needed separately.
+        iraDeduction,
+        studentLoanDeduction: studentLoanInterestContribution.aboveLine,
+        coveredSelf,
+        coveredSpouse,
+        hasTraditionalIraContribution: savingsUngated.traditionalIraPreTax > 0,
+        // The GROSS accrual, not the post-gate deduction: a household whose
+        // deduction phased out entirely still HAS student-loan interest, and
+        // the Thresholds report needs to say "out", not "not applicable".
+        hasStudentLoanInterest: currentLiabilities.some(
+          (l) => l.liabilityType === "student" && (liabResult.interestByLiability[l.id] ?? 0) > 0,
         ),
-        deriveAboveLineFromExpenses(year, allExpenses.map((e) => ({
-          deductionType: e.deductionType ?? null,
-          annualAmount: e.annualAmount,
-          startYear: e.startYear,
-          endYear: e.endYear,
-          growthRate: e.growthRate,
-          inflationStartYear: e.inflationStartYear,
-        }))),
-        deriveItemizedFromExpenses(year, allExpenses.map((e) => ({
-          deductionType: e.deductionType ?? null,
-          annualAmount: e.annualAmount,
-          startYear: e.startYear,
-          endYear: e.endYear,
-          growthRate: e.growthRate,
-          inflationStartYear: e.inflationStartYear,
-        }))),
+      };
+
+      const contributions = [
+        savingsContribution,
+        taggedExpenseContribution,
+        deriveItemizedFromExpenses(year, expensesForDeduction),
         deriveMortgageInterestFromLiabilities(
           year,
-          currentLiabilities.map((l) => ({
+          // Student loans are excluded even when flagged isInterestDeductible:
+          // above-line and itemized are mutually exclusive for the same interest
+          // dollars (IRC 221 vs the Schedule A mortgage-interest deduction), and
+          // `deriveStudentLoanInterest` already claimed them above the line.
+          currentLiabilities.filter((l) => l.liabilityType !== "student").map((l) => ({
             id: l.id,
             isInterestDeductible: l.isInterestDeductible ?? false,
             startYear: l.startYear,
@@ -3554,9 +3897,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           })),
           planSettings.planStartYear
         ),
-        sumItemizedFromEntries(year, data.deductions ?? []),
+        manualEntryContribution,
+        // APPEND-ONLY: `contributions` is read positionally below ([0], [1],
+        // [3], [4], [5]). New sources go on the end so no existing index moves.
+        studentLoanInterestContribution,
       ];
       // Estimate state income tax for SALT pool before aggregation.
+      // Student-loan interest is deliberately left OUT of preAGI. preAGI feeds
+      // the state-tax estimate, and the MAGI handed to the student-loan gate is
+      // itself derived from income — folding the gated result back in would make
+      // the two circular. Omitting it keeps the state estimate conservative.
       const preAGI = Math.max(0, taxableIncome - contributions[0].aboveLine - contributions[1].aboveLine - contributions[5].aboveLine);
       const estStateTax = preAGI * planSettings.flatStateRate;
       const stateIncomeTaxContribution: import("../lib/tax/derive-deductions").DeductionContribution = {
@@ -3572,6 +3922,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const retirementContributions = contributions[0].aboveLine;
       const expenseAboveLine = contributions[1].aboveLine;
       const manualAboveLine = contributions[5].aboveLine;
+      const studentLoanAboveLine = studentLoanInterestContribution.aboveLine;
 
       // Below-line per-category split from source data
       let charitable = 0;
@@ -3629,6 +3980,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           retirementContributions,
           taggedExpenses: expenseAboveLine,
           manualEntries: manualAboveLine,
+          studentLoanInterest: studentLoanAboveLine,
           total: aboveLineDeductions,
           bySource: aboveLineBySource,
         },
@@ -3758,6 +4110,193 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
     const interestIncomeForTax = realizationOI;
 
+    // ── Household assembly for the credit layer + Thresholds report ─────────
+    // Placed here rather than inside the bracket block above because it needs
+    // `seEarnings`, which is derived after it. Runs exactly once per year, so
+    // the AOTC four-year counter advances once per student per year no matter
+    // how many times the convergence loop below re-runs `computeTaxForYear` off
+    // the same household.
+    // Both stay undefined outside bracket mode: `thresholdInputs` is only
+    // assigned inside the bracket block, and flat mode models no credits.
+    //
+    // ⚠️ `hasInvestmentIncome` is deliberately OMITTED from this snapshot's type
+    // (I1). Everything else here is settled by now, but investment income is
+    // not: the withdrawal pass books liquidation gains onto `taxDetail` further
+    // down. Omitting the field rather than filling it in is what makes the
+    // stale value UNREADABLE rather than merely unread — it is supplied at the
+    // `thresholdFacts` assembly, off the settled tax result.
+    let taxHousehold: TaxHouseholdInput | undefined;
+    let thresholdHousehold: Omit<ThresholdHousehold, "hasInvestmentIncome"> | undefined;
+    // Students offered to the credit layer this year, in the same order as
+    // `taxHousehold.aotcStudents`. Held so the four-year counter can be
+    // advanced AFTER the tax pass, against the credit that was actually
+    // allowed rather than against a MAGI computed before the year's income
+    // was complete. Re-set every year; never read across years.
+    let aotcStudentIdsThisYear: string[] = [];
+    if (thresholdInputs) {
+      // ── Dependents (IRC 24) ──────────────────────────────────────────────
+      // The plan's qualifying-child predicate verbatim: a child/stepchild, under
+      // 17 in the tax year, not overridden to "no".
+      //
+      // NOTE, and it is not an accident: under `!== "no"`, `auto` and `yes` are
+      // INDISTINGUISHABLE, so a `yes` override is a NO-OP for qualifying
+      // children. `yes` earns its keep on the other branch instead — it is what
+      // makes a NON-qualifying-child (an adult child, a parent, an over-17
+      // student) count for the IRC 24(h)(4) $500 Other Dependent Credit, which
+      // nothing else in the data can infer.
+      let qualifyingChildren = 0;
+      let otherDependents = 0;
+      for (const fm of data.familyMembers ?? []) {
+        // IRC 152(b)(1): the taxpayer and their spouse are never dependents on
+        // their own return, whatever the override column says.
+        if (fm.role === "client" || fm.role === "spouse") continue;
+        const claim = fm.claimedAsDependent ?? "auto";
+        // `resolveAgeInYear` is `year - birthYear`, bounded at NEITHER end, and
+        // each end is wrong for its own reason — hence two guards, not one:
+        //  - MISSING DOB yields a MAGIC 50: a product default, not an age. A
+        //    DOB-less child is excluded BECAUSE the DOB is missing, not because
+        //    50 happens not to be under 17 — the right answer for the right
+        //    reason, which stays right if that default ever moves below 17.
+        //  - DOB AFTER the tax year yields a NEGATIVE age, which is also "under
+        //    17". Modelling a not-yet-born child (usually to hang an education
+        //    goal off) is a normal advisor action and the family-member API
+        //    stores `dateOfBirth` unvalidated, so this is reachable data rather
+        //    than corruption.
+        const age = fm.dateOfBirth != null ? resolveAgeInYear(fm.dateOfBirth, year) : null;
+        // IRC 151/152 allow a dependent only for an individual who EXISTS in the
+        // tax year — a child born DURING it is a dependent for the whole year,
+        // one born after it is not yet a person the return can claim. So an
+        // unborn member is skipped OUTRIGHT rather than merely failing the
+        // qualifying-child test: `claimedAsDependent: "yes"` asserts that
+        // someone IS claimed, never that they exist, so it must not fall through
+        // and promote them to an Other Dependent on the `else if` below.
+        if (age != null && age < 0) continue;
+        const isQualifyingChild =
+          QUALIFYING_CHILD_RELATIONSHIPS.has(fm.relationship)
+          && age != null
+          && age < QUALIFYING_CHILD_MAX_AGE_EXCLUSIVE
+          && claim !== "no";
+        if (isQualifyingChild) qualifyingChildren++;
+        else if (claim === "yes") otherDependents++;
+      }
+
+      // ── AOTC students (IRC 25A) ──────────────────────────────────────────
+      // A student is a family member NAMED by an active education goal. A goal
+      // with no `forFamilyMemberId` names nobody and is skipped outright — it is
+      // never attributed to the client. Multiple goals for one student in one
+      // year aggregate into a single claimed year, because §25A's four-year
+      // limit and its $4,000 expense ceiling are both per STUDENT per year.
+      const expensesByStudent = new Map<string, number>();
+      for (const { goal, gate } of educationGoalsThisYear) {
+        if (goal.forFamilyMemberId == null) continue;
+        const cost = educationGoalCost(goal, gate);
+        if (cost <= 0) continue;
+        expensesByStudent.set(
+          goal.forFamilyMemberId,
+          (expensesByStudent.get(goal.forFamilyMemberId) ?? 0) + cost,
+        );
+      }
+      // IRC 25A(b)(2)(C) spends one of the four years only when the taxpayer
+      // ELECTED the credit — "elected to have this section apply ... for any 4
+      // PRIOR taxable years". A year the phase-out reduced to zero is not an
+      // election (no Form 8863 is filed for it), so it must NOT burn one.
+      //
+      // ⚠️ The ELIGIBILITY gate below reads PRIOR years only, which is what
+      // keeps this acyclic: gate on the counter -> run the tax pass -> advance
+      // the counter from the credit the tax pass actually allowed. The
+      // increment itself deliberately does NOT live here, because at this
+      // point in the year the only AGI available is the REPORT's
+      // `magiForCredits`, and that is a different number from the one
+      // `calculate.ts` hands `computeAotc` (it cannot see taxable Social
+      // Security or the §164(f) deductible half of SE tax). Driving the
+      // counter off it lets a self-employed household sit above the ceiling
+      // for counting purposes while the credit engine sits below it and keeps
+      // paying — an UNBOUNDED AOTC. See `aotcAllowed` on TaxResult and the
+      // increment after the tax pass below.
+      const aotcStudentIds: string[] = [];
+      const aotcStudents: { qualifiedExpenses: number }[] = [];
+      for (const [studentId, qualifiedExpenses] of expensesByStudent) {
+        const alreadyClaimed = aotcClaimedYearsByStudent.get(studentId) ?? 0;
+        // IRC 25A(b)(2)(C): a fifth claimed year contributes no entry at all.
+        if (alreadyClaimed >= STATUTORY_FIXED.aotcMaxYearsPerStudent) continue;
+        // The student is still reported in a phased-out year. That is what
+        // makes the Thresholds report say "out" (income disqualified them)
+        // rather than "na" (no student here) — a materially different
+        // statement to an advisor, and the one the old counter destroyed by
+        // spending the allowance on zero-credit years.
+        aotcStudents.push({ qualifiedExpenses });
+        aotcStudentIds.push(studentId);
+      }
+      aotcStudentIdsThisYear = aotcStudentIds;
+
+      // ── Saver's Credit contributions (IRC 25B), per person ───────────────
+      // Elective deferrals + IRA contributions only; the employer match is not
+      // the individual's contribution. The spouse figure is carried ONLY on a
+      // joint return: `credits.ts` sums both entries with no filing-status
+      // filter and documents that the caller owns that decision. An MFS return
+      // reports one spouse's contributions, not the couple's.
+      let clientRetirementContributions = 0;
+      let spouseRetirementContributions = 0;
+      for (const rule of data.savingsRules) {
+        const acct = accountById.get(rule.accountId);
+        if (!acct || !SAVERS_CREDIT_SUBTYPES.has(acct.subType ?? "")) continue;
+        const ruleGate = itemProrationGate(rule, year, data.client);
+        if (!ruleGate.include) continue;
+        // Same capped/prorated figure the savings pass will actually apply —
+        // mirrors the 529-contribution derivation above.
+        const amount = (cappedByRuleId[rule.id] ?? resolvedByRuleId[rule.id] ?? 0) * ruleGate.factor;
+        if (amount <= 0) continue;
+        if (spouseFmId != null && controllingFamilyMember(acct) === spouseFmId) {
+          spouseRetirementContributions += amount;
+        } else {
+          clientRetirementContributions += amount;
+        }
+      }
+
+      // Bound once and shared with `thresholdHousehold` below, so the report's
+      // "does the Saver's Credit apply?" flag is derived from the EXACT figure
+      // the credit layer is handed — including the non-joint spouse zeroing. A
+      // flag re-derived from the two locals would say "applies" to an MFS filer
+      // whose only contributions are the spouse's, which `computeSaversCredit`
+      // never sees and never pays for.
+      const retirementContributions = {
+        client: clientRetirementContributions,
+        spouse: filingStatus === "married_joint" ? spouseRetirementContributions : 0,
+      };
+
+      taxHousehold = {
+        qualifyingChildren,
+        otherDependents,
+        aotcStudents,
+        retirementContributions,
+        // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): the refundable CTC's earned income
+        // is wages PLUS net SE earnings. Passed separately from wages because
+        // `CalcInput.earnedIncome` also drives FICA/Additional Medicare, which
+        // SE income must not reach twice (SECA already taxes it above).
+        selfEmploymentEarnings: seEarnings,
+      };
+
+      thresholdHousehold = {
+        filingStatus,
+        qualifyingChildren,
+        otherDependents,
+        aotcStudents: aotcStudents.length,
+        hasStudentLoanInterest: thresholdInputs.hasStudentLoanInterest,
+        hasRothContribution: data.savingsRules.some((rule) => {
+          const acct = accountById.get(rule.accountId);
+          if (acct?.subType !== "roth_ira") return false;
+          if (!itemProrationGate(rule, year, data.client).include) return false;
+          return (cappedByRuleId[rule.id] ?? resolvedByRuleId[rule.id] ?? 0) > 0;
+        }),
+        hasTraditionalIraContribution: thresholdInputs.hasTraditionalIraContribution,
+        hasQbi: taxDetail.qbi > 0,
+        hasRetirementContributions:
+          retirementContributions.client + retirementContributions.spouse > 0,
+        coveredSelf: thresholdInputs.coveredSelf,
+        coveredSpouse: thresholdInputs.coveredSpouse,
+      };
+    }
+
     // ── Household withdraw balances (hoisted: needed by both phase 5b
     // bracket-filler sizing and phase 12 supplemental / legacy-no-checking
     // gap-fill). Build unconditionally — the legacy no-checking path also
@@ -3862,6 +4401,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
+          household: taxHousehold,
         });
         return trial.taxResult.flow.incomeTaxBase;
       };
@@ -4036,6 +4576,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       primaryAge: ages.client,
       spouseAge: ages.spouse,
       isoSpread: equityIsoSpread,
+      household: taxHousehold,
     };
     const taxOut = computeTaxForYear(baseTaxInput);
 
@@ -4705,11 +5246,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     const educationGoalYears: EducationGoalYear[] = [];
     for (const { goal, gate } of educationGoalsThisYear) {
-      const inflateFrom = goal.inflationStartYear ?? goal.startYear;
-      const rawCost = goal.scheduleOverrides
-        ? (goal.scheduleOverrides[year] ?? 0)
-        : goal.annualAmount * Math.pow(1 + goal.growthRate, year - inflateFrom);
-      const goalCost = rawCost * gate.factor;
+      const goalCost = educationGoalCost(goal, gate);
 
       const ids = goal.dedicatedAccountIds ?? [];
       const boy = ids.reduce((s, id) => s + (eduBoyBalances[id] ?? 0), 0);
@@ -5273,6 +5810,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
+          household: taxHousehold,
         };
         taxOutForIter = computeTaxForYear(seededTaxInput);
         finalTaxInput = seededTaxInput;
@@ -5447,6 +5985,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           primaryAge: ages.client,
           spouseAge: ages.spouse,
           isoSpread: equityIsoSpread,
+          household: taxHousehold,
           taxFreeRetirementIncome: supplementalTaxFree,
         };
         taxOutForIter = computeTaxForYear(supplementalTaxInput);
@@ -5590,6 +6129,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             primaryAge: ages.client,
             spouseAge: ages.spouse,
             isoSpread: equityIsoSpread,
+            household: taxHousehold,
             taxFreeRetirementIncome: educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws),
           };
           taxOutForIter = computeTaxForYear(legacyTaxInput);
@@ -5671,6 +6211,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     const finalTaxResult = taxOutForIter.taxResult;
     const finalTaxes = taxOutForIter.taxes;
+
+    // ── IRC 25A(b)(2)(C): advance the four-year AOTC counter ────────────────
+    // Deliberately HERE and nowhere else. Three properties this placement buys
+    // that the pre-tax version could not:
+    //
+    //  1. It reads `aotcAllowed`, the credit the tax engine actually granted
+    //     from its OWN AGI. The eligibility gate up in the household assembly
+    //     consults only PRIOR years, so gate -> tax -> increment is acyclic
+    //     even though the credit depends on this year's income.
+    //  2. It runs exactly ONCE per year. The convergence loop above re-runs
+    //     `computeTaxForYear` up to five times (Roth fill, bracket filler,
+    //     supplemental withdrawals, legacy pass), and incrementing inside any
+    //     of those would spend the whole allowance in a single year.
+    //  3. `taxOutForIter` is the FINAL result, so a year whose credit only
+    //     survives (or only vanishes) after the supplemental draw is counted
+    //     the way it is actually reported.
+    //
+    // A zero-credit year is not an election and burns nothing — that is the
+    // rule this whole mechanism exists to enforce.
+    if (finalTaxResult.flow.aotcAllowed > 0) {
+      for (const studentId of aotcStudentIdsThisYear) {
+        aotcClaimedYearsByStudent.set(studentId, (aotcClaimedYearsByStudent.get(studentId) ?? 0) + 1);
+      }
+    }
+
     charityCarryforward = taxOutForIter.charityCarryforwardOut;
     // The ONLY write-back of the capital-loss carryforward. Must stay here,
     // outside the iterative supplemental-withdrawal solve above.
@@ -6686,6 +7251,90 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // The year's resolved threshold inputs, for the Thresholds report. `year` is
+    // the projection loop's REQUESTED year — never `resolved.params.year`, which
+    // the resolver stamps with the SOURCE year when it inflates an out-year
+    // forward, and which would report the SECURE 2.0 Saver's Credit sunset as
+    // never arriving and pick the pre-OBBBA AMT phase-out rate past 2026.
+    //
+    // The three post-tax income measures come off the final tax result rather
+    // than being re-derived: taxable-income-before-QBI is not recoverable from
+    // `flow` (which is post-QBI and floored), AMTI's add-back depends on which
+    // below-line deduction actually won, and NII is a third subset again.
+    // ── The REPORT's four MAGIs (B3) ────────────────────────────────────────
+    // Rebuilt HERE, from the settled AGI, rather than reported from the gating
+    // figures resolved before the year's income existed. `magiBase` is fixed
+    // before Roth conversions, the bracket filler and supplemental withdrawals
+    // are added to `taxableIncome`, and taxable Social Security never enters it
+    // at all — so the gating figures understate a conversion strategy by the
+    // whole conversion, and a retiree living off an IRA by the whole draw.
+    //
+    // ⚠️ NOT a single shared base. Each statute adds back a different set:
+    //   §221(b)(2)(C)(ii)  — AGI without regard to §221 ITSELF. The §219
+    //                        deduction DOES reduce it.
+    //   §219(g)(3)(A)(ii)  — AGI without regard to §221 AND §219.
+    //   §408A(c)(3)(B)(i)  — borrows 219(g)(3) wholesale.
+    //   credits / agi      — plain AGI, no add-backs.
+    // and Roth conversion income is BACKED OUT of the two §219(g)-derived
+    // figures only (Pub 590-A Wksht 1-1 and 2-1). Converting must not
+    // disqualify the household from contributing — that is not the law, and
+    // giving all four one base would silently impose it.
+    //
+    // Social Security and the §164(f) SE-tax half belong in ALL FOUR, and now
+    // reach all four for free: they are already inside `adjustedGrossIncome`.
+    const reportMagis = thresholdInputs
+      ? (() => {
+          const agi = finalTaxResult.flow.adjustedGrossIncome;
+          const conversionIncome = rothConversionResult.taxableOrdinaryIncome;
+          const forStudentLoan = agi + thresholdInputs.studentLoanDeduction;
+          const for219g = forStudentLoan + thresholdInputs.iraDeduction - conversionIncome;
+          return {
+            agi,
+            magiForCredits: agi,
+            magiForStudentLoan: forStudentLoan,
+            magiForIraDeduction: for219g,
+            // Kept as its own binding rather than aliased: 219(g)(3) and
+            // 408A(c)(3)(B)(i) are distinct statutory concepts that happen to
+            // coincide, they are reported separately, and only one of them
+            // would move if either statute did.
+            magiForRoth: for219g,
+          };
+        })()
+      : undefined;
+
+    // ── I1: the NIIT row's APPLICABILITY, rebuilt off the settled tax result ──
+    // Same ordering root cause as B3 one layer over. B3 fixed the AGI the row is
+    // COMPARED against; this fixes whether the row is consulted at all. The
+    // household snapshot above is taken before the withdrawal pass books
+    // liquidation gains, so a retiree living off appreciated brokerage assets
+    // read as having NO investment income while `calcNiit` charged 3.8% on the
+    // sale — the report saying "does not apply" about a tax it was paying.
+    //
+    // `> 0` is `calcNiit`'s OWN gate (niit.ts:14 returns 0 on a non-positive
+    // base) applied to the SAME loss-netted figure the tax pass was handed, so
+    // the row's applicability and the surtax cannot disagree. That also makes
+    // "capital losses erased the gains" report "na" rather than "out", which is
+    // right: no NII, no surtax.
+    //
+    // Absent outside bracket mode — but so is `thresholdInputs`, so this whole
+    // block is unreachable there and the `?? 0` never decides anything.
+    const reportedNii = finalTaxResult.diag.netInvestmentIncome ?? 0;
+
+    const thresholdFacts: Omit<ThresholdFacts, "params"> | undefined =
+      thresholdInputs && thresholdHousehold && reportMagis
+        ? {
+            year,
+            household: { ...thresholdHousehold, hasInvestmentIncome: reportedNii > 0 },
+            agi: reportMagis.agi,
+            magiForIraDeduction: reportMagis.magiForIraDeduction,
+            magiForStudentLoan: reportMagis.magiForStudentLoan,
+            magiForRoth: reportMagis.magiForRoth,
+            magiForCredits: reportMagis.magiForCredits,
+            taxableIncomeBeforeQbi: finalTaxResult.diag.taxableIncomeBeforeQbi ?? 0,
+            amti: finalTaxResult.diag.amti ?? 0,
+          }
+        : undefined;
+
     years.push({
       year,
       ages,
@@ -6713,6 +7362,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         : {}),
       ...(grantorCapGainsByEntity.size > 0 ? { grantorCapGainsByEntity } : {}),
       deductionBreakdown: deductionBreakdownResult,
+      ...(thresholdFacts ? { thresholdFacts } : {}),
+      ...(contributionAdjustments ? { contributionAdjustments } : {}),
       withdrawals,
       entityWithdrawals,
       expenses,

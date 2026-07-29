@@ -9,6 +9,7 @@ import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
 import { computeStateIncomeTax } from "./state-income";
 import { getAdditionalStdDeduction, getObbbaSeniorBonus } from "./senior-deductions";
+import { computeCredits } from "./credits";
 import {
   netCapitalGainsAndLosses,
   computeCarryforwardOut,
@@ -251,14 +252,78 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   });
   const stateTax = stateResult.stateTax;
 
-  // 14. Roll-ups
-  const regularFederalIncomeTax = regularTaxCalc; // v1: no AMT credit, no tax credits
+  // 14. Federal credits (IRC 24 CTC/ACTC + ODC, 25A AOTC, 25B Saver's).
+  //
+  // `household` is optional and nothing supplies it yet (projection.ts assembly
+  // is a later task), so the common path here is "no household → no credits",
+  // which leaves the roll-up below identical to its pre-credit form.
+  //
+  // Chapter 1 subpart A tax — the only base personal credits may offset. Bound
+  // to ONE local deliberately: credits.ts clamps its nonrefundable total at
+  // whatever base it is handed, so if the figure passed in and the figure
+  // credits are subtracted from below ever drifted apart, the clamp would be
+  // computed against one base and applied against another and the roll-up's
+  // Math.max would silently absorb the inconsistency instead of failing.
+  // (Equals `regularFederalIncomeTax + capitalGainsTax + amtAdditional` — see
+  // the roll-up, where regularFederalIncomeTax is just regularTaxCalc.)
+  const subpartATaxBeforeCredits = regularTaxCalc + capitalGainsTax + amtAdditional;
+  const credits = input.household
+    ? computeCredits({
+        ...input.household,
+        // The REQUESTED year, never `p.year`: resolver.ts stamps params with the
+        // SOURCE year when it inflates an out-year forward, so reading the year
+        // off the params would report the SECURE 2.0 §103 Saver's Credit sunset
+        // as never arriving.
+        year: input.year,
+        filingStatus: fs,
+        params: p,
+        // MAGI *is* AGI for every household this engine can represent: statutory
+        // MAGI (IRC 24(b), 25A(d)) differs only by the §911/§931/§933
+        // foreign-earned-income exclusions, and CalcInput has no foreign-exclusion
+        // input at all. Exact for domestic filers, not an approximation — the
+        // apparent duplication is deliberate, don't collapse it.
+        magi: adjustedGrossIncome,
+        agi: adjustedGrossIncome,
+        // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): earned income for the refundable
+        // CTC is wages PLUS net self-employment earnings. This is the ONLY
+        // place the two are combined — `earnedIncome` stays wages-only
+        // everywhere else (it feeds calcFica / calcAdditionalMedicare above,
+        // and SE income is taxed through SECA in year-tax.ts). Floored at 0 so
+        // a Schedule C loss can't shrink wage earned income. Same idiom as
+        // tax-analysis/adapter.ts's `wages + max(0, scheduleCNet)`.
+        earnedIncome: earnedIncome + Math.max(0, input.household.selfEmploymentEarnings),
+        taxBeforeCredits: subpartATaxBeforeCredits,
+      })
+    : null;
+  const nonrefundableCredits = credits?.nonrefundable ?? 0;
+  const refundableCredits = credits?.refundable ?? 0;
+  // The AOTC actually allowed this year, both halves. Surfaced because
+  // projection.ts's IRC 25A(b)(2)(C) four-year counter has to know whether the
+  // taxpayer ELECTED the credit, and the only figure that can answer that is
+  // the one the credit engine itself produced from its OWN AGI. The report's
+  // `magiForCredits` is a different number (it cannot see taxable Social
+  // Security or the §164(f) deductible half of SE tax), so a counter driven
+  // off it disagrees with what was actually paid — and for a self-employed
+  // household it disagrees in the direction that never advances, making the
+  // four-year allowance unbounded.
+  const aotcAllowed = credits ? credits.byCredit.aotcNonrefundable + credits.byCredit.aotcRefundable : 0;
+
+  // 15. Roll-ups
+  // Stays the PRE-credit bracket tax: it is a reported line item meaning
+  // "regular bracket tax before credits", and netting credits here as well as
+  // in the total below would double-count them.
+  const regularFederalIncomeTax = regularTaxCalc; // v1: no AMT credit
+  // Nonrefundable personal credits offset chapter 1 subpart A tax ONLY. NIIT
+  // (§1411) and Additional Medicare (§3101(b)(2)) sit outside subpart A, so
+  // they are added AFTER the floor — folding them inside would let credits wipe
+  // out NIIT for any household with children. Refundable credits are subtracted
+  // OUTSIDE the floor, so an ACTC/AOTC refund shows up as a negative federal tax
+  // rather than being floored away.
   const totalFederalTax =
-    regularFederalIncomeTax +
-    capitalGainsTax +
-    amtAdditional +
+    Math.max(0, subpartATaxBeforeCredits - nonrefundableCredits) +
     niit +
-    additionalMedicare;
+    additionalMedicare -
+    refundableCredits;
   const totalTax = totalFederalTax + stateTax + ficaResult.total;
 
   return {
@@ -283,7 +348,9 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       incomeTaxBase,
       regularTaxCalc,
       amtCredit: 0,
-      taxCredits: 0,
+      taxCredits: nonrefundableCredits,
+      refundableCredits,
+      aotcAllowed,
       regularFederalIncomeTax,
       capitalGainsTax,
       amtAdditional,
@@ -302,6 +369,14 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       effectiveFederalRate: grossTotalIncome > 0 ? totalFederalTax / grossTotalIncome : 0,
       bracketsUsed: p,
       inflationFactor: input.inflationFactor,
+      // Three income measures the Thresholds report tests but `flow` cannot
+      // supply: taxableIncome there is post-QBI and floored, AMTI's add-back
+      // depends on which below-line deduction won, and NII is a different
+      // subset of income again. Surfaced from the locals that already computed
+      // them so no caller has to re-derive (and drift from) them.
+      taxableIncomeBeforeQbi,
+      amti,
+      netInvestmentIncome: niitInvestmentClean,
     },
     state: stateResult,
     capitalLoss: {
