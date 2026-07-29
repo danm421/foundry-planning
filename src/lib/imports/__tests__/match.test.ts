@@ -38,6 +38,7 @@ function payloadFixture(overrides: Partial<ImportPayload> = {}): ImportPayload {
     lifePolicies: [],
     wills: [],
     entities: [],
+    savings: [],
     warnings: [],
     ...overrides,
   };

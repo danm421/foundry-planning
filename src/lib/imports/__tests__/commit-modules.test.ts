@@ -42,6 +42,7 @@ function emptyPayload(): ImportPayload {
     lifePolicies: [],
     wills: [],
     entities: [],
+    savings: [],
     warnings: [],
   };
 }

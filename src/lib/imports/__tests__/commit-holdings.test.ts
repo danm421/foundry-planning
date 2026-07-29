@@ -5,7 +5,7 @@ import type { ImportPayload } from "@/lib/imports/types";
 function payloadWith(accounts: ImportPayload["accounts"]): ImportPayload {
   return {
     dependents: [], accounts, incomes: [], expenses: [], liabilities: [],
-    lifePolicies: [], wills: [], entities: [], warnings: [],
+    lifePolicies: [], wills: [], entities: [], savings: [], warnings: [],
   };
 }
 

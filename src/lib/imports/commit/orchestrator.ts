@@ -19,6 +19,7 @@ import { commitIncomes } from "./incomes";
 import { commitLiabilities } from "./liabilities";
 import { commitLifeInsurance } from "./life-insurance";
 import { commitPlanBasics } from "./plan-basics";
+import { commitSavings } from "./savings";
 import { commitWills } from "./wills";
 import {
   COMMIT_TABS,
@@ -134,6 +135,8 @@ async function dispatchTab(
       return commitWills(tx, payload, ctx);
     case "entities":
       return commitEntities(tx, payload, ctx);
+    case "savings":
+      return commitSavings(tx, payload, ctx);
     case "goals":
       return commitGoals(tx, payload, ctx);
   }

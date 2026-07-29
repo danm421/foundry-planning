@@ -20,6 +20,7 @@ export interface CategoryPresence {
   lifePolicies: boolean;
   wills: boolean;
   entities: boolean;
+  savings: boolean;
   goals: boolean;
 }
 
@@ -46,6 +47,7 @@ const PRESENCE_TO_TABS: Record<keyof CategoryPresence, CommitTab[]> = {
   lifePolicies: ["life-insurance"],
   wills: ["wills"],
   entities: ["entities"],
+  savings: ["savings"],
   goals: ["goals"],
 };
 
@@ -84,6 +86,7 @@ export function presenceFromPayload(payload: ImportPayload): CategoryPresence {
     lifePolicies: payload.lifePolicies.length > 0,
     wills: payload.wills.length > 0,
     entities: payload.entities.length > 0,
+    savings: payload.savings.length > 0,
     goals:
       (payload.goals?.education.length ?? 0) + (payload.goals?.homePurchases.length ?? 0) > 0 ||
       payload.goals?.riskTolerance.value != null,

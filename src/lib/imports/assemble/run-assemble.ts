@@ -54,7 +54,8 @@ function countRows(payload: ImportPayload): number {
     payload.dependents.length +
     payload.lifePolicies.length +
     payload.wills.length +
-    payload.entities.length
+    payload.entities.length +
+    payload.savings.length
   );
 }
 

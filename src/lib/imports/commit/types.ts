@@ -11,9 +11,12 @@ export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * first (it writes the client row and nothing depends on it), then
  * clients-identity (so family-members can read primary/spouse names), then
  * family-members (so accounts/etc. can resolve owner -> family member id),
- * then everything else. `goals` is LAST: it resolves its funding accounts
- * and its student by querying rows the `accounts` and `family-members` tabs
- * have already written, so it must never run before them.
+ * then everything else. `savings` resolves its destination account BY NAME
+ * against already-committed accounts (mirroring `goals`' funding-account
+ * resolution), so it must run after `accounts`. `goals` is LAST: it resolves
+ * its funding accounts and its student by querying rows the `accounts` and
+ * `family-members` tabs have already written, so it must never run before
+ * them.
  */
 export const COMMIT_TABS = [
   "plan-basics",
@@ -26,6 +29,7 @@ export const COMMIT_TABS = [
   "life-insurance",
   "wills",
   "entities",
+  "savings",
   "goals",
 ] as const;
 

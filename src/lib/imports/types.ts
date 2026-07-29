@@ -7,6 +7,7 @@ import type {
   ExtractedLiability,
   ExtractedLifePolicy,
   ExtractedPrimaryFamilyMember,
+  ExtractedSavings,
   ExtractedSpouseFamilyMember,
   ExtractedWill,
   ExtractionResult,
@@ -52,6 +53,7 @@ export type ImportPayload = {
   lifePolicies: Annotated<ExtractedLifePolicy>[];
   wills: Annotated<ExtractedWill>[];
   entities: Annotated<ExtractedEntity>[];
+  savings: Annotated<ExtractedSavings>[];
   warnings: string[];
   /**
    * Persistent Current/Retirement living-expense slots for this import's
@@ -101,6 +103,7 @@ export function emptyImportPayload(): ImportPayload {
     lifePolicies: [],
     wills: [],
     entities: [],
+    savings: [],
     warnings: [],
   };
 }

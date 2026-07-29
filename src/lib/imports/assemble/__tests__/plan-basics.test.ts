@@ -9,7 +9,7 @@ import type { ImportPayload } from "../../types";
 function payload(over: Partial<ImportPayload> = {}): ImportPayload {
   return {
     dependents: [], accounts: [], incomes: [], expenses: [], liabilities: [],
-    lifePolicies: [], wills: [], entities: [], warnings: [], ...over,
+    lifePolicies: [], wills: [], entities: [], savings: [], warnings: [], ...over,
   };
 }
 

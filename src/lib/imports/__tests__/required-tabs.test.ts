@@ -17,6 +17,7 @@ const NOTHING: CategoryPresence = {
   lifePolicies: false,
   wills: false,
   entities: false,
+  savings: false,
   goals: false,
 };
 
@@ -30,6 +31,7 @@ function emptyPayload(): ImportPayload {
     lifePolicies: [],
     wills: [],
     entities: [],
+    savings: [],
     warnings: [],
   };
 }
@@ -70,6 +72,7 @@ describe("requiredCommitTabs", () => {
       lifePolicies: true,
       wills: true,
       entities: true,
+      savings: false,
       goals: false,
     });
     expect(all).toEqual([
@@ -158,7 +161,7 @@ describe("goals tab requirement", () => {
   it("commits last, after accounts", () => {
     const all = requiredCommitTabs({
       family: true, accounts: true, incomes: true, expenses: true,
-      liabilities: true, lifePolicies: true, wills: true, entities: true, goals: true,
+      liabilities: true, lifePolicies: true, wills: true, entities: true, savings: false, goals: true,
     });
     expect(all[all.length - 1]).toBe("goals");
     expect(all.indexOf("accounts")).toBeLessThan(all.indexOf("goals"));

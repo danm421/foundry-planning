@@ -6,6 +6,7 @@ import type {
   ExtractedIncome,
   ExtractedLiability,
   ExtractedLifePolicy,
+  ExtractedSavings,
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
@@ -254,6 +255,7 @@ export function mergeAcrossFiles(
   const entityRows: SourceRow<ExtractedEntity>[] = [];
   const lifePolicyRows: SourceRow<ExtractedLifePolicy>[] = [];
   const willRows: SourceRow<ExtractedWill>[] = [];
+  const savingsRows: SourceRow<ExtractedSavings>[] = [];
 
   for (const [fileId, result] of Object.entries(fileResults)) {
     const provenanceFor = (section: string): Provenance => ({ sourceFileId: fileId, section });
@@ -272,6 +274,9 @@ export function mergeAcrossFiles(
     }
     for (const row of result.extracted.entities) {
       entityRows.push({ content: row, provenance: provenanceFor("entities") });
+    }
+    for (const row of result.extracted.savings) {
+      savingsRows.push({ content: row, provenance: provenanceFor("savings") });
     }
     for (const row of result.extracted.lifePolicies) {
       lifePolicyRows.push({ content: row, provenance: provenanceFor("lifePolicies") });
@@ -342,6 +347,7 @@ export function mergeAcrossFiles(
   concatSection(payload.entities, entityRows);
   concatSection(payload.lifePolicies, lifePolicyRows);
   concatSection(payload.wills, willRows);
+  concatSection(payload.savings, savingsRows);
 
   return { payload, mergedFileCount: Object.keys(fileResults).length };
 }

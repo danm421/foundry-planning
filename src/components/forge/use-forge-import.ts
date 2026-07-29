@@ -50,7 +50,7 @@ export interface PlanBuildResult {
 // commit module is server-only; keep this list in sync if tabs change.
 const ALL_COMMIT_TABS = [
   "plan-basics", "clients-identity", "family-members", "accounts", "incomes",
-  "expenses", "liabilities", "life-insurance", "wills", "entities", "goals",
+  "expenses", "liabilities", "life-insurance", "wills", "entities", "savings", "goals",
 ] as const;
 
 export interface FactFinderIdentifyResponse {

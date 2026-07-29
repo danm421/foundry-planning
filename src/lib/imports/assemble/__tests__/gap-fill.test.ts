@@ -11,6 +11,7 @@ const empty: ImportPayload = {
   lifePolicies: [],
   wills: [],
   entities: [],
+  savings: [],
   warnings: [],
 };
 
