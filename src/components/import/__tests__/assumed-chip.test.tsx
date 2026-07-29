@@ -26,4 +26,49 @@ describe("AssumedChip", () => {
     render(<AssumedChip assumption={ASSUMPTION} />);
     expect(screen.getByRole("tooltip")).toHaveTextContent(ASSUMPTION.reason);
   });
+
+  it("renders an estimated value distinctly from a document value", () => {
+    const { container } = render(
+      <AssumedChip
+        assumption={{
+          field: "goal.education.ucsb",
+          value: 41000,
+          provenance: "estimated",
+          reason: "Model estimate of UCSB cost.",
+        }}
+      />,
+    );
+    expect(container.textContent).toMatch(/estimate/i);
+    expect(container.textContent).toMatch(/verify/i);
+  });
+
+  it("does not label a document-sourced value as an estimate", () => {
+    const { container } = render(
+      <AssumedChip
+        assumption={{
+          field: "client.age",
+          value: 64,
+          provenance: "document",
+          reason: "Stated in the Profile table.",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("assumed-chip")).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/estimate/i);
+  });
+
+  it("shows the reason for a normalized value", () => {
+    render(
+      <AssumedChip
+        assumption={{
+          field: "client.retirementAge",
+          value: 2049,
+          provenance: "derived",
+          reason:
+            "Ends at the spouse's retirement. The document stated age 95, which appears to be a data-entry error.",
+        }}
+      />,
+    );
+    expect(screen.getByText(/data-entry error/)).toBeInTheDocument();
+  });
 });
