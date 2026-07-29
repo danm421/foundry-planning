@@ -121,13 +121,33 @@ export const SURVIVOR_FLOOR_PCT_OF_PIA = 0.825;
  * STALENESS: the caller's ssWageBase is a 2026 figure (184,500), so the
  * estimator currently pairs a 2026 wage base with 2025 bend points. The bend
  * points are the stalest input in the calculation. Bend points and the wage
- * base are both indexed to the same SSA average-wage index, so 2026 figures
- * will be HIGHER than these; using 2025's too-low bend points leaves more of
- * AIME in the 90% band, which OVERSTATES the PIA slightly — on the order of
- * 1-2%, well inside the plus-or-minus-10% tolerance this estimator is
- * specified to. To fix, replace BOTH figures AND the year with SSA's published
- * 2026 "Benefit Formula Bend Points" once confirmed from SSA directly. Do not
- * derive or interpolate them.
+ * base are both indexed to the same SSA average-wage index, so the 2026 bend
+ * points will be HIGHER than these.
+ *
+ * The bias is an UNDERSTATEMENT of the PIA: the 90% band is capped at the first
+ * bend point (band1 = min(AIME, first)), so a too-low bend point prices fewer
+ * dollars at 90% and more at 32%/15%. Because the rates descend, PIA is
+ * monotonically non-decreasing in both bend points.
+ *
+ * Sensitivity, writing dFirst/dSecond for the amounts by which the 2026 figures
+ * exceed these — only dollars that cross a band boundary get repriced, at the
+ * rate differences 0.9-0.32 = 0.58 and 0.32-0.15 = 0.17:
+ *   AIME above the second bend point → shortfall = 0.58*dFirst + 0.17*dSecond
+ *   AIME between the two bend points  → shortfall = 0.58*dFirst
+ *   AIME below the first bend point   → NO error at all; 0.9*AIME either way
+ *
+ * Magnitude: a low-single-digit percentage of the PIA, and strictly SMALLER
+ * than the year-over-year percentage increase in the bend points themselves.
+ * (For a uniform increase g, the shortfall is g*K while the PIA is
+ * K + 0.15*AIME, where K = 0.58*first + 0.17*second; the denominator carries a
+ * positive term the numerator does not, so the ratio stays below g.) The bend
+ * points track the same index as the wage base, which moved 176,100 → 184,500,
+ * about 4.8%. Well inside the plus-or-minus-10% tolerance this estimator is
+ * specified to.
+ *
+ * To fix, replace BOTH figures AND the year with SSA's published 2026 "Benefit
+ * Formula Bend Points" once confirmed from SSA directly. Do not derive or
+ * interpolate them.
  *
  * Source: SSA "Benefit Formula Bend Points".
  */
