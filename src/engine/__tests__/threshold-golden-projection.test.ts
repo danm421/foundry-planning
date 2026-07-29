@@ -513,11 +513,15 @@ describe("crossing: the CTC is partially phased through 2027, whole from 2028, t
   });
 
   it("walks the credit down as the children age out, with nothing else moving", () => {
-    //          2028                    2029                2030     2031/32
-    //   2 QC + 1 ODC + AOTC     1 QC + 1 ODC + AOTC   1 QC + 1 ODC   1 ODC
-    //   4,000 + 500 + 328.125   2,000 + 500 + 328.125  2,000 + 500     500
+    //          2028                    2029                   2030
+    //   2 QC + 1 ODC + AOTC     1 QC + 1 ODC + AOTC     1 QC + 1 ODC + AOTC
+    //   4,000 + 500 + 328.125   2,000 + 500 + 328.125   2,000 + 500 + 328.125
+    //
+    //          2031                 2032
+    //   1 ODC + AOTC              1 ODC          (allowance spent after 4 years)
+    //   500 + 328.125               500
     expect(per((y) => y.taxResult!.flow.taxCredits)).toEqual([
-      3_000, 3_000, 4_828.125, 2_828.125, 2_500, 500, 500,
+      3_000, 3_000, 4_828.125, 2_828.125, 2_828.125, 828.125, 500,
     ]);
   });
 });
@@ -527,74 +531,64 @@ describe("crossing: the CTC is partially phased through 2027, whole from 2028, t
 // (430,000 is past the 180,000 MFJ ceiling; 175,625 sits inside it). THAT is
 // this item's statutory crossing and the one R4 is satisfied by.
 //
-// ⚠️ The credit ALSO goes to zero at 2030, but that second transition is NOT a
-// statutory one — it is the engine defect documented at the foot of this block.
-// Under a §25A-correct counter the credit would keep paying through 2031 and
-// there would be no 2030 flip at all. The assertions below pin CURRENT
-// behaviour, correctly and deliberately; they are not a statement about what
-// the statute requires. Read the divergence note before trusting the shape.
+// The credit then pays for four years — 2028 through 2031 — and stops in 2032
+// because IRC 25A(b)(2)(C)'s four-year allowance is spent, not because income
+// moved. 2026-2027 are phased out to zero and so cost the student NOTHING:
+// a year in which no credit was allowed is not a year the taxpayer "elected to
+// have this section apply", so it does not burn one of the four.
 // ════════════════════════════════════════════════════════════════════════════
 
-describe("crossing: the AOTC is phased out through 2027, PAID in 2028-2029, and zero from 2030", () => {
-  it("stops counting the student after four goal-years — the ENGINE's counter, not the statute's", () => {
-    // Goal runs 2026-2031. The engine burns a year per active goal-year
-    // regardless of whether a credit was allowed, so it stops after 2029.
-    // ⚠️ The two trailing zeros are the DEFECT documented below, not §25A:
-    // 2026-2027 paid nothing yet consumed half the allowance.
-    expect(per((y) => facts(y).household.aotcStudents)).toEqual([1, 1, 1, 1, 0, 0, 0]);
+describe("crossing: the AOTC is phased out through 2027, then PAID for its full four years", () => {
+  it("keeps offering the student the credit in every goal-year until the four are spent", () => {
+    // Goal runs 2026-2031, six years, of which the student may claim four.
+    // 2026-2027 are phased out (income), so the allowance is untouched; the
+    // four claimed years are 2028-2031 and 2032 is the first denial.
+    //
+    // The leading 1s matter as much as the trailing 0: a phased-out year still
+    // REPORTS the student, which is what lets the Thresholds report say "out"
+    // (disqualified by income) instead of "na" (no student here).
+    expect(per((y) => facts(y).household.aotcStudents)).toEqual([1, 1, 1, 1, 1, 1, 0]);
   });
 
-  it("pays 218.75 refundable + 328.125 nonrefundable in 2028-2029 and nothing either side", () => {
+  it("pays 218.75 refundable + 328.125 nonrefundable in each of the four claimed years", () => {
     // MAGI 175,625 inside the 160,000-180,000 MFJ band -> surviving fraction
     // (180,000 - 175,625) / 20,000 = 0.21875. One student, 40,000 of qualified
     // expenses -> the 2,500 cap binds -> 2,500 x 0.21875 = 546.875, split 40/60
     // by IRC 25A(i)(5) into 218.75 refundable and 328.125 nonrefundable.
     // Every figure is a dyadic fraction, so these are exact, not approximate.
     //
-    // ⚠️ The 2028 flip (0 -> 218.75) is the statutory MAGI crossing. The 2030
-    // flip (218.75 -> 0) is the ENGINE DEFECT documented below — §25A would
-    // keep paying 218.75 through 2031. Both values are pinned as current
-    // behaviour; only the first is a statement about the statute.
+    // The 2028 flip (0 -> 218.75) is the statutory MAGI crossing. The 2032 flip
+    // (218.75 -> 0) is the four-year allowance running out — both statutory.
     expect(per((y) => y.taxResult!.flow.refundableCredits)).toEqual([
-      0, 0, 218.75, 218.75, 0, 0, 0,
+      0, 0, 218.75, 218.75, 218.75, 218.75, 0,
     ]);
   });
 
-  it("renders out → partial at 2028, then na from 2030 once the counter is spent", () => {
-    // "na" rather than "out" from 2030: the household still HAS a student in
-    // college, but the engine's counter no longer offers them the credit, which
-    // is a different statement from "their income disqualified them".
-    // ⚠️ Those three "na"s are the DEFECT documented below, not the statute —
-    // and they are the reason it is invisible on the report, which reads them
-    // as "no AOTC student here" rather than "allowance already spent".
-    expect(statuses("aotc")).toEqual([
-      "out", "out", "partial", "partial", "na", "na", "na",
-    ]);
-  });
-
-  /**
-   * ⚠️ KNOWN DIVERGENCE FROM IRC 25A(b)(2)(C) — reported to the controller,
-   * deliberately NOT fixed here (Task 14 is not a fix task) and deliberately
-   * NOT asserted the other way round, which would launder it into a green tick.
-   *
-   * `projection.ts:4064-4069` burns one of the student's four years whenever an
-   * education goal is active, WITHOUT regard to whether any credit was actually
-   * allowed. This household's 2026 and 2027 credits are 0 — the MAGI is 250,000
-   * past the ceiling — yet those two years consume half the allowance, so by
-   * the time the income falls only 2028 and 2029 remain.
-   *
-   * §25A(b)(2)(C) denies the credit only where "the taxpayer elected to have
-   * this section apply ... for any 4 PRIOR taxable years". A year in which the
-   * phase-out reduced the credit to zero is not a year the taxpayer elected
-   * anything — no Form 8863 is filed for it — so 2030 and 2031 should still be
-   * claimable, at the same 546.875 the engine pays in 2028.
-   *
-   * `it.fails` rather than a comment so this self-destructs: the moment the
-   * counter learns to skip zero-credit years, this test starts FAILING (vitest
-   * reports "expected test to fail") and whoever fixes it is told to delete it.
-   */
-  it.fails("§25A(b)(2)(C): a year whose credit phased out to zero should not burn one of the four", () => {
+  it("does NOT burn one of the four on a year the phase-out zeroed — IRC 25A(b)(2)(C)", () => {
+    // The regression that matters, stated as a single equality: 2030 (index 4)
+    // pays, and it can only pay because 2026 and 2027 — both credit-zero —
+    // left the allowance intact. A counter that burns on education-goal
+    // ACTIVITY rather than on election spends 2026+2027 and leaves this at 0.
+    //
+    // This replaces the `it.fails` tripwire that marked the defect while it
+    // stood. `it.fails` passes on ANY value other than the expected one
+    // (including a thrown TypeError), so it was never coverage — the exact
+    // figure is pinned here instead.
     expect(YEARS[4].taxResult!.flow.refundableCredits).toBe(218.75);
+  });
+
+  it("renders out → partial at 2028 and holds it through 2031, then na once spent", () => {
+    // The two vocabularies are doing different work here, and the distinction
+    // is the whole point of the counter fix:
+    //   "out"  (2026-2027) — the student exists; their income disqualified them.
+    //   "na"   (2032)      — the four-year allowance is spent, so no student is
+    //                        offered the credit at all.
+    // Before the fix this read "na" from 2030, which told an advisor "no AOTC
+    // student here" for a household that had one in college and two unused
+    // claim years left.
+    expect(statuses("aotc")).toEqual([
+      "out", "out", "partial", "partial", "partial", "partial", "na",
+    ]);
   });
 });
 

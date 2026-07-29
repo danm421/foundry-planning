@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeCredits } from "../credits";
+import { computeCredits, aotcSurvivingFraction } from "../credits";
 import type { CreditsInput } from "../credits";
 import type { TaxYearParameters } from "../types";
 
@@ -356,5 +356,45 @@ describe("computeCredits — byCredit structural invariants (R4)", () => {
     expect(result.byCredit.aotcRefundable).toBe(1000); // 40% of the $2,500 capped, unphased credit
     expect(result.byCredit.ctcRefundable).toBe(500); // afterPhaseout 2500 - used 2000 = 500 unused, under both caps
     expect(result.refundable).toBe(1500);
+  });
+});
+
+// ── The phase-out fraction, exported for the IRC 25A(b)(2)(C) counter ───────
+
+describe("aotcSurvivingFraction", () => {
+  // AOTC ranges are STATUTORY_FIXED, not seeded: MFJ 160,000-180,000,
+  // everyone else 80,000-90,000. The `params` fixture never supplies them.
+  const mfj = (magi: number) => aotcSurvivingFraction(2026, params, "married_joint", magi);
+
+  it("is 1 below the range and 0 at or above its top", () => {
+    expect(mfj(150_000)).toBe(1);
+    expect(mfj(160_000)).toBe(1);
+    // Exactly AT the ceiling the credit is gone — the boundary that decides
+    // whether the year burns one of the student's four.
+    expect(mfj(180_000)).toBe(0);
+    expect(mfj(430_000)).toBe(0);
+  });
+
+  it("is linear inside the range", () => {
+    // (180,000 - 175,625) / 20,000 = 0.21875 — the golden projection's figure.
+    expect(mfj(175_625)).toBe(0.21875);
+    expect(mfj(170_000)).toBe(0.5);
+  });
+
+  it("is 0 for MFS at ANY income — IRC 25A(g)(6) denies the credit outright", () => {
+    // Must be decided on filing status, not inferred from rangeFor's NA
+    // sentinel, which elsewhere means "not seeded yet". A filer well below
+    // every threshold still gets nothing.
+    expect(aotcSurvivingFraction(2026, params, "married_separate", 0)).toBe(0);
+    expect(aotcSurvivingFraction(2026, params, "married_separate", 50_000)).toBe(0);
+    // ...while the same income single is fully in.
+    expect(aotcSurvivingFraction(2026, params, "single", 50_000)).toBe(1);
+  });
+
+  it("uses the narrower non-MFJ range", () => {
+    // Single 80,000-90,000: 85,000 is the midpoint. Under the MFJ range the
+    // same MAGI would survive in full, so a transposed ternary shows up here.
+    expect(aotcSurvivingFraction(2026, params, "single", 85_000)).toBe(0.5);
+    expect(mfj(85_000)).toBe(1);
   });
 });

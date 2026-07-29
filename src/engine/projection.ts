@@ -49,6 +49,7 @@ import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxHouseholdInput, TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import type { ThresholdFacts, ThresholdHousehold } from "../lib/tax/thresholds";
 import { STATUTORY_FIXED } from "../lib/tax/constants";
+import { aotcSurvivingFraction } from "../lib/tax/credits";
 import {
   buildAnnualExclusionMap,
   type AnnualExclusionRow,
@@ -4076,12 +4077,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           (expensesByStudent.get(goal.forFamilyMemberId) ?? 0) + cost,
         );
       }
+      // IRC 25A(b)(2)(C) spends one of the four years only when the taxpayer
+      // ELECTED the credit — "elected to have this section apply ... for any 4
+      // PRIOR taxable years". A year the phase-out reduced to zero is not an
+      // election (no Form 8863 is filed for it), so it must NOT burn one.
+      //
+      // Read from the same function that computes the credit itself, so the
+      // counter can never disagree with what was actually paid.
+      const aotcElected = aotcSurvivingFraction(
+        year, resolved!.params, filingStatus, thresholdInputs.magiForCredits,
+      ) > 0;
       const aotcStudents: { qualifiedExpenses: number }[] = [];
       for (const [studentId, qualifiedExpenses] of expensesByStudent) {
         const alreadyClaimed = aotcClaimedYearsByStudent.get(studentId) ?? 0;
         // IRC 25A(b)(2)(C): a fifth claimed year contributes no entry at all.
         if (alreadyClaimed >= STATUTORY_FIXED.aotcMaxYearsPerStudent) continue;
-        aotcClaimedYearsByStudent.set(studentId, alreadyClaimed + 1);
+        if (aotcElected) aotcClaimedYearsByStudent.set(studentId, alreadyClaimed + 1);
+        // The student is still reported in a phased-out year. That is what
+        // makes the Thresholds report say "out" (income disqualified them)
+        // rather than "na" (no student here) — a materially different
+        // statement to an advisor, and the one the old counter destroyed by
+        // spending the allowance on zero-credit years.
         aotcStudents.push({ qualifiedExpenses });
       }
 

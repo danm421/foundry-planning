@@ -89,27 +89,57 @@ interface AotcSplit {
   refundable: number;
 }
 
-function computeAotc(input: CreditsInput): AotcSplit {
+/**
+ * The fraction of each student's AOTC that survives this household's IRC 25A(d)
+ * phase-out — 0 when the credit is denied outright, 1 below the range.
+ *
+ * Exported because IRC 25A(b)(2)(C)'s four-year-per-student allowance must only
+ * be spent on a year the taxpayer actually ELECTED the credit. The statute
+ * denies the credit where the taxpayer "elected to have this section apply ...
+ * for any 4 PRIOR taxable years"; a year the phase-out reduced to zero is not
+ * an election — no Form 8863 is filed for it — so `projection.ts` consults this
+ * before advancing its counter.
+ *
+ * It is the SAME function that computes the money below, deliberately: a
+ * separate "was the credit allowed?" predicate in the engine would be free to
+ * drift from the arithmetic it is supposed to describe, and the counter would
+ * start burning years the credit layer did not pay for.
+ *
+ * One household MAGI applies identically to every student, so this is a
+ * household-level answer, not a per-student one.
+ */
+export function aotcSurvivingFraction(
+  year: number,
+  params: TaxYearParameters,
+  filingStatus: FilingStatus,
+  magi: number,
+): number {
   // IRC 25A(g)(6): denied outright to MFS filers. Decided on filing status
   // BEFORE consulting rangeFor — rangeFor's own NA_RANGE for ("aotc", MFS)
   // means exactly this, but inferring statutory denial from the NA sentinel
   // is the trap R3 calls out: the same sentinel elsewhere means "not seeded
   // yet," and this module must never conflate the two.
-  if (input.filingStatus === "married_separate") return { nonrefundable: 0, refundable: 0 };
+  if (filingStatus === "married_separate") return 0;
 
-  const range = rangeFor("aotc", input.year, input.params, input.filingStatus);
+  const range = rangeFor("aotc", year, params, filingStatus);
   // Every non-MFS filing status yields a real STATUTORY_FIXED-backed range —
   // AOTC amounts are never null, so this is unreachable in practice. Kept so
   // a future change to rangeFor fails safe (0 credit) rather than throwing.
-  if (isNaRange(range) || range.end == null) return { nonrefundable: 0, refundable: 0 };
+  if (isNaRange(range) || range.end == null) return 0;
+
+  // Same surviving-fraction shape as `studentLoanInterestDeduction`: linear
+  // phase-out (IRC 25A(d)). No Pub 590-A $10 round-up — that rounding is
+  // IRA/Roth-specific.
+  return Math.max(0, Math.min(1, (range.end - magi) / (range.end - range.start)));
+}
+
+function computeAotc(input: CreditsInput): AotcSplit {
+  const survivingFraction = aotcSurvivingFraction(
+    input.year, input.params, input.filingStatus, input.magi,
+  );
+  if (survivingFraction === 0) return { nonrefundable: 0, refundable: 0 };
 
   const S = STATUTORY_FIXED;
-  // Same surviving-fraction shape as `studentLoanInterestDeduction`: linear
-  // phase-out (IRC 25A(d)), one household MAGI applied identically to every
-  // student. No Pub 590-A $10 round-up — that rounding is IRA/Roth-specific.
-  const rawFraction = (range.end - input.magi) / (range.end - range.start);
-  const survivingFraction = Math.max(0, Math.min(1, rawFraction));
-
   let nonrefundable = 0;
   let refundable = 0;
   for (const student of input.aotcStudents) {

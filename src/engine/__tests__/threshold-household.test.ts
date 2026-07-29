@@ -706,7 +706,13 @@ describe("AOTC students: named by an education goal, capped at four claimed year
   const sixYearSettings: PlanSettings = { ...SETTINGS, planEndYear: 2031 };
 
   it("claims the credit for exactly four years and then stops", () => {
+    // ⚠️ Salary 100,000 is load-bearing, not decoration. The counter only
+    // spends a year in which the credit was actually ALLOWED (IRC
+    // 25A(b)(2)(C) — see the phased-out case below), so at the fixture's
+    // default 200,000 the MAGI is past the 180,000 MFJ ceiling, no year is
+    // ever claimed, and this assertion would be testing nothing at all.
     const years = runProjection(build({
+      incomes: [salary(100_000)],
       planSettings: sixYearSettings,
       familyMembers: [...FMS, student],
       expenses: [goal()],
@@ -716,22 +722,48 @@ describe("AOTC students: named by an education goal, capped at four claimed year
     expect(counts).toEqual([1, 1, 1, 1, 0, 0]);
   });
 
+  it("does NOT spend one of the four on a year the phase-out zeroed", () => {
+    // Same six-year goal at an income that denies the credit outright (MAGI
+    // 200,000 is past the 180,000 MFJ ceiling). §25A(b)(2)(C) spends a year
+    // only where the taxpayer "elected to have this section apply"; a
+    // zero-credit year is no election, so the allowance stays intact and the
+    // student is still reported in all six years.
+    //
+    // This is the exact contrast with the test above: same goal, same student,
+    // same horizon — only the income differs, and only the income should
+    // decide whether the allowance is consumed.
+    const years = runProjection(build({
+      incomes: [salary(200_000)],
+      planSettings: sixYearSettings,
+      familyMembers: [...FMS, student],
+      expenses: [goal()],
+    }));
+    expect(years.map((y) => y.thresholdFacts!.household.aotcStudents))
+      .toEqual([1, 1, 1, 1, 1, 1]);
+    // And nothing was ever paid, which is what makes those six years free.
+    expect(years.every((y) => y.taxResult!.flow.refundableCredits === 0)).toBe(true);
+  });
+
   it("would be wrong in every year after the first if the counter were per-year", () => {
     // The counter is per-projection-CALL state declared outside the year loop.
     // A fresh call must start from zero again — otherwise Monte Carlo's second
     // trial onward silently denies the credit.
-    const first = runProjection(build({
+    //
+    // ⚠️ Salary 100,000 again: at an income where no year is ever claimed the
+    // counter never advances, so leaked state would be indistinguishable from
+    // clean state and both runs would match trivially.
+    const runOnce = () => runProjection(build({
+      incomes: [salary(100_000)],
       planSettings: sixYearSettings,
       familyMembers: [...FMS, student],
       expenses: [goal()],
-    }));
-    const second = runProjection(build({
-      planSettings: sixYearSettings,
-      familyMembers: [...FMS, student],
-      expenses: [goal()],
-    }));
-    expect(second.map((y) => y.thresholdFacts!.household.aotcStudents))
-      .toEqual(first.map((y) => y.thresholdFacts!.household.aotcStudents));
+    })).map((y) => y.thresholdFacts!.household.aotcStudents);
+    const first = runOnce();
+    const second = runOnce();
+    expect(second).toEqual(first);
+    // Non-vacuous: the counter genuinely runs out inside a single call, so a
+    // leak across calls would show up as a second run of all zeros.
+    expect(first).toEqual([1, 1, 1, 1, 0, 0]);
   });
 
   it("skips a goal that names no student rather than attributing it to the client", () => {
@@ -745,7 +777,10 @@ describe("AOTC students: named by an education goal, capped at four claimed year
   it("counts two goals for the same student as ONE claimed year", () => {
     // §25A's four-year limit and its $4,000 expense ceiling are both per
     // STUDENT per year, so two goals must not burn two of the four years.
+    // Salary 100,000 so the years are actually claimed — see the note on the
+    // four-year test above.
     const years = runProjection(build({
+      incomes: [salary(100_000)],
       planSettings: sixYearSettings,
       familyMembers: [...FMS, student],
       expenses: [goal(), goal({ id: "exp-college-2", name: "Room & Board", annualAmount: 15_000 })],
