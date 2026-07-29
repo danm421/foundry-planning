@@ -2,11 +2,18 @@ import { describe, it, expect } from "vitest";
 import { describeMismatch, effectiveScenarioPortfolioId, describeBucketSource } from "../portfolio-mismatch";
 
 describe("describeMismatch", () => {
+  const BUCKETS = [
+    { label: "Taxable", value: "Balanced Growth" },
+    { label: "Retirement", value: "Custom 6.00%" },
+  ];
+
   it("reports aligned when the scenario already uses the profile's portfolio", () => {
     const s = describeMismatch({
       compositeLevel: "moderate",
       profilePortfolioId: "pf-mod",
+      profilePortfolioName: "Balanced Growth",
       scenarioPortfolioId: "pf-mod",
+      buckets: BUCKETS,
     });
     expect(s.kind).toBe("aligned");
   });
@@ -15,7 +22,9 @@ describe("describeMismatch", () => {
     const s = describeMismatch({
       compositeLevel: "moderate",
       profilePortfolioId: "pf-mod",
+      profilePortfolioName: "Balanced Growth",
       scenarioPortfolioId: "pf-aggr",
+      buckets: BUCKETS,
     });
     expect(s.kind).toBe("mismatch");
     expect(s.kind === "mismatch" && s.applyToPortfolioId).toBe("pf-mod");
@@ -25,7 +34,9 @@ describe("describeMismatch", () => {
     const s = describeMismatch({
       compositeLevel: "moderate",
       profilePortfolioId: null,
+      profilePortfolioName: null,
       scenarioPortfolioId: "pf-aggr",
+      buckets: BUCKETS,
     });
     expect(s.kind).toBe("untagged");
   });
@@ -34,9 +45,48 @@ describe("describeMismatch", () => {
     const s = describeMismatch({
       compositeLevel: null,
       profilePortfolioId: null,
+      profilePortfolioName: null,
       scenarioPortfolioId: "pf-aggr",
+      buckets: BUCKETS,
     });
     expect(s.kind).toBe("no_profile");
+  });
+
+  it("carries the target name and the buckets through the aligned state", () => {
+    const s = describeMismatch({
+      compositeLevel: "moderate",
+      profilePortfolioId: "pf-mod",
+      profilePortfolioName: "Balanced Growth",
+      scenarioPortfolioId: "pf-mod",
+      buckets: BUCKETS,
+    });
+    expect(s.kind === "aligned" && s.targetName).toBe("Balanced Growth");
+    expect(s.kind === "aligned" && s.buckets).toEqual(BUCKETS);
+  });
+
+  it("carries the target name and the buckets through the mismatch state", () => {
+    const s = describeMismatch({
+      compositeLevel: "moderate",
+      profilePortfolioId: "pf-mod",
+      profilePortfolioName: "Balanced Growth",
+      scenarioPortfolioId: null,
+      buckets: BUCKETS,
+    });
+    expect(s.kind === "mismatch" && s.targetName).toBe("Balanced Growth");
+    expect(s.kind === "mismatch" && s.buckets).toEqual(BUCKETS);
+  });
+
+  it("falls back to Unknown portfolio when the tagged id has no name", () => {
+    // The rung is tagged, so this is not `untagged` -- but the name lookup
+    // missed, and the headline must still read as a sentence.
+    const s = describeMismatch({
+      compositeLevel: "moderate",
+      profilePortfolioId: "pf-mod",
+      profilePortfolioName: null,
+      scenarioPortfolioId: "pf-aggr",
+      buckets: BUCKETS,
+    });
+    expect(s.kind === "mismatch" && s.targetName).toBe("Unknown portfolio");
   });
 });
 

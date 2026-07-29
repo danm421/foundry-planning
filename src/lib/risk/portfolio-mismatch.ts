@@ -2,27 +2,44 @@ import type { RiskLevel } from "@/lib/risk-levels";
 
 export type MismatchState =
   | { kind: "no_profile" }
-  | { kind: "untagged"; level: RiskLevel }
-  | { kind: "aligned"; level: RiskLevel }
-  | { kind: "mismatch"; level: RiskLevel; applyToPortfolioId: string };
+  | { kind: "untagged"; level: RiskLevel; buckets: BucketReadout[] }
+  | { kind: "aligned"; level: RiskLevel; targetName: string; buckets: BucketReadout[] }
+  | {
+      kind: "mismatch";
+      level: RiskLevel;
+      targetName: string;
+      applyToPortfolioId: string;
+      buckets: BucketReadout[];
+    };
 
 export function describeMismatch(args: {
   compositeLevel: RiskLevel | null;
   /** The firm's model portfolio tagged with the composite level, if any. */
   profilePortfolioId: string | null;
+  /** That portfolio's name. Null when the id is null, or when the lookup missed. */
+  profilePortfolioName: string | null;
   /** The portfolio the base scenario is effectively driven by (see
    *  `effectiveScenarioPortfolioId`). */
   scenarioPortfolioId: string | null;
+  /** Per-bucket readout of what the scenario actually runs on. */
+  buckets: BucketReadout[];
 }): MismatchState {
   if (!args.compositeLevel) return { kind: "no_profile" };
-  if (!args.profilePortfolioId) return { kind: "untagged", level: args.compositeLevel };
+  // `untagged` carries no targetName by construction: no portfolio is tagged
+  // at this rung, so there is no name to show.
+  if (!args.profilePortfolioId) {
+    return { kind: "untagged", level: args.compositeLevel, buckets: args.buckets };
+  }
+  const targetName = args.profilePortfolioName ?? "Unknown portfolio";
   if (args.profilePortfolioId === args.scenarioPortfolioId) {
-    return { kind: "aligned", level: args.compositeLevel };
+    return { kind: "aligned", level: args.compositeLevel, targetName, buckets: args.buckets };
   }
   return {
     kind: "mismatch",
     level: args.compositeLevel,
+    targetName,
     applyToPortfolioId: args.profilePortfolioId,
+    buckets: args.buckets,
   };
 }
 
