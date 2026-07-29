@@ -17,7 +17,11 @@
 //
 // Extracted because the rule (and the paragraph above it) had been written out
 // three times — `flow-write.ts`, `life-expectancy-write.ts`, and the loop in
-// `account-write.ts`. `strip` is a PARAMETER rather than a shared constant on
+// `account-write.ts`. The first two call this; `account-write.ts` still carries
+// its own copy, because its loop is only the first half of a larger payload
+// build (prune, then merge the patch over it, then the `growthRate: null`
+// guard) and converting it is a change to prod-live account writes rather than
+// to this feature. `strip` is a PARAMETER rather than a shared constant on
 // purpose: the flow rows have keys that must never be sent, the singletons have
 // none, and a shared default would silently start stripping a singleton the day
 // `client` gains an `id`.
