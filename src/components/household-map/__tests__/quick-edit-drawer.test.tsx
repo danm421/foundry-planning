@@ -19,6 +19,11 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/clients/client-1/details/map",
 }));
 
+// Real uuids: `forFamilyMemberId` is validated as one on the write path, so a
+// "fm-kelly" placeholder would let a test pass a body the API would 400.
+const FM_KELLY = "11111111-1111-4111-8111-111111111111";
+const FM_SAM = "22222222-2222-4222-8222-222222222222";
+
 const milestones: ClientMilestones = {
   planStart: 2026,
   planEnd: 2066,
@@ -79,6 +84,12 @@ function renderExpense(row: ExpenseView) {
       spouseFirstName="Jordan"
       milestones={milestones}
       resolvedInflationRate={0.03}
+      // Two children, both with a birth year, so the education-goal
+      // beneficiary picker has something to auto-fill from.
+      familyMembers={[
+        { id: FM_KELLY, firstName: "Kelly", birthYear: 2012 },
+        { id: FM_SAM, firstName: "Sam", birthYear: null },
+      ]}
       onClose={() => {}}
     />,
   );
@@ -148,6 +159,12 @@ describe("QuickEditDrawer — goal checkbox (Task 11 brief, Step 2)", () => {
         spouseFirstName="Jordan"
         milestones={milestones}
         resolvedInflationRate={0.03}
+      // Two children, both with a birth year, so the education-goal
+      // beneficiary picker has something to auto-fill from.
+      familyMembers={[
+        { id: FM_KELLY, firstName: "Kelly", birthYear: 2012 },
+        { id: FM_SAM, firstName: "Sam", birthYear: null },
+      ]}
         onClose={() => {}}
       />,
     );
@@ -260,6 +277,12 @@ describe("QuickEditDrawer — create mode seeded as a goal", () => {
         spouseFirstName="Jordan"
         milestones={milestones}
         resolvedInflationRate={0.03}
+      // Two children, both with a birth year, so the education-goal
+      // beneficiary picker has something to auto-fill from.
+      familyMembers={[
+        { id: FM_KELLY, firstName: "Kelly", birthYear: 2012 },
+        { id: FM_SAM, firstName: "Sam", birthYear: null },
+      ]}
         onClose={() => {}}
       />,
     );

@@ -71,6 +71,15 @@ function ownerFromColumn(column: MapColumn): "client" | "spouse" | "joint" {
   return column === "client" || column === "spouse" ? column : "joint";
 }
 
+/** The four `expenses.type` enum members, in the order the full editor
+ *  (`income-expenses-view.tsx`) lists them. */
+const EXPENSE_TYPES = [
+  { value: "living", label: "Living expense" },
+  { value: "insurance", label: "Insurance" },
+  { value: "education", label: "Education" },
+  { value: "other", label: "Other" },
+] as const;
+
 interface SeedValues {
   name: string;
   owner: "client" | "spouse" | "joint";
@@ -168,6 +177,15 @@ interface QuickEditDrawerProps {
    * 2.4% plan the wrong number.
    */
   resolvedInflationRate: number;
+  /**
+   * Beneficiary options for a NEW education expense. Every family member, not
+   * just the children: a grandchild's 529 is an `other`-role member, and the
+   * full editor offers the same unfiltered list.
+   *
+   * `birthYear` drives the auto-fill (start = the year they turn 18) and is
+   * nullable, so a member with no DOB just doesn't move the dates.
+   */
+  familyMembers: { id: string; firstName: string; birthYear: number | null }[];
   onClose: () => void;
 }
 
@@ -178,6 +196,7 @@ export default function QuickEditDrawer({
   spouseFirstName,
   milestones,
   resolvedInflationRate,
+  familyMembers,
   onClose,
 }: QuickEditDrawerProps) {
   const writer = useScenarioWriter(clientId);
@@ -203,8 +222,20 @@ export default function QuickEditDrawer({
   const [growthSource, setGrowthSource] = useState(seed.growthSource);
   const [growthRateDisplay, setGrowthRateDisplay] = useState(seed.growthRateDisplay);
   const [isGoal, setIsGoal] = useState(seed.isGoal);
+  /**
+   * Editable in CREATE mode only — the picker below is gated on `!isEdit`, so in
+   * edit mode this holds `seed.type` and never changes.
+   *
+   * Retyping an EXISTING expense is deliberately left to the full editor: an
+   * education row also carries `institutionState`, `payShortfallOutOfPocket` and
+   * a `dedicatedAccountIds` join this drawer does not render, and switching a
+   * row's type here would leave those pointing at a type the row no longer is.
+   * Creating has nothing to strand.
+   */
+  const [type, setType] = useState(seed.type);
+  const [forFamilyMemberId, setForFamilyMemberId] = useState("");
+  const [institutionName, setInstitutionName] = useState("");
 
-  const type = seed.type;
   const isDefault = seed.isDefault;
 
   useEffect(() => {
@@ -216,6 +247,31 @@ export default function QuickEditDrawer({
   }, [onClose]);
 
   const isEducation = target.kind === "expense" && type === "education";
+
+  /**
+   * Picking the beneficiary titles and time-boxes the goal: a 4-year program
+   * starting the year they turn 18, or the plan's first year if that has already
+   * passed. Both stay editable afterwards. Mirrors `handleForChange` in
+   * `income-expenses-view.tsx` so a goal added here and one added there land on
+   * the same dates.
+   *
+   * The refs are CLEARED alongside the years. They seed to plan_start/plan_end,
+   * and a ref outranks the stored year on every future load
+   * (`resolvedStart`/`resolvedEnd`), so leaving them set would silently stretch
+   * the goal back across the whole projection.
+   */
+  function handleForChange(fmId: string) {
+    setForFamilyMemberId(fmId);
+    const fm = familyMembers.find((f) => f.id === fmId);
+    if (!fm) return;
+    setName(`${fm.firstName} - Education`);
+    if (fm.birthYear == null) return;
+    const start = Math.max(milestones.planStart, fm.birthYear + 18);
+    setStartYear(start);
+    setStartYearRef(null);
+    setEndYear(start + 3);
+    setEndYearRef(null);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -231,6 +287,15 @@ export default function QuickEditDrawer({
       growthSource,
       ...(target.kind === "income" ? { owner } : {}),
       ...(target.kind === "expense" ? { isGoal: isEducation ? true : isGoal } : {}),
+      // Education-only, and create-only (the type picker is). `|| null` rather
+      // than the empty string: `forFamilyMemberId` is validated as a uuid, and
+      // "" is a 400 rather than "no beneficiary".
+      ...(isEducation && !isEdit
+        ? {
+            forFamilyMemberId: forFamilyMemberId || null,
+            institutionName: institutionName.trim() || null,
+          }
+        : {}),
     };
     if (!isEdit) body.type = type;
 
@@ -322,6 +387,29 @@ export default function QuickEditDrawer({
         <div className="flex flex-1 flex-col gap-4">
           {error && <p className="text-xs text-crit">{error}</p>}
 
+          {/* CREATE mode only — see the `type` state above for why retyping an
+              existing expense stays with the full editor. Rendered first
+              because it changes what the rest of the form asks for. */}
+          {target.kind === "expense" && !isEdit && (
+            <div>
+              <label className="block text-xs font-medium text-ink-2" htmlFor="qed-type">
+                Type
+              </label>
+              <select
+                id="qed-type"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              >
+                {EXPENSE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-ink-2" htmlFor="qed-name">
               Name
@@ -333,6 +421,47 @@ export default function QuickEditDrawer({
               className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
             />
           </div>
+
+          {/* The two education fields the Goals board actually renders: the
+              beneficiary becomes the card's "for Kelly" line and the institution
+              its "College · State U" title. The full editor's remaining
+              education fields (institution state, dedicated 529 accounts,
+              out-of-pocket shortfall) are a funding conversation, not a
+              goal-shaped one — "Open full editor" below leads to them. */}
+          {isEducation && !isEdit && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-ink-2" htmlFor="qed-for">
+                  For
+                </label>
+                <select
+                  id="qed-for"
+                  value={forFamilyMemberId}
+                  onChange={(e) => handleForChange(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                >
+                  <option value="">— Select —</option>
+                  {familyMembers.map((fm) => (
+                    <option key={fm.id} value={fm.id}>
+                      {fm.firstName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-2" htmlFor="qed-institution">
+                  Institution
+                </label>
+                <input
+                  id="qed-institution"
+                  value={institutionName}
+                  onChange={(e) => setInstitutionName(e.target.value)}
+                  placeholder="Optional"
+                  className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                />
+              </div>
+            </>
+          )}
 
           {target.kind === "income" && (
             <div>

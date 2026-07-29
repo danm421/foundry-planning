@@ -3,7 +3,15 @@ import { formatCurrency } from "@/lib/cell-drill/format";
 import type { Account, Expense, Income, SavingsRule } from "@/engine/types";
 import { assignColumn } from "./columns";
 import { moneyLabel } from "./format";
-import type { ColumnAssignment, ColumnContext, FlowTiming, MapColumn, MapItem } from "./types";
+import { isSocialSecurityIncome } from "./social-security";
+import type {
+  ColumnAssignment,
+  ColumnContext,
+  FlowStartNote,
+  FlowTiming,
+  MapColumn,
+  MapItem,
+} from "./types";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Display adapters. Page-shaped, not domain logic: they turn engine rows into
@@ -60,17 +68,21 @@ export function toMapItem(
  * the projection. The refs are carried through unresolved so the cell can NAME
  * the anchor in its tooltip.
  */
-export function flowTiming(flow: {
-  startYear: number;
-  endYear: number;
-  startYearRef?: string | null;
-  endYearRef?: string | null;
-}): FlowTiming {
+export function flowTiming(
+  flow: {
+    startYear: number;
+    endYear: number;
+    startYearRef?: string | null;
+    endYearRef?: string | null;
+  },
+  startsAt: FlowStartNote | null = null,
+): FlowTiming {
   return {
     startYear: flow.startYear,
     endYear: flow.endYear,
     startYearRef: flow.startYearRef ?? null,
     endYearRef: flow.endYearRef ?? null,
+    startsAt,
   };
 }
 
@@ -117,10 +129,16 @@ export function flowAssignment(
   return { column: householdColumn, splitChip: null, trayOwnerLabel: null };
 }
 
+/**
+ * @param startsAt Replaces the card's year range. Only Social Security passes
+ *   one — see `ssStartNote` in `./social-security`, which is also where the
+ *   reason an SS row's persisted years are meaningless is written down.
+ */
 export function incomeToMapItem(
   income: Income,
   accountById: ReadonlyMap<string, Pick<Account, "name">>,
   ctx: ColumnContext,
+  startsAt: FlowStartNote | null = null,
 ): MapItem {
   return {
     id: income.id,
@@ -131,8 +149,14 @@ export function incomeToMapItem(
     valueLabel: moneyLabel(income.annualAmount),
     ...flowAssignment(income, income.owner, accountById, ctx),
     noteChip: null,
-    timing: flowTiming(income),
-    editableAmount: income.annualAmount,
+    timing: flowTiming(income, startsAt),
+    // NO inline editor on Social Security, even though it now has a pencil.
+    // `annualAmount` is not the row's number in `pia_at_fra` mode — the engine
+    // computes the benefit from `piaMonthly` + the claim age and ignores the
+    // column entirely — so a field over it would accept a figure the projection
+    // discards. `SocialSecurityDialog` owns every SS field; see
+    // `isHydratableIncome` below for why a narrow write is worse than none here.
+    editableAmount: isSocialSecurityIncome(income) ? null : income.annualAmount,
   };
 }
 
@@ -215,17 +239,20 @@ export function resolveSavings(rule: SavingsRule): {
  *    "Claim at 70" scenario and pressing Save with NO edits makes every
  *    submitted field equal base, the diff empty, and the whole scenario edit
  *    row is deleted: the scenario silently reverts to claiming at FRA and the
- *    projection, Monte Carlo and solver all move with it. The Map is the only
- *    surface that exposes SS as a generic editable card;
- *    `income-expenses-view.tsx` (`nonSsIncomeList`) excludes it from its own
+ *    projection, Monte Carlo and solver all move with it.
+ *    `income-expenses-view.tsx` (`nonSsIncomeList`) excludes SS from its own
  *    nine-field dialog for exactly this reason.
  *
- * The complete fix — spreading the untouched fields of the effective row back
- * into the body — needs `IncomeView` widened first (it has no
- * `claimingAgeMode`), so the exclusion is the correct guard for now.
+ * This is a rule about ONE EDITOR, not about editability. SS rows are now fully
+ * editable from the Cash Flow board — their pencil opens `SocialSecurityDialog`
+ * itself, hydrated from `HouseholdMapProps.ssIncomeRows`, which submits all five
+ * of the fields above and so cannot produce the empty diff described. Keeping
+ * them out of `incomeRows` is what ROUTES them there: `isItemEditable` in
+ * `household-map-view.tsx` checks both maps and `handleEditItem` picks the
+ * dialog by which one the id is in. Do not "fix" this predicate by admitting SS.
  */
 export function isHydratableIncome(income: Pick<Income, "source" | "type">): boolean {
-  return income.source !== "policy" && income.type !== "social_security";
+  return income.source !== "policy" && !isSocialSecurityIncome(income);
 }
 
 /** Expense counterpart of `isHydratableIncome`. Only the synthesized

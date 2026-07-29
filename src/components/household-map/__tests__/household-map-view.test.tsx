@@ -6,6 +6,7 @@ import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investm
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
 import type { ExpenseView, IncomeView, SavingsRuleView } from "@/lib/scenario/view-adapters";
+import { TEST_CLIENT_INFO, TEST_PLAN_SETTINGS } from "./fixtures";
 
 // `useScenarioWriter` branches on the URL's `?scenario=`, and the two branches
 // send DIFFERENT payloads on purpose (see lib/household-map/flow-write.ts), so
@@ -190,12 +191,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     goals: [],
     canEdit: true,
     incomeRows: {},
+    ssIncomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
+    clientInfo: TEST_CLIENT_INFO,
+    planSettings: TEST_PLAN_SETTINGS,
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared
@@ -221,8 +225,8 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save
     // 400 — see the "+ Add" test below.
     familyMemberOptions: [
-      { id: "fm-client", role: "client", firstName: "Alex" },
-      { id: "fm-spouse", role: "spouse", firstName: "Jordan" },
+      { id: "fm-client", role: "client", firstName: "Alex", birthYear: 1980 },
+      { id: "fm-spouse", role: "spouse", firstName: "Jordan", birthYear: 1982 },
     ],
     entityOptions: [{ id: "ent-1", name: "Sample Family Trust" }],
     ...overrides,

@@ -1,4 +1,5 @@
 // src/lib/household-map/types.ts
+import type { ClientInfo, Income, PlanSettings } from "@/engine/types";
 import type { LifeExpectancyOwner, MapGoal } from "./goals";
 import type {
   AccountViewEngineFields,
@@ -43,11 +44,32 @@ export interface ColumnAssignment {
  * own. The refs ride along only to NAME the anchor in the cell's tooltip
  * ("Client Retirement (2035)"); nothing re-resolves them client-side.
  */
+/**
+ * A pre-formatted replacement for a timing cell's year range, for a row whose
+ * range would misdescribe it. Both strings are built server-side so the cell and
+ * its tooltip cannot describe the row differently.
+ */
+export interface FlowStartNote {
+  /** The cell's text. Short — the cell is 74px at 10px type. */
+  label: string;
+  /** The same fact as a sentence, for the cell's `title`. */
+  title: string;
+}
+
 export interface FlowTiming {
   startYear: number;
   endYear: number;
   startYearRef: string | null;
   endYearRef: string | null;
+  /**
+   * Replaces the year range when the range would misdescribe the row. Social
+   * Security is the only producer today: its persisted years are inert (the
+   * engine derives the first benefit year from the CLAIM AGE), so an unclaimed
+   * benefit shows "at 70" rather than "2024-2099". Null on every other row, and
+   * on an SS benefit already in payment — see `ssStartNote` in
+   * `./social-security` for the full rule.
+   */
+  startsAt: FlowStartNote | null;
 }
 
 /** A household member drawn as a node at the top of a board column. */
@@ -135,6 +157,20 @@ export interface HouseholdMapProps {
 
   /** income id → scenario-effective row, for the quick-edit drawer. */
   incomeRows: Record<string, IncomeView>;
+  /**
+   * income id → the scenario-effective SOCIAL SECURITY row, for
+   * `SocialSecurityDialog`. Disjoint from `incomeRows` by construction:
+   * `isHydratableIncome` keeps SS out of that map because the quick-edit
+   * drawer's fixed nine-key body would wipe the five SS-only fields
+   * (`claimingAge*`, `piaMonthly`, `ssBenefitMode`) out of a scenario's change
+   * payload. The answer is a different editor, not a wider one — the SS dialog
+   * submits all five, so it can write the row safely where the drawer cannot.
+   *
+   * The FULL engine `Income`, not an `IncomeView`: the view type carries none of
+   * those five fields, so hydrating the dialog from it would open every scenario
+   * at "claim at FRA".
+   */
+  ssIncomeRows: Record<string, Income>;
   /** expense id → scenario-effective row, for the quick-edit drawer. */
   expenseRows: Record<string, ExpenseView>;
   /** savings-rule id → scenario-effective row, for `SavingsRuleDialog`. */
@@ -200,6 +236,21 @@ export interface HouseholdMapProps {
    * `lib/household-map/life-expectancy-write.ts`.
    */
   planSettingsScenarioFields: Record<string, unknown>;
+
+  /**
+   * The scenario-effective `client` and `planSettings` singletons as the ENGINE
+   * sees them, for `SocialSecurityDialog` (which takes both and reads DOBs, both
+   * retirement ages and both life expectancies off the first to resolve a claim
+   * age and preview a benefit).
+   *
+   * Distinct from the two `*ScenarioFields` maps above and not interchangeable
+   * with them: those are pruned `Record<string, unknown>` WRITE payloads, these
+   * are the typed READ models. `clientInfo` is also what `ssStartAgeLabel` was
+   * given server-side, so the dialog and the card it opened from agree on which
+   * age the benefit starts at.
+   */
+  clientInfo: ClientInfo;
+  planSettings: PlanSettings;
 
   /**
    * The COMPLETE per-account row, keyed by id — engine fields merged with
@@ -272,7 +323,17 @@ export interface HouseholdMapProps {
    * entry". Three of those buttons render on the DEFAULT board, so the dialog
    * has to arrive already able to save.
    */
-  familyMemberOptions: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
+  // `birthYear` rides along for the quick-edit drawer's education goal, which
+  // time-boxes the goal to the beneficiary's college years (start = the year
+  // they turn 18) the way `income-expenses-view.tsx`'s expense dialog does.
+  // Nullable: an unparseable/absent DOB just means no auto-fill, never a guessed
+  // year. `AddAccountDialog` reads the other three fields and ignores this one.
+  familyMemberOptions: {
+    id: string;
+    role: "client" | "spouse" | "child" | "other";
+    firstName: string;
+    birthYear: number | null;
+  }[];
   /** Entities offered as account owners in the same dialog. */
   entityOptions: { id: string; name: string }[];
 

@@ -9,6 +9,7 @@ import type {
   MapItem,
   MapPerson,
 } from "@/lib/household-map/types";
+import { TEST_CLIENT_INFO, TEST_PLAN_SETTINGS } from "./fixtures";
 
 function person(overrides: Partial<MapPerson> = {}): MapPerson {
   return {
@@ -39,7 +40,14 @@ function item(overrides: Partial<MapItem> & Pick<MapItem, "id" | "column" | "kin
 }
 
 function timing(overrides: Partial<FlowTiming> = {}): FlowTiming {
-  return { startYear: 2026, endYear: 2060, startYearRef: null, endYearRef: null, ...overrides };
+  return {
+    startYear: 2026,
+    endYear: 2060,
+    startYearRef: null,
+    endYearRef: null,
+    startsAt: null,
+    ...overrides,
+  };
 }
 
 function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProps {
@@ -57,12 +65,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     // Editor hydration rows (see HouseholdMapProps). Empty by default — these
     // boards render cards, they don't hydrate editors.
     incomeRows: {},
+    ssIncomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
+    clientInfo: TEST_CLIENT_INFO,
+    planSettings: TEST_PLAN_SETTINGS,
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared

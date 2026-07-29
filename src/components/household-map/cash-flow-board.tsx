@@ -24,8 +24,16 @@ const BANDS = [
 
 type OwnerColumn = Exclude<MapColumn, "tray">;
 
-/** "2026-2060", or a single year when the window is one year wide. */
+/**
+ * "2026-2060", or a single year when the window is one year wide — unless the row
+ * carries a `startsAt` note, which REPLACES the range outright ("at 70").
+ *
+ * Only Social Security sets one, and only while the benefit is unclaimed: its
+ * persisted years are inert, so the range named a window the projection does not
+ * use. `ssStartNote` in `@/lib/household-map/social-security` owns that rule.
+ */
 function timingLabel(t: FlowTiming): string {
+  if (t.startsAt) return t.startsAt.label;
   return t.startYear === t.endYear ? String(t.startYear) : `${t.startYear}-${t.endYear}`;
 }
 
@@ -35,8 +43,14 @@ function timingLabel(t: FlowTiming): string {
  * retirement age moves — and only one of them follows it. `coerceYearRef` narrows
  * the persisted string; an unrecognised token degrades to the bare year rather
  * than indexing `YEAR_REF_LABELS` with undefined.
+ *
+ * A row with a `startsAt` note uses that note's own sentence, NOT the note plus
+ * the years: the years are the inert columns the note exists to replace, and
+ * repeating them in the tooltip would put the wrong number back in front of the
+ * advisor one hover later.
  */
 function timingTitle(t: FlowTiming): string {
+  if (t.startsAt) return t.startsAt.title;
   const startRef = coerceYearRef(t.startYearRef);
   const endRef = coerceYearRef(t.endYearRef);
   const start = startRef ? `${YEAR_REF_LABELS[startRef]} (${t.startYear})` : String(t.startYear);
