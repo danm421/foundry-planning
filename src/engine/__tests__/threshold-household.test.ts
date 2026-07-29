@@ -936,6 +936,107 @@ describe("unseeded credit columns yield zero credits, never NaN", () => {
   });
 });
 
+describe("unseeded DEDUCTION columns do NOT gate — the mirror image of the credit columns", () => {
+  // The deduction gates invert the rule the block above pins. An unseeded
+  // CREDIT column is the credit AMOUNT, so null pays nothing. An unseeded
+  // DEDUCTION column is a phase-out BOUND, and a missing bound cannot mean
+  // "phase out from zero" — so the gates return the full amount ungated.
+  //
+  // This is the combination production actually runs: all 5 `tax_year_parameters`
+  // rows still hold NULL in all 21 new columns, so the unseeded arm below is the
+  // live path and the seeded arm is the aspiration. It is also the combination
+  // that fails in the OPPOSITE direction from the credits — an unseeded
+  // deduction gate over-deducts where an unseeded credit under-pays — which is
+  // why one pair cannot stand in for the other.
+  //
+  // ONE exception, deliberate and pinned separately below: `studentLoan.
+  // maxDeduction` falls back to IRC 221(b)(1)'s $2,500. That figure is fixed by
+  // statute and never indexed, so a null there can only mean "not seeded",
+  // never "awaiting this year's indexed value" — and treating it as "no cap"
+  // would deduct the household's ENTIRE student-loan interest.
+  const UNSEEDED_DEDUCTIONS: TaxYearParameters[] = [{
+    ...SEEDED_PARAMS[0],
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: {
+      coveredStartMfj: null, coveredEndMfj: null,
+      coveredStartSingle: null, coveredEndSingle: null,
+      spousalStartMfj: null, spousalEndMfj: null,
+    },
+    studentLoan: {
+      maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null,
+    },
+  }];
+
+  const studentLoan: Liability = {
+    id: "liab-student", name: "Student Loan",
+    balance: 150_000, interestRate: 0.065, monthlyPayment: 1_300,
+    startYear: 2026, startMonth: 1, termMonths: 240,
+    liabilityType: "student", isInterestDeductible: false,
+    extraPayments: [], owners: [],
+  };
+  // Spouse-owned so the Roth sits in its OWN per-person IRA bucket: 7,000 there
+  // and 6,000 in the client's, both at or under `iraTradLimit`, so the age-cap
+  // pass scales nothing and the only adjustment either arm can produce is the
+  // Roth MAGI gate's.
+  const ACCT_ROTH_SPOUSE = acct({
+    id: "acct-roth-spouse", category: "retirement", subType: "roth_ira",
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+  });
+
+  // Salary 300,000 with a 20,000 deferral -> magiBase 280,000, which is past the
+  // FAR end of all three seeded bands (Roth 246,000; covered-IRA 149,000;
+  // student loan 200,000). Every gate therefore bites to its maximum when the
+  // columns are seeded, and the two arms below disagree about every figure.
+  const shared = {
+    accounts: [CHECKING, ACCT_401K, ACCT_IRA, ACCT_ROTH_SPOUSE],
+    incomes: [salary(300_000)],
+    liabilities: [studentLoan],
+    savingsRules: [
+      rule({ id: "sav-401k", accountId: "acct-401k", annualAmount: 20_000 }),
+      rule({ id: "sav-ira", accountId: "acct-ira", annualAmount: 6_000 }),
+      rule({ id: "sav-roth", accountId: "acct-roth-spouse", annualAmount: 7_000 }),
+    ],
+  };
+
+  it("returns the FULL amount from all three gates, and caps student-loan interest at §221(b)(1)'s 2,500", () => {
+    const years = runProjection(build({ ...shared, taxYearRows: UNSEEDED_DEDUCTIONS }));
+    const y = years[0];
+    // Non-vacuity: the household IS in every gate's scope, so a `false` here
+    // would make the three assertions below pass for the wrong reason.
+    expect(y.thresholdFacts!.household.coveredSelf).toBe(true);
+    expect(y.thresholdFacts!.household.hasTraditionalIraContribution).toBe(true);
+    expect(y.thresholdFacts!.household.hasRothContribution).toBe(true);
+
+    // 1. IRC 219(g) — the whole 6,000 IRA contribution joins the 20,000 deferral.
+    expect(y.deductionBreakdown!.aboveLine.retirementContributions).toBe(26_000);
+    // 2. IRC 408A(c)(3) — nothing is re-tagged, so the block is absent entirely.
+    expect(y.contributionAdjustments).toBeUndefined();
+    // 3. IRC 221 — the RANGE is unseeded so no phase-out applies, but the CAP
+    //    falls back to the statute. Exactly 2,500 and not the year's ~9,700 of
+    //    accrued interest: that is the one narrowing of the "don't gate" rule,
+    //    and asserting the round figure is what proves the fallback fired
+    //    rather than the accrual passing through uncapped.
+    expect(y.deductionBreakdown!.aboveLine.studentLoanInterest).toBe(2_500);
+
+    // The surviving IRA deduction feeds forward: 280,000 - 6,000.
+    expect(y.thresholdFacts!.magiForStudentLoan).toBe(274_000);
+    expect(Number.isNaN(y.expenses.taxes)).toBe(false);
+  });
+
+  it("gates all three away once the same household's columns ARE seeded", () => {
+    // The discriminating counterpart, as with the credit pair above: without it
+    // every figure asserted there would also pass on a household no gate could
+    // reach. One column set changes; the fixture is byte-identical otherwise.
+    const years = runProjection(build(shared));
+    const y = years[0];
+    expect(y.deductionBreakdown!.aboveLine.retirementContributions).toBe(20_000);
+    expect(y.contributionAdjustments!.backdoorByRuleId["sav-roth"]).toBe(7_000);
+    expect(y.deductionBreakdown!.aboveLine.studentLoanInterest).toBe(0);
+    // No IRA deduction survives, so nothing is subtracted here.
+    expect(y.thresholdFacts!.magiForStudentLoan).toBe(280_000);
+  });
+});
+
 describe("the three dependent/student counts come from three DIFFERENT members", () => {
   it("reports a distinct qualifying child, other dependent and AOTC student", () => {
     // R17: a fixture where one member could satisfy all three buckets would
