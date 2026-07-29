@@ -52,9 +52,16 @@ export interface FlowPatch {
   endYear?: number;
   endYearRef?: YearRef | null;
   growthRate?: string;
-  growthSource?: string;
-  modelPortfolioId?: string | null;
-  tickerPortfolioId?: string | null;
+  /**
+   * Flows store growth source via `itemGrowthSourceEnum` (schema.ts:478-481),
+   * which is `["custom", "inflation"]` ONLY — there is no `model_portfolio` /
+   * `ticker_portfolio` value for incomes/expenses/savings rules, unlike the
+   * account-level `growthSourceEnum` (schema.ts:429-437), which has both. Do
+   * not widen this back to `string` or re-add `modelPortfolioId` /
+   * `tickerPortfolioId` below — that's the account quartet, and flows have no
+   * matching column to write it to.
+   */
+  growthSource?: "custom" | "inflation";
 }
 
 /** Retained so existing call sites keep compiling. */

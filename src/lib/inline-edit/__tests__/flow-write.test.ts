@@ -5,6 +5,7 @@ import {
   flowAmountPatch,
   flowYearPatch,
 } from "../flow-write";
+import type { FlowPatch } from "../flow-write";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
 
 describe("buildFlowScenarioFields", () => {
@@ -125,6 +126,33 @@ describe("buildFlowScenarioDesiredFields", () => {
     const fields = { annualAmount: 250000, name: "Salary" };
     buildFlowScenarioDesiredFields(fields, flowAmountPatch(1));
     expect(fields.annualAmount).toBe(250000);
+  });
+});
+
+describe("FlowPatch rejects account-only growth fields", () => {
+  it("does not accept model/ticker portfolio ids or an account growthSource", () => {
+    // Flows store growthSource via `itemGrowthSourceEnum` = ["custom","inflation"] only
+    // (src/db/schema.ts:478-481). The account enum (:429-437) is the one with
+    // model_portfolio / ticker_portfolio. These directives are the assertion: if any
+    // of these became assignable again, tsc fails with "Unused '@ts-expect-error'".
+
+    // @ts-expect-error flows have no model_portfolio growth source
+    const a: FlowPatch = { growthSource: "model_portfolio" };
+    // @ts-expect-error flows have no ticker_portfolio growth source
+    const b: FlowPatch = { growthSource: "ticker_portfolio" };
+    // @ts-expect-error flows have no model_portfolio_id column
+    const c: FlowPatch = { modelPortfolioId: "mp-1" };
+    // @ts-expect-error flows have no ticker_portfolio_id column
+    const d: FlowPatch = { tickerPortfolioId: "tp-1" };
+
+    // Reference them so no-unused-vars stays quiet; the assertion is the directives.
+    expect([a, b, c, d]).toHaveLength(4);
+  });
+
+  it("still accepts the two growth sources flows really have", () => {
+    const custom: FlowPatch = { growthSource: "custom" };
+    const inflation: FlowPatch = { growthSource: "inflation" };
+    expect([custom.growthSource, inflation.growthSource]).toEqual(["custom", "inflation"]);
   });
 });
 
