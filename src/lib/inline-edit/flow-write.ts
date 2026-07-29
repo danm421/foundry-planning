@@ -32,11 +32,33 @@
 // out of the diff), so merging would break partial reverts everywhere.
 
 import { pruneScenarioFields } from "./scenario-fields";
+import type { YearRef } from "@/lib/milestones";
 
-/** The only field the Cash Flow board's inline editor changes. */
-export interface FlowAmountPatch {
-  annualAmount: string;
+/**
+ * The fields the inline flow cells can change.
+ *
+ * `startYearRef` / `endYearRef` are `YearRef | null` and the null is a REAL
+ * value — "manual year, not anchored". Do NOT add a null-strip here mirroring
+ * `account-write.ts`'s `growthRate` guard: that guard exists because a null
+ * growthRate means ABSENCE and reaches the engine as a literal zero, whereas
+ * stripping a null year ref would leave the old anchor in place and make
+ * un-anchoring a stream impossible. The rule is per field, never global.
+ */
+export interface FlowPatch {
+  annualAmount?: string;
+  owner?: "client" | "spouse" | "joint";
+  startYear?: number;
+  startYearRef?: YearRef | null;
+  endYear?: number;
+  endYearRef?: YearRef | null;
+  growthRate?: string;
+  growthSource?: string;
+  modelPortfolioId?: string | null;
+  tickerPortfolioId?: string | null;
 }
+
+/** Retained so existing call sites keep compiling. */
+export type FlowAmountPatch = FlowPatch;
 
 /**
  * Keys stripped from the scenario field set.
@@ -71,14 +93,30 @@ export function buildFlowScenarioFields<T extends object>(row: T): Record<string
  * tables; a negative would turn an expense into an inflow for the whole
  * projection. Keep the magnitude, drop the sign.
  */
-export function flowAmountPatch(next: number): FlowAmountPatch {
+export function flowAmountPatch(next: number): FlowPatch {
   return { annualAmount: String(Math.abs(next)) };
+}
+
+/**
+ * The year pair for one end of a flow's window. Both keys always travel
+ * together: writing `startYear` without `startYearRef` would leave a stale
+ * anchor that re-derives the year on the next milestone change, silently
+ * undoing the edit.
+ */
+export function flowYearPatch(
+  position: "start" | "end",
+  year: number,
+  ref: YearRef | null,
+): FlowPatch {
+  return position === "start"
+    ? { startYear: year, startYearRef: ref }
+    : { endYear: year, endYearRef: ref };
 }
 
 /** Scenario payload: the pruned effective row with the new amount on top. */
 export function buildFlowScenarioDesiredFields(
   fields: Record<string, unknown>,
-  patch: FlowAmountPatch,
+  patch: FlowPatch,
 ): Record<string, unknown> {
   return { ...fields, ...patch };
 }

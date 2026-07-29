@@ -3,6 +3,7 @@ import {
   buildFlowScenarioDesiredFields,
   buildFlowScenarioFields,
   flowAmountPatch,
+  flowYearPatch,
 } from "../flow-write";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
 
@@ -124,5 +125,68 @@ describe("buildFlowScenarioDesiredFields", () => {
     const fields = { annualAmount: 250000, name: "Salary" };
     buildFlowScenarioDesiredFields(fields, flowAmountPatch(1));
     expect(fields.annualAmount).toBe(250000);
+  });
+});
+
+describe("flowYearPatch", () => {
+  it("emits the start pair", () => {
+    expect(flowYearPatch("start", 2035, "client_retirement")).toEqual({
+      startYear: 2035,
+      startYearRef: "client_retirement",
+    });
+  });
+
+  it("emits the end pair", () => {
+    expect(flowYearPatch("end", 2059, "client_end")).toEqual({
+      endYear: 2059,
+      endYearRef: "client_end",
+    });
+  });
+
+  it("emits an EXPLICIT null ref when un-anchoring", () => {
+    // null is a REAL value here: "manual year, not anchored". If it were
+    // stripped the way growthRate: null is, the old ref would persist and keep
+    // dragging the year with it — un-anchoring would be impossible.
+    expect(flowYearPatch("start", 2042, null)).toEqual({
+      startYear: 2042,
+      startYearRef: null,
+    });
+  });
+});
+
+describe("the null rule is per field, not global", () => {
+  const effective = {
+    id: "inc-1",
+    name: "Salary",
+    annualAmount: "200000",
+    startYear: 2026,
+    startYearRef: "plan_start",
+    endYear: 2035,
+    endYearRef: "client_retirement",
+    owner: "client",
+    growthRate: "0.03",
+  };
+
+  it("carries startYearRef: null through to the scenario payload", () => {
+    const fields = buildFlowScenarioFields(effective);
+    const out = buildFlowScenarioDesiredFields(fields, flowYearPatch("start", 2030, null));
+    expect(out).toHaveProperty("startYearRef", null);
+    expect(out.startYear).toBe(2030);
+  });
+
+  it("carries endYearRef: null through to the scenario payload", () => {
+    const fields = buildFlowScenarioFields(effective);
+    const out = buildFlowScenarioDesiredFields(fields, flowYearPatch("end", 2050, null));
+    expect(out).toHaveProperty("endYearRef", null);
+  });
+
+  it("retains unrelated fields when only the owner changes", () => {
+    const fields = buildFlowScenarioFields(effective);
+    const out = buildFlowScenarioDesiredFields(fields, { owner: "spouse" });
+    expect(out.owner).toBe("spouse");
+    expect(out.annualAmount).toBe("200000");
+    expect(out.startYearRef).toBe("plan_start");
+    expect(out.endYearRef).toBe("client_retirement");
+    expect(out.growthRate).toBe("0.03");
   });
 });
