@@ -288,7 +288,7 @@ describe("GoalsBoard — inline life-expectancy editing", () => {
       // against what production would actually render.
       detail: assumed ? `age ${age} · assumed` : `age ${age}`,
       year: birthYear + age,
-      lifeExpectancy: { owner, age, year: birthYear + age, assumed },
+      lifeExpectancy: { owner, age, assumed },
     });
   }
 

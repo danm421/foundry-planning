@@ -31,6 +31,8 @@
 // replace is how reverting a field works (resend it at its base value, it drops
 // out of the diff), so merging would break partial reverts everywhere.
 
+import { pruneScenarioFields } from "./scenario-fields";
+
 /** The only field the Cash Flow board's inline editor changes. */
 export interface FlowAmountPatch {
   annualAmount: string;
@@ -54,22 +56,11 @@ const NON_WRITABLE_KEYS: ReadonlySet<string> = new Set(["id", "scheduleOverrides
 
 /**
  * Prune an effective engine income / expense / savings-rule row down to the
- * field set a scenario edit may send. Runs SERVER-side (`map-content.tsx`) so
- * the client never has to know the engine's field list.
- *
- * `undefined` values are dropped: the engine resolvers write `x ?? undefined`
- * for every absent optional column, and an explicit `undefined` in
- * `desiredFields` would diff against a base `null` as a change and write
- * `undefined` over it.
+ * field set a scenario edit may send — the shared `pruneScenarioFields` rule
+ * (which owns the `undefined`-vs-`null` reasoning) plus this module's strip set.
  */
 export function buildFlowScenarioFields<T extends object>(row: T): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(row)) {
-    if (NON_WRITABLE_KEYS.has(k)) continue;
-    if (v === undefined) continue;
-    out[k] = v;
-  }
-  return out;
+  return pruneScenarioFields(row, NON_WRITABLE_KEYS);
 }
 
 /**

@@ -214,33 +214,27 @@ export default function GoalsBoard({
             </div>
           );
         }
+        // Exactly one side renders the card — `joint` returned above, so `g.side`
+        // is client-or-spouse here. Built once rather than twice so the two
+        // branches cannot drift, and so `clickHandlerFor`/`detailSlotFor` run
+        // once per row instead of once per grid cell.
+        const card = (
+          <GoalCard
+            goal={g}
+            side={g.side === "client" ? "left" : "right"}
+            onClick={clickHandlerFor(g)}
+            detailSlot={detailSlotFor(g)}
+          />
+        );
         return (
           <div
             key={g.id}
             data-testid={`goal-row-${g.id}`}
             className="mb-1.5 grid grid-cols-[1fr_88px_1fr] items-center"
           >
-            {g.side === "client" ? (
-              <GoalCard
-                goal={g}
-                side="left"
-                onClick={clickHandlerFor(g)}
-                detailSlot={detailSlotFor(g)}
-              />
-            ) : (
-              <div />
-            )}
+            {g.side === "client" ? card : <div />}
             <GoalYearLabel year={g.year} ages={agesAt(g.year)} />
-            {g.side === "spouse" ? (
-              <GoalCard
-                goal={g}
-                side="right"
-                onClick={clickHandlerFor(g)}
-                detailSlot={detailSlotFor(g)}
-              />
-            ) : (
-              <div />
-            )}
+            {g.side === "spouse" ? card : <div />}
           </div>
         );
       })}

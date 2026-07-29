@@ -182,7 +182,7 @@ export interface HouseholdMapProps {
 
   /**
    * The scenario-effective `client` singleton, pruned by
-   * `buildSingletonScenarioFields`, for the Goals board's life-expectancy editor.
+   * `pruneScenarioFields`, for the Goals board's life-expectancy editor.
    *
    * Same rule as `flowScenarioFields` and for the same reason: a scenario edit's
    * payload is a wholesale replace, so it must carry every field this scenario

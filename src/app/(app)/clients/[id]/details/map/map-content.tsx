@@ -45,7 +45,7 @@ import {
   toMapItem,
 } from "@/lib/household-map/map-items";
 import { buildFlowScenarioFields } from "@/lib/household-map/flow-write";
-import { buildSingletonScenarioFields } from "@/lib/household-map/life-expectancy-write";
+import { pruneScenarioFields } from "@/lib/household-map/scenario-fields";
 import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { Account, Expense, Income, Liability, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
@@ -396,8 +396,8 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // both singletons — `planEndAge` on `client`, `planEndYear` on `plan_settings`
   // — and one `scenario_changes` row targets exactly one kind. See
   // `lib/household-map/life-expectancy-write.ts`.
-  const clientScenarioFields = buildSingletonScenarioFields(effectiveClient);
-  const planSettingsScenarioFields = buildSingletonScenarioFields(effectiveTree.planSettings);
+  const clientScenarioFields = pruneScenarioFields(effectiveClient);
+  const planSettingsScenarioFields = pruneScenarioFields(effectiveTree.planSettings);
 
   // Net worth = assets − debts, the same signs the item list carries.
   const netWorth =

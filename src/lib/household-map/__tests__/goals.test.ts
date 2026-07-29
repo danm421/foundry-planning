@@ -159,15 +159,14 @@ describe("buildMapGoals", () => {
     expect(goals.find((g) => g.id === "milestone:spouse_life_expectancy")?.year).toBe(2064);
   });
 
-  it("carries an editable payload whose age and year agree with the card", () => {
+  it("carries an editable payload whose age agrees with the card's year", () => {
     const goals = buildMapGoals(base);
+    const card = goals.find((g) => g.id === "milestone:client_life_expectancy");
 
-    expect(goals.find((g) => g.id === "milestone:client_life_expectancy")?.lifeExpectancy).toEqual({
-      owner: "client",
-      age: 92,
-      year: 2064,
-      assumed: false,
-    });
+    expect(card?.lifeExpectancy).toEqual({ owner: "client", age: 92, assumed: false });
+    // The year lives on the CARD, not on the payload — one derivation of
+    // `birthYear + age`, so the spine and the editable age cannot disagree.
+    expect(card?.year).toBe(2064);
     // Null everywhere else — its presence is what makes a card's age editable,
     // so a retirement milestone acquiring one would offer an editor that writes
     // the wrong column.
@@ -216,7 +215,6 @@ describe("buildMapGoals", () => {
     expect(spouse?.lifeExpectancy).toEqual({
       owner: "spouse",
       age: ASSUMED_LIFE_EXPECTANCY,
-      year: 1974 + ASSUMED_LIFE_EXPECTANCY,
       assumed: true,
     });
     expect(spouse?.detail).toBe(`age ${ASSUMED_LIFE_EXPECTANCY} · assumed`);

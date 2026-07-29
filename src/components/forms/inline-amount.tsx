@@ -72,6 +72,20 @@ const currencyFmt = (n: number) =>
   }).format(n);
 const percentFmt = (n: number) => `${n.toFixed(2)}%`;
 
+/**
+ * Everything that varies by mode, in one table, so a fourth mode is a data row
+ * rather than another level of nesting in two unrelated expressions.
+ *
+ * `inputPad` is asymmetric on purpose: it has to clear whichever affix is
+ * rendered, so percent mirrors currency rather than reusing `px-1.5`, which
+ * would let a 4-character rate run under the `%`.
+ */
+const MODES = {
+  currency: { read: currencyFmt, inputPad: "pl-4 pr-1.5" },
+  percent: { read: percentFmt, inputPad: "pl-1.5 pr-5" },
+  plain: { read: String, inputPad: "px-1.5" },
+} as const;
+
 export function InlineAmount({
   amount,
   onSave,
@@ -138,13 +152,7 @@ export function InlineAmount({
         }
         aria-label={`Edit ${noun} for ${label}`}
       >
-        {format
-          ? format(amount)
-          : mode === "percent"
-            ? percentFmt(amount)
-            : mode === "plain"
-              ? String(amount)
-              : currencyFmt(amount)}
+        {(format ?? MODES[mode].read)(amount)}
       </button>
     );
   }
@@ -182,12 +190,7 @@ export function InlineAmount({
             setEditing(false);
           }
         }}
-        // Padding is asymmetric on purpose: it has to clear whichever affix is
-        // rendered, so percent mirrors currency rather than reusing `px-1.5`,
-        // which would let a 4-character rate run under the `%`.
-        className={`w-full rounded-sm border border-hair-2 bg-card-2 py-0.5 text-right text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60 ${
-          mode === "currency" ? "pl-4 pr-1.5" : mode === "percent" ? "pl-1.5 pr-5" : "px-1.5"
-        }`}
+        className={`w-full rounded-sm border border-hair-2 bg-card-2 py-0.5 text-right text-sm text-ink outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 disabled:opacity-60 ${MODES[mode].inputPad}`}
         aria-label={`${nounCap} for ${label}`}
       />
       {mode === "percent" && (

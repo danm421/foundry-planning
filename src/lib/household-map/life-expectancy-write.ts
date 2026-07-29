@@ -24,7 +24,10 @@
 //
 // Both scenario payloads carry the WHOLE effective singleton, not just the
 // changed keys — the same rule (and the same reason) as `flow-write.ts` and
-// `account-write.ts`. `applyEntityEdit` upserts with `set: { payload: diff }`, a
+// `account-write.ts`. The singletons themselves are pruned by the shared
+// `pruneScenarioFields` (`./scenario-fields`) with NO strip set: unlike a flow
+// row, a `client` / `planSettings` singleton has no key that must be withheld.
+// `applyEntityEdit` upserts with `set: { payload: diff }`, a
 // wholesale replace, and `buildFieldDiff` only emits keys the caller sent. A
 // narrow `{ lifeExpectancy }` write against a scenario that ALSO overrides
 // `retirementAge` (exactly what the Solver writes) would delete the retirement
@@ -83,31 +86,6 @@ export function lifeExpectancyBasePayload(
   age: number,
 ): Record<string, number> {
   return { [COLUMN_FOR[owner]]: age };
-}
-
-/**
- * Prune an effective singleton (`client` / `planSettings`) down to the field set
- * a scenario edit may send. Runs SERVER-side so the browser never has to know
- * the engine's field list.
- *
- * Dropping `undefined` is load-bearing, not tidying: the engine's loaders write
- * `x ?? undefined` for every absent optional column, while the BASE tree those
- * values are diffed against carries `null`. `valuesEqual(null, undefined)` is
- * false, so an explicit `undefined` would diff as a change and then serialise to
- * a JSON payload with the key missing — writing `undefined` over a real base
- * value. `applyEntityEdit` additionally filters singleton fields to keys the
- * base singleton carries, so anything non-overlayable is dropped server-side
- * too; this is the belt to that braces.
- */
-export function buildSingletonScenarioFields<T extends object>(
-  singleton: T,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(singleton)) {
-    if (v === undefined) continue;
-    out[k] = v;
-  }
-  return out;
 }
 
 /** The horizon implied by `clientFields` once `owner`'s life expectancy is `age`. */

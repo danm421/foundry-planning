@@ -232,6 +232,13 @@ afterEach(() => {
   nav.scenario = null;
 });
 
+/** Shared by both inline-write suites; the `afterEach` above restores it. */
+function mockFetchOk() {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response("{}", { status: 200 }) as Response);
+}
+
 describe("HouseholdMapView — Task 11 card-click and add-button routing", () => {
   it("clicking an income card opens the drawer with kind 'income' and the item's id — DISCRIMINATING case, see report for break/restore evidence", () => {
     const items = [
@@ -524,12 +531,6 @@ describe("HouseholdMapView — inline Cash Flow amount writes", () => {
     });
   }
 
-  function mockFetchOk() {
-    return vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("{}", { status: 200 }) as Response);
-  }
-
   async function editAmount(name: string, next: string) {
     fireEvent.click(screen.getByText("Cash Flow"));
     fireEvent.click(screen.getByRole("button", { name: `Edit amount for ${name}` }));
@@ -709,7 +710,7 @@ describe("HouseholdMapView — inline life-expectancy writes", () => {
       title: `${firstName}'s life expectancy`,
       detail: `age ${age}`,
       year: birthYear + age,
-      lifeExpectancy: { owner, age, year: birthYear + age, assumed: false },
+      lifeExpectancy: { owner, age, assumed: false },
     });
   }
 
@@ -725,12 +726,6 @@ describe("HouseholdMapView — inline life-expectancy writes", () => {
       planSettingsScenarioFields: PLAN_SETTINGS_SCENARIO_FIELDS,
       ...overrides,
     });
-  }
-
-  function mockFetchOk() {
-    return vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("{}", { status: 200 }) as Response);
   }
 
   async function editAge(name: string, next: string) {
@@ -831,13 +826,19 @@ describe("HouseholdMapView — inline life-expectancy writes", () => {
 
     await editAge("Jordan", "100");
 
-    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    // Waiting for the TRIGGER to come back, not for a timer: the editor only
+    // closes once `onSave` has resolved, and a second POST would have been
+    // issued before that resolution. So the reappearing button is proof the
+    // handler ran to completion — a `setTimeout(0)` only proves a tick passed.
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit life expectancy for Jordan" }),
+      ).toHaveTextContent("90"),
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string).targetKind).toBe(
       "client",
     );
-    // Give the handler room to make a second call it should not make.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   // Below the person's current age the derived death year lands before the plan

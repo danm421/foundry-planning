@@ -13,7 +13,6 @@ import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savin
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { LifeExpectancyOwner, MapGoal } from "@/lib/household-map/goals";
-import { useScenarioState } from "@/hooks/use-scenario-state";
 import {
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
@@ -21,7 +20,7 @@ import {
   lifeExpectancyBasePayload,
 } from "@/lib/household-map/life-expectancy-write";
 import type { TargetKind } from "@/engine/scenario/types";
-import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import {
   buildBasePayload,
   buildScenarioDesiredFields,
@@ -113,11 +112,6 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   const milestones = approximateMilestones(people, goals);
 
   const writer = useScenarioWriter(clientId);
-  // Read directly, not via `writer.scenarioActive`: the life-expectancy saver
-  // needs the scenario ID itself to post its second (`plan_settings`) change,
-  // which `useScenarioWriter` has no shape for — one `submit` carries one
-  // targetKind, and a second `submit` would fire a second base PUT in base mode.
-  const { scenarioId } = useScenarioState(clientId);
   const router = useRouter();
   const withScenario = useScenarioPreservingHref();
 
@@ -239,12 +233,13 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
    *                   `lifeExpectancyBasePayload`).
    *
    *   Scenario mode — TWO `scenario_changes` rows, because one row targets
-   *                   exactly one `targetKind`. Not atomic: the route offers no
-   *                   way to write both kinds in one request, so a failure
-   *                   between them leaves the scenario with a new life
-   *                   expectancy and a stale horizon. We return false so the
-   *                   editor reverts; re-saving is idempotent (both writes are
-   *                   upserts diffed against base).
+   *                   exactly one `targetKind`. Passed to `submit` as a BATCH,
+   *                   which posts them in order and stops at the first failure.
+   *                   Not atomic: the route offers no way to write both kinds
+   *                   in one request, so a failure between them leaves the
+   *                   scenario with a new life expectancy and a stale horizon.
+   *                   We return false so the editor reverts; re-saving is
+   *                   idempotent (both writes are upserts diffed against base).
    *
    * `targetId` for the `plan_settings` singleton is the CLIENT ID, not a
    * sentinel. `scenario_changes.target_id` is a Postgres `uuid` column and
@@ -268,22 +263,14 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
       owner === "client" ? people.client.birthYear : (people.spouse?.birthYear ?? null);
     if (!isValidLifeExpectancy(age, birthYear, new Date().getFullYear())) return false;
 
-    const res = await writer.submit(
+    const edits: ScenarioEdit[] = [
       {
         op: "edit",
         targetKind: "client",
         targetId: clientId,
         desiredFields: buildLifeExpectancyClientFields(props.clientScenarioFields, owner, age),
       },
-      {
-        url: `/api/clients/${clientId}`,
-        method: "PUT",
-        body: lifeExpectancyBasePayload(owner, age),
-      },
-    );
-    if (!res.ok) return false;
-    // Base mode is already complete — the PUT route moved the horizon.
-    if (!scenarioId) return true;
+    ];
 
     const planSettingsFields = buildLifeExpectancyPlanSettingsFields(
       props.planSettingsScenarioFields,
@@ -291,23 +278,27 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
       owner,
       age,
     );
-    // No derivable horizon (unparseable DOB). Skip rather than post a payload
-    // that would replace this scenario's existing plan_settings overrides with
-    // nothing gained.
-    if (!planSettingsFields) return true;
-
-    const horizonRes = await fetch(`/api/clients/${clientId}/scenarios/${scenarioId}/changes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    // Null means no derivable horizon (unparseable DOB). Omit the second edit
+    // rather than post a payload that would replace this scenario's existing
+    // plan_settings overrides with nothing gained.
+    if (planSettingsFields) {
+      edits.push({
         op: "edit",
         targetKind: "plan_settings",
         targetId: clientId,
         desiredFields: planSettingsFields,
-      }),
+      });
+    }
+
+    // Both edits are built unconditionally; base mode discards them and sends
+    // only the fallback PUT. They are pure derivations off props, so building
+    // them costs nothing a branch would save.
+    const res = await writer.submit(edits, {
+      url: `/api/clients/${clientId}`,
+      method: "PUT",
+      body: lifeExpectancyBasePayload(owner, age),
     });
-    if (horizonRes.ok) router.refresh();
-    return horizonRes.ok;
+    return res.ok;
   }
 
   // ── BoardCallbacks — card-click and add-button routing ──────────────────

@@ -1,5 +1,6 @@
 // src/lib/household-map/goals.ts
 import { coerceYearRef, resolveMilestone, type ClientMilestones } from "@/lib/milestones";
+import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 
 export type GoalKind =
   | "education"
@@ -19,8 +20,6 @@ export interface GoalLifeExpectancy {
   /** The age the projection actually uses — the stored column, or the engine's
    *  fallback when `assumed`. */
   age: number;
-  /** Calendar year this person reaches `age`; the card's spine year. */
-  year: number;
   /**
    * True when nothing is stored and `age` is the engine's own `?? 95` fallback
    * (`isSpouseLifeExpectancyDefaulted` in `engine/death-event/shared.ts`). The
@@ -51,12 +50,15 @@ export interface MapGoal {
 }
 
 /**
- * The age the engine assumes for a spouse with a DOB but no stored life
- * expectancy — `spouseLifeExpectancy ?? 95` in `computeFinalDeathYear` and
- * `planHorizonFromLifeExpectancy`. Duplicated here rather than imported so this
- * module stays free of engine imports; the three must not drift.
+ * Re-exported from `lib/plan-horizon`, which is where the horizon derivation
+ * that has to agree with it lives. It used to be a second literal here, on the
+ * reasoning that this module should stay free of engine imports — but
+ * `plan-horizon` is a `lib` module whose only engine reference is an erased
+ * `import type`, and the sibling `life-expectancy-write.ts` already imports from
+ * it. A local copy bought nothing and could drift from the number the projection
+ * actually runs to.
  */
-export const ASSUMED_LIFE_EXPECTANCY = 95;
+export { ASSUMED_LIFE_EXPECTANCY };
 
 /** The subset of an engine Expense the Goals board needs. */
 export interface GoalExpense {
@@ -217,9 +219,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
   // lifeExpectancy` (`computeFinalDeathYear`, `engine/death-event/shared.ts`),
   // which is what the projection actually keys death events off. Do not route
   // these back through `milestones`.
-  for (const le of lifeExpectancyMilestones(input)) {
-    goals.push(le);
-  }
+  goals.push(...lifeExpectancyMilestones(input));
 
   return goals.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
 }
@@ -240,26 +240,33 @@ function lifeExpectancyMilestones(input: BuildMapGoalsInput): MapGoal[] {
   const { client } = input;
   const out: MapGoal[] = [];
 
+  // Takes the STORED age (nullable) rather than a resolved age plus an
+  // `assumed` flag: the flag is derivable from the same nullable the age comes
+  // from, and passing both separately made "assumed: true at an age someone
+  // actually chose" representable.
   const card = (
     owner: LifeExpectancyOwner,
     firstName: string,
     birthYear: number,
-    age: number,
-    assumed: boolean,
-  ): MapGoal => ({
-    id: `milestone:${owner}_life_expectancy`,
-    year: birthYear + age,
-    kind: "life_expectancy",
-    side: owner,
-    title: `${firstName}'s life expectancy`,
-    detail: assumed ? `age ${age} · assumed` : `age ${age}`,
-    expenseId: null,
-    forFamilyMemberName: null,
-    lifeExpectancy: { owner, age, year: birthYear + age, assumed },
-  });
+    storedAge: number | null,
+  ): MapGoal => {
+    const assumed = storedAge == null;
+    const age = storedAge ?? ASSUMED_LIFE_EXPECTANCY;
+    return {
+      id: `milestone:${owner}_life_expectancy`,
+      year: birthYear + age,
+      kind: "life_expectancy",
+      side: owner,
+      title: `${firstName}'s life expectancy`,
+      detail: assumed ? `age ${age} · assumed` : `age ${age}`,
+      expenseId: null,
+      forFamilyMemberName: null,
+      lifeExpectancy: { owner, age, assumed },
+    };
+  };
 
   if (client.birthYear != null) {
-    out.push(card("client", client.firstName, client.birthYear, client.lifeExpectancy, false));
+    out.push(card("client", client.firstName, client.birthYear, client.lifeExpectancy));
   }
 
   // Gated on the spouse's NAME + BIRTH YEAR, not on `milestones.spouseEnd`.
@@ -268,13 +275,7 @@ function lifeExpectancyMilestones(input: BuildMapGoalsInput): MapGoal[] {
   // for a spouse who has a DOB but no retirement age — two unrelated facts.
   if (client.spouseFirstName && client.spouseBirthYear != null) {
     out.push(
-      card(
-        "spouse",
-        client.spouseFirstName,
-        client.spouseBirthYear,
-        client.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY,
-        client.spouseLifeExpectancy == null,
-      ),
+      card("spouse", client.spouseFirstName, client.spouseBirthYear, client.spouseLifeExpectancy),
     );
   }
 

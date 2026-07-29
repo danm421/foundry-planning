@@ -21,8 +21,8 @@ import type { ClientInfo, PlanSettings } from "@/engine/types";
 import {
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
-  buildSingletonScenarioFields,
 } from "../life-expectancy-write";
+import { pruneScenarioFields } from "../scenario-fields";
 
 const CLIENT_ID = "3f1c2b7e-0000-4000-8000-000000000000";
 
@@ -123,8 +123,8 @@ function survivesWriterFilter(
 }
 
 describe("the horizon fields survive applyEntityEdit's singleton filter", () => {
-  const clientFields = buildSingletonScenarioFields(BASE_CLIENT);
-  const planSettingsFields = buildSingletonScenarioFields(BASE_PLAN_SETTINGS);
+  const clientFields = pruneScenarioFields(BASE_CLIENT);
+  const planSettingsFields = pruneScenarioFields(BASE_PLAN_SETTINGS);
 
   it("planEndAge is a field the base client singleton carries", () => {
     const payload = buildLifeExpectancyClientFields(clientFields, "spouse", 100);
@@ -171,7 +171,7 @@ describe("the payloads survive the JSON round-trip the fetch performs", () => {
     // assertion discriminating: without the prune, the payload OBJECT carries
     // the key and the WIRE does not, so the scenario disagrees with itself
     // about which fields it overrides.
-    const clientFields = buildSingletonScenarioFields({
+    const clientFields = pruneScenarioFields({
       ...BASE_CLIENT,
       spouseRetirementAge: undefined,
     });

@@ -16,7 +16,6 @@ import {
   MAX_LIFE_EXPECTANCY,
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
-  buildSingletonScenarioFields,
   isValidLifeExpectancy,
   lifeExpectancyBasePayload,
 } from "../life-expectancy-write";
@@ -145,46 +144,8 @@ describe("lifeExpectancyBasePayload", () => {
   });
 });
 
-// ── Singleton pruning ───────────────────────────────────────────────────────
-
-describe("buildSingletonScenarioFields", () => {
-  // The engine's loaders emit `x ?? undefined` for every absent optional
-  // column, while the base tree those get diffed against carries `null`.
-  // `valuesEqual(null, undefined)` is false, so an explicit `undefined` diffs as
-  // a change and then vanishes in `JSON.stringify` — writing "no value" over a
-  // real base value.
-  it("drops undefined keys", () => {
-    const out = buildSingletonScenarioFields({
-      lifeExpectancy: 92,
-      spouseLifeExpectancy: undefined,
-    });
-    expect(out).not.toHaveProperty("spouseLifeExpectancy");
-    expect(out).toEqual({ lifeExpectancy: 92 });
-  });
-
-  // null is a REAL stored value ("this person has no spouse LE on record"), not
-  // an absent one — pruning it would silently stop the scenario overriding it.
-  it("keeps null, and keeps falsy values that are not undefined", () => {
-    const out = buildSingletonScenarioFields({
-      spouseLifeExpectancy: null,
-      retirementMonth: 0,
-      isSelfEmployment: false,
-      spouseName: "",
-    });
-    expect(out).toEqual({
-      spouseLifeExpectancy: null,
-      retirementMonth: 0,
-      isSelfEmployment: false,
-      spouseName: "",
-    });
-  });
-
-  it("survives the JSON round-trip the fetch performs, losing no key", () => {
-    const out = buildSingletonScenarioFields({ ...CLIENT_FIELDS, spouseRetirementAge: undefined });
-    const overTheWire = JSON.parse(JSON.stringify(out));
-    expect(Object.keys(overTheWire).sort()).toEqual(Object.keys(out).sort());
-  });
-});
+// Singleton pruning lives in `scenario-fields.test.ts` — the rule is shared
+// with the Cash Flow board's writer, so it is tested where it is implemented.
 
 // ── Scenario mode: the client singleton ─────────────────────────────────────
 
