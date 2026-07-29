@@ -80,8 +80,14 @@ describe("runAssemble + planner", () => {
     expect(runPlannerFn).toHaveBeenCalledTimes(1);
     const calledWith = runPlannerFn.mock.calls[0][0];
     expect(calledWith.documentText).toBe("Client Profile: retiring at 64...");
-    // R3 stub: estimatePia is Task 17's real export; today it always returns 0.
-    expect(calledWith.estimatePia({ highestAnnualSalary: 100000, yearsEmployed: 10, futureYears: 5 })).toBe(0);
+    // The planner is handed the REAL estimator, not the zero stub this file
+    // asserted while Task 16's engine function did not exist yet. Expected
+    // value from the published PIA formula: credited years min(10+5, 35) = 15,
+    // AIME = 100000 * 15 / 420 = 3571.43, which lands between the two bend
+    // points, so PIA = 0.9*1226 + 0.32*(3571.43-1226) = 1853.94/month.
+    expect(
+      calledWith.estimatePia({ highestAnnualSalary: 100000, yearsEmployed: 10, futureYears: 5 }),
+    ).toBeCloseTo(1853.94, 2);
 
     expect(persistedPayload().planBasics?.retirementAge).toEqual({
       value: 64, provenance: "document", reason: "Stated in the profile table.",

@@ -36,13 +36,20 @@ export interface AssemblePlanBasics {
   socialSecurity: Array<{
     owner: "client" | "spouse";
     /**
-     * The ANNUAL Social Security benefit, despite the field name. It commits
-     * straight to `incomes.annualAmount`, and the seeded SS rows carry
-     * `ssBenefitMode = null` — which the engine treats as "manual_amount" and
-     * reads literally, with no PIA/claiming-age actuarial path. The wizard
-     * labels it "Annual Social Security benefit" for that reason. Writing a
-     * real PIA (`piaMonthly` + `ssBenefitMode: "pia_at_fra"`) is follow-up
-     * work; renaming this key alone would not change what is written.
+     * A MONTHLY Primary Insurance Amount at full retirement age, in today's
+     * dollars. It commits to `incomes.pia_monthly` alongside
+     * `ssBenefitMode: "pia_at_fra"` (see `commit/plan-basics.ts`), so the
+     * engine runs the real actuarial path — early reduction, delayed credit,
+     * spousal and survivor — rather than reading one flat annual number
+     * forever. `incomes.annualAmount` is left untouched; the engine ignores it
+     * in this mode.
+     *
+     * TWO PRODUCERS, ONE UNIT. The planner supplies an already-monthly PIA
+     * (`apply-decisions.ts`). The document path extracts an ANNUAL benefit and
+     * DIVIDES IT BY 12 (`assemble/plan-basics.ts`), keeping
+     * `provenance: "document"` — same fact, different units. That conversion is
+     * not a double adjustment: the document path also defaults the claiming age
+     * to FRA, and at FRA the engine applies neither a reduction nor a credit.
      */
     pia: PlanBasicsField<number>;
     claimingAge: PlanBasicsField<number>;

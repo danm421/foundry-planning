@@ -26,7 +26,9 @@ function basics(over: Partial<AssemblePlanBasics> = {}): AssemblePlanBasics {
 describe("PlanBasicsStep", () => {
   it("renders with a completely empty payload — it is not row-driven", () => {
     render(<PlanBasicsStep value={basics()} hasSpouse={false} onChange={vi.fn()} />);
-    expect(screen.getByLabelText(/retirement age/i)).toBeInTheDocument();
+    // Anchored: the Social Security field's label now ends in "at full
+    // retirement age", so a loose /retirement age/i matches two inputs.
+    expect(screen.getByLabelText(/^retirement age$/i)).toBeInTheDocument();
   });
 
   it("shows an Assumed chip on a derived field", () => {
@@ -55,13 +57,16 @@ describe("PlanBasicsStep", () => {
     );
   });
 
-  it("labels the Social Security field as the ANNUAL benefit, not a PIA", () => {
-    // The field commits to `incomes.annualAmount` on a row whose ssBenefitMode
-    // is null, which the engine reads as a literal annual figure — labelling it
-    // "PIA at FRA" invited a monthly SSA-statement number and a 12x understate.
+  it("labels the Social Security field as the MONTHLY benefit at FRA, never the annual one", () => {
+    // The field now commits to `incomes.pia_monthly` on a row committed as
+    // `ssBenefitMode: "pia_at_fra"`, so the units in the label are part of the
+    // correctness: an "Annual …" label over a monthly figure reads as a 12x bug
+    // (and invites the advisor to "fix" it by typing the annual benefit back in).
     render(<PlanBasicsStep value={basics()} hasSpouse={false} onChange={vi.fn()} />);
-    expect(screen.getByLabelText(/annual social security benefit \(client\)/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/pia at fra/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/monthly social security benefit at full retirement age \(client\)/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/annual social security benefit/i)).not.toBeInTheDocument();
   });
 
   it("hides spouse fields for a single filer", () => {

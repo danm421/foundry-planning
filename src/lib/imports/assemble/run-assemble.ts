@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { runMatchingPass } from "@/lib/imports/match";
 import { applyDecisions } from "@/lib/imports/planner/apply-decisions";
+import { makePiaEstimator } from "@/lib/imports/planner/pia-estimator";
 import { runPlanner } from "@/lib/imports/planner/run-planner";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
@@ -14,16 +15,6 @@ import { mergeAcrossFiles } from "./merge-across-files";
 import { derivePlanBasics } from "./plan-basics";
 import { generateQuestions } from "./questions";
 import type { AssemblePlanBasics, AssembleQuestion, AssembleState } from "./types";
-
-/**
- * Task 17's real export — until then, a stub. `estimate_ss_pia` (the
- * planner's tool, see `planner/tools.ts`) always returns 0. Task 16 builds
- * the underlying Social Security PIA estimator and Task 17 wires it in
- * here. A zero-argument function is assignable to
- * `(input: EstimatePiaToolInput) => number` (TS allows fewer params on the
- * source side), so this typechecks as-is.
- */
-const makePiaEstimator = () => () => 0;
 
 export interface RunAssembleArgs {
   importId: string;

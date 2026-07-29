@@ -32,11 +32,10 @@ export interface DerivePlanBasicsInput {
 /**
  * Find the extracted ANNUAL Social Security amount for one owner.
  *
- * Deliberately NOT named `extractedPia`: the value round-trips to
- * `incomes.annualAmount`, which the engine reads as a literal annual benefit
- * (the seeded rows carry `ssBenefitMode = null`, i.e. "manual_amount"), so it
- * is not a PIA and no claiming-age actuarial adjustment is applied to it. The
- * wizard labels the field "Annual Social Security benefit" to match.
+ * Still named for the ANNUAL figure it reads: `incomes.annualAmount` is what
+ * extraction fills in. The caller divides by 12 before it lands in
+ * `planBasics.socialSecurity[].pia`, which is a MONTHLY PIA — see
+ * `monthlyPiaFromAnnual` below.
  */
 function extractedAnnualSocialSecurity(
   payload: ImportPayload,
@@ -48,6 +47,28 @@ function extractedAnnualSocialSecurity(
     if (amount != null) return amount;
   }
   return null;
+}
+
+/**
+ * Convert an extracted ANNUAL Social Security benefit into the MONTHLY PIA the
+ * `pia` field carries.
+ *
+ * This field has two producers — this one and the planner's
+ * `apply-decisions.ts`, whose `piaMonthly` is already monthly — so the units
+ * are normalized HERE rather than at the commit write site. Leaving the annual
+ * figure in a field that commits to the `pia_monthly` column would overstate
+ * Social Security 12x on the document path.
+ *
+ * NOT a double adjustment: `claimingAgeField` below always defaults the claim
+ * age to FRA, and in `pia_at_fra` mode at FRA the engine applies neither an
+ * early reduction nor a delayed credit — so annual/12 reproduces exactly the
+ * yearly benefit the old literal-annual path produced.
+ *
+ * Rounded to 2 decimals because `incomes.pia_monthly` is `decimal(15,2)`;
+ * rounding here keeps what the advisor reviews identical to what is stored.
+ */
+function monthlyPiaFromAnnual(annual: number): number {
+  return Math.round((annual / 12) * 100) / 100;
 }
 
 function claimingAgeField(dob: string | undefined): PlanBasicsField<number> {
@@ -127,7 +148,12 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
       const annual = extractedAnnualSocialSecurity(payload, owner);
       return {
         owner,
-        pia: annual != null ? { value: annual, provenance: "document" } : blank<number>(),
+        // `provenance: "document"` survives the unit conversion — it is the
+        // same document fact in different units, not an assumption.
+        pia:
+          annual != null
+            ? { value: monthlyPiaFromAnnual(annual), provenance: "document" }
+            : blank<number>(),
         claimingAge: claimingAgeField(dob),
       };
     }),

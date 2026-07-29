@@ -216,7 +216,10 @@ describe("commitPlanBasics", () => {
     expect(calls.filter((c) => c.table === expenses)).toHaveLength(0);
   });
 
-  it("writes annualAmount/claimingAge for a Social Security row, stamping updatedAt", async () => {
+  // `pia` is a MONTHLY PIA at FRA, and the row commits as `pia_at_fra` so the
+  // engine runs the actuarial path. `annualAmount` is deliberately left alone.
+  // See plan-basics-ss.test.ts for the full PIA-path coverage.
+  it("writes the PIA/claimingAge for a Social Security row, stamping updatedAt", async () => {
     const { tx, calls } = fakeTx();
     await commitPlanBasics(tx as never, {
       planBasics: {
@@ -227,7 +230,7 @@ describe("commitPlanBasics", () => {
         socialSecurity: [
           {
             owner: "client",
-            pia: { value: 24000, provenance: "stated" },
+            pia: { value: 2000, provenance: "stated" },
             claimingAge: { value: 67, provenance: "stated" },
           },
         ],
@@ -236,7 +239,12 @@ describe("commitPlanBasics", () => {
 
     const incomeCalls = calls.filter((c) => c.table === incomes);
     expect(incomeCalls).toHaveLength(1);
-    expect(incomeCalls[0].patch).toMatchObject({ annualAmount: "24000", claimingAge: 67 });
+    expect(incomeCalls[0].patch).toMatchObject({
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: "2000",
+      claimingAge: 67,
+    });
+    expect(incomeCalls[0].patch).not.toHaveProperty("annualAmount");
     expect(incomeCalls[0].patch.updatedAt).toBeInstanceOf(Date);
   });
 
