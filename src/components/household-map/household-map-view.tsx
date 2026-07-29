@@ -6,6 +6,7 @@ import GoalsBoard from "./goals-board";
 import CashFlowBoard from "./cash-flow-board";
 import QuickEditDrawer, { type QuickEditTarget } from "./quick-edit-drawer";
 import AddAccountDialog from "@/components/add-account-dialog";
+import { SocialSecurityDialog } from "@/components/social-security-dialog";
 import { accountToInitial } from "@/components/balance-sheet-view";
 import { useRouter } from "next/navigation";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -20,6 +21,7 @@ import {
   lifeExpectancyBasePayload,
 } from "@/lib/household-map/life-expectancy-write";
 import type { TargetKind } from "@/engine/scenario/types";
+import type { Income } from "@/engine/types";
 import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import {
   buildBasePayload,
@@ -99,10 +101,16 @@ function approximateMilestones(
 }
 
 export default function HouseholdMapView(props: HouseholdMapProps) {
-  const { clientId, people, goals, canEdit, incomeRows, expenseRows, savingsRuleRows } = props;
+  const { clientId, people, goals, canEdit, incomeRows, ssIncomeRows, expenseRows, savingsRuleRows } =
+    props;
   const [board, setBoard] = useState<(typeof BOARDS)[number]["key"]>("net-worth");
 
   const [drawerTarget, setDrawerTarget] = useState<QuickEditTarget | null>(null);
+
+  /** The Social Security row whose dialog is open, or null. Holds the ROW, not
+   *  the owner: `SocialSecurityDialog` takes both, and deriving the owner from a
+   *  stored id would need a second lookup that could miss. */
+  const [editingSs, setEditingSs] = useState<Income | null>(null);
 
   const [savingsOpen, setSavingsOpen] = useState(false);
   const [savingsEditing, setSavingsEditing] = useState<SavingsRuleRow | undefined>(undefined);
@@ -326,8 +334,12 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   // those cards render plain rather than as a button whose Save could never
   // land (base PUT → 500 on a uuid column; scenario POST → 400 from
   // `targetId: z.string().uuid()`).
+  // An income is editable through EITHER of two maps, and which one decides
+  // which editor opens (see `handleEditItem`). They are disjoint by construction
+  // — `isHydratableIncome` puts Social Security in `ssIncomeRows` and everything
+  // else in `incomeRows` — so the `||` can never pick the wrong dialog.
   function isItemEditable(item: MapItem): boolean {
-    if (item.kind === "income") return item.id in incomeRows;
+    if (item.kind === "income") return item.id in incomeRows || item.id in ssIncomeRows;
     if (item.kind === "expense") return item.id in expenseRows;
     if (item.kind === "savings") return item.id in savingsRuleRows;
     return false;
@@ -336,6 +348,16 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   function handleEditItem(item: MapItem) {
     if (!canEdit) return;
     if (item.kind === "income") {
+      // Social Security FIRST. The quick-edit drawer renders none of the five
+      // SS-only fields and its Save is a wholesale replace of the scenario's
+      // change payload, so routing an SS row there deletes a "claim at 70"
+      // override — the reason those rows are kept out of `incomeRows` at all
+      // (`isHydratableIncome`). `SocialSecurityDialog` submits all five.
+      const ssRow = ssIncomeRows[item.id];
+      if (ssRow) {
+        setEditingSs(ssRow);
+        return;
+      }
       const row = incomeRows[item.id];
       if (row) setDrawerTarget({ kind: "income", id: item.id, row, presetColumn: item.column });
     } else if (item.kind === "expense") {
@@ -457,7 +479,28 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           spouseFirstName={people.spouse?.firstName ?? null}
           milestones={milestones}
           resolvedInflationRate={props.resolvedInflationRate}
+          // The same unfiltered list `AddAccountDialog` gets. NOT `people.children`:
+          // that drops the `other`-role members a grandchild's education goal is
+          // for, and carries no ids for the client/spouse rows when the
+          // beneficiary is a principal.
+          familyMembers={props.familyMemberOptions}
           onClose={() => setDrawerTarget(null)}
+        />
+      )}
+
+      {/* The app's canonical Social Security editor, opened in place rather than
+          linked to. Its own `useScenarioWriter` handles base-vs-scenario mode and
+          calls `router.refresh()` on success, so `onSaved` has nothing to do but
+          close — the Map re-renders server-side with the new claim age. */}
+      {editingSs && (
+        <SocialSecurityDialog
+          clientId={clientId}
+          owner={editingSs.owner === "spouse" ? "spouse" : "client"}
+          existingRow={editingSs}
+          clientInfo={props.clientInfo}
+          planSettings={props.planSettings}
+          onClose={() => setEditingSs(null)}
+          onSaved={() => setEditingSs(null)}
         />
       )}
 

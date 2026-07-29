@@ -5,6 +5,7 @@ import GoalsBoard from "../goals-board";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapPerson } from "@/lib/household-map/types";
+import { TEST_CLIENT_INFO, TEST_PLAN_SETTINGS } from "./fixtures";
 
 function person(overrides: Partial<MapPerson> = {}): MapPerson {
   return {
@@ -46,12 +47,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     // Editor hydration rows (see HouseholdMapProps). Empty by default — these
     // boards render cards, they don't hydrate editors.
     incomeRows: {},
+    ssIncomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
+    clientInfo: TEST_CLIENT_INFO,
+    planSettings: TEST_PLAN_SETTINGS,
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared

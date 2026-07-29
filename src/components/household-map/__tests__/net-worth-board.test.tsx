@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import NetWorthBoard from "../net-worth-board";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+import { TEST_CLIENT_INFO, TEST_PLAN_SETTINGS } from "./fixtures";
 import type { AccountRow } from "@/components/balance-sheet-view";
 
 // `useScenarioPreservingHref` reads the URL's `?scenario=`. `vi.hoisted` so the
@@ -67,12 +68,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     // Editor hydration rows (see HouseholdMapProps). Empty by default — these
     // boards render cards, they don't hydrate editors.
     incomeRows: {},
+    ssIncomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
+    clientInfo: TEST_CLIENT_INFO,
+    planSettings: TEST_PLAN_SETTINGS,
     accountOptions: [],
     accountRows: {},
     // Controller resolution R3: Task 5 adds ONLY `accountRows` and

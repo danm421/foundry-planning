@@ -6,6 +6,8 @@ import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investm
 import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
 import type { ExpenseView, IncomeView, SavingsRuleView } from "@/lib/scenario/view-adapters";
+import type { Income } from "@/engine/types";
+import { TEST_CLIENT_INFO, TEST_PLAN_SETTINGS } from "./fixtures";
 
 // `useScenarioWriter` branches on the URL's `?scenario=`, and the two branches
 // send DIFFERENT payloads on purpose (see lib/household-map/flow-write.ts), so
@@ -62,6 +64,26 @@ vi.mock("@/components/forms/savings-rule-dialog", () => ({
       data-editing-id={props.editing?.id ?? ""}
       data-editing-amount={props.editing?.annualAmount ?? ""}
       data-schedule={JSON.stringify(props.schedule ?? null)}
+    />
+  ),
+}));
+
+// The SS editor, captured the same way. `existingRow` is captured as an ID plus
+// the two fields the quick-edit drawer cannot round-trip (`claimingAge`,
+// `ssBenefitMode`): asserting only that "a dialog opened" would still pass if the
+// Map handed the dialog a row hydrated from `IncomeView`, which carries neither —
+// and every scenario would then open at "claim at FRA" and save that back.
+vi.mock("@/components/social-security-dialog", () => ({
+  SocialSecurityDialog: (props: {
+    owner: string;
+    existingRow: { id: string; claimingAge?: number; ssBenefitMode?: string } | null;
+  }) => (
+    <div
+      data-testid="mock-social-security-dialog"
+      data-owner={props.owner}
+      data-existing-id={props.existingRow?.id ?? ""}
+      data-claiming-age={String(props.existingRow?.claimingAge ?? "")}
+      data-benefit-mode={props.existingRow?.ssBenefitMode ?? ""}
     />
   ),
 }));
@@ -163,6 +185,29 @@ function expenseRow(id: string, overrides: Partial<ExpenseView> = {}): ExpenseVi
   };
 }
 
+/** A Social Security row as `ssIncomeRows` carries it: the FULL engine `Income`,
+ *  not an `IncomeView`. The five SS-only fields are what the type exists for. */
+function ssIncomeRow(id: string, overrides: Partial<Income> = {}): Income {
+  return {
+    id,
+    type: "social_security",
+    name: "Alex Social Security",
+    // 0 on purpose — in `pia_at_fra` mode the engine derives the benefit from
+    // `piaMonthly` and never reads this column.
+    annualAmount: 0,
+    startYear: 2024,
+    endYear: 2099,
+    growthRate: 0.02,
+    owner: "client",
+    ssBenefitMode: "pia_at_fra",
+    piaMonthly: 3200,
+    claimingAgeMode: "years",
+    claimingAge: 70,
+    claimingAgeMonths: 0,
+    ...overrides,
+  };
+}
+
 function savingsRow(id: string, overrides: Partial<SavingsRuleView> = {}): SavingsRuleView {
   return {
     id,
@@ -190,12 +235,15 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     goals: [],
     canEdit: true,
     incomeRows: {},
+    ssIncomeRows: {},
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
+    clientInfo: TEST_CLIENT_INFO,
+    planSettings: TEST_PLAN_SETTINGS,
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared
@@ -221,8 +269,8 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     // EMPTY familyMemberOptions is the exact shape that made the dialog's save
     // 400 — see the "+ Add" test below.
     familyMemberOptions: [
-      { id: "fm-client", role: "client", firstName: "Alex" },
-      { id: "fm-spouse", role: "spouse", firstName: "Jordan" },
+      { id: "fm-client", role: "client", firstName: "Alex", birthYear: 1980 },
+      { id: "fm-spouse", role: "spouse", firstName: "Jordan", birthYear: 1982 },
     ],
     entityOptions: [{ id: "ent-1", name: "Sample Family Trust" }],
     ...overrides,
@@ -537,6 +585,186 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(screen.queryByTestId("mock-add-account-dialog")?.getAttribute("data-open")).not.toBe(
       "true",
     );
+  });
+});
+
+// An income is editable through EITHER `incomeRows` or `ssIncomeRows`, and WHICH
+// map holds it decides which editor opens. The two are disjoint by construction
+// (`isHydratableIncome` sends social_security to one and everything else to the
+// other), so these tests are about the routing rule, not about the split.
+//
+// The stakes are asymmetric. Routing a non-SS row to the SS dialog is a visible
+// nuisance; routing an SS row to the quick-edit drawer is silent data loss — the
+// drawer submits a fixed nine-key body and the scenario writer replaces the
+// change payload wholesale, so Save with no edits at all empties the diff and
+// deletes a "claim at 70" override, moving the projection, Monte Carlo and
+// solver with it.
+describe("HouseholdMapView — Social Security card routing", () => {
+  function ssItem() {
+    return item({
+      id: "inc-ss",
+      kind: "income",
+      column: "client",
+      name: "Alex Social Security",
+      value: 0,
+      // No inline editor on an SS card (see map-items.test.ts) — the pencil is
+      // the whole affordance, which is why these tests assert on the button.
+      editableAmount: null,
+    });
+  }
+
+  it("gives an SS card a pencil — a hydration entry in ssIncomeRows makes it editable", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [ssItem()],
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss") },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    expect(screen.getByRole("button", { name: "Edit Alex Social Security" })).toBeInTheDocument();
+  });
+
+  // The control. Same card, no hydration entry in EITHER map — it must render
+  // inert, or the case above is passing on "every card is a button" rather than
+  // on `ssIncomeRows`.
+  it("leaves the same card inert when it is in neither hydration map", () => {
+    render(<HouseholdMapView {...baseProps({ items: [ssItem()] })} />);
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    expect(
+      screen.queryByRole("button", { name: "Edit Alex Social Security" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens SocialSecurityDialog — NOT the quick-edit drawer — hydrated from the engine row", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [ssItem()],
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss", { claimingAge: 70 }) },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Alex Social Security" }));
+
+    const dialog = screen.getByTestId("mock-social-security-dialog");
+    expect(dialog.dataset.existingId).toBe("inc-ss");
+    // The two fields an `IncomeView`-hydrated dialog could not have carried.
+    expect(dialog.dataset.claimingAge).toBe("70");
+    expect(dialog.dataset.benefitMode).toBe("pia_at_fra");
+    expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
+  });
+
+  // `owner` is what the dialog reads DOB, retirement age and life expectancy off
+  // — the spouse case is the discriminating one, because a hardcoded "client"
+  // would satisfy a client-owned row and then quietly resolve a spouse's claim
+  // age against the client's birthday.
+  it("hands the dialog the row's own owner, so a spouse benefit is not resolved off the client", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [
+            item({
+              id: "inc-ss-spouse",
+              kind: "income",
+              column: "spouse",
+              name: "Jordan Social Security",
+              value: 0,
+            }),
+          ],
+          ssIncomeRows: { "inc-ss-spouse": ssIncomeRow("inc-ss-spouse", { owner: "spouse" }) },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Jordan Social Security" }));
+
+    expect(screen.getByTestId("mock-social-security-dialog").dataset.owner).toBe("spouse");
+  });
+
+  it("narrows a joint-owned SS row to 'client' — the dialog takes only the two principals", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [ssItem()],
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss", { owner: "joint" }) },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Alex Social Security" }));
+
+    expect(screen.getByTestId("mock-social-security-dialog").dataset.owner).toBe("client");
+  });
+
+  // THE REGRESSION GUARD. `handleEditItem` checks `ssIncomeRows` FIRST, and this
+  // is the only test that can tell that ordering apart from luck: it contrives
+  // the collision the disjointness invariant currently prevents, so if a later
+  // change ever admits SS into `incomeRows` — "fixing" `isHydratableIncome`, or
+  // widening the drawer — the row must STILL reach the SS dialog rather than the
+  // drawer whose Save deletes the claim-age override.
+  it("routes to the SS dialog even when the same id is contrived into BOTH maps", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [ssItem()],
+          incomeRows: { "inc-ss": incomeRow("inc-ss", { type: "social_security" }) },
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss") },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Alex Social Security" }));
+
+    expect(screen.getByTestId("mock-social-security-dialog").dataset.existingId).toBe("inc-ss");
+    expect(screen.queryByTestId("mock-quick-edit-drawer")).not.toBeInTheDocument();
+  });
+
+  // The other half of the routing rule: an ordinary income must not be caught by
+  // the SS branch. Without this, "always open the SS dialog" would pass every
+  // case above.
+  it("still sends an ordinary salary to the quick-edit drawer", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          items: [item({ id: "inc-1", kind: "income", column: "client", name: "Salary", value: 90000 })],
+          incomeRows: { "inc-1": incomeRow("inc-1") },
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss") },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Salary" }));
+
+    expect(screen.getByTestId("mock-quick-edit-drawer").dataset.id).toBe("inc-1");
+    expect(screen.queryByTestId("mock-social-security-dialog")).not.toBeInTheDocument();
+  });
+
+  it("does not open the SS dialog on a read-only board", () => {
+    render(
+      <HouseholdMapView
+        {...baseProps({
+          canEdit: false,
+          items: [ssItem()],
+          ssIncomeRows: { "inc-ss": ssIncomeRow("inc-ss") },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Cash Flow"));
+    expect(
+      screen.queryByRole("button", { name: "Edit Alex Social Security" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mock-social-security-dialog")).not.toBeInTheDocument();
   });
 });
 

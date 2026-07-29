@@ -162,6 +162,52 @@ describe("incomeToMapItem", () => {
     expect(item.column).toBe("tray");
     expect(item.trayOwnerLabel).toBe("Mueller Consulting LLC");
   });
+
+  // `editableAmount` is what makes the Cash Flow card's value an inline field.
+  // A Social Security row in `pia_at_fra` mode has an `annualAmount` the engine
+  // does NOT read — `resolveAnnualBenefit` derives the benefit from `piaMonthly`
+  // plus the claim age — so a field over that column would take a figure the
+  // projection discards, and show the advisor a number the plan disagrees with.
+  // The pair is the point: SS is null while an OTHERWISE IDENTICAL income keeps
+  // its amount, so this cannot pass on a blanket null.
+  it("gives a social_security row NO inline editor, even though its card now has a pencil", () => {
+    const item = incomeToMapItem(
+      income({ type: "social_security", name: "Alex's SS", annualAmount: 42000 }),
+      accountById,
+      ctx,
+    );
+    expect(item.editableAmount).toBeNull();
+  });
+
+  it("gives every other income its annualAmount as the inline editable value", () => {
+    expect(incomeToMapItem(income({ annualAmount: 90000 }), accountById, ctx).editableAmount).toBe(
+      90000,
+    );
+  });
+
+  // The note is built server-side (`ssStartNote`) and has to survive the trip
+  // through the adapter onto `timing.startsAt`, which is the only field the
+  // Cash Flow board's timing cell reads it from. Dropping the argument here
+  // would leave every SS card showing its inert "2024-2099" again with nothing
+  // else in the suite noticing.
+  it("threads a start note onto the item's timing", () => {
+    const note = { label: "at 70", title: "Benefit starts at age 70 (2040)" };
+    const item = incomeToMapItem(
+      income({ type: "social_security", startYear: 2024, endYear: 2099 }),
+      accountById,
+      ctx,
+      note,
+    );
+    expect(item.timing?.startsAt).toEqual(note);
+    // The years still ride along untouched — the note REPLACES them at render
+    // time, it does not rewrite the row.
+    expect(item.timing?.startYear).toBe(2024);
+    expect(item.timing?.endYear).toBe(2099);
+  });
+
+  it("leaves startsAt null when no note is passed — the ordinary case", () => {
+    expect(incomeToMapItem(income(), accountById, ctx).timing?.startsAt).toBeNull();
+  });
 });
 
 describe("editor hydration eligibility", () => {
