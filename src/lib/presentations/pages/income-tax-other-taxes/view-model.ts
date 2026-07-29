@@ -1,6 +1,8 @@
-// Other Taxes drill — the "Other ▸" group from the Federal tab: the taxes
-// beyond regular federal income tax. Their sum equals the Federal page's
-// "Other" column (= totalTax − regularFederalIncomeTax). Table-only.
+// Other Taxes drill — the "Other ▸" group from the Federal tab: everything in
+// Total Tax beyond regular federal income tax. Mostly taxes, plus one NEGATIVE
+// component (federal credits, netted inside totalTax while regularFederalIncomeTax
+// stays pre-credit). The named columns SUM to the Total column, which equals the
+// Federal page's "Other" (= totalTax − regularFederalIncomeTax). Table-only.
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type {
@@ -26,6 +28,40 @@ const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: 
   { key: "stateTax",           label: "State Tax",     color: dataLight.grey, pick: (f) => f?.stateTax ?? 0 },
 ];
 
+/** Federal credits as they land in the Other bucket — always ≤ 0.
+ *
+ *  SIGN. `otherTaxFromFlow` = totalTax − regularFederalIncomeTax, and
+ *  `regularFederalIncomeTax` stays PRE-credit by design (calculate.ts). Expanding
+ *  the roll-up (calculate.ts: totalFederalTax = max(0, subpartA − nonrefundable)
+ *  + NIIT + addl Medicare − refundable, where subpartA = regularFed + capGains +
+ *  AMT) gives
+ *
+ *      other = capGains + AMT + NIIT + addlMedicare + state + FICA + penalty
+ *              − (taxCredits + refundableCredits)
+ *
+ *  so the named columns OVERSHOOT the total by exactly the credit dollars, and
+ *  the column that closes the gap must be NEGATIVE. `flow.taxCredits` is already
+ *  the APPLIED nonrefundable figure — credits.ts clamps each component against
+ *  remaining tax, so it can never exceed subpartA and the roll-up's `Math.max(0,…)`
+ *  is a no-op. That is why no second clamp is needed here. */
+const creditsInOther = (f: TaxFlow | undefined) =>
+  -((f?.taxCredits ?? 0) + (f?.refundableCredits ?? 0));
+
+/** Chart stack for credits. A negative series is SAFE here: build-chart-spec
+ *  tracks positive and negative stack subtotals separately and opens a diverging
+ *  y-domain, and the renderer's `stackRects` stacks negative segments downward
+ *  from zero (see chart-geom.ts — Portfolio Activity already relies on it). So
+ *  credits render as a below-axis segment rather than a broken bar, and the
+ *  stack still sums to the Other total. */
+const CREDITS_STACK = {
+  key: "credits", label: "Federal Credits", color: dataLight.blue, pick: creditsInOther,
+};
+
+/** True when any visible year applied a federal credit. */
+function hasCreditYear(years: ProjectionYear[]): boolean {
+  return years.some((y) => creditsInOther(y.taxResult?.flow) !== 0);
+}
+
 export interface BuildTaxOtherTaxesDrillInput {
   years: ProjectionYear[];
   clientData: ClientData;
@@ -45,6 +81,12 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
   // to the Other total (= totalTax − regularFed, which already includes it).
   const showPenalty = hasPenaltyYear(visibleYears);
 
+  // Same zero-suppression for federal credits (Task 14b / D2). Credits are netted
+  // inside totalTax while regularFederalIncomeTax stays pre-credit, so they land
+  // entirely in the Other bucket; without this column the named columns overshoot
+  // `total` by the credit dollars and the page contradicts its own header comment.
+  const showCredits = hasCreditYear(visibleYears);
+
   const columns: DrillColumn[] = [
     { key: "capitalGainsTax",    header: "Capital\nGains Tax",  width: 52 },
     { key: "amt",                header: "AMT",                 width: 40 },
@@ -54,6 +96,9 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
     { key: "stateTax",           header: "State\nTax",          width: 48 },
     ...(showPenalty
       ? [{ key: "earlyWithdrawalPenalty", header: "Early\nWithdrawal", width: 52 }]
+      : []),
+    ...(showCredits
+      ? [{ key: "credits", header: "Federal\nCredits", width: 50 }]
       : []),
     { key: "total",              header: "Total",               width: 50, strong: true },
   ];
@@ -68,6 +113,7 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
       fica:               f?.fica               ?? 0,
       stateTax:           f?.stateTax           ?? 0,
       earlyWithdrawalPenalty: f?.earlyWithdrawalPenalty ?? 0,
+      credits:            creditsInOther(f),
       total: otherTaxFromFlow(f),
     };
     return { year: py.year, ageClient: py.ages.client ?? null, ageSpouse: py.ages.spouse ?? null, cells };
@@ -75,7 +121,11 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
 
   const markers = buildMarkers(clientData, visibleYears, clientName, spouseName);
 
-  const stackDefs = showPenalty ? [...OTHER_STACK, PENALTY_STACK] : OTHER_STACK;
+  const stackDefs = [
+    ...OTHER_STACK,
+    ...(showPenalty ? [PENALTY_STACK] : []),
+    ...(showCredits ? [CREDITS_STACK] : []),
+  ];
   const chartSpec = buildDrillChartSpec({
     years: visibleYears.map((y) => y.year),
     stacks: stackDefs.map((s) => ({

@@ -86,6 +86,31 @@ function secaFixture(): { year: ProjectionYear; ctx: DrillContext } {
   return { year, ctx };
 }
 
+// Credit-driven NEGATIVE residual (Task 14b / D1). MFJ, 3 children, $30k wages,
+// no state tax: subpart A tax is 0 so no nonrefundable credit can be used, the
+// refundable ACTC is 0.15 × (30,000 − 2,500) = 4,125, and FICA is 2,295. The
+// credits are netted inside totalFederalTax while regularFederalIncomeTax stays
+// PRE-credit, so the only nonzero named line is FICA (+2,295) against a reported
+// totalTax of −1,830 — a residual of −4,125 (= −refundableCredits).
+// `creditGapFixture(gap)` scales that gap so the noise floor can be probed too.
+function creditGapFixture(refundable = 4_125): { year: ProjectionYear; ctx: DrillContext } {
+  const { ctx } = compositionFixture();
+  const year = makeYear({
+    year: 2062,
+    taxDetail: makeTaxDetail({ "wages:dan": { type: "ordinary", amount: 30_000 } }),
+    taxResult: makeTaxResult({
+      flow: {
+        regularFederalIncomeTax: 0,
+        fica: 2_295,
+        refundableCredits: refundable,
+        totalFederalTax: -refundable,
+        totalTax: 2_295 - refundable,
+      },
+    }),
+  });
+  return { year, ctx };
+}
+
 describe("taxAdapter.components (COMPOSITION)", () => {
   it("decomposes a tax year into labeled, source-keyed components", () => {
     const { year, ctx } = compositionFixture();
@@ -126,6 +151,39 @@ describe("taxAdapter.components (COMPOSITION)", () => {
     // …and the tax_line parts (eight lines + residual) reconcile to totalTax.
     expect(Math.round(parts.reduce((s, p) => s + (p.type === "tax_line" ? p.amount : 0), 0)))
       .toBe(Math.round(year.taxResult!.flow.totalTax));
+  });
+
+  // D1 (Task 14b). Three separate `it`s on purpose: two assertions in one block
+  // are NOT two covered assertions — once the first throws the second never runs,
+  // so a mutation table would credit coverage that never executed.
+  it("D1: surfaces a credit-driven NEGATIVE residual as its own tax_line", () => {
+    const { year, ctx } = creditGapFixture();
+    const taxLines = taxAdapter.components(year, ctx).filter((p) => p.type === "tax_line");
+    // One assertion, not two: identity AND amount in a single toEqual, so the red
+    // can only land here. The old one-sided `residual >= LINE_FLOOR` guard drops
+    // this line entirely and the find() returns undefined.
+    expect(taxLines.find((p) => p.label === "Self-employment tax and other federal adjustments"))
+      .toEqual({
+        label: "Self-employment tax and other federal adjustments",
+        amount: -4_125,
+        type: "tax_line",
+      });
+  });
+
+  it("D1: the tax_line parts reconcile to a NEGATIVE totalTax", () => {
+    const { year, ctx } = creditGapFixture();
+    const parts = taxAdapter.components(year, ctx);
+    // −1,830, not the +2,295 the eight named lines alone report.
+    expect(parts.reduce((s, p) => s + (p.type === "tax_line" ? p.amount : 0), 0))
+      .toBe(Math.round(year.taxResult!.flow.totalTax));
+  });
+
+  it("D1: a sub-floor negative gap is still dropped as noise", () => {
+    // |−50| < LINE_FLOOR (100): the noise floor survives the switch to |residual|,
+    // so this is `Math.abs(residual) >= LINE_FLOOR` and not merely `residual !== 0`.
+    const { year, ctx } = creditGapFixture(50);
+    const taxLines = taxAdapter.components(year, ctx).filter((p) => p.type === "tax_line");
+    expect(taxLines.map((p) => p.label)).toEqual(["FICA"]);
   });
 
   it("degrades to a single Total tax component when taxResult is absent", () => {

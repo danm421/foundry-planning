@@ -131,7 +131,7 @@ export const FLOW_COLUMNS: Column[] = [
     key: "otherTaxes",
     label: "Other",
     tooltip:
-      "Cap Gains, AMT, NIIT, Addl Medicare, FICA, State, and Early-Withdrawal Penalty — everything in Total Tax beyond Regular Federal. Click to drill down. (Trust & beneficiary tax are shown separately and are NOT in Total Tax.)",
+      "Cap Gains, AMT, NIIT, Addl Medicare, FICA, State, and Early-Withdrawal Penalty, LESS federal tax credits — everything in Total Tax beyond Regular Federal (which stays pre-credit). Click to drill down. (Trust & beneficiary tax are shown separately and are NOT in Total Tax.)",
     value: (y) => computeOtherTaxes(y),
   },
   {
