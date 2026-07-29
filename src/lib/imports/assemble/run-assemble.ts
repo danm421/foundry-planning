@@ -123,7 +123,23 @@ function countRows(payload: ImportPayload): number {
     payload.lifePolicies.length +
     payload.wills.length +
     payload.entities.length +
-    payload.savings.length
+    payload.savings.length +
+    // Goals are ROWS, not derived views of the accounts that seeded them:
+    // `commitGoals` writes one `expenses` row per education goal
+    // (commit/goals.ts:128,159) and one `assetTransactions` row per home
+    // purchase (:226,254). So a 529 account and its education goal are two
+    // distinct committed records, and counting both is not double-counting.
+    //
+    // Optional because `goals` only rides on the payload from assemble onward
+    // (set at :190 below); `annotated` never carries it.
+    //
+    // Without these two terms the count was asymmetric in a way that made R4's
+    // "counts planner-added rows" only half-true: a planner goal decision of
+    // kind "one_time"/"recurring" becomes an `expenses` row and WAS counted
+    // (apply-decisions.ts buildExpenseRow), while kind "education" becomes a
+    // `goals.education` entry and was INVISIBLE here (deriveEducationGoal).
+    (payload.goals?.education.length ?? 0) +
+    (payload.goals?.homePurchases.length ?? 0)
   );
 }
 

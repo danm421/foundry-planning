@@ -293,6 +293,47 @@ describe("runAssemble + planner", () => {
     expect(res.rowCount).toBe(1);
   });
 
+  it("rowCount counts a planner EDUCATION-goal decision, which lands in goals.education and not in expenses", async () => {
+    // The sibling test above uses kind "one_time", which applyDecisions turns
+    // into an `expenses` row (buildExpenseRow) — already counted. kind
+    // "education" instead becomes a `goals.education` entry
+    // (deriveEducationGoal), which countRows omitted entirely, so a planner
+    // education goal moved rowCount by zero. fileResults is empty, so every
+    // other payload array is empty and the only row that can exist is this one.
+    const decisions: PlanningDecisions = {
+      ...EMPTY_DECISIONS,
+      goals: [
+        {
+          kind: "education",
+          name: { value: "Ava college", provenance: "document", reason: "Stated in the notes." },
+          annualAmount: { value: 30000, provenance: "document", reason: "Stated in the notes." },
+          startYear: { value: 2035, provenance: "document", reason: "Stated in the notes." },
+          endYear: { value: 2038, provenance: "document", reason: "Stated in the notes." },
+          dedicatedAccountNames: [],
+        },
+      ],
+    };
+    const runPlannerFn = vi.fn<RunPlannerFn>(async () => decisions);
+
+    const res = await runAssemble({
+      importId: "imp11", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      hasSpouse: false,
+      documentText: "Ava starts college in 2035, $30,000 a year for four years.",
+      runPlannerFn,
+    });
+
+    // Prove the row landed where we think it did, so this test cannot pass for
+    // the wrong reason (e.g. the goal silently becoming an expense instead).
+    const persisted = persistedPayload() as {
+      goals?: { education: unknown[] };
+      expenses: unknown[];
+    };
+    expect(persisted.goals?.education).toHaveLength(1);
+    expect(persisted.expenses).toHaveLength(0);
+    expect(res.rowCount).toBe(1);
+  });
+
   it("existing explicit documentText still takes precedence over fileResults-derived text", async () => {
     const runPlannerFn = vi.fn<RunPlannerFn>(async () => EMPTY_DECISIONS);
 
