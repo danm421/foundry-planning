@@ -103,7 +103,7 @@ function ownerAgreement(incoming: string[], candidate: string[] | undefined): nu
   let shared = 0;
   for (const id of incoming) if (set.has(id)) shared += 1;
   const union = new Set([...incoming, ...candidate]).size;
-  return union === 0 ? 0.5 : shared / union;
+  return shared / union;
 }
 
 /** 1 identical, decaying to 0 at a 100%+ gap. 0.5 when the value is unknown. */
@@ -169,7 +169,7 @@ export function matchAccount(
     const score =
       W_NAME * nameSimilarity(a.name, incoming.name) +
       W_OWNER * ownerAgreement(incomingOwnerIds, a.ownerIds) +
-      W_CATEGORY * (incoming.category && a.category === incoming.category ? 1 : 0) +
+      W_CATEGORY * (a.category === incoming.category ? 1 : 0) +
       W_VALUE * valueProximity(incoming.value, a.value);
     if (score >= SCORE_FLOOR) scored.push({ id: a.id, score });
   }
