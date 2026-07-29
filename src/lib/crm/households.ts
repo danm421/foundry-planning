@@ -25,6 +25,7 @@ import { resolveContactDateOfBirth } from "./default-dob";
 import { deriveNameForHousehold } from "./sync-household-name";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import type { CreateCrmHouseholdInput } from "./schemas";
+import { buildOrderBy, type ClientSortKey, type SortDir } from "./sort";
 
 type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
 
@@ -40,6 +41,13 @@ export async function listCrmHouseholds(opts?: {
    * value here is silently ignored, never used to widen their own scope.
    */
   viewAsAdvisorId?: string;
+  /**
+   * Explicit ordering from the clients list. `undefined`/`null` keeps this
+   * loader's historical default (updatedAt desc, or deletedAt desc in trash),
+   * which is what the four non-UI callers rely on.
+   */
+  sort?: ClientSortKey | null;
+  dir?: SortDir;
 }) {
   const firmId = await requireOrgId();
   const limit = opts?.limit ?? 50;
@@ -68,8 +76,9 @@ export async function listCrmHouseholds(opts?: {
     },
     limit,
     offset,
-    orderBy: (t, { desc }) =>
-      opts?.deleted ? [desc(t.deletedAt)] : [desc(t.updatedAt)],
+    orderBy: opts?.sort
+      ? buildOrderBy(opts.sort, opts.dir ?? "asc")
+      : (t, { desc }) => (opts?.deleted ? [desc(t.deletedAt)] : [desc(t.updatedAt)]),
   });
 }
 
