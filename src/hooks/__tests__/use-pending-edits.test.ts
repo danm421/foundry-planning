@@ -66,6 +66,31 @@ describe("usePendingEdits", () => {
     await waitFor(() => expect(result.current.rows).toEqual(refreshed));
   });
 
+  // Additive test (not part of the original brief). "drops the pending value
+  // once fresh props agree with it" above only asserts on the MERGED output,
+  // which looks correct whether the pending key was actually removed or merely
+  // retained-but-coincidentally-equal to what the server sent. This test tells
+  // those two cases apart by checking what happens on the NEXT, genuinely
+  // different server value: if the pending key was truly dropped on agreement,
+  // this new value shows through; if it was only retained, the stale value
+  // keeps winning forever.
+  it("actually drops the pending key on agreement, not just a coincidentally-equal merge", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {
+      initialProps: { rows: ROWS },
+    });
+    await act(async () => { await result.current.apply("a", { value: "999" }, save); });
+    expect(result.current.rows[0].value).toBe("999");
+
+    // Server agrees — the point at which the pending key should be dropped.
+    rerender({ rows: [{ id: "a", value: "999", name: "A" }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].value).toBe("999"));
+
+    // A LATER, genuinely different server value.
+    rerender({ rows: [{ id: "a", value: "777", name: "A" }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].value).toBe("777"));
+  });
+
   it("keeps the pending value while the server still disagrees", async () => {
     const save = vi.fn().mockResolvedValue(true);
     const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {

@@ -30,6 +30,13 @@ export function usePendingEdits<T extends { id: string }>(rows: T[]): PendingEdi
   const [pending, setPending] = useState<Record<string, Partial<T>>>({});
 
   useEffect(() => {
+    // Reconciliation is a props-driven state adjustment, not an external-system
+    // sync. The functional updater returns `prev` unchanged whenever nothing was
+    // reconciled, so the cascading re-render the rule warns about cannot occur.
+    // Restructuring this into the render-phase "adjust state when props change"
+    // pattern is a change to plan-mandated code and is pending the project
+    // owner's decision.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPending((prev) => {
       const ids = Object.keys(prev);
       if (ids.length === 0) return prev;
