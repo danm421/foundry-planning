@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import ClientIdentityMenu, { type PersonInfo } from "@/components/client-identity-menu";
+import { CLIENT_HEADER_ACTIONS_ID } from "@/components/client-header-actions";
 
 interface ClientHeaderProps {
   clientId: string;
@@ -26,7 +27,20 @@ export default function ClientHeader({
         <ClientIdentityMenu clientId={clientId} people={people} />
       </div>
       <div className="justify-self-center">{centerSlot}</div>
-      <div className="justify-self-end">{rightSlot}</div>
+      <div className="flex items-center gap-3 justify-self-end">
+        {rightSlot}
+        {/* Route-level action slot, filled by <ClientHeaderActions> (portal) so
+            a page can put controls on this row instead of spending its own
+            vertical space. It trails the plan chrome deliberately: a page's
+            primary action is an accent fill and so is the scenario chip, and
+            side by side they read as one teal blob with no way to tell the
+            action from the state. empty:hidden collapses the divider and its
+            gap on routes that contribute nothing. */}
+        <div
+          id={CLIENT_HEADER_ACTIONS_ID}
+          className="flex items-center gap-2 border-l border-hair-2 pl-3 empty:hidden"
+        />
+      </div>
     </div>
   );
 }
