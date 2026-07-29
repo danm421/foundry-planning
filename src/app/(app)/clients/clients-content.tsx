@@ -14,6 +14,8 @@ import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
+import { resolveSort, clampTake, type ClientsView } from "@/lib/crm/sort";
+import { ClientsLoadMore } from "@/components/clients-load-more";
 
 // ---------------------------------------------------------------------------
 // Shared-row type — exported so the table component and tests can reference it.
@@ -63,6 +65,9 @@ export async function ClientsContent({
     view?: string;
     /** Admin book-switcher: narrow the list to one advisor's book. */
     advisor?: string;
+    sort?: string;
+    dir?: string;
+    take?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -74,6 +79,13 @@ export async function ClientsContent({
   // Default to the "Recently opened" view; ?view=all, ?view=deleted, and
   // ?view=shared opt out.
   const recentView = !deletedView && !sharedView && params.view !== "all";
+
+  const view: ClientsView = deletedView ? "deleted" : recentView ? "recent" : "all";
+  const sort = resolveSort(view, params.sort, params.dir);
+  const take = clampTake(params.take);
+  // Fetch one extra row: if it comes back, there is another page. Exact, and
+  // avoids a separate COUNT(*).
+  const fetchLimit = take + 1;
 
   const tab = "text-sm text-ink-3 hover:text-ink";
   const tabActive = "text-sm font-medium text-ink";
@@ -114,6 +126,9 @@ export async function ClientsContent({
         status: params.status,
         deleted: true,
         viewAsAdvisorId: params.advisor,
+        sort: sort.key,
+        dir: sort.dir,
+        limit: fetchLimit,
       })
     : recentView && userId
       ? await listRecentlyOpenedHouseholds({
@@ -121,14 +136,23 @@ export async function ClientsContent({
           search: params.search,
           status: params.status,
           viewAsAdvisorId: params.advisor,
+          sort: sort.key,
+          dir: sort.dir,
+          limit: fetchLimit,
         })
       : await listCrmHouseholds({
           search: params.search,
           status: params.status,
           viewAsAdvisorId: params.advisor,
+          sort: sort.key,
+          dir: sort.dir,
+          limit: fetchLimit,
         });
 
-  const rows: UnifiedClientRow[] = households.map((h) => {
+  const hasMore = households.length > take;
+  const visible = hasMore ? households.slice(0, take) : households;
+
+  const rows: UnifiedClientRow[] = visible.map((h) => {
     const primary = h.contacts.find((c) => c.role === "primary");
     const spouse = h.contacts.find((c) => c.role === "spouse");
     return {
@@ -187,6 +211,7 @@ export async function ClientsContent({
       <UnifiedClientsTable
         rows={rows}
         canManage={canManage}
+        sort={sort}
         emptyMessage={
           deletedView
             ? "Trash is empty."
@@ -195,6 +220,7 @@ export async function ClientsContent({
               : undefined
         }
       />
+      {hasMore && <ClientsLoadMore take={take} />}
     </div>
   );
 }
