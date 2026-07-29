@@ -52,9 +52,14 @@ export interface RunAssembleArgs {
   /**
    * The source document's full text and per-page text, used to run the
    * planning reasoner (Task 13/14) opportunistically. Optional: no caller
-   * supplies this today (see the comment at its use below), so the planner
-   * never actually runs in production yet. When absent, assemble is exactly
-   * the deterministic path this file always ran.
+   * passes these explicitly in production - the route stays unmodified (R3)
+   * - so when absent, `deriveDocumentTextFromFileResults` below sources them
+   * from `fileResults` instead, now that `ExtractionResult` carries its own
+   * already-redacted `text`/`pages` (extract.ts R2). When BOTH an explicit
+   * value and `fileResults` would yield text, the explicit value wins (Task
+   * 19's fixture harness and this file's own tests rely on that). Only when
+   * no file yields any text does assemble stay on the deterministic path
+   * this file always ran.
    */
   documentText?: string;
   pages?: string[];
@@ -66,6 +71,46 @@ export interface RunAssembleResult {
   assemble: AssembleState;
   questionCount: number;
   rowCount: number;
+}
+
+/**
+ * R3: `runAssemble` already takes `fileResults`, and (per extract.ts's R2
+ * change) an `ExtractionResult` now carries its own already-SSN-redacted
+ * `text` (single-pass) or `pages` (multi-pass) - never both, see the
+ * comments at extract.ts's two return sites. This derives the planner's
+ * `documentText`/`pages` inputs from what the caller already has, so the
+ * route needs NO change; it's only consulted when the caller didn't inject
+ * `documentText` explicitly (Task 19's fixture harness, and this file's own
+ * tests, still take precedence via `args.documentText`).
+ *
+ * Iterates `Object.entries(fileResults)` in the SAME order `mergeAcrossFiles`
+ * uses (merge-across-files.ts:260) - determinism is a plan Global Constraint.
+ * Per file: text is `r.text ?? r.pages?.join("\n")`; pages are `r.pages ??
+ * (r.text ? [r.text] : [])`, which recovers whichever form extract.ts didn't
+ * persist for that file. An import can hold multiple files: pages flatten
+ * into one array in file order, and text joins per-file with a
+ * `=== <fileName> ===` separator so the planner can tell files apart. If no
+ * file yields any text, both come back undefined so the caller's
+ * `if (documentText)` guard stays false and the planner is skipped - the
+ * degrade-to-deterministic path must survive.
+ */
+function deriveDocumentTextFromFileResults(
+  fileResults: Record<string, ExtractionResult>,
+): { documentText?: string; pages?: string[] } {
+  const sections: string[] = [];
+  const pages: string[] = [];
+
+  for (const [, r] of Object.entries(fileResults)) {
+    const text = r.text ?? r.pages?.join("\n");
+    const filePages = r.pages ?? (r.text ? [r.text] : []);
+    if (text) {
+      sections.push(`=== ${r.fileName} ===\n${text}`);
+    }
+    pages.push(...filePages);
+  }
+
+  if (sections.length === 0) return {};
+  return { documentText: sections.join("\n\n"), pages };
 }
 
 function countRows(payload: ImportPayload): number {
@@ -148,22 +193,25 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   // opportunistic: no document text, a timeout, or an outage all leave the
   // assembled payload exactly as the deterministic path built it.
   //
-  // No caller supplies `documentText` yet — `ExtractionResult` (the shape
-  // every caller actually has, via `fileResults`) carries no source text or
-  // page breakdown to forward here; getting the raw text to this layer is a
-  // separate decision the owner is deciding. So in production this branch
-  // never runs today. The seam exists so wiring a real source is a small
-  // change later; Task 19's fixture harness exercises it directly. Do not
-  // read this as "the planner is live."
+  // `args.documentText` still wins when a caller supplies it directly (Task
+  // 19's fixture harness, and this file's own tests). No caller does that in
+  // production — the route stays unmodified (R3) — so the fallback below
+  // derives it from `fileResults`, which now carries each file's own
+  // already-redacted `text`/`pages` (extract.ts R2). Only when NEITHER an
+  // explicit value nor any file yields text does this branch stay skipped.
   let plannerQuestions: AssembleQuestion[] = [];
   let plannerNotes: string[] = [];
   let plannerPayload: ImportPayload = { ...annotated, ...(planBasics ? { planBasics } : {}), goals };
 
-  if (args.documentText) {
+  const derived = args.documentText ? null : deriveDocumentTextFromFileResults(fileResults);
+  const documentText = args.documentText ?? derived?.documentText;
+  const plannerPages = args.documentText ? args.pages : derived?.pages;
+
+  if (documentText) {
     const plan = args.runPlannerFn ?? runPlanner;
     const decisions = await plan({
-      documentText: args.documentText,
-      pages: args.pages ?? [args.documentText],
+      documentText,
+      pages: plannerPages ?? [documentText],
       payload: plannerPayload,
       estimatePia: makePiaEstimator(),
     }).catch(() => null);
@@ -228,5 +276,12 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     metadata: { mode, questionCount: allQuestions.length },
   });
 
-  return { assemble, questionCount: allQuestions.length, rowCount: countRows(annotated) };
+  // R4: count rows on `assembledPayload` (== `plannerPayload`), not
+  // `annotated` — `applyDecisions` can add rows (Rule 2 savings, Rule 4
+  // "other" expenses from non-education goals) that `annotated` never sees.
+  // Deferred from Task 15 only because the planner was dormant there; once
+  // Step 5 makes it actually run, an undercount here would be a real user-
+  // facing bug (the wizard's row-count summary silently dropping planner
+  // rows).
+  return { assemble, questionCount: allQuestions.length, rowCount: countRows(assembledPayload) };
 }

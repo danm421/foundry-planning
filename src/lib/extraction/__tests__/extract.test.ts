@@ -702,3 +702,78 @@ describe("extractDocument — images", () => {
         ).toBe(true);
     });
 });
+
+describe("extractDocument — persisted text/pages (Task 15 Step 5, R1/R2/R5)", () => {
+    it("persists the single-pass path's `text` already SSN-redacted, and omits `pages` (R1/R2 site 3)", async () => {
+        // Regression test for R1: pdfPages (assigned before SSN redaction) must
+        // never be what gets persisted. If `text` were captured pre-redaction,
+        // or if `pages: pdfPages` were added at this site, this would go red.
+        mockedPdf.mockResolvedValueOnce(
+            "Taxpayer SSN: 123-45-6789. Account balance: $50,000.\n" +
+                "Schwab Brokerage holdings of various securities."
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini"
+        );
+
+        expect(result.text).toBeDefined();
+        expect(result.text).not.toContain("123-45-6789");
+        expect(result.text).toContain("[REDACTED-SSN]");
+        expect(result.pages).toBeUndefined();
+    });
+
+    it("persists the multi-pass path's `pages` already SSN-redacted, and omits `text` (R1/R2 site 2)", async () => {
+        // Same regression as above, on the OTHER path: `pages` must come from
+        // `redactedPages`, never the raw `pdfPages` that multi-pass extraction
+        // itself reads from.
+        mockedPages.mockResolvedValueOnce([
+            "page 1 content with enough text to pass the minimum length check",
+            "Client SSN: 123-45-6789. Account balance: $50,000.",
+            "page 3 content with enough text to pass the minimum length check",
+            "page 4 income and social security data for John SS 38400 per year",
+        ]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "report.pdf", "auto", "mini", "pdf", false, /* comprehensive */ true,
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.pages).toBeDefined();
+        const persistedPages = (result.pages ?? []).join("\n");
+        expect(persistedPages).not.toContain("123-45-6789");
+        expect(persistedPages).toContain("[REDACTED-SSN]");
+        expect(result.text).toBeUndefined();
+    });
+
+    it("caps persisted `pages` at the 100000-char ceiling on the multi-pass path, dropping whole trailing pages and warning (R5)", async () => {
+        const page1 = "A".repeat(60000);
+        const page2 = "B".repeat(50000);
+        const page3 = "C".repeat(5000);
+        mockedPages.mockResolvedValueOnce([page1, page2, page3]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [] })); // incomes section
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "big-report.pdf", "fact_finder", "mini", "pdf",
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        const persistedPages = result.pages ?? [];
+        const totalChars = persistedPages.reduce((sum, p) => sum + p.length, 0);
+        // page1 (60000) fits under the 100000 ceiling; adding page2 (50000
+        // more) would exceed it, so page2 and page3 are dropped whole.
+        expect(totalChars).toBeLessThanOrEqual(100000);
+        expect(persistedPages).toEqual([page1]);
+        expect(result.warnings.some((w) => /2 page\(s\)/i.test(w))).toBe(true);
+    });
+});

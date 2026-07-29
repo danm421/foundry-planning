@@ -27,6 +27,14 @@ function er(fileName: string, extracted: Partial<ExtractionResult["extracted"]>)
   };
 }
 
+// R3/R6: an ExtractionResult carrying the already-redacted `text` extract.ts
+// (R2) now persists on the single-pass path — used to prove runAssemble
+// derives the planner's inputs from fileResults when args.documentText is
+// absent.
+function erWithText(fileName: string, text: string): ExtractionResult {
+  return { ...er(fileName, {}), text };
+}
+
 const EMPTY_DECISIONS: PlanningDecisions = {
   version: 1, assumptions: {}, savings: [], socialSecurity: [],
   goals: [], incomeTiming: [], questions: [], notes: [],
@@ -195,5 +203,112 @@ describe("runAssemble + planner", () => {
     expect(recordAudit).toHaveBeenCalledTimes(1);
     const auditMeta = recordAudit.mock.calls[0][0] as { metadata: { questionCount: number } };
     expect(auditMeta.metadata.questionCount).toBe(baselineCount + 1);
+  });
+
+  // ── Fix round 1 — Step 5 (owner ruled option (a)) ──────────────────────
+  // Task 15 shipped with `args.documentText` always undefined in production
+  // (Step 5 was skipped, see task-15-report.md) — the planner never ran, and
+  // every test above proved that only via injection. These four prove the
+  // NEW derive-from-fileResults path (R3/R4) actually fires.
+
+  it("derives documentText from fileResults and actually runs the planner when no explicit documentText is passed", async () => {
+    const decisions: PlanningDecisions = {
+      ...EMPTY_DECISIONS,
+      assumptions: {
+        retirementAge: { value: 64, provenance: "document", reason: "Stated in the profile table." },
+      },
+    };
+    const runPlannerFn = vi.fn<RunPlannerFn>(async () => decisions);
+
+    await runAssemble({
+      importId: "imp7", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      // NOTE: no `documentText` arg — this must be DERIVED from fileResults'
+      // persisted `text` (extract.ts R2), the whole point of this fix round.
+      fileResults: { f1: erWithText("profile.pdf", "Client Profile: retiring at 64...") },
+      hasSpouse: false,
+      runPlannerFn,
+    });
+
+    expect(runPlannerFn).toHaveBeenCalledTimes(1);
+    const calledWith = runPlannerFn.mock.calls[0][0];
+    expect(calledWith.documentText).toContain("Client Profile: retiring at 64...");
+
+    // Not just "called" — the decision it returned must actually land in
+    // the persisted payload, same decisive check as the injected-text test.
+    expect(persistedPayload().planBasics?.retirementAge).toEqual({
+      value: 64, provenance: "document", reason: "Stated in the profile table.",
+    });
+  });
+
+  it("concatenates MULTIPLE fileResults into documentText in deterministic (Object.entries) file order", async () => {
+    const runPlannerFn = vi.fn<RunPlannerFn>(async () => EMPTY_DECISIONS);
+
+    await runAssemble({
+      importId: "imp8", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {
+        f1: erWithText("first.pdf", "First file body."),
+        f2: erWithText("second.pdf", "Second file body."),
+      },
+      hasSpouse: false,
+      runPlannerFn,
+    });
+
+    expect(runPlannerFn).toHaveBeenCalledTimes(1);
+    const calledWith = runPlannerFn.mock.calls[0][0];
+    const firstIdx = calledWith.documentText.indexOf("First file body.");
+    const secondIdx = calledWith.documentText.indexOf("Second file body.");
+    expect(firstIdx).toBeGreaterThanOrEqual(0);
+    expect(secondIdx).toBeGreaterThan(firstIdx);
+    expect(calledWith.documentText).toContain("first.pdf");
+    expect(calledWith.documentText).toContain("second.pdf");
+  });
+
+  it("rowCount counts planner-added rows (R4) — fails if rowCount reverts to countRows(annotated)", async () => {
+    // A non-education goal decision (Rule 4 in applyDecisions) adds an
+    // "other" expense row that exists ONLY on plannerPayload/assembledPayload,
+    // never on `annotated` (fileResults is empty, so annotated has zero rows).
+    const decisions: PlanningDecisions = {
+      ...EMPTY_DECISIONS,
+      goals: [
+        {
+          kind: "one_time",
+          name: { value: "New Roof", provenance: "document", reason: "Stated in the notes." },
+          annualAmount: { value: 20000, provenance: "document", reason: "Stated in the notes." },
+          startYear: { value: 2030, provenance: "document", reason: "Stated in the notes." },
+          endYear: { value: 2030, provenance: "document", reason: "Stated in the notes." },
+          dedicatedAccountNames: [],
+        },
+      ],
+    };
+    const runPlannerFn = vi.fn<RunPlannerFn>(async () => decisions);
+
+    const res = await runAssemble({
+      importId: "imp9", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      fileResults: {},
+      hasSpouse: false,
+      documentText: "New roof needed, $20,000 in 2030.",
+      runPlannerFn,
+    });
+
+    expect(res.rowCount).toBe(1);
+  });
+
+  it("existing explicit documentText still takes precedence over fileResults-derived text", async () => {
+    const runPlannerFn = vi.fn<RunPlannerFn>(async () => EMPTY_DECISIONS);
+
+    await runAssemble({
+      importId: "imp10", clientId: "cli1", firmId: "firm1", mode: "new", scenarioId: "sc1",
+      // fileResults carries text too, but the explicit documentText below
+      // must win — Task 19's fixture harness relies on this precedence.
+      fileResults: { f1: erWithText("ignored.pdf", "This should NOT reach the planner.") },
+      hasSpouse: false,
+      documentText: "Explicit text wins.",
+      runPlannerFn,
+    });
+
+    expect(runPlannerFn).toHaveBeenCalledTimes(1);
+    const calledWith = runPlannerFn.mock.calls[0][0];
+    expect(calledWith.documentText).toBe("Explicit text wins.");
+    expect(calledWith.documentText).not.toContain("This should NOT reach the planner.");
   });
 });

@@ -327,6 +327,20 @@ export interface ExtractionResult {
   };
   warnings: string[];
   promptVersion: string;
+  /**
+   * The already-SSN-redacted source document text, captured at extraction
+   * time (Task 15 Step 5, owner-ruled option (a)) so the planning reasoner
+   * can run without re-fetching or re-parsing the source file. Present only
+   * on the single-pass path (`extract.ts`'s final return) - the multi-pass
+   * path persists `pages` instead (see below), never both, to avoid storing
+   * the same content twice at rest.
+   */
+  text?: string;
+  /**
+   * Already-SSN-redacted per-page text, captured at extraction time.
+   * Present only on the multi-pass path's return.
+   */
+  pages?: string[];
 }
 
 export interface ExtractionRequest {
