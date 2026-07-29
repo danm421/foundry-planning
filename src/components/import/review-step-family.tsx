@@ -11,6 +11,7 @@ import type {
 } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { AssembleAssumption } from "@/lib/imports/assemble/types";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import AssumedChip from "./assumed-chip";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
@@ -250,7 +251,7 @@ export default function ReviewStepFamily({
                     <div className="mb-2">
                       <MatchColumn
                         match={match}
-                        candidates={dependentCandidates}
+                        candidates={candidatesForRow(i, dependentMatches ?? [], dependentCandidates)}
                         entityKind="familyMember"
                         onChange={(next) => onDependentMatchChange?.(i, next)}
                       />

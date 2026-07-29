@@ -70,3 +70,51 @@ describe("supplementalDrawSources (R2: per-account accumulation)", () => {
     });
   });
 });
+
+/**
+ * Task 9 review, Finding 4 — the fifth same-shape site, on the common
+ * supplemental-withdrawal path. `planSupplementalWithdrawal` accumulates
+ * `draw.capitalGains` into the recognized-income TOTAL unconditionally
+ * (withdrawal.ts:244), so a `recognized > 0` gate here made the drill-down
+ * contradict its own total exactly the way the §4 sites did.
+ */
+describe("supplementalDrawSources — signed capital gains", () => {
+  it("books a LOSS row for an underwater taxable draw instead of dropping it", () => {
+    // $10k drawn from a 2:1 underwater brokerage → −$10k realized loss.
+    const draws = [draw({ accountId: "acct-brokerage", amount: 10_000, capitalGains: -10_000 })];
+
+    const out = supplementalDrawSources(draws, retirementSlice(new Set()));
+
+    expect(
+      out["withdrawal:acct-brokerage"],
+      "the loss row was dropped from the drill-down",
+    ).toEqual({ type: "capital_gains", amount: -10_000 });
+  });
+
+  it("types each account's row correctly when a loss draw sits beside an ordinary draw", () => {
+    // A draw carries EITHER ordinaryIncome OR capitalGains, never both —
+    // categorizeDraw's branches are per-account-category and mutually
+    // exclusive — so one key per account is sufficient and the type never
+    // conflicts. The mixed case lives ACROSS accounts, as here.
+    const draws = [
+      draw({ accountId: "acct-ira", amount: 30_000, ordinaryIncome: 30_000 }),
+      draw({ accountId: "acct-brokerage", amount: 12_000, capitalGains: -12_000 }),
+    ];
+
+    const out = supplementalDrawSources(draws, retirementSlice(new Set(["acct-ira"])));
+
+    expect(out["withdrawal:acct-ira"]).toEqual({ type: "ordinary_income", amount: 30_000 });
+    expect(out["withdrawal:acct-brokerage"]).toEqual({ type: "capital_gains", amount: -12_000 });
+  });
+
+  it("still omits a draw that recognizes nothing", () => {
+    // Post-59.5 Roth: no ordinary income, no gain — the row must not appear
+    // just because the gate widened from `> 0` to `!== 0`.
+    const draws = [draw({ accountId: "acct-roth", amount: 25_000 })];
+
+    const out = supplementalDrawSources(draws, retirementSlice(new Set(["acct-roth"])));
+
+    expect(out["withdrawal:acct-roth"]).toBeUndefined();
+    expect(out["withdrawal_tax_free:acct-roth"]).toEqual({ type: "tax_free", amount: 25_000 });
+  });
+});

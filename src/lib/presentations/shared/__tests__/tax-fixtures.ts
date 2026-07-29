@@ -14,6 +14,7 @@ export function makeTaxResult(over: {
   flow?: Partial<TaxResult["flow"]>;
   diag?: Partial<TaxResult["diag"]>;
   state?: Partial<NonNullable<TaxResult["state"]>>;
+  capitalLoss?: Partial<TaxResult["capitalLoss"]>;
 } = {}): TaxResult {
   return {
     income: {
@@ -49,6 +50,12 @@ export function makeTaxResult(over: {
           ...over.state,
         } as NonNullable<TaxResult["state"]>
       : undefined,
+    capitalLoss: {
+      deduction: 0, carryforwardConsumed: 0,
+      carryforwardOut: { shortTerm: 0, longTerm: 0 },
+      shortTermLoss: 0, longTermLoss: 0,
+      ...over.capitalLoss,
+    },
   };
 }
 

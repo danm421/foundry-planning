@@ -18,6 +18,7 @@ import type {
 } from "@/components/deductions-derived-summary";
 import type { LiquidAccount, AssetAccount } from "@/components/account-groups/types";
 import { type RiskLevel } from "@/lib/risk-levels";
+import type { FilingStatus } from "@/lib/tax/types";
 
 export interface DeductionsTabData {
   derivedRows: DerivedRow[];
@@ -77,6 +78,9 @@ export interface AssumptionsSettings {
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
+  capitalLossCarryforwardSt: string;
+  capitalLossCarryforwardLt: string;
+  capitalLossCarryforwardLtSourceYear: number | null;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
   coveredByWorkplacePlan: "auto" | "yes" | "no";
@@ -92,7 +96,13 @@ interface ModelPortfolioOption {
 
 interface AssumptionsClientProps {
   clientId: string;
-  riskTolerance?: string | null;
+  /** The household's composite risk level (Task 9+), falling back to the
+   *  legacy `clients.riskTolerance` column when no profile row exists yet --
+   *  resolved by the server component so this stays a plain read-only value. */
+  riskLevel?: RiskLevel | null;
+  /** Household filing status — quoted in the §1211(b) capital-loss field help
+   *  ($1,500 for MFS, $3,000 otherwise). */
+  filingStatus?: FilingStatus;
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
@@ -121,7 +131,8 @@ const TABS = [
 
 export default function AssumptionsClient({
   clientId,
-  riskTolerance,
+  riskLevel,
+  filingStatus,
   settings,
   accounts,
   withdrawalStrategies,
@@ -159,6 +170,10 @@ export default function AssumptionsClient({
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
             coveredByWorkplacePlan={settings.coveredByWorkplacePlan}
             spouseCoveredByWorkplacePlan={settings.spouseCoveredByWorkplacePlan}
+            capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
+            capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
+            capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}
+            filingStatus={filingStatus}
             hasSpouse={Boolean(spouseFirstName)}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}
@@ -168,7 +183,7 @@ export default function AssumptionsClient({
         {activeTab === "growth-inflation" && (
           <GrowthInflationForm
             clientId={clientId}
-            riskTolerance={riskTolerance}
+            riskLevel={riskLevel}
             inflationRate={settings.inflationRate}
             inflationRateSource={settings.inflationRateSource}
             resolvedInflationRate={resolvedInflationRate}

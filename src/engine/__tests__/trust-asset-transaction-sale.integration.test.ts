@@ -177,23 +177,27 @@ const taxYearRow: TaxYearParameters = {
   },
 };
 
+// Fresh instance per test — `runProjection` walks (and may annotate) entities,
+// so the two tests must not share one object.
+const makeSlat = (): EntitySummary => ({
+  id: "slat-3",
+  includeInPortfolio: true,
+  isGrantor: false,
+  entityType: "trust",
+  trustSubType: "irrevocable",
+  isIrrevocable: true,
+  grantor: "client",
+  distributionMode: null, // accumulate so the gain hits the trust directly
+  distributionAmount: null,
+  distributionPercent: null,
+  incomeBeneficiaries: [],
+});
+
 // ── Test ────────────────────────────────────────────────────────────────────
 
 describe("Trust-owned business sale", () => {
   it("asset-transaction sale inside non-grantor trust — gain taxed at compressed LTCG", () => {
-    const slat: EntitySummary = {
-      id: "slat-3",
-      includeInPortfolio: true,
-      isGrantor: false,
-      entityType: "trust",
-      trustSubType: "irrevocable",
-      isIrrevocable: true,
-      grantor: "client",
-      distributionMode: null, // accumulate so the gain hits the trust directly
-      distributionAmount: null,
-      distributionPercent: null,
-      incomeBeneficiaries: [],
-    };
+    const slat = makeSlat();
 
     const data: ClientData = {
       client,
@@ -220,5 +224,58 @@ describe("Trust-owned business sale", () => {
     expect(trustTax!.recognizedCapGains).toBeGreaterThan(3_900_000);
     expect(trustTax!.federalCapGainsTax).toBeGreaterThan(700_000);
     expect(trustTax!.niit).toBeGreaterThan(100_000);
+  });
+
+  /**
+   * Task 9 §3 — the mirror case. The household ADD of `saleResult.capitalGains`
+   * is unconditional and books the trust's share too, so the subtraction that
+   * takes it back out must be symmetric. Gating that subtraction on `> 0` left
+   * the household BOTH absorbing and keeping a loss that the 1041 pass was
+   * simultaneously handed.
+   */
+  it("asset-transaction sale at a LOSS inside a non-grantor trust does not land on the household 1040", () => {
+    const slat = makeSlat();
+
+    // Same business, underwater: $1M value against a $5M basis → −$4M.
+    const underwaterBusiness: Account = {
+      ...trustBusiness,
+      value: 1_000_000,
+      basis: 5_000_000,
+    };
+    const data: ClientData = {
+      client,
+      accounts: [hhChecking, trustChecking, underwaterBusiness],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [slat],
+      assetTransactions: [sale2030],
+      taxYearRows: [taxYearRow],
+      giftEvents: [],
+    };
+
+    const year2030 = runProjection(data).find((y) => y.year === 2030)!;
+
+    // The household must not keep the trust's loss.
+    expect(
+      year2030.taxDetail!.capitalGains,
+      "the trust's $4M loss stayed on the household 1040",
+    ).toBeCloseTo(0, 6);
+
+    // C2: the loss is routed to the 1041 pass, which clamps it at zero rather
+    // than booking a NEGATIVE tax. Before the clamp this trust reported
+    // total: −$200,000 — a figure that is published to tax-detail-flow-table
+    // and entity-cashflow. Asserting the trust's tax total (not just
+    // recognizedCapGains) is what this test was missing when the bug shipped.
+    const trustTax = year2030.trustTaxByEntity?.get("slat-3");
+    expect(trustTax).toBeDefined();
+    expect(trustTax!.recognizedCapGains).toBe(0);
+    expect(trustTax!.federalCapGainsTax).toBe(0);
+    expect(trustTax!.stateTax).toBeGreaterThanOrEqual(0);
+    expect(trustTax!.total).toBeGreaterThanOrEqual(0);
   });
 });

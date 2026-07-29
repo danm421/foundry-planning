@@ -66,6 +66,37 @@ describe("AssetLedgerTable", () => {
     expect(screen.getByText(/off by/)).toBeDefined();
   });
 
+  /**
+   * i5 — `reconciles` is false when EITHER the value residual or the BASIS
+   * residual is off, but the badge only ever rendered `block.residual`. A
+   * basis-only break therefore showed the advisor "⚠ off by $0.00", a warning
+   * with a zero delta that reads as a rendering bug rather than a real
+   * reconciliation failure.
+   */
+  it("shows the BASIS residual when only the basis fails to reconcile", () => {
+    const basisOnly: AssetLedger = {
+      ...ledger,
+      sections: [
+        {
+          ...ledger.sections[0],
+          accounts: [
+            {
+              ...ledger.sections[0].accounts[0],
+              residual: 0,
+              basisResidual: 5_000,
+              reconciles: false,
+            },
+          ],
+        },
+      ],
+    };
+    render(<AssetLedgerTable ledger={basisOnly} filter={showAll} />);
+    const warning = screen.getByText(/off by/).parentElement!;
+    expect(warning.textContent).toContain("5,000");
+    expect(warning.textContent).toContain("(basis)");
+    expect(warning.textContent).not.toMatch(/off by \$0\b/);
+  });
+
   it("hides zero-amount rows when hideZero is on, but never bookend rows", () => {
     const { rerender } = render(<AssetLedgerTable ledger={ledger} filter={showAll} />);
     expect(screen.queryByText("Phantom")).not.toBeNull();

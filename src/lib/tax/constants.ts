@@ -136,3 +136,9 @@ export const SS_TAXABILITY = {
   base2: { single: 34000, mfj: 44000, mfs: 0 },
   // mfs has special "lived together" rules; we treat as 0 thresholds → 85% taxable.
 };
+
+// §1211(b) annual limit on the net capital loss deductible against ordinary
+// income. Fixed by statute since 1978 and never inflation-indexed, so it lives
+// here rather than in the seeded TaxYearParameters.
+export const CAPITAL_LOSS_ORDINARY_LIMIT = 3000;
+export const CAPITAL_LOSS_ORDINARY_LIMIT_MFS = 1500;

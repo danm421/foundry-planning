@@ -3818,6 +3818,395 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.client_risk_profile_events": {
+      "name": "client_risk_profile_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "firm_id": {
+          "name": "firm_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "risk_profile_event_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "before_score": {
+          "name": "before_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "before_level": {
+          "name": "before_level",
+          "type": "risk_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after_score": {
+          "name": "after_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after_level": {
+          "name": "after_level",
+          "type": "risk_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "components": {
+          "name": "components",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "client_risk_profile_events_client_idx": {
+          "name": "client_risk_profile_events_client_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "client_risk_profile_events_firm_idx": {
+          "name": "client_risk_profile_events_firm_idx",
+          "columns": [
+            {
+              "expression": "firm_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "client_risk_profile_events_firm_id_firms_firm_id_fk": {
+          "name": "client_risk_profile_events_firm_id_firms_firm_id_fk",
+          "tableFrom": "client_risk_profile_events",
+          "tableTo": "firms",
+          "columnsFrom": [
+            "firm_id"
+          ],
+          "columnsTo": [
+            "firm_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "client_risk_profile_events_client_id_clients_id_fk": {
+          "name": "client_risk_profile_events_client_id_clients_id_fk",
+          "tableFrom": "client_risk_profile_events",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.client_risk_profiles": {
+      "name": "client_risk_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "firm_id": {
+          "name": "firm_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tolerance_score": {
+          "name": "tolerance_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tolerance_source": {
+          "name": "tolerance_source",
+          "type": "risk_tolerance_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tolerance_confirmed_at": {
+          "name": "tolerance_confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rtq_version": {
+          "name": "rtq_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_tolerance_score": {
+          "name": "spouse_tolerance_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_rtq_version": {
+          "name": "spouse_rtq_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_score": {
+          "name": "capacity_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_factors": {
+          "name": "capacity_factors",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_computed_at": {
+          "name": "capacity_computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "required_growth_pct": {
+          "name": "required_growth_pct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "environment_adj": {
+          "name": "environment_adj",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "environment_reason": {
+          "name": "environment_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "environment_updated_at": {
+          "name": "environment_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "composite_score": {
+          "name": "composite_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "composite_level": {
+          "name": "composite_level",
+          "type": "risk_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "binding_constraint": {
+          "name": "binding_constraint",
+          "type": "risk_binding_constraint",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "client_risk_profiles_client_idx": {
+          "name": "client_risk_profiles_client_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "client_risk_profiles_firm_idx": {
+          "name": "client_risk_profiles_firm_idx",
+          "columns": [
+            {
+              "expression": "firm_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "client_risk_profiles_level_idx": {
+          "name": "client_risk_profiles_level_idx",
+          "columns": [
+            {
+              "expression": "firm_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "composite_level",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "client_risk_profiles_firm_id_firms_firm_id_fk": {
+          "name": "client_risk_profiles_firm_id_firms_firm_id_fk",
+          "tableFrom": "client_risk_profiles",
+          "tableTo": "firms",
+          "columnsFrom": [
+            "firm_id"
+          ],
+          "columnsTo": [
+            "firm_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "client_risk_profiles_client_id_clients_id_fk": {
+          "name": "client_risk_profiles_client_id_clients_id_fk",
+          "tableFrom": "client_risk_profiles",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "client_risk_profiles_env_adj_range": {
+          "name": "client_risk_profiles_env_adj_range",
+          "value": "environment_adj between -25 and 25"
+        },
+        "client_risk_profiles_env_reason_required": {
+          "name": "client_risk_profiles_env_reason_required",
+          "value": "environment_adj = 0 or (environment_reason is not null and length(trim(environment_reason)) > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.client_shares": {
       "name": "client_shares",
       "schema": "",
@@ -4075,22 +4464,6 @@
           "notNull": true,
           "default": "'single'"
         },
-        "covered_by_workplace_plan": {
-          "name": "covered_by_workplace_plan",
-          "type": "dependent_override",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
-        },
-        "spouse_covered_by_workplace_plan": {
-          "name": "spouse_covered_by_workplace_plan",
-          "type": "dependent_override",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
-        },
         "risk_tolerance": {
           "name": "risk_tolerance",
           "type": "risk_level",
@@ -4124,6 +4497,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "details_view_mode": {
+          "name": "details_view_mode",
+          "type": "details_view_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'detailed'"
         },
         "created_at": {
           "name": "created_at",
@@ -4163,6 +4544,22 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "covered_by_workplace_plan": {
+          "name": "covered_by_workplace_plan",
+          "type": "dependent_override",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
+        },
+        "spouse_covered_by_workplace_plan": {
+          "name": "spouse_covered_by_workplace_plan",
+          "type": "dependent_override",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
         }
       },
       "indexes": {
@@ -7792,6 +8189,13 @@
           "notNull": true,
           "default": false
         },
+        "is_goal": {
+          "name": "is_goal",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "institution_state": {
           "name": "institution_state",
           "type": "text",
@@ -8144,14 +8548,6 @@
           "notNull": true,
           "default": "'child'"
         },
-        "claimed_as_dependent": {
-          "name": "claimed_as_dependent",
-          "type": "dependent_override",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'auto'"
-        },
         "role": {
           "name": "role",
           "type": "family_member_role",
@@ -8199,6 +8595,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "claimed_as_dependent": {
+          "name": "claimed_as_dependent",
+          "type": "dependent_override",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
         }
       },
       "indexes": {},
@@ -13455,6 +13859,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "capital_loss_carryforward_lt": {
+          "name": "capital_loss_carryforward_lt",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capital_loss_carryforward_st": {
+          "name": "capital_loss_carryforward_st",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -15065,6 +15481,236 @@
         "revocable_trusts_client_id_clients_id_fk": {
           "name": "revocable_trusts_client_id_clients_id_fk",
           "tableFrom": "revocable_trusts",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.risk_questionnaires": {
+      "name": "risk_questionnaires",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "firm_id": {
+          "name": "firm_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "risk_questionnaire_subject",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'primary'"
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_email": {
+          "name": "recipient_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_name": {
+          "name": "recipient_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "risk_questionnaire_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "rtq_version": {
+          "name": "rtq_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "answers": {
+          "name": "answers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "score": {
+          "name": "score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "environment_note": {
+          "name": "environment_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "environment_note_reviewed_at": {
+          "name": "environment_note_reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "risk_questionnaires_token_idx": {
+          "name": "risk_questionnaires_token_idx",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "token is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "risk_questionnaires_client_idx": {
+          "name": "risk_questionnaires_client_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "risk_questionnaires_firm_idx": {
+          "name": "risk_questionnaires_firm_idx",
+          "columns": [
+            {
+              "expression": "firm_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "risk_questionnaires_status_idx": {
+          "name": "risk_questionnaires_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "risk_questionnaires_firm_id_firms_firm_id_fk": {
+          "name": "risk_questionnaires_firm_id_firms_firm_id_fk",
+          "tableFrom": "risk_questionnaires",
+          "tableTo": "firms",
+          "columnsFrom": [
+            "firm_id"
+          ],
+          "columnsTo": [
+            "firm_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "risk_questionnaires_client_id_clients_id_fk": {
+          "name": "risk_questionnaires_client_id_clients_id_fk",
+          "tableFrom": "risk_questionnaires",
           "tableTo": "clients",
           "columnsFrom": [
             "client_id"
@@ -17856,6 +18502,104 @@
           "primaryKey": false,
           "notNull": true
         },
+        "ira_401k_elective": {
+          "name": "ira_401k_elective",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ira_401k_catchup_50": {
+          "name": "ira_401k_catchup_50",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ira_401k_catchup_60_63": {
+          "name": "ira_401k_catchup_60_63",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ira_trad_limit": {
+          "name": "ira_trad_limit",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ira_catchup_50": {
+          "name": "ira_catchup_50",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "simple_limit_regular": {
+          "name": "simple_limit_regular",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "simple_catchup_50": {
+          "name": "simple_catchup_50",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hsa_limit_self": {
+          "name": "hsa_limit_self",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hsa_limit_family": {
+          "name": "hsa_limit_family",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hsa_catchup_55": {
+          "name": "hsa_catchup_55",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gift_annual_exclusion": {
+          "name": "gift_annual_exclusion",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "standard_part_b_premium": {
+          "name": "standard_part_b_premium",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "part_d_national_base": {
+          "name": "part_d_national_base",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "irmaa_brackets_mfj": {
+          "name": "irmaa_brackets_mfj",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "irmaa_brackets_single": {
+          "name": "irmaa_brackets_single",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "roth_phaseout_start_mfj": {
           "name": "roth_phaseout_start_mfj",
           "type": "numeric(12, 2)",
@@ -17981,104 +18725,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "ira_401k_elective": {
-          "name": "ira_401k_elective",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ira_401k_catchup_50": {
-          "name": "ira_401k_catchup_50",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ira_401k_catchup_60_63": {
-          "name": "ira_401k_catchup_60_63",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ira_trad_limit": {
-          "name": "ira_trad_limit",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ira_catchup_50": {
-          "name": "ira_catchup_50",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "simple_limit_regular": {
-          "name": "simple_limit_regular",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "simple_catchup_50": {
-          "name": "simple_catchup_50",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hsa_limit_self": {
-          "name": "hsa_limit_self",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hsa_limit_family": {
-          "name": "hsa_limit_family",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hsa_catchup_55": {
-          "name": "hsa_catchup_55",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "gift_annual_exclusion": {
-          "name": "gift_annual_exclusion",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "standard_part_b_premium": {
-          "name": "standard_part_b_premium",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "part_d_national_base": {
-          "name": "part_d_national_base",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "irmaa_brackets_mfj": {
-          "name": "irmaa_brackets_mfj",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "irmaa_brackets_single": {
-          "name": "irmaa_brackets_single",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
@@ -20115,13 +20761,12 @@
         "property_tax"
       ]
     },
-    "public.dependent_override": {
-      "name": "dependent_override",
+    "public.details_view_mode": {
+      "name": "details_view_mode",
       "schema": "public",
       "values": [
-        "auto",
-        "yes",
-        "no"
+        "detailed",
+        "map"
       ]
     },
     "public.distribution_form": {
@@ -20683,6 +21328,15 @@
         "custom"
       ]
     },
+    "public.risk_binding_constraint": {
+      "name": "risk_binding_constraint",
+      "schema": "public",
+      "values": [
+        "tolerance",
+        "capacity",
+        "none"
+      ]
+    },
     "public.risk_level": {
       "name": "risk_level",
       "schema": "public",
@@ -20692,6 +21346,46 @@
         "moderate",
         "moderately_aggressive",
         "aggressive"
+      ]
+    },
+    "public.risk_profile_event_kind": {
+      "name": "risk_profile_event_kind",
+      "schema": "public",
+      "values": [
+        "profile_created",
+        "rtq_completed",
+        "tolerance_manual",
+        "environment_changed",
+        "capacity_changed"
+      ]
+    },
+    "public.risk_questionnaire_status": {
+      "name": "risk_questionnaire_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "sent",
+        "submitted",
+        "applied",
+        "discarded",
+        "expired"
+      ]
+    },
+    "public.risk_questionnaire_subject": {
+      "name": "risk_questionnaire_subject",
+      "schema": "public",
+      "values": [
+        "primary",
+        "spouse"
+      ]
+    },
+    "public.risk_tolerance_source": {
+      "name": "risk_tolerance_source",
+      "schema": "public",
+      "values": [
+        "rtq_client",
+        "rtq_advisor",
+        "manual"
       ]
     },
     "public.roth_conversion_type": {
@@ -20934,6 +21628,15 @@
         "spouse_ss_62",
         "spouse_ss_fra",
         "spouse_ss_70"
+      ]
+    },
+    "public.dependent_override": {
+      "name": "dependent_override",
+      "schema": "public",
+      "values": [
+        "auto",
+        "yes",
+        "no"
       ]
     }
   },

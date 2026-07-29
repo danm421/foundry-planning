@@ -6,6 +6,11 @@ import { PercentInput } from "@/components/percent-input";
 import { CurrencyInput } from "@/components/currency-input";
 import { HelpTip } from "@/components/help-tip";
 import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
+import {
+  CAPITAL_LOSS_ORDINARY_LIMIT,
+  CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
+} from "@/lib/tax/constants";
+import type { FilingStatus } from "@/lib/tax/types";
 import { USPS_STATE_NAMES, USPS_STATE_CODES, type USPSStateCode } from "@/lib/usps-states";
 import { useClientAccess } from "@/components/client-access-provider";
 
@@ -25,6 +30,20 @@ interface TaxRatesFormProps {
   priorTaxableGiftsSpouse: string;
   coveredByWorkplacePlan: "auto" | "yes" | "no";
   spouseCoveredByWorkplacePlan: "auto" | "yes" | "no";
+  capitalLossCarryforwardSt: string;
+  capitalLossCarryforwardLt: string;
+  /** Set when the LT default above was auto-filled from an analyzed tax
+   *  return (rather than a previously-saved value) — renders a "from 20XX
+   *  return — needs review" hint, since `getLatestTaxReturn` returns the
+   *  newest row regardless of QA status and a freshly-extracted return is
+   *  `needs_review` until an advisor confirms it. Null once the advisor has
+   *  an actual stored value. */
+  capitalLossCarryforwardLtSourceYear?: number | null;
+  /** Drives the §1211(b) limit quoted in the carryforward field help —
+   *  $1,500 for married-filing-separately, $3,000 otherwise. Optional: falls
+   *  back to the non-MFS limit, mirroring `capitalLossRows` in
+   *  `lib/tax/cell-drill/income-breakdown.ts`. */
+  filingStatus?: FilingStatus;
   hasSpouse: boolean;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -125,6 +144,10 @@ export default function TaxRatesForm({
   priorTaxableGiftsSpouse,
   coveredByWorkplacePlan,
   spouseCoveredByWorkplacePlan,
+  capitalLossCarryforwardSt,
+  capitalLossCarryforwardLt,
+  capitalLossCarryforwardLtSourceYear,
+  filingStatus,
   hasSpouse,
   clientFirstName,
   spouseFirstName,
@@ -142,6 +165,17 @@ export default function TaxRatesForm({
   const [residenceStateValue, setResidenceStateValue] = useState<USPSStateCode | "">(
     residenceState ?? "",
   );
+
+  // §1211(b) annual ordinary-income offset. Both carryforward fields quoted a
+  // hardcoded "$3,000" — the same MFS error already fixed in the drill-down
+  // tooltip.
+  const capitalLossLimit =
+    filingStatus === "married_separate"
+      ? CAPITAL_LOSS_ORDINARY_LIMIT_MFS
+      : CAPITAL_LOSS_ORDINARY_LIMIT;
+  const capitalLossHelp =
+    "From Schedule D of the client's most recent return. Offsets future gains, " +
+    `plus up to $${capitalLossLimit.toLocaleString("en-US")} of ordinary income per year.`;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -187,6 +221,18 @@ export default function TaxRatesForm({
       spouseCoveredByWorkplacePlan: hasSpouse
         ? ((data.get("spouseCoveredByWorkplacePlan") as string) ?? "auto")
         : "auto",
+      capitalLossCarryforwardSt: (() => {
+        const raw = ((data.get("capitalLossCarryforwardSt") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? String(n) : null;
+      })(),
+      capitalLossCarryforwardLt: (() => {
+        const raw = ((data.get("capitalLossCarryforwardLt") as string | null) ?? "").trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? String(n) : null;
+      })(),
     };
 
     if (mode === "flat") {
@@ -460,6 +506,43 @@ export default function TaxRatesForm({
               </div>
             </FieldRow>
           )}
+        </FieldTable>
+      </section>
+
+      <section>
+        <SectionTitle title="Capital loss carryforward" />
+        <FieldTable>
+          <FieldRow
+            label="Short-term"
+            help={capitalLossHelp}
+          >
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="capitalLossCarryforwardSt"
+                name="capitalLossCarryforwardSt"
+                defaultValue={capitalLossCarryforwardSt}
+                className={INPUT_CLS}
+              />
+            </div>
+          </FieldRow>
+          <FieldRow
+            label="Long-term"
+            help={capitalLossHelp}
+          >
+            <div className="max-w-[12rem]">
+              <CurrencyInput
+                id="capitalLossCarryforwardLt"
+                name="capitalLossCarryforwardLt"
+                defaultValue={capitalLossCarryforwardLt}
+                className={INPUT_CLS}
+              />
+              {capitalLossCarryforwardLtSourceYear != null && (
+                <p className="mt-1 text-xs text-gray-500">
+                  from {capitalLossCarryforwardLtSourceYear} return — needs review
+                </p>
+              )}
+            </div>
+          </FieldRow>
         </FieldTable>
       </section>
 

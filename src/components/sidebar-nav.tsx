@@ -10,6 +10,7 @@ import {
   FolderIcon,
   HomeIcon,
   ListCheckIcon,
+  RiskIcon,
   SettingsIcon,
 } from "./icons";
 
@@ -31,6 +32,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { icon: <HomeIcon />, label: "Home", href: "/home" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
+      { icon: <RiskIcon />, label: "Risk", href: "/risk" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
       { icon: <DataCollectionIcon />, label: "Data Collection", href: "/data-collection" },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { candidatesForRow } from "../expense-slot-candidates";
+import { candidatesForRow } from "../candidates-for-row";
 import type { MatchAnnotation } from "../types";
 
 const CANDS = [
@@ -38,5 +38,19 @@ describe("candidatesForRow", () => {
       { kind: "fuzzy", candidates: [] },
     ];
     expect(candidatesForRow(0, matches, CANDS)).toEqual(CANDS);
+  });
+
+  it("accepts a richer candidate shape and preserves its extra fields", () => {
+    const result = candidatesForRow(
+      0,
+      [undefined, { kind: "exact", existingId: "b" }],
+      [
+        { id: "a", name: "A", subtitle: "401(k) — Fidelity", score: 0.9 },
+        { id: "b", name: "B", subtitle: "IRA — Schwab", score: 0.8 },
+      ],
+    );
+    expect(result).toEqual([
+      { id: "a", name: "A", subtitle: "401(k) — Fidelity", score: 0.9 },
+    ]);
   });
 });

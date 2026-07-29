@@ -182,6 +182,8 @@ const TAX_RATES_BASE_PROPS = {
   priorTaxableGiftsSpouse: "0",
   coveredByWorkplacePlan: "auto" as const,
   spouseCoveredByWorkplacePlan: "auto" as const,
+  capitalLossCarryforwardSt: "0",
+  capitalLossCarryforwardLt: "0",
   hasSpouse: false,
   clientFirstName: "Alice",
 };

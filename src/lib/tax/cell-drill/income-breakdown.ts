@@ -1,10 +1,15 @@
 import type {
+  CellDrillContext,
   CellDrillProps,
   CellDrillRow,
   IncomeCellDrillArgs,
   IncomeColumnKey,
 } from "./types";
-import { bySourceRows, resolveSourceLabel } from "./_shared";
+import { bySourceRows, formatCurrency, resolveSourceLabel } from "./_shared";
+import {
+  CAPITAL_LOSS_ORDINARY_LIMIT,
+  CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
+} from "@/lib/tax/constants";
 
 const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   earnedIncome: "Earned Income",
@@ -33,15 +38,126 @@ const DIRECT_CONFIG: Partial<Record<IncomeColumnKey, DirectConfig>> = {
   qbi:               { sourceType: "qbi",              taxDetailKey: "qbi" },
 };
 
+/** Capital-loss rows shown in their own group, separate from the LT/ST
+ *  capital-gain rows that sum to `total`. Without these the §1211(b) cap is
+ *  invisible and a large loss producing only a $3,000 deduction reads as a
+ *  bug.
+ *
+ *  These rows deliberately do NOT roll into the LT/ST gain group: the
+ *  deduction offsets ORDINARY income (Form 1040 line 7), not LT/ST capital
+ *  gains, and the carryforward is a cross-year BALANCE, not a this-year
+ *  flow. See `buildIncomeCellDrill`'s caller, which puts them in a labeled
+ *  sibling group with a footnote rather than appending them to `rows`.
+ *
+ *  Uses `ctx.filingStatus` to pick the $3,000 vs $1,500(MFS) §1211(b) limit;
+ *  falls back to the non-MFS limit when filing status isn't populated by the
+ *  caller (not every caller threads it through yet).
+ *
+ *  Both tax-engine modes now run the same netting (`calculateTaxYearFlat`
+ *  gained it alongside `calculateTaxYear`), so `deduction === 0` while the
+ *  carryforward is nonzero is no longer reachable: a nonzero carryforward-out
+ *  requires shortTermLoss + longTermLoss > 0, which pins
+ *  deduction = min(that, limit) > 0. The former flat-mode caveat on the
+ *  carryforward row is gone with it. */
+function capitalLossRows(
+  taxDetail: IncomeCellDrillArgs["year"]["taxDetail"],
+  filingStatus: CellDrillContext["filingStatus"],
+  /** `netted − raw` for the column being drilled. Non-zero whenever §1222
+   *  netting moved the figure the CELL renders away from the raw signed
+   *  `taxDetail` total the itemized rows sum to (a prior-year carryforward
+   *  applied, or a cross-character offset). Rendered as its own row so the
+   *  itemization reconciles to the total instead of contradicting it. */
+  nettingAdjustment: number,
+): CellDrillRow[] {
+  const rows: CellDrillRow[] = [];
+  const deduction = taxDetail?.capitalLossDeduction ?? 0;
+  const cf = taxDetail?.capitalLossCarryforward;
+  const disallowed = taxDetail?.disallowedCapitalLoss ?? 0;
+  const limit =
+    filingStatus === "married_separate"
+      ? CAPITAL_LOSS_ORDINARY_LIMIT_MFS
+      : CAPITAL_LOSS_ORDINARY_LIMIT;
+
+  // Rounded to the cent before testing — float noise from the netting
+  // arithmetic must not spawn a $0.00 reconciling row.
+  if (Math.round(nettingAdjustment * 100) !== 0) {
+    rows.push({
+      id: "capital-loss-netting",
+      label:
+        nettingAdjustment < 0
+          ? "Offset by capital losses"
+          : "Restored by capital-loss netting",
+      amount: nettingAdjustment,
+      meta: `Difference between the ${formatCurrency(-nettingAdjustment)} of gains itemized above and the net figure taxed this year, after prior-year carryforward and cross-character netting (IRC §1222).`,
+    });
+  }
+
+  if (deduction > 0) {
+    rows.push({
+      id: "capital-loss-deduction",
+      label: "Capital loss deduction",
+      amount: -deduction,
+      meta: `Net capital loss offsets ordinary income, limited to ${formatCurrency(limit)} per year (IRC §1211(b)).`,
+    });
+  }
+
+  if (cf && (cf.shortTerm > 0 || cf.longTerm > 0)) {
+    rows.push({
+      id: "capital-loss-carryforward",
+      label: "Loss carried to next year",
+      amount: cf.shortTerm + cf.longTerm,
+      meta: `${formatCurrency(cf.shortTerm)} short-term, ${formatCurrency(cf.longTerm)} long-term. Carries forward indefinitely (IRC §1212(b)).`,
+    });
+  }
+
+  if (disallowed > 0) {
+    rows.push({
+      id: "capital-loss-disallowed",
+      label: "Capital loss — not deductible",
+      amount: 0,
+      meta: `${formatCurrency(disallowed)} loss on personal-use property, which is not deductible (IRC §165(c)).`,
+    });
+  }
+
+  return rows;
+}
+
 export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps {
   const { year, columnKey, ctx } = args;
   const title = `${COLUMN_LABEL[columnKey]} — ${year.year}`;
 
   const directCfg = DIRECT_CONFIG[columnKey];
   if (directCfg) {
-    const total = (year.taxDetail?.[directCfg.taxDetailKey] as number | undefined) ?? 0;
+    const raw = (year.taxDetail?.[directCfg.taxDetailKey] as number | undefined) ?? 0;
+    const isCapitalGainColumn =
+      columnKey === "capitalGains" || columnKey === "shortCapitalGains";
+    // i1: for the two capital-gain columns the CELL renders
+    // `taxResult.income.capitalGains` / `.shortCapitalGains` — the §1222-NETTED
+    // figures, floored at 0. Totalling the raw signed `taxDetail` figure here
+    // made the modal contradict the number the advisor clicked: $50,000 of
+    // gains against a $30,000 seeded carryover showed a $20,000 cell and a
+    // $50,000 modal, every year until the carryover was exhausted. Every other
+    // column keeps its taxDetail total (the two agree by construction there).
+    const total =
+      isCapitalGainColumn && year.taxResult
+        ? (year.taxResult.income[columnKey] ?? 0)
+        : raw;
     const rows = directRows(year, directCfg.sourceType, ctx);
-    return { title, total, groups: [{ rows }] };
+    const groups: CellDrillProps["groups"] = [{ rows }];
+    let footnote: string | undefined;
+    if (isCapitalGainColumn) {
+      const lossRows = capitalLossRows(year.taxDetail, ctx.filingStatus, total - raw);
+      if (lossRows.length > 0) {
+        // Separate, labeled group. Only the reconciling `capital-loss-netting`
+        // row bridges the itemization to `total`; the deduction offsets
+        // ordinary income and the carryforward is a cross-year balance, so
+        // neither belongs inside the sum.
+        groups.push({ label: "Capital Loss Carryover", rows: lossRows });
+        footnote =
+          "The itemized gains above plus any “Offset by capital losses” line reconcile to the total. The remaining capital-loss items sit outside it — the deduction offsets ordinary income (not LT/ST gains) and the carryforward is a year-end balance, not income earned this year.";
+      }
+    }
+    return { title, total, groups, footnote };
   }
 
   if (columnKey === "taxableSocialSecurity") {
