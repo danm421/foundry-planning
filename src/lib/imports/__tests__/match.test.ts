@@ -7,7 +7,12 @@ import {
   runMatchingPass,
   type MatchCandidates,
 } from "../match";
-import { emptyImportPayload, type Annotated, type ImportPayload } from "../types";
+import {
+  emptyImportPayload,
+  type Annotated,
+  type ImportPayload,
+  type MatchAnnotation,
+} from "../types";
 import type {
   ExtractedAccount,
   ExtractedDependent,
@@ -56,6 +61,45 @@ function payloadFixture(overrides: Partial<ImportPayload> = {}): ImportPayload {
 function annotated<T extends object>(row: T): Annotated<T> {
   return { ...row, match: { kind: "new" } };
 }
+
+/** Ranked candidate scores keyed by id, for asserting on relative scoring. */
+function fuzzyScores(match: MatchAnnotation | undefined): Map<string, number> {
+  if (match?.kind !== "fuzzy") {
+    throw new Error(`expected a fuzzy match, got ${JSON.stringify(match)}`);
+  }
+  return new Map(match.candidates.map((c) => [c.id, c.score]));
+}
+
+/**
+ * Two identical accounts differing only in who owns them. Any ownership signal
+ * — real or fabricated — separates their scores; true neutrality leaves them
+ * exactly equal.
+ */
+const HIS_AND_HERS: MatchCandidates["accounts"] = [
+  {
+    id: "his",
+    name: "Fidelity IRA",
+    category: "retirement",
+    accountNumberLast4: null,
+    custodian: "Fidelity",
+    value: 100_000,
+    ownerIds: ["fm-john"],
+  },
+  {
+    id: "hers",
+    name: "Fidelity IRA",
+    category: "retirement",
+    accountNumberLast4: null,
+    custodian: "Fidelity",
+    value: 100_000,
+    ownerIds: ["fm-jane"],
+  },
+];
+
+const SPOUSES: MatchCandidates["family"] = [
+  { id: "fm-john", role: "client", firstName: "John", lastName: "Smith" },
+  { id: "fm-jane", role: "spouse", firstName: "Jane", lastName: "Smith" },
+];
 
 describe("annotatePayload", () => {
   it("annotates each entity-array in parallel using the right match-key module", () => {
@@ -279,6 +323,77 @@ describe("annotatePayload", () => {
     if (match?.kind === "fuzzy") {
       expect(match.candidates[0].id).toBe("hers");
     }
+  });
+
+  // The registration parser is shared with the commit step, which must always
+  // write *somebody* as the owner and so falls back to the client. As matching
+  // evidence that fallback is a fabrication: it scores client-owned candidates
+  // 1.0 and spouse-owned ones 0.0 on a signal the document never carried.
+  it("scores ownership neutrally when the account carries no registration evidence", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [annotated({ name: "Fidelity IRA", category: "retirement", value: 100_000 })],
+      }),
+      { ...emptyCandidates(), family: SPOUSES, accounts: HIS_AND_HERS },
+    );
+
+    const scores = fuzzyScores(result.accounts[0].match);
+    expect([...scores.keys()].sort()).toEqual(["hers", "his"]);
+    expect(scores.get("hers")).toBe(scores.get("his"));
+  });
+
+  it("scores ownership neutrally when the registration hint names nobody on the roster", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [
+          annotated({
+            name: "Fidelity IRA",
+            category: "retirement",
+            value: 100_000,
+            // An entity registration: matches no family member's first name
+            // and carries no joint cue, so the parser degrades to the client.
+            ownerNameHint: "Smith Family Trust",
+          }),
+        ],
+      }),
+      { ...emptyCandidates(), family: SPOUSES, accounts: HIS_AND_HERS },
+    );
+
+    const scores = fuzzyScores(result.accounts[0].match);
+    expect([...scores.keys()].sort()).toEqual(["hers", "his"]);
+    expect(scores.get("hers")).toBe(scores.get("his"));
+  });
+
+  // The user-visible harm, not just the mechanism: SCORE_FLOOR is documented as
+  // calibrated to keep renamed accounts in the picker. Neutral ownership puts
+  // this candidate at 0.45*(2/3) + 0.25*0.5 + 0 + 0.1*0.769 = 0.502, just over
+  // the 0.45 floor. Fabricated client ownership zeroes the owner term -> 0.377,
+  // and the advisor's real account vanishes and gets duplicated.
+  it("keeps a renamed spouse-owned account above SCORE_FLOOR when ownership is unknown", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [
+          annotated({ name: "Fidelity IRA", category: "taxable", value: 130_000 }),
+        ],
+      }),
+      {
+        ...emptyCandidates(),
+        family: SPOUSES,
+        accounts: [
+          {
+            id: "renamed",
+            name: "Fidelity Rollover IRA",
+            category: "retirement",
+            accountNumberLast4: null,
+            custodian: "Fidelity",
+            value: 100_000,
+            ownerIds: ["fm-jane"],
+          },
+        ],
+      },
+    );
+
+    expect(fuzzyScores(result.accounts[0].match).has("renamed")).toBe(true);
   });
 });
 

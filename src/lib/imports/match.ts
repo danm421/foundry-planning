@@ -34,7 +34,7 @@ import {
   type LivingSlot,
 } from "./match-keys/living-slot";
 import { matchWill, type WillCandidate } from "./match-keys/will";
-import { matchOwnersFromHint, type OwnerMatchFamilyMember } from "./owner-match";
+import { resolveOwnersFromHint, type OwnerMatchFamilyMember } from "./owner-match";
 import type { ImportPayload } from "./types";
 
 export interface MatchCandidates {
@@ -71,19 +71,31 @@ export function emptyCandidates(): MatchCandidates {
 }
 
 /**
- * Resolve an extracted account's owners to family_member ids, reusing the
- * same registration-hint parser the commit step uses so the matching pass and
- * the commit agree on who owns what. Entity-owned accounts contribute no ids
- * and therefore score neutrally.
+ * Resolve an extracted account's owners to family_member ids for *matching*,
+ * reusing the same registration-hint parser the commit step uses so the two
+ * agree on who owns what.
+ *
+ * Only evidence-derived ownership is forwarded. The parser ends in a "somebody
+ * has to own it, so use the client" default — correct when writing an account,
+ * wrong as matching evidence: a fabricated client id replaces
+ * `ownerAgreement`'s neutral 0.5 with 0.0 against every spouse-owned
+ * candidate, which can push a genuine renamed-account match under SCORE_FLOOR
+ * and drop it from the picker entirely. So a `"default"` resolution yields no
+ * ids and scores neutral — an account with no registration hint, one
+ * registered to a trust or any other name the roster does not contain, or one
+ * whose `owner: "spouse"` names a spouse this household does not have, costs
+ * nothing rather than counting against the right candidate.
  */
 function resolveOwnerIds(
   row: { ownerNameHint?: string; owner?: "client" | "spouse" | "joint" },
   family: OwnerMatchFamilyMember[],
 ): string[] {
   if (family.length === 0) return [];
-  return matchOwnersFromHint(row.ownerNameHint, row.owner, family).flatMap((o) =>
-    o.kind === "family_member" ? [o.familyMemberId] : [],
-  );
+  const { owners, source } = resolveOwnersFromHint(row.ownerNameHint, row.owner, family);
+  if (source === "default") return [];
+  // Narrowing only — this parser never emits entity or external-beneficiary
+  // owners, but AccountOwner is a union and the ids have to be extracted.
+  return owners.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : []));
 }
 
 /**
