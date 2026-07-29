@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { emptyImportPayload } from "../../types";
 import { emptyPlanBasics } from "../../assemble/plan-basics";
+import { emptyGoals } from "../../assemble/goals";
+import { stated } from "../../assemble/field";
 import { applyDecisions } from "../apply-decisions";
 import type { PlanningDecisions } from "../types";
 
@@ -229,5 +231,93 @@ describe("applyDecisions", () => {
       name: "New Roof", type: "other", annualAmount: 25000, startYear: 2030, endYear: 2030,
       match: { kind: "new" },
     });
+  });
+
+  // ── Coordinator fix round: riskTolerance was silently dropped ──
+
+  it("writes a riskTolerance decision onto goals.riskTolerance", () => {
+    const { payload } = applyDecisions({
+      payload: emptyImportPayload(), known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        assumptions: {
+          riskTolerance: { value: "moderate", provenance: "document", reason: "Stated as 'Moderate' on the risk questionnaire." },
+        },
+      },
+    });
+    expect(payload.goals?.riskTolerance).toEqual({
+      value: "moderate", provenance: "document", reason: "Stated as 'Moderate' on the risk questionnaire.",
+    });
+  });
+
+  it("does not overwrite a riskTolerance whose existing provenance is already 'stated'", () => {
+    const base = {
+      ...emptyImportPayload(),
+      goals: { ...emptyGoals(), riskTolerance: stated<string>("aggressive") },
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        assumptions: {
+          riskTolerance: { value: "moderate", provenance: "document", reason: "Stated as 'Moderate' on the risk questionnaire." },
+        },
+      },
+    });
+    expect(payload.goals?.riskTolerance).toEqual({ value: "aggressive", provenance: "stated" });
+  });
+
+  // ── Coordinator fix round: Rule 3's replace-by-owner path was untested ──
+
+  it("replaces an existing client Social Security entry, leaving exactly one client entry", () => {
+    const base = {
+      ...emptyImportPayload(),
+      planBasics: {
+        ...emptyPlanBasics(),
+        socialSecurity: [
+          { owner: "client" as const, pia: { value: 2000, provenance: "document" as const }, claimingAge: { value: 67, provenance: "document" as const } },
+        ],
+      },
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        socialSecurity: [{
+          owner: "client", basis: "estimated_from_income",
+          piaMonthly: { value: 3200, provenance: "derived", reason: "Estimated from $166,750 over 35 years." },
+          claimingAge: { value: 64, provenance: "document", reason: "Start collecting at retirement." },
+        }],
+      },
+    });
+    const clientEntries = (payload.planBasics?.socialSecurity ?? []).filter((e) => e.owner === "client");
+    expect(clientEntries).toHaveLength(1);
+    expect(clientEntries[0].pia.value).toBe(3200);
+    expect(clientEntries[0].claimingAge.value).toBe(64);
+  });
+
+  it("preserves an existing spouse Social Security entry when only a client decision is provided", () => {
+    const spouseEntry = {
+      owner: "spouse" as const,
+      pia: { value: 1500, provenance: "document" as const },
+      claimingAge: { value: 65, provenance: "document" as const },
+    };
+    const base = {
+      ...emptyImportPayload(),
+      planBasics: { ...emptyPlanBasics(), socialSecurity: [spouseEntry] },
+    };
+    const { payload } = applyDecisions({
+      payload: base, known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        socialSecurity: [{
+          owner: "client", basis: "estimated_from_income",
+          piaMonthly: { value: 3200, provenance: "derived", reason: "Estimated from $166,750 over 35 years." },
+          claimingAge: { value: 64, provenance: "document", reason: "Start collecting at retirement." },
+        }],
+      },
+    });
+    const spouseEntries = (payload.planBasics?.socialSecurity ?? []).filter((e) => e.owner === "spouse");
+    expect(spouseEntries).toEqual([spouseEntry]);
   });
 });

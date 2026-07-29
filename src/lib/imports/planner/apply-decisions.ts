@@ -136,11 +136,11 @@ export function applyDecisions(input: ApplyDecisionsInput): ApplyDecisionsResult
     spouseLifeExpectancy: applyOptionalField(baseBasics.spouseLifeExpectancy, assumptions.spouseLifeExpectancy),
     socialSecurity,
   };
-  // `assumptions.inflationRate` and `assumptions.riskTolerance` have no
-  // matching `planBasics` field (no inflation slot exists at all;
-  // riskTolerance lives on `AssembleGoals`, not `AssemblePlanBasics`) - like
-  // Rule 5's "override naming no existing row is ignored", there is nothing
-  // to write them onto, so they are dropped here.
+  // `assumptions.inflationRate` has no matching field anywhere in the
+  // payload (no inflation slot exists at all) - like Rule 5's "override
+  // naming no existing row is ignored", there is nothing to write it onto,
+  // so it is dropped here. `assumptions.riskTolerance` DOES have a target -
+  // `AssembleGoals.riskTolerance` - and is wired in the Rule 4 block below.
 
   // ── Rule 2: savings decisions replace matching extracted rows by name ──
   const decidedAccountKeys = new Set(decisions.savings.map((d) => accountKey(d.accountName)));
@@ -157,6 +157,10 @@ export function applyDecisions(input: ApplyDecisionsInput): ApplyDecisionsResult
   const goals: AssembleGoals = {
     ...baseGoals,
     education: [...baseGoals.education, ...educationDecisions.map(deriveEducationGoal)],
+    // riskTolerance is advisor-editable in the Goals step, so it goes
+    // through the same "never overwrite 'stated'" guard as Rule 1's
+    // planBasics fields, reusing that guard rather than a second copy of it.
+    riskTolerance: applyRequiredField(baseGoals.riskTolerance, assumptions.riskTolerance),
   };
   const expenses: Annotated<ExtractedExpense>[] = [...payload.expenses, ...expenseDecisions.map(buildExpenseRow)];
 
