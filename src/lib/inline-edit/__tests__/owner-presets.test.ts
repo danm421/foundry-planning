@@ -49,6 +49,11 @@ describe("ownerSelectValue", () => {
       { kind: "gifted_away", recipient: { kind: "family_member", id: "fm-kid" }, percent: 1 },
     ];
     expect(ownerSelectValue(gifted, C, S, "jtwros")).toBeNull();
+
+    const externalBeneficiary: AccountOwner[] = [
+      { kind: "external_beneficiary", externalBeneficiaryId: "eb-1", percent: 1 },
+    ];
+    expect(ownerSelectValue(externalBeneficiary, C, S, "jtwros")).toBeNull();
   });
 
   it("returns null for an empty owners array", () => {
