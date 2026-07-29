@@ -16,10 +16,12 @@ interface MapCardProps {
   item: MapItem;
   /** Optional glyph rendered ahead of the name. */
   icon?: ReactNode;
-  onClick?: () => void;
+  /** Leading cell of the trailing group, ahead of `rateSlot`. The Cash Flow
+   *  board's start/end year range. */
+  metaSlot?: ReactNode;
   /** Growth rate, rendered between the name and the value. Net Worth board only. */
   rateSlot?: ReactNode;
-  /** Trailing affordance (the edit pencil). Net Worth board only. */
+  /** Trailing affordance (the edit pencil). */
   actionSlot?: ReactNode;
   /** Replaces the formatted value. Used for the inline editor. */
   valueSlot?: ReactNode;
@@ -30,11 +32,18 @@ interface MapCardProps {
  * slot, the name, the value, and at most one chip. Ownership context wins over
  * the free-form note when both are present — an item sitting in the tray or on
  * an uneven split needs to say why before it says anything else.
+ *
+ * The card itself is never interactive. Both boards now edit in place — an
+ * inline value editor plus a pencil for the full dialog — and those are
+ * `<button>`s, which cannot legally nest inside a card-level `<button>`. Callers
+ * that still want the whole card to go somewhere wrap it in a `<Link>` (see
+ * `NetWorthBoard.renderCard`, which does exactly that for the liability and
+ * policy rows it cannot edit in place).
  */
 export default function MapCard({
   item,
   icon,
-  onClick,
+  metaSlot,
   rateSlot,
   actionSlot,
   valueSlot,
@@ -55,6 +64,7 @@ export default function MapCard({
           `tabular-nums` utility so the rate and the value align on the same
           numeral width once both slots are filled. */}
       <span className="ml-auto flex shrink-0 items-center gap-2">
+        {metaSlot}
         {rateSlot}
         {valueSlot ?? (
           <span className="text-xs font-semibold tabular text-ink-2">{item.valueLabel}</span>
@@ -65,15 +75,11 @@ export default function MapCard({
   );
 
   // `group-hover:` is inert unless an ancestor carries `group` — it exists so a
-  // card wrapped in a <Link> (Net Worth board) gets the same hover affordance
-  // the onClick/<button> branch below adds for itself. Without it a navigating
-  // card looks identical to a read-only one.
+  // card wrapped in a <Link> (Net Worth board) gets a hover affordance that says
+  // it navigates. A card that edits in place instead has no `group` ancestor and
+  // stays flat, which is correct: the affordances are the inline value and the
+  // pencil, not the card.
   const className = `flex w-full items-center gap-2.5 rounded-lg border border-hair border-l-2 bg-card-2 px-3 py-2 text-left group-hover:bg-card-hover ${CATEGORY_BORDER[item.category]}`;
 
-  if (!onClick) return <div className={className}>{body}</div>;
-  return (
-    <button type="button" onClick={onClick} className={`${className} hover:bg-card-hover`}>
-      {body}
-    </button>
-  );
+  return <div className={className}>{body}</div>;
 }

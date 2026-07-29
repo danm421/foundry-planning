@@ -33,6 +33,23 @@ export interface ColumnAssignment {
   trayOwnerLabel: string | null;
 }
 
+/**
+ * The projection window of a cash-flow row, for the Cash Flow board's timing
+ * column.
+ *
+ * `startYear`/`endYear` are the RESOLVED years the engine actually projects
+ * with — `resolvedStart`/`resolvedEnd` in `lib/projection/load-client-data.ts`
+ * have already applied any milestone ref — so they are safe to render on their
+ * own. The refs ride along only to NAME the anchor in the cell's tooltip
+ * ("Client Retirement (2035)"); nothing re-resolves them client-side.
+ */
+export interface FlowTiming {
+  startYear: number;
+  endYear: number;
+  startYearRef: string | null;
+  endYearRef: string | null;
+}
+
 /** A household member drawn as a node at the top of a board column. */
 export interface MapPerson {
   familyMemberId: string | null;
@@ -75,6 +92,26 @@ export interface MapItem {
   trayOwnerLabel: string | null;
   /** Extra chip, e.g. "for Kelly" or "8% + 4% match". */
   noteChip: string | null;
+  /** The row's projection window, or null for kinds that have none — an account
+   *  or liability is a balance, not a flow. */
+  timing: FlowTiming | null;
+  /**
+   * The POSITIVE annual figure the Cash Flow board's inline editor writes back,
+   * or null when there is no single number to edit.
+   *
+   * Deliberately unsigned, and deliberately NOT `value`. `value` is signed so
+   * band subtotals net out (an expense is negative) while the persisted
+   * `annualAmount` column is unsigned — writing `value` back would flip the sign
+   * of every outflow on the board.
+   *
+   * Null for accounts and liabilities (the Net Worth board edits those through
+   * `accountRows`), and null for any savings rule whose contribution resolves to
+   * a RULE rather than a dollar figure — IRS max, percent-of-pay, custom
+   * schedule. Those show the rule in `valueLabel`, and offering a number editor
+   * for a figure the engine will overrule is worse than offering none.
+   * `resolveSavings` owns that call, so the two cannot disagree.
+   */
+  editableAmount: number | null;
 }
 
 /** The single prop object every Household Map board reads. */
@@ -113,6 +150,30 @@ export interface HouseholdMapProps {
    * `ScheduleMap`. Rules with no overrides are simply absent.
    */
   savingsSchedules: Record<string, { year: number; amount: number }[]>;
+  /**
+   * flow id → the field set a SCENARIO edit of that flow must send, already
+   * pruned by `buildFlowScenarioFields` (`lib/household-map/flow-write.ts`).
+   * Present for exactly the ids that have a hydration entry above — the
+   * income/expense/savings rows the Map is allowed to write.
+   *
+   * Why the WHOLE field set and not just the changed field: `applyEntityEdit`
+   * stores `payload: diff` through `onConflictDoUpdate`, a wholesale replace, and
+   * `buildFieldDiff` only emits keys the caller actually sent. A narrow
+   * `{ annualAmount }` write against a flow that ALSO carries an endYear override
+   * in that scenario deletes the endYear override — silently; the year just
+   * reverts to base on the next render. Sending everything makes the new payload
+   * "every override this scenario already had, plus the new amount".
+   *
+   * Why the raw engine row and not `IncomeView`/`ExpenseView`/`SavingsRuleView`:
+   * those three are strict SUBSETS of the engine rows, and the gaps are
+   * load-bearing. `ExpenseView` carries no `endsAtMedicareEligibilityOwner` (so a
+   * view-sourced payload would drop the flag that stops a pre-Medicare health
+   * expense double-counting against modeled Medicare premiums) and
+   * `SavingsRuleView` carries no `fundFromExpenseReduction` — which the Solver
+   * writes. Diffing the effective engine row against base cannot miss a field by
+   * construction, and cannot drift when the engine type gains one.
+   */
+  flowScenarioFields: Record<string, Record<string, unknown>>;
   /** Every account, for `SavingsRuleDialog`'s target picker (it filters
    *  eligibility itself via `isSavingsEligibleAccount`). Engine fields only —
    *  a superset of the `{id, name, category, subType, ownerEntityId}` the
@@ -244,4 +305,11 @@ export interface BoardCallbacks {
   onSaveAccountField?: (accountId: string, patch: AccountPatch) => Promise<boolean>;
   /** The card's pencil was clicked — open the full account editor. */
   onEditAccount?: (accountId: string) => void;
+  /**
+   * Persist an inline annual-amount edit on an income / expense / savings row.
+   * `next` is the POSITIVE annual figure — see `MapItem.editableAmount`; the
+   * board never hands back a signed value even though outflow cards render in
+   * accounting parens. Resolves false on failure so the editor can revert.
+   */
+  onSaveFlowAmount?: (item: MapItem, next: number) => Promise<boolean>;
 }

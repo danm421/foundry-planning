@@ -13,18 +13,46 @@ import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savin
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
+import type { TargetKind } from "@/engine/scenario/types";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import {
   buildBasePayload,
   buildScenarioDesiredFields,
   type AccountPatch,
 } from "@/lib/household-map/account-write";
+import {
+  buildFlowScenarioDesiredFields,
+  flowAmountPatch,
+} from "@/lib/household-map/flow-write";
 
 const BOARDS = [
   { key: "net-worth", label: "Net Worth" },
   { key: "goals", label: "Goals" },
   { key: "cash-flow", label: "Cash Flow" },
 ] as const;
+
+/**
+ * Where an inline Cash Flow amount edit is written, per item kind. A `switch`
+ * rather than a lookup object so the two non-flow kinds have to be handled
+ * explicitly: `MapItem["kind"]` also admits "account" and "liability", and a
+ * ternary chain would have quietly posted an account edit to the savings-rules
+ * route. Only the Cash Flow board calls the writer, so `null` is unreachable
+ * today — that is exactly why it must not be a guess.
+ */
+function flowWriteTarget(
+  kind: MapItem["kind"],
+): { targetKind: TargetKind; collection: string } | null {
+  switch (kind) {
+    case "income":
+      return { targetKind: "income", collection: "incomes" };
+    case "expense":
+      return { targetKind: "expense", collection: "expenses" };
+    case "savings":
+      return { targetKind: "savings_rule", collection: "savings-rules" };
+    default:
+      return null;
+  }
+}
 
 /**
  * Rough `ClientMilestones` built from what's already in `HouseholdMapProps` —
@@ -130,6 +158,44 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         url: `/api/clients/${clientId}/accounts/${accountId}`,
         method: "PUT",
         body: buildBasePayload(patch),
+      },
+    );
+    return res.ok;
+  }
+
+  /**
+   * Persist one inline Cash Flow amount edit. Same base/scenario asymmetry as
+   * `handleSaveAccountField` and for the same reason — see
+   * `lib/household-map/flow-write.ts`, which owns both payloads.
+   *
+   * Refuses when `flowScenarioFields` has no entry for the row. `map-content.tsx`
+   * builds that map from the same effective tree and filters it with the same
+   * hydratability predicates as `incomeRows`/`expenseRows` — and the BOARD gates
+   * its editor on the hydration entry — so a miss here means the two maps have
+   * drifted. Refusing is the only safe answer: with no field set the scenario
+   * payload could only be the narrow write that deletes the row's other
+   * overrides, and sending nothing beats sending that.
+   */
+  async function handleSaveFlowAmount(item: MapItem, next: number): Promise<boolean> {
+    if (!canEdit) return false;
+    const fields = props.flowScenarioFields[item.id];
+    if (!fields) return false;
+
+    const target = flowWriteTarget(item.kind);
+    if (!target) return false;
+
+    const patch = flowAmountPatch(next);
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: target.targetKind,
+        targetId: item.id,
+        desiredFields: buildFlowScenarioDesiredFields(fields, patch),
+      },
+      {
+        url: `/api/clients/${clientId}/${target.collection}/${item.id}`,
+        method: "PUT",
+        body: patch,
       },
     );
     return res.ok;
@@ -252,6 +318,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           {...props}
           onEditItem={handleEditItem}
           onAddFlow={handleAddFlow}
+          onSaveFlowAmount={handleSaveFlowAmount}
           isItemEditable={isItemEditable}
         />
       )}

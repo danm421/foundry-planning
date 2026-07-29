@@ -46,6 +46,8 @@ function item(overrides: Partial<MapItem> & Pick<MapItem, "id" | "column">): Map
     splitChip: null,
     trayOwnerLabel: null,
     noteChip: null,
+    timing: null,
+    editableAmount: null,
     ...overrides,
   };
 }
@@ -68,6 +70,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
+    flowScenarioFields: {},
     accountOptions: [],
     accountRows: {},
     // Controller resolution R3: Task 5 adds ONLY `accountRows` and

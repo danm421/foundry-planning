@@ -1,7 +1,18 @@
+"use client";
+
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
+import { PencilIcon } from "@/components/icons";
+import { InlineAmount } from "@/components/forms/inline-amount";
 import { moneyLabel } from "@/lib/household-map/format";
-import type { BoardCallbacks, HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
+import { coerceYearRef, YEAR_REF_LABELS } from "@/lib/milestones";
+import type {
+  BoardCallbacks,
+  FlowTiming,
+  HouseholdMapProps,
+  MapColumn,
+  MapItem,
+} from "@/lib/household-map/types";
 
 const BANDS = [
   { key: "income", label: "Income", kinds: ["income"] },
@@ -10,6 +21,37 @@ const BANDS = [
 ] as const;
 
 type OwnerColumn = Exclude<MapColumn, "tray">;
+
+/** "2026-2060", or a single year when the window is one year wide. */
+function timingLabel(t: FlowTiming): string {
+  return t.startYear === t.endYear ? String(t.startYear) : `${t.startYear}-${t.endYear}`;
+}
+
+/**
+ * Tooltip for the timing cell. Names the milestone anchor when the row has one,
+ * because "2035" and "the year Cooper retires" are the same number until
+ * retirement age moves — and only one of them follows it. `coerceYearRef` narrows
+ * the persisted string; an unrecognised token degrades to the bare year rather
+ * than indexing `YEAR_REF_LABELS` with undefined.
+ */
+function timingTitle(t: FlowTiming): string {
+  const startRef = coerceYearRef(t.startYearRef);
+  const endRef = coerceYearRef(t.endYearRef);
+  const start = startRef ? `${YEAR_REF_LABELS[startRef]} (${t.startYear})` : String(t.startYear);
+  const end = endRef ? `${YEAR_REF_LABELS[endRef]} (${t.endYear})` : String(t.endYear);
+  return `Starts ${start} · Ends ${end}`;
+}
+
+/**
+ * The sign the card's amount is DISPLAYED with. `MapItem.editableAmount` is the
+ * unsigned persisted column, so the parens on an outflow have to be reapplied
+ * here; `item.value` can't stand in because an unresolvable savings rule carries
+ * a literal 0 and would render as an inflow. Exhaustive over the three band
+ * kinds, which are the only kinds this board renders.
+ */
+function displaySign(item: MapItem): 1 | -1 {
+  return item.kind === "income" ? 1 : -1;
+}
 
 /**
  * The Cash Flow board: three horizontal bands (Income / Savings / Expenses)
@@ -36,21 +78,98 @@ export default function CashFlowBoard({
   canEdit,
   onEditItem,
   onAddFlow,
+  onSaveFlowAmount,
   isItemEditable,
 }: HouseholdMapProps & BoardCallbacks) {
   const hasSpouse = people.spouse !== null;
 
-  /** `undefined` renders a plain card instead of a button (see MapCard). A row
-   *  the caller can't write — a synthesized life-insurance premium, say — must
-   *  look inert, not merely behave inertly once clicked. */
-  function clickHandlerFor(item: MapItem): (() => void) | undefined {
-    if (!canEdit) return undefined;
-    if (!(isItemEditable?.(item) ?? true)) return undefined;
-    return () => onEditItem?.(item);
+  /** Permission AND per-row writability. A row the caller can't write — a
+   *  synthesized life-insurance premium, say — must LOOK inert, so it gets
+   *  neither the pencil nor the inline editor. Absent `isItemEditable` means
+   *  every row is writable (boards render standalone in tests). */
+  function isWritable(item: MapItem): boolean {
+    return canEdit && (isItemEditable?.(item) ?? true);
+  }
+
+  /** The start/end year range. Display-only — editing the window is the drawer's
+   *  job, which has the milestone-anchor picker this cell only reports. Fixed
+   *  width so the value column still lines up down a board column. */
+  function metaSlotFor(item: MapItem) {
+    if (!item.timing) return null;
+    return (
+      <span
+        title={timingTitle(item.timing)}
+        className="w-[74px] shrink-0 text-right text-[10px] tabular text-ink-3"
+      >
+        {timingLabel(item.timing)}
+      </span>
+    );
+  }
+
+  /** The inline amount editor, or null to fall back to `item.valueLabel`. Gated
+   *  on a writer being present as well as on writability: a board rendered
+   *  without `onSaveFlowAmount` must not show a field that silently discards the
+   *  edit. `editableAmount` null means there is no single number to edit — an IRS
+   *  max or percent-of-pay rule keeps its rule text. */
+  function valueSlotFor(item: MapItem) {
+    if (item.editableAmount == null || !onSaveFlowAmount || !isWritable(item)) return null;
+    const sign = displaySign(item);
+    return (
+      <InlineAmount
+        amount={item.editableAmount}
+        label={item.name}
+        // The editor holds the unsigned amount; the card keeps showing an outflow
+        // in accounting parens, exactly as the read-only label did.
+        format={(n) => moneyLabel(sign * n)}
+        onSave={(next) => onSaveFlowAmount(item, next)}
+        className="min-w-[72px] rounded-sm px-1 py-0.5 text-right text-xs font-semibold tabular text-ink-2 hover:bg-card hover:ring-1 hover:ring-inset hover:ring-hair-2"
+      />
+    );
+  }
+
+  /** The pencil — opens the row's full editor (quick-edit drawer for an
+   *  income/expense, `SavingsRuleDialog` for a rule). It replaces the old
+   *  whole-card click, which cannot survive an inline editor: a card-level
+   *  `<button>` may not contain the editor's own `<button>`. Mirrors the Net
+   *  Worth board. */
+  function actionSlotFor(item: MapItem) {
+    if (!onEditItem || !isWritable(item)) return null;
+    return (
+      <button
+        type="button"
+        aria-label={`Edit ${item.name}`}
+        title={`Edit ${item.name}`}
+        onClick={() => onEditItem(item)}
+        className="text-ink-4 hover:text-accent"
+      >
+        <PencilIcon width={12} height={12} strokeWidth={1.5} />
+      </button>
+    );
+  }
+
+  function renderCard(c: MapItem) {
+    return (
+      <MapCard
+        key={c.id}
+        item={c}
+        metaSlot={metaSlotFor(c)}
+        valueSlot={valueSlotFor(c)}
+        actionSlot={actionSlotFor(c)}
+      />
+    );
   }
 
   const COLUMNS: OwnerColumn[] = hasSpouse ? ["client", "joint", "spouse"] : ["client", "joint"];
-  const gridCols = hasSpouse ? "grid-cols-[74px_repeat(3,1fr)]" : "grid-cols-[74px_repeat(2,1fr)]";
+  // `minmax(0,1fr)`, not a bare `1fr`. A bare `1fr` is `minmax(auto,1fr)`, so a
+  // track never shrinks below its content's min-content width — one long income
+  // name then steals width from the other columns and the card's own `truncate`
+  // never engages, because there is nothing constraining it. Measured at 1800px:
+  // a 60-character name pushed the three tracks to 592/293/295. This is what
+  // Tailwind's own `grid-cols-3` expands to; only the arbitrary-value form here
+  // had to opt in by hand.
+  const gridCols = hasSpouse
+    ? "grid-cols-[74px_repeat(3,minmax(0,1fr))]"
+    : "grid-cols-[74px_repeat(2,minmax(0,1fr))]";
 
   return (
     <div className="flex flex-col gap-4">
@@ -90,9 +209,7 @@ export default function CashFlowBoard({
                     data-testid={`band-${band.key}-column-${col}`}
                     className="flex flex-col gap-1.5"
                   >
-                    {cards.map((c) => (
-                      <MapCard key={c.id} item={c} onClick={clickHandlerFor(c)} />
-                    ))}
+                    {cards.map(renderCard)}
                     {/* Step 2 — empty cells are add targets. */}
                     {cards.length === 0 && canEdit && (
                       <button
@@ -117,9 +234,11 @@ export default function CashFlowBoard({
                 <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                   Held by trusts, businesses &amp; other family members
                 </div>
-                {trayItems.map((c) => (
-                  <MapCard key={c.id} item={c} onClick={clickHandlerFor(c)} />
-                ))}
+                {/* Column-width cards, not full-bleed rows. A tray card is one
+                    row's worth of information and stretching it the width of the
+                    board read as more important than the owner columns above it.
+                    Same three-up grid the Net Worth board's tray uses. */}
+                <div className="grid grid-cols-3 gap-1.5">{trayItems.map(renderCard)}</div>
               </div>
             )}
 

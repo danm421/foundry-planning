@@ -28,6 +28,15 @@ export interface InlineAmountProps {
   label: string;
   mode?: "currency" | "percent";
   className?: string;
+  /**
+   * Overrides the READ-mode display string only; the open input always shows the
+   * raw number. Exists because the Household Map's Cash Flow board edits the
+   * unsigned `annualAmount` while displaying outflows in accounting parens
+   * ("($200,000)" via `moneyLabel`) — a display that cannot be derived from
+   * `amount` alone, since `amount` carries no sign. Not a styling hook; pass
+   * `className` for that.
+   */
+  format?: (n: number) => string;
 }
 
 // Must stay behaviourally identical to the `fmt` helper this component was
@@ -49,6 +58,7 @@ export function InlineAmount({
   label,
   mode = "currency",
   className,
+  format,
 }: InlineAmountProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -103,7 +113,7 @@ export function InlineAmount({
         }
         aria-label={`Edit amount for ${label}`}
       >
-        {mode === "percent" ? percentFmt(amount) : currencyFmt(amount)}
+        {format ? format(amount) : mode === "percent" ? percentFmt(amount) : currencyFmt(amount)}
       </button>
     );
   }

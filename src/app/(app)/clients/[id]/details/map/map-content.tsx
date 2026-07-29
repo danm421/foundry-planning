@@ -44,6 +44,7 @@ import {
   savingsToMapItem,
   toMapItem,
 } from "@/lib/household-map/map-items";
+import { buildFlowScenarioFields } from "@/lib/household-map/flow-write";
 import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { Account, Expense, Income, Liability, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
@@ -255,6 +256,29 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
           ] as const,
       ),
   );
+  // Scenario-edit field sets for the Cash Flow board's inline amount editor —
+  // the EFFECTIVE ENGINE ROWS, pruned, not the view rows above. A scenario edit's
+  // payload is stored as a wholesale replace, so it has to carry every field this
+  // scenario already overrides; the three view types are strict subsets of the
+  // engine types and the fields they drop (`endsAtMedicareEligibilityOwner`,
+  // `fundFromExpenseReduction`, `isSelfEmployment`) are ones real producers
+  // override. `lib/household-map/flow-write.ts` documents the whole rule.
+  //
+  // Filtered by the SAME hydratability predicates as the rows above so the two
+  // maps agree on which flows the Map may write — a row with a card but no
+  // hydration entry must not become writable through this map instead.
+  const flowScenarioFields: Record<string, Record<string, unknown>> = Object.fromEntries([
+    ...effectiveTree.incomes
+      .filter(isHydratableIncome)
+      .map((i: Income) => [i.id, buildFlowScenarioFields(i)] as const),
+    ...effectiveTree.expenses
+      .filter(isHydratableExpense)
+      .map((e: Expense) => [e.id, buildFlowScenarioFields(e)] as const),
+    ...effectiveTree.savingsRules.map(
+      (s: SavingsRule) => [s.id, buildFlowScenarioFields(s)] as const,
+    ),
+  ]);
+
   const accountOptions = effectiveTree.accounts.map(accountEngineToView);
 
   // The COMPLETE per-account row: scenario-effective engine accounts merged
@@ -406,6 +430,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       expenseRows={expenseRows}
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
+      flowScenarioFields={flowScenarioFields}
       accountOptions={accountOptions}
       accountRows={accountRows}
       growthContext={growthContext}

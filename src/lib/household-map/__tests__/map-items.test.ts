@@ -60,32 +60,32 @@ describe("resolveSavings", () => {
         annualPercent: 0.1,
         annualAmount: 9999,
       }),
-      { value: 0, valueLabel: "Custom schedule" },
+      { value: 0, valueLabel: "Custom schedule", editableAmount: null },
     ],
     [
       "an EMPTY scheduleOverrides is not a schedule — falls through",
       savingsRule({ scheduleOverrides: {}, annualAmount: 6000 }),
-      { value: -6000, valueLabel: "($6,000)" },
+      { value: -6000, valueLabel: "($6,000)", editableAmount: 6000 },
     ],
     [
       "contributeMax true → IRS max label, zero value",
       savingsRule({ contributeMax: true, annualPercent: 0.1, annualAmount: 9999 }),
-      { value: 0, valueLabel: "IRS max" },
+      { value: 0, valueLabel: "IRS max", editableAmount: null },
     ],
     [
       "annualPercent set and > 0 → percent-of-pay label, zero value",
       savingsRule({ annualPercent: 0.08, annualAmount: 9999 }),
-      { value: 0, valueLabel: "8% of pay" },
+      { value: 0, valueLabel: "8% of pay", editableAmount: null },
     ],
     [
       "annualPercent === 0 falls through to the flat branch (not '0% of pay')",
       savingsRule({ annualPercent: 0, annualAmount: 6000 }),
-      { value: -6000, valueLabel: "($6,000)" },
+      { value: -6000, valueLabel: "($6,000)", editableAmount: 6000 },
     ],
     [
       "flat annualAmount → negative value (savings is an outflow)",
       savingsRule({ annualAmount: 6000 }),
-      { value: -6000, valueLabel: "($6,000)" },
+      { value: -6000, valueLabel: "($6,000)", editableAmount: 6000 },
     ],
   ] as const)("%s", (_label, rule, expected) => {
     expect(resolveSavings(rule)).toEqual(expected);
@@ -96,6 +96,9 @@ describe("resolveSavings", () => {
     expect(resolveSavings(savingsRule({ annualAmount: 0 }))).toEqual({
       value: -0,
       valueLabel: "$0",
+      // The flat branch, so still editable — a zero-dollar contribution is a
+      // number the advisor can raise, not an unresolvable rule.
+      editableAmount: 0,
     });
   });
 });

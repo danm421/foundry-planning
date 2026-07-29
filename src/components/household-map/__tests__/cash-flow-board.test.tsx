@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import CashFlowBoard from "../cash-flow-board";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
-import type { HouseholdMapProps, MapItem, MapPerson } from "@/lib/household-map/types";
+import type {
+  FlowTiming,
+  HouseholdMapProps,
+  MapItem,
+  MapPerson,
+} from "@/lib/household-map/types";
 
 function person(overrides: Partial<MapPerson> = {}): MapPerson {
   return {
@@ -25,8 +30,16 @@ function item(overrides: Partial<MapItem> & Pick<MapItem, "id" | "column" | "kin
     splitChip: null,
     trayOwnerLabel: null,
     noteChip: null,
+    // Both default to "nothing to show / nothing to edit" so a case that cares
+    // about the timing cell or the inline editor has to opt in explicitly.
+    timing: null,
+    editableAmount: null,
     ...overrides,
   };
+}
+
+function timing(overrides: Partial<FlowTiming> = {}): FlowTiming {
+  return { startYear: 2026, endYear: 2060, startYearRef: null, endYearRef: null, ...overrides };
 }
 
 function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProps {
@@ -47,6 +60,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     expenseRows: {},
     savingsRuleRows: {},
     savingsSchedules: {},
+    flowScenarioFields: {},
     accountOptions: [],
     // Required on `HouseholdMapProps` as of Task 5. This board does not read
     // either one — they are here so the fixture typechecks against the shared
@@ -329,5 +343,283 @@ describe("CashFlowBoard", () => {
     render(<CashFlowBoard {...baseProps({ items, canEdit: true })} onEditItem={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+  });
+
+  // ── Timing column ──────────────────────────────────────────────────────────
+
+  describe("timing column", () => {
+    it("renders the row's start-end year range", () => {
+      const items: MapItem[] = [
+        item({
+          id: "inc-1",
+          kind: "income",
+          column: "client",
+          name: "Alex salary",
+          value: 90000,
+          timing: timing({ startYear: 2026, endYear: 2035 }),
+        }),
+      ];
+
+      render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(screen.getByText("2026-2035")).toBeInTheDocument();
+    });
+
+    it("collapses a one-year window to a single year, not '2030-2030'", () => {
+      const items: MapItem[] = [
+        item({
+          id: "exp-1",
+          kind: "expense",
+          column: "joint",
+          name: "Roof replacement",
+          value: -30000,
+          timing: timing({ startYear: 2030, endYear: 2030 }),
+        }),
+      ];
+
+      render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(screen.getByText("2030")).toBeInTheDocument();
+      expect(screen.queryByText("2030-2030")).not.toBeInTheDocument();
+    });
+
+    // "2035" and "the year Cooper retires" are the same number until retirement
+    // age moves, and only one of them follows it — so the anchor has to be
+    // reachable, even if only on hover.
+    it("names the milestone anchor in the cell's tooltip when the row has one", () => {
+      const items: MapItem[] = [
+        item({
+          id: "exp-1",
+          kind: "expense",
+          column: "joint",
+          name: "Retirement Living Expenses",
+          value: -200000,
+          timing: timing({
+            startYear: 2035,
+            endYear: 2060,
+            startYearRef: "client_retirement",
+            endYearRef: "plan_end",
+          }),
+        }),
+      ];
+
+      render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(screen.getByText("2035-2060")).toHaveAttribute(
+        "title",
+        "Starts Client Retirement (2035) · Ends Plan End (2060)",
+      );
+    });
+
+    it("falls back to the bare years when a ref token is not a known anchor", () => {
+      const items: MapItem[] = [
+        item({
+          id: "exp-1",
+          kind: "expense",
+          column: "joint",
+          name: "Something",
+          value: -1000,
+          timing: timing({ startYearRef: "not_a_milestone" }),
+        }),
+      ];
+
+      render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(screen.getByText("2026-2060")).toHaveAttribute(
+        "title",
+        "Starts 2026 · Ends 2060",
+      );
+    });
+
+    it("renders no timing cell for a row with no window", () => {
+      const items: MapItem[] = [
+        item({ id: "inc-1", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+      ];
+
+      const { container } = render(<CashFlowBoard {...baseProps({ items })} />);
+
+      expect(container.querySelector("[title^='Starts']")).toBeNull();
+    });
+  });
+
+  // ── Inline amount editing ──────────────────────────────────────────────────
+
+  describe("inline amount editing", () => {
+    function editableIncome(overrides: Partial<MapItem> = {}): MapItem {
+      return item({
+        id: "inc-1",
+        kind: "income",
+        column: "client",
+        name: "Alex salary",
+        value: 250000,
+        valueLabel: "$250,000",
+        editableAmount: 250000,
+        ...overrides,
+      });
+    }
+
+    it("commits an income edit as the amount typed", async () => {
+      const onSaveFlowAmount = vi.fn().mockResolvedValue(true);
+      render(
+        <CashFlowBoard
+          {...baseProps({ items: [editableIncome()] })}
+          onSaveFlowAmount={onSaveFlowAmount}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit amount for Alex salary" }));
+      const input = screen.getByRole("textbox", { name: "Amount for Alex salary" });
+      fireEvent.change(input, { target: { value: "275000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => expect(onSaveFlowAmount).toHaveBeenCalledTimes(1));
+      expect(onSaveFlowAmount.mock.calls[0][0].id).toBe("inc-1");
+      expect(onSaveFlowAmount.mock.calls[0][1]).toBe(275000);
+    });
+
+    // DISCRIMINATING: `MapItem.value` is NEGATIVE for an outflow so band subtotals
+    // net out, but the persisted `annualAmount` column is unsigned. Handing the
+    // editor `value` would show "-$200,000" and write -200000 back, flipping the
+    // expense into income for the whole projection.
+    it("an expense edits its UNSIGNED amount while still displaying accounting parens", async () => {
+      const onSaveFlowAmount = vi.fn().mockResolvedValue(true);
+      const items: MapItem[] = [
+        item({
+          id: "exp-1",
+          kind: "expense",
+          column: "joint",
+          name: "Current Living Expenses",
+          value: -200000,
+          valueLabel: "($200,000)",
+          editableAmount: 200000,
+        }),
+      ];
+      render(
+        <CashFlowBoard {...baseProps({ items })} onSaveFlowAmount={onSaveFlowAmount} />,
+      );
+
+      // Read mode keeps the parens the read-only label had.
+      const trigger = screen.getByRole("button", {
+        name: "Edit amount for Current Living Expenses",
+      });
+      expect(trigger).toHaveTextContent("($200,000)");
+
+      // Edit mode holds the unsigned figure.
+      fireEvent.click(trigger);
+      const input = screen.getByRole("textbox", { name: "Amount for Current Living Expenses" });
+      expect(input).toHaveValue("200,000");
+
+      fireEvent.change(input, { target: { value: "180000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => expect(onSaveFlowAmount).toHaveBeenCalledTimes(1));
+      expect(onSaveFlowAmount.mock.calls[0][1]).toBe(180000);
+    });
+
+    // A percent-of-pay / IRS-max / custom-schedule rule resolves in the
+    // projection, not here. Offering a number field would let an advisor type a
+    // figure the engine then overrules.
+    it("a savings rule with no resolvable dollar figure keeps its rule label and gets no editor", () => {
+      const items: MapItem[] = [
+        item({
+          id: "sav-1",
+          kind: "savings",
+          column: "spouse",
+          name: "Susan - 401k",
+          value: 0,
+          valueLabel: "10% of pay",
+          editableAmount: null,
+        }),
+      ];
+
+      render(
+        <CashFlowBoard {...baseProps({ items })} onSaveFlowAmount={vi.fn()} />,
+      );
+
+      expect(screen.getByText("10% of pay")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Edit amount for Susan - 401k/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    // An editable-looking field with nowhere to write is worse than a read-only
+    // one — the board is rendered standalone (no writer) in tests and by any
+    // future read-only surface.
+    it("renders the plain label when no writer is supplied", () => {
+      render(<CashFlowBoard {...baseProps({ items: [editableIncome()] })} />);
+
+      // Scoped to the card's column — the band subtotal renders the same figure.
+      const col = screen.getByTestId("band-income-column-client");
+      expect(within(col).getByText("$250,000")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Edit amount for Alex salary/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("a non-writable row gets neither the inline editor nor the pencil", () => {
+      const items: MapItem[] = [
+        item({
+          id: "premium-abc",
+          kind: "expense",
+          column: "joint",
+          category: "insurance",
+          name: "Term policy premium",
+          value: -1200,
+          valueLabel: "($1,200)",
+          editableAmount: 1200,
+        }),
+      ];
+
+      render(
+        <CashFlowBoard
+          {...baseProps({ items })}
+          onEditItem={vi.fn()}
+          onSaveFlowAmount={vi.fn()}
+          isItemEditable={(i) => !i.id.startsWith("premium-")}
+        />,
+      );
+
+      const col = screen.getByTestId("band-expense-column-joint");
+      expect(within(col).getByText("($1,200)")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Term policy premium/ })).not.toBeInTheDocument();
+    });
+
+    it("canEdit false suppresses the editor even with a writer wired up", () => {
+      render(
+        <CashFlowBoard
+          {...baseProps({ items: [editableIncome()], canEdit: false })}
+          onSaveFlowAmount={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: /Edit amount for Alex salary/ }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // The tray used to be a `flex-col` of full-bleed rows, which read as more
+  // important than the owner columns above it. Same three-up grid the Net Worth
+  // board's tray uses.
+  it("tray cards are laid out three-up, not stretched across the board", () => {
+    const items: MapItem[] = [
+      item({
+        id: "inc-tray",
+        kind: "income",
+        column: "tray",
+        name: "S-Corp distribution",
+        value: 120000,
+        trayOwnerLabel: "Acme Consulting S-Corp",
+      }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items })} />);
+
+    const tray = screen.getByTestId("band-income-tray");
+    const grid = tray.querySelector(".grid");
+    expect(grid).not.toBeNull();
+    expect(grid).toHaveClass("grid-cols-3");
+    // The card is inside that grid, not a sibling of it.
+    expect(within(grid as HTMLElement).getByText("S-Corp distribution")).toBeInTheDocument();
   });
 });

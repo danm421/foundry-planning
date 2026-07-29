@@ -3,7 +3,7 @@ import { formatCurrency } from "@/lib/cell-drill/format";
 import type { Account, Expense, Income, SavingsRule } from "@/engine/types";
 import { assignColumn } from "./columns";
 import { moneyLabel } from "./format";
-import type { ColumnAssignment, ColumnContext, MapColumn, MapItem } from "./types";
+import type { ColumnAssignment, ColumnContext, FlowTiming, MapColumn, MapItem } from "./types";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Display adapters. Page-shaped, not domain logic: they turn engine rows into
@@ -44,6 +44,33 @@ export function toMapItem(
     valueLabel: moneyLabel(value),
     ...assignColumn(thing, ctx),
     noteChip: null,
+    // A balance, not a flow: no projection window, and its inline editor lives
+    // on the Net Worth board, which writes through `accountRows` instead.
+    timing: null,
+    editableAmount: null,
+  };
+}
+
+/**
+ * A flow's projection window, for the Cash Flow board's timing column.
+ *
+ * A straight lift, on purpose: `resolvedStart`/`resolvedEnd` in
+ * `lib/projection/load-client-data.ts` already turned any milestone ref into the
+ * year the engine projects with, so re-resolving here could only disagree with
+ * the projection. The refs are carried through unresolved so the cell can NAME
+ * the anchor in its tooltip.
+ */
+export function flowTiming(flow: {
+  startYear: number;
+  endYear: number;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
+}): FlowTiming {
+  return {
+    startYear: flow.startYear,
+    endYear: flow.endYear,
+    startYearRef: flow.startYearRef ?? null,
+    endYearRef: flow.endYearRef ?? null,
   };
 }
 
@@ -104,6 +131,8 @@ export function incomeToMapItem(
     valueLabel: moneyLabel(income.annualAmount),
     ...flowAssignment(income, income.owner, accountById, ctx),
     noteChip: null,
+    timing: flowTiming(income),
+    editableAmount: income.annualAmount,
   };
 }
 
@@ -127,19 +156,34 @@ export function incomeToMapItem(
  * negative, exactly like expenseToMapItem's outflows, so
  * `items.reduce((s, i) => s + i.value, 0)` nets out correctly without any
  * kind-specific special-casing by callers.
+ *
+ * `editableAmount` follows the same three-way split, and for the same reason:
+ * it is the rule's UNSIGNED `annualAmount` on the flat branch and null on every
+ * other, so the Cash Flow board offers a number editor exactly where a number is
+ * what the engine will use. Offering one on a "20% of pay" rule would let an
+ * advisor type a figure the projection then overrules. See
+ * `MapItem.editableAmount`.
  */
-export function resolveSavings(rule: SavingsRule): { value: number; valueLabel: string } {
+export function resolveSavings(rule: SavingsRule): {
+  value: number;
+  valueLabel: string;
+  editableAmount: number | null;
+} {
   // FIRST, matching the engine's resolution order: a schedule beats every
   // other mode, so a rule with one must never advertise its flat annualAmount.
   if (rule.scheduleOverrides && Object.keys(rule.scheduleOverrides).length > 0) {
-    return { value: 0, valueLabel: "Custom schedule" };
+    return { value: 0, valueLabel: "Custom schedule", editableAmount: null };
   }
-  if (rule.contributeMax) return { value: 0, valueLabel: "IRS max" };
+  if (rule.contributeMax) return { value: 0, valueLabel: "IRS max", editableAmount: null };
   if (rule.annualPercent != null && rule.annualPercent > 0) {
-    return { value: 0, valueLabel: `${Math.round(rule.annualPercent * 100)}% of pay` };
+    return {
+      value: 0,
+      valueLabel: `${Math.round(rule.annualPercent * 100)}% of pay`,
+      editableAmount: null,
+    };
   }
   const value = -rule.annualAmount;
-  return { value, valueLabel: moneyLabel(value) };
+  return { value, valueLabel: moneyLabel(value), editableAmount: rule.annualAmount };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -204,7 +248,7 @@ export function savingsToMapItem(
   ctx: ColumnContext,
 ): MapItem {
   const account = accountById.get(rule.accountId);
-  const { value, valueLabel } = resolveSavings(rule);
+  const { value, valueLabel, editableAmount } = resolveSavings(rule);
   return {
     id: rule.id,
     kind: "savings",
@@ -214,6 +258,8 @@ export function savingsToMapItem(
     valueLabel,
     ...assignColumn(account ?? { owners: [] }, ctx),
     noteChip: savingsNoteChip(rule),
+    timing: flowTiming(rule),
+    editableAmount,
   };
 }
 
@@ -240,5 +286,8 @@ export function expenseToMapItem(
     valueLabel: moneyLabel(value),
     ...flowAssignment(expense, "joint", accountById, ctx),
     noteChip: forName ? `for ${forName}` : null,
+    timing: flowTiming(expense),
+    // The UNSIGNED column value, not `value` above — see MapItem.editableAmount.
+    editableAmount: expense.annualAmount,
   };
 }
