@@ -27,6 +27,23 @@ describe("buildPlannerTools", () => {
     expect(out).not.toContain("page one");
   });
 
+  it("read_document returns the whole document when both bounds are omitted", async () => {
+    const { tools } = buildPlannerTools(CTX);
+    const read = tools.find((t) => t.name === "read_document")!;
+    const out = await read.invoke({});
+    expect(out).toBe(CTX.documentText);
+    expect(out).not.toContain("page one");
+    expect(out).not.toContain("page two");
+  });
+
+  it("read_document truncates output over 60,000 characters", async () => {
+    const longCtx = { ...CTX, documentText: "x".repeat(70_000) };
+    const { tools } = buildPlannerTools(longCtx);
+    const read = tools.find((t) => t.name === "read_document")!;
+    const out = await read.invoke({});
+    expect(out).toBe(`${"x".repeat(60_000)}... [truncated]`);
+  });
+
   it("list_extracted returns the requested entity as JSON", async () => {
     const { tools } = buildPlannerTools(CTX);
     const list = tools.find((t) => t.name === "list_extracted")!;
@@ -47,6 +64,15 @@ describe("buildPlannerTools", () => {
     const out = await propose.invoke({ decisions: { version: 99 } });
     expect(out).toContain("invalid");
     expect(getProposal()).toBeNull();
+  });
+
+  it("propose_decisions does not clobber an earlier valid proposal on later failure", async () => {
+    const { tools, getProposal } = buildPlannerTools(CTX);
+    const propose = tools.find((t) => t.name === "propose_decisions")!;
+    await propose.invoke({ decisions: MINIMAL });
+    expect(getProposal()).toMatchObject({ version: 1 });
+    await propose.invoke({ decisions: { version: 99 } });
+    expect(getProposal()).toMatchObject({ version: 1 });
   });
 
   it("estimate_ss_pia delegates to the injected estimator", async () => {
