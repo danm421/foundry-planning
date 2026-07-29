@@ -1,5 +1,7 @@
-import { sql, type SQL } from "drizzle-orm";
-import { crmHouseholds } from "@/db/schema";
+// Deliberately dependency-free: `clients-sort-header.tsx` and
+// `clients-load-more.tsx` are client components and import from this module,
+// so nothing here may pull in `@/db`. The ORDER BY expressions, which do need
+// the schema, live in the server-only sibling `sort-order.ts`.
 
 export type ClientSortKey = "name" | "status" | "primary" | "spouse" | "updated";
 export type SortDir = "asc" | "desc";
@@ -65,63 +67,4 @@ export function clampTake(raw: string | undefined): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return PAGE_SIZE;
   return Math.min(Math.max(Math.trunc(n), PAGE_SIZE), MAX_TAKE);
-}
-
-// ---------------------------------------------------------------------------
-// Ordering expressions
-//
-// Last name is not a column on crm_households — it lives on the primary
-// contact row. Drizzle's relational query API can't ORDER BY a joined child
-// table, so each of these is a correlated subquery. `${crmHouseholds.id}`
-// renders as `"crmHouseholds"."id"`, matching the alias Drizzle generates for
-// the base table.
-//
-// The primary subqueries are deterministic without an inner ORDER BY because
-// `crm_contacts_one_primary_per_household` is UNIQUE(household_id) WHERE
-// role = 'primary'. `crm_contacts_one_spouse_per_household` is the matching
-// UNIQUE(household_id) WHERE role = 'spouse', so the spouse subqueries are
-// deterministic on the same grounds.
-// ---------------------------------------------------------------------------
-
-const primaryLast = sql`(select c.last_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'primary' limit 1)`;
-const primaryFirst = sql`(select c.first_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'primary' limit 1)`;
-const spouseLast = sql`(select c.last_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' limit 1)`;
-const spouseFirst = sql`(select c.first_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' limit 1)`;
-
-/**
- * Nulls last in BOTH directions — a household with no primary contact should
- * never occupy the top of the list, whichever way the column is sorted.
- */
-function dirWithNullsLast(expr: SQL, dir: SortDir): SQL {
-  return dir === "asc" ? sql`${expr} asc nulls last` : sql`${expr} desc nulls last`;
-}
-
-/** Final tie-break. Required for offset stability under "Load more". */
-const idTieBreak = sql`${crmHouseholds.id} asc`;
-
-export function buildOrderBy(key: ClientSortKey, dir: SortDir): SQL[] {
-  const d = (expr: SQL) => dirWithNullsLast(expr, dir);
-  switch (key) {
-    // The Name column reads "John & Jane Cooper" but sorts on the LAST name.
-    case "name":
-      return [d(primaryLast), d(primaryFirst), idTieBreak];
-    // The Primary contact cell reads "John Cooper", so it sorts on FIRST name.
-    // Deliberately a different key from `name` — were both to sort on last
-    // name, one of the two headers would be decorative.
-    case "primary":
-      return [d(primaryFirst), d(primaryLast), idTieBreak];
-    case "spouse":
-      return [d(spouseFirst), d(spouseLast), idTieBreak];
-    // Postgres sorts enums by declaration order, and crmHouseholdStatusEnum is
-    // declared prospect → active → inactive → archived. That is lifecycle
-    // order, which beats alphabetical (active, archived, inactive, prospect).
-    case "status":
-      return [d(sql`${crmHouseholds.status}`), idTieBreak];
-    case "updated":
-      return [d(sql`${crmHouseholds.updatedAt}`), idTieBreak];
-  }
 }

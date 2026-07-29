@@ -4,11 +4,11 @@ import {
   resolveSort,
   clampTake,
   shouldShowLoadMore,
-  buildOrderBy,
   PAGE_SIZE,
   type ClientSortKey,
   type SortDir,
 } from "../sort";
+import { buildOrderBy } from "../sort-order";
 
 describe("resolveSort — per-view defaults", () => {
   it("defaults the All view to last-name ascending", () => {

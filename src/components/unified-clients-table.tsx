@@ -1,7 +1,7 @@
 "use client";
 
 import { ClientRowActions } from "./client-row-actions";
-import { ClientsSortHeader } from "./clients-sort-header";
+import { ClientsSortHeader, TH } from "./clients-sort-header";
 import { HouseholdStatusSelect, HOUSEHOLD_STATUS_LABELS } from "./household-status-select";
 import { HouseholdTrashActions } from "./household-trash-actions";
 import { daysUntilPurge } from "@/lib/crm/trash";
@@ -31,9 +31,6 @@ interface UnifiedClientsTableProps {
 
 // Widened so a row's plain-string status can index it (unknowns fall back below).
 const STATUS_LABELS: Record<string, string> = HOUSEHOLD_STATUS_LABELS;
-
-const TH =
-  "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
 
 function dash(value: string | null) {
   return value && value.trim() ? value : <span className="text-ink-3">—</span>;

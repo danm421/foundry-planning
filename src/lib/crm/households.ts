@@ -25,7 +25,8 @@ import { resolveContactDateOfBirth } from "./default-dob";
 import { deriveNameForHousehold } from "./sync-household-name";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
 import type { CreateCrmHouseholdInput } from "./schemas";
-import { buildOrderBy, type ClientSortKey, type SortDir } from "./sort";
+import type { ClientSortKey, SortDir } from "./sort";
+import { buildOrderBy } from "./sort-order";
 
 type CrmHouseholdStatus = "prospect" | "active" | "inactive" | "archived";
 

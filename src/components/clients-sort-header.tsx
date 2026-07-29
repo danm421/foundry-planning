@@ -3,7 +3,13 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DEFAULT_DIR, type ClientSortKey, type SortDir } from "@/lib/crm/sort";
 
-const TH = "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
+/**
+ * Header-cell styling for the clients table. Exported because
+ * `unified-clients-table.tsx` interleaves plain `<th>` cells with these sortable
+ * ones in the SAME header row — two copies would let the row drift out of
+ * alignment. Declared here rather than there to keep the import one-directional.
+ */
+export const TH = "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
 
 interface ClientsSortHeaderProps {
   sortKey: ClientSortKey;

@@ -149,8 +149,9 @@ export async function ClientsContent({
           limit: fetchLimit,
         });
 
+  // One extra row was fetched purely to detect a next page; never render it.
   const hasMore = households.length > take;
-  const visible = hasMore ? households.slice(0, take) : households;
+  const visible = households.slice(0, take);
 
   const rows: UnifiedClientRow[] = visible.map((h) => {
     const primary = h.contacts.find((c) => c.role === "primary");
