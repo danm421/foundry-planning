@@ -1,9 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { matchOwnersFromHint, type OwnerMatchFamilyMember } from "../owner-match";
+import {
+  matchOwnersFromHint,
+  resolveOwnersFromHint,
+  type OwnerMatchFamilyMember,
+} from "../owner-match";
 
 const fam: OwnerMatchFamilyMember[] = [
   { id: "c", role: "client", firstName: "John", lastName: "Smith" },
   { id: "s", role: "spouse", firstName: "Jane", lastName: "Smith" },
+];
+
+/** A household with no spouse on the roster. */
+const clientOnly: OwnerMatchFamilyMember[] = [
+  { id: "c", role: "client", firstName: "John", lastName: "Smith" },
 ];
 
 describe("matchOwnersFromHint", () => {
@@ -56,5 +65,70 @@ describe("matchOwnersFromHint", () => {
     expect(matchOwnersFromHint("John Smith disjoint note", undefined, fam)).toEqual([
       { kind: "family_member", familyMemberId: "c", percent: 1 },
     ]);
+  });
+});
+
+describe("resolveOwnersFromHint — source", () => {
+  it("reports 'hint' when the registration name resolves to a family member", () => {
+    expect(resolveOwnersFromHint("John A. Smith", undefined, fam).source).toBe("hint");
+  });
+
+  it("reports 'hint' when a joint cue fires with both spouses present", () => {
+    expect(resolveOwnersFromHint("Smith Family JTWROS", "joint", fam).source).toBe("hint");
+  });
+
+  it("reports 'coarse' for client/spouse/joint backed by a matching roster", () => {
+    expect(resolveOwnersFromHint(undefined, "client", fam).source).toBe("coarse");
+    expect(resolveOwnersFromHint(undefined, "spouse", fam).source).toBe("coarse");
+    expect(resolveOwnersFromHint(undefined, "joint", fam).source).toBe("coarse");
+  });
+
+  it("reports 'default' when there is no hint and no coarse enum", () => {
+    const res = resolveOwnersFromHint(undefined, undefined, fam);
+    // Owners are still the client — the commit step needs somebody to write.
+    expect(res.owners).toEqual([{ kind: "family_member", familyMemberId: "c", percent: 1 }]);
+    expect(res.source).toBe("default");
+  });
+
+  it("reports 'default' when the hint names nobody on the roster", () => {
+    const res = resolveOwnersFromHint("Smith Family Trust", undefined, fam);
+    expect(res.owners).toEqual([{ kind: "family_member", familyMemberId: "c", percent: 1 }]);
+    expect(res.source).toBe("default");
+  });
+
+  it("reports 'default' when coarse 'spouse' degrades to the client (no spouse)", () => {
+    const res = resolveOwnersFromHint(undefined, "spouse", clientOnly);
+    // The enum said spouse; there is no spouse, so this silently became the
+    // client. Owners are unchanged for the commit path, but it is NOT evidence.
+    expect(res.owners).toEqual([{ kind: "family_member", familyMemberId: "c", percent: 1 }]);
+    expect(res.source).toBe("default");
+  });
+
+  it("reports 'default' when coarse 'joint' degrades to the client (no spouse)", () => {
+    const res = resolveOwnersFromHint(undefined, "joint", clientOnly);
+    expect(res.owners).toEqual([{ kind: "family_member", familyMemberId: "c", percent: 1 }]);
+    expect(res.source).toBe("default");
+  });
+
+  it("reports 'default' with no owners when the roster is empty", () => {
+    expect(resolveOwnersFromHint("Nobody", undefined, [])).toEqual({
+      owners: [],
+      source: "default",
+    });
+  });
+
+  it("matchOwnersFromHint returns exactly resolveOwnersFromHint's owners", () => {
+    const cases: Array<[string | undefined, "client" | "spouse" | "joint" | undefined]> = [
+      ["John A. Smith", undefined],
+      ["Smith Family JTWROS", "joint"],
+      ["Acme Holdings Trust", "spouse"],
+      [undefined, "joint"],
+      [undefined, undefined],
+    ];
+    for (const [hint, coarse] of cases) {
+      expect(matchOwnersFromHint(hint, coarse, fam)).toEqual(
+        resolveOwnersFromHint(hint, coarse, fam).owners,
+      );
+    }
   });
 });

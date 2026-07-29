@@ -6,6 +6,7 @@ import { clientImports } from "@/db/schema";
 import type { ImportPayload } from "../types";
 import { requiredCommitTabs, presenceFromPayload } from "../required-tabs";
 import { commitAccounts } from "./accounts";
+import { noteAmbiguousSkips } from "./ambiguous-rows";
 import { commitClientsIdentity } from "./clients-identity";
 import { commitEntities } from "./entities";
 import { commitExpenses } from "./expenses";
@@ -106,7 +107,24 @@ export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult
   });
 }
 
+/**
+ * Runs one tab's commit module, then annotates the result with a single
+ * summary warning for any row that module skipped as ambiguous. Doing it here
+ * — rather than in each of the eight modules that skip `fuzzy` rows — keeps the
+ * reporting in one place and out of the write paths.
+ */
 async function dispatchTab(
+  tab: CommitTab,
+  tx: Tx,
+  payload: ImportPayload,
+  ctx: CommitContext,
+  family: FamilyRoleIds | null,
+): Promise<CommitResult> {
+  const result = await runTab(tab, tx, payload, ctx, family);
+  return noteAmbiguousSkips(tab, payload, result);
+}
+
+async function runTab(
   tab: CommitTab,
   tx: Tx,
   payload: ImportPayload,

@@ -2,6 +2,7 @@
 
 import type { ExtractedLifePolicy, LifePolicyType } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { CurrencyInput } from "@/components/currency-input";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
@@ -97,7 +98,7 @@ export default function ReviewStepInsurance({
                 <div className="mb-2">
                   <MatchColumn
                     match={match}
-                    candidates={candidates}
+                    candidates={candidatesForRow(i, matches ?? [], candidates)}
                     entityKind="lifePolicy"
                     onChange={(next) => onMatchChange?.(i, next)}
                   />
