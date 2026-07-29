@@ -62,6 +62,13 @@ export async function getPortfolioNames(
 ): Promise<Map<string, string>> {
   const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (wanted.length === 0) return new Map();
+  // The firmId predicate is the ONLY control against a cross-firm name
+  // surfacing on the card -- there is no second layer behind it. A miss here
+  // is what makes describeBucketSource fall back to "Unknown portfolio"; if a
+  // foreign id reached this query, the lookup would HIT and disclose that
+  // firm's portfolio name verbatim. Do not drop this as "redundant because the
+  // ids came from our own row" -- they don't: plan_settings.model_portfolio_id_*
+  // is written unvalidated by the plan-settings route (no firm check there).
   const rows = await db
     .select({ id: modelPortfolios.id, name: modelPortfolios.name })
     .from(modelPortfolios)
