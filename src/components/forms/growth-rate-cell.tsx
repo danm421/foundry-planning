@@ -10,6 +10,7 @@
 // stale rate.
 import { useState } from "react";
 import { InlineAmount } from "@/components/forms/inline-amount";
+import { InlineSelect } from "@/components/forms/inline-select";
 import {
   formatGrowthPct,
   growthEditModeFor,
@@ -51,7 +52,6 @@ export default function GrowthRateCell({
   canEdit,
   onSave,
 }: GrowthRateCellProps) {
-  const [picking, setPicking] = useState(false);
   const [customArmed, setCustomArmed] = useState(false);
 
   const mode = growthEditModeFor(row.category);
@@ -80,83 +80,56 @@ export default function GrowthRateCell({
     );
   }
 
-  if (picking) {
-    // From `categoryDefaultRates` (decimal strings, all ten categories) — NOT
-    // `growthContext.categoryDefaults`, which is a differently-shaped map
-    // covering only taxable/cash/retirement. See category-default-rates.ts.
-    const rawDefault = categoryDefaultRates[row.category];
-    const defaultPct =
-      rawDefault != null && Number.isFinite(Number(rawDefault))
-        ? Math.round(Number(rawDefault) * 10000) / 100
-        : null;
-    return (
-      <select
-        autoFocus
-        aria-label={`Growth rate for ${row.name}`}
-        value={growthSelectValue(row)}
-        onBlur={() => setPicking(false)}
-        onChange={(e) => {
-          const raw = e.target.value;
-          setPicking(false);
-          if (raw === "custom") {
-            setCustomArmed(true);
-            return;
-          }
-          void onSave(patchFromGrowthSelection(raw));
-        }}
-        // Both, for the same reason as `InlineAmount`: the card is wrapped in a
-        // `<Link>`, and `stopPropagation` does not cancel an anchor's default
-        // navigation.
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        className="rounded-sm border border-hair-2 bg-card-2 px-1 py-0.5 text-[11px] text-ink"
-      >
-        {growthOptionsFor({
-          category: row.category,
-          modelPortfolios: growthContext.modelPortfolios,
-          fundPortfolios: growthContext.fundPortfolios,
-          resolvedInflationRate,
-          defaultPctForCategory: defaultPct,
-          // The form computes these from the account's holdings and asset
-          // allocations, which the Map does not load (and must not fetch — see
-          // the zero-client-fetch invariant in types.ts).
-          //
-          // So the Map offers "Asset mix" ONLY to an account already using it.
-          // That keeps a mix-driven account displaying and round-tripping
-          // correctly, while refusing to let the advisor newly select a mix we
-          // can't confirm has holdings behind it — which would resolve through
-          // `resolver.resolveAccountMix` to an empty blend and silently zero the
-          // account's growth. Selecting a mix for the first time stays in the
-          // full dialog, one click away via the pencil.
-          //
-          // `assetMixBlendedPct: null` renders the option as a bare
-          // "Asset mix (custom)" with no percentage, which is honest: we don't
-          // have the blend here.
-          assetMixBlendedPct: null,
-          hideAssetMix: row.growthSource !== "asset_mix",
-        }).map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
+  // From `categoryDefaultRates` (decimal strings, all ten categories) — NOT
+  // `growthContext.categoryDefaults`, which is a differently-shaped map
+  // covering only taxable/cash/retirement. See category-default-rates.ts.
+  const rawDefault = categoryDefaultRates[row.category];
+  const defaultPct =
+    rawDefault != null && Number.isFinite(Number(rawDefault))
+      ? Math.round(Number(rawDefault) * 10000) / 100
+      : null;
 
   return (
-    <button
-      type="button"
-      aria-label={`Change growth rate for ${row.name}`}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setPicking(true);
+    <InlineSelect
+      display={label}
+      value={growthSelectValue(row)}
+      label={`growth rate for ${row.name}`}
+      canEdit
+      onSelect={(raw) => {
+        // "custom" ARMS the percent editor rather than saving: a <select>
+        // cannot host a number input, and every other option resolves to a
+        // rate on its own. The write lands when the rate is committed, so the
+        // engine never sees "custom" with a stale rate.
+        if (raw === "custom") {
+          setCustomArmed(true);
+          return;
+        }
+        void onSave(patchFromGrowthSelection(raw));
       }}
-      className="rounded-sm px-1 py-0.5 tabular text-[11px] text-ink-3 hover:bg-card-hover hover:text-ink-2"
-    >
-      {label}
-    </button>
+      options={growthOptionsFor({
+        category: row.category,
+        modelPortfolios: growthContext.modelPortfolios,
+        fundPortfolios: growthContext.fundPortfolios,
+        resolvedInflationRate,
+        defaultPctForCategory: defaultPct,
+        // The form computes these from the account's holdings and asset
+        // allocations, which the Map does not load (and must not fetch — see
+        // the zero-client-fetch invariant in types.ts).
+        //
+        // So the Map offers "Asset mix" ONLY to an account already using it.
+        // That keeps a mix-driven account displaying and round-tripping
+        // correctly, while refusing to let the advisor newly select a mix we
+        // can't confirm has holdings behind it — which would resolve through
+        // `resolver.resolveAccountMix` to an empty blend and silently zero the
+        // account's growth. Selecting a mix for the first time stays in the
+        // full dialog, one click away via the pencil.
+        //
+        // `assetMixBlendedPct: null` renders the option as a bare
+        // "Asset mix (custom)" with no percentage, which is honest: we don't
+        // have the blend here.
+        assetMixBlendedPct: null,
+        hideAssetMix: row.growthSource !== "asset_mix",
+      })}
+    />
   );
 }
