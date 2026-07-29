@@ -2,6 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { emptyImportPayload } from "../../types";
 import { runPlanner } from "../run-planner";
 
+// Every test below passes an explicit `model`, so `chatModel` is never
+// reached except by the "unconfigured environment" test. Mocking it here
+// (rather than relying on the ambient .env.local, which may or may not have
+// Azure vars set in this worktree) is the honest, deterministic seam for
+// that one scenario.
+vi.mock("@/domain/forge/llm", () => ({
+  chatModel: () => {
+    throw new Error("ai_not_configured");
+  },
+}));
+
 const MINIMAL = { version: 1, assumptions: {}, savings: [], socialSecurity: [], goals: [], incomeTiming: [], questions: [], notes: [] };
 
 /** A model double that emits a scripted sequence of tool calls. */
@@ -67,7 +78,7 @@ describe("runPlanner", () => {
   it("returns null when it exceeds its timeout", async () => {
     const model = {
       bindTools: () => model,
-      invoke: () => new Promise((r) => setTimeout(r, 200)),
+      invoke: () => new Promise(() => {}),
     } as never;
     await expect(runPlanner({ ...BASE, model, timeoutMs: 20 })).resolves.toBeNull();
   });
@@ -78,5 +89,9 @@ describe("runPlanner", () => {
       { tool_calls: [{ name: "propose_decisions", args: { decisions: MINIMAL }, id: "c2" }] },
     ]);
     await expect(runPlanner({ ...BASE, model })).resolves.toMatchObject({ version: 1 });
+  });
+
+  it("returns null when the environment is unconfigured", async () => {
+    await expect(runPlanner({ ...BASE })).resolves.toBeNull();
   });
 });
