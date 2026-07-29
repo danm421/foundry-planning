@@ -7,10 +7,12 @@ import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
 import { band, type BindingConstraint } from "@/lib/risk/scoring";
 import { resolveScenarioId } from "@/lib/compute-cache/resolve-scenario-id";
-import { resolveRiskPortfolioId } from "@/lib/cma/resolve-risk-portfolio";
+import { resolveRiskPortfolioId, getPortfolioNames } from "@/lib/cma/resolve-risk-portfolio";
 import {
+  describeBucketSource,
   describeMismatch,
   effectiveScenarioPortfolioId,
+  type BucketReadout,
   type MismatchState,
 } from "@/lib/risk/portfolio-mismatch";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
@@ -93,14 +95,48 @@ export async function RiskDetailContent({
           growthSourceRetirement: planSettings.growthSourceRetirement,
           modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
           modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
+          defaultGrowthTaxable: planSettings.defaultGrowthTaxable,
+          defaultGrowthRetirement: planSettings.defaultGrowthRetirement,
         })
         .from(planSettings)
         .where(eq(planSettings.scenarioId, baseScenarioId));
       const profilePortfolioId = await resolveRiskPortfolioId(firmId, row.compositeLevel);
+      const names = await getPortfolioNames(firmId, [
+        settings?.modelPortfolioIdTaxable,
+        settings?.modelPortfolioIdRetirement,
+        profilePortfolioId,
+      ]);
+      // No plan settings row -> no buckets to describe. The card still renders
+      // its headline; describeMismatch treats a null scenario portfolio as a
+      // mismatch, which is the intended reading.
+      const buckets: BucketReadout[] = settings
+        ? [
+            {
+              label: "Taxable",
+              value: describeBucketSource({
+                source: settings.growthSourceTaxable,
+                portfolioId: settings.modelPortfolioIdTaxable,
+                customRate: settings.defaultGrowthTaxable,
+                portfolioNames: names,
+              }),
+            },
+            {
+              label: "Retirement",
+              value: describeBucketSource({
+                source: settings.growthSourceRetirement,
+                portfolioId: settings.modelPortfolioIdRetirement,
+                customRate: settings.defaultGrowthRetirement,
+                portfolioNames: names,
+              }),
+            },
+          ]
+        : [];
       mismatch = describeMismatch({
         compositeLevel: row.compositeLevel,
         profilePortfolioId,
+        profilePortfolioName: profilePortfolioId ? (names.get(profilePortfolioId) ?? null) : null,
         scenarioPortfolioId: effectiveScenarioPortfolioId(settings ?? null),
+        buckets,
       });
     } catch {
       mismatch = { kind: "no_profile" };

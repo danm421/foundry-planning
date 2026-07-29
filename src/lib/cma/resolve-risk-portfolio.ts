@@ -1,5 +1,5 @@
 // src/lib/cma/resolve-risk-portfolio.ts
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { db } from "@/db";
 import { modelPortfolios, planSettings } from "@/db/schema";
@@ -49,4 +49,22 @@ export async function applyRiskPortfolioToScenario(
       updatedAt: new Date(),
     })
     .where(eq(planSettings.scenarioId, scenarioId));
+}
+
+/**
+ * Names for a handful of model portfolio ids, firm-scoped. Nulls and dupes in
+ * `ids` are tolerated -- callers pass raw nullable columns. Returns an empty
+ * map when nothing is resolvable, so callers never branch on null.
+ */
+export async function getPortfolioNames(
+  firmId: string,
+  ids: (string | null | undefined)[],
+): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (wanted.length === 0) return new Map();
+  const rows = await db
+    .select({ id: modelPortfolios.id, name: modelPortfolios.name })
+    .from(modelPortfolios)
+    .where(and(eq(modelPortfolios.firmId, firmId), inArray(modelPortfolios.id, wanted)));
+  return new Map(rows.map((r) => [r.id, r.name]));
 }
