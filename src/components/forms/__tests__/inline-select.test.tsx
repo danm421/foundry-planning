@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { InlineSelect } from "../inline-select";
 
@@ -93,5 +93,47 @@ describe("InlineSelect", () => {
     await user.click(screen.getByRole("button", { name: "elsewhere" }));
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  // Supplementary coverage (review finding on Task 4): the brief's 7 tests
+  // above never discriminate `preventDefault`, and never click the open
+  // <select> at all — see task-4-report.md for the mutation evidence that
+  // motivated these. `fireEvent.click()` returns the result of
+  // `dispatchEvent`, which is `false` when a handler called
+  // `preventDefault()` on the (cancelable) click event — that's the
+  // discriminator used below, since jsdom has no real navigation to observe.
+
+  it("prevents default on the trigger button click", () => {
+    render(
+      <InlineSelect display="Cooper" value="client" options={OPTIONS}
+        onSelect={vi.fn()} label="owner for Schwab" canEdit />,
+    );
+    const trigger = screen.getByRole("button", { name: "Change owner for Schwab" });
+    expect(fireEvent.click(trigger)).toBe(false);
+  });
+
+  it("prevents default on the open select's click", async () => {
+    const user = userEvent.setup();
+    render(
+      <InlineSelect display="Cooper" value="client" options={OPTIONS}
+        onSelect={vi.fn()} label="owner for Schwab" canEdit />,
+    );
+    await user.click(screen.getByRole("button"));
+    const combobox = screen.getByRole("combobox");
+    expect(fireEvent.click(combobox)).toBe(false);
+  });
+
+  it("stops propagation on the open select's click so an enclosing Link does not navigate", async () => {
+    const user = userEvent.setup();
+    const ancestorClick = vi.fn();
+    render(
+      <div onClick={ancestorClick}>
+        <InlineSelect display="Cooper" value="client" options={OPTIONS}
+          onSelect={vi.fn()} label="owner for Schwab" canEdit />
+      </div>,
+    );
+    await user.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(ancestorClick).not.toHaveBeenCalled();
   });
 });
