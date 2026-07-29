@@ -138,6 +138,8 @@ describe("matchAccount", () => {
   });
 
   it("returns exact when last4 is unique and neither side names a custodian", () => {
+    // Both sides are `retirement`, which is what corroborates the bare last4
+    // here — see the two tests below. A unique last4 on its own does not.
     const result = matchAccount(
       { name: "Rollover IRA", category: "retirement", accountNumberLast4: "4321" },
       [
@@ -152,6 +154,59 @@ describe("matchAccount", () => {
       ],
     );
     expect(result).toEqual({ kind: "exact", existingId: "acct-solo" });
+  });
+
+  it("does NOT return exact on a bare last4 when neither category nor name corroborates", () => {
+    // Rung 2 asks only that no KNOWN custodian contradicts, so an existing row
+    // with a NULL custodian contradicts nothing and four digits decide alone.
+    // Four digits collide often, and an `exact` here does not merely mis-link:
+    // commit rewrites category, flipping a taxable checking account into a
+    // pre-tax retirement account and with it the withdrawal waterfall, RMD
+    // eligibility and every tax year of the projection.
+    const result = matchAccount(
+      {
+        name: "Fidelity Rollover IRA",
+        category: "retirement",
+        accountNumberLast4: "4821",
+        custodian: "Fidelity",
+        value: 450_000,
+      },
+      [
+        {
+          id: "chase",
+          name: "Chase Checking",
+          category: "cash",
+          accountNumberLast4: "4821",
+          custodian: null,
+          value: 20_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "new" });
+  });
+
+  it("still returns exact on a bare last4 when the name corroborates across a category mismatch", () => {
+    // The other half of the guard's `||`. Category is a scoring input rather
+    // than an exclusion precisely because the extractor misclassifies it, so
+    // name agreement has to be able to carry the corroboration by itself.
+    const result = matchAccount(
+      {
+        name: "Fidelity Rollover IRA",
+        category: "retirement",
+        accountNumberLast4: "4821",
+      },
+      [
+        {
+          id: "misfiled",
+          name: "Fidelity Rollover IRA",
+          category: "taxable",
+          accountNumberLast4: "4821",
+          custodian: null,
+          value: 450_000,
+        },
+      ],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "misfiled" });
   });
 
   it("does NOT return exact when last4 is shared by two candidates and custodian cannot disambiguate", () => {
@@ -299,6 +354,14 @@ describe("matchAccount", () => {
     // the floor even with zero name overlap and a maximally wrong value. Any
     // future re-weighting will flip this test, which is the point — a
     // recalibration should be a deliberate decision, not a silent drift.
+    //
+    // Reachability, since the arithmetic alone reads alarming: this calls
+    // `matchAccount` directly, so it can hand over owner ids the production
+    // caller would withhold. `resolveOwnerIds` forwards ids only for a `"hint"`
+    // resolution, so reaching this regime for real takes a registration line
+    // that names the candidate's actual owner — evidence, not the model's
+    // inferred `owner` enum. That is the trade: 0.45-on-owner-and-category-alone
+    // is defensible on evidence and was not on a guess.
     const result = matchAccount(
       // No shared token with "Schwab Brokerage", so nameSimilarity === 0.
       // value 0 against a 100k candidate makes valueProximity === 0.

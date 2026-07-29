@@ -75,16 +75,33 @@ export function emptyCandidates(): MatchCandidates {
  * reusing the same registration-hint parser the commit step uses so the two
  * agree on who owns what.
  *
- * Only evidence-derived ownership is forwarded. The parser ends in a "somebody
- * has to own it, so use the client" default — correct when writing an account,
- * wrong as matching evidence: a fabricated client id replaces
- * `ownerAgreement`'s neutral 0.5 with 0.0 against every spouse-owned
- * candidate, which can push a genuine renamed-account match under SCORE_FLOOR
- * and drop it from the picker entirely. So a `"default"` resolution yields no
- * ids and scores neutral — an account with no registration hint, one
- * registered to a trust or any other name the roster does not contain, or one
- * whose `owner: "spouse"` names a spouse this household does not have, costs
- * nothing rather than counting against the right candidate.
+ * ONLY a `"hint"` resolution is forwarded — one where the statement's verbatim
+ * registration line actually named somebody on the roster. The other two
+ * sources are guesses, and a guess is worse than silence here because
+ * `ownerAgreement` has no "maybe": it scores 1.0 or 0.0, never the neutral 0.5
+ * it reserves for genuinely unknown ownership.
+ *
+ * - `"default"` is the parser's trailing "somebody has to own it, so use the
+ *   client" fallback. Correct when WRITING an account, a fabrication when
+ *   matching one: it zeroes the owner term against every spouse-owned
+ *   candidate, pushing a genuine renamed-account match under SCORE_FLOOR and
+ *   out of the picker entirely.
+ * - `"coarse"` is the model's inferred client/spouse/joint enum.
+ *   `prompts/account-statement.ts` tells the extractor to fill it by inferring
+ *   "from account title or registration", so it is present on essentially every
+ *   row and asserted with the same confidence whether the registration was
+ *   unambiguous or absent. Scoring it as evidence was the more damaging half:
+ *   W_OWNER (0.25) + W_CATEGORY (0.20) is exactly SCORE_FLOOR (0.45) under a
+ *   `>=` test, so a correctly-guessed owner plus an agreeing category cleared
+ *   the floor with ZERO name overlap — making name, the point of this ladder,
+ *   decorative on the dominant production path.
+ *
+ * The cost is real and accepted: an account registered to a trust, or to anyone
+ * else off the roster, no longer earns owner credit from the coarse enum, so a
+ * renamed one can fall under the floor and be offered as `new`. That was the
+ * behaviour before this branch too, so it forgoes a gain rather than causing a
+ * regression — and the wrongly-surfaced direction is the more expensive error,
+ * since a `fuzzy` row is skipped at commit while a bad merge overwrites.
  */
 function resolveOwnerIds(
   row: { ownerNameHint?: string; owner?: "client" | "spouse" | "joint" },
@@ -92,7 +109,7 @@ function resolveOwnerIds(
 ): string[] {
   if (family.length === 0) return [];
   const { owners, source } = resolveOwnersFromHint(row.ownerNameHint, row.owner, family);
-  if (source === "default") return [];
+  if (source !== "hint") return [];
   // Narrowing only — this parser never emits entity or external-beneficiary
   // owners, but AccountOwner is a union and the ids have to be extracted.
   return owners.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : []));

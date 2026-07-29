@@ -21,8 +21,11 @@ export interface OwnerMatchFamilyMember {
  *   the roster has no spouse — that degradation is a fabrication too.
  *
  * Callers that *write* ownership want the owners regardless of source. Callers
- * that treat ownership as *evidence* (the import matching pass) must ignore
- * `"default"`, or they turn "we don't know" into a confident wrong answer.
+ * that treat ownership as *evidence* — the import matching pass — take `"hint"`
+ * only. `"default"` is a fabrication, and `"coarse"` is a model guess the
+ * extraction prompt asks for on every row, so neither can be told apart from a
+ * confident right answer by a scorer that only knows "agrees" and "disagrees".
+ * See `resolveOwnerIds` in `match.ts` for what that costs and why it is worth it.
  */
 export type OwnerResolutionSource = "hint" | "coarse" | "default";
 

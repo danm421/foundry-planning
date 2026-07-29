@@ -160,16 +160,37 @@ export function matchAccount(
       }
     }
 
-    // Rung 2: the last4 is unique among candidates and no KNOWN custodian
-    // contradicts it. A Fidelity statement must never auto-merge into a Schwab
-    // account just because both end in 1234.
+    // Rung 2: the last4 is unique among candidates, no KNOWN custodian
+    // contradicts it, and something other than the digits corroborates. A
+    // Fidelity statement must never auto-merge into a Schwab account just
+    // because both end in 1234.
+    //
+    // The corroboration requirement is what makes "no custodian contradicts"
+    // safe to rely on. When either side's custodian is null nothing contradicts
+    // *by construction*, so without it four digits decide alone — and `exact`
+    // rewrites category at commit, which turns a coincidence into a taxable
+    // account reclassified as pre-tax, moving the withdrawal waterfall, RMD
+    // eligibility and every tax year of the projection. Either signal suffices:
+    // category is a scoring input rather than an exclusion precisely because the
+    // extractor misclassifies it, so name has to be able to carry it alone.
+    //
+    // It also contains an order-dependence. `sameLast4` is computed over the
+    // candidate pool the CALLER passes, which `claimOnce` shrinks as earlier
+    // rows claim records, so filtering can make a last4 unique that was not
+    // unique in the full set. `claimOnce`'s duplicate probe only re-checks rows
+    // that came back `new`, so an `exact` manufactured that way would be trusted
+    // unconditionally; requiring corroboration keeps a pure filtering artifact
+    // from reaching that state.
     if (sameLast4.length === 1) {
       const existingCustodian = normalizeCustodian(sameLast4[0].custodian);
       const contradicts =
         incomingCustodian !== null &&
         existingCustodian !== null &&
         !custodianMatches(incomingCustodian, existingCustodian);
-      if (!contradicts) {
+      const corroborates =
+        sameLast4[0].category === incoming.category ||
+        nameSimilarity(sameLast4[0].name, incoming.name) > 0;
+      if (!contradicts && corroborates) {
         return { kind: "exact", existingId: sameLast4[0].id };
       }
     }

@@ -371,6 +371,72 @@ describe("annotatePayload", () => {
     expect(scores.get("hers")).toBe(scores.get("his"));
   });
 
+  // The coarse enum is a model GUESS, not evidence: account-statement.ts:34,82
+  // instructs the extractor to "infer from account title or registration" and to
+  // fill it even when the registration line is already captured. So in
+  // production ownership is almost never neutral, and scoring the guess at the
+  // full 0.25 made W_OWNER + W_CATEGORY (0.45) exactly equal SCORE_FLOOR under a
+  // `>=` test. Neutral is the honest reading: the document did not say who owns
+  // this, the model did.
+  it("scores an inferred coarse owner enum neutrally rather than as evidence", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [
+          annotated({
+            name: "Fidelity IRA",
+            category: "retirement",
+            value: 100_000,
+            owner: "spouse" as const,
+          }),
+        ],
+      }),
+      { ...emptyCandidates(), family: SPOUSES, accounts: HIS_AND_HERS },
+    );
+
+    const scores = fuzzyScores(result.accounts[0].match);
+    expect([...scores.keys()].sort()).toEqual(["hers", "his"]);
+    // Distinguishes "neutral" from "reduced weight" — halving W_OWNER for the
+    // coarse source would still separate these two by the owner term.
+    expect(scores.get("hers")).toBe(scores.get("his"));
+  });
+
+  // The consequence the neutrality above buys, stated as the user-visible
+  // outcome. With the coarse enum scoring as evidence this row surfaced at
+  // 0.5433 on category + owner alone, with ZERO shared name tokens — which makes
+  // name, the whole point of this matching ladder, decorative. Pre-branch it
+  // returned `new`, and it should still.
+  it("leaves a disjoint-name account new when only the coarse owner enum and category agree", () => {
+    const result = annotatePayload(
+      payloadFixture({
+        accounts: [
+          annotated({
+            name: "Chase Checking",
+            category: "cash",
+            value: 15_000,
+            owner: "client" as const,
+          }),
+        ],
+      }),
+      {
+        ...emptyCandidates(),
+        family: SPOUSES,
+        accounts: [
+          {
+            id: "wells",
+            name: "Wells Fargo Savings",
+            category: "cash",
+            accountNumberLast4: null,
+            custodian: "Wells Fargo",
+            value: 14_000,
+            ownerIds: ["fm-john"],
+          },
+        ],
+      },
+    );
+
+    expect(result.accounts[0].match).toEqual({ kind: "new" });
+  });
+
   // The user-visible harm, not just the mechanism: SCORE_FLOOR is documented as
   // calibrated to keep renamed accounts in the picker. Neutral ownership puts
   // this candidate at 0.45*(2/3) + 0.25*0.5 + 0 + 0.1*0.769 = 0.502, just over
