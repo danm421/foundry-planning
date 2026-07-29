@@ -45,6 +45,8 @@ const W_VALUE = 0.1;
 const SCORE_FLOOR = 0.45;
 const MAX_CANDIDATES = 5;
 
+// Keeps digits deliberately — "401k"/"529" are meaningful in account names.
+// Contrast `owner-match.ts`'s `tokenize`, which drops them for person names.
 function tokens(s: string): string[] {
   return s
     .toLowerCase()
@@ -72,7 +74,7 @@ const TYPO_MATCH_CREDIT = 0.8;
  * would tie "Schwab Brokerage" with "Schwab Brokrage" and let input order
  * decide which the advisor sees first.
  */
-export function nameSimilarity(a: string, b: string): number {
+function nameSimilarity(a: string, b: string): number {
   const ta = tokens(a);
   const tb = tokens(b);
   if (ta.length === 0 || tb.length === 0) return 0;

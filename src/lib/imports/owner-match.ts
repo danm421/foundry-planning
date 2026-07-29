@@ -36,6 +36,8 @@ export interface OwnerResolution {
 // distinctive enough to match as substrings.
 const JOINT_CUES = ["jtwros", " joint ", " jt ", "ten com", " tenants ", " & ", " and "];
 
+// Drops digits deliberately — this tokenizes person-name hints, where digits
+// are noise. Contrast `match-keys/account.ts`'s `tokens`, which keeps them.
 function tokenize(s: string): string[] {
   return s
     .toLowerCase()

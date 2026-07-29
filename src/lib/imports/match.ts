@@ -98,9 +98,6 @@ function resolveOwnerIds(
   return owners.flatMap((o) => (o.kind === "family_member" ? [o.familyMemberId] : []));
 }
 
-/** Passed to `annotate` for the unclaimed-world probe below; never mutated. */
-const NOTHING_CLAIMED: ReadonlySet<string> = new Set<string>();
-
 /**
  * Annotate `rows` such that no existing record is claimed twice.
  *
@@ -129,27 +126,22 @@ const NOTHING_CLAIMED: ReadonlySet<string> = new Set<string>();
  * list because `annotateExpenses` reads the set directly (its slot pool is not
  * in `candidates` at all in onboarding mode) — filtering alone would return the
  * post-claim answer and the expenses half would never degrade.
- *
- * `claimed` is injectable because expenses draw on two candidate pools that
- * share one id space (see `annotateExpenses`); every claim against either pool
- * has to be visible to the other. Callers with a single pool omit it.
  */
 function claimOnce<T, C extends { id: string }>(
   rows: T[],
   candidates: C[],
   annotate: (row: T, available: C[], claimed: ReadonlySet<string>) => MatchAnnotation,
-  claimed: Set<string> = new Set(),
 ): Array<T & { match: MatchAnnotation }> {
+  const claimed = new Set<string>();
   return rows.map((row) => {
-    const available =
-      claimed.size === 0 ? candidates : candidates.filter((c) => !claimed.has(c.id));
+    const available = candidates.filter((c) => !claimed.has(c.id));
     const match = annotate(row, available, claimed);
     if (match.kind === "exact") {
       claimed.add(match.existingId);
       return { ...row, match };
     }
     if (match.kind === "new" && claimed.size > 0) {
-      const unclaimed = annotate(row, candidates, NOTHING_CLAIMED);
+      const unclaimed = annotate(row, candidates, new Set<string>());
       if (unclaimed.kind === "exact" && claimed.has(unclaimed.existingId)) {
         // Empty `candidates` deliberately: the picker builds its option list
         // from the component's own `candidates` prop via `candidatesForRow`,
@@ -233,7 +225,6 @@ function annotateExpenses(
       }
       return matchExpense(row, available);
     },
-    new Set<string>(),
   );
 }
 

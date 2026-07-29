@@ -6,9 +6,9 @@ import type { MatchAnnotation } from "./types";
  * list. The row's own current pick is always retained, so re-opening the picker
  * on a matched row still shows what it is matched to.
  *
- * Generic over the candidate shape so every review step can use it — the
- * accounts/insurance/wills/family pickers pass `MatchCandidate` (with subtitle
- * and score), the expenses picker passes a bare `{id, name}`.
+ * Generic over the candidate shape so every review step can use it — all five
+ * call sites (accounts, insurance, wills, family, expenses) pass
+ * `MatchCandidate[]` (with subtitle and score).
  */
 export function candidatesForRow<C extends { id: string }>(
   rowIndex: number,
@@ -19,6 +19,5 @@ export function candidatesForRow<C extends { id: string }>(
   matches.forEach((m, i) => {
     if (i !== rowIndex && m?.kind === "exact") claimed.add(m.existingId);
   });
-  if (claimed.size === 0) return candidates;
   return candidates.filter((c) => !claimed.has(c.id));
 }

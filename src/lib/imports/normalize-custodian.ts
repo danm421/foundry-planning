@@ -35,9 +35,7 @@ export function normalizeCustodian(raw: string | null | undefined): string | nul
 
   let s = raw
     .toLowerCase()
-    .replace(/&/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
     .trim();
 
   // Strip repeatedly: "Fidelity Brokerage Services LLC Inc." -> "fidelity brokerage services"
