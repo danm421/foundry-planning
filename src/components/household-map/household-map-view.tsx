@@ -371,6 +371,26 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
     setAddAccountOpen(true);
   }
 
+  /**
+   * The Goals board's "Add goal". Opens the SAME create-mode drawer
+   * `handleAddFlow("expense", …)` opens, with one addition: `presetIsGoal`, which
+   * ticks "Show as a goal" so the saved expense lands back on this board.
+   *
+   * `presetColumn: "joint"` because a goal has no owner column to be clicked in
+   * — and it is inert here regardless: the drawer only reads `presetColumn` for
+   * an income's owner selector, and expenses have none.
+   */
+  function handleAddGoal() {
+    if (!canEdit) return;
+    setDrawerTarget({
+      kind: "expense",
+      id: null,
+      row: null,
+      presetColumn: "joint",
+      presetIsGoal: true,
+    });
+  }
+
   return (
     <div className="rounded-xl border border-hair bg-card p-5">
       <div className="mb-5 flex items-center justify-between">
@@ -415,6 +435,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           {...props}
           onEditGoalExpense={handleEditGoalExpense}
           onSaveLifeExpectancy={handleSaveLifeExpectancy}
+          onAddGoal={handleAddGoal}
         />
       )}
       {board === "cash-flow" && (

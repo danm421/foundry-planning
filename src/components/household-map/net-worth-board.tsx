@@ -6,7 +6,7 @@ import GrowthRateCell from "./growth-rate-cell";
 // The app has no lucide dependency — icons are hand-rolled SVGs in
 // `components/icons.tsx`, which is where the rest of this board's glyphs come
 // from. The plan called for lucide's Pencil; this is the same glyph.
-import { PencilIcon } from "@/components/icons";
+import { PencilIcon, PlusIcon } from "@/components/icons";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import PersonNode from "./person-node";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -208,16 +208,24 @@ export default function NetWorthBoard({
               <div className="mb-0.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                 {labelFor(col)}
               </div>
-              {cards.map(renderCard)}
+              {/* ABOVE the cards, not below them. At the bottom of a long column
+                  the add affordance scrolled out of sight on any household with
+                  more than a handful of accounts — it was findable only by
+                  reading to the end of the list. It is also a solid-bordered
+                  accent button rather than a dashed ink-3 placeholder: this is an
+                  action, which is the one thing the brand reserves the accent
+                  for. */}
               {canEdit && (
                 <button
                   type="button"
                   onClick={() => onAddAccount?.()}
-                  className="rounded-md border border-dashed border-hair px-2 py-1 text-center text-[10px] text-ink-3 hover:text-ink-2"
+                  className="mb-0.5 flex items-center justify-center gap-1 rounded-md border border-hair-2 bg-card-2 px-2 py-1.5 text-[11px] font-medium text-accent transition-colors hover:border-accent hover:bg-accent-wash"
                 >
-                  + Add
+                  <PlusIcon width={11} height={11} strokeWidth={2} />
+                  Add account
                 </button>
               )}
+              {cards.map(renderCard)}
               <div className="mt-0.5 border-t border-hair pt-1.5 text-right text-[10px] text-ink-3">
                 {labelFor(col)} · <b className="text-ink">{moneyLabel(subtotal)}</b>
               </div>

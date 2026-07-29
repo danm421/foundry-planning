@@ -243,3 +243,62 @@ describe("QuickEditDrawer — delete confirmation", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 });
+
+describe("QuickEditDrawer — create mode seeded as a goal", () => {
+  function renderNewGoal(presetIsGoal: boolean) {
+    return render(
+      <QuickEditDrawer
+        clientId="client-1"
+        target={{
+          kind: "expense",
+          id: null,
+          row: null,
+          presetColumn: "joint",
+          presetIsGoal,
+        }}
+        clientFirstName="Alex"
+        spouseFirstName="Jordan"
+        milestones={milestones}
+        resolvedInflationRate={0.03}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it("pre-ticks 'Show as a goal'", () => {
+    renderNewGoal(true);
+    expect(screen.getByRole("checkbox")).toBeChecked();
+  });
+
+  // The control against the above: without the preset the same create-mode
+  // drawer must still open unticked, or the assertion above is passing on a
+  // default rather than on the preset.
+  it("leaves it unticked without the preset", () => {
+    renderNewGoal(false);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+  });
+
+  it("titles itself 'Add Goal' so the click that opened it is legible", () => {
+    renderNewGoal(true);
+    expect(screen.getByRole("dialog", { name: "Add Goal" })).toBeInTheDocument();
+  });
+
+  it("still titles itself 'Add Expense' without the preset", () => {
+    renderNewGoal(false);
+    expect(screen.getByRole("dialog", { name: "Add Expense" })).toBeInTheDocument();
+  });
+
+  it("sends isGoal on the create so the row lands back on the Goals board", async () => {
+    const calls = captureFetch();
+    renderNewGoal(true);
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New roof" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.url.endsWith("/expenses") && c.init?.method === "POST");
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post!.init!.body)).isGoal).toBe(true);
+    });
+  });
+});

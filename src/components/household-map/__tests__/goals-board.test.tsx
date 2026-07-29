@@ -441,3 +441,54 @@ describe("GoalsBoard — inline life-expectancy editing", () => {
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("spouse", 87));
   });
 });
+
+describe("GoalsBoard — adding a goal", () => {
+  it("renders the add button for an editor", () => {
+    render(<GoalsBoard {...baseProps()} onAddGoal={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Add goal" })).toBeInTheDocument();
+  });
+
+  it("reports the click so the view can open the drawer", () => {
+    const onAddGoal = vi.fn();
+    render(<GoalsBoard {...baseProps()} onAddGoal={onAddGoal} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+
+    expect(onAddGoal).toHaveBeenCalledTimes(1);
+  });
+
+  it("a read-only viewer gets no add button", () => {
+    render(<GoalsBoard {...baseProps({ canEdit: false })} onAddGoal={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Add goal" })).not.toBeInTheDocument();
+  });
+
+  // A board rendered without the callback must not show a button that silently
+  // does nothing — the same gate the inline editors on these boards apply.
+  it("no add button without a handler, even for an editor", () => {
+    render(<GoalsBoard {...baseProps({ canEdit: true })} />);
+    expect(screen.queryByRole("button", { name: "Add goal" })).not.toBeInTheDocument();
+  });
+
+  // POSITION, on its own — "at the top" is the requirement, and an
+  // "it renders" assertion holds just as well with the button below the spine.
+  it("the add button precedes the goal rows in DOM order", () => {
+    const goals = [goal({ id: "g1", year: 2030, title: "New roof", expenseId: "exp-1" })];
+    render(<GoalsBoard {...baseProps({ goals })} onAddGoal={vi.fn()} />);
+
+    const addButton = screen.getByRole("button", { name: "Add goal" });
+    const firstRow = screen.getByTestId("goal-row-g1");
+
+    expect(addButton.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("the empty-state hint points at the button once there is one", () => {
+    render(<GoalsBoard {...baseProps()} onAddGoal={vi.fn()} />);
+    expect(
+      screen.getByText(
+        "No goals yet — add one above, or tick “Show as a goal” on an existing expense.",
+      ),
+    ).toBeInTheDocument();
+  });
+});

@@ -2,7 +2,7 @@
 
 import MapCard from "./map-card";
 import PersonNode from "./person-node";
-import { PencilIcon } from "@/components/icons";
+import { PencilIcon, PlusIcon } from "@/components/icons";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { moneyLabel } from "@/lib/household-map/format";
 import { coerceYearRef, YEAR_REF_LABELS } from "@/lib/milestones";
@@ -14,10 +14,12 @@ import type {
   MapItem,
 } from "@/lib/household-map/types";
 
+// `addLabel` is written out rather than derived from `label`, because the two
+// don't line up: the Expenses band is plural and its button adds one expense.
 const BANDS = [
-  { key: "income", label: "Income", kinds: ["income"] },
-  { key: "savings", label: "Savings", kinds: ["savings"] },
-  { key: "expense", label: "Expenses", kinds: ["expense"] },
+  { key: "income", label: "Income", addLabel: "Add income", kinds: ["income"] },
+  { key: "savings", label: "Savings", addLabel: "Add savings", kinds: ["savings"] },
+  { key: "expense", label: "Expenses", addLabel: "Add expense", kinds: ["expense"] },
 ] as const;
 
 type OwnerColumn = Exclude<MapColumn, "tray">;
@@ -167,9 +169,11 @@ export default function CashFlowBoard({
   // a 60-character name pushed the three tracks to 592/293/295. This is what
   // Tailwind's own `grid-cols-3` expands to; only the arbitrary-value form here
   // had to opt in by hand.
+  // 100px, not the original 74px: the gutter now carries the band's add button
+  // alongside its label. "EXPENSES" at 10px/0.08em is ~53px, the button ~20px.
   const gridCols = hasSpouse
-    ? "grid-cols-[74px_repeat(3,minmax(0,1fr))]"
-    : "grid-cols-[74px_repeat(2,minmax(0,1fr))]";
+    ? "grid-cols-[100px_repeat(3,minmax(0,1fr))]"
+    : "grid-cols-[100px_repeat(2,minmax(0,1fr))]";
 
   return (
     <div className="flex flex-col gap-4">
@@ -198,8 +202,26 @@ export default function CashFlowBoard({
         return (
           <div key={band.key} data-testid={`band-${band.key}`} className="flex flex-col gap-1.5">
             <div className={`grid ${gridCols} gap-2`}>
-              <div className="flex items-center text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
+              {/* The band's add button lives HERE, beside the type label, and is
+                  always present. The per-column placeholders below only render
+                  in an EMPTY cell, so every band that already had a single row
+                  in it offered no way to add a second one — the affordance
+                  disappeared exactly when the advisor started using the board.
+                  Column-less by nature (the gutter spans all three), so it
+                  presets "joint"; the placeholders keep the per-column preset. */}
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-2">
                 {band.label}
+                {canEdit && (
+                  <button
+                    type="button"
+                    aria-label={band.addLabel}
+                    title={band.addLabel}
+                    onClick={() => onAddFlow?.(band.key, "joint")}
+                    className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border border-hair-2 bg-card-2 text-accent transition-colors hover:border-accent hover:bg-accent-wash"
+                  >
+                    <PlusIcon width={11} height={11} strokeWidth={2} />
+                  </button>
+                )}
               </div>
               {COLUMNS.map((col) => {
                 const cards = bandItems.filter((i) => i.column === col);

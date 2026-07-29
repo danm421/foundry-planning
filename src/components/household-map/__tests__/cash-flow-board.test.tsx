@@ -281,6 +281,51 @@ describe("CashFlowBoard", () => {
     ).not.toBeInTheDocument();
   });
 
+  // The regression the band button exists to fix. The per-column placeholders
+  // above render ONLY in an empty cell, so a band whose every column already had
+  // a row offered no way to add another one — the affordance vanished exactly
+  // when the advisor started using the board. Every column here is populated, so
+  // this case is red without the band button.
+  it("each band offers an add button beside its type label even when no column is empty", () => {
+    const items: MapItem[] = [
+      item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
+      item({ id: "inc-joint", kind: "income", column: "joint", name: "Rental income", value: 18000 }),
+      item({ id: "inc-spouse", kind: "income", column: "spouse", name: "Jordan salary", value: 70000 }),
+    ];
+
+    render(<CashFlowBoard {...baseProps({ items, canEdit: true })} />);
+
+    // No placeholder anywhere in the band — every column is populated.
+    expect(
+      within(screen.getByTestId("band-income")).queryByRole("button", { name: "+ add" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add income" })).toBeInTheDocument();
+  });
+
+  it("all three bands carry their own add button, each naming its own kind", () => {
+    render(<CashFlowBoard {...baseProps({ canEdit: true })} />);
+
+    expect(screen.getByRole("button", { name: "Add income" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add savings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add expense" })).toBeInTheDocument();
+  });
+
+  it("a band's add button reports its own kind and presets the joint column", () => {
+    const onAddFlow = vi.fn();
+    render(<CashFlowBoard {...baseProps({ canEdit: true })} onAddFlow={onAddFlow} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+
+    // "joint", not a column: the gutter the button sits in spans all three.
+    expect(onAddFlow).toHaveBeenCalledWith("expense", "joint");
+  });
+
+  it("a read-only viewer gets no band add buttons", () => {
+    render(<CashFlowBoard {...baseProps({ canEdit: false })} />);
+
+    expect(screen.queryByRole("button", { name: "Add income" })).not.toBeInTheDocument();
+  });
+
   it("single-client household renders two owner columns (client, joint), not three", () => {
     const items: MapItem[] = [
       item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
