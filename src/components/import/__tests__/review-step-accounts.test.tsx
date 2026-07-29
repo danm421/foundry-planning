@@ -51,7 +51,7 @@ describe("ReviewStepAccounts name display", () => {
     const nameField = screen.getByText("Name").closest("div") as HTMLElement;
     expect(within(nameField).getByText("Fidelity Rollover IRA")).toBeInTheDocument();
     expect(
-      screen.getByText(/from document: JOHN SMITH ROLLOVER IRA XXXX-1234/),
+      screen.getByText(/extracted: JOHN SMITH ROLLOVER IRA XXXX-1234/),
     ).toBeInTheDocument();
     expect(
       screen.queryByDisplayValue("JOHN SMITH ROLLOVER IRA XXXX-1234"),

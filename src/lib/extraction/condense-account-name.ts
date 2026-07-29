@@ -4,11 +4,17 @@ const MAX_LENGTH = 60;
  * Deterministic backstop for the account-statement prompt's "short name" rule.
  *
  * The prompt asks the model for `custodian + account type` (e.g. "Fidelity
- * Rollover IRA"), but prompt compliance is probabilistic and draft payloads
- * already persisted in the DB replay through the review wizard with their
- * original verbatim-header names. This strips the two things that make those
- * names unusable — embedded account numbers and unbounded length — without
- * attempting to restructure the name itself.
+ * Rollover IRA"), but prompt compliance is probabilistic, so this strips the
+ * two things that make a non-compliant name unusable — embedded account
+ * numbers and unbounded length — without attempting to restructure the name
+ * itself.
+ *
+ * WHERE IT RUNS: `extract.ts` only, on the way out of extraction (both the
+ * multi-pass and single-pass paths), before the result is returned and
+ * persisted to `payloadJson.fileResults`. It is NOT applied at a replay seam —
+ * `run-matching.ts` re-merges the persisted `fileResults` verbatim on every
+ * pass — so drafts extracted BEFORE this shipped keep their original
+ * verbatim-header names forever. Only re-extraction condenses them.
  *
  * Pure. Idempotent. Never returns empty for a non-empty input: if stripping
  * would erase everything, the trimmed original is returned instead, because a

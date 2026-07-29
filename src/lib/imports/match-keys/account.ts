@@ -9,9 +9,10 @@ export interface AccountCandidate {
   /**
    * Mirrors the DB `account_category` enum, which matches extraction's
    * `AccountCategory` value for value. Category is only a scoring input in the
-   * ladder below, so a 529 that extraction classified as `taxable` + subType
-   * "529" instead of `education_savings` still surfaces as a candidate — it
-   * merely forfeits the category weight.
+   * ladder below, not an exclusion, so a 529 that extraction classified as
+   * `taxable` + subType "529" instead of `education_savings` can still surface
+   * as a candidate — but it forfeits the 0.2 category weight against a 0.45
+   * floor, so it only clears on strong name/owner evidence.
    */
   category: AccountCategory;
   accountNumberLast4: string | null;
@@ -108,7 +109,13 @@ function ownerAgreement(incoming: string[], candidate: string[] | undefined): nu
   return shared / union;
 }
 
-/** 1 identical, decaying to 0 at a 100%+ gap. 0.5 when the value is unknown. */
+/**
+ * 1 when identical, 0.5 when the incoming value is unknown.
+ *
+ * The gap is divided by the LARGER of the two values, so the term decays
+ * hyperbolically and never actually reaches 0 unless one side is 0: a doubling
+ * scores 0.5, a 10x gap still scores 0.1.
+ */
 function valueProximity(incoming: number | undefined, candidate: number): number {
   if (incoming === undefined || !Number.isFinite(incoming)) return 0.5;
   const base = Math.max(Math.abs(candidate), Math.abs(incoming), 1);
@@ -124,7 +131,9 @@ function valueProximity(incoming: number | undefined, candidate: number): number
  * agreement, however strong, only ever produce a ranked `fuzzy`.
  *
  * `incomingOwnerIds` are family_member ids resolved from the statement's
- * registration hint (see `matchOwnersFromHint`); pass none when unknown.
+ * registration hint — the matching pass gets them from `resolveOwnersFromHint`
+ * (`owner-match.ts`), which also reports whether the answer was evidence-backed
+ * or a default. Pass none when ownership is unknown.
  */
 export function matchAccount(
   incoming: ExtractedAccount,
@@ -135,7 +144,10 @@ export function matchAccount(
   const incomingCustodian = normalizeCustodian(incoming.custodian);
 
   if (last4) {
-    const sameLast4 = existing.filter((a) => a.accountNumberLast4 === last4);
+    // Trim BOTH sides: commitAccounts persists the extracted last4 verbatim,
+    // so a stored " 1234" would never equal a trimmed incoming "1234" and the
+    // same account would duplicate on every later import.
+    const sameLast4 = existing.filter((a) => a.accountNumberLast4?.trim() === last4);
 
     // Rung 1: custodian agrees and singles out exactly one candidate.
     if (incomingCustodian) {

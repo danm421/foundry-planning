@@ -290,8 +290,14 @@ export default function ReviewStepAccounts({
                     // be a false affordance. Rename on the account page instead.
                     <div className="px-2 py-1.5">
                       <div className="text-sm text-gray-100">{existingRow.name}</div>
+                      {/* NOT the document's own header text: extract.ts runs
+                          every extracted account name through
+                          condenseAccountName before the payload is persisted,
+                          and the prompt asks the model to synthesize a
+                          "custodian + account type" name rather than transcribe
+                          the statement. "extracted" is what this actually is. */}
                       <div className="mt-0.5 text-xs text-ink-4">
-                        from document: {account.name}
+                        extracted: {account.name}
                       </div>
                     </div>
                   ) : (

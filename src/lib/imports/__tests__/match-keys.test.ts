@@ -290,6 +290,47 @@ describe("matchAccount", () => {
     );
     expect(result).toEqual({ kind: "new" });
   });
+
+  it("PINS CURRENT CALIBRATION: category + agreeing owner alone admits a zero-name-similarity candidate", () => {
+    // Every other "stays new" case above uses neutral ownership or a category
+    // mismatch, so this regime was uncovered. It is pinned, NOT endorsed:
+    // W_OWNER (0.25) + W_CATEGORY (0.20) is exactly SCORE_FLOOR (0.45) and the
+    // admission test is `>=`, so agreement on category and owner alone clears
+    // the floor even with zero name overlap and a maximally wrong value. Any
+    // future re-weighting will flip this test, which is the point — a
+    // recalibration should be a deliberate decision, not a silent drift.
+    const result = matchAccount(
+      // No shared token with "Schwab Brokerage", so nameSimilarity === 0.
+      // value 0 against a 100k candidate makes valueProximity === 0.
+      { name: "Zzz Unrelated Holding", category: "taxable", value: 0 },
+      [{ ...baseExisting, accountNumberLast4: null, ownerIds: ["fm-jane"] }],
+      ["fm-jane"],
+    );
+    expect(result.kind).toBe("fuzzy");
+    if (result.kind === "fuzzy") {
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0].id).toBe("acct-1");
+      expect(result.candidates[0].score).toBeCloseTo(0.45, 12);
+    }
+  });
+
+  it("returns exact when the stored last4 carries stray whitespace", () => {
+    // commitAccounts persists `row.accountNumberLast4` untrimmed, so an
+    // extraction that emitted " 1234" is stored with the space. Comparing the
+    // candidate side raw failed both exact rungs and duplicated the account on
+    // every subsequent import.
+    const result = matchAccount(
+      {
+        name: "Schwab Brokerage",
+        category: "taxable",
+        accountNumberLast4: "1234",
+        custodian: "Charles Schwab",
+        value: 100_000,
+      },
+      [{ ...baseExisting, accountNumberLast4: " 1234" }],
+    );
+    expect(result).toEqual({ kind: "exact", existingId: "acct-1" });
+  });
 });
 
 describe("matchIncome", () => {
