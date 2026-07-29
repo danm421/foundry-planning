@@ -54,6 +54,11 @@ export const CASCADE_COVERED_FIRM_TABLES: readonly string[] = [
   "scenario_compute_cache", // client_id NOT NULL → clients
   "solver_mc_cache", // client_id NOT NULL → clients
   "subscription_items", // subscription_id NOT NULL → subscriptions
+  // Risk profiles: all three have client_id NOT NULL with ON DELETE CASCADE to
+  // clients, which purgeCrmHouseholdById already removes.
+  "client_risk_profiles",
+  "client_risk_profile_events",
+  "risk_questionnaires",
 ];
 
 /** Intentionally retained (legal / evidence). */

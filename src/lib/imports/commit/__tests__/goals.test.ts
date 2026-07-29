@@ -5,6 +5,10 @@ vi.mock("@/lib/cma/resolve-risk-portfolio", () => ({
   applyRiskPortfolioToScenario: vi.fn(),
 }));
 
+vi.mock("@/lib/risk/profile", () => ({
+  recomputeProfileTx: vi.fn().mockResolvedValue({}),
+}));
+
 import { commitGoals } from "../goals";
 import { emptyImportPayload, type ImportPayload } from "../../types";
 import type { EducationGoal, HomePurchaseGoal } from "../../assemble/types";
@@ -14,6 +18,7 @@ import {
   resolveRiskPortfolioId,
   applyRiskPortfolioToScenario,
 } from "@/lib/cma/resolve-risk-portfolio";
+import { recomputeProfileTx } from "@/lib/risk/profile";
 
 /**
  * DEFECT 1 (brief vs. real tree): the brief's Step 8.1 was written against a
@@ -574,6 +579,7 @@ describe("commitGoals — risk tolerance", () => {
   beforeEach(() => {
     vi.mocked(resolveRiskPortfolioId).mockClear();
     vi.mocked(applyRiskPortfolioToScenario).mockClear();
+    vi.mocked(recomputeProfileTx).mockClear();
   });
 
   /** A payload carrying only the `riskTolerance` field of `goals`, otherwise empty. */
@@ -629,6 +635,55 @@ describe("commitGoals — risk tolerance", () => {
     expect(updateCalls(fake, "clients")).toHaveLength(0);
     expect(resolveRiskPortfolioId).not.toHaveBeenCalled();
     expect(applyRiskPortfolioToScenario).not.toHaveBeenCalled();
+    expect(recomputeProfileTx).not.toHaveBeenCalled();
     expect(result.warnings).toEqual([]);
+  });
+
+  // An import that states a rung is confident enough to point the client's
+  // taxable+retirement portfolios at it. Writing `clients.risk_tolerance` while
+  // leaving `client_risk_profiles` empty left exactly that household reading
+  // "no tolerance established" on /risk -- an allocation set from a rung the
+  // suitability record did not know about. Seeded through the same
+  // recomputeProfile path as the advisor's manual rung so the composite,
+  // binding constraint, and history row can never drift from the inputs.
+  it("stated: seeds the risk profile as a manual tolerance", async () => {
+    const fake = makeFakeTx();
+    vi.mocked(resolveRiskPortfolioId).mockResolvedValue("pf-id");
+
+    await commitGoals(fake.tx, payloadWithTolerance(stated("moderately_aggressive")), CTX);
+
+    expect(recomputeProfileTx).toHaveBeenCalledTimes(1);
+    const [tx, args] = vi.mocked(recomputeProfileTx).mock.calls[0];
+    // Same transaction as the rest of the commit: a profile seeded by an
+    // import that later rolls back must roll back with it.
+    expect(tx).toBe(fake.tx);
+    expect(args).toMatchObject({
+      clientId: CTX.clientId,
+      firmId: CTX.orgId,
+      actorUserId: CTX.userId,
+      kind: "tolerance_manual",
+    });
+    expect(args.patch).toMatchObject({
+      toleranceScore: 70, // BAND_CENTERS.moderately_aggressive
+      toleranceSource: "manual",
+      rtqVersion: null,
+    });
+    expect(args.patch.toleranceConfirmedAt).toBeInstanceOf(Date);
+  });
+
+  // The profile is the suitability record for the stated rung; whether the firm
+  // happens to have tagged a model portfolio for it is a separate concern.
+  it("stated + untagged: still seeds the profile even though no portfolio applies", async () => {
+    const fake = makeFakeTx();
+    vi.mocked(resolveRiskPortfolioId).mockResolvedValue(null);
+
+    await commitGoals(fake.tx, payloadWithTolerance(stated("conservative")), CTX);
+
+    expect(applyRiskPortfolioToScenario).not.toHaveBeenCalled();
+    expect(recomputeProfileTx).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(recomputeProfileTx).mock.calls[0][1].patch).toMatchObject({
+      toleranceScore: 10, // BAND_CENTERS.conservative
+      toleranceSource: "manual",
+    });
   });
 });

@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-06-10.1";
+export const ACCOUNT_STATEMENT_VERSION = "2026-07-28.1";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-06-12.2-holdings-continuation";
 
 const HOLDINGS_FIELD = `,
@@ -28,7 +28,7 @@ Return a JSON object with this exact structure:
 {
   "accounts": [
     {
-      "name": "Account name or description (e.g. 'Fidelity Brokerage - Joint', 'Home - Austin')",
+      "name": "SHORT display name: custodian + account type, Title Case, max ~40 chars. e.g. 'Fidelity Rollover IRA', 'Schwab Joint Brokerage', 'Chase Checking'. Do NOT include account numbers or the registration/owner names.",
       "category": "one of: taxable, cash, retirement, annuity, real_estate, business, education_savings",
       "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, primary_residence, rental_property, commercial_property, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
@@ -78,6 +78,7 @@ Extraction rules:
 - If a margin balance or loan appears, add it to "liabilities"
 - DO NOT extract the full account number. Capture only the last 4 characters in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
 - "custodian" is the institution that holds the account. Use a clean, normalized name without LLC/Inc suffixes.
+- "name" must be SHORT and descriptive — custodian plus account type, nothing else. Never copy the statement's registration header into "name". The account number belongs in "accountNumberLast4" and the registration line belongs in "ownerNameHint", so "name" needs neither. Good: "Fidelity Rollover IRA". Bad: "JOHN A SMITH & JANE B SMITH JTWROS ROLLOVER IRA XXXX-1234".
 - "ownerNameHint": copy the registration/title line verbatim (all names + any 'JTWROS'/'Joint'/'TOD' wording). Still also fill the coarse "owner" enum.${withHoldings ? HOLDINGS_RULES : ""}
 
 Return ONLY valid JSON. No explanation, no markdown.`;

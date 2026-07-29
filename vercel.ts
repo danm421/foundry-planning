@@ -57,5 +57,9 @@ export const config: VercelConfig = {
       path: "/api/cron/prune-plaid-webhook-events",
       schedule: "0 8 * * *",
     },
+    {
+      path: "/api/cron/refresh-risk-capacity",
+      schedule: "0 6 * * *",
+    },
   ],
 };

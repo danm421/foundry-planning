@@ -77,6 +77,40 @@ export const riskLevelEnum = pgEnum("risk_level", [
   "aggressive",
 ]);
 
+export const riskToleranceSourceEnum = pgEnum("risk_tolerance_source", [
+  "rtq_client",
+  "rtq_advisor",
+  "manual",
+]);
+
+export const riskBindingConstraintEnum = pgEnum("risk_binding_constraint", [
+  "tolerance",
+  "capacity",
+  "none",
+]);
+
+export const riskProfileEventKindEnum = pgEnum("risk_profile_event_kind", [
+  "profile_created",
+  "rtq_completed",
+  "tolerance_manual",
+  "environment_changed",
+  "capacity_changed",
+]);
+
+export const riskQuestionnaireSubjectEnum = pgEnum("risk_questionnaire_subject", [
+  "primary",
+  "spouse",
+]);
+
+export const riskQuestionnaireStatusEnum = pgEnum("risk_questionnaire_status", [
+  "draft",
+  "sent",
+  "submitted",
+  "applied",
+  "discarded",
+  "expired",
+]);
+
 export const grantTypeEnum = pgEnum("grant_type", ["rsu", "nqso", "iso"]);
 export const equityExerciseTimingEnum = pgEnum("equity_exercise_timing", [
   "at_vest",
@@ -4971,7 +5005,9 @@ export const scenarioComputeCache = pgTable(
     scenarioId: uuid("scenario_id")
       .notNull()
       .references(() => scenarios.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["monte_carlo", "life_insurance_solve", "max_spending"] }).notNull(),
+    kind: text("kind", {
+      enum: ["monte_carlo", "life_insurance_solve", "max_spending", "risk_capacity"],
+    }).notNull(),
     inputHash: text("input_hash").notNull(),
     trials: integer("trials").notNull(),
     engineVersion: integer("engine_version").notNull(),
@@ -5412,3 +5448,150 @@ export const portalPrivacySettings = pgTable("portal_privacy_settings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// -- Risk Profiles -----------------------------------------------------------
+
+/**
+ * Current risk profile for one household. `composite_score`, `composite_level`,
+ * and `binding_constraint` are denormalized so the Risk list can sort and
+ * filter across the whole book without running a projection per row. They are
+ * written by exactly one function -- `recomputeProfile()` in
+ * src/lib/risk/profile.ts -- which is the sole writer of all three.
+ */
+export const clientRiskProfiles = pgTable(
+  "client_risk_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+
+    toleranceScore: integer("tolerance_score"),
+    toleranceSource: riskToleranceSourceEnum("tolerance_source"),
+    toleranceConfirmedAt: timestamp("tolerance_confirmed_at", { withTimezone: true }),
+    rtqVersion: integer("rtq_version"),
+    spouseToleranceScore: integer("spouse_tolerance_score"),
+    spouseRtqVersion: integer("spouse_rtq_version"),
+
+    capacityScore: integer("capacity_score"),
+    /** { horizon, buffer, withdrawal, incomeFloor } contributions, 0..1 each. */
+    capacityFactors: jsonb("capacity_factors"),
+    capacityComputedAt: timestamp("capacity_computed_at", { withTimezone: true }),
+    /** Growth % the goals demand; > capacity means the PLAN must change. */
+    requiredGrowthPct: integer("required_growth_pct"),
+
+    environmentAdj: integer("environment_adj").notNull().default(0),
+    environmentReason: text("environment_reason"),
+    environmentUpdatedAt: timestamp("environment_updated_at", { withTimezone: true }),
+
+    compositeScore: integer("composite_score"),
+    compositeLevel: riskLevelEnum("composite_level"),
+    bindingConstraint: riskBindingConstraintEnum("binding_constraint")
+      .notNull()
+      .default("none"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("client_risk_profiles_client_idx").on(t.clientId),
+    index("client_risk_profiles_firm_idx").on(t.firmId),
+    index("client_risk_profiles_level_idx").on(t.firmId, t.compositeLevel),
+    check(
+      "client_risk_profiles_env_adj_range",
+      sql`environment_adj between -25 and 25`,
+    ),
+    // The reasoning IS the audit trail -- a non-zero adjustment without it is
+    // an unexplained change to a client's suitability record.
+    check(
+      "client_risk_profiles_env_reason_required",
+      sql`environment_adj = 0 or (environment_reason is not null and length(trim(environment_reason)) > 0)`,
+    ),
+  ],
+);
+
+/** Append-only history. `components` freezes the three inputs at that moment so
+ *  a two-year-old row stays readable after the scoring code moves on. */
+export const clientRiskProfileEvents = pgTable(
+  "client_risk_profile_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    kind: riskProfileEventKindEnum("kind").notNull(),
+    /** Null means client-submitted or system-generated. */
+    actorUserId: text("actor_user_id"),
+    reason: text("reason"),
+    beforeScore: integer("before_score"),
+    beforeLevel: riskLevelEnum("before_level"),
+    afterScore: integer("after_score"),
+    afterLevel: riskLevelEnum("after_level"),
+    components: jsonb("components"),
+  },
+  (t) => [
+    index("client_risk_profile_events_client_idx").on(t.clientId, t.occurredAt),
+    index("client_risk_profile_events_firm_idx").on(t.firmId),
+  ],
+);
+
+/**
+ * One RTQ send or sitting. An advisor-administered questionnaire has no token
+ * and lands directly in `applied`; an emailed one carries a token and walks
+ * draft -> sent -> submitted -> applied. Deliberately separate from
+ * `intake_forms`: the payloads share nothing, the apply semantics differ, and a
+ * single missed `kind` filter there would leak RTQs into Data Collection.
+ */
+export const riskQuestionnaires = pgTable(
+  "risk_questionnaires",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    subject: riskQuestionnaireSubjectEnum("subject").notNull().default("primary"),
+    /** Null for advisor-administered sittings -- nothing is emailed. */
+    token: text("token"),
+    recipientEmail: text("recipient_email"),
+    recipientName: text("recipient_name"),
+    status: riskQuestionnaireStatusEnum("status").notNull().default("draft"),
+    rtqVersion: integer("rtq_version").notNull(),
+    answers: jsonb("answers").notNull().default({}),
+    score: integer("score"),
+    /** Free text from the client. Never auto-scored -- an advisor reads it and
+     *  turns it into the environment adjustment. */
+    environmentNote: text("environment_note"),
+    environmentNoteReviewedAt: timestamp("environment_note_reviewed_at", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("risk_questionnaires_token_idx")
+      .on(t.token)
+      .where(sql`token is not null`),
+    index("risk_questionnaires_client_idx").on(t.clientId),
+    index("risk_questionnaires_firm_idx").on(t.firmId),
+    index("risk_questionnaires_status_idx").on(t.status),
+  ],
+);
+
+export type ClientRiskProfileRow = InferSelectModel<typeof clientRiskProfiles>;
+export type NewClientRiskProfileRow = InferInsertModel<typeof clientRiskProfiles>;
+export type ClientRiskProfileEventRow = InferSelectModel<typeof clientRiskProfileEvents>;
+export type RiskQuestionnaireRow = InferSelectModel<typeof riskQuestionnaires>;
+export type NewRiskQuestionnaireRow = InferInsertModel<typeof riskQuestionnaires>;

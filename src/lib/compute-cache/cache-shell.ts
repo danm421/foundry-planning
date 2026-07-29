@@ -15,7 +15,7 @@ import { and, eq } from "drizzle-orm";
 import { ENGINE_VERSION } from "./hash";
 import { singleFlight } from "./single-flight";
 
-type CacheKind = "monte_carlo" | "life_insurance_solve" | "max_spending";
+type CacheKind = "monte_carlo" | "life_insurance_solve" | "max_spending" | "risk_capacity";
 
 export async function withComputeCache<T>(args: {
   firmId: string;

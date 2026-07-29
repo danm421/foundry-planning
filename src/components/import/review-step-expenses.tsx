@@ -3,7 +3,7 @@
 import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import type { MatchAnnotation } from "@/lib/imports/types";
-import { candidatesForRow } from "@/lib/imports/expense-slot-candidates";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";

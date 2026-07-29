@@ -98,6 +98,26 @@ export function hashLifeInsuranceInputs(input: {
   return createHash("sha256").update(material).digest("hex");
 }
 
+/**
+ * Cache key for a household's risk capacity. Folds in the CMA return bounds
+ * alongside the plan tree because computeRequiredGrowthPct interpolates against
+ * them -- a tree-only hash would keep serving a stale required-growth figure
+ * after a firm edits its capital market assumptions.
+ */
+export function hashRiskCapacityInputs(input: {
+  tree: ClientData;
+  cashReturn: number;
+  equityReturn: number;
+}): string {
+  const material = stableStringify({
+    engineVersion: ENGINE_VERSION,
+    kind: "risk_capacity",
+    tree: input.tree,
+    bounds: { cash: input.cashReturn, equity: input.equityReturn },
+  });
+  return createHash("sha256").update(material).digest("hex");
+}
+
 export function hashMaxSpendingInputs(input: {
   tree: ClientData;
   mcPayload: MonteCarloPayload;

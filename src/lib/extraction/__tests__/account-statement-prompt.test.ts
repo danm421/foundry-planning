@@ -29,7 +29,17 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-06-10.1");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-07-28.1");
+  });
+
+  it("instructs a short custodian + account-type name, not the registration header", () => {
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(/SHORT/);
+    expect(ACCOUNT_STATEMENT_PROMPT).toContain("Fidelity Rollover IRA");
+    // The registration line and the account number have their own fields, so
+    // neither belongs in "name".
+    expect(ACCOUNT_STATEMENT_PROMPT).toMatch(
+      /Never copy the statement's registration header into "name"/,
+    );
   });
 
   it("payload with accountNumberLast4 + custodian validates", () => {
