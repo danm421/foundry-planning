@@ -313,7 +313,8 @@ export function rothIraAllowedContribution(
  * below always means "not seeded yet."
  */
 export function traditionalIraDeductibleAmount(
-  magi: number, contribution: number, coveredSelf: boolean, coveredSpouse: boolean,
+  magi: number, contribution: number, annualLimit: number,
+  coveredSelf: boolean, coveredSpouse: boolean,
   year: number, params: TaxYearParameters, filingStatus: FilingStatus,
 ): number {
   if (!coveredSelf && !coveredSpouse) return contribution;
@@ -331,7 +332,19 @@ export function traditionalIraDeductibleAmount(
   if (magi <= range.start) return contribution;
   if (magi >= range.end) return 0;
   const fraction = (magi - range.start) / (range.end - range.start);
-  return roundReducedLimit(contribution * (1 - fraction), contribution);
+  // IRC 219(g)(2)(A) reduces the §219(b) annual LIMIT by the phase-out
+  // fraction; §219(a) then deducts the contribution against that reduced
+  // limit. Applying the fraction to the CONTRIBUTION instead under-deducts
+  // whenever the contribution is below the limit — a $6,000 contribution
+  // against a $7,000 limit at fraction 0.8 deducts $1,400, not $1,200.
+  // The two agree only when contribution === annualLimit, which is why a
+  // suite full of at-the-limit cases pinned nothing here.
+  //
+  // Same shape as `rothIraAllowedContribution` above, which already reduces
+  // its `ageBasedLimit` — the two phase-outs now derive identically and
+  // `roundReducedLimit`'s ceiling is the statutory limit in both.
+  const reducedLimit = roundReducedLimit(annualLimit * (1 - fraction), annualLimit);
+  return Math.min(contribution, reducedLimit);
 }
 
 /**

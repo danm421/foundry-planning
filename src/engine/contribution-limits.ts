@@ -75,6 +75,55 @@ export function computeIraLimit(params: TaxYearParameters, age: number): number 
   return base;
 }
 
+/**
+ * The IRC §219(b) annual-IRA-limit basis for a set of accounts that actually
+ * received a traditional-IRA contribution this year — the figure IRC
+ * 219(g)(2)(A) applies the deduction phase-out fraction TO.
+ *
+ * The limit is PER PERSON, so distinct owners are counted once each: two IRAs
+ * owned by the same spouse share one $7,000 (or $8,000 catch-up) limit, while
+ * one IRA each for two spouses gives $14,000.
+ *
+ * ⚠️ Pass ONLY accounts that contributed. An owner who contributed nothing must
+ * not enlarge the ceiling — doing so would over-deduct, the mirror image of the
+ * contribution-basis bug the annual-limit parameter exists to fix.
+ *
+ * An IRA is individually owned by statute (the "I" in IRA), so an account that
+ * does not resolve to a single 100% family-member owner is attributed to the
+ * CLIENT rather than given a bucket of its own the way `applyContributionLimits`
+ * treats "joint". A separate joint bucket here would hand the household an
+ * extra full ceiling no taxpayer is entitled to.
+ */
+export function traditionalIraAnnualLimitBasis(input: {
+  accountIds: string[];
+  accounts: Account[];
+  client: ClientInfo;
+  familyMembers: FamilyMember[];
+  year: number;
+  taxYearParams: TaxYearParameters;
+}): number {
+  const { accountIds, accounts, client, familyMembers, year, taxYearParams } = input;
+  const spouseFmId = familyMembers.find((fm) => fm.role === "spouse")?.id ?? null;
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+
+  // "client" covers both a client-owned IRA and any account that doesn't
+  // resolve to a single family member (see the note above).
+  const owners = new Set<"client" | "spouse">();
+  for (const id of accountIds) {
+    const acct = accountById.get(id);
+    if (!acct) continue;
+    const fmId = controllingFamilyMember(acct);
+    owners.add(fmId != null && fmId === spouseFmId ? "spouse" : "client");
+  }
+
+  let basis = 0;
+  for (const owner of owners) {
+    const dob = owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+    basis += computeIraLimit(taxYearParams, resolveAgeInYear(dob, year));
+  }
+  return basis;
+}
+
 /** HSA contribution limit for a given age + coverage tier. Self vs family
  *  base, plus the $1,000-ish catch-up once age >= 55 (HSA catch-up is 55, not
  *  50). Coverage defaults to "self" (the lower cap) when unknown. */

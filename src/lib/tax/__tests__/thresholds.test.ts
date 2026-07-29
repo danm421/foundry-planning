@@ -237,7 +237,7 @@ describe("rothIraAllowedContribution", () => {
 
 describe("traditionalIraDeductibleAmount", () => {
   it("returns the full contribution when neither spouse is covered, regardless of MAGI — IRC 219(g)(1)", () => {
-    expect(traditionalIraDeductibleAmount(9_000_000, 7000, false, false, 2026, params, "married_joint")).toBe(7000);
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, 7000, false, false, 2026, params, "married_joint")).toBe(7000);
   });
 
   it("does not gate when the covered-MFJ params are unseeded", () => {
@@ -245,26 +245,38 @@ describe("traditionalIraDeductibleAmount", () => {
       ...params,
       iraDeduct: { ...params.iraDeduct, coveredStartMfj: null, coveredEndMfj: null },
     } as TaxYearParameters;
-    expect(traditionalIraDeductibleAmount(9_000_000, 7000, true, false, 2026, bare, "married_joint")).toBe(7000);
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, 7000, true, false, 2026, bare, "married_joint")).toBe(7000);
   });
 
   it("is full exactly at the covered-MFJ range start", () => {
-    expect(traditionalIraDeductibleAmount(129000, 7000, true, false, 2026, params, "married_joint")).toBe(7000);
+    expect(traditionalIraDeductibleAmount(129000, 7000, 7000, true, false, 2026, params, "married_joint")).toBe(7000);
   });
 
   it("is zero exactly at the covered-MFJ range end", () => {
-    expect(traditionalIraDeductibleAmount(149000, 7000, true, false, 2026, params, "married_joint")).toBe(0);
+    expect(traditionalIraDeductibleAmount(149000, 7000, 7000, true, false, 2026, params, "married_joint")).toBe(0);
   });
 
   it("rounds the reduced covered-MFJ deduction UP to the nearest $10, not down", () => {
     // start 129000, end 149000, width 20000; magi 33 into the range.
     // reduced = 7000 * (1 - 33/20000) = 6988.45 -> ceil to nearest $10 = 6990 (not 6980).
-    expect(traditionalIraDeductibleAmount(129033, 7000, true, false, 2026, params, "married_joint")).toBe(6990);
+    expect(traditionalIraDeductibleAmount(129033, 7000, 7000, true, false, 2026, params, "married_joint")).toBe(6990);
   });
 
   it("raises the reduced covered-MFJ deduction to the $200 floor at high MAGI inside the range", () => {
     // 100 short of the end: reduced = 7000 * (100/20000) = 35 -> floored up to 200.
-    expect(traditionalIraDeductibleAmount(148900, 7000, true, false, 2026, params, "married_joint")).toBe(200);
+    expect(traditionalIraDeductibleAmount(148900, 7000, 7000, true, false, 2026, params, "married_joint")).toBe(200);
+  });
+
+  it("reduces the §219(b) LIMIT, not the contribution — IRC 219(g)(2)(A)", () => {
+    // The ONE case that discriminates the two formulations: a contribution
+    // BELOW the annual limit. Covered-MFJ range 129000-149000 (width 20000);
+    // magi 145000 is 80% through it, so 20% of the LIMIT survives:
+    // 7000 * 0.2 = 1400, and the deduction is min(contribution, 1400) = 1400.
+    // Reducing the CONTRIBUTION instead yields 6000 * 0.2 = 1200 — the engine's
+    // former answer, which under-deducts whenever contribution < limit.
+    // Every other case in this describe passes contribution === limit === 7000,
+    // where the two formulations agree and nothing is pinned.
+    expect(traditionalIraDeductibleAmount(145000, 6000, 7000, true, false, 2026, params, "married_joint")).toBe(1400);
   });
 
   it("gives a not-covered contributor with a covered spouse the spousal range, not the covered range", () => {
@@ -272,12 +284,12 @@ describe("traditionalIraDeductibleAmount", () => {
     // covered range (129000-149000). 247000 is the spousal range's midpoint ->
     // half of 7000 = 3500. A wrong implementation reading the covered range
     // would treat 247000 as past its end (149000) and return 0 instead.
-    expect(traditionalIraDeductibleAmount(247000, 7000, false, true, 2026, params, "married_joint")).toBe(3500);
+    expect(traditionalIraDeductibleAmount(247000, 7000, 7000, false, true, 2026, params, "married_joint")).toBe(3500);
   });
 
   it("uses the narrow covered-MFS range for a covered self filing MFS", () => {
     // MFS statutory range is 0-10000; magi 5000 is the midpoint -> half of 7000 = 3500.
-    expect(traditionalIraDeductibleAmount(5000, 7000, true, false, 2026, params, "married_separate")).toBe(3500);
+    expect(traditionalIraDeductibleAmount(5000, 7000, 7000, true, false, 2026, params, "married_separate")).toBe(3500);
   });
 
   it("routes a not-covered MFS filer with a covered spouse to the SAME narrow MFS range, not the MFJ-only spousal range", () => {
@@ -286,7 +298,7 @@ describe("traditionalIraDeductibleAmount", () => {
     // unseeded. A wrong implementation that read that NA as "unseeded, don't
     // gate" would return the full $7000 here; the correct answer routes
     // through the covered-MFS range (0-10000) and phases it to 3500 at magi 5000.
-    expect(traditionalIraDeductibleAmount(5000, 7000, false, true, 2026, params, "married_separate")).toBe(3500);
+    expect(traditionalIraDeductibleAmount(5000, 7000, 7000, false, true, 2026, params, "married_separate")).toBe(3500);
   });
 
   it("gives a not-covered single filer the full contribution — no spouse exists to be covered", () => {
@@ -295,16 +307,17 @@ describe("traditionalIraDeductibleAmount", () => {
     // it's unseeded. This must be decided on filing status, not inferred
     // from that NA -- pinned here so a later change can't silently start
     // reading a seeded spousal range for a filer who has no spouse.
-    expect(traditionalIraDeductibleAmount(9_000_000, 7000, false, true, 2026, params, "single")).toBe(7000);
+    expect(traditionalIraDeductibleAmount(9_000_000, 7000, 7000, false, true, 2026, params, "single")).toBe(7000);
   });
 
-  it("caps the $200 floor at the contribution when that contribution is itself under $200", () => {
+  it("never deducts more than was contributed when the reduced limit exceeds it", () => {
     // Same 100-short-of-end covered-MFJ position as the earlier floor test,
-    // but with a $100 contribution. Un-capped floor math would raise this to
-    // $200 -- more than was ever contributed.
-    // reduced = 100 * (100/20000) = 0.5 -> ceil to $10 = 10 -> floored to 200
-    // -> capped at the $100 ceiling.
-    expect(traditionalIraDeductibleAmount(148900, 100, true, false, 2026, params, "married_joint")).toBe(100);
+    // but with a $100 contribution.
+    // reduced LIMIT = 7000 * (100/20000) = 35 -> ceil to $10 = 40 -> raised to
+    // the $200 floor. The deduction is then min(contribution, 200) = $100 --
+    // the §219(a) step, not a cap inside `roundReducedLimit`. Dropping that
+    // final min would deduct $200 against a $100 contribution.
+    expect(traditionalIraDeductibleAmount(148900, 100, 7000, true, false, 2026, params, "married_joint")).toBe(100);
   });
 
   it("phases out using the covered-single MAGI range, not the covered-MFJ range", () => {
@@ -312,7 +325,7 @@ describe("traditionalIraDeductibleAmount", () => {
     // midpoint -> half of 7000 = 3500. A transposed MFJ/single ternary would
     // read 86000 against the MFJ range (129000-149000) and return the full
     // $7000 instead.
-    expect(traditionalIraDeductibleAmount(86000, 7000, true, false, 2026, params, "single")).toBe(3500);
+    expect(traditionalIraDeductibleAmount(86000, 7000, 7000, true, false, 2026, params, "single")).toBe(3500);
   });
 });
 

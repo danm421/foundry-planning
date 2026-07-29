@@ -241,8 +241,19 @@ describe("gate: traditional-IRA deduction is phased out on the year's real MAGI"
 
   it("phases the deduction PARTIALLY inside the range, aggregated once", () => {
     // Salary 155,000 with the same 10,000 deferral -> magiBase 145,000.
-    // (145,000 - 129,000) / 20,000 = 0.8 exactly; 20% of 6,000 = 1,200 survives,
-    // and Pub 590-A's $10 round-up leaves it at 1,200.
+    // (145,000 - 129,000) / 20,000 = 0.8 exactly, so 20% of the §219(b) LIMIT
+    // survives — IRC 219(g)(2)(A) reduces the limit, not the contribution.
+    // One contributor, age under 50 -> limit 7,000; 20% = 1,400, and Pub
+    // 590-A's $10 round-up leaves it there. The deduction is
+    // min(6,000 contributed, 1,400) = 1,400, so above-line = 10,000 + 1,400.
+    //
+    // Scaling the 6,000 CONTRIBUTION instead gives 1,200 (total 11,200) — the
+    // engine's former answer, and the one number on this branch that pinned
+    // the wrong formulation.
+    //
+    // 11,400 rather than 12,800 also confirms the limit basis is ONE person's
+    // 7,000: a basis that wrongly added the non-contributing spouse's limit
+    // would leave 20% of 14,000 = 2,800 and deduct min(6,000, 2,800).
     const years = runProjection(build({
       incomes: [salary(155_000)],
       savingsRules: [
@@ -251,7 +262,7 @@ describe("gate: traditional-IRA deduction is phased out on the year's real MAGI"
       ],
     }));
     expect(years[0].thresholdFacts!.magiForIraDeduction).toBe(145_000);
-    expect(years[0].deductionBreakdown!.aboveLine.retirementContributions).toBe(11_200);
+    expect(years[0].deductionBreakdown!.aboveLine.retirementContributions).toBe(11_400);
   });
 
   it("does not gate at all when NOBODY is a covered participant", () => {

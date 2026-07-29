@@ -109,6 +109,22 @@ export interface AccountForDeduction {
  */
 export type SavingsDeductionContribution = DeductionContribution & {
   traditionalIraPreTax: number;
+  /**
+   * Account ids that actually contributed to `traditionalIraPreTax` this year,
+   * de-duplicated. Exposed for exactly one reason: IRC 219(g)(2)(A) reduces the
+   * §219(b) LIMIT, and that limit is PER PERSON — so the caller has to know
+   * WHICH accounts (and hence which owners, and hence which ages) are in play
+   * before it can build the limit basis to pass back in as `iraGate.annualLimit`.
+   *
+   * It has to come from THIS loop rather than being re-derived by the caller:
+   * inclusion here turns on six guards (retirement category,
+   * DEDUCTIBLE_ELIGIBLE_SUBTYPES, the isDeductible/HSA split, the grantor-entity
+   * check, the rule's own year window and a non-zero resolved amount) that do
+   * NOT match the guard set `applyContributionLimits` uses. Deriving the basis
+   * from that other guard set would bound these contributions with a limit
+   * computed over a different set of people.
+   */
+  traditionalIraAccountIds: string[];
 };
 
 export function deriveAboveLineFromSavings(
@@ -132,6 +148,19 @@ export function deriveAboveLineFromSavings(
     coveredSpouse: boolean;
     params: TaxYearParameters;
     filingStatus: FilingStatus;
+    /**
+     * The §219(b) annual IRA limit basis this household's aggregated
+     * traditional-IRA contributions are measured against — the figure IRC
+     * 219(g)(2)(A) applies the phase-out fraction TO. One limit per PERSON, so
+     * the caller sums the distinct owners of `traditionalIraAccountIds` from a
+     * prior ungated call (see that field's note).
+     *
+     * ⚠️ It must be gated on who actually CONTRIBUTED. Handing in a whole
+     * couple's combined limit when only one spouse contributed inflates the
+     * ceiling and over-deducts — the mirror image of the contribution-basis
+     * bug this parameter exists to fix.
+     */
+    annualLimit: number;
   }
 ): SavingsDeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -139,6 +168,7 @@ export function deriveAboveLineFromSavings(
   // Traditional IRA contributions accumulate separately so the MAGI gate below
   // can be applied ONCE to their sum. Everything else is never MAGI-limited.
   let traditionalIraPreTax = 0;
+  const traditionalIraAccountIds = new Set<string>();
   for (const rule of savingsRules) {
     if (year < rule.startYear || year > rule.endYear) continue;
     const acct = accountById.get(rule.accountId);
@@ -164,8 +194,13 @@ export function deriveAboveLineFromSavings(
     // When overridden, `amount` is the total (possibly capped) contribution —
     // the Roth split still applies to it to isolate the pre-tax portion.
     const preTax = amount * (1 - (rule.rothPercent ?? 0));
-    if (acct.subType === "traditional_ira") traditionalIraPreTax += preTax;
-    else total += preTax;
+    if (acct.subType === "traditional_ira") {
+      traditionalIraPreTax += preTax;
+      // Only a non-zero contribution puts its owner's §219(b) limit into the
+      // basis. A rule resolving to $0 (or wholly Roth-split) must NOT enlarge
+      // the ceiling — see the warning on `iraGate.annualLimit`.
+      if (preTax > 0) traditionalIraAccountIds.add(acct.id);
+    } else total += preTax;
   }
 
   // ── IRC 219(g) traditional-IRA gate ──────────────────────────────────────
@@ -191,6 +226,7 @@ export function deriveAboveLineFromSavings(
       ? traditionalIraDeductibleAmount(
           iraGate.magi,
           traditionalIraPreTax,
+          iraGate.annualLimit,
           iraGate.coveredSelf,
           iraGate.coveredSpouse,
           year,
@@ -200,7 +236,13 @@ export function deriveAboveLineFromSavings(
       : traditionalIraPreTax;
   }
 
-  return { aboveLine: total, itemized: 0, saltPool: 0, traditionalIraPreTax };
+  return {
+    aboveLine: total,
+    itemized: 0,
+    saltPool: 0,
+    traditionalIraPreTax,
+    traditionalIraAccountIds: [...traditionalIraAccountIds],
+  };
 }
 
 // ── Source 2: Expenses tagged with deductionType ────────────────────────────

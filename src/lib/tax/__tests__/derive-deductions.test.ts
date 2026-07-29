@@ -532,15 +532,25 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
     },
   } as unknown as TaxYearParameters;
 
+  /** The §219(b) annual IRA limit basis these fixtures phase out — one
+   *  contributor at the 2026 statutory $7,000. Real callers build this from
+   *  the contributing owners (see `traditionalIraAnnualLimitBasis`); here it
+   *  is a literal so the phase-out arithmetic stays readable. */
+  const GATE_ANNUAL_LIMIT = 7000;
+
   /** Default: MFJ, self covered, MAGI above the top of the covered range. */
   const gate = (
-    over: Partial<{ magi: number; coveredSelf: boolean; coveredSpouse: boolean; filingStatus: FilingStatus }> = {}
+    over: Partial<{
+      magi: number; coveredSelf: boolean; coveredSpouse: boolean;
+      filingStatus: FilingStatus; annualLimit: number;
+    }> = {}
   ) => ({
     magi: 200000,
     coveredSelf: true,
     coveredSpouse: false,
     params: gateParams,
     filingStatus: "married_joint" as FilingStatus,
+    annualLimit: GATE_ANNUAL_LIMIT,
     ...over,
   });
 
@@ -586,9 +596,14 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
   });
 
   it("aggregates traditional IRA rules so Pub 590-A rounding applies once", () => {
-    // MAGI 147,750 -> fraction 18,750/20,000 = 0.9375, so 6.25% survives.
-    // Aggregated: 6,000 x 0.0625 = 375 -> rounded up to 380.
-    // Per-rule would be 2,000 x 0.0625 = 125 -> floored to 200 each = 600.
+    // MAGI 148,900 -> fraction 19,900/20,000 = 0.995, so 0.5% of the $7,000
+    // limit survives: 35 -> rounded up to 40 -> raised to the $200 floor.
+    // Deduction = min(6,000 contributed, 200) = 200, ONE floor application.
+    // Per-rule the same $200 floor would apply to each of the three rules
+    // (min(2,000, 200) each) = 600 — triple the statutory allowance.
+    //
+    // The MAGI sits deep in the range on purpose: the floor is what this test
+    // is about, and it only binds once the reduced limit falls under $200.
     const rules = [
       makeRule("acct-ira", 2000),
       makeRule("acct-ira", 2000),
@@ -596,20 +611,28 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
     ];
     const res = deriveAboveLineFromSavings(
       2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
-      undefined, undefined, gate({ magi: 147750 }),
+      undefined, undefined, gate({ magi: 148900 }),
     );
-    expect(res.aboveLine).toBe(380);
+    expect(res.aboveLine).toBe(200);
   });
 
   it("gates the pre-tax portion of a split rule, not the gross contribution", () => {
     // 10,000 with rothPercent 0.4 -> 6,000 pre-tax.
-    // 6,000 x 0.0625 = 375 -> 380. Gating the gross 10,000 would give 630.
+    // MAGI 130,000 -> fraction 1,000/20,000 = 0.05, so 95% of the $7,000 limit
+    // survives: reduced limit 6,650. The deduction is min(contribution, 6,650),
+    // and WHICH contribution decides the answer: the 6,000 pre-tax portion
+    // gives 6,000, the gross 10,000 would give 6,650.
+    //
+    // ⚠️ The MAGI must sit where the CONTRIBUTION binds (contribution < reduced
+    // limit). Deeper in the range the reduced limit binds instead and both the
+    // gross and the pre-tax figure clamp to the same number — the assertion
+    // would still pass while testing nothing.
     const rules = [makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 })];
     const res = deriveAboveLineFromSavings(
       2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
-      undefined, undefined, gate({ magi: 147750 }),
+      undefined, undefined, gate({ magi: 130000 }),
     );
-    expect(res.aboveLine).toBe(380);
+    expect(res.aboveLine).toBe(6000);
   });
 
   it("never deducts more than the pre-tax portion below the range", () => {
@@ -650,9 +673,11 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
       2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
       gate({ magi: 86000, filingStatus: "single" }),
     );
-    // Single range 81,000-91,000: halfway through -> 7,500 x 0.5 = 3,750.
-    // Under the MFJ range this MAGI would be fully deductible.
-    expect(res.aboveLine).toBe(3750);
+    // Single range 81,000-91,000: halfway through -> half the $7,000 limit
+    // survives = 3,500, and min(7,500 contributed, 3,500) = 3,500.
+    // Under the MFJ range (129,000-149,000) this MAGI is below the start, so a
+    // transposed ternary would deduct the full 7,500.
+    expect(res.aboveLine).toBe(3500);
   });
 
   it("never reaches the gate for a rule the existing guards already skip", () => {
@@ -698,17 +723,21 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
       makeRule("acct-ira", 6000),
     ];
     const accounts = [ACCT_401K, ACCT_TRADITIONAL_IRA];
-    // MAGI 147,750 -> surviving fraction 18,750/20,000 = 0.9375, so 6.25%
-    // survives: 6,000 x 0.0625 = 375, rounded up to 380 (Pub 590-A).
+    // MAGI 147,750 -> 18,750/20,000 = 93.75% through the range, so 6.25% of the
+    // §219(b) LIMIT survives: 7,000 x 0.0625 = 437.50, rounded up to 440
+    // (Pub 590-A). The deduction is min(contribution 6,000, 440) = 440.
+    // Note the limit, not the contribution, is what the fraction scales —
+    // IRC 219(g)(2)(A). Scaling the 6,000 contribution instead would give 380.
     const ungated = deriveAboveLineFromSavings(2026, rules, accounts, isGrantorAlways);
     const gated = deriveAboveLineFromSavings(
       2026, rules, accounts, isGrantorAlways, undefined, undefined, gate({ magi: 147750 }),
     );
 
     const expectedGatedIra = traditionalIraDeductibleAmount(
-      147750, ungated.traditionalIraPreTax, true, false, 2026, gateParams, "married_joint",
+      147750, ungated.traditionalIraPreTax, GATE_ANNUAL_LIMIT,
+      true, false, 2026, gateParams, "married_joint",
     );
-    expect(expectedGatedIra).toBe(380);
+    expect(expectedGatedIra).toBe(440);
     // Non-vacuous on both sides: the gate genuinely bit, and there IS a
     // non-IRA component that must survive it untouched.
     expect(expectedGatedIra).toBeLessThan(ungated.traditionalIraPreTax);
@@ -716,7 +745,7 @@ describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
 
     expect(gated.aboveLine - expectedGatedIra).toBe(ungated.aboveLine - ungated.traditionalIraPreTax);
     expect(gated.traditionalIraPreTax).toBe(ungated.traditionalIraPreTax);
-    expect(gated.aboveLine).toBe(24880); // 24,500 + 380
+    expect(gated.aboveLine).toBe(24940); // 24,500 + 440
   });
 
   it("reports a zero subtotal when the household contributes to no traditional IRA", () => {

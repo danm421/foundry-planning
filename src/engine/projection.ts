@@ -71,6 +71,7 @@ import {
   computeIraLimit,
   computeMaxContribution,
   resolveAgeInYear,
+  traditionalIraAnnualLimitBasis,
   type CapAdjustment,
 } from "./contribution-limits";
 import { computeRoth529Rollover } from "./education/roth-rollover";
@@ -3616,6 +3617,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         filingStatus === "married_joint" || filingStatus === "married_separate";
       const coveredSpouse = spouseOnReturn && resolveWorkplaceCoverage("spouse");
 
+      // IRC 219(g)(2)(A) reduces the §219(b) LIMIT, so the gate needs that
+      // limit as its basis. It is built from the accounts the UNGATED pass
+      // reports as having actually contributed — pass 1 applies the same six
+      // inclusion guards pass 2 does, and only a contributing owner's limit
+      // belongs in the ceiling.
+      const iraAnnualLimit = traditionalIraAnnualLimitBasis({
+        accountIds: savingsUngated.traditionalIraAccountIds,
+        accounts: data.accounts,
+        client,
+        familyMembers: data.familyMembers ?? [],
+        year,
+        taxYearParams: resolved!.params,
+      });
+
       // Pass 2 over the savings rules — THIS is the contribution that feeds
       // `aggregateDeductions`. Routing the gate through `iraGate` rather than
       // calling `traditionalIraDeductibleAmount` here keeps one implementation
@@ -3629,6 +3644,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           coveredSpouse,
           params: resolved!.params,
           filingStatus,
+          annualLimit: iraAnnualLimit,
         },
       );
       // The non-IRA component is identical across the two calls, so the
