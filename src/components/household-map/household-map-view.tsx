@@ -12,9 +12,15 @@ import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href"
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
-import type { MapGoal } from "@/lib/household-map/goals";
+import type { LifeExpectancyOwner, MapGoal } from "@/lib/household-map/goals";
+import {
+  buildLifeExpectancyClientFields,
+  buildLifeExpectancyPlanSettingsFields,
+  isValidLifeExpectancy,
+  lifeExpectancyBasePayload,
+} from "@/lib/household-map/life-expectancy-write";
 import type { TargetKind } from "@/engine/scenario/types";
-import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioWriter, type ScenarioEdit } from "@/hooks/use-scenario-writer";
 import {
   buildBasePayload,
   buildScenarioDesiredFields,
@@ -56,30 +62,39 @@ function flowWriteTarget(
 
 /**
  * Rough `ClientMilestones` built from what's already in `HouseholdMapProps` —
- * no new fetch. `planStart`/`clientEnd`/`spouseEnd` are estimates (the exact
- * values live server-side and aren't part of this page's props). This is only
- * ever used to seed the quick-edit drawer's milestone-anchor picker options;
- * whichever ref the user picks is stored alongside the resolved year, and the
- * engine re-resolves the effective year from the ref (not the stored year) on
- * every future load — see `resolvedStart`/`resolvedEnd` in
- * `lib/projection/load-client-data.ts`. An approximate resolution here is
- * cosmetic only and self-corrects on the next page refresh.
+ * no new fetch. `planStart` is an estimate (the exact value lives server-side
+ * and isn't part of this page's props). This is only ever used to seed the
+ * quick-edit drawer's milestone-anchor picker options; whichever ref the user
+ * picks is stored alongside the resolved year, and the engine re-resolves the
+ * effective year from the ref (not the stored year) on every future load — see
+ * `resolvedStart`/`resolvedEnd` in `lib/projection/load-client-data.ts`. An
+ * approximate resolution here is cosmetic only and self-corrects on the next
+ * page refresh.
+ *
+ * `clientEnd` / `spouseEnd` are now read off the two life-expectancy milestone
+ * cards, which carry each person's OWN death year. They used to be a single
+ * shared `approxEnd` taken from the one "plan end" card, so the picker offered
+ * "Spouse End of Plan" and "Client End of Plan" as the same year for every
+ * household — and for at least one of the two it was the wrong year.
  */
 function approximateMilestones(
   people: HouseholdMapProps["people"],
   goals: MapGoal[],
 ): ClientMilestones {
   const currentYear = new Date().getFullYear();
-  const planEndGoal = goals.find((g) => g.id === "milestone:plan_end");
   const clientRetirement = people.client.retirementYear ?? currentYear + 10;
-  const approxEnd = planEndGoal?.year ?? currentYear + 30;
+  const clientEnd =
+    goals.find((g) => g.lifeExpectancy?.owner === "client")?.year ?? currentYear + 30;
+  const spouseEnd = goals.find((g) => g.lifeExpectancy?.owner === "spouse")?.year;
   return {
     planStart: currentYear,
-    planEnd: approxEnd,
+    // The plan runs to the LAST death, which is the whole reason both cards
+    // exist — never just the client's.
+    planEnd: Math.max(clientEnd, spouseEnd ?? clientEnd),
     clientRetirement,
-    clientEnd: approxEnd,
+    clientEnd,
     spouseRetirement: people.spouse?.retirementYear ?? undefined,
-    spouseEnd: people.spouse ? approxEnd : undefined,
+    spouseEnd,
   };
 }
 
@@ -201,6 +216,91 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
     return res.ok;
   }
 
+  /**
+   * Persist an inline life-expectancy edit from the Goals board.
+   *
+   * The only field on this page that moves the PLAN HORIZON, which is why this
+   * doesn't look like the other two savers. The horizon lives on two singletons
+   * — `client.planEndAge` and `planSettings.planEndYear` — and the engine's year
+   * loop is bounded by the latter, so writing the life expectancy alone would
+   * change every displayed death year while the projection kept running to the
+   * old one.
+   *
+   *   Base mode     — one `PUT /api/clients/[id]`. That route re-derives
+   *                   `planEndAge` and pushes the new `planEndYear` to every one
+   *                   of the client's plan_settings rows itself, so there is
+   *                   nothing else to do (and nothing else to send: see
+   *                   `lifeExpectancyBasePayload`).
+   *
+   *   Scenario mode — TWO `scenario_changes` rows, because one row targets
+   *                   exactly one `targetKind`. Passed to `submit` as a BATCH,
+   *                   which posts them in order and stops at the first failure.
+   *                   Not atomic: the route offers no way to write both kinds
+   *                   in one request, so a failure between them leaves the
+   *                   scenario with a new life expectancy and a stale horizon.
+   *                   We return false so the editor reverts; re-saving is
+   *                   idempotent (both writes are upserts diffed against base).
+   *
+   * `targetId` for the `plan_settings` singleton is the CLIENT ID, not a
+   * sentinel. `scenario_changes.target_id` is a Postgres `uuid` column and
+   * `lookupBaseEntity` ignores the value for singleton kinds, so any stable uuid
+   * works and the clientId is the only one to hand. (The Solver emits the string
+   * `"plan_settings"` for the same slot — `mutations-to-scenario-changes.ts` —
+   * which cannot cast to uuid; there are zero such rows in the database. Do not
+   * copy that convention here.)
+   */
+  async function handleSaveLifeExpectancy(
+    owner: LifeExpectancyOwner,
+    age: number,
+  ): Promise<boolean> {
+    if (!canEdit) return false;
+
+    // Reject before writing anything. Below the person's current age the derived
+    // death year lands before the plan starts and `computeFinalDeathYear` returns
+    // null — the projection then models NO death at all, which is the opposite of
+    // what someone typing a low number meant.
+    const birthYear =
+      owner === "client" ? people.client.birthYear : (people.spouse?.birthYear ?? null);
+    if (!isValidLifeExpectancy(age, birthYear, new Date().getFullYear())) return false;
+
+    const edits: ScenarioEdit[] = [
+      {
+        op: "edit",
+        targetKind: "client",
+        targetId: clientId,
+        desiredFields: buildLifeExpectancyClientFields(props.clientScenarioFields, owner, age),
+      },
+    ];
+
+    const planSettingsFields = buildLifeExpectancyPlanSettingsFields(
+      props.planSettingsScenarioFields,
+      props.clientScenarioFields,
+      owner,
+      age,
+    );
+    // Null means no derivable horizon (unparseable DOB). Omit the second edit
+    // rather than post a payload that would replace this scenario's existing
+    // plan_settings overrides with nothing gained.
+    if (planSettingsFields) {
+      edits.push({
+        op: "edit",
+        targetKind: "plan_settings",
+        targetId: clientId,
+        desiredFields: planSettingsFields,
+      });
+    }
+
+    // Both edits are built unconditionally; base mode discards them and sends
+    // only the fallback PUT. They are pure derivations off props, so building
+    // them costs nothing a branch would save.
+    const res = await writer.submit(edits, {
+      url: `/api/clients/${clientId}`,
+      method: "PUT",
+      body: lifeExpectancyBasePayload(owner, age),
+    });
+    return res.ok;
+  }
+
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
   // Every editor opened from here hydrates from `props`, which carry the
@@ -311,7 +411,11 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
         />
       )}
       {board === "goals" && (
-        <GoalsBoard {...props} onEditGoalExpense={handleEditGoalExpense} />
+        <GoalsBoard
+          {...props}
+          onEditGoalExpense={handleEditGoalExpense}
+          onSaveLifeExpectancy={handleSaveLifeExpectancy}
+        />
       )}
       {board === "cash-flow" && (
         <CashFlowBoard

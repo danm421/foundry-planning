@@ -1,6 +1,18 @@
 import type { ClientData } from "@/engine/types";
 
 /**
+ * The age assumed for a person with a DOB but no stored life expectancy. Must
+ * agree with the engine's own `?? 95` (`computeFinalDeathYear` /
+ * `isSpouseLifeExpectancyDefaulted` in `engine/death-event/shared.ts`) and with
+ * the Solver's sliders: the projection ALREADY runs to that year, so anything
+ * that displays or re-derives the horizon has to name the same number.
+ *
+ * Exported so callers outside this module (the Household Map's "assumed" badge)
+ * consume the constant rather than re-typing the literal.
+ */
+export const ASSUMED_LIFE_EXPECTANCY = 95;
+
+/**
  * Compute the plan-end age (in the primary client's years) from the
  * household's life-expectancy inputs. The plan horizon is the year the last
  * spouse dies, so this returns the primary client's age in that year.
@@ -21,7 +33,7 @@ export function computePlanEndAge(params: {
   let lastDeathYear = clientDeathYear;
   if (params.spouseDob) {
     const spouseBirthYear = new Date(params.spouseDob).getFullYear();
-    const spouseLE = params.spouseLifeExpectancy ?? 95;
+    const spouseLE = params.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY;
     const spouseDeathYear = spouseBirthYear + spouseLE;
     if (spouseDeathYear > lastDeathYear) lastDeathYear = spouseDeathYear;
   }
@@ -67,13 +79,13 @@ export function planHorizonFromLifeExpectancy(client: {
   const clientBirthYear = parseInt(String(client.dateOfBirth).slice(0, 4), 10);
   if (!Number.isFinite(clientBirthYear)) return null;
 
-  let lastDeathYear = clientBirthYear + (client.lifeExpectancy ?? 95);
+  let lastDeathYear = clientBirthYear + (client.lifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY);
   if (client.spouseDob) {
     const spouseBirthYear = parseInt(String(client.spouseDob).slice(0, 4), 10);
     if (Number.isFinite(spouseBirthYear)) {
       lastDeathYear = Math.max(
         lastDeathYear,
-        spouseBirthYear + (client.spouseLifeExpectancy ?? 95),
+        spouseBirthYear + (client.spouseLifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY),
       );
     }
   }

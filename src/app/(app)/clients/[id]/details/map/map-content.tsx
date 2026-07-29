@@ -45,6 +45,7 @@ import {
   toMapItem,
 } from "@/lib/household-map/map-items";
 import { buildFlowScenarioFields } from "@/lib/household-map/flow-write";
+import { pruneScenarioFields } from "@/lib/household-map/scenario-fields";
 import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
 import type { Account, Expense, Income, Liability, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
@@ -354,6 +355,19 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     .filter((a) => a.subType === "roth_ira")
     .map((a) => ({ id: a.id, name: a.name }));
 
+  // Birth years, from the CRM-contact DOBs gated at the top of this function.
+  // Declared here rather than beside `people` below because `buildMapGoals` needs
+  // them too: each life-expectancy milestone sits at `birthYear + lifeExpectancy`,
+  // the engine's own per-person death-year rule. Both consumers must read the
+  // same value — a card whose year disagreed with the person node's age is the
+  // bug this replaced.
+  const clientBirthYear = birthYearFromDob(client.dateOfBirth);
+  // Same CRM spouse-contact DOB (`client.spouseDob`) that feeds `age` below
+  // and gates `milestones.spouseEnd` — must not diverge (see the
+  // `spouseFirstName` note in `buildMapGoals` below).
+  const spouseBirthYear = birthYearFromDob(client.spouseDob);
+  const spouseFirstName = effectiveClient.spouseName ?? null;
+
   const goals = buildMapGoals({
     expenses: effectiveTree.expenses,
     milestones,
@@ -361,16 +375,29 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       firstName: effectiveClient.firstName,
       retirementAge,
       lifeExpectancy,
+      birthYear: clientBirthYear,
       // `spouseName` is the spouse CRM contact's firstName — the same row whose
       // dateOfBirth gates `milestones.spouseEnd` above. They cannot diverge, so
       // the unguarded `${spouseFirstName}'s life expectancy` title in goals.ts
       // stays safe. Do not source this name from anywhere else.
-      spouseFirstName: effectiveClient.spouseName ?? null,
+      spouseFirstName,
       spouseRetirementAge,
       spouseLifeExpectancy,
+      spouseBirthYear,
     },
     familyMemberNamesById: ctx.nameByFamilyMemberId,
   });
+
+  // Scenario-edit field sets for the two singletons the Goals board's
+  // life-expectancy editor writes. Same wholesale-replace rule as
+  // `flowScenarioFields` above: a scenario edit's stored payload REPLACES the
+  // previous one, so the write has to carry every field this scenario already
+  // overrides or it deletes them. Two of them because the plan horizon straddles
+  // both singletons — `planEndAge` on `client`, `planEndYear` on `plan_settings`
+  // — and one `scenario_changes` row targets exactly one kind. See
+  // `lib/household-map/life-expectancy-write.ts`.
+  const clientScenarioFields = pruneScenarioFields(effectiveClient);
+  const planSettingsScenarioFields = pruneScenarioFields(effectiveTree.planSettings);
 
   // Net worth = assets − debts, the same signs the item list carries.
   const netWorth =
@@ -378,12 +405,6 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     effectiveTree.liabilities.reduce((sum, l) => sum + l.balance, 0);
 
   const today = new Date();
-  const spouseFirstName = effectiveClient.spouseName ?? null;
-  const clientBirthYear = birthYearFromDob(client.dateOfBirth);
-  // Same CRM spouse-contact DOB (`client.spouseDob`) that feeds `age` below
-  // and gates `milestones.spouseEnd` — must not diverge (see the
-  // `spouseFirstName` note near `buildMapGoals` below).
-  const spouseBirthYear = birthYearFromDob(client.spouseDob);
   const people = {
     client: {
       familyMemberId: familyMemberRows.find((f) => f.role === "client")?.id ?? null,
@@ -431,6 +452,8 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
       flowScenarioFields={flowScenarioFields}
+      clientScenarioFields={clientScenarioFields}
+      planSettingsScenarioFields={planSettingsScenarioFields}
       accountOptions={accountOptions}
       accountRows={accountRows}
       growthContext={growthContext}
