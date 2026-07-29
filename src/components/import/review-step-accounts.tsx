@@ -284,12 +284,24 @@ export default function ReviewStepAccounts({
               <div className="grid grid-cols-6 gap-2">
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs text-gray-300">Name</label>
-                  <input
-                    value={account.name}
-                    onChange={(e) => updateField(i, "name", e.target.value)}
-                    className={account.name ? INPUT_CLASS : EMPTY_CLASS}
-                    placeholder="Account name"
-                  />
+                  {existingRow?.name ? (
+                    // Matched rows keep the existing account's name — commitAccounts
+                    // maps `name` as keep-existing, so an editable input here would
+                    // be a false affordance. Rename on the account page instead.
+                    <div className="px-2 py-1.5">
+                      <div className="text-sm text-gray-100">{existingRow.name}</div>
+                      <div className="mt-0.5 text-xs text-ink-4">
+                        from document: {account.name}
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      value={account.name}
+                      onChange={(e) => updateField(i, "name", e.target.value)}
+                      className={account.name ? INPUT_CLASS : EMPTY_CLASS}
+                      placeholder="Account name"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Category</label>
