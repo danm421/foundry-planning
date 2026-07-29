@@ -10,7 +10,6 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
 import { CurrencyInput } from "./currency-input";
-import { InlineAmount } from "./forms/inline-amount";
 import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
@@ -20,6 +19,8 @@ import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineInco
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
+import Row from "@/components/income-expenses/row";
+import Group from "@/components/income-expenses/group";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -259,34 +260,6 @@ function yearsDescriptor(start: number, end: number, planStart?: number, planEnd
 
 // ── Shared atoms ──────────────────────────────────────────────────────────────
 
-function TrashIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
-function PlusMiniIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-    </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793 3 14.172V17h2.828l8.379-8.379-2.828-2.828z" />
-    </svg>
-  );
-}
-
 function SectionHeader({
   title,
   subtitle,
@@ -318,19 +291,6 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       }`}
     >
       {on ? "Done" : "Edit"}
-    </button>
-  );
-}
-
-function AddGroupButton({ onClick, label = "Add" }: { onClick: () => void; label?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-accent/15 hover:text-accent"
-      aria-label={label}
-      title={label}
-    >
-      <PlusMiniIcon />
     </button>
   );
 }
@@ -2280,118 +2240,6 @@ function Kpi({
 
 function Panel({ children }: { children: React.ReactNode }) {
   return <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">{children}</div>;
-}
-
-function Group({
-  label,
-  total,
-  onAdd,
-  children,
-}: {
-  label: string;
-  total: string;
-  onAdd?: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border-b border-gray-800 last:border-0">
-      <div className="flex items-center justify-between bg-gray-900/70 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">{label}</span>
-          {onAdd && <AddGroupButton onClick={onAdd} label={`Add to ${label}`} />}
-        </div>
-        <span className="text-xs text-gray-400">{total}</span>
-      </div>
-      <div className="divide-y divide-gray-800">{children}</div>
-    </div>
-  );
-}
-
-function Row({
-  onClick,
-  editMode,
-  onDelete,
-  onEdit,
-  label,
-  meta,
-  starts,
-  value,
-  amount,
-  onSaveAmount,
-  outOfEstate,
-}: {
-  onClick?: () => void;
-  editMode: boolean;
-  onDelete?: () => void;
-  /** When set, renders a pencil button that opens the full editor. */
-  onEdit?: () => void;
-  label: string;
-  meta?: (string | null | undefined)[];
-  starts?: string;
-  value: string;
-  /** Raw numeric amount — required alongside `onSaveAmount` for inline editing. */
-  amount?: number;
-  /** When set (with `amount`), the value becomes an inline-editable field. */
-  onSaveAmount?: (next: number) => Promise<boolean>;
-  outOfEstate?: boolean;
-}) {
-  const metaLine = (meta ?? []).filter(Boolean).join(" · ");
-  const interactive = Boolean(onClick);
-  const inlineEditable = onSaveAmount != null && amount != null;
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center justify-between gap-3 px-4 py-2 ${
-        interactive ? "cursor-pointer hover:bg-gray-800/60" : ""
-      } ${outOfEstate ? "bg-amber-950/10" : ""}`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-gray-100">{label}</span>
-          {outOfEstate && (
-            <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-300">
-              OOE
-            </span>
-          )}
-        </div>
-        {metaLine && <div className="truncate text-xs text-gray-400">{metaLine}</div>}
-      </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {starts && (
-          <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
-        )}
-        {inlineEditable ? (
-          <InlineAmount amount={amount} onSave={onSaveAmount} label={label} />
-        ) : (
-          <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
-        )}
-        {editMode && onDelete ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="text-white hover:text-white"
-            aria-label={`Delete ${label}`}
-          >
-            <TrashIcon />
-          </button>
-        ) : onEdit && !editMode ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="text-gray-500 hover:text-accent"
-            aria-label={`Edit ${label}`}
-            title={`Edit ${label}`}
-          >
-            <PencilIcon />
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 function EmptyRow({ message }: { message: string }) {
