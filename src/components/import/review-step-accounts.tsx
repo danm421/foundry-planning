@@ -5,6 +5,7 @@ import type { ExtractedAccount, AccountCategory, AccountSubType, ExtractedHoldin
 import { holdingsReconciliation, holdingMarketValue } from "@/lib/extraction/normalize-holdings";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
@@ -241,7 +242,7 @@ export default function ReviewStepAccounts({
                     <MatchColumn
                       match={match}
                       existingName={existingRow?.name}
-                      candidates={candidates}
+                      candidates={candidatesForRow(i, matches ?? [], candidates)}
                       entityKind="account"
                       onChange={(next) => onMatchChange?.(i, next)}
                     />

@@ -2,6 +2,7 @@
 
 import type { CommitWill } from "@/lib/imports/commit/will-types";
 import type { MatchAnnotation, Provenance } from "@/lib/imports/types";
+import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import MatchColumn from "./match-column";
 import SourceBadge from "./source-badge";
 import type { MatchCandidate } from "./match-link-picker";
@@ -113,7 +114,7 @@ export default function ReviewStepWills({
                 {matchingEnabled && (
                   <MatchColumn
                     match={matches?.[wIndex]}
-                    candidates={candidates}
+                    candidates={candidatesForRow(wIndex, matches ?? [], candidates)}
                     entityKind="will"
                     onChange={(next) => onMatchChange?.(wIndex, next)}
                   />
