@@ -107,17 +107,22 @@ describe("listCrmHouseholds sorting", () => {
       { name: "Zoe Adams", primary: ["Zoe", "Adams"] },
       { name: "Amy Baker", primary: ["Amy", "Baker"] },
     ]);
-    // Make Zoe the most recently updated. Without this the two rows share an
-    // insert-time timestamp and the assertion would pass whatever the order is.
+    // Make Baker (Amy Baker) the most recently updated. Baker sorts AFTER
+    // Adams on last name, so this timestamp is the only reason Baker could
+    // end up first — it makes updatedAt-desc and name-asc disagree, which is
+    // the point: if the no-sort default silently fell back to
+    // buildOrderBy("name", "asc") instead of updatedAt desc, Zoe Adams would
+    // wrongly come first and this assertion would catch it.
     await db
       .update(crmHouseholds)
       .set({ updatedAt: new Date(Date.UTC(2030, 0, 1)) })
-      .where(eq(crmHouseholds.name, "Zoe Adams"));
+      .where(eq(crmHouseholds.name, "Amy Baker"));
 
     const rows = await listCrmHouseholds();
 
-    // updatedAt desc — Zoe first, DESPITE Baker losing on last name.
-    expect(rows.map((r) => r.name)).toEqual(["Zoe Adams", "Amy Baker"]);
+    // updatedAt desc puts Baker first, DESPITE Adams winning on last-name
+    // order; the two orderings disagree here, which is the point.
+    expect(rows.map((r) => r.name)).toEqual(["Amy Baker", "Zoe Adams"]);
   });
 
   it("sorts status in lifecycle order, not alphabetical order", async () => {
