@@ -107,3 +107,28 @@ export const AGE_60_MONTHS = 60 * 12;
 
 /** Survivor floor: max(deceased's reduced benefit, 82.5% × deceased PIA) (§5.6.5 Case A). */
 export const SURVIVOR_FLOOR_PCT_OF_PIA = 0.825;
+
+// ── PIA formula bend points ──────────────────────────────────────────
+
+/**
+ * PIA formula bend points, MONTHLY. These are the 2025 SSA published figures.
+ *
+ * UPDATE ANNUALLY when SSA publishes the new figures, exactly like FRA_TABLE
+ * and the reduction factors above. Held here rather than in tax_year_params so
+ * the engine stays free of DB reads; the caller supplies ssWageBase, which
+ * already lives in the tax params.
+ *
+ * STALENESS: the caller's ssWageBase is a 2026 figure (184,500), so the
+ * estimator currently pairs a 2026 wage base with 2025 bend points. The bend
+ * points are the stalest input in the calculation. Bend points and the wage
+ * base are both indexed to the same SSA average-wage index, so 2026 figures
+ * will be HIGHER than these; using 2025's too-low bend points leaves more of
+ * AIME in the 90% band, which OVERSTATES the PIA slightly — on the order of
+ * 1-2%, well inside the plus-or-minus-10% tolerance this estimator is
+ * specified to. To fix, replace BOTH figures AND the year with SSA's published
+ * 2026 "Benefit Formula Bend Points" once confirmed from SSA directly. Do not
+ * derive or interpolate them.
+ *
+ * Source: SSA "Benefit Formula Bend Points".
+ */
+export const BEND_POINTS = { year: 2025, first: 1226, second: 7391 } as const;
