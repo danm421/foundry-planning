@@ -5,6 +5,8 @@ import { applyRiskPortfolioToScenario, resolveRiskPortfolioId } from "@/lib/cma/
 import { replaceDedicatedAccounts } from "@/lib/clients/dedicated-accounts";
 import type { AccountSubType } from "@/lib/extraction/types";
 import { isRiskLevel } from "@/lib/risk-levels";
+import { BAND_CENTERS } from "@/lib/risk/scoring";
+import { recomputeProfileTx } from "@/lib/risk/profile";
 import type { ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
@@ -286,6 +288,31 @@ export async function commitGoals(
       .set({ riskTolerance: tolerance, updatedAt: new Date() })
       .where(and(eq(clients.id, ctx.clientId), eq(clients.firmId, ctx.orgId)));
     result.updated += 1;
+
+    // Seed the suitability record too. An import that states a rung is already
+    // confident enough to repoint the client's portfolios (just below), so
+    // leaving client_risk_profiles empty stranded exactly that household on
+    // /risk as "no tolerance established" — an allocation set from a rung the
+    // suitability record never learned about. Same shape as the advisor's
+    // manual-rung route (api/clients/[id]/risk/tolerance), and routed through
+    // recomputeProfile so the composite, binding constraint, and history row
+    // stay derived from their inputs rather than written by hand.
+    //
+    // On `tx`, not its own transaction: a profile seeded by an import that
+    // later rolls back must roll back with it.
+    await recomputeProfileTx(tx, {
+      clientId: ctx.clientId,
+      firmId: ctx.orgId,
+      actorUserId: ctx.userId,
+      kind: "tolerance_manual",
+      reason: "Stated during document import",
+      patch: {
+        toleranceScore: BAND_CENTERS[tolerance],
+        toleranceSource: "manual",
+        toleranceConfirmedAt: new Date(),
+        rtqVersion: null,
+      },
+    });
 
     const portfolioId = await resolveRiskPortfolioId(ctx.orgId, tolerance);
     if (portfolioId) {
