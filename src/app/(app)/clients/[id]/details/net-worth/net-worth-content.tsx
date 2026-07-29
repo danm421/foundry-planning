@@ -23,6 +23,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadFundPortfolioOptions } from "@/lib/investments/load-fund-portfolio-options";
+import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
@@ -154,7 +155,12 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       const ac = acMap.get(alloc.assetClassId);
       if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
     }
-    return { id: p.id, name: p.name, blendedReturn };
+    // `riskLevel` is carried for the inline growth cell's `GrowthContext`
+    // (`GrowthContextPortfolio` requires it). It is a real column
+    // (`model_portfolios.risk_level`, nullable), not a placeholder. The
+    // `modelPortfolios` prop below takes the narrower `ModelPortfolioOption`
+    // and simply ignores the extra field.
+    return { id: p.id, name: p.name, blendedReturn, riskLevel: p.riskLevel };
   });
 
   const settings = settingsRows[0];
@@ -282,6 +288,28 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     resolvedInflationRate,
   );
 
+  // Growth-rate dropdown context for the inline rate cell on asset rows. Built
+  // on the server and passed down, mirroring `map-content.tsx` — the client
+  // view cannot derive it from the props it already gets, which carry neither
+  // `riskLevel` nor the percent-scaled category labels.
+  const growthContext: GrowthContext = {
+    modelPortfolios: modelPortfolioOptions,
+    fundPortfolios: fundPortfolioOptions,
+    resolvedInflationRate,
+    categoryDefaults: Object.fromEntries(
+      Object.entries(categoryDefaultSources).map(([category, s]) => [
+        category,
+        {
+          portfolioName: s.portfolioName ?? null,
+          // UNITS: `blendedReturn` here is a DECIMAL (0.06);
+          // `blendedReturnPct` is a PERCENT (6). Dropping the ×100 renders
+          // "0.06% — Model portfolio".
+          blendedReturnPct: s.blendedReturn != null ? s.blendedReturn * 100 : null,
+        },
+      ]),
+    ),
+  };
+
   return (
     <BalanceSheetView
       clientId={id}
@@ -327,6 +355,8 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       categoryDefaultSources={categoryDefaultSources}
       milestones={milestones}
       resolvedInflationRate={resolvedInflationRate}
+      growthContext={growthContext}
+      categoryDefaultRates={categoryDefaults}
     />
   );
 }

@@ -31,6 +31,17 @@ import Row from "@/components/balance-sheet/row";
 import CategoryGroup from "@/components/balance-sheet/category-group";
 import BusinessRowGroup from "@/components/balance-sheet/business-row-group";
 import { ChevronDown, ChevronRight, LinkedSourceBadge } from "@/components/balance-sheet/icons";
+import InlineOwnerCell from "@/components/forms/inline-owner-cell";
+import GrowthRateCell from "@/components/forms/growth-rate-cell";
+import { InlineAmount } from "@/components/forms/inline-amount";
+import { usePendingEdits } from "@/hooks/use-pending-edits";
+import {
+  buildBasePayload,
+  buildScenarioDesiredFields,
+  type AccountPatch,
+} from "@/lib/inline-edit/account-write";
+import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
@@ -171,6 +182,22 @@ interface BalanceSheetViewProps {
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
   milestones?: ClientMilestones;
   resolvedInflationRate?: number;
+  /**
+   * Growth-rate dropdown context for the inline rate cell on asset rows.
+   * Server-built (`net-worth-content.tsx`) and OPTIONAL: the onboarding wizard's
+   * accounts/liabilities steps mount this view without it and simply get no
+   * rate cell. Deliberately not derived from `modelPortfolios`/`categoryDefaults`
+   * — those props carry a narrower shape (no `riskLevel`) and a different unit
+   * (flat decimal strings vs `blendedReturnPct`).
+   */
+  growthContext?: GrowthContext;
+  /**
+   * Per-category default RATES as decimal strings, all ten categories.
+   * NAMING TRAP: this is NOT `growthContext.categoryDefaults`, which is a
+   * `{portfolioName, blendedReturnPct}` label map for three categories. The
+   * rate cell needs this one. Travels with `growthContext`.
+   */
+  categoryDefaultRates?: CategoryDefaultRateMap;
   /** "wizard" hides the KPI strip + Out-of-Estate panel and renders only the
    * column indicated by `section`. Default "page" preserves the existing
    * tabbed-view behavior verbatim. */
@@ -442,6 +469,8 @@ export default function BalanceSheetView({
   categoryDefaultSources,
   milestones,
   resolvedInflationRate,
+  growthContext,
+  categoryDefaultRates,
   embed = "page",
   section,
   planStartYear,
@@ -483,6 +512,39 @@ export default function BalanceSheetView({
 
   const writer = useScenarioWriter(clientId);
   const withScenario = useScenarioPreservingHref();
+
+  // This view holds no row state — it renders props and re-renders via
+  // `router.refresh()`. Without an optimistic overlay every inline edit would
+  // sit unchanged until the round-trip lands, which reads as a dead control.
+  const pendingAccounts = usePendingEdits(accounts);
+
+  /** Persist one inline asset-row field. The two payloads are deliberately
+   *  asymmetric — see `lib/inline-edit/account-write.ts`, which owns both. */
+  async function saveAccountField(id: string, patch: AccountPatch): Promise<boolean> {
+    // The MERGED row, not the raw `accounts` prop. `buildScenarioDesiredFields`
+    // sends the WHOLE row plus the patch, so a second edit landing before the
+    // first round-trip completes would carry the STALE field and silently
+    // revert it.
+    const row = pendingAccounts.rows.find((a) => a.id === id);
+    if (!row) return false;
+    return pendingAccounts.apply(id, patch, async () => {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "account",
+          targetId: id,
+          desiredFields: buildScenarioDesiredFields(row, patch),
+        },
+        {
+          url: `/api/clients/${clientId}/accounts/${id}`,
+          method: "PUT",
+          body: buildBasePayload(patch),
+        },
+      );
+      if (!res.ok) showToast({ message: `Couldn't save ${row.name}.` });
+      return res.ok;
+    });
+  }
 
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
@@ -584,7 +646,9 @@ export default function BalanceSheetView({
   };
 
   // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
-  const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
+  // Reads the MERGED rows so an in-flight inline edit shows immediately — and
+  // so the KPI totals derived from these lists move with it.
+  const nonNoteAccounts = pendingAccounts.rows.filter((a) => a.category !== "notes_receivable");
 
   const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
   // 529s render as their own category group in the Assets card — that's where
@@ -926,18 +990,72 @@ export default function BalanceSheetView({
                     ) : (
                       <Row
                         key={a.id}
-                        onClick={canEdit ? () => handleAccountClick(a) : undefined}
                         editMode={canEdit && assetsEdit}
                         onDelete={canEdit ? () => setDeletingAccount(a) : undefined}
+                        onEdit={canEdit ? () => handleAccountClick(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
                         labelBadge={
                           a.linkedSource ? <LinkedSourceBadge source={a.linkedSource} /> : undefined
                         }
+                        // Owner and growth moved into their own cells; the
+                        // beneficiary has no cell, so 529 rows keep a subLabel
+                        // reduced to just that name.
                         subLabel={
                           cat === "education_savings"
-                            ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary) · ${growthDisplay(a)}`
-                            : `${ownerDisplay(a)} · ${growthDisplay(a)}`
+                            ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary)`
+                            : undefined
+                        }
+                        ownerSlot={
+                          <InlineOwnerCell
+                            owners={a.owners}
+                            titlingType={a.titlingType ?? "jtwros"}
+                            parentAccountId={a.parentAccountId}
+                            familyMembers={familyMembers ?? []}
+                            entities={entities}
+                            retirementMode={a.category === "retirement"}
+                            display={ownerDisplay(a)}
+                            label={`owner for ${a.name}`}
+                            canEdit={canEdit}
+                            onSave={({ owners, titlingType }) =>
+                              saveAccountField(a.id, { owners, titlingType })
+                            }
+                          />
+                        }
+                        // Always rendered when the context is there, including
+                        // life insurance: `growthEditModeFor` already answers
+                        // "none" for it and the cell falls back to a read-only
+                        // span. Returning null instead would drop the
+                        // fixed-width cell and shift the value column out of
+                        // alignment with every sibling row.
+                        rateSlot={
+                          growthContext && categoryDefaultRates ? (
+                            <GrowthRateCell
+                              row={a}
+                              growthContext={growthContext}
+                              categoryDefaultRates={categoryDefaultRates}
+                              // Falls back to the context's own rate only to
+                              // satisfy the optional prop — on the Net Worth
+                              // page both are built from the same resolve.
+                              resolvedInflationRate={
+                                resolvedInflationRate ?? growthContext.resolvedInflationRate
+                              }
+                              canEdit={canEdit}
+                              onSave={(patch) => saveAccountField(a.id, patch)}
+                            />
+                          ) : undefined
+                        }
+                        valueSlot={
+                          // A linked account's value is owned by the integration
+                          // — editing it here would be overwritten on the next
+                          // sync without warning.
+                          canEdit && a.linkedSource == null ? (
+                            <InlineAmount
+                              amount={Number(a.value)}
+                              label={a.name}
+                              onSave={(next) => saveAccountField(a.id, { value: String(next) })}
+                            />
+                          ) : undefined
                         }
                         value={fmt(a.value)}
                       />
