@@ -9,9 +9,15 @@ import { USPS_STATE_NAMES } from "@/lib/usps-states";
 interface TaxBracketTabProps {
   years: ProjectionYear[];
   onCellClick?: (year: number, columnKey: BracketColumnKey) => void;
+  /** Optional third scope for the Federal/State group. The solver fills this
+   *  with its Thresholds panel — that report needs the base projection and the
+   *  working tree, neither of which this component has, so it arrives as a
+   *  ready-made node rather than as props. Callers that pass nothing (the
+   *  cash-flow tax detail view) get the two-button group they always had. */
+  thresholds?: React.ReactNode;
 }
 
-type Mode = "federal" | "state";
+type Mode = "federal" | "state" | "thresholds";
 
 function fmtUsd(n: number): string {
   const sign = n < 0 ? "-" : "";
@@ -313,17 +319,26 @@ function ModeButton({
   );
 }
 
-export function TaxBracketTab({ years, onCellClick }: TaxBracketTabProps) {
+export function TaxBracketTab({ years, onCellClick, thresholds }: TaxBracketTabProps) {
   const [mode, setMode] = useState<Mode>("federal");
+
+  // The "All Years" chip and the two glyph legends both describe the bracket
+  // TABLE — the thresholds panel is single-year (it carries its own picker) and
+  // renders neither glyph, so both would be lies beside it.
+  const isBracketScope = mode !== "thresholds";
 
   return (
     <div className="rounded-md bg-paper p-5 text-ink">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold tracking-tight">Tax Bracket</h3>
-          <span className="rounded-md border border-hair-2 bg-card-2 px-2.5 py-1 text-xs text-ink-2">
-            All Years
-          </span>
+          <h3 className="text-lg font-semibold tracking-tight">
+            {isBracketScope ? "Tax Bracket" : "Thresholds"}
+          </h3>
+          {isBracketScope ? (
+            <span className="rounded-md border border-hair-2 bg-card-2 px-2.5 py-1 text-xs text-ink-2">
+              All Years
+            </span>
+          ) : null}
           <div
             role="group"
             aria-label="Bracket scope"
@@ -332,25 +347,35 @@ export function TaxBracketTab({ years, onCellClick }: TaxBracketTabProps) {
             <ModeButton label="Federal" active={mode === "federal"} onClick={() => setMode("federal")} />
             <span aria-hidden className="w-px bg-hair" />
             <ModeButton label="State" active={mode === "state"} onClick={() => setMode("state")} />
+            {thresholds ? (
+              <>
+                <span aria-hidden className="w-px bg-hair" />
+                <ModeButton
+                  label="Thresholds"
+                  active={mode === "thresholds"}
+                  onClick={() => setMode("thresholds")}
+                />
+              </>
+            ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-5 text-xs text-ink-3">
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-hair-2" />
-            Multiple Events
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent border-b-hair-2" />
-            End Of Life
-          </span>
-        </div>
+        {isBracketScope ? (
+          <div className="flex items-center gap-5 text-xs text-ink-3">
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="inline-block h-3 w-3 rounded-sm border border-hair-2" />
+              Multiple Events
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="inline-block h-0 w-0 border-x-[6px] border-b-[10px] border-x-transparent border-b-hair-2" />
+              End Of Life
+            </span>
+          </div>
+        ) : null}
       </div>
 
-      {mode === "federal" ? (
-        <FederalTable years={years} onCellClick={onCellClick} />
-      ) : (
-        <StateTable years={years} />
-      )}
+      {mode === "federal" ? <FederalTable years={years} onCellClick={onCellClick} /> : null}
+      {mode === "state" ? <StateTable years={years} /> : null}
+      {mode === "thresholds" ? thresholds : null}
     </div>
   );
 }

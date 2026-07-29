@@ -25,7 +25,6 @@ import {
   EducationIcon,
   SummariesIcon,
   BalanceSheetIcon,
-  ThresholdsIcon,
 } from "./report-tab-icons";
 import { ReportCustomizePopover, type ReportMeta } from "./report-customize-popover";
 import {
@@ -59,7 +58,6 @@ export const REPORT_TABS: {
   { id: "education", label: "Education", short: "Education", icon: EducationIcon },
   { id: "balanceSheet", label: "Balance Sheet", short: "Bal Sheet", icon: BalanceSheetIcon },
   { id: "summaries", label: "Summaries", short: "Summary", icon: SummariesIcon },
-  { id: "thresholds", label: "Thresholds", short: "Thresholds", icon: ThresholdsIcon },
 ];
 
 // Shared by the tab strip and the customize popover — one label/short/icon
@@ -404,20 +402,6 @@ export function SolverChartPanel({
     );
   }
 
-  if (tab === "thresholds") {
-    return (
-      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
-        <div className="mb-3">{reportTabs}</div>
-        <SolverThresholdsPanel
-          years={currentProjection}
-          baseProjection={baseProjection}
-          workingTree={workingTree}
-        />
-        {recalculating}
-      </div>
-    );
-  }
-
   if (tab === "monteCarlo") {
     return (
       <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
@@ -578,7 +562,20 @@ export function SolverChartPanel({
 
       {tab === "taxBracket" ? (
         <div className="mt-3">
-          <TaxBracketTab years={currentProjection} />
+          {/* Thresholds is a scope of the Taxes report, not a report of its
+              own — it rides the same Federal/State group the bracket tables
+              use. Only the solver has the base projection and working tree it
+              needs, so it's passed down as a ready-made node. */}
+          <TaxBracketTab
+            years={currentProjection}
+            thresholds={
+              <SolverThresholdsPanel
+                years={currentProjection}
+                baseProjection={baseProjection}
+                workingTree={workingTree}
+              />
+            }
+          />
         </div>
       ) : showTable ? (
         <SolverYearTablePanel

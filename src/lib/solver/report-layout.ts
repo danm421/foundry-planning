@@ -17,14 +17,13 @@ export type ReportKey =
   | "monteCarlo"
   | "education"
   | "balanceSheet"
-  | "summaries"
-  | "thresholds";
+  | "summaries";
 
 /** Canonical report order. `REPORT_TABS` in solver-chart-panel.tsx must match.
- *  `thresholds` is appended at the end rather than beside `taxBracket` — rule
- *  3 below always appends a newly-shipped id at the end of a stored layout,
- *  so putting it last here too means a brand-new advisor and an existing one
- *  see the same strip. */
+ *  Note there is no `thresholds` key: the Thresholds report is a scope INSIDE
+ *  the Taxes report (see tax-bracket-tab.tsx), not a tab of its own. Advisors
+ *  who stored a layout while it briefly was one are handled by rule 4 below,
+ *  which drops non-canonical stored ids. */
 export const REPORT_KEYS: readonly ReportKey[] = [
   "portfolio",
   "cashflow",
@@ -35,7 +34,6 @@ export const REPORT_KEYS: readonly ReportKey[] = [
   "education",
   "balanceSheet",
   "summaries",
-  "thresholds",
 ];
 
 /** One report's place in an advisor's customized strip. */

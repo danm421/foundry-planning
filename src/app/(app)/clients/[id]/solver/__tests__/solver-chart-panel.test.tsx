@@ -49,8 +49,14 @@ vi.mock("../solver-summary-panel", () => ({
 vi.mock("@/components/cashflow/charts/tax-bracket-chart", () => ({
   TaxBracketChart: () => <div data-testid="chart-tax-bracket" />,
 }));
+// Renders the `thresholds` slot rather than dropping it — otherwise the
+// assertion below that the solver still wires its Thresholds panel into the
+// Taxes report would be vacuous: a mock that ignores the prop stays green no
+// matter what the panel passes (or stops passing).
 vi.mock("@/components/cashflow/tax-bracket-tab", () => ({
-  TaxBracketTab: () => <div data-testid="table-tax-bracket" />,
+  TaxBracketTab: ({ thresholds }: { thresholds?: React.ReactNode }) => (
+    <div data-testid="table-tax-bracket">{thresholds}</div>
+  ),
 }));
 vi.mock("../solver-monte-carlo-panel", () => ({
   SolverMonteCarloPanel: () => <div data-testid="solver-mc-panel" />,
@@ -150,14 +156,17 @@ describe("SolverChartPanel", () => {
     expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
   });
 
-  it("switches to the Tax Bracket chart and shows its table when expanded", async () => {
+  it("switches to the Tax Bracket chart and shows its table inline", async () => {
     render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Tax Bracket" }));
     expect(screen.getByTestId("chart-tax-bracket")).toBeInTheDocument();
     expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
-    // The bracket tables ARE the details view — not the generic year table.
-    await userEvent.click(screen.getByRole("button", { name: /expand table/i }));
+    // The bracket tables ARE the details view — not the generic year table —
+    // so this report shows them at all times and carries no expand toggle.
     expect(screen.getByTestId("table-tax-bracket")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /expand table/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the liquidity chart inside Estate and toggles portfolio assets", async () => {
@@ -257,24 +266,19 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("solver-balance-sheet-panel")).toBeInTheDocument();
   });
 
-  // The Thresholds tab shipped with NO test here, while every sibling tab has
-  // one. Deleting the whole `if (tab === "thresholds")` branch from
-  // solver-chart-panel.tsx left this entire file — and all 12 tests in
-  // solver-thresholds-panel.test.tsx, which render the panel DIRECTLY and so
-  // bypass the router — green, while an advisor clicking Thresholds silently
-  // got the Portfolio chart. This test is the only thing that reddens on that
-  // mutation.
-  it("renders the Thresholds panel when that tab is active", () => {
-    render(<ControlledPanel initialReport="thresholds" />);
-    // One `toEqual` so both facts share a SINGLE throw point. As two separate
-    // `expect`s the second never runs once the first fails, and a mutation
-    // table credits it with coverage it never executed.
+  // Thresholds is no longer a report of its own — it's a scope inside the
+  // Taxes report, reached through that report's Federal/State group. Both
+  // halves matter: the strip must not carry a Thresholds tab, and the panel
+  // must still reach TaxBracketTab's slot. All 12 tests in
+  // solver-thresholds-panel.test.tsx render the panel DIRECTLY and so bypass
+  // this wiring entirely — drop the `thresholds` prop below and this is the
+  // only test that reddens.
+  it("hands the Thresholds panel to the Taxes report instead of giving it a tab", () => {
+    render(<ControlledPanel initialReport="taxBracket" />);
     expect({
-      selected: screen
-        .getByRole("tab", { name: "Thresholds" })
-        .getAttribute("aria-selected"),
-      panelRendered: screen.queryByTestId("solver-thresholds-panel") !== null,
-    }).toEqual({ selected: "true", panelRendered: true });
+      ownTab: screen.queryByRole("tab", { name: "Thresholds" }) !== null,
+      slotFilled: screen.queryByTestId("solver-thresholds-panel") !== null,
+    }).toEqual({ ownTab: false, slotFilled: true });
   });
 
   it("renders only visible tabs, in layout order", () => {
