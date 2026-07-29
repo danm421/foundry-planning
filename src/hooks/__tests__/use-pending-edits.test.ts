@@ -3,7 +3,11 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { usePendingEdits } from "../use-pending-edits";
 
-interface Row { id: string; value: string; name: string }
+type Owner =
+  | { kind: "family_member"; familyMemberId: string; percent: number }
+  | { kind: "gifted_away"; recipient: { kind: "family_member" | "entity"; id: string }; percent: number };
+
+interface Row { id: string; value: string; name: string; owners?: Owner[] }
 
 const ROWS: Row[] = [
   { id: "a", value: "100", name: "A" },
@@ -102,6 +106,65 @@ describe("usePendingEdits", () => {
     rerender({ rows: [{ id: "a", value: "100", name: "A2" }, ROWS[1]] });
     expect(result.current.rows[0].value).toBe("999");
     expect(result.current.rows[0].name).toBe("A2");
+  });
+
+  // Reference-typed field, flat variant: a JSON round-trip always produces a
+  // fresh object identity, so `===` reconciliation can never drop this key —
+  // it would stay pinned to the optimistic value even after the server
+  // catches up, and every later, genuinely different server value would be
+  // invisible. See use-pending-edits.ts `sameFieldValue`.
+  it("reconciles an array-of-objects field by value, not reference (flat owners)", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    const pendingOwners: Owner[] = [{ kind: "family_member", familyMemberId: "fm-1", percent: 100 }];
+    const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {
+      initialProps: { rows: ROWS },
+    });
+    await act(async () => {
+      await result.current.apply("a", { owners: pendingOwners }, save);
+    });
+    expect(result.current.rows[0].owners).toEqual(pendingOwners);
+
+    // Server agrees: same value, but a FRESH identity (JSON round-trip), not
+    // the same object reference — this is exactly what a real props refresh
+    // produces and exactly what `===` cannot see through.
+    const agreeing: Owner[] = JSON.parse(JSON.stringify(pendingOwners));
+    rerender({ rows: [{ ...ROWS[0], owners: agreeing }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].owners).toEqual(agreeing));
+
+    // A LATER, genuinely different server value must show through — proving
+    // the pending key was actually dropped on agreement, not merely retained
+    // and coincidentally equal.
+    const different: Owner[] = [{ kind: "family_member", familyMemberId: "fm-2", percent: 50 }];
+    rerender({ rows: [{ ...ROWS[0], owners: different }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].owners).toEqual(different));
+  });
+
+  // Nested variant: `gifted_away` nests `recipient: { kind, id }` a level
+  // below the array element itself. Not redundant with the flat case above —
+  // a compare that only walks one level into each array element (see mutation
+  // M-B in the report) passes the flat test but still strands this one.
+  it("reconciles a nested gifted_away owner by value, not reference", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    const pendingOwners: Owner[] = [
+      { kind: "gifted_away", recipient: { kind: "family_member", id: "fm-3" }, percent: 100 },
+    ];
+    const { result, rerender } = renderHook(({ rows }) => usePendingEdits(rows), {
+      initialProps: { rows: ROWS },
+    });
+    await act(async () => {
+      await result.current.apply("a", { owners: pendingOwners }, save);
+    });
+    expect(result.current.rows[0].owners).toEqual(pendingOwners);
+
+    const agreeing: Owner[] = JSON.parse(JSON.stringify(pendingOwners));
+    rerender({ rows: [{ ...ROWS[0], owners: agreeing }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].owners).toEqual(agreeing));
+
+    const different: Owner[] = [
+      { kind: "gifted_away", recipient: { kind: "entity", id: "ent-1" }, percent: 100 },
+    ];
+    rerender({ rows: [{ ...ROWS[0], owners: different }, ROWS[1]] });
+    await waitFor(() => expect(result.current.rows[0].owners).toEqual(different));
   });
 
   it("drops pending state for a row that disappears", async () => {

@@ -12,8 +12,46 @@
 // than by a timer or a props-identity check: a pending field is dropped the
 // moment the incoming row carries the same value. That keeps an optimistic
 // value visible across an unrelated refresh (which would otherwise flicker it
-// back to the stale number) without ever stranding one forever.
+// back to the stale number) without ever stranding one forever. The agreement
+// check is a structural (deep) compare, not `===` — a reference-typed field
+// (e.g. an account's `owners` array) arrives from a JSON round-trip with a
+// fresh identity every time, so a reference compare would never see the
+// server catch up and would strand that field at its optimistic value
+// permanently. See `sameFieldValue` below.
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+/**
+ * Structural equality for a single pending field value.
+ *
+ * Reconciliation asks "has the server caught up with what we optimistically
+ * applied?", and for a reference-typed field that question cannot be answered
+ * with `===`: a JSON round-trip always returns a fresh identity, so the key
+ * would never be dropped and the field would stay pinned to the optimistic
+ * value forever.
+ *
+ * Recursive rather than shallow because `AccountOwner`
+ * (src/engine/ownership.ts) is a union of objects, and its `gifted_away`
+ * variant nests `recipient: { kind, id }` a further level down — a one- or
+ * two-level compare would silently strand exactly that case.
+ */
+function sameFieldValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => sameFieldValue(v, b[i]));
+  }
+  const ka = Object.keys(a as Record<string, unknown>);
+  const kb = Object.keys(b as Record<string, unknown>);
+  return (
+    ka.length === kb.length &&
+    ka.every(
+      (k) =>
+        Object.prototype.hasOwnProperty.call(b, k) &&
+        sameFieldValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+    )
+  );
+}
 
 export interface PendingEdits<T> {
   /** `rows` with any pending field values merged over them. */
@@ -30,12 +68,20 @@ export function usePendingEdits<T extends { id: string }>(rows: T[]): PendingEdi
   const [pending, setPending] = useState<Record<string, Partial<T>>>({});
 
   useEffect(() => {
-    // Reconciliation is a props-driven state adjustment, not an external-system
-    // sync. The functional updater returns `prev` unchanged whenever nothing was
-    // reconciled, so the cascading re-render the rule warns about cannot occur.
-    // Restructuring this into the render-phase "adjust state when props change"
-    // pattern is a change to plan-mandated code and is pending the project
-    // owner's decision.
+    // RULING (settled, not deferred): keep this targeted suppression rather
+    // than restructuring into the render-phase "adjust state when props
+    // change" pattern. The restructure would be provably unobservable, not
+    // merely cheaper to skip. A pending key is dropped only when the
+    // incoming row's value already equals it (via `sameFieldValue`), so the
+    // render before the drop and the render after it produce IDENTICAL
+    // merged output — the only difference would be one extra render pass,
+    // with no visual change. The row-removed branch is likewise
+    // unobservable: `merged` only maps over `rows`, so a vanished row is
+    // never rendered regardless of when its pending state clears.
+    // Separately, the functional updater returns `prev` BY IDENTITY whenever
+    // nothing reconciled (the `changed` flag stays false and
+    // `return changed ? next : prev` yields `prev`), so no cascading
+    // re-render occurs from this effect at all.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPending((prev) => {
       const ids = Object.keys(prev);
@@ -51,7 +97,7 @@ export function usePendingEdits<T extends { id: string }>(rows: T[]): PendingEdi
         }
         const kept: Partial<T> = {};
         for (const key of Object.keys(prev[id]) as (keyof T)[]) {
-          if (row[key] === prev[id][key]) changed = true;
+          if (sameFieldValue(row[key], prev[id][key])) changed = true;
           else kept[key] = prev[id][key];
         }
         if (Object.keys(kept).length > 0) next[id] = kept;
