@@ -796,6 +796,41 @@ describe("AOTC students: named by an education goal, capped at four claimed year
     expect(years.every((y) => y.taxResult!.flow.refundableCredits === 0)).toBe(true);
   });
 
+  it("burns a year on a SUB-DOLLAR credit — any allowed credit is an election", () => {
+    // MAGI 179,996 sits four dollars under the 180,000 MFJ ceiling, so the
+    // surviving fraction is 4/20,000 = 0.0002 and the 2,500 cap yields an
+    // allowed credit of exactly $0.50 — positive, but under a dollar.
+    //
+    // IRC 25A(b)(2)(C) spends a year the taxpayer "elected to have this
+    // section apply", and sets no de minimis floor: fifty cents allowed is an
+    // election exactly as much as the full 2,500. That is why the gate in
+    // projection.ts is `> 0` rather than `>= 1`.
+    //
+    // ⚠️ This pins the boundary in the direction nothing else here reaches.
+    // Every other AOTC fixture in this file pays either zero or hundreds of
+    // dollars, so the gap between $0 and $1 is untested — and raising the gate
+    // to `> 1`, an entirely plausible "guard against rounding noise" edit,
+    // passes the whole suite while silently handing students extra claim
+    // years. Verified: with `> 1` this is the only test that reddens.
+    const years = runProjection(build({
+      incomes: [salary(179_996)],
+      planSettings: sixYearSettings,
+      familyMembers: [...FMS, student],
+      expenses: [goal()],
+    }));
+    // The INSTRUMENT (the credit really is positive and really is sub-dollar)
+    // and the SUBJECT (it still spent the allowance) in one toEqual, so the
+    // fixture cannot drift into the ordinary regime and keep passing — and so
+    // there is exactly one throw point.
+    expect({
+      allowed: years[0].taxResult!.flow.aotcAllowed,
+      reported: years.map((y) => y.thresholdFacts!.household.aotcStudents),
+    }).toEqual({
+      allowed: 0.5,
+      reported: [1, 1, 1, 1, 0, 0],
+    });
+  });
+
   it("stops at four years even when the REPORT's MAGI and the CREDIT's AGI disagree", () => {
     // ⚠️ THE REGRESSION GUARD FOR B2. Self-employment is the wedge: the
     // report's `magiForCredits` never sees the §164(f) deductible half of SE
