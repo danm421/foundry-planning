@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import GoalsBoard from "../goals-board";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
@@ -256,4 +256,188 @@ describe("GoalsBoard", () => {
       expect(card.style.borderColor).toBe(border);
     },
   );
+});
+
+// The board half of the life-expectancy editor. What makes an age editable here
+// is the `lifeExpectancy` PAYLOAD on the goal — not its kind, not its side — so
+// these all key off that. The payload's own construction (including the
+// spouse-with-no-stored-LE case that sets `assumed`) is covered in
+// `lib/household-map/__tests__/goals.test.ts`; from here `assumed` is just a
+// flag arriving on a prop.
+describe("GoalsBoard — inline life-expectancy editing", () => {
+  const CARD_ID = {
+    client: "milestone:client_life_expectancy",
+    spouse: "milestone:spouse_life_expectancy",
+  } as const;
+
+  function lifeExpectancyGoal(
+    owner: "client" | "spouse",
+    over: { age?: number; assumed?: boolean } = {},
+  ): MapGoal {
+    const age = over.age ?? 92;
+    const assumed = over.assumed ?? false;
+    // Matches baseProps' people: Alex born 1980, Jordan born 1982.
+    const birthYear = owner === "client" ? 1980 : 1982;
+    const firstName = owner === "client" ? "Alex" : "Jordan";
+    return goal({
+      id: CARD_ID[owner],
+      kind: "life_expectancy",
+      side: owner,
+      title: `${firstName}'s life expectancy`,
+      // The string the builder emits, so the read-only fallbacks below assert
+      // against what production would actually render.
+      detail: assumed ? `age ${age} · assumed` : `age ${age}`,
+      year: birthYear + age,
+      lifeExpectancy: { owner, age, year: birthYear + age, assumed },
+    });
+  }
+
+  const writer = () => vi.fn().mockResolvedValue(true);
+
+  it("renders the age as a click-to-edit field", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("client")] })}
+        onSaveLifeExpectancy={writer()}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Edit life expectancy for Alex" });
+    expect(trigger).toHaveTextContent("92");
+
+    fireEvent.click(trigger);
+    // Not "Amount for Alex" — the field holds an age, and calling it an amount
+    // to a screen reader is simply wrong (hence `noun` on InlineAmount).
+    expect(screen.getByRole("textbox", { name: "Life expectancy for Alex" })).toBeInTheDocument();
+  });
+
+  // A `<button>` may not contain another `<button>`. The card-level click
+  // handler and this editor are therefore mutually exclusive by construction:
+  // life milestones carry `expenseId: null`, so `clickHandlerFor` returns
+  // undefined and the card renders as a div. If that ever inverts, the editor
+  // becomes unreachable AND the markup becomes invalid.
+  it("renders the card as a div, so the editor's button can legally live inside it", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("client")] })}
+        onSaveLifeExpectancy={writer()}
+      />,
+    );
+
+    const card = screen.getByTestId(`goal-card-left-${CARD_ID.client}`);
+    expect(card.tagName).toBe("DIV");
+    expect(
+      within(card).getByRole("button", { name: "Edit life expectancy for Alex" }),
+    ).toBeInTheDocument();
+  });
+
+  // DISCRIMINATING: both cards render the same editor against the same handler,
+  // and `owner` is the only thing telling them apart. Getting it from the card's
+  // own payload — rather than, say, the last-rendered card — is what keeps a
+  // spouse edit out of the client's `lifeExpectancy` column.
+  it("each card saves its OWN owner and the newly typed age", async () => {
+    const onSave = writer();
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("client"), lifeExpectancyGoal("spouse")] })}
+        onSaveLifeExpectancy={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit life expectancy for Jordan" }));
+    const spouseInput = screen.getByRole("textbox", { name: "Life expectancy for Jordan" });
+    fireEvent.change(spouseInput, { target: { value: "88" } });
+    fireEvent.keyDown(spouseInput, { key: "Enter" });
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("spouse", 88));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit life expectancy for Alex" }));
+    const clientInput = screen.getByRole("textbox", { name: "Life expectancy for Alex" });
+    fireEvent.change(clientInput, { target: { value: "96" } });
+    fireEvent.keyDown(clientInput, { key: "Enter" });
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("client", 96));
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  // The editor is gated on the goal's `lifeExpectancy` payload, NOT on its kind
+  // or its lack of an expenseId. A retirement milestone acquiring one would
+  // offer an age field that writes the life-expectancy column.
+  it("a goal with no life-expectancy payload gets no age editor", () => {
+    const retirement = goal({
+      id: "milestone:client_retirement",
+      kind: "retirement",
+      side: "client",
+      title: "Alex retires",
+      detail: "age 65",
+    });
+    render(
+      <GoalsBoard {...baseProps({ goals: [retirement] })} onSaveLifeExpectancy={writer()} />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 65")).toBeInTheDocument();
+  });
+
+  // Both fallbacks below still RENDER the age — losing the editor must not lose
+  // the number, which is the one thing every viewer of this card came for.
+  it("falls back to the static detail string when the viewer may not edit", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("client")], canEdit: false })}
+        onSaveLifeExpectancy={writer()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 92")).toBeInTheDocument();
+  });
+
+  // Same rule the Cash Flow board applies: a board rendered without a writer
+  // must not show a field that silently discards the edit.
+  it("falls back to the static detail string when the board has no writer", () => {
+    render(<GoalsBoard {...baseProps({ goals: [lifeExpectancyGoal("client")] })} />);
+
+    expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 92")).toBeInTheDocument();
+  });
+
+  it("flags an assumed age, and only an assumed one", () => {
+    const { unmount } = render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("spouse", { age: 95, assumed: true })] })}
+        onSaveLifeExpectancy={writer()}
+      />,
+    );
+    expect(screen.getByText("· assumed")).toBeInTheDocument();
+    unmount();
+
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("spouse", { age: 90, assumed: false })] })}
+        onSaveLifeExpectancy={writer()}
+      />,
+    );
+    expect(screen.queryByText("· assumed")).not.toBeInTheDocument();
+  });
+
+  // The assumption is the engine's `?? 95`, already driving the projection.
+  // Editing the card is how an advisor replaces it with a decision, so the
+  // "assumed" state must be editable rather than read-only.
+  it("an assumed age is still editable — that is how the assumption gets replaced", async () => {
+    const onSave = writer();
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [lifeExpectancyGoal("spouse", { age: 95, assumed: true })] })}
+        onSaveLifeExpectancy={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit life expectancy for Jordan" }));
+    const input = screen.getByRole("textbox", { name: "Life expectancy for Jordan" });
+    fireEvent.change(input, { target: { value: "87" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("spouse", 87));
+  });
 });

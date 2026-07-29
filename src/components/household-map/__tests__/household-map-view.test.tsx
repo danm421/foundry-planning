@@ -667,3 +667,221 @@ describe("HouseholdMapView — inline Cash Flow amount writes", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+// Life expectancy is the only field on this page that moves the PLAN HORIZON,
+// and the horizon lives on two singletons — `client.planEndAge` and
+// `planSettings.planEndYear` — while the engine's year loop is bounded by the
+// latter. So the two modes send genuinely different things, and "one write per
+// mode" is wrong in one direction and "two writes per mode" is wrong in the
+// other. That asymmetry is what these tests exist to pin.
+describe("HouseholdMapView — inline life-expectancy writes", () => {
+  // Alex born 1980, Jordan born 1982. Both die 2072 at the stored ages, so the
+  // fixture is a TIE at rest and every case below moves exactly one of them.
+  const CLIENT_SCENARIO_FIELDS = {
+    firstName: "Alex",
+    dateOfBirth: "1980-05-10",
+    lifeExpectancy: 92,
+    spouseName: "Jordan",
+    spouseDob: "1982-09-01",
+    spouseLifeExpectancy: 90,
+    planEndAge: 92,
+    filingStatus: "married_joint",
+    // The Solver's signature override — "retire at 62". The whole-singleton
+    // payload exists to stop a life-expectancy edit deleting it.
+    retirementAge: 62,
+  };
+
+  const PLAN_SETTINGS_SCENARIO_FIELDS = {
+    flatFederalRate: 0.22,
+    inflationRate: 0.028,
+    planStartYear: 2026,
+    planEndYear: 2072,
+  };
+
+  function lifeExpectancyGoal(owner: "client" | "spouse"): MapGoal {
+    const age = owner === "client" ? 92 : 90;
+    const birthYear = owner === "client" ? 1980 : 1982;
+    const firstName = owner === "client" ? "Alex" : "Jordan";
+    return goal({
+      id: `milestone:${owner}_life_expectancy`,
+      kind: "life_expectancy",
+      side: owner,
+      title: `${firstName}'s life expectancy`,
+      detail: `age ${age}`,
+      year: birthYear + age,
+      lifeExpectancy: { owner, age, year: birthYear + age, assumed: false },
+    });
+  }
+
+  function editableLifeExpectancyProps(overrides: Partial<HouseholdMapProps> = {}) {
+    return baseProps({
+      people: {
+        client: person({ familyMemberId: "fm-client", firstName: "Alex", birthYear: 1980 }),
+        spouse: person({ familyMemberId: "fm-spouse", firstName: "Jordan", birthYear: 1982 }),
+        children: [],
+      },
+      goals: [lifeExpectancyGoal("client"), lifeExpectancyGoal("spouse")],
+      clientScenarioFields: CLIENT_SCENARIO_FIELDS,
+      planSettingsScenarioFields: PLAN_SETTINGS_SCENARIO_FIELDS,
+      ...overrides,
+    });
+  }
+
+  function mockFetchOk() {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }) as Response);
+  }
+
+  async function editAge(name: string, next: string) {
+    fireEvent.click(screen.getByText("Goals"));
+    fireEvent.click(screen.getByRole("button", { name: `Edit life expectancy for ${name}` }));
+    const input = screen.getByRole("textbox", { name: `Life expectancy for ${name}` });
+    fireEvent.change(input, { target: { value: next } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  // ONE write, and nothing else. The PUT route re-derives `planEndAge` itself
+  // and pushes the new `planEndYear` to every one of the client's plan_settings
+  // rows, so a second write here would be the Map re-asserting a horizon it does
+  // not own — and sending our own `planEndAge` would land in
+  // `MUTABLE_CLIENT_FIELDS` only to be overwritten by the route's.
+  it("base mode PUTs only the changed column, and posts no scenario change", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    await editAge("Alex", "96");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/clients/client-1");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ lifeExpectancy: 96 });
+
+    // Explicit, because "one call" and "no horizon POST" fail differently.
+    expect(
+      fetchSpy.mock.calls.some(([u]) => String(u).includes("/changes")),
+    ).toBe(false);
+  });
+
+  it("base mode routes a spouse edit to the spouse column", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    await editAge("Jordan", "88");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ spouseLifeExpectancy: 88 });
+  });
+
+  // TWO rows, because `planEndAge` lives on the `client` singleton and
+  // `planEndYear` on `plan_settings`, and one scenario_change row targets
+  // exactly one kind. A spouse edit on purpose: it moves the horizon to a
+  // number that is neither the age typed (100) nor the age replaced (90), so a
+  // handler that echoed the input, or that only recomputed for client-side
+  // edits, cannot pass.
+  it("scenario mode posts the client change THEN the plan_settings change", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    // Jordan 1982 + 100 -> 2082, past Alex's 2072. Alex is born 1980, so 2082
+    // is his age 102.
+    await editAge("Jordan", "100");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+
+    const [clientUrl, clientInit] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(clientUrl).toBe("/api/clients/client-1/scenarios/sc-1/changes");
+    const clientBody = JSON.parse(clientInit.body as string);
+    expect(clientBody.op).toBe("edit");
+    expect(clientBody.targetKind).toBe("client");
+    expect(clientBody.targetId).toBe("client-1");
+    expect(clientBody.desiredFields.spouseLifeExpectancy).toBe(100);
+    expect(clientBody.desiredFields.planEndAge).toBe(102);
+    // The clobber guard: the scenario's Solver override survives the edit.
+    expect(clientBody.desiredFields.retirementAge).toBe(62);
+    expect(clientBody.desiredFields.lifeExpectancy).toBe(92);
+
+    const [horizonUrl, horizonInit] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    expect(horizonUrl).toBe("/api/clients/client-1/scenarios/sc-1/changes");
+    const horizonBody = JSON.parse(horizonInit.body as string);
+    expect(horizonBody.op).toBe("edit");
+    expect(horizonBody.targetKind).toBe("plan_settings");
+    // The CLIENT ID, not the Solver's `"plan_settings"` sentinel — target_id is
+    // a `uuid` column, and that sentinel is why there are zero plan_settings
+    // rows in production. (This fixture's id is not itself a uuid; the uuid rule
+    // is pinned in `life-expectancy-write-contract.test.ts`.)
+    expect(horizonBody.targetId).toBe("client-1");
+    expect(horizonBody.desiredFields.planEndYear).toBe(2082);
+    expect(horizonBody.desiredFields.inflationRate).toBe(0.028);
+  });
+
+  // Not atomic — the route offers no way to write both kinds in one request. If
+  // the first fails there is nothing to keep consistent, so the second must not
+  // be sent: posting a horizon for a life expectancy that was never stored is
+  // strictly worse than posting neither.
+  it("scenario mode does not post the horizon when the client change fails", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 500 }) as Response);
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    await editAge("Jordan", "100");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string).targetKind).toBe(
+      "client",
+    );
+    // Give the handler room to make a second call it should not make.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // Below the person's current age the derived death year lands before the plan
+  // starts, `computeFinalDeathYear` returns null, and the projection then runs
+  // with NO death event at all. Rejected before anything is written — the gate
+  // has to be on this side of the fetch.
+  it("refuses an age below the person's current age without writing anything", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    await editAge("Alex", "5");
+
+    // Waits for the editor to close (the commit is async even when it refuses)
+    // and pins that the card came back showing the UNCHANGED age.
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit life expectancy for Alex" }),
+      ).toHaveTextContent("92"),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses an age past the 110 ceiling without writing anything", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps()} />);
+
+    await editAge("Alex", "115");
+
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit life expectancy for Alex" }),
+      ).toHaveTextContent("92"),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the viewer may not edit — the age is not even a field", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableLifeExpectancyProps({ canEdit: false })} />);
+
+    fireEvent.click(screen.getByText("Goals"));
+
+    expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 92")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
