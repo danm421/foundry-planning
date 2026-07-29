@@ -46,7 +46,7 @@ export function classifyToken(
   }
   if (row.status === "expired") return { ok: false, reason: "expired" };
   // Covers `discarded` and anything unrecognized.
-  if (!(OPEN_RTQ_STATUSES as readonly string[]).includes(row.status)) {
+  if (!OPEN_RTQ_STATUSES.some((s) => s === row.status)) {
     return { ok: false, reason: "not_found" };
   }
   if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) {

@@ -18,6 +18,7 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { SEND_RTQ_SCHEMA } from "@/lib/risk/schema";
 import { buildQuestionnaireRow } from "@/lib/risk/send-rtq";
+import { OPEN_RTQ_STATUSES } from "@/lib/risk/token-guard";
 import { sendRiskQuestionnaireEmail } from "@/lib/risk/email";
 import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             eq(riskQuestionnaires.clientId, clientId),
             eq(riskQuestionnaires.firmId, firmId),
             eq(riskQuestionnaires.subject, subject),
-            inArray(riskQuestionnaires.status, ["draft", "sent"]),
+            inArray(riskQuestionnaires.status, OPEN_RTQ_STATUSES),
           ),
         );
       await tx.insert(riskQuestionnaires).values(newRow);

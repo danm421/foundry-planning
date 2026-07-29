@@ -10,7 +10,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { MANUAL_TOLERANCE_SCHEMA } from "@/lib/risk/schema";
-import { BAND_CENTERS } from "@/lib/risk/scoring";
+import { manualTolerancePatch } from "@/lib/risk/apply-rtq";
 import { recomputeProfile } from "@/lib/risk/profile";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +39,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
       actorUserId: userId ?? null,
       kind: "tolerance_manual",
       reason: parsed.data.reason,
-      patch: {
-        toleranceScore: BAND_CENTERS[parsed.data.level],
-        toleranceSource: "manual",
-        toleranceConfirmedAt: new Date(),
-        rtqVersion: null,
-      },
+      patch: manualTolerancePatch(parsed.data.level),
     });
 
     await recordAudit({
