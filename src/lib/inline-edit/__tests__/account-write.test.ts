@@ -285,7 +285,7 @@ describe("owner writes", () => {
 
   it("overrides the row's owners with the patch's", () => {
     const next = [{ kind: "entity" as const, entityId: "e1", percent: 1 }];
-    const out = buildScenarioDesiredFields(row({ owners }), {
+    const out = buildScenarioDesiredFields(row({ owners, titlingType: "community_property" }), {
       owners: next,
       titlingType: "jtwros",
     });
