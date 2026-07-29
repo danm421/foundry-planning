@@ -39,9 +39,21 @@
 import { parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import type { AccountRow } from "@/components/balance-sheet-view";
 
-/** The fields the Map's inline editors can change. */
+/** The fields the inline editors can change. `titlingType` is here because it
+ *  is inseparable from `owners`: joint and community property produce the
+ *  identical owners array and differ only by titling, which drives
+ *  §1014(b)(6) full step-up vs §2040(b) 50/50. */
 export type AccountPatch = Partial<
-  Pick<AccountRow, "value" | "growthRate" | "growthSource" | "modelPortfolioId" | "tickerPortfolioId">
+  Pick<
+    AccountRow,
+    | "value"
+    | "growthRate"
+    | "growthSource"
+    | "modelPortfolioId"
+    | "tickerPortfolioId"
+    | "owners"
+    | "titlingType"
+  >
 >;
 
 /**
