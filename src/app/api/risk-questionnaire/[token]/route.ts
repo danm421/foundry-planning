@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { riskQuestionnaires } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   extractClientIp,
   checkIntakeSubmitRateLimit,
@@ -22,9 +22,21 @@ import { isCompleteRtq, scoreRtq } from "@/lib/risk/rtq";
 import { applyRtqPatch } from "@/lib/risk/apply-rtq";
 import { recomputeProfileTx } from "@/lib/risk/profile";
 import { loadExistingScores } from "@/lib/risk/existing-scores";
-import { loadQuestionnaireByToken, classifyToken } from "@/lib/risk/token-guard";
+import {
+  loadQuestionnaireByToken,
+  classifyToken,
+  OPEN_RTQ_STATUSES,
+} from "@/lib/risk/token-guard";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Thrown when the guarded UPDATE below matches no row, i.e. a concurrent
+ * request already claimed this questionnaire. Rolls the transaction back on
+ * the way out and is converted to a 409 by the handler -- the same answer the
+ * step-2 classification would have given had it run a moment later.
+ */
+class AlreadySubmittedError extends Error {}
 
 export async function POST(
   req: Request,
@@ -114,45 +126,70 @@ export async function POST(
   // orphaned `applied` row whose score never reached the profile, which a
   // later spouse submission's lookup would then read as legitimate.
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const { existingPrimaryScore, existingSpouseScore } = await loadExistingScores(tx, {
-      clientId: questionnaire.clientId,
-      firmId: questionnaire.firmId,
-      subject: questionnaire.subject,
-    });
+  try {
+    await db.transaction(async (tx) => {
+      const { existingPrimaryScore, existingSpouseScore } = await loadExistingScores(tx, {
+        clientId: questionnaire.clientId,
+        firmId: questionnaire.firmId,
+        subject: questionnaire.subject,
+      });
 
-    await tx
-      .update(riskQuestionnaires)
-      .set({
-        status: "applied",
-        answers,
-        score,
-        environmentNote: environmentNote ?? null,
-        submittedAt: now,
-        appliedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(riskQuestionnaires.id, questionnaire.id));
-
-    return recomputeProfileTx(tx, {
-      clientId: questionnaire.clientId,
-      firmId: questionnaire.firmId,
-      // Null actor is load-bearing: it is what makes the history row read
-      // "Client" rather than "System" (risk-history-table.tsx).
-      actorUserId: null,
-      kind: "rtq_completed",
-      reason: "Client-completed questionnaire",
-      patch: {
-        ...applyRtqPatch({
-          subject: questionnaire.subject,
+      // The status predicate is the concurrency guard, and it has to live in the
+      // WHERE -- the step-2 classifyToken check is a read, so two simultaneous
+      // submissions both pass it, then both write `applied` and both recompute,
+      // double-applying one client's answers and double-logging the suitability
+      // history. Here Postgres serializes: the second UPDATE blocks on the first's
+      // row lock, re-evaluates this predicate against the committed row, and
+      // matches nothing. Zero rows back means someone else claimed it -> 409.
+      const [claimed] = await tx
+        .update(riskQuestionnaires)
+        .set({
+          status: "applied",
+          answers,
           score,
-          existingPrimaryScore,
-          existingSpouseScore,
-        }),
-        toleranceSource: "rtq_client",
-      },
+          environmentNote: environmentNote ?? null,
+          submittedAt: now,
+          appliedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(riskQuestionnaires.id, questionnaire.id),
+            inArray(riskQuestionnaires.status, [...OPEN_RTQ_STATUSES]),
+          ),
+        )
+        .returning({ id: riskQuestionnaires.id });
+
+      if (!claimed) throw new AlreadySubmittedError();
+
+      return recomputeProfileTx(tx, {
+        clientId: questionnaire.clientId,
+        firmId: questionnaire.firmId,
+        // Null actor is load-bearing: it is what makes the history row read
+        // "Client" rather than "System" (risk-history-table.tsx).
+        actorUserId: null,
+        kind: "rtq_completed",
+        reason: "Client-completed questionnaire",
+        patch: {
+          ...applyRtqPatch({
+            subject: questionnaire.subject,
+            score,
+            existingPrimaryScore,
+            existingSpouseScore,
+          }),
+          toleranceSource: "rtq_client",
+        },
+      });
     });
-  });
+  } catch (e) {
+    if (e instanceof AlreadySubmittedError) {
+      return NextResponse.json(
+        { error: "This questionnaire has already been submitted." },
+        { status: 409 },
+      );
+    }
+    throw e;
+  }
 
   // 6. Audit -- outside the transaction, never hold a DB transaction open
   // across an unrelated write. actorKind "client" + no actorId lets
