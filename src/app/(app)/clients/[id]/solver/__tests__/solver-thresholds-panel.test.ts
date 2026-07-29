@@ -38,6 +38,7 @@ const household: ThresholdHousehold = {
   qualifyingChildren: 1, otherDependents: 0, aotcStudents: 1,
   hasStudentLoanInterest: true, hasRothContribution: true,
   hasTraditionalIraContribution: true, hasQbi: true, hasInvestmentIncome: true,
+  hasRetirementContributions: true,
   coveredSelf: true, coveredSpouse: false,
 };
 

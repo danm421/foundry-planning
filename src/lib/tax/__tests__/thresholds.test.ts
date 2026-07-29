@@ -27,6 +27,7 @@ const household: ThresholdHousehold = {
   qualifyingChildren: 1, otherDependents: 0, aotcStudents: 1,
   hasStudentLoanInterest: true, hasRothContribution: true,
   hasTraditionalIraContribution: true, hasQbi: true, hasInvestmentIncome: true,
+  hasRetirementContributions: true,
   coveredSelf: true, coveredSpouse: false,
 };
 
@@ -163,6 +164,18 @@ describe("statusFor", () => {
   it("is na for the Saver's Credit from 2027 onward", () => {
     expect(statusFor("saversCredit", facts({ year: 2026, agi: 40000 }))).toBe("full");
     expect(statusFor("saversCredit", facts({ year: 2027, agi: 40000 }))).toBe("na");
+  });
+
+  it("is na for the Saver's Credit when the household contributed nothing", () => {
+    // IRC 25B pays a percentage OF the contribution, so no contribution is no
+    // credit at any AGI. Without this gate the Saver's row was the only
+    // contribution-driven item with none — it read "Full" at a qualifying AGI
+    // for a household `computeSaversCredit` pays $0, which is the same claim
+    // the Roth and IRA-deduction rows are careful never to make.
+    expect(statusFor("saversCredit", facts({
+      year: 2026, agi: 40000,
+      household: { ...household, hasRetirementContributions: false },
+    }))).toBe("na");
   });
 
   it("is na when a required parameter was never seeded", () => {

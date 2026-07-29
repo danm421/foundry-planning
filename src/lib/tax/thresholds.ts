@@ -37,6 +37,12 @@ export interface ThresholdHousehold {
   hasTraditionalIraContribution: boolean;
   hasQbi: boolean;
   hasInvestmentIncome: boolean;
+  /** Whether the household made any IRC 25B-eligible contribution — elective
+   *  deferrals plus IRA contributions, the SAME sum `computeSaversCredit`
+   *  multiplies by the tier rate. Without it the Saver's row is the only
+   *  contribution-driven item with no household gate, and reads "Full" at a
+   *  qualifying AGI for a household the credit layer pays $0. */
+  hasRetirementContributions: boolean;
   coveredSelf: boolean;
   coveredSpouse: boolean;
 }
@@ -232,7 +238,12 @@ function applies(item: ThresholdItemId, f: ThresholdFacts): boolean {
     case "niit":                return h.hasInvestmentIncome;
     case "aotc":                return h.aotcStudents > 0 && !isMfs(h.filingStatus);
     case "ctc":                 return h.qualifyingChildren > 0 || h.otherDependents > 0;
-    case "saversCredit":        return f.year <= STATUTORY_FIXED.saversCreditLastYear;
+    // IRC 25B pays a percentage OF the contribution, so no contribution is no
+    // credit at any AGI — the same reason `rothIra` and the two `iraDeduct`
+    // rows are contribution-gated. The SECURE 2.0 §103 sunset is a second,
+    // independent reason the row can go dark.
+    case "saversCredit":        return h.hasRetirementContributions
+                                    && f.year <= STATUTORY_FIXED.saversCreditLastYear;
     case "amtExemption":
     case "charitableLimit":     return true;
   }

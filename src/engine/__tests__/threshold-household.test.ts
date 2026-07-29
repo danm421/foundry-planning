@@ -22,6 +22,7 @@ import type {
   SavingsRule,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { statusFor } from "../../lib/tax/thresholds";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Seeded tax parameters ───────────────────────────────────────────────────
@@ -1221,6 +1222,103 @@ describe("thresholdFacts rides on the projection year", () => {
       magi: se.taxResult!.flow.adjustedGrossIncome,
       secaHalfIsReal: true,
     });
+  });
+
+  // ── I1: the NIIT row's APPLICABILITY must see the whole year too ───────────
+  // Same ordering root cause as B3, one layer over: `thresholdHousehold` is
+  // assembled at projection.ts ~:4278 from `taxDetail`, and the withdrawal pass
+  // adds liquidation gains to it afterwards. B3 fixed the AGI the row is
+  // COMPARED against; this fixes whether the row is consulted at all.
+
+  it("flags investment income the LIQUIDATION produced, not just the income statement's", () => {
+    // A retiree with no salary, no dividends and no interest, funding spending
+    // by selling appreciated brokerage assets. Every dollar of NII arrives
+    // after the household snapshot, so the report said the NIIT "does not
+    // apply" to a household `calcNiit` was charging 3.8% on.
+    const years = runProjection(build({
+      incomes: [],
+      accounts: [
+        { ...CHECKING, value: 5_000, basis: 5_000 },
+        acct({ id: "acct-brokerage", category: "taxable", value: 3_000_000, basis: 0 }),
+      ],
+      expenses: [{
+        id: "exp-living", type: "living", name: "Living",
+        annualAmount: 400_000, startYear: 2026, endYear: 2040, growthRate: 0,
+      }],
+      withdrawalStrategy: [
+        { accountId: "acct-brokerage", priorityOrder: 1, startYear: 2026, endYear: 2040 },
+      ],
+    }));
+    const y = years[0];
+    // Rebuilt exactly the way buildThresholdReport rebuilds it — the report
+    // holds the year's params and spreads them onto the stored facts.
+    const facts = { ...y.thresholdFacts!, params: SEEDED_PARAMS[0] };
+    expect({
+      // The INSTRUMENT: the engine really did charge the surtax this year, so
+      // the row disagreeing with it is a contradiction, not a judgement call.
+      niitCharged: y.taxResult!.flow.niit > 0,
+      applies: facts.household.hasInvestmentIncome,
+      // ⚠️ "out" is this row's polarity for "the tax BITES" — NIIT is a burden,
+      // not a benefit being phased out. See thresholds.ts:252-253.
+      status: statusFor("niit", facts),
+    }).toEqual({ niitCharged: true, applies: true, status: "out" });
+  });
+
+  // ── I2: the Saver's row must be gated on having actually contributed ───────
+
+  it("gates the Saver's Credit row on a contribution, and still shows it for one", () => {
+    // Identical households at the same qualifying AGI; the ONLY difference is
+    // the 401(k) rule. Both used to read "Full" — IRC 25B pays a percentage OF
+    // the contribution, so the first was being promised a credit the engine
+    // pays $0 of.
+    //
+    // Both directions are asserted deliberately: gating on a flag that is
+    // always false would satisfy the first half alone.
+    const nothingSaved = runProjection(build({ incomes: [salary(45_000)] }))[0];
+    const contributing = runProjection(build({
+      incomes: [salary(45_000)],
+      savingsRules: [rule({ id: "sav-401k", accountId: "acct-401k", annualAmount: 5_000 })],
+    }))[0];
+    const status = (y: typeof nothingSaved) =>
+      statusFor("saversCredit", { ...y.thresholdFacts!, params: SEEDED_PARAMS[0] });
+    expect({
+      nothingSavedStatus: status(nothingSaved),
+      contributingStatus: status(contributing),
+      // The INSTRUMENT. No children and no students in this fixture, so the
+      // Saver's Credit is the ONLY thing `taxCredits` can be counting.
+      nothingSavedPaid: nothingSaved.taxResult!.flow.taxCredits,
+      contributingPaid: contributing.taxResult!.flow.taxCredits > 0,
+    }).toEqual({
+      nothingSavedStatus: "na",
+      contributingStatus: "full",
+      nothingSavedPaid: 0,
+      contributingPaid: true,
+    });
+  });
+
+  it("does not apply to an MFS filer whose only contributions are the spouse's", () => {
+    // ⚠️ The ASYMMETRIC case, and the reason the flag is read off the same
+    // object the credit layer receives rather than off the two per-person
+    // locals: `retirementContributions.spouse` is zeroed on a non-joint
+    // return, so `computeSaversCredit` never sees these dollars. A flag
+    // re-derived from the locals would be TRUE here and the row would promise
+    // a credit this return can never collect.
+    //
+    // AGI 20,000 sits below the FIRST single-table ceiling (24,000), so the row
+    // would read "Full" without the gate — not "na" for want of a range.
+    const y = runProjection(build({
+      client: { ...CLIENT, filingStatus: "married_separate" },
+      incomes: [salary(20_000)],
+      accounts: [CHECKING, ACCT_401K_SPOUSE],
+      savingsRules: [
+        rule({ id: "sav-401k-sp", accountId: "acct-401k-spouse", annualAmount: 5_000 }),
+      ],
+    }))[0];
+    expect({
+      applies: y.thresholdFacts!.household.hasRetirementContributions,
+      status: statusFor("saversCredit", { ...y.thresholdFacts!, params: SEEDED_PARAMS[0] }),
+      paid: y.taxResult!.flow.taxCredits,
+    }).toEqual({ applies: false, status: "na", paid: 0 });
   });
 });
 

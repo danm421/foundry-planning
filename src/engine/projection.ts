@@ -4112,14 +4112,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // ── Household assembly for the credit layer + Thresholds report ─────────
     // Placed here rather than inside the bracket block above because it needs
-    // `seEarnings` and `interestIncomeForTax`, both of which are derived after
-    // it. Runs exactly once per year, so the AOTC four-year counter advances
-    // once per student per year no matter how many times the convergence loop
-    // below re-runs `computeTaxForYear` off the same household.
+    // `seEarnings`, which is derived after it. Runs exactly once per year, so
+    // the AOTC four-year counter advances once per student per year no matter
+    // how many times the convergence loop below re-runs `computeTaxForYear` off
+    // the same household.
     // Both stay undefined outside bracket mode: `thresholdInputs` is only
     // assigned inside the bracket block, and flat mode models no credits.
+    //
+    // ⚠️ `hasInvestmentIncome` is deliberately OMITTED from this snapshot's type
+    // (I1). Everything else here is settled by now, but investment income is
+    // not: the withdrawal pass books liquidation gains onto `taxDetail` further
+    // down. Omitting the field rather than filling it in is what makes the
+    // stale value UNREADABLE rather than merely unread — it is supplied at the
+    // `thresholdFacts` assembly, off the settled tax result.
     let taxHousehold: TaxHouseholdInput | undefined;
-    let thresholdHousehold: ThresholdHousehold | undefined;
+    let thresholdHousehold: Omit<ThresholdHousehold, "hasInvestmentIncome"> | undefined;
     // Students offered to the credit layer this year, in the same order as
     // `taxHousehold.aotcStudents`. Held so the four-year counter can be
     // advanced AFTER the tax pass, against the credit that was actually
@@ -4246,14 +4253,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
 
+      // Bound once and shared with `thresholdHousehold` below, so the report's
+      // "does the Saver's Credit apply?" flag is derived from the EXACT figure
+      // the credit layer is handed — including the non-joint spouse zeroing. A
+      // flag re-derived from the two locals would say "applies" to an MFS filer
+      // whose only contributions are the spouse's, which `computeSaversCredit`
+      // never sees and never pays for.
+      const retirementContributions = {
+        client: clientRetirementContributions,
+        spouse: filingStatus === "married_joint" ? spouseRetirementContributions : 0,
+      };
+
       taxHousehold = {
         qualifyingChildren,
         otherDependents,
         aotcStudents,
-        retirementContributions: {
-          client: clientRetirementContributions,
-          spouse: filingStatus === "married_joint" ? spouseRetirementContributions : 0,
-        },
+        retirementContributions,
         // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): the refundable CTC's earned income
         // is wages PLUS net SE earnings. Passed separately from wages because
         // `CalcInput.earnedIncome` also drives FICA/Additional Medicare, which
@@ -4275,9 +4290,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }),
         hasTraditionalIraContribution: thresholdInputs.hasTraditionalIraContribution,
         hasQbi: taxDetail.qbi > 0,
-        hasInvestmentIncome:
-          taxDetail.dividends + taxDetail.capitalGains + taxDetail.stCapitalGains
-          + interestIncomeForTax > 0,
+        hasRetirementContributions:
+          retirementContributions.client + retirementContributions.spouse > 0,
         coveredSelf: thresholdInputs.coveredSelf,
         coveredSpouse: thresholdInputs.coveredSpouse,
       };
@@ -7288,11 +7302,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         })()
       : undefined;
 
+    // ── I1: the NIIT row's APPLICABILITY, rebuilt off the settled tax result ──
+    // Same ordering root cause as B3 one layer over. B3 fixed the AGI the row is
+    // COMPARED against; this fixes whether the row is consulted at all. The
+    // household snapshot above is taken before the withdrawal pass books
+    // liquidation gains, so a retiree living off appreciated brokerage assets
+    // read as having NO investment income while `calcNiit` charged 3.8% on the
+    // sale — the report saying "does not apply" about a tax it was paying.
+    //
+    // `> 0` is `calcNiit`'s OWN gate (niit.ts:14 returns 0 on a non-positive
+    // base) applied to the SAME loss-netted figure the tax pass was handed, so
+    // the row's applicability and the surtax cannot disagree. That also makes
+    // "capital losses erased the gains" report "na" rather than "out", which is
+    // right: no NII, no surtax.
+    //
+    // Absent outside bracket mode — but so is `thresholdInputs`, so this whole
+    // block is unreachable there and the `?? 0` never decides anything.
+    const reportedNii = finalTaxResult.diag.netInvestmentIncome ?? 0;
+
     const thresholdFacts: Omit<ThresholdFacts, "params"> | undefined =
       thresholdInputs && thresholdHousehold && reportMagis
         ? {
             year,
-            household: thresholdHousehold,
+            household: { ...thresholdHousehold, hasInvestmentIncome: reportedNii > 0 },
             agi: reportMagis.agi,
             magiForIraDeduction: reportMagis.magiForIraDeduction,
             magiForStudentLoan: reportMagis.magiForStudentLoan,
@@ -7300,7 +7332,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             magiForCredits: reportMagis.magiForCredits,
             taxableIncomeBeforeQbi: finalTaxResult.diag.taxableIncomeBeforeQbi ?? 0,
             amti: finalTaxResult.diag.amti ?? 0,
-            netInvestmentIncome: finalTaxResult.diag.netInvestmentIncome ?? 0,
+            netInvestmentIncome: reportedNii,
           }
         : undefined;
 
