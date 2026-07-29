@@ -11,7 +11,7 @@ import type {
 import { filterYearsToRange, type RangeOption } from "../../shared/year-filter";
 import { buildMarkers } from "../../shared/markers";
 import { buildDrillChartSpec } from "../../shared/build-chart-spec";
-import { otherTaxFromFlow } from "@/lib/tax/other-tax";
+import { otherTaxFromFlow, creditsInOtherFromFlow } from "@/lib/tax/other-tax";
 import { PENALTY_STACK, hasPenaltyYear } from "../../shared/penalty";
 import { dataLight } from "@/brand";
 
@@ -28,25 +28,6 @@ const OTHER_STACK: Array<{ key: string; label: string; color: string; pick: (f: 
   { key: "stateTax",           label: "State Tax",     color: dataLight.grey, pick: (f) => f?.stateTax ?? 0 },
 ];
 
-/** Federal credits as they land in the Other bucket — always ≤ 0.
- *
- *  SIGN. `otherTaxFromFlow` = totalTax − regularFederalIncomeTax, and
- *  `regularFederalIncomeTax` stays PRE-credit by design (calculate.ts). Expanding
- *  the roll-up (calculate.ts: totalFederalTax = max(0, subpartA − nonrefundable)
- *  + NIIT + addl Medicare − refundable, where subpartA = regularFed + capGains +
- *  AMT) gives
- *
- *      other = capGains + AMT + NIIT + addlMedicare + state + FICA + penalty
- *              − (taxCredits + refundableCredits)
- *
- *  so the named columns OVERSHOOT the total by exactly the credit dollars, and
- *  the column that closes the gap must be NEGATIVE. `flow.taxCredits` is already
- *  the APPLIED nonrefundable figure — credits.ts clamps each component against
- *  remaining tax, so it can never exceed subpartA and the roll-up's `Math.max(0,…)`
- *  is a no-op. That is why no second clamp is needed here. */
-const creditsInOther = (f: TaxFlow | undefined) =>
-  -((f?.taxCredits ?? 0) + (f?.refundableCredits ?? 0));
-
 /** Chart stack for credits. A negative series is SAFE here: build-chart-spec
  *  tracks positive and negative stack subtotals separately and opens a diverging
  *  y-domain, and the renderer's `stackRects` stacks negative segments downward
@@ -54,12 +35,12 @@ const creditsInOther = (f: TaxFlow | undefined) =>
  *  credits render as a below-axis segment rather than a broken bar, and the
  *  stack still sums to the Other total. */
 const CREDITS_STACK = {
-  key: "credits", label: "Federal Credits", color: dataLight.blue, pick: creditsInOther,
+  key: "credits", label: "Federal Credits", color: dataLight.blue, pick: creditsInOtherFromFlow,
 };
 
 /** True when any visible year applied a federal credit. */
 function hasCreditYear(years: ProjectionYear[]): boolean {
-  return years.some((y) => creditsInOther(y.taxResult?.flow) !== 0);
+  return years.some((y) => creditsInOtherFromFlow(y.taxResult?.flow) !== 0);
 }
 
 export interface BuildTaxOtherTaxesDrillInput {
@@ -113,7 +94,7 @@ export function buildTaxOtherTaxesDrillData(input: BuildTaxOtherTaxesDrillInput)
       fica:               f?.fica               ?? 0,
       stateTax:           f?.stateTax           ?? 0,
       earlyWithdrawalPenalty: f?.earlyWithdrawalPenalty ?? 0,
-      credits:            creditsInOther(f),
+      credits:            creditsInOtherFromFlow(f),
       total: otherTaxFromFlow(f),
     };
     return { year: py.year, ageClient: py.ages.client ?? null, ageSpouse: py.ages.spouse ?? null, cells };

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
-import { otherTaxFromFlow } from "@/lib/tax/other-tax";
+import { otherTaxFromFlow, creditsInOtherFromFlow } from "@/lib/tax/other-tax";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -239,11 +239,22 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
         "10% penalty on pre-59½ withdrawals used to fund a cash-flow shortfall. Included in Total Tax.",
       value: (y) => y.taxResult?.flow.earlyWithdrawalPenalty ?? 0,
     },
+    // Negative component. Credits are netted inside Total Tax while Regular Fed
+    // stays pre-credit, so they land entirely in this bucket; without this column
+    // the components to the left of Other Total overshoot it by the credit
+    // dollars. Zero-suppressed by the filter below, like every other component.
+    {
+      key: "credits",
+      label: "Federal Credits",
+      tooltip:
+        "Nonrefundable + refundable federal tax credits (CTC/ACTC, Saver's, AOTC, ODC). Shown negative because they REDUCE tax: they are netted inside Total Tax while Regular Fed stays pre-credit.",
+      value: (y) => creditsInOtherFromFlow(y.taxResult?.flow),
+    },
     {
       key: "other_total",
       label: "Other Total",
       tooltip:
-        "Sum of the federal tax components (= Total Tax − Regular Federal). Excludes trust & beneficiary tax.",
+        "Sum of the federal tax components to the left, credits included as a negative (= Total Tax − Regular Federal). Excludes trust & beneficiary tax.",
       value: (y) => computeOtherTaxes(y),
     },
     // Informational columns — NOT part of the household Total Tax. Placed after
