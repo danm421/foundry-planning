@@ -113,7 +113,7 @@ export function flowYearPatch(
     : { endYear: year, endYearRef: ref };
 }
 
-/** Scenario payload: the pruned effective row with the new amount on top. */
+/** Scenario payload: the pruned effective row with the patch merged on top. */
 export function buildFlowScenarioDesiredFields(
   fields: Record<string, unknown>,
   patch: FlowPatch,
