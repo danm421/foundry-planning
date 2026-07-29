@@ -6,7 +6,7 @@ export type SortDir = "asc" | "desc";
 export type ClientsView = "recent" | "all" | "deleted";
 
 export const PAGE_SIZE = 50;
-const MAX_TAKE = 1000;
+export const MAX_TAKE = 1000;
 
 /**
  * Default direction per key. Text sorts read A→Z; a date reads newest-first.
@@ -51,6 +51,15 @@ export function resolveSort(
   return { key, dir };
 }
 
+/**
+ * Whether to offer another page. `take` is clamped to MAX_TAKE, so at the
+ * ceiling raising it is a no-op — the control would render forever and do
+ * nothing. Hide it instead of lying.
+ */
+export function shouldShowLoadMore(hasMore: boolean, take: number): boolean {
+  return hasMore && take < MAX_TAKE;
+}
+
 /** Parses ?take=, clamped so a hostile value can't exhaust the server. */
 export function clampTake(raw: string | undefined): number {
   const n = Number(raw);
@@ -69,8 +78,9 @@ export function clampTake(raw: string | undefined): number {
 //
 // The primary subqueries are deterministic without an inner ORDER BY because
 // `crm_contacts_one_primary_per_household` is UNIQUE(household_id) WHERE
-// role = 'primary'. There is no equivalent constraint for spouses, so the
-// spouse subqueries order by id before taking one.
+// role = 'primary'. `crm_contacts_one_spouse_per_household` is the matching
+// UNIQUE(household_id) WHERE role = 'spouse', so the spouse subqueries are
+// deterministic on the same grounds.
 // ---------------------------------------------------------------------------
 
 const primaryLast = sql`(select c.last_name from crm_household_contacts c
@@ -78,9 +88,9 @@ const primaryLast = sql`(select c.last_name from crm_household_contacts c
 const primaryFirst = sql`(select c.first_name from crm_household_contacts c
   where c.household_id = ${crmHouseholds.id} and c.role = 'primary' limit 1)`;
 const spouseLast = sql`(select c.last_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' order by c.id limit 1)`;
+  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' limit 1)`;
 const spouseFirst = sql`(select c.first_name from crm_household_contacts c
-  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' order by c.id limit 1)`;
+  where c.household_id = ${crmHouseholds.id} and c.role = 'spouse' limit 1)`;
 
 /**
  * Nulls last in BOTH directions — a household with no primary contact should

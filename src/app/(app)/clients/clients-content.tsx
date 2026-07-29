@@ -14,7 +14,7 @@ import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
-import { resolveSort, clampTake, type ClientsView } from "@/lib/crm/sort";
+import { resolveSort, clampTake, shouldShowLoadMore, type ClientsView } from "@/lib/crm/sort";
 import { ClientsLoadMore } from "@/components/clients-load-more";
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ export async function ClientsContent({
               : undefined
         }
       />
-      {hasMore && <ClientsLoadMore take={take} />}
+      {shouldShowLoadMore(hasMore, take) && <ClientsLoadMore take={take} />}
     </div>
   );
 }

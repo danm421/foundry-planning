@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts, crmHouseholdViews } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
@@ -116,7 +116,7 @@ describe("listCrmHouseholds sorting", () => {
     await db
       .update(crmHouseholds)
       .set({ updatedAt: new Date(Date.UTC(2030, 0, 1)) })
-      .where(eq(crmHouseholds.name, "Amy Baker"));
+      .where(and(eq(crmHouseholds.firmId, ORG), eq(crmHouseholds.name, "Amy Baker")));
 
     const rows = await listCrmHouseholds();
 

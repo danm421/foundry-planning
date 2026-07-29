@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { resolveSort, clampTake, buildOrderBy, PAGE_SIZE, type ClientSortKey, type SortDir } from "../sort";
+import {
+  resolveSort,
+  clampTake,
+  shouldShowLoadMore,
+  buildOrderBy,
+  PAGE_SIZE,
+  type ClientSortKey,
+  type SortDir,
+} from "../sort";
 
 describe("resolveSort — per-view defaults", () => {
   it("defaults the All view to last-name ascending", () => {
@@ -59,6 +67,24 @@ describe("clampTake", () => {
 
   it("passes a sane value through", () => {
     expect(clampTake("150")).toBe(150);
+  });
+});
+
+describe("shouldShowLoadMore", () => {
+  it("offers another page below the ceiling", () => {
+    expect(shouldShowLoadMore(true, 950)).toBe(true);
+  });
+
+  it("hides the control AT the ceiling — raising take there is a no-op", () => {
+    expect(shouldShowLoadMore(true, 1000)).toBe(false);
+  });
+
+  it("hides the control when there are no more rows below the ceiling", () => {
+    expect(shouldShowLoadMore(false, 950)).toBe(false);
+  });
+
+  it("hides the control when there are no more rows at the ceiling", () => {
+    expect(shouldShowLoadMore(false, 1000)).toBe(false);
   });
 });
 
@@ -147,5 +173,16 @@ describe("buildOrderBy — compiled SQL text", () => {
   it("updated orders on the household updated_at column directly, not a subquery", () => {
     const [leading] = orderByText("updated", "desc");
     expect(leading).toBe('"crm_households"."updated_at" desc nulls last');
+  });
+
+  // Point 5: the spouse terms must actually select the SPOUSE contact. Every
+  // assertion above survives a mutation that points `spouse` at the primary
+  // subqueries, because the field names (first_name/last_name) are identical.
+  it("spouse's terms select the spouse contact, not the primary", () => {
+    const [leading, second] = orderByText("spouse", "asc");
+    expect(leading).toContain("c.role = 'spouse'");
+    expect(leading).toContain("c.first_name");
+    expect(second).toContain("c.role = 'spouse'");
+    expect(second).toContain("c.last_name");
   });
 });

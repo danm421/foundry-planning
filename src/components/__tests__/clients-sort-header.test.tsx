@@ -18,13 +18,17 @@ vi.mock("next/navigation", () => ({
 import { ClientsSortHeader } from "../clients-sort-header";
 import type { ClientSortKey, SortDir } from "@/lib/crm/sort";
 
-function renderHeader(activeKey: ClientSortKey | null, activeDir: SortDir = "asc") {
+function renderHeader(
+  activeKey: ClientSortKey | null,
+  activeDir: SortDir = "asc",
+  sortKey: ClientSortKey = "name",
+) {
   return render(
     <table>
       <thead>
         <tr>
           <ClientsSortHeader
-            sortKey="name"
+            sortKey={sortKey}
             label="Name"
             srLabel="Sort by last name"
             activeKey={activeKey}
@@ -80,6 +84,13 @@ describe("ClientsSortHeader", () => {
     renderHeader("name", "asc");
     fireEvent.click(screen.getByRole("button"));
     expect(replace).toHaveBeenCalledWith(expect.not.stringContaining("take="), { scroll: false });
+  });
+
+  it("applies a descending default for a key whose default direction is desc", () => {
+    renderHeader("name", "asc", "updated");
+    fireEvent.click(screen.getByRole("button"));
+    expect(replace).toHaveBeenCalledWith(expect.stringContaining("sort=updated"), { scroll: false });
+    expect(replace).toHaveBeenCalledWith(expect.stringContaining("dir=desc"), { scroll: false });
   });
 
   it("preserves unrelated params", () => {
