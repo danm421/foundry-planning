@@ -64,6 +64,13 @@ function persistedPayload() {
   return persisted.payloadJson.payload;
 }
 
+function persistedAssemble() {
+  const persisted = setSpy.mock.calls[0][0] as {
+    payloadJson: { assemble: Record<string, unknown> };
+  };
+  return persisted.payloadJson.assemble;
+}
+
 async function assembleWithThrowingFold() {
   const runPlannerFn = vi.fn<typeof runPlanner>(async () => DECISIONS);
   const res = await runAssemble({
@@ -128,5 +135,22 @@ describe("runAssemble — applyDecisions throws", () => {
     expect(setSpy).toHaveBeenCalledTimes(1);
     expect(recordAudit).toHaveBeenCalledTimes(1);
     expect(res.assemble.version).toBe(1);
+  });
+
+  // The third branch of the PLANNER_VERSION stamp, and the only one this file
+  // can reach: the planner DID propose, so a stamp keyed on "was the planner
+  // attempted" would fire here — but the fold threw and the persisted payload
+  // is the deterministic one, which no prompt shaped. Attributing it to
+  // `PLANNER_VERSION` would make the provenance record actively wrong.
+  // See run-assemble-planner-version.test.ts for the ran/never-ran branches.
+  it("does not stamp plannerVersion when the fold threw", async () => {
+    await assembleWithThrowingFold();
+    expect(persistedAssemble()).not.toHaveProperty("plannerVersion");
+  });
+
+  it("does not stamp plannerVersion into the audit metadata either", async () => {
+    await assembleWithThrowingFold();
+    const call = recordAudit.mock.calls[0][0] as { metadata: Record<string, unknown> };
+    expect(call.metadata).not.toHaveProperty("plannerVersion");
   });
 });

@@ -70,6 +70,19 @@ export interface AssembleState {
    * reader tolerates that absence, so `version` stays `1`.
    */
   notes?: string[];
+  /**
+   * `PLANNER_VERSION` of the prompt whose proposal was applied to this payload.
+   *
+   * ABSENT means no prompt shaped this payload — the planner never ran (no
+   * document text, timeout, Azure outage, unconfigured env), or it ran and its
+   * proposal failed to apply, in which case `run-assemble` keeps the purely
+   * deterministic payload. Absence is therefore load-bearing, not "unknown":
+   * stamping it unconditionally would attribute a deterministic payload to a
+   * prompt that contributed nothing to it.
+   *
+   * Optional and additive for the same reason as `notes`, so `version` stays `1`.
+   */
+  plannerVersion?: string;
 }
 
 /**
