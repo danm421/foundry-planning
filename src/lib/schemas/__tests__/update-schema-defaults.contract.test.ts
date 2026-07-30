@@ -33,7 +33,6 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import * as path from "node:path";
 import { z } from "zod";
-import { stripDefault } from "../strict-partial";
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 
@@ -137,39 +136,38 @@ describe("update-schema default-injection contract", () => {
     }
   });
 
-  it.each(DISCOVERED.map((d) => [`${path.relative(SRC_ROOT, d.file)}::${d.name}`, d] as const))(
-    "%s does not inject defaults",
-    async (_label, { file, name }) => {
-      if (ALLOWLIST[name]) return;
+  it.each(
+    DISCOVERED.map((d) => ({ ...d, label: `${path.relative(SRC_ROOT, d.file)}::${d.name}` })),
+  )("$label does not inject defaults", async ({ file, name }) => {
+    if (ALLOWLIST[name]) return;
 
-      const mod = (await import(file)) as Record<string, unknown>;
-      const schema = mod[name] as z.ZodTypeAny | undefined;
-      expect(schema, `${name} is not exported from ${file}`).toBeDefined();
-      if (!schema) return;
+    const mod = (await import(file)) as Record<string, unknown>;
+    const schema = mod[name] as z.ZodTypeAny | undefined;
+    expect(schema, `${name} is not exported from ${file}`).toBeDefined();
+    if (!schema) return;
 
-      // --- Structural: no field in the shape is (or wraps) a ZodDefault. -----
-      // Uniform across all schemas, including the several with required fields
-      // that legitimately reject `{}` and so cannot be checked behaviourally.
-      // That gap is not hypothetical: `grantUpdateSchema` rejects `{}` and
-      // injects three defaults, two of them arrays a route full-replaces.
-      const shapes = shapesOf(schema);
-      expect(shapes.length, `${name} has no introspectable shape`).toBeGreaterThan(0);
-      const offenders = shapes
-        .flatMap((shape) => Object.entries(shape))
-        .filter(([, field]) => injectsDefault(field as z.ZodTypeAny))
-        .map(([key]) => key);
-      expect(
-        offenders,
-        `${name} injects defaults for ${offenders.join(", ")} — use strictPartial() from @/lib/schemas/strict-partial`,
-      ).toEqual([]);
+    // --- Structural: no field in the shape is (or wraps) a ZodDefault. -------
+    // Uniform across all schemas, including the several with required fields
+    // that legitimately reject `{}` and so cannot be checked behaviourally.
+    // That gap is not hypothetical: `grantUpdateSchema` rejects `{}` and
+    // injects three defaults, two of them arrays a route full-replaces.
+    const shapes = shapesOf(schema);
+    expect(shapes.length, `${name} has no introspectable shape`).toBeGreaterThan(0);
+    const offenders = shapes
+      .flatMap((shape) => Object.entries(shape))
+      .filter(([, field]) => injectsDefault(field as z.ZodTypeAny))
+      .map(([key]) => key);
+    expect(
+      offenders,
+      `${name} injects defaults for ${offenders.join(", ")} — use strictPartial() from @/lib/schemas/strict-partial`,
+    ).toEqual([]);
 
-      // --- Behavioural: an empty body parses to an empty object. ------------
-      // Only meaningful where `{}` is accepted; schemas with required fields
-      // are covered by the structural check above.
-      const empty = schema.safeParse({});
-      if (empty.success) {
-        expect(empty.data, `${name}.parse({}) must be {}`).toEqual({});
-      }
-    },
-  );
+    // --- Behavioural: an empty body parses to an empty object. --------------
+    // Only meaningful where `{}` is accepted; schemas with required fields are
+    // covered by the structural check above.
+    const empty = schema.safeParse({});
+    if (empty.success) {
+      expect(empty.data, `${name}.parse({}) must be {}`).toEqual({});
+    }
+  });
 });
