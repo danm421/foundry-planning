@@ -422,11 +422,12 @@ const ADD_ASSET_MENU_W = 192;
  *  category below "Retirement". Flips above the trigger when the viewport is
  *  short. Closes on outside click, Escape, scroll, or resize. */
 function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
-  const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // `pos` doubles as the open flag — non-null means open, so there is no second
+  // piece of state to keep in sync with it.
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => setPos(null), []);
 
   const openMenu = useCallback(() => {
     const r = triggerRef.current?.getBoundingClientRect();
@@ -441,11 +442,10 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
     const spaceBelow = window.innerHeight - r.bottom;
     const openUp = spaceBelow < menuH && r.top > spaceBelow;
     setPos(openUp ? { left, bottom: window.innerHeight - r.top + 4 } : { left, top: r.bottom + 4 });
-    setOpen(true);
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!pos) return;
     const onMove = () => close();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -458,21 +458,21 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
       window.removeEventListener("resize", onMove);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, close]);
+  }, [pos, close]);
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => (open ? close() : openMenu())}
+        onClick={() => (pos ? close() : openMenu())}
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={pos !== null}
         className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
       >
         + Add Asset <ChevronDown />
       </button>
-      {open && pos &&
+      {pos &&
         createPortal(
           <>
             <button
