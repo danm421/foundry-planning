@@ -13,10 +13,13 @@ import {
   ArrowRightIcon,
   AlertCircleIcon,
   CheckCircleIcon,
-  FlowIcon,
-  ClipboardCheckIcon,
-  SparkleIcon,
 } from "@/components/icons";
+import {
+  START_PATHS,
+  PathCard,
+  isStartPath,
+  type StartPath,
+} from "@/components/planning-start-paths";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { StateSelect } from "@/components/state-select";
 import { AgeYearField } from "@/components/forms/age-year-field";
@@ -81,46 +84,6 @@ interface PreviewHousehold {
   id: string;
   name: string;
   contacts: PreviewContact[];
-}
-
-type StartPath = "quick" | "detailed" | "import" | "empty";
-
-function PathCard({
-  icon,
-  title,
-  subtitle,
-  selected,
-  onSelect,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={`flex items-start gap-3 rounded-[var(--radius-sm)] border px-3.5 py-3 text-left transition-colors ${
-        selected
-          ? "border-accent bg-accent/10"
-          : "border-hair bg-card-2 hover:border-ink-4"
-      }`}
-    >
-      <span
-        className={`mt-0.5 shrink-0 ${selected ? "text-accent-ink" : "text-ink-3"}`}
-        aria-hidden="true"
-      >
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-semibold text-ink">{title}</span>
-        <span className="block text-[12px] text-ink-3">{subtitle}</span>
-      </span>
-    </button>
-  );
 }
 
 export default function QuickCreateForm() {
@@ -598,34 +561,16 @@ export default function QuickCreateForm() {
       <div className="border-t border-hair pt-4">
         <span className={fieldLabelClassName}>How do you want to start?</span>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PathCard
-            icon={<FlowIcon width={18} height={18} />}
-            title="Quick Start"
-            subtitle="Fast retirement intake"
-            selected={path === "quick"}
-            onSelect={() => setPath("quick")}
-          />
-          <PathCard
-            icon={<ClipboardCheckIcon width={18} height={18} />}
-            title="Detailed setup"
-            subtitle="Full guided wizard"
-            selected={path === "detailed"}
-            onSelect={() => setPath("detailed")}
-          />
-          <PathCard
-            icon={<SparkleIcon width={18} height={18} />}
-            title="AI import"
-            subtitle="Extract from documents"
-            selected={path === "import"}
-            onSelect={() => setPath("import")}
-          />
-          <PathCard
-            icon={<ArrowRightIcon width={18} height={18} />}
-            title="Empty client"
-            subtitle="Skip the wizard, start blank"
-            selected={path === "empty"}
-            onSelect={() => setPath("empty")}
-          />
+          {START_PATHS.map((p) => (
+            <PathCard
+              key={p.id}
+              icon={p.icon}
+              title={p.title}
+              subtitle={p.subtitle}
+              selected={path === p.id}
+              onSelect={() => setPath(p.id)}
+            />
+          ))}
         </div>
       </div>
 
