@@ -105,7 +105,14 @@ export function buildPlannerTools(
     async ({ decisions }: { decisions: unknown }) => {
       const parsed = planningDecisionsSchema.safeParse(decisions);
       if (!parsed.success) {
-        const issue = formatZodIssues(parsed.error).map((i) => i.message).join("; ");
+        // Include the PATH, not just the message. R6 took the number of
+        // rejectable numeric fields from zero to ~12, so "Too big: expected
+        // number to be <=1; Too big: expected number to be <=1" is now a
+        // realistic reply — two anonymous complaints the model cannot act on.
+        // A rejection it can't localise costs the whole proposal.
+        const issue = formatZodIssues(parsed.error)
+          .map((i) => (i.path ? `${i.path}: ${i.message}` : i.message))
+          .join("; ");
         return `Proposal was invalid and was NOT recorded: ${issue}. Fix it and call propose_decisions again.`;
       }
       proposal = parsed.data;

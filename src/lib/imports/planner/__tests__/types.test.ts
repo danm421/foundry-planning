@@ -103,8 +103,13 @@ describe("planningDecisionsSchema — riskTolerance is the RiskLevel enum (R5)",
 });
 
 describe("PLANNER_SYSTEM_PROMPT teaches the risk vocabulary (R5)", () => {
-  it.each(RISK_LEVELS)("names %s", (level) => {
-    expect(PLANNER_SYSTEM_PROMPT).toContain(level);
+  // Word-boundaried, NOT toContain: `conservative` is a substring of
+  // `moderately_conservative` (and `aggressive` of `moderately_aggressive`), so
+  // a toContain sweep passes on a prompt that names only the two long tokens —
+  // pinning two of five rungs while reading like it pins all five. `_` is a
+  // word char, so \b correctly refuses to match inside the longer token.
+  it.each(RISK_LEVELS)("names %s as its own token", (level) => {
+    expect(PLANNER_SYSTEM_PROMPT).toMatch(new RegExp(String.raw`\b${level}\b`));
   });
 
   it("does not name the two invalid tokens the extraction prompt used to teach", () => {

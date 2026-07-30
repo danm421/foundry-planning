@@ -234,7 +234,14 @@ describe("GET /api/clients/[id]/imports/[importId] — payloadJson slimming (R8)
     });
   });
 
-  it("STILL ships assemble — the Assumed chip and get_plan_status read it", async () => {
+  // Keep this assertion, but NOT for the reason an earlier revision gave: no
+  // consumer of THIS GET reads `assemble`. extraction-progress reads status +
+  // files; wizard-import-drawer reads payload + perTabCommittedAt. The Assumed
+  // chip and get_plan_status read it from the DB (import-flow-content.tsx:81,
+  // plan-builder.ts:54), not from here. It stays because `assemble` is small and
+  // narrowing the response further is a separate decision — a false rationale is
+  // what invites the next person to delete a line that should stay.
+  it("STILL ships assemble — small, and narrowing it is a separate call", async () => {
     const body = await getBody(FAT_PAYLOAD_JSON);
     expect(body.import.payloadJson?.assemble).toEqual({
       version: 1, mergedFileCount: 1, assumptions: [], questions: [],

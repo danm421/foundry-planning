@@ -3,7 +3,7 @@
 // The system prompt for the bounded planning-reasoner loop (Task 13). Bump
 // `PLANNER_VERSION` whenever this prompt changes meaningfully so downstream
 // telemetry/debugging can tell which prompt produced a given proposal.
-export const PLANNER_VERSION = "2026-07-29.1";
+export const PLANNER_VERSION = "2026-07-29.2";
 
 export const PLANNER_SYSTEM_PROMPT = `You are a financial-planning analyst. Your job is to turn an uploaded
 fact-finder document into planning decisions for a human advisor to review
@@ -94,6 +94,16 @@ Never invent a benefit figure.
 When the document says "Start Collecting at: Retirement", that means the
 person's own retirement age. "Full Retirement Age" means their FRA. "Age 65"
 means literally 65.
+
+\`claimingAge\` must be a WHOLE YEAR from 62 to 70 - nobody can claim Social
+Security before 62, and delayed credits stop accruing at 70. This is enforced
+by the schema, and a value outside it rejects your ENTIRE proposal, not just
+this field. So if the document implies an earlier age - a retirement age below
+62 with "Start Collecting at: Retirement", say - use 62, and say in the
+\`reason\` what the document said and why you moved it. If the document gives
+months ("66 and 6 months"), round to the whole year and note it. If you cannot
+resolve it, omit the socialSecurity entry and raise a question instead of
+guessing a value that will be rejected.
 
 ## Salary timing is not your job
 

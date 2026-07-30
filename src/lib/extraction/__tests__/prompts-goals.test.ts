@@ -42,9 +42,12 @@ describe("goal + assumption prompts", () => {
   // R5 (whole-branch review, I3 adjacent). The prompt used to enumerate
   // `moderate_conservative` and `moderate_aggressive`, neither of which is a
   // real `RiskLevel` — it taught the model two tokens nothing can consume.
+  // Word-boundaried for the same reason as the planner-prompt twin: three of
+  // the five rungs are substrings of the other two, so toContain would pin only
+  // `moderately_conservative` and `moderately_aggressive`.
   it("assumptions prompt names exactly the real RiskLevel values", () => {
     for (const level of RISK_LEVELS) {
-      expect(ASSUMPTIONS_PROMPT).toContain(level);
+      expect(ASSUMPTIONS_PROMPT).toMatch(new RegExp(String.raw`\b${level}\b`));
     }
   });
 
