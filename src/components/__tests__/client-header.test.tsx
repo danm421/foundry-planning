@@ -9,6 +9,7 @@ vi.mock("next/link", () => ({
 }));
 
 import ClientHeader from "../client-header";
+import { CLIENT_HEADER_ACTIONS_ID } from "../client-header-actions";
 import type { PersonInfo } from "../client-identity-menu";
 
 const people: PersonInfo[] = [
@@ -55,5 +56,24 @@ describe("ClientHeader", () => {
     expect(screen.getByText("Cooper Sample")).toBeInTheDocument();
     expect(screen.getByText("sub-report-tabs")).toBeInTheDocument();
     expect(screen.getByText("chips-here")).toBeInTheDocument();
+  });
+
+  it("puts route actions BEFORE the plan chrome, with the divider on the actions slot", () => {
+    // The plan selector + CRM link stay pinned to the right edge on every
+    // route; a page's portaled actions (solver's Reset / Save…) land to their
+    // left. Asserting the DOM order — not just presence — is the only way this
+    // reads, since both are siblings in the same flex row.
+    const { container } = render(
+      <ClientHeader clientId="abc" people={people} rightSlot={<span>chips-here</span>} />,
+    );
+
+    const slot = container.querySelector(`#${CLIENT_HEADER_ACTIONS_ID}`)!;
+    const chips = screen.getByText("chips-here");
+    expect(slot.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The divider must collapse with the slot when a route contributes nothing,
+    // so it has to be the slot's own border — a border-l on the chrome would
+    // leave a stray rule on every other route.
+    expect(slot.className).toContain("border-r");
+    expect(slot.className).toContain("empty:hidden");
   });
 });

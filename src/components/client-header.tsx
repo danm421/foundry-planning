@@ -28,18 +28,18 @@ export default function ClientHeader({
       </div>
       <div className="justify-self-center">{centerSlot}</div>
       <div className="flex items-center gap-3 justify-self-end">
-        {rightSlot}
         {/* Route-level action slot, filled by <ClientHeaderActions> (portal) so
             a page can put controls on this row instead of spending its own
-            vertical space. It trails the plan chrome deliberately: a page's
-            primary action is an accent fill and so is the scenario chip, and
-            side by side they read as one teal blob with no way to tell the
-            action from the state. empty:hidden collapses the divider and its
-            gap on routes that contribute nothing. */}
+            vertical space. It leads the plan chrome, which keeps the plan
+            selector and CRM link pinned to the same right edge on every route
+            whether or not the page contributes actions. The divider rides on
+            this slot (border-r) so empty:hidden collapses it, its padding and
+            its gap together on routes that contribute nothing. */}
         <div
           id={CLIENT_HEADER_ACTIONS_ID}
-          className="flex items-center gap-2 border-l border-hair-2 pl-3 empty:hidden"
+          className="flex items-center gap-2 border-r border-hair-2 pr-3 empty:hidden"
         />
+        {rightSlot}
       </div>
     </div>
   );
