@@ -43,11 +43,22 @@ export interface GrowthOptionsArgs {
   hideAssetMix: boolean;
 }
 
+/**
+ * The "Inflation rate" option's label.
+ *
+ * Exported because `FlowGrowthCell` offers the same option and has no account
+ * category to route through `growthOptionsFor` \u2014 and two dropdowns over one
+ * field whose labels disagree is exactly what this module exists to prevent.
+ */
+export function inflationRateOptionLabel(resolvedInflationRate: number): string {
+  return `${(resolvedInflationRate * 100).toFixed(2)}% \u2014 Inflation rate`;
+}
+
 export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
   const mode = growthEditModeFor(args.category);
   if (mode === "none") return [];
 
-  const inflationLabel = `${(args.resolvedInflationRate * 100).toFixed(2)}% \u2014 Inflation rate`;
+  const inflationLabel = inflationRateOptionLabel(args.resolvedInflationRate);
 
   if (mode === "custom_only") return [{ value: "custom", label: "Custom %" }];
   if (mode === "inflation_custom") {

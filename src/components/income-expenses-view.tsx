@@ -6,13 +6,21 @@ import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
 import { StateSelect } from "@/components/state-select";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
 import SavingsRulesList from "./forms/savings-rules-list";
+import InlineYearCell from "./forms/inline-year-cell";
+import FlowGrowthCell from "./forms/flow-growth-cell";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
 import { CurrencyInput } from "./currency-input";
 import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
+import { coerceYearRef, defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
+import {
+  buildFlowScenarioDesiredFields,
+  flowAmountPatch,
+  flowYearPatch,
+  type FlowPatch,
+} from "@/lib/inline-edit/flow-write";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
@@ -174,6 +182,21 @@ interface IncomeExpensesViewProps {
   incomeSchedules: ScheduleMap;
   expenseSchedules: ScheduleMap;
   savingsSchedules: ScheduleMap;
+  /**
+   * Per-row scenario-edit field sets, keyed by income / expense id, built
+   * SERVER-side from the EFFECTIVE ENGINE rows.
+   *
+   * Not derivable here. `initialIncomes` / `initialExpenses` are
+   * `incomeEngineToView` / `expenseEngineToView` output — strict subsets of the
+   * engine types — and the fields they drop (`isSelfEmployment`,
+   * `endsAtMedicareEligibilityOwner`) are ones real producers override. A
+   * scenario edit's payload is stored as a WHOLESALE REPLACE, so a key missing
+   * from `desiredFields` doesn't just go unwritten: the scenario's existing
+   * override for it is deleted. `lib/inline-edit/flow-write.ts` owns the rule.
+   *
+   * A row with no entry here refuses its inline write — see `saveIncomeField`.
+   */
+  flowScenarioFields: Record<string, Record<string, unknown>>;
   resolvedInflationRate: number;
   ssClientInfo?: EngineClientInfo;
   ssPlanSettings?: PlanSettings;
@@ -250,12 +273,44 @@ function makeDefaultIncomeName(owner: Owner, type: IncomeType, ownerNames: Owner
 }
 
 
-function yearsDescriptor(start: number, end: number, planStart?: number, planEnd?: number): string {
-  if (planStart !== undefined && planEnd !== undefined && start <= planStart && end >= planEnd) {
-    return "Active";
-  }
-  if (start === end) return String(start);
-  return `${start}–${end}`;
+/**
+ * The six Social-Security anchors. Mirrors the `includeSSRefs` branch of
+ * `availableRefs` (`lib/milestones.ts`), the only other place that enumerates
+ * them.
+ */
+const SS_YEAR_REFS: ReadonlySet<YearRef> = new Set<YearRef>([
+  "client_ss_62",
+  "client_ss_fra",
+  "client_ss_70",
+  "spouse_ss_62",
+  "spouse_ss_fra",
+  "spouse_ss_70",
+]);
+
+/**
+ * `showSSRefs` has to track the row's REF, not its income type.
+ *
+ * With an SS-anchored ref and `showSSRefs=false`, `availableRefs` omits that ref
+ * and the open `<select>`'s value matches no `<option>`. Read mode still looks
+ * right, because `InlineYearCell`'s display comes from `YEAR_REF_LABELS`
+ * independently — so the defect is invisible until the dropdown is opened.
+ *
+ * This page never CREATES an SS anchor (all four dialog pickers pass
+ * `showSSRefs={false}`) and no `social_security` row reaches a `Row` at all —
+ * `INCOME_GROUPS` has no such group and SS renders in `SocialSecurityCard`. But
+ * the Solver and the importer do write these refs, so read-back has to cope.
+ */
+const isSsRef = (ref: YearRef | null): boolean => ref != null && SS_YEAR_REFS.has(ref);
+
+/**
+ * The year cell for a page with no milestones to anchor against.
+ *
+ * A span rather than `undefined`: `Row` renders a slot's fixed-width cell only
+ * when the slot is present, so a missing one collapses the column and shifts
+ * every following cell. Styling matches `InlineYearCell`'s own read mode.
+ */
+function PlainYearCell({ year }: { year: number }) {
+  return <span className="tabular text-[11px] text-ink-3">{year}</span>;
 }
 
 // ── Shared atoms ──────────────────────────────────────────────────────────────
@@ -1585,6 +1640,7 @@ export default function IncomeExpensesView({
   incomeSchedules,
   expenseSchedules,
   savingsSchedules,
+  flowScenarioFields,
   resolvedInflationRate,
   ssClientInfo,
   ssPlanSettings,
@@ -1640,50 +1696,95 @@ export default function IncomeExpensesView({
     }
   }
 
-  // Inline amount edit for an expense row. Reconstructs the full field set from
-  // the current expense (overriding only the amount) so scenario-mode edits
-  // diff against base correctly and don't clobber other overrides on the same
-  // row — the unified writer replaces the change payload with whatever fields we
-  // send. Optimistically updates the list, reverting if the write fails.
-  async function saveExpenseAmount(expense: Expense, nextAmount: number): Promise<boolean> {
-    const body = {
-      type: expense.type,
-      name: expense.name,
-      annualAmount: String(nextAmount),
-      startYear: String(expense.startYear),
-      endYear: String(expense.endYear),
-      growthRate: expense.growthRate,
-      growthSource: expense.growthSource ?? "custom",
-      cashAccountId: expense.cashAccountId ?? null,
-      ownerAccountId: expense.ownerAccountId ?? null,
-      inflationStartYear: expense.inflationStartYear ?? null,
-      startYearRef: expense.startYearRef ?? null,
-      endYearRef: expense.endYearRef ?? null,
-      deductionType: expense.deductionType ?? null,
-      endsAtMedicareEligibilityOwner: expense.endsAtMedicareEligibilityOwner ?? null,
-      isGoal: expense.isGoal ?? false,
-    };
-    const prevAmount = expense.annualAmount;
-    setExpenseList((list) =>
-      list.map((e) => (e.id === expense.id ? { ...e, annualAmount: String(nextAmount) } : e)),
-    );
+  // ── Inline field writers ──────────────────────────────────────────────────
+  //
+  // One per entity, sharing the base/scenario asymmetry `flow-write.ts` owns:
+  //
+  //   Base mode     → the PATCH ALONE. `incomes-writes.ts` / `expenses-writes.ts`
+  //                   apply strict partial updates (`...(p.x !== undefined && {x})`).
+  //                   The full-row body this replaced sent
+  //                   `endsAtMedicareEligibilityOwner: expense.… ?? null`, and
+  //                   `expenseEngineToView` never populates that field, so every
+  //                   inline edit wrote a literal null over the Medicare
+  //                   auto-end flag. Unreachable while only `living` rows edited
+  //                   inline; reachable now that every group does.
+  //
+  //   Scenario mode → the whole pruned effective row with the patch on top,
+  //                   because `applyEntityEdit` stores the payload as a
+  //                   wholesale replace and a narrow write deletes the row's
+  //                   other overrides in that scenario.
+  //
+  // Both optimistically update the list with the WHOLE patch and restore the
+  // whole pre-edit row on failure. `usePendingEdits` deliberately isn't used:
+  // this view already keeps its own list state (see the hook's own header).
+
+  /**
+   * Nothing in this task writes `owner`: `Expense` has no owner column, and the
+   * income `owner` enum (`client | spouse | joint`) is parked pending a design
+   * decision — `InlineOwnerCell` would offer picks it cannot represent. Narrowing
+   * the patch type here rather than casting keeps the optimistic spread honest.
+   */
+  type FlowFieldPatch = Omit<FlowPatch, "owner">;
+
+  /**
+   * The scenario field set for a row, or null when the row and the server-built
+   * map have drifted. With no field set the scenario payload could only be the
+   * narrow write that deletes the row's other overrides, and sending nothing
+   * beats sending that — so callers refuse rather than guess.
+   */
+  function scenarioFieldsFor(id: string): Record<string, unknown> | null {
+    return flowScenarioFields[id] ?? null;
+  }
+
+  async function saveIncomeField(income: Income, patch: FlowFieldPatch): Promise<boolean> {
+    const fields = scenarioFieldsFor(income.id);
+    if (!fields) return false;
+    const prev = income;
+    setIncomeList((list) => list.map((i) => (i.id === income.id ? { ...i, ...patch } : i)));
     try {
       const res = await writer.submit(
-        { op: "edit", targetKind: "expense", targetId: expense.id, desiredFields: body },
-        { url: `/api/clients/${clientId}/expenses/${expense.id}`, method: "PUT", body },
+        {
+          op: "edit",
+          targetKind: "income",
+          targetId: income.id,
+          desiredFields: buildFlowScenarioDesiredFields(fields, patch),
+        },
+        { url: `/api/clients/${clientId}/incomes/${income.id}`, method: "PUT", body: patch },
       );
-      if (!res.ok) throw new Error("Failed to save expense amount");
+      if (!res.ok) throw new Error("Failed to save income");
       return true;
     } catch {
-      setExpenseList((list) =>
-        list.map((e) => (e.id === expense.id ? { ...e, annualAmount: prevAmount } : e)),
-      );
+      // The whole pre-edit row back, not one field: a multi-key patch (the year
+      // pair, or rate + source) must not half-revert.
+      setIncomeList((list) => list.map((i) => (i.id === income.id ? prev : i)));
       return false;
     }
   }
 
-  const planStart = clientInfo?.planStartYear;
-  const planEnd = clientInfo?.planEndYear;
+  async function saveExpenseField(expense: Expense, patch: FlowFieldPatch): Promise<boolean> {
+    const fields = scenarioFieldsFor(expense.id);
+    if (!fields) return false;
+    const prev = expense;
+    setExpenseList((list) => list.map((e) => (e.id === expense.id ? { ...e, ...patch } : e)));
+    try {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "expense",
+          targetId: expense.id,
+          desiredFields: buildFlowScenarioDesiredFields(fields, patch),
+        },
+        { url: `/api/clients/${clientId}/expenses/${expense.id}`, method: "PUT", body: patch },
+      );
+      if (!res.ok) throw new Error("Failed to save expense");
+      return true;
+    } catch {
+      setExpenseList((list) => list.map((e) => (e.id === expense.id ? prev : e)));
+      return false;
+    }
+  }
+
+  const milestones = clientInfo?.milestones;
 
   // Exclude SS rows from the visible income list (SS is shown in its own card)
   const nonSsIncomeList = incomeList.filter((i) => i.type !== "social_security");
@@ -1810,10 +1911,17 @@ export default function IncomeExpensesView({
                       const businessName = income.ownerAccountId
                         ? businessAccountMap[income.ownerAccountId]?.name
                         : undefined;
+                      const startRef = coerceYearRef(income.startYearRef) ?? null;
+                      const endRef = coerceYearRef(income.endYearRef) ?? null;
                       return (
                         <Row
                           key={income.id}
-                          onClick={canEdit ? () => !incomeEdit && setIncomeDialog({ open: true, editing: income }) : undefined}
+                          // No row-level onClick: it swallows clicks meant for
+                          // the cells inside it. The pencil is the only route to
+                          // the full editor now — and income needs one, because
+                          // name, type, tax treatment, claiming age and schedule
+                          // live nowhere else.
+                          onEdit={canEdit ? () => setIncomeDialog({ open: true, editing: income }) : undefined}
                           editMode={canEdit && incomeEdit}
                           onDelete={canEdit ? () => setDeletingIncome(income) : undefined}
                           label={income.name}
@@ -1823,7 +1931,50 @@ export default function IncomeExpensesView({
                               individualOwnerLabel(income.owner, ownerNames),
                             income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
                           ]}
-                          starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
+                          startSlot={
+                            milestones ? (
+                              <InlineYearCell
+                                year={income.startYear}
+                                yearRef={startRef}
+                                milestones={milestones}
+                                position="start"
+                                showSSRefs={isSsRef(startRef)}
+                                label={`start year for ${income.name}`}
+                                canEdit={canEdit}
+                                onSave={(year, ref) =>
+                                  saveIncomeField(income, flowYearPatch("start", year, ref))
+                                }
+                              />
+                            ) : (
+                              <PlainYearCell year={income.startYear} />
+                            )
+                          }
+                          endSlot={
+                            milestones ? (
+                              <InlineYearCell
+                                year={income.endYear}
+                                yearRef={endRef}
+                                milestones={milestones}
+                                position="end"
+                                showSSRefs={isSsRef(endRef)}
+                                label={`end year for ${income.name}`}
+                                canEdit={canEdit}
+                                onSave={(year, ref) =>
+                                  saveIncomeField(income, flowYearPatch("end", year, ref))
+                                }
+                              />
+                            ) : (
+                              <PlainYearCell year={income.endYear} />
+                            )
+                          }
+                          rateSlot={
+                            <FlowGrowthCell
+                              row={income}
+                              resolvedInflationRate={resolvedInflationRate}
+                              canEdit={canEdit}
+                              onSave={(patch) => saveIncomeField(income, patch)}
+                            />
+                          }
                           value={fmt(income.annualAmount)}
                           outOfEstate={Boolean(income.ownerEntityId)}
                         />
@@ -2008,8 +2159,9 @@ export default function IncomeExpensesView({
               );
               if (items.length === 0) return null;
               const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
-              // Living-expense rows edit their amount inline; the pencil opens the
-              // full editor. Other groups keep the click-row-to-open behavior.
+              // Living-expense rows edit their amount inline. The row-level
+              // click-to-open is gone for EVERY group now — the inline year and
+              // rate cells make it unusable — so every group gets the pencil.
               const isLiving = group.types.includes("living");
               return (
                 <Group
@@ -2023,24 +2175,66 @@ export default function IncomeExpensesView({
                     const businessName = expense.ownerAccountId
                       ? businessAccountMap[expense.ownerAccountId]?.name
                       : undefined;
+                    const startRef = coerceYearRef(expense.startYearRef) ?? null;
+                    const endRef = coerceYearRef(expense.endYearRef) ?? null;
                     return (
                       <Row
                         key={expense.id}
-                        onClick={
-                          !canEdit
-                            ? undefined
-                            : isLiving
-                            ? undefined
-                            : () => !expenseEdit && setExpenseDialog({ open: true, editing: expense })
-                        }
-                        onEdit={canEdit && isLiving ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
+                        onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
                         amount={isLiving ? Number(expense.annualAmount) : undefined}
-                        onSaveAmount={canEdit && isLiving ? (next) => saveExpenseAmount(expense, next) : undefined}
+                        onSaveAmount={
+                          canEdit && isLiving
+                            ? (next) => saveExpenseField(expense, flowAmountPatch(next))
+                            : undefined
+                        }
+                        startSlot={
+                          milestones ? (
+                            <InlineYearCell
+                              year={expense.startYear}
+                              yearRef={startRef}
+                              milestones={milestones}
+                              position="start"
+                              showSSRefs={isSsRef(startRef)}
+                              label={`start year for ${expense.name}`}
+                              canEdit={canEdit}
+                              onSave={(year, ref) =>
+                                saveExpenseField(expense, flowYearPatch("start", year, ref))
+                              }
+                            />
+                          ) : (
+                            <PlainYearCell year={expense.startYear} />
+                          )
+                        }
+                        endSlot={
+                          milestones ? (
+                            <InlineYearCell
+                              year={expense.endYear}
+                              yearRef={endRef}
+                              milestones={milestones}
+                              position="end"
+                              showSSRefs={isSsRef(endRef)}
+                              label={`end year for ${expense.name}`}
+                              canEdit={canEdit}
+                              onSave={(year, ref) =>
+                                saveExpenseField(expense, flowYearPatch("end", year, ref))
+                              }
+                            />
+                          ) : (
+                            <PlainYearCell year={expense.endYear} />
+                          )
+                        }
+                        rateSlot={
+                          <FlowGrowthCell
+                            row={expense}
+                            resolvedInflationRate={resolvedInflationRate}
+                            canEdit={canEdit}
+                            onSave={(patch) => saveExpenseField(expense, patch)}
+                          />
+                        }
                         editMode={canEdit && expenseEdit}
                         onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
                         label={expense.name}
                         meta={[entityName ?? businessName ?? null]}
-                        starts={yearsDescriptor(expense.startYear, expense.endYear, planStart, planEnd)}
                         value={fmt(expense.annualAmount)}
                         outOfEstate={Boolean(expense.ownerEntityId)}
                       />
