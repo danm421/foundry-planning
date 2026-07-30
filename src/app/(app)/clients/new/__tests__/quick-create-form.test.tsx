@@ -97,3 +97,26 @@ it("selects nothing when ?path= is absent", async () => {
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
   }
 });
+
+it("defaults filing status to married_joint when the household has a spouse", async () => {
+  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  stubHousehold(["primary", "spouse"]);
+  render(<QuickCreateForm />);
+
+  await waitFor(() =>
+    expect((screen.getByLabelText(/filing status/i) as HTMLSelectElement).value).toBe(
+      "married_joint",
+    ),
+  );
+});
+
+it("defaults filing status to single when the household has no spouse", async () => {
+  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  stubHousehold(["primary"]);
+  render(<QuickCreateForm />);
+
+  await waitFor(() =>
+    expect(screen.getByLabelText(/filing status/i)).toBeInTheDocument(),
+  );
+  expect((screen.getByLabelText(/filing status/i) as HTMLSelectElement).value).toBe("single");
+});

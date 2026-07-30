@@ -95,6 +95,7 @@ export default function QuickCreateForm() {
   const [preview, setPreview] = useState<PreviewHousehold | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(false);
+  const [filingStatus, setFilingStatus] = useState<FilingStatus>("single");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,6 +150,10 @@ export default function QuickCreateForm() {
         setPreview(json.household);
         const hasSpouse = json.household.contacts.some((c) => c.role === "spouse");
         setShowSpouse(hasSpouse);
+        // Match what the zero-field Import/Empty paths already derive, so an
+        // advisor who just entered a spouse doesn't land on "Single".
+        // Overridable, and re-derived if they switch households.
+        setFilingStatus(hasSpouse ? "married_joint" : "single");
       } catch (err) {
         if (cancelled) return;
         setPreviewError(err instanceof Error ? err.message : "Load failed");
@@ -630,7 +635,8 @@ export default function QuickCreateForm() {
                   <select
                     id="filingStatus"
                     name="filingStatus"
-                    defaultValue="single"
+                    value={filingStatus}
+                    onChange={(e) => setFilingStatus(e.target.value as FilingStatus)}
                     required
                     className={selectClassName}
                   >
