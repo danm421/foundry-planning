@@ -18,6 +18,9 @@ export const ENTITY_SECTIONS = [
     "insurance",
     "wills",
     "entities",
+    "savings",
+    "goals",
+    "assumptions",
 ] as const;
 
 export type SectionEntityType = (typeof ENTITY_SECTIONS)[number];
@@ -38,6 +41,9 @@ const sectionsSchema = z.object({
     insurance: z.array(pageRangeSchema).max(20).default([]),
     wills: z.array(pageRangeSchema).max(20).default([]),
     entities: z.array(pageRangeSchema).max(20).default([]),
+    savings: z.array(pageRangeSchema).max(20).default([]),
+    goals: z.array(pageRangeSchema).max(20).default([]),
+    assumptions: z.array(pageRangeSchema).max(20).default([]),
 });
 
 export type Sections = z.infer<typeof sectionsSchema>;

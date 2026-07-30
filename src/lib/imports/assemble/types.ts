@@ -17,7 +17,8 @@ export type PlanBasicsProvenance =
   | "client_record" // read off the clients row (refresh)
   | "build_request" // came in as a build_plan argument (new build)
   | "document"      // extracted from an uploaded file
-  | "derived";      // computed; `reason` is required and is final copy
+  | "derived"       // computed; `reason` is required and is final copy
+  | "estimated";    // supplied from outside the document; always advisor-verified
 
 export interface PlanBasicsField<T> {
   value: T | null;
@@ -35,13 +36,22 @@ export interface AssemblePlanBasics {
   socialSecurity: Array<{
     owner: "client" | "spouse";
     /**
-     * The ANNUAL Social Security benefit, despite the field name. It commits
-     * straight to `incomes.annualAmount`, and the seeded SS rows carry
-     * `ssBenefitMode = null` — which the engine treats as "manual_amount" and
-     * reads literally, with no PIA/claiming-age actuarial path. The wizard
-     * labels it "Annual Social Security benefit" for that reason. Writing a
-     * real PIA (`piaMonthly` + `ssBenefitMode: "pia_at_fra"`) is follow-up
-     * work; renaming this key alone would not change what is written.
+     * A MONTHLY Primary Insurance Amount at full retirement age, in today's
+     * dollars. It commits to `incomes.pia_monthly` alongside
+     * `ssBenefitMode: "pia_at_fra"` (see `commit/plan-basics.ts`), so the
+     * engine runs the real actuarial path — early reduction, delayed credit,
+     * spousal and survivor — rather than reading one flat annual number
+     * forever. `incomes.annualAmount` is left untouched; the engine ignores it
+     * in this mode.
+     *
+     * TWO PRODUCERS, ONE UNIT. The planner supplies an already-monthly PIA
+     * (`apply-decisions.ts`). The document path extracts an ANNUAL benefit and
+     * DIVIDES IT BY 12 (`assemble/plan-basics.ts`), keeping
+     * `provenance: "document"` — same fact, different units. That conversion is
+     * not a double adjustment, because the document path also defaults the
+     * claiming age to FRA and at FRA the engine applies neither a reduction nor a
+     * credit — exactly so for FRA 67y0m (births from 1960 on), and slightly
+     * conservative for 1955-1959 births. See `monthlyPiaFromAnnual` for why.
      */
     pia: PlanBasicsField<number>;
     claimingAge: PlanBasicsField<number>;
@@ -53,6 +63,13 @@ export interface AssembleState {
   mergedFileCount: number; // how many source files were merged
   assumptions: AssembleAssumption[];
   questions: AssembleQuestion[];
+  /**
+   * Free-text notes surfaced by the planner (Task 13/15) — advisor-facing
+   * context that isn't a question or an assumption. Optional and additive:
+   * a payload persisted before this field existed has no `notes`, and every
+   * reader tolerates that absence, so `version` stays `1`.
+   */
+  notes?: string[];
 }
 
 /**

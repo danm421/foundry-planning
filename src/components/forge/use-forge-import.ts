@@ -16,6 +16,13 @@
 import { useCallback, useState } from "react";
 import { resolveBaseScenarioId } from "./actions";
 import type { AssembleState } from "@/lib/imports/assemble/types";
+// `commit/types.ts` is safe to import from a client component: its only two
+// imports are `import type`, so they are erased at compile, and `COMMIT_TABS`
+// itself is a plain `as const` array. This file used to carry a hand-copied
+// mirror of it under a comment claiming "the commit module is server-only" —
+// which was never true, and the drift it invited is exactly what made the Task
+// 17 PIA-clobber invisible.
+import { COMMIT_TABS } from "@/lib/imports/commit/types";
 
 export type ForgeImportStatus =
   | "idle"
@@ -45,13 +52,6 @@ export interface PlanBuildResult {
   assemble: AssembleState;
   warnings: string[];
 }
-
-// Mirror src/lib/imports/commit/types.ts COMMIT_TABS. Hardcoded because the
-// commit module is server-only; keep this list in sync if tabs change.
-const ALL_COMMIT_TABS = [
-  "plan-basics", "clients-identity", "family-members", "accounts", "incomes",
-  "expenses", "liabilities", "life-insurance", "wills", "entities", "goals",
-] as const;
 
 export interface FactFinderIdentifyResponse {
   isHouseholdDoc: boolean;
@@ -314,7 +314,7 @@ export function useForgeImport(): UseForgeImportResult {
         const res = await fetch(`/api/clients/${clientId}/imports/${importId}/commit`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ tabs: ALL_COMMIT_TABS }),
+          body: JSON.stringify({ tabs: COMMIT_TABS }),
         });
         if (!res.ok) {
           setErrorMessage(await errText(res, "Could not commit the plan."));

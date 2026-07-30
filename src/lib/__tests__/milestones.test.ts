@@ -175,3 +175,23 @@ describe("smart defaults", () => {
     expect(d.endYearRef).toBe("plan_end");
   });
 });
+
+describe("defaultSavingsRuleRefs", () => {
+  it("ends a client rule at the client's retirement", () => {
+    expect(defaultSavingsRuleRefs("client")).toEqual({
+      startYearRef: "plan_start",
+      endYearRef: "client_retirement",
+    });
+  });
+
+  it("ends a spouse rule at the spouse's retirement", () => {
+    expect(defaultSavingsRuleRefs("spouse")).toEqual({
+      startYearRef: "plan_start",
+      endYearRef: "spouse_retirement",
+    });
+  });
+
+  it("treats joint as the client", () => {
+    expect(defaultSavingsRuleRefs("joint").endYearRef).toBe("client_retirement");
+  });
+});

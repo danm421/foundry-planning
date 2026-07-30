@@ -10,6 +10,13 @@ type MatchedRow = { match?: MatchAnnotation };
  * Only tabs whose commit module drops a row when `match.kind === "fuzzy"`
  * appear here. `plan-basics` and `clients-identity` write singletons that carry
  * no match annotation, and `goals` is advisor-assembled rather than matched.
+ *
+ * `savings` is deliberately absent, and adding it would be a bug. Savings rows
+ * are never matched: `run-matching.ts` scores only the eight arrays listed
+ * above, and `merge-across-files.ts` stamps every savings row
+ * `match: { kind: "new" }`. So no savings row can ever be `fuzzy`, and a
+ * `savings` entry here could only ever produce a warning claiming rows were
+ * "left ambiguous and not imported" for rows that WERE imported.
  */
 const AMBIGUOUS_ROW_SOURCES: Partial<
   Record<CommitTab, { noun: string; rows: (p: ImportPayload) => readonly MatchedRow[] }>

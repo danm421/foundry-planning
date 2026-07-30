@@ -60,6 +60,67 @@ function promptVersionFor(documentType: DocumentType): string {
     return `${documentType}:${PROMPT_VERSIONS[documentType]}`;
 }
 
+/**
+ * At-rest / per-AI-call size ceiling for persisted document text, in
+ * characters. The owner accepted ~20-80KB/file at rest (Task 15 Step 5,
+ * R5). Shared by the single-pass path's existing truncation (used both to
+ * cap the AI call and, per R5, the persisted `text`) and the multi-pass
+ * path's page cap below (`capPersistedPages`) - one named constant instead
+ * of the literal `100000` repeated at both sites.
+ */
+const MAX_DOCUMENT_TEXT_CHARS = 100000;
+
+/**
+ * R5: bound what the multi-pass path PERSISTS to `MAX_DOCUMENT_TEXT_CHARS`.
+ * The rule is "whole pages while they fit, else a truncated first page" -
+ * NOT simply "drop from the end": keep whole pages from the start until the
+ * budget would be exceeded, dropping the (whole) remainder. But if the
+ * FIRST page alone already exceeds the budget, whole-page dropping would
+ * keep zero pages and persist nothing for that document - the exact
+ * opposite of what this cap exists to protect (a long fact finder still
+ * reaching the planner). So in that one case, truncate the first page to
+ * the budget instead of dropping it, mirroring the single-pass path's own
+ * truncation marker (`"\n... [truncated]"`, see step 5 below) rather than
+ * inventing a new one. This only caps the return value written to
+ * `payloadJson.fileResults` at rest - the extraction pass itself
+ * (anchors/outline/classifyFactFinder/section prompts) already ran against
+ * the full, uncapped page array before this is called. Never silently
+ * normalizes: the caller pushes a warning that distinguishes "pages were
+ * dropped whole" from "the first page itself was too long and got cut
+ * mid-page" - an advisor needs to be able to tell those apart.
+ */
+function capPersistedPages(
+    pages: string[],
+    maxChars: number,
+): { pages: string[]; droppedCount: number; truncatedFirstPage: boolean } {
+    let total = 0;
+    let keep = pages.length;
+    for (let i = 0; i < pages.length; i++) {
+        total += pages[i].length;
+        if (total > maxChars) {
+            keep = i;
+            break;
+        }
+    }
+    if (keep === 0 && pages.length > 0) {
+        // Zero whole pages fit under the budget - even page 1 alone is too
+        // long. Keep something rather than persisting `pages: []`: truncate
+        // page 1 to the budget. Any other pages are still whole-page
+        // dropped (they never had a chance to fit once page 1 alone
+        // exhausted the budget).
+        return {
+            pages: [pages[0].slice(0, maxChars) + "\n... [truncated]"],
+            droppedCount: pages.length - 1,
+            truncatedFirstPage: true,
+        };
+    }
+    return {
+        pages: pages.slice(0, keep),
+        droppedCount: pages.length - keep,
+        truncatedFirstPage: false,
+    };
+}
+
 function emptyExtracted(): ExtractionResult["extracted"] {
     return {
         accounts: [],
@@ -69,6 +130,8 @@ function emptyExtracted(): ExtractionResult["extracted"] {
         entities: [],
         lifePolicies: [],
         wills: [],
+        savings: [],
+        goals: [],
     };
 }
 
@@ -109,8 +172,21 @@ function flattenMultiPass(
     merge("expenses", result.sections.expenses);
     merge("liabilities", result.sections.liabilities);
     merge("entities", result.sections.entities);
+    merge("savings", result.sections.savings);
+    merge("goals", result.sections.goals);
     merge("lifePolicies", result.sections.insurance);
     merge("wills", result.sections.wills);
+
+    // assumptions is object-shaped (like family): the section returns one row
+    // that IS the payload, so lift it rather than pushing it into a list.
+    const assumptionRows = result.sections.assumptions;
+    if (assumptionRows.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { __provenance: _drop, ...rest } = assumptionRows[0];
+        if (Object.keys(rest).length > 0) {
+            out.assumptions = rest as ExtractionResult["extracted"]["assumptions"];
+        }
+    }
 
     const familyRows = result.sections.family;
     if (familyRows.length > 0) {
@@ -361,12 +437,44 @@ export async function extractDocument(
             const extracted = flattenMultiPass(multi);
             extracted.accounts = condenseAccountNames(extracted.accounts);
             warnings.push(...multi.warnings);
+            // R5: this path returns before the single-pass truncation below
+            // (step 5, `MAX_DOCUMENT_TEXT_CHARS`), so redactedPages is
+            // otherwise uncapped - a long fact finder could exceed the
+            // at-rest envelope the owner approved. Cap only what gets
+            // PERSISTED here; the extraction above already ran against the
+            // full page array.
+            const capped = capPersistedPages(redactedPages, MAX_DOCUMENT_TEXT_CHARS);
+            // Two distinct warnings, never collapsed into one sentence: an
+            // advisor needs to be able to tell "trailing pages were dropped
+            // whole" from "your first page was itself too long and got cut
+            // mid-page" (R5, fix round 2).
+            if (capped.truncatedFirstPage) {
+                warnings.push(
+                    "The first page of this document was itself longer than the size limit for AI review and was truncated mid-page."
+                );
+                if (capped.droppedCount > 0) {
+                    warnings.push(
+                        `Document text was very long; ${capped.droppedCount} additional page(s) were also dropped from the copy saved for AI review.`
+                    );
+                }
+            } else if (capped.droppedCount > 0) {
+                warnings.push(
+                    `Document text was very long; ${capped.droppedCount} page(s) at the end were dropped from the copy saved for AI review.`
+                );
+            }
             return {
                 documentType,
                 fileName,
                 extracted,
                 warnings,
                 promptVersion: `multi-pass:${FACT_FINDER_CLASSIFIER_VERSION}`,
+                // R1/R2: persist `pages` (already SSN-redacted - `redactedPages`,
+                // never the raw `pdfPages`) here, and NOT `text`. For PDFs,
+                // `text = pdfPages.join("\n")` (above) holds the SAME content
+                // as `pages` joined, so writing both would store every
+                // document TWICE at rest. `runAssemble` derives whichever
+                // form it needs from just this one field.
+                pages: capped.pages,
             };
         }
         warnings.push(
@@ -375,9 +483,11 @@ export async function extractDocument(
         // fall through to single-pass below
     }
 
-    // 5. Truncate very long documents
-    if (text.length > 100000) {
-        text = text.slice(0, 100000) + "\n... [truncated]";
+    // 5. Truncate very long documents. This also satisfies R5's at-rest cap
+    // for the `text` persisted below - it runs on the redacted `text`
+    // (post step 3), so what's persisted is both redacted and capped.
+    if (text.length > MAX_DOCUMENT_TEXT_CHARS) {
+        text = text.slice(0, MAX_DOCUMENT_TEXT_CHARS) + "\n... [truncated]";
         warnings.push("Document was very long and was truncated. Some data at the end may be missing.");
     }
 
@@ -438,6 +548,9 @@ export async function extractDocument(
         lifePolicies: (Array.isArray(safe.lifePolicies) ? safe.lifePolicies : []) as unknown as ExtractionResult["extracted"]["lifePolicies"],
         wills: (Array.isArray(safe.wills) ? safe.wills : []) as unknown as ExtractionResult["extracted"]["wills"],
         family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
+        savings: (Array.isArray(safe.savings) ? safe.savings : []) as unknown as ExtractionResult["extracted"]["savings"],
+        goals: (Array.isArray(safe.goals) ? safe.goals : []) as unknown as ExtractionResult["extracted"]["goals"],
+        assumptions: (safe.assumptions ?? undefined) as ExtractionResult["extracted"]["assumptions"],
     };
 
     extracted.accounts = condenseAccountNames(extracted.accounts);
@@ -458,7 +571,10 @@ export async function extractDocument(
         extracted.entities.length === 0 &&
         extracted.lifePolicies.length === 0 &&
         extracted.wills.length === 0 &&
-        !extracted.family
+        extracted.savings.length === 0 &&
+        extracted.goals.length === 0 &&
+        !extracted.family &&
+        !extracted.assumptions
     ) {
         warnings.push("No data could be extracted from this document. Try a different document type or the Detailed model.");
     }
@@ -471,5 +587,14 @@ export async function extractDocument(
         promptVersion: useHoldings
             ? `${documentType}:${ACCOUNT_STATEMENT_HOLDINGS_VERSION}`
             : promptVersionFor(documentType),
+        // R1/R2: persist `text` here - already SSN-redacted (step 3, above)
+        // and capped (step 5, above). Deliberately NOT `pages`: the only page
+        // array in scope on this path is the un-redacted `pdfPages` (assigned
+        // at the docx/image/PDF branches above and at the fact_finder
+        // backfill, all BEFORE the step-3 SSN redaction, which rewrites
+        // `text` only and never touches `pdfPages`). Persisting `pdfPages`
+        // here would write raw SSNs to `payloadJson` at rest - do not
+        // "helpfully" add it back.
+        text,
     };
 }

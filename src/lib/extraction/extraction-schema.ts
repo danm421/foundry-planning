@@ -27,6 +27,8 @@ const maxLenPerList = {
   wills: 4,
   bequestsPerWill: 30,
   holdingsPerAccount: 300,
+  savings: 200,
+  goals: 100,
 } as const;
 
 const row = z.looseObject({});
@@ -67,6 +69,9 @@ export const extractedPayloadSchema = z
       )
       .max(maxLenPerList.wills)
       .optional(),
+    savings: z.array(row).max(maxLenPerList.savings).optional(),
+    goals: z.array(row).max(maxLenPerList.goals).optional(),
+    assumptions: z.looseObject({}).optional(),
   })
   .strict();
 

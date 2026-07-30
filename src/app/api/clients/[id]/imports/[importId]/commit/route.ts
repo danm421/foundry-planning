@@ -19,7 +19,7 @@ import {
     type CommitTab,
 } from "@/lib/imports/commit/types";
 import { WillCommitValidationError } from "@/lib/imports/commit/will-types";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { syncAccountFromHoldings } from "@/lib/investments/sync-account-from-holdings";
 import { linkImportFilesToVault } from "@/lib/crm/vault-plans";
@@ -143,13 +143,16 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
         const tabs = parsed;
 
-        const payload = (imp.payloadJson as ImportPayloadJson)?.payload;
-        if (!payload) {
+        const persistedPayload = (imp.payloadJson as ImportPayloadJson)?.payload;
+        if (!persistedPayload) {
             return NextResponse.json(
                 { error: "Import has no annotated payload. Run matching first." },
                 { status: 400 },
             );
         }
+        // Rows persisted before a section existed carry no key for it, so the
+        // commit modules must never see the raw on-disk shape.
+        const payload = normalizeImportPayload(persistedPayload);
 
         const resolvedHoldings = tabs.includes("accounts")
             ? await resolveHoldingsForCommit(payload)

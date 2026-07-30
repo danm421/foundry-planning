@@ -318,6 +318,16 @@ export async function commitGoals(
         `No model portfolio is tagged for the selected risk tolerance; the scenario's portfolios were left unchanged.`,
       );
     }
+  } else if (tolerance != null) {
+    // R5: a non-null tolerance that isn't one of the five `RISK_LEVELS` rungs
+    // used to be dropped here in total silence. The planner's schema now types
+    // the field as the enum, so this should be unreachable from that path — but
+    // `goals.riskTolerance` is a bare `PlanBasicsField<string>` (assemble/types.ts)
+    // that anything upstream can write, so an unmappable value must say so
+    // rather than vanish.
+    result.warnings.push(
+      `Risk tolerance "${String(tolerance).slice(0, 40)}" is not one of the firm's risk levels and was not saved.`,
+    );
   }
 
   return result;

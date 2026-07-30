@@ -166,6 +166,66 @@ export interface ExtractedEntity {
   entityType?: EntityType;
 }
 
+/**
+ * One savings / contribution instruction. eMoney emits the employee and
+ * employer legs as SEPARATE rows sharing a Destination; `contributionRole`
+ * carries that distinction so applyDecisions can merge the pair into one
+ * savings_rules row.
+ */
+export interface ExtractedSavings {
+  name: string;
+  /** The account this funds. Resolved to accountId by name at commit. */
+  destinationAccountName: string;
+  owner?: "client" | "spouse" | "joint";
+  annualAmount?: number;
+  /** Fraction of the owner's salary, e.g. 0.10 for "10.0% of salary". */
+  annualPercent?: number;
+  /** Match rate, e.g. 1.0 for a dollar-for-dollar match. */
+  employerMatchPct?: number;
+  /** Fraction of salary the match applies to, e.g. 0.04. */
+  employerMatchCap?: number;
+  rothPercent?: number;
+  growthRate?: number;
+  startYear?: number;
+  endYear?: number;
+  startYearRef?: YearRef;
+  endYearRef?: YearRef;
+  contributionRole?: "employee" | "employer";
+}
+
+/** A goal stated in the document's Goals / Education / Other-expense sections. */
+export interface ExtractedGoal {
+  kind: "retirement" | "education" | "one_time" | "recurring";
+  name: string;
+  annualAmount?: number;
+  startYear?: number;
+  endYear?: number;
+  startYearRef?: YearRef;
+  endYearRef?: YearRef;
+  growthRate?: number;
+  forFamilyMemberNameHint?: string;
+  institutionName?: string;
+  tuition?: number;
+  roomAndBoard?: number;
+  booksAndSupplies?: number;
+  otherExpenses?: number;
+  grants?: number;
+  scholarships?: number;
+  otherOutsideFunds?: number;
+}
+
+/** Plan-level assumptions stated in the document. */
+export interface ExtractedAssumptions {
+  inflationRate?: number;
+  riskTolerance?: string;
+  /**
+   * Extracted because documents state it, but Foundry has NO destination
+   * column - the only mc_target_score is the LI solver's own target. Surfaced
+   * as a planner note only; never committed.
+   */
+  targetSuccessProbability?: number;
+}
+
 export type FilingStatus =
   | "single"
   | "married_filing_jointly"
@@ -186,12 +246,18 @@ export interface ExtractedPrimaryFamilyMember {
   lastName?: string;
   dateOfBirth?: string;
   filingStatus?: FilingStatus;
+  retirementAge?: number;
+  lifeExpectancy?: number;
+  /** Two-letter USPS code, e.g. "CA". */
+  stateOfResidence?: string;
 }
 
 export interface ExtractedSpouseFamilyMember {
   firstName: string;
   lastName?: string;
   dateOfBirth?: string;
+  retirementAge?: number;
+  lifeExpectancy?: number;
 }
 
 export interface ExtractedDependent {
@@ -255,9 +321,26 @@ export interface ExtractionResult {
     family?: ExtractedFamilyPayload;
     lifePolicies: ExtractedLifePolicy[];
     wills: ExtractedWill[];
+    savings: ExtractedSavings[];
+    goals: ExtractedGoal[];
+    assumptions?: ExtractedAssumptions;
   };
   warnings: string[];
   promptVersion: string;
+  /**
+   * The already-SSN-redacted source document text, captured at extraction
+   * time (Task 15 Step 5, owner-ruled option (a)) so the planning reasoner
+   * can run without re-fetching or re-parsing the source file. Present only
+   * on the single-pass path (`extract.ts`'s final return) - the multi-pass
+   * path persists `pages` instead (see below), never both, to avoid storing
+   * the same content twice at rest.
+   */
+  text?: string;
+  /**
+   * Already-SSN-redacted per-page text, captured at extraction time.
+   * Present only on the multi-pass path's return.
+   */
+  pages?: string[];
 }
 
 export interface ExtractionRequest {

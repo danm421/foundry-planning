@@ -420,6 +420,146 @@ describe("extractDocument", () => {
     });
 });
 
+describe("extractDocument — flattenMultiPass savings/goals/assumptions", () => {
+    it("merges savings and goals rows from their multi-pass sections onto extracted.savings/extracted.goals", async () => {
+        // Classifier runs first (awaited before the per-section tasks are built),
+        // then the section prompts fire synchronously in schema-declared order
+        // (savings before goals) before either's promise resolves — so chained
+        // `mockImplementationOnce` calls land deterministically in that order.
+        mockedDocx.mockResolvedValueOnce(
+            "Savings & Goals\nJohn contributes 10% of salary to his 401k.\nCollege goal for Sam."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ savings: [[1, 1]], goals: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => // savings section prompt
+                JSON.stringify({
+                    savings: [
+                        { name: "401k", destinationAccountName: "Fidelity 401k", owner: "client", annualPercent: 0.1 },
+                    ],
+                })
+            )
+            .mockImplementationOnce(async () => // goals section prompt
+                JSON.stringify({
+                    goals: [{ kind: "education", name: "Sam's College", annualAmount: 30000 }],
+                })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "savings-goals.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.savings).toHaveLength(1);
+        expect(result.extracted.savings[0].destinationAccountName).toBe("Fidelity 401k");
+        expect(result.extracted.goals).toHaveLength(1);
+        expect(result.extracted.goals[0].name).toBe("Sam's College");
+    });
+
+    it("lifts a populated assumptions row onto extracted.assumptions with __provenance stripped", async () => {
+        mockedDocx.mockResolvedValueOnce(
+            "Plan Assumptions\nInflation: 3.00%\nRisk Tolerance: Moderate\nTarget Probability of Success: 80%"
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ assumptions: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => // assumptions section prompt
+                JSON.stringify({ inflationRate: 0.03, riskTolerance: "moderate", targetSuccessProbability: 0.8 })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "assumptions.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toEqual({
+            inflationRate: 0.03,
+            riskTolerance: "moderate",
+            targetSuccessProbability: 0.8,
+        });
+        expect(result.extracted.assumptions).not.toHaveProperty("__provenance");
+    });
+
+    it("leaves extracted.assumptions undefined when the assumptions section is empty", async () => {
+        mockedDocx.mockResolvedValueOnce(
+            "Income Summary\nJohn receives Social Security of $38,400 per year."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier - no assumptions range
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "income.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toBeUndefined();
+    });
+
+    it("does not write an empty assumptions object when the row's only key is __provenance", async () => {
+        // The section merge step in extractWithMultiPass spreads the model's
+        // parsed object, then unconditionally overwrites `__provenance` with the
+        // real {section, pageRange} metadata. If the model hallucinates a
+        // top-level key literally named "__provenance" (its only key), that
+        // overwrite leaves a row whose sole visible key is the real provenance
+        // object — flattenMultiPass must not lift that into an empty
+        // extracted.assumptions object.
+        mockedDocx.mockResolvedValueOnce("Plan Assumptions\nSome unparsable content.");
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ assumptions: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ __provenance: "hallucinated" })); // assumptions prompt
+
+        const result = await extractDocument(
+            Buffer.from("fake docx"),
+            "assumptions.docx",
+            "fact_finder",
+            "mini",
+            "docx",
+        );
+
+        expect(result.extracted.assumptions).toBeUndefined();
+    });
+});
+
+describe("extractDocument — the 'nothing extracted' guard", () => {
+    it("does not warn 'No data could be extracted' on the single-pass path when only plan-level assumptions came back", async () => {
+        // Regression test for the guard omitting `assumptions`. This exercises
+        // the SINGLE-PASS path (not multi-pass, which returns before ever
+        // reaching this guard): a document whose one whole-document AI call
+        // yields ONLY assumptions (no accounts/incomes/expenses/etc., no
+        // family) must not be reported as having nothing extracted.
+        mockedCallAI.mockResolvedValueOnce(
+            JSON.stringify({
+                assumptions: { inflationRate: 0.03, riskTolerance: "moderate" },
+            })
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "assumptions-only.pdf",
+            "account_statement",
+            "mini",
+        );
+
+        expect(result.extracted.assumptions).toEqual({
+            inflationRate: 0.03,
+            riskTolerance: "moderate",
+        });
+        expect(
+            result.warnings.some((w) => /No data could be extracted/i.test(w))
+        ).toBe(false);
+    });
+});
+
 describe("scanned-PDF vision OCR fallback", () => {
     beforeEach(() => {
         mockedVision.mockReset();
@@ -559,6 +699,113 @@ describe("extractDocument — images", () => {
         expect(result.extracted.accounts).toHaveLength(0);
         expect(
             result.warnings.some((w) => /couldn't read this image/i.test(w))
+        ).toBe(true);
+    });
+});
+
+describe("extractDocument — persisted text/pages (Task 15 Step 5, R1/R2/R5)", () => {
+    it("persists the single-pass path's `text` already SSN-redacted, and omits `pages` (R1/R2 site 3)", async () => {
+        // Regression test for R1: pdfPages (assigned before SSN redaction) must
+        // never be what gets persisted. If `text` were captured pre-redaction,
+        // or if `pages: pdfPages` were added at this site, this would go red.
+        mockedPdf.mockResolvedValueOnce(
+            "Taxpayer SSN: 123-45-6789. Account balance: $50,000.\n" +
+                "Schwab Brokerage holdings of various securities."
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini"
+        );
+
+        expect(result.text).toBeDefined();
+        expect(result.text).not.toContain("123-45-6789");
+        expect(result.text).toContain("[REDACTED-SSN]");
+        expect(result.pages).toBeUndefined();
+    });
+
+    it("persists the multi-pass path's `pages` already SSN-redacted, and omits `text` (R1/R2 site 2)", async () => {
+        // Same regression as above, on the OTHER path: `pages` must come from
+        // `redactedPages`, never the raw `pdfPages` that multi-pass extraction
+        // itself reads from.
+        mockedPages.mockResolvedValueOnce([
+            "page 1 content with enough text to pass the minimum length check",
+            "Client SSN: 123-45-6789. Account balance: $50,000.",
+            "page 3 content with enough text to pass the minimum length check",
+            "page 4 income and social security data for John SS 38400 per year",
+        ]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[4, 4]] })) // classifier
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ incomes: [{ type: "social_security", name: "John SS", annualAmount: 38400, owner: "client" }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "report.pdf", "auto", "mini", "pdf", false, /* comprehensive */ true,
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        expect(result.pages).toBeDefined();
+        const persistedPages = (result.pages ?? []).join("\n");
+        expect(persistedPages).not.toContain("123-45-6789");
+        expect(persistedPages).toContain("[REDACTED-SSN]");
+        expect(result.text).toBeUndefined();
+    });
+
+    it("caps persisted `pages` at the 100000-char ceiling on the multi-pass path, dropping whole trailing pages and warning (R5)", async () => {
+        const page1 = "A".repeat(60000);
+        const page2 = "B".repeat(50000);
+        const page3 = "C".repeat(5000);
+        mockedPages.mockResolvedValueOnce([page1, page2, page3]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [] })); // incomes section
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "big-report.pdf", "fact_finder", "mini", "pdf",
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        const persistedPages = result.pages ?? [];
+        const totalChars = persistedPages.reduce((sum, p) => sum + p.length, 0);
+        // page1 (60000) fits under the 100000 ceiling; adding page2 (50000
+        // more) would exceed it, so page2 and page3 are dropped whole.
+        expect(totalChars).toBeLessThanOrEqual(100000);
+        expect(persistedPages).toEqual([page1]);
+        expect(result.warnings.some((w) => /2 page\(s\)/i.test(w))).toBe(true);
+    });
+
+    it("truncates (not drops) a SINGLE page that alone exceeds the 100000-char ceiling, and warns distinctly (R5, fix round 2)", async () => {
+        // Regression test for the "keep === 0" edge capPersistedPages didn't
+        // originally handle: a first page bigger than the whole budget used
+        // to make EVERY page drop, persisting `pages: []` — the opposite of
+        // what R5 exists to protect (a long fact finder still reaching the
+        // planner).
+        const hugePage = "Z".repeat(150000);
+        mockedPages.mockResolvedValueOnce([hugePage]);
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [[1, 1]] })) // classifier
+            .mockImplementationOnce(async () => JSON.stringify({ incomes: [] })); // incomes section
+
+        const result = await extractDocument(
+            Buffer.from("pdf"), "huge-first-page.pdf", "fact_finder", "mini", "pdf",
+        );
+
+        expect(result.promptVersion.startsWith("multi-pass:")).toBe(true);
+        const persistedPages = result.pages ?? [];
+        // Not empty — something always survives.
+        expect(persistedPages.length).toBeGreaterThan(0);
+        const totalChars = persistedPages.reduce((sum, p) => sum + p.length, 0);
+        expect(totalChars).toBeGreaterThan(0);
+        // Within the ceiling plus the truncation marker's own length.
+        expect(totalChars).toBeLessThanOrEqual(100000 + "\n... [truncated]".length);
+        expect(persistedPages[0]).toContain("[truncated]");
+        // Distinct warning from the "trailing pages dropped" sentence above —
+        // must name the mid-page truncation, not a page-count drop.
+        expect(
+            result.warnings.some((w) => /first page.*truncated mid-page/i.test(w))
         ).toBe(true);
     });
 });

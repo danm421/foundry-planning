@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { commitTabs } from "@/lib/imports/commit/orchestrator";
-import type { ImportPayload } from "@/lib/imports/types";
+import { emptyImportPayload, type ImportPayload } from "@/lib/imports/types";
 
 const ctx = {
   clientId: "client-1",
@@ -21,17 +21,7 @@ const ctx = {
 };
 
 function emptyPayload(): ImportPayload {
-  return {
-    dependents: [],
-    accounts: [],
-    incomes: [],
-    expenses: [],
-    liabilities: [],
-    lifePolicies: [],
-    wills: [],
-    entities: [],
-    warnings: [],
-  };
+  return emptyImportPayload();
 }
 
 vi.mock("@/db", async () => {

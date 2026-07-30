@@ -6,8 +6,10 @@ import type { StepSlug } from "./types";
  * Wizard steps that get an "Import from document" drawer — the steps whose
  * data the extractor supports (see ENTITY_SECTIONS in
  * src/lib/extraction/section-classifier.ts). Household and Assumptions are
- * excluded: no extraction schema for client-level fields or advisor
- * assumptions. Review is a summary step.
+ * excluded: there is no client-level-fields onboarding step for Household to
+ * import into, and no advisor-assumptions onboarding step for Assumptions to
+ * import into — not because either lacks an extraction schema (Assumptions
+ * has one: `ExtractedAssumptions`). Review is a summary step.
  */
 export const IMPORT_ELIGIBLE_STEPS = [
   "family",
@@ -29,12 +31,13 @@ export function isImportEligibleStep(slug: StepSlug): slug is ImportEligibleStep
  * Commit tabs the per-step drawer sends to POST /imports/[importId]/commit.
  * Mirrors ReviewWizard's TAB_TO_COMMIT (review-wizard.tsx) — family commits
  * both clients-identity (filing status) and family-members; cash-flow
- * commits incomes and expenses together.
+ * commits incomes and expenses together; accounts also commits savings,
+ * since a contribution's destination is an account.
  */
 export const STEP_COMMIT_TABS: Record<ImportEligibleStep, CommitTab[]> = {
   family: ["clients-identity", "family-members"],
   entities: ["entities"],
-  accounts: ["accounts"],
+  accounts: ["accounts", "savings"],
   liabilities: ["liabilities"],
   "cash-flow": ["incomes", "expenses"],
   insurance: ["life-insurance"],
@@ -70,7 +73,7 @@ export function stepHasImportData(
     case "entities":
       return payload.entities.length > 0;
     case "accounts":
-      return payload.accounts.length > 0;
+      return payload.accounts.length > 0 || payload.savings.length > 0;
     case "liabilities":
       return payload.liabilities.length > 0;
     case "cash-flow":

@@ -121,10 +121,48 @@ export async function commitPlanBasics(
   }
 
   // ── 3. Seeded Social Security rows, matched on type + owner. ──
+  //
+  //  The PIA path, not a literal annual amount. `row.pia.value` is a MONTHLY
+  //  PIA at full retirement age (see the field's doc comment in
+  //  assemble/types.ts), so the row switches to `ssBenefitMode: "pia_at_fra"`
+  //  and the engine runs the real actuarial path — early reduction, delayed
+  //  credit, spousal and survivor — instead of reading one flat number
+  //  forever. `annualAmount` is deliberately NOT written: the engine ignores
+  //  it in this mode, and putting a monthly figure in an annual column would
+  //  show a 1/12th benefit in every amount-based UI.
+  //
+  //  WHY THIS DOESN'T DOUBLE-ADJUST THE DOCUMENT PATH. `assemble/plan-basics.ts`
+  //  divides the extracted ANNUAL benefit by 12, and its `claimingAgeField`
+  //  defaults the claiming age to FRA. In `pia_at_fra` mode with the claim age
+  //  AT FRA the engine applies neither a reduction nor a credit, so annual/12 as
+  //  the PIA reproduces the same yearly benefit the old literal path produced.
+  //  That is EXACT for birth years from 1960 on (FRA 67y0m) and slightly
+  //  CONSERVATIVE for 1955-1959 births, whose dropped FRA months leave the claim
+  //  age just below true FRA — full analysis on `monthlyPiaFromAnnual` in
+  //  `assemble/plan-basics.ts`. A value that came from the planner instead is
+  //  already a true monthly PIA at FRA, so the actuarial adjustment is correct
+  //  there by construction.
+  //
+  //  EVERY FIELD STAYS INDIVIDUALLY CONDITIONAL, and `claimingAge` especially.
+  //  `commit/incomes.ts` seeds these rows with `claimingAge: … ?? 67` and
+  //  `claimingAgeMode: "years"`; the engine's `resolveClaimAgeMonths`
+  //  (engine/socialSecurity/claimAge.ts:31) returns NULL for a "years" row with
+  //  a null `claimingAge`, `resolveAnnualBenefit` returns ZERO on a null claim
+  //  age (orchestrator.ts:76), and income.ts:128 then skips the annualAmount
+  //  fallback. So writing a null over the seeded 67 would silently wipe out the
+  //  client's entire Social Security while the row advertises a PIA. Same
+  //  hazard for `claimingAgeMonths`, which therefore only rides along with an
+  //  actual `claimingAge` write.
   for (const row of basics.socialSecurity) {
     const patch: Record<string, unknown> = {};
-    if (row.pia.value != null) patch.annualAmount = String(row.pia.value);
-    if (row.claimingAge.value != null) patch.claimingAge = row.claimingAge.value;
+    if (row.pia.value != null) {
+      patch.ssBenefitMode = "pia_at_fra";
+      patch.piaMonthly = String(row.pia.value);
+    }
+    if (row.claimingAge.value != null) {
+      patch.claimingAge = row.claimingAge.value;
+      patch.claimingAgeMonths = 0;
+    }
     if (Object.keys(patch).length === 0) continue;
     patch.updatedAt = now;
 

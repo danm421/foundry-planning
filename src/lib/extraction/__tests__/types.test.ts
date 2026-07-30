@@ -21,6 +21,8 @@ describe("extraction types", () => {
         entities: [],
         lifePolicies: [],
         wills: [],
+        savings: [],
+        goals: [],
       },
       warnings: [],
       promptVersion: "account_statement:2026-04-29.2",

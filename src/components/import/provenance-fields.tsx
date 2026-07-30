@@ -1,13 +1,13 @@
 "use client";
 
-import type { AssembleAssumption, PlanBasicsField } from "@/lib/imports/assemble/types";
-import AssumedChip from "./assumed-chip";
+import type { PlanBasicsField } from "@/lib/imports/assemble/types";
+import AssumedChip, { type ChipAssumption } from "./assumed-chip";
 
-/** A field carries a chip only when it was derived AND says why. Generic over T
- *  so it serves string, number and boolean fields alike. */
-export function chipFor<T>(field: PlanBasicsField<T>): AssembleAssumption | undefined {
-  if (field.provenance !== "derived" || !field.reason) return undefined;
-  return { field: "", value: String(field.value ?? ""), reason: field.reason };
+/** A field carries a chip only when it was derived or model-estimated AND says
+ *  why. Generic over T so it serves string, number and boolean fields alike. */
+export function chipFor<T>(field: PlanBasicsField<T>): ChipAssumption | undefined {
+  if ((field.provenance !== "derived" && field.provenance !== "estimated") || !field.reason) return undefined;
+  return { field: "", value: String(field.value ?? ""), reason: field.reason, provenance: field.provenance };
 }
 
 export function FieldLabel<T>({ id, label, field }: { id: string; label: string; field: PlanBasicsField<T> }) {

@@ -217,9 +217,16 @@ export function defaultExpenseRefs(_type: ExpenseType): { startYearRef: YearRef 
   return { startYearRef: "plan_start", endYearRef: "plan_end" };
 }
 
-/** Get default year refs for a new savings rule */
-export function defaultSavingsRuleRefs(): { startYearRef: YearRef | null; endYearRef: YearRef | null } {
-  return { startYearRef: "plan_start", endYearRef: "client_retirement" };
+/** Get default year refs for a new savings rule. A rule funded by the spouse's
+ *  salary must stop when the SPOUSE retires, not when the client does. */
+export function defaultSavingsRuleRefs(owner: Owner = "client"): {
+  startYearRef: YearRef | null;
+  endYearRef: YearRef | null;
+} {
+  return {
+    startYearRef: "plan_start",
+    endYearRef: owner === "spouse" ? "spouse_retirement" : "client_retirement",
+  };
 }
 
 /** Get default year refs for a new withdrawal strategy */

@@ -7,6 +7,7 @@ import type {
   ExtractedLiability,
   ExtractedLifePolicy,
   ExtractedPrimaryFamilyMember,
+  ExtractedSavings,
   ExtractedSpouseFamilyMember,
   ExtractedWill,
   ExtractionResult,
@@ -52,6 +53,7 @@ export type ImportPayload = {
   lifePolicies: Annotated<ExtractedLifePolicy>[];
   wills: Annotated<ExtractedWill>[];
   entities: Annotated<ExtractedEntity>[];
+  savings: Annotated<ExtractedSavings>[];
   warnings: string[];
   /**
    * Persistent Current/Retirement living-expense slots for this import's
@@ -71,14 +73,64 @@ export type ImportPayload = {
 };
 
 /**
+ * `payloadJson.payload` AS IT SITS ON DISK. Every section is optional: a
+ * payload persisted before a section was added carries no key for it.
+ * `ImportPayload` is the in-memory contract and is NOT what rest gives you —
+ * go through `normalizeImportPayload` to cross that boundary.
+ *
+ * This alias exists because the same bug reached its THIRD instance in this
+ * codebase (`expenseSlots.role`, `goals`, then `savings`): a section is added
+ * to `ImportPayload` as REQUIRED, every already-persisted row lacks it, and
+ * the first bare `payload.<section>.length` read crashes. Typing the persisted
+ * side as `Partial` turns each of those reads into a compile error.
+ */
+export type PersistedImportPayload = Partial<ImportPayload>;
+
+/**
+ * The only legal way from a persisted payload to the in-memory
+ * `ImportPayload` contract. Fills every section a pre-existing row may be
+ * missing.
+ *
+ * The per-key coercion below is deliberate, not belt-and-braces noise: a bare
+ * double spread copies an explicit `"savings": null` (which a hand-edited or
+ * older writer can leave on disk) straight through, and it sidesteps any
+ * argument about whether spreading a `Partial` over a complete type still
+ * satisfies `ImportPayload`.
+ */
+export function normalizeImportPayload(
+  raw: PersistedImportPayload | null | undefined,
+): ImportPayload {
+  const base = emptyImportPayload();
+  return {
+    ...base,
+    ...raw,
+    dependents: raw?.dependents ?? base.dependents,
+    accounts: raw?.accounts ?? base.accounts,
+    incomes: raw?.incomes ?? base.incomes,
+    expenses: raw?.expenses ?? base.expenses,
+    liabilities: raw?.liabilities ?? base.liabilities,
+    lifePolicies: raw?.lifePolicies ?? base.lifePolicies,
+    wills: raw?.wills ?? base.wills,
+    entities: raw?.entities ?? base.entities,
+    savings: raw?.savings ?? base.savings,
+    warnings: raw?.warnings ?? base.warnings,
+  };
+}
+
+/**
  * Shape persisted to `client_imports.payloadJson`. `fileResults` is the
  * source of truth raw per-file extraction; `payload` is the post-merge,
  * post-match shape the review wizard reads. Defined here so the match
  * route, commit route, and commit-time loaders all agree on field names.
+ *
+ * `payload` is a `PersistedImportPayload`, NOT an `ImportPayload`: what is on
+ * disk predates whichever section was added last. Run it through
+ * `normalizeImportPayload` before handing it to anything that reads sections
+ * unguarded.
  */
 export interface ImportPayloadJson {
   fileResults?: Record<string, ExtractionResult>;
-  payload?: ImportPayload;
+  payload?: PersistedImportPayload;
   assemble?: AssembleState;   // NEW — Forge Plan Builder sub-state
 }
 
@@ -101,6 +153,7 @@ export function emptyImportPayload(): ImportPayload {
     lifePolicies: [],
     wills: [],
     entities: [],
+    savings: [],
     warnings: [],
   };
 }

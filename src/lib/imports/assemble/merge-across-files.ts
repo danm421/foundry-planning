@@ -6,6 +6,7 @@ import type {
   ExtractedIncome,
   ExtractedLiability,
   ExtractedLifePolicy,
+  ExtractedSavings,
   ExtractedWill,
   ExtractionResult,
 } from "@/lib/extraction/types";
@@ -254,6 +255,7 @@ export function mergeAcrossFiles(
   const entityRows: SourceRow<ExtractedEntity>[] = [];
   const lifePolicyRows: SourceRow<ExtractedLifePolicy>[] = [];
   const willRows: SourceRow<ExtractedWill>[] = [];
+  const savingsRows: SourceRow<ExtractedSavings>[] = [];
 
   for (const [fileId, result] of Object.entries(fileResults)) {
     const provenanceFor = (section: string): Provenance => ({ sourceFileId: fileId, section });
@@ -272,6 +274,15 @@ export function mergeAcrossFiles(
     }
     for (const row of result.extracted.entities) {
       entityRows.push({ content: row, provenance: provenanceFor("entities") });
+    }
+    // `?? []` for the same reason as `merge.ts`'s savings loop — see the long
+    // comment there. `result` is a PERSISTED `payloadJson.fileResults` entry
+    // (assemble/route.ts reads the column and hands it straight in), and
+    // `extracted.savings` only exists on this branch (`0038b216f`), so a
+    // pre-branch fileResults row has no key for it. This loop is older than
+    // `merge.ts`'s, so this path was already crashing on those imports.
+    for (const row of result.extracted.savings ?? []) {
+      savingsRows.push({ content: row, provenance: provenanceFor("savings") });
     }
     for (const row of result.extracted.lifePolicies) {
       lifePolicyRows.push({ content: row, provenance: provenanceFor("lifePolicies") });
@@ -342,6 +353,7 @@ export function mergeAcrossFiles(
   concatSection(payload.entities, entityRows);
   concatSection(payload.lifePolicies, lifePolicyRows);
   concatSection(payload.wills, willRows);
+  concatSection(payload.savings, savingsRows);
 
   return { payload, mergedFileCount: Object.keys(fileResults).length };
 }

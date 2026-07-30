@@ -38,15 +38,26 @@ const updateSetSpy = vi.fn((_values: unknown) => ({
   where: () => ({ returning: () => updateReturningResolve() }),
 }));
 
+// GET reads `db.select().from().where().orderBy()` twice (files, then
+// extractions); returning an empty file list short-circuits the second read.
+const selectSpy = vi.fn(() => ({
+  from: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }),
+}));
+
 vi.mock("@/db", () => {
+  // Both spies are referenced through a closure, not passed directly: the
+  // `vi.mock` factory is hoisted above this file's `const`s, so naming one
+  // eagerly is a TDZ error.
   const update = vi.fn(() => ({ set: updateSetSpy }));
-  return { db: { update } };
+  const select = vi.fn((...args: unknown[]) => selectSpy(...(args as [])));
+  return { db: { update, select } };
 });
 
-import { PATCH } from "../route";
+import { GET, PATCH } from "../route";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireImportAccess } from "@/lib/imports/authz";
+import { checkImportRateLimit } from "@/lib/rate-limit";
 
 function makeReq(body: unknown) {
   return new Request(
@@ -64,7 +75,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireOrgId).mockResolvedValue("org_1");
   vi.mocked(auth).mockResolvedValue({ userId: "user_1" } as never);
+  vi.mocked(checkImportRateLimit).mockResolvedValue({ allowed: true } as never);
   updateReturningResolve.mockReset().mockResolvedValue([{ id: "i1" }]);
+  selectSpy.mockClear();
 });
 
 describe("PATCH /api/clients/[id]/imports/[importId] — payloadJson merge (FIX 3)", () => {
@@ -171,5 +184,85 @@ describe("PATCH /api/clients/[id]/imports/[importId] — payloadJson merge (FIX 
       payloadJson: Record<string, unknown>;
     };
     expect(setArg.payloadJson).toEqual({ payload: { accounts: [] } });
+  });
+});
+
+// R8 (whole-branch review, I7). The GET returned the whole import row, and
+// `payloadJson.fileResults` now carries each file's raw `text`/`pages` capped at
+// 100,000 chars PER FILE. `extraction-progress.tsx` polls this endpoint every
+// 1500ms and reads only `status`/`files`.
+//
+// The review claimed no caller reads `payloadJson` and proposed dropping the
+// whole column — that is FALSE: `wizard-import-drawer.tsx`'s `loadImport` reads
+// `body.import.payloadJson?.payload` to hydrate the onboarding drawer. So only
+// `fileResults` goes. BOTH directions are asserted here, or the next person
+// "optimizes" `payload` away too.
+describe("GET /api/clients/[id]/imports/[importId] — payloadJson slimming (R8)", () => {
+  const FAT_PAYLOAD_JSON = {
+    fileResults: {
+      f1: { fileName: "big.pdf", warnings: [], text: "x".repeat(100_000) },
+    },
+    payload: { accounts: [{ id: "a1" }], savings: [{ name: "401k deferral" }] },
+    assemble: { version: 1, mergedFileCount: 1, assumptions: [], questions: [] },
+  };
+  const getParams = { params: Promise.resolve({ id: "c1", importId: "i1" }) };
+
+  async function getBody(payloadJson: unknown) {
+    vi.mocked(requireImportAccess).mockResolvedValue({
+      id: "i1",
+      status: "extracting",
+      createdByUserId: "user_1",
+      payloadJson,
+    } as never);
+    const res = await GET({} as never, getParams);
+    expect(res.status).toBe(200);
+    return (await res.json()) as {
+      import: { payloadJson: Record<string, unknown> | null; status: string };
+    };
+  }
+
+  it("does not ship fileResults", async () => {
+    const body = await getBody(FAT_PAYLOAD_JSON);
+    expect(body.import.payloadJson).not.toHaveProperty("fileResults");
+  });
+
+  it("STILL ships payload — the onboarding drawer hydrates from it", async () => {
+    const body = await getBody(FAT_PAYLOAD_JSON);
+    expect(body.import.payloadJson?.payload).toEqual({
+      accounts: [{ id: "a1" }],
+      savings: [{ name: "401k deferral" }],
+    });
+  });
+
+  // Keep this assertion, but NOT for the reason an earlier revision gave: no
+  // consumer of THIS GET reads `assemble`. extraction-progress reads status +
+  // files; wizard-import-drawer reads payload + perTabCommittedAt. The Assumed
+  // chip and get_plan_status read it from the DB (import-flow-content.tsx:81,
+  // plan-builder.ts:54), not from here. It stays because `assemble` is small and
+  // narrowing the response further is a separate decision — a false rationale is
+  // what invites the next person to delete a line that should stay.
+  it("STILL ships assemble — small, and narrowing it is a separate call", async () => {
+    const body = await getBody(FAT_PAYLOAD_JSON);
+    expect(body.import.payloadJson?.assemble).toEqual({
+      version: 1, mergedFileCount: 1, assumptions: [], questions: [],
+    });
+  });
+
+  it("leaves the rest of the import row alone", async () => {
+    const body = await getBody(FAT_PAYLOAD_JSON);
+    expect(body.import.status).toBe("extracting");
+  });
+
+  it("passes a non-object payloadJson through untouched (defensive)", async () => {
+    const body = await getBody(null);
+    expect(body.import.payloadJson).toBeNull();
+  });
+
+  it("does not mutate the row it was handed", async () => {
+    // The handler builds a copy; a `delete` on the live row would corrupt any
+    // later read of `imp` in the same request.
+    const row = structuredClone(FAT_PAYLOAD_JSON);
+    await getBody(row);
+    expect(row).toHaveProperty("fileResults");
   });
 });

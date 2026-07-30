@@ -32,11 +32,10 @@ export interface DerivePlanBasicsInput {
 /**
  * Find the extracted ANNUAL Social Security amount for one owner.
  *
- * Deliberately NOT named `extractedPia`: the value round-trips to
- * `incomes.annualAmount`, which the engine reads as a literal annual benefit
- * (the seeded rows carry `ssBenefitMode = null`, i.e. "manual_amount"), so it
- * is not a PIA and no claiming-age actuarial adjustment is applied to it. The
- * wizard labels the field "Annual Social Security benefit" to match.
+ * Still named for the ANNUAL figure it reads: `incomes.annualAmount` is what
+ * extraction fills in. The caller divides by 12 before it lands in
+ * `planBasics.socialSecurity[].pia`, which is a MONTHLY PIA — see
+ * `monthlyPiaFromAnnual` below.
  */
 function extractedAnnualSocialSecurity(
   payload: ImportPayload,
@@ -48,6 +47,41 @@ function extractedAnnualSocialSecurity(
     if (amount != null) return amount;
   }
   return null;
+}
+
+/**
+ * Convert an extracted ANNUAL Social Security benefit into the MONTHLY PIA the
+ * `pia` field carries.
+ *
+ * This field has two producers — this one and the planner's
+ * `apply-decisions.ts`, whose `piaMonthly` is already monthly — so the units
+ * are normalized HERE rather than at the commit write site. Leaving the annual
+ * figure in a field that commits to the `pia_monthly` column would overstate
+ * Social Security 12x on the document path.
+ *
+ * NOT a double adjustment — but the strength of that claim depends on the birth
+ * year, so read the two cases separately.
+ *
+ * EXACT for FRA 67y0m, i.e. birth years from 1960 on. `claimingAgeField` below
+ * defaults the claim age to FRA, and in `pia_at_fra` mode AT FRA the engine
+ * applies neither an early reduction nor a delayed credit, so annual/12
+ * reproduces exactly the yearly benefit the old literal-annual path produced.
+ *
+ * SLIGHTLY CONSERVATIVE for 1955-1959 birth years, whose FRA carries months
+ * (66y2m-66y10m). `claimingAgeField` stores `fra.years` and DROPS `fra.months`,
+ * so a 1957 birth year (FRA 66y6m) commits a claim age of 66y0m — six months
+ * early. The engine then applies a real early reduction the old literal path
+ * never applied, at 5/9% per month for the first 36 months
+ * (engine/socialSecurity/ownRetirement.ts:45), so the understatement runs up to
+ * 10 months x 5/9% = 5.56% at the 1955 end of the range. Deferred as future
+ * work: carrying the months needs either a widened `PlanBasicsField<number>` or
+ * `claimingAgeMode: "fra"`, and both ripple into the wizard.
+ *
+ * Rounded to 2 decimals because `incomes.pia_monthly` is `decimal(15,2)`;
+ * rounding here keeps what the advisor reviews identical to what is stored.
+ */
+function monthlyPiaFromAnnual(annual: number): number {
+  return Math.round((annual / 12) * 100) / 100;
 }
 
 function claimingAgeField(dob: string | undefined): PlanBasicsField<number> {
@@ -127,7 +161,12 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
       const annual = extractedAnnualSocialSecurity(payload, owner);
       return {
         owner,
-        pia: annual != null ? { value: annual, provenance: "document" } : blank<number>(),
+        // `provenance: "document"` survives the unit conversion — it is the
+        // same document fact in different units, not an assumption.
+        pia:
+          annual != null
+            ? { value: monthlyPiaFromAnnual(annual), provenance: "document" }
+            : blank<number>(),
         claimingAge: claimingAgeField(dob),
       };
     }),

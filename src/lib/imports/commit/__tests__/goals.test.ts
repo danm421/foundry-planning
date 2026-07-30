@@ -686,4 +686,76 @@ describe("commitGoals — risk tolerance", () => {
       toleranceSource: "manual",
     });
   });
+
+  // R5 (whole-branch review, I3). `isRiskLevel` gates the write, so a tolerance
+  // that isn't one of the five `RISK_LEVELS` rungs used to be dropped in total
+  // SILENCE — which was I3's entire complaint. The planner's schema now types
+  // the field as the enum, so the planner can no longer reach this branch; but
+  // `AssembleGoals.riskTolerance` is a bare `PlanBasicsField<string>`
+  // (assemble/types.ts) that any upstream writer can set, and "unreachable from
+  // one path" is not "unreachable". These pin the warning so the branch cannot
+  // be deleted with a green suite.
+  //
+  // The fixtures are realistic near-misses, not gibberish: "balanced" and
+  // "Moderate" are what a model actually emits when asked for a risk tolerance
+  // in prose, and both are `isRiskLevel`-false.
+  const UNMAPPABLE_WARNING = "is not one of the firm's risk levels";
+
+  it("unmappable rung: warns, naming the value that was dropped", async () => {
+    const fake = makeFakeTx();
+
+    const result = await commitGoals(fake.tx, payloadWithTolerance(stated("balanced")), CTX);
+
+    expect(result.warnings.join(" ")).toContain(UNMAPPABLE_WARNING);
+    // The value itself has to be in the message, or the advisor cannot tell
+    // which of their fields was ignored.
+    expect(result.warnings.join(" ")).toContain("balanced");
+  });
+
+  it("unmappable rung: writes nothing to clients.riskTolerance", async () => {
+    const fake = makeFakeTx();
+
+    const result = await commitGoals(fake.tx, payloadWithTolerance(stated("balanced")), CTX);
+
+    expect(updateCalls(fake, "clients")).toHaveLength(0);
+    expect(result.updated).toBe(0);
+  });
+
+  it("unmappable rung: never resolves a portfolio or seeds a risk profile", async () => {
+    const fake = makeFakeTx();
+
+    await commitGoals(fake.tx, payloadWithTolerance(stated("balanced")), CTX);
+
+    expect(resolveRiskPortfolioId).not.toHaveBeenCalled();
+    expect(applyRiskPortfolioToScenario).not.toHaveBeenCalled();
+    expect(recomputeProfileTx).not.toHaveBeenCalled();
+  });
+
+  it("unmappable rung: a title-cased near-miss is rejected the same way", async () => {
+    // `RISK_LEVELS` is lower_snake, so "Moderate" — the most likely thing a
+    // model emits when it reads "Moderate" off a questionnaire — is NOT a rung.
+    const fake = makeFakeTx();
+
+    const result = await commitGoals(fake.tx, payloadWithTolerance(stated("Moderate")), CTX);
+
+    expect(result.warnings.join(" ")).toContain(UNMAPPABLE_WARNING);
+    expect(updateCalls(fake, "clients")).toHaveLength(0);
+  });
+
+  it("a VALID rung produces no unmappable warning AND does write", async () => {
+    // The other direction, kept in the same block rather than leaning on the
+    // tagged/untagged tests above: a mutation that pushes the warning
+    // unconditionally passes every assertion in this describe without this one.
+    const fake = makeFakeTx();
+    vi.mocked(resolveRiskPortfolioId).mockResolvedValue("pf-id");
+
+    const result = await commitGoals(fake.tx, payloadWithTolerance(stated("moderate")), CTX);
+
+    expect(result.warnings.join(" ")).not.toContain(UNMAPPABLE_WARNING);
+    const clientUpdates = updateCalls(fake, "clients");
+    expect(clientUpdates).toHaveLength(1);
+    expect((clientUpdates[0] as { values: Record<string, unknown> }).values).toMatchObject({
+      riskTolerance: "moderate",
+    });
+  });
 });

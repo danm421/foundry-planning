@@ -16,7 +16,7 @@ import { runAssemble } from "../run-assemble";
 function er(fileName: string, extracted: Partial<ExtractionResult["extracted"]>): ExtractionResult {
   return {
     documentType: "account_statement", fileName, promptVersion: "test", warnings: [],
-    extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], ...extracted },
+    extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [], lifePolicies: [], wills: [], savings: [], goals: [], ...extracted },
   };
 }
 

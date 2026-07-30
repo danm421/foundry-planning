@@ -119,6 +119,13 @@ interface SsSlot {
   owner: "client" | "spouse" | "joint";
   claimingAge: number | null;
   claimingAgeMode: string | null;
+  /**
+   * Read so reconciliation can DEFER to a row already on the PIA path instead
+   * of clobbering it blind. `pia_monthly` is `decimal(15,2)`, so drizzle hands
+   * it back as a string.
+   */
+  ssBenefitMode: string | null;
+  piaMonthly: string | null;
 }
 
 /** Accumulated extracted SS for one person before it's written to their slot. */
@@ -139,9 +146,14 @@ interface SsTarget {
  *   - multiple SS rows for one person are summed (preserving the projection
  *     total the engine already shows) — the advisor reconciles in the editor.
  *
- * Each target slot is updated in place with `ssBenefitMode='manual_amount'` and
- * the carried claim age, so the SS card and editor render the imported amount.
- * Fuzzy-matched rows are skipped, mirroring the generic income path.
+ * Each target slot is updated in place with the carried claim age, so the SS
+ * card and editor render the imported amount. Fuzzy-matched rows are skipped,
+ * mirroring the generic income path.
+ *
+ * A slot is normally switched to `ssBenefitMode='manual_amount'` with a literal
+ * `annualAmount`. THE ONE EXCEPTION IS A SLOT ALREADY ON THE PIA PATH, which
+ * this pass leaves alone — see the block comment in the update loop below for
+ * why that case is live rather than theoretical.
  */
 async function reconcileSocialSecurity(
   tx: Tx,
@@ -157,6 +169,8 @@ async function reconcileSocialSecurity(
       owner: incomes.owner,
       claimingAge: incomes.claimingAge,
       claimingAgeMode: incomes.claimingAgeMode,
+      ssBenefitMode: incomes.ssBenefitMode,
+      piaMonthly: incomes.piaMonthly,
     })
     .from(incomes)
     .where(
@@ -216,13 +230,51 @@ async function reconcileSocialSecurity(
 
   for (const [person, t] of targets) {
     const slot = slotByOwner.get(person);
+
+    // ── DEFER TO A SLOT ALREADY ON THE PIA PATH. ──
+    //
+    // `commitPlanBasics` writes `ssBenefitMode: "pia_at_fra"` + `piaMonthly` to
+    // these same rows, and it runs EARLIER IN THE SAME REQUEST: `COMMIT_TABS`
+    // (commit/types.ts) dispatches "plan-basics" at index 0 and "incomes" at
+    // index 4. A caller that commits every tab at once therefore reaches both.
+    //
+    // That caller is real, not hypothetical: the Forge fact-finder import posts
+    // `{ tabs: ALL_COMMIT_TABS }` in ONE request
+    // (components/forge/use-forge-import.ts:317, list at :51-54, a hardcoded
+    // mirror of COMMIT_TABS carrying BOTH tabs). Without this guard that path
+    // would write the PIA and then immediately revert the row to
+    // `manual_amount` with a literal annual figure — silently undoing the
+    // actuarial path (early reduction, delayed credit, spousal, survivor) and
+    // stranding `piaMonthly` as dead data the SS card and editor disagree
+    // about. The wizard is unaffected either way; it commits one tab per click
+    // (TAB_TO_COMMIT, review-wizard.tsx:101-113).
+    //
+    // Reordering COMMIT_TABS is NOT the fix — the order carries other
+    // dependencies and a test asserts the dispatch order.
+    //
+    // Only the two mode-defining fields are withheld. Everything else here is
+    // shared by both modes and stays additive: the claim age (which the PIA
+    // path needs — a null one zeroes the benefit outright), its mode, the COLA,
+    // and updatedAt.
+    const existingPia = slot?.ssBenefitMode === "pia_at_fra" ? slot.piaMonthly : null;
+    const preservePia = existingPia != null;
+
     const fields: Record<string, unknown> = {
-      annualAmount: String(t.amount),
-      ssBenefitMode: "manual_amount",
       claimingAge: t.claimingAge ?? slot?.claimingAge ?? 67,
       claimingAgeMode: slot?.claimingAgeMode ?? "years",
       updatedAt: now,
     };
+    if (preservePia) {
+      result.warnings.push(
+        `Social Security (${person}): kept the PIA-based benefit already saved ` +
+          `(monthly PIA ${existingPia} at full retirement age) and did not replace it ` +
+          `with the imported annual amount of ${t.amount}. Switch the row to a manual ` +
+          `amount in the income editor if you want the imported figure instead.`,
+      );
+    } else {
+      fields.annualAmount = String(t.amount);
+      fields.ssBenefitMode = "manual_amount";
+    }
     if (t.growthRate != null) fields.growthRate = String(t.growthRate);
 
     if (slot) {

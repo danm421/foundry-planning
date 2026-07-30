@@ -7,7 +7,7 @@ import {
   clients,
 } from "@/db/schema";
 import { getOrgId } from "@/lib/db-helpers";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import { loadImportMilestones } from "@/lib/imports/import-milestones";
 import ImportFlow from "./import-flow";
@@ -77,7 +77,7 @@ export async function ImportFlowContent({ clientId: id, importId }: ImportFlowCo
         sizeBytes: f.sizeBytes,
         uploadedAt: f.uploadedAt.toISOString(),
       }))}
-      payload={payloadJson?.payload ?? null}
+      payload={payloadJson?.payload ? normalizeImportPayload(payloadJson.payload) : null}
       assumptions={payloadJson?.assemble?.assumptions ?? []}
       perTabCommittedAt={imp.perTabCommittedAt as Record<string, string> | null}
       milestones={importMilestones?.milestones ?? null}

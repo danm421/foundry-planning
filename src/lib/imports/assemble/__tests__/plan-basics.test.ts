@@ -9,7 +9,7 @@ import type { ImportPayload } from "../../types";
 function payload(over: Partial<ImportPayload> = {}): ImportPayload {
   return {
     dependents: [], accounts: [], incomes: [], expenses: [], liabilities: [],
-    lifePolicies: [], wills: [], entities: [], warnings: [], ...over,
+    lifePolicies: [], wills: [], entities: [], savings: [], warnings: [], ...over,
   };
 }
 
@@ -191,5 +191,38 @@ describe("social security", () => {
       known: { retirementAge: 65, lifeExpectancy: 92, hasSpouse: false },
     }));
     expect(b.socialSecurity[0].claimingAge.value).toBe(67);
+  });
+
+  /**
+   * `pia` commits to `incomes.pia_monthly` under `ssBenefitMode: "pia_at_fra"`,
+   * so it must be MONTHLY. Extraction reads an ANNUAL benefit off the document;
+   * leaving that annual figure in the field would overstate Social Security 12x
+   * once committed. The planner's producer (apply-decisions.ts) is already
+   * monthly, which is why the conversion belongs here rather than at the commit
+   * write site.
+   */
+  it("converts the extracted ANNUAL benefit into a MONTHLY PIA", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        incomes: [
+          { type: "social_security", name: "Social Security", annualAmount: 40200, owner: "client" },
+        ],
+      }),
+    }));
+    expect(b.socialSecurity[0].pia.value).toBe(3350);
+    // Same document fact in different units — not a re-derivation.
+    expect(b.socialSecurity[0].pia.provenance).toBe("document");
+  });
+
+  it("rounds the monthly PIA to the 2 decimals the pia_monthly column stores", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        incomes: [
+          { type: "social_security", name: "Social Security", annualAmount: 40000, owner: "client" },
+        ],
+      }),
+    }));
+    // 40000 / 12 = 3333.3333… — stored as decimal(15,2).
+    expect(b.socialSecurity[0].pia.value).toBe(3333.33);
   });
 });
