@@ -63,6 +63,19 @@ describe("WalkthroughOverlay", () => {
     vi.useRealTimers();
   });
 
+  it("on a click-gated step, offers the do-the-action hint instead of a dead Next", () => {
+    const w = getWalkthrough("add-household")!;
+    const save = w.steps[w.steps.length - 1];
+    expect(save.advanceOn).toBe("click"); // guard: this test's premise
+    const el = document.createElement("button");
+    el.setAttribute("data-forge-anchor", save.anchorId);
+    document.body.appendChild(el);
+    renderWith({ stepIndex: w.steps.length - 1, currentStep: save });
+    // A "Next" here could never enable — canAdvance only flips for manual/input.
+    expect(screen.queryByRole("button", { name: /^next$/i })).toBeNull();
+    expect(screen.getByText(/Do the highlighted action to continue/i)).toBeTruthy();
+  });
+
   it("on a manual step, Next is enabled and calls next()", () => {
     const w = getWalkthrough("add-household")!;
     const el = document.createElement("div");

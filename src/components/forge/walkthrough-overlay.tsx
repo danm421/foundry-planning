@@ -45,7 +45,11 @@ export function WalkthroughOverlay() {
 
   const total = active.steps.length;
   const counter = `Step ${stepIndex + 1} of ${total}`;
-  const isNavigate = currentStep.advanceOn === "navigate";
+  // Steps gated on a real interaction with the spotlighted element (a click on
+  // it, or arriving at the next route) can never enable "Next" — show the
+  // do-the-action hint instead of a permanently-disabled button.
+  const advancesOnAction =
+    currentStep.advanceOn === "navigate" || currentStep.advanceOn === "click";
 
   // Graceful degradation: anchor never appeared → text fallback, never a trap.
   if (status === "missing") {
@@ -116,7 +120,7 @@ export function WalkthroughOverlay() {
             Exit
           </button>
           <div className="flex gap-2">
-            {!isNavigate && (
+            {!advancesOnAction && (
               <button
                 onClick={next}
                 disabled={!canAdvance}
@@ -130,7 +134,7 @@ export function WalkthroughOverlay() {
             </button>
           </div>
         </div>
-        {isNavigate && (
+        {advancesOnAction && (
           <p className="mt-1 text-[11px] text-ink-3">Do the highlighted action to continue…</p>
         )}
       </div>
