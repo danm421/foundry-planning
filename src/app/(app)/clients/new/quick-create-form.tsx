@@ -98,7 +98,13 @@ export default function QuickCreateForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [path, setPath] = useState<StartPath | null>(null);
+  // `?path=` lets a caller (the post-create prompt on /crm/new) pre-select a
+  // card. Advisory only — it never skips the confirm button, and anything
+  // unrecognized falls back to today's "nothing selected".
+  const queryPath = searchParams.get("path");
+  const [path, setPath] = useState<StartPath | null>(
+    isStartPath(queryPath) ? queryPath : null,
+  );
   const [residenceState, setResidenceState] = useState<string>("");
   const [children, setChildren] = useState<{ firstName: string; dob: string }[]>([]);
 
